@@ -7,17 +7,29 @@ use winit::{
 };
 use winit_input_helper::WinitInputHelper;
 
+/// The main application struct. Contains all the state needed to run the game engine.
 pub struct App {
+    /// Winit event loop.
     event_loop: EventLoop<()>,
+    /// Winit input helper.
     input: WinitInputHelper,
+    /// Winit window.
     window: Window,
+    /// Pixels framebuffer handle.
     pixels: Pixels,
+    /// Raqote draw target.
     dt: DrawTarget,
+    /// Weaver renderer.
     renderer: crate::renderer::Renderer,
+
+    /// The ECS World.
+    pub(crate) world: crate::ecs::world::World,
 }
 
 impl App {
+    /// Create a new instance of the game engine, initializing everything needed to run the main loop.
     pub fn new(window_size: (u32, u32), window_title: &str) -> App {
+        // Instantiate Winit stuff.
         let event_loop = EventLoop::new();
         let input = WinitInputHelper::new();
 
@@ -30,6 +42,7 @@ impl App {
                 .unwrap()
         };
 
+        // Instantiate Pixels framebuffer.
         let window_size = window.inner_size();
         let pixels = {
             let surface_texture =
@@ -40,9 +53,12 @@ impl App {
                 .unwrap()
         };
 
+        // Instantiate Raqote draw target and Weaver renderer.
         let dt = DrawTarget::new(window_size.width as i32, window_size.height as i32);
-
         let renderer = crate::renderer::Renderer::new();
+
+        // Instantiate ECS world.
+        let world = crate::ecs::world::World::new();
 
         App {
             event_loop,
@@ -51,11 +67,14 @@ impl App {
             pixels,
             dt,
             renderer,
+            world,
         }
     }
 
+    /// Runs the main event loop of the game engine.
     pub fn run(mut self) -> anyhow::Result<()> {
         self.event_loop.run(move |event, _, control_flow| {
+            self.window.request_redraw();
             if self.input.update(&event) {
                 // ...
                 if self.input.close_requested() {
@@ -63,6 +82,8 @@ impl App {
                     return;
                 }
             }
+
+            self.world.update();
 
             if let Event::RedrawRequested(_) = event {
                 self.dt.clear(SolidSource {

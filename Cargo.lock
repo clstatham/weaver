@@ -1782,7 +1782,9 @@ dependencies = [
  "log",
  "pixels",
  "raqote",
+ "rustc-hash",
  "thiserror",
+ "typed-arena",
  "winit",
  "winit_input_helper",
 ]

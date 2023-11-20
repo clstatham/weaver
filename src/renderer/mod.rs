@@ -2,6 +2,7 @@ use raqote::{DrawOptions, DrawTarget, PathBuilder, SolidSource, StrokeStyle};
 
 pub struct Renderer;
 
+/// The Weaver renderer.
 impl Renderer {
     pub fn new() -> Self {
         Self
