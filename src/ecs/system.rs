@@ -1,3 +1,5 @@
+use std::cell::{Ref, RefMut};
+
 use crate::ecs::world::World;
 
 use super::component::Component;
@@ -5,26 +7,26 @@ use super::component::Component;
 #[derive(Debug)]
 pub enum Query {
     Immutable(String),
-    // Mutable(String),
+    Mutable(String),
 }
 
 #[derive(Debug)]
 pub enum ResolvedQuery<'a> {
     NoMatch,
-    Immutable(Vec<&'a Component>),
-    // Mutable(Vec<&'a mut Component>),
+    Immutable(Vec<Ref<'a, Component>>),
+    Mutable(Vec<RefMut<'a, Component>>),
 }
 
-impl<'a> ResolvedQuery<'a> {
-    pub fn unwrap(self) -> Vec<&'a Component> {
-        match self {
-            ResolvedQuery::NoMatch => panic!("unwrap called on ResolvedQuery::None"),
-            ResolvedQuery::Immutable(components) => components,
-        }
-    }
-}
+// impl<'a> ResolvedQuery<'a> {
+//     pub fn unwrap(self) -> Vec<Ref<'a, Component>> {
+//         match self {
+//             ResolvedQuery::NoMatch => panic!("unwrap called on ResolvedQuery::None"),
+//             ResolvedQuery::Immutable(components) => components,
+//         }
+//     }
+// }
 
-pub type StaticSystemLogic = fn(&[ResolvedQuery]);
+pub type StaticSystemLogic = fn(&mut [ResolvedQuery]);
 
 pub enum SystemLogic {
     None,
@@ -71,16 +73,7 @@ impl System {
         }
         match &self.logic {
             SystemLogic::None => {}
-            SystemLogic::Static(logic) => logic(&components),
+            SystemLogic::Static(logic) => logic(&mut components),
         }
     }
-}
-
-#[macro_export]
-macro_rules! static_system {
-    ($name:ident; $body:block) => {
-        pub fn $name(queries: &[ResolvedQuery]) {
-            $body
-        }
-    };
 }

@@ -8,7 +8,20 @@ pub mod app;
 pub mod ecs;
 pub mod renderer;
 
-fn test_system(queries: &[ResolvedQuery]) {
+fn update_system(queries: &mut [ResolvedQuery]) {
+    if let ResolvedQuery::Mutable(components) = &mut queries[0] {
+        for component in components {
+            if component.name() != "health" {
+                continue;
+            }
+            if let Field::U32(value) = component.field_mut("value").unwrap() {
+                *value += 1;
+            }
+        }
+    }
+}
+
+fn test_system(queries: &mut [ResolvedQuery]) {
     dbg!(queries);
 }
 
@@ -26,7 +39,20 @@ fn main() -> anyhow::Result<()> {
     app.world.add_component(ent2, health);
     let mut test = System::new("test_system".to_string(), SystemLogic::Static(test_system));
     test.queries.push(Query::Immutable("health".to_string()));
+    let mut update = System::new(
+        "update_system".to_string(),
+        SystemLogic::Static(update_system),
+    );
+    update.queries.push(Query::Mutable("health".to_string()));
     app.world.add_system(test);
+    app.world.add_system(update);
 
-    app.run()
+    // app.run()
+
+    app.world.update();
+    app.world.update();
+    app.world.update();
+    app.world.update();
+
+    Ok(())
 }

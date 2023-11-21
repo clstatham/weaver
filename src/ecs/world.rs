@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicU32;
+use std::{cell::RefCell, sync::atomic::AtomicU32};
 
 use super::{
     component::Component,
@@ -10,7 +10,7 @@ use rustc_hash::FxHashMap;
 /// A collection of entities, components, and systems.
 #[derive(Default)]
 pub struct World {
-    components: FxHashMap<Entity, Vec<Component>>,
+    components: FxHashMap<Entity, Vec<RefCell<Component>>>,
     systems: Vec<System>,
 }
 
@@ -31,7 +31,10 @@ impl World {
     /// Adds a component to an Entity.
     pub fn add_component(&mut self, entity: Entity, mut component: Component) {
         component.entity = entity;
-        self.components.entry(entity).or_default().push(component);
+        self.components
+            .entry(entity)
+            .or_default()
+            .push(RefCell::new(component));
     }
 
     pub fn add_system(&mut self, system: System) {
@@ -44,8 +47,8 @@ impl World {
                 let mut results = Vec::new();
                 for components in self.components.values() {
                     for component in components {
-                        if component_name == component.name() {
-                            results.push(component);
+                        if component_name == component.borrow().name() {
+                            results.push(component.borrow());
                         }
                     }
                 }
@@ -53,6 +56,21 @@ impl World {
                     ResolvedQuery::NoMatch
                 } else {
                     ResolvedQuery::Immutable(results)
+                }
+            }
+            Query::Mutable(component_name) => {
+                let mut results = Vec::new();
+                for components in self.components.values() {
+                    for component in components {
+                        if component_name == component.borrow().name() {
+                            results.push(component.borrow_mut());
+                        }
+                    }
+                }
+                if results.is_empty() {
+                    ResolvedQuery::NoMatch
+                } else {
+                    ResolvedQuery::Mutable(results)
                 }
             }
         }
