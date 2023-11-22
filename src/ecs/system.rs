@@ -4,12 +4,14 @@ use crate::ecs::world::World;
 
 use super::component::Component;
 
+/// A query for [Component]s, used by [System]s to find [Component]s to operate on.
 #[derive(Debug)]
 pub enum Query {
     Immutable(String),
     Mutable(String),
 }
 
+/// The result of a [Query], possibly containing references to [Component]s in the queried [World].
 #[derive(Debug)]
 pub enum ResolvedQuery<'a> {
     NoMatch,
@@ -17,30 +19,25 @@ pub enum ResolvedQuery<'a> {
     Mutable(Vec<RefMut<'a, Component>>),
 }
 
-// impl<'a> ResolvedQuery<'a> {
-//     pub fn unwrap(self) -> Vec<Ref<'a, Component>> {
-//         match self {
-//             ResolvedQuery::NoMatch => panic!("unwrap called on ResolvedQuery::None"),
-//             ResolvedQuery::Immutable(components) => components,
-//         }
-//     }
-// }
-
+/// A static function that implements a [System]'s logic.
 pub type StaticSystemLogic = fn(&mut [ResolvedQuery]);
 
+/// How a [System] is implemented.
 pub enum SystemLogic {
     None,
     Static(StaticSystemLogic),
     // todo: dynamic system logic
 }
 
+/// A System, which operates on components in a [World].
 pub struct System {
     name: String,
     logic: SystemLogic,
-    pub(crate) queries: Vec<Query>,
+    queries: Vec<Query>,
 }
 
 impl System {
+    /// Creates a new [System] with the given name and [SystemLogic].
     pub fn new(name: String, logic: SystemLogic) -> Self {
         System {
             name,
@@ -49,14 +46,29 @@ impl System {
         }
     }
 
+    /// Returns the name of the [System].
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    pub fn logic(&mut self) -> &mut SystemLogic {
-        &mut self.logic
+    /// Returns a reference to the [System]'s logic.
+    pub fn logic(&self) -> &SystemLogic {
+        &self.logic
     }
 
+    /// Adds a [Query] to the System. The [System] will operate on components matching the [Query].
+    pub fn add_query(&mut self, query: Query) {
+        self.queries.push(query);
+    }
+
+    /// Returns a slice of the [System]'s Queries.
+    pub fn queries(&self) -> &[Query] {
+        &self.queries
+    }
+
+    /// Runs the [System]'s logic a single time on the given [World].
+    ///
+    /// This will query the [World] for [Component]s matching the [System]'s [Query]ies, and then run the [System]'s logic on those [Component]s.
     pub fn update<'a, 'b: 'a>(&'a self, world: &'b World) {
         let mut components = Vec::new();
         for query in &self.queries {

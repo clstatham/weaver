@@ -38,12 +38,12 @@ fn main() -> anyhow::Result<()> {
     health.add_field("value", Field::U32(69));
     app.world.add_component(ent2, health);
     let mut test = System::new("test_system".to_string(), SystemLogic::Static(test_system));
-    test.queries.push(Query::Immutable("health".to_string()));
+    test.add_query(Query::Immutable("health".to_string()));
     let mut update = System::new(
         "update_system".to_string(),
         SystemLogic::Static(update_system),
     );
-    update.queries.push(Query::Mutable("health".to_string()));
+    update.add_query(Query::Mutable("health".to_string()));
     app.world.add_system(test);
     app.world.add_system(update);
 
