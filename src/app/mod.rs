@@ -19,8 +19,8 @@ pub struct App {
     pixels: Pixels,
     /// Raqote draw target.
     dt: DrawTarget,
-    /// Weaver renderer.
-    renderer: crate::renderer::Renderer,
+    /// The camera.
+    pub(crate) camera: crate::renderer::camera::PerspectiveCamera,
 
     /// The ECS World.
     pub(crate) world: crate::ecs::world::World,
@@ -55,10 +55,14 @@ impl App {
 
         // Instantiate Raqote draw target and Weaver renderer.
         let dt = DrawTarget::new(window_size.width as i32, window_size.height as i32);
-        let renderer = crate::renderer::Renderer::new();
 
         // Instantiate ECS world.
         let world = crate::ecs::world::World::new();
+
+        // Instantiate camera.
+        let mut camera = crate::renderer::camera::PerspectiveCamera::new();
+        camera.aspect = window_size.width as f32 / window_size.height as f32;
+        camera.position = glam::Vec3::new(0.0, 0.0, 1.0);
 
         App {
             event_loop,
@@ -66,8 +70,8 @@ impl App {
             window,
             pixels,
             dt,
-            renderer,
             world,
+            camera,
         }
     }
 
@@ -93,7 +97,14 @@ impl App {
                     a: 255,
                 });
 
-                if let Err(err) = self.renderer.render(&mut self.dt) {
+                let screen_size = self.window.inner_size();
+
+                if let Err(err) = crate::renderer::render(
+                    &mut self.dt,
+                    &self.camera,
+                    &self.world,
+                    (screen_size.width, screen_size.height),
+                ) {
                     log::error!("renderer.render() failed: {}", err);
                     *control_flow = ControlFlow::Exit;
                     return;

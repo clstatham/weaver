@@ -8,51 +8,49 @@ pub mod app;
 pub mod ecs;
 pub mod renderer;
 
-fn update_system(queries: &mut [ResolvedQuery]) {
-    if let ResolvedQuery::Mutable(components) = &mut queries[0] {
-        for component in components {
-            if component.name() != "health" {
-                continue;
-            }
-            if let Field::U32(value) = component.field_mut("value").unwrap() {
-                *value += 1;
-            }
+fn test_system(queries: &mut [ResolvedQuery]) {
+    // rotate any meshes
+    let transforms = &mut queries[0];
+    if let ResolvedQuery::Mutable(transforms) = transforms {
+        for transform in transforms {
+            let rotation = match transform.fields.get_mut("rotation") {
+                Some(Field::Vec3(rotation)) => rotation,
+                _ => {
+                    log::error!("transform component does not have a rotation field");
+                    continue;
+                }
+            };
+            rotation.x += 0.00;
+            rotation.y += 0.00;
+            rotation.z += 0.01;
         }
     }
-}
-
-fn test_system(queries: &mut [ResolvedQuery]) {
-    dbg!(queries);
 }
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
     let mut app = app::App::new((800, 600), "Weaver");
 
-    let ent1 = app.world.create_entity();
-    let ent2 = app.world.create_entity();
-    let mut health = Component::new("health".to_string());
-    health.add_field("value", Field::U32(100));
-    app.world.add_component(ent1, health);
-    let mut health = Component::new("health".to_string());
-    health.add_field("value", Field::U32(69));
-    app.world.add_component(ent2, health);
-    let mut test = System::new("test_system".to_string(), SystemLogic::Static(test_system));
-    test.add_query(Query::Immutable("health".to_string()));
-    let mut update = System::new(
-        "update_system".to_string(),
-        SystemLogic::Static(update_system),
+    let e1 = app.world.create_entity();
+    let mut mesh1 = Component::new("mesh".to_string());
+    mesh1.add_field(
+        "vertices",
+        Field::List(vec![
+            Field::Vec3(glam::Vec3::new(0.0, 0.0, 0.0)),
+            Field::Vec3(glam::Vec3::new(0.1, 0.0, 0.0)),
+            Field::Vec3(glam::Vec3::new(0.0, 0.1, 0.0)),
+        ]),
     );
-    update.add_query(Query::Mutable("health".to_string()));
-    app.world.add_system(test);
-    app.world.add_system(update);
+    app.world.add_component(e1, mesh1);
+    let mut transform1 = Component::new("transform".to_string());
+    transform1.add_field("position", Field::Vec3(glam::Vec3::new(0.0, 0.0, 1.0)));
+    transform1.add_field("rotation", Field::Vec3(glam::Vec3::new(0.0, 0.0, 0.0)));
+    transform1.add_field("scale", Field::Vec3(glam::Vec3::new(1.0, 1.0, 1.0)));
+    app.world.add_component(e1, transform1);
 
-    // app.run()
+    let mut s1 = System::new("test_system".to_string(), SystemLogic::Static(test_system));
+    s1.add_query(Query::Mutable("transform".to_string()));
+    app.world.add_system(s1);
 
-    app.world.update();
-    app.world.update();
-    app.world.update();
-    app.world.update();
-
-    Ok(())
+    app.run()
 }

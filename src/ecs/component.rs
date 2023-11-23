@@ -16,6 +16,12 @@ pub enum Field {
     I64(i64),
     F32(f32),
     F64(f64),
+    String(String),
+    Vec3(glam::Vec3),
+    Vec4(glam::Vec4),
+    Mat3(glam::Mat3),
+    Mat4(glam::Mat4),
+    List(Vec<Field>),
 }
 
 /// A collection of fields that describe an [Entity].
