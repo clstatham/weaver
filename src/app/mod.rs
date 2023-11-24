@@ -1,11 +1,15 @@
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
-use raqote::{DrawTarget, SolidSource};
 use winit::{
     event::Event,
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
 use winit_input_helper::WinitInputHelper;
+
+use crate::ecs::{
+    component::Field,
+    system::{Query, ResolvedQuery},
+};
 
 /// The main application struct. Contains all the state needed to run the game engine.
 pub struct App {
@@ -17,10 +21,11 @@ pub struct App {
     window: Window,
     /// Pixels framebuffer handle.
     pixels: Pixels,
-    /// Raqote draw target.
-    dt: DrawTarget,
     /// The camera.
     pub(crate) camera: crate::renderer::camera::PerspectiveCamera,
+
+    /// The time of the last frame.
+    last_frame_time: std::time::Instant,
 
     /// The ECS World.
     pub(crate) world: crate::ecs::world::World,
@@ -48,30 +53,35 @@ impl App {
             let surface_texture =
                 SurfaceTexture::new(window_size.width, window_size.height, &window);
             PixelsBuilder::new(window_size.width, window_size.height, surface_texture)
-                .texture_format(pixels::wgpu::TextureFormat::Bgra8UnormSrgb) // compat with raqote's DrawTarget
+                // .texture_format(pixels::wgpu::TextureFormat::Bgra8UnormSrgb) // compat with raqote's DrawTarget
                 .build()
                 .unwrap()
         };
 
-        // Instantiate Raqote draw target and Weaver renderer.
-        let dt = DrawTarget::new(window_size.width as i32, window_size.height as i32);
-
         // Instantiate ECS world.
-        let world = crate::ecs::world::World::new();
+        let mut world = crate::ecs::world::World::new();
 
         // Instantiate camera.
         let mut camera = crate::renderer::camera::PerspectiveCamera::new();
         camera.aspect = window_size.width as f32 / window_size.height as f32;
         camera.position = glam::Vec3::new(0.0, 0.0, 1.0);
 
+        // Instantiate timer.
+        let last_frame_time = std::time::Instant::now();
+        // Add timer to the World as an entity/component.
+        let timer_entity = world.create_entity();
+        let mut timer_component = crate::ecs::component::Component::new("timer".to_string());
+        timer_component.add_field("dt", Field::F32(0.0));
+        world.add_component(timer_entity, timer_component);
+
         App {
             event_loop,
             input,
             window,
             pixels,
-            dt,
             world,
             camera,
+            last_frame_time,
         }
     }
 
@@ -79,6 +89,7 @@ impl App {
     pub fn run(mut self) -> anyhow::Result<()> {
         self.event_loop.run(move |event, _, control_flow| {
             self.window.request_redraw();
+
             if self.input.update(&event) {
                 // ...
                 if self.input.close_requested() {
@@ -87,20 +98,36 @@ impl App {
                 }
             }
 
-            self.world.update();
-
             if let Event::RedrawRequested(_) = event {
-                self.dt.clear(SolidSource {
-                    r: 50,
-                    g: 50,
-                    b: 50,
-                    a: 255,
-                });
+                // Update timer.
+                let current_time = std::time::Instant::now();
+                let dt = current_time
+                    .duration_since(self.last_frame_time)
+                    .as_secs_f32();
+                self.last_frame_time = current_time;
+                let timers_query = Query::Mutable("timer".to_string());
+                let timers = self.world.query(&timers_query);
+                if let ResolvedQuery::Mutable(timer) = timers {
+                    for mut timer in timer {
+                        if let Some(Field::F32(old_dt)) = timer.fields.get_mut("dt") {
+                            *old_dt = dt;
+                        } else {
+                            log::error!("timer component does not have a f32 dt field");
+                        }
+                    }
+                } else {
+                    log::error!("timer component not found");
+                }
+
+                self.world.update();
 
                 let screen_size = self.window.inner_size();
 
+                let frame = bytemuck::cast_slice_mut(self.pixels.frame_mut());
+                frame.fill(0x000000ff);
+
                 if let Err(err) = crate::renderer::render(
-                    &mut self.dt,
+                    frame,
                     &self.camera,
                     &self.world,
                     (screen_size.width, screen_size.height),
@@ -110,9 +137,6 @@ impl App {
                     return;
                 }
 
-                self.pixels
-                    .frame_mut()
-                    .copy_from_slice(self.dt.get_data_u8());
                 if let Err(err) = self.pixels.render() {
                     log::error!("pixels.render() failed: {}", err);
                     *control_flow = ControlFlow::Exit;

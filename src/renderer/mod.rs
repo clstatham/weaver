@@ -1,4 +1,3 @@
-use raqote::{DrawOptions, DrawTarget, PathBuilder, SolidSource, StrokeStyle};
 use rustc_hash::FxHashMap;
 
 use crate::ecs::{
@@ -11,8 +10,37 @@ use self::camera::PerspectiveCamera;
 
 pub mod camera;
 
+pub fn line(frame: &mut [u32], frame_width: i32, x0: i32, y0: i32, x1: i32, y1: i32, color: u32) {
+    let dx = (x1 - x0).abs();
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let dy = -(y1 - y0).abs();
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let mut err = dx + dy;
+    let mut x = x0;
+    let mut y = y0;
+    loop {
+        let offset = x + y * frame_width;
+        if offset < 0 || offset >= frame.len() as i32 {
+            break;
+        }
+        frame[offset as usize] = color;
+        if x == x1 && y == y1 {
+            break;
+        }
+        let e2 = 2 * err;
+        if e2 >= dy {
+            err += dy;
+            x += sx;
+        }
+        if e2 <= dx {
+            err += dx;
+            y += sy;
+        }
+    }
+}
+
 pub fn render(
-    draw_target: &mut DrawTarget,
+    frame: &mut [u32],
     camera: &PerspectiveCamera,
     world: &World,
     screen_size: (u32, u32),
@@ -87,29 +115,33 @@ pub fn render(
         }
 
         for (_entity, vertices) in transformed_meshes {
-            let mut path_builder = PathBuilder::new();
+            let mut last = glam::Vec3::ZERO;
             for (i, vertex) in vertices.iter().enumerate() {
                 let vertex = vertex.mul_add(
                     glam::Vec3::new(screen_size.0 as f32, -(screen_size.1 as f32), 0.0),
                     glam::Vec3::new(screen_size.0 as f32 / 2.0, screen_size.1 as f32 / 2.0, 0.0),
                 );
                 if i == 0 {
-                    path_builder.move_to(vertex.x, vertex.y);
-                } else {
-                    path_builder.line_to(vertex.x, vertex.y);
+                    last = vertex;
+                    continue;
                 }
+                // dbg!(vertex);
+                // let offset = vertex.x as i32 + vertex.y as i32 * screen_size.0 as i32;
+                // if offset < 0 || offset >= frame.len() as i32 {
+                //     continue;
+                // }
+                // frame[offset as usize] = 0xffffffff;
+                line(
+                    frame,
+                    screen_size.0 as i32,
+                    last.x as i32,
+                    last.y as i32,
+                    vertex.x as i32,
+                    vertex.y as i32,
+                    0xffffffff,
+                );
+                last = vertex;
             }
-            let path = path_builder.finish();
-            draw_target.fill(
-                &path,
-                &raqote::Source::Solid(SolidSource {
-                    r: 255,
-                    g: 255,
-                    b: 255,
-                    a: 255,
-                }),
-                &DrawOptions::new(),
-            );
         }
     }
 

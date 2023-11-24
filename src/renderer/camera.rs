@@ -12,7 +12,7 @@ impl PerspectiveCamera {
     pub fn new() -> Self {
         Self {
             fov: 60.0,
-            near: 0.1,
+            near: 0.01,
             far: 1000.0,
             aspect: 1.0,
             position: glam::Vec3::new(0.0, 0.0, 0.0),
