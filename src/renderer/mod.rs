@@ -10,6 +10,7 @@ use self::camera::PerspectiveCamera;
 
 pub mod camera;
 
+/// Draws a line from (x0, y0) to (x1, y1) in the given frame.
 pub fn line(frame: &mut [u32], frame_width: i32, x0: i32, y0: i32, x1: i32, y1: i32, color: u32) {
     let dx = (x1 - x0).abs();
     let sx = if x0 < x1 { 1 } else { -1 };
@@ -39,12 +40,14 @@ pub fn line(frame: &mut [u32], frame_width: i32, x0: i32, y0: i32, x1: i32, y1: 
     }
 }
 
+/// Renders the given [World] to the given frame.
 pub fn render(
     frame: &mut [u32],
     camera: &PerspectiveCamera,
     world: &World,
     screen_size: (u32, u32),
 ) -> anyhow::Result<()> {
+    // Query the world for meshes and transforms.
     let query = Query::Immutable("mesh".to_string());
     let meshes = world.query(&query);
     let query = Query::Immutable("transform".to_string());
@@ -54,6 +57,7 @@ pub fn render(
     if let (ResolvedQuery::Immutable(meshes), ResolvedQuery::Immutable(transforms)) =
         (meshes, transforms)
     {
+        // Transform the meshes, storing the transformed meshes in a map.
         for mesh in meshes {
             let vertices = match mesh.fields.get("vertices") {
                 Some(Field::List(vertices)) => vertices,
@@ -63,7 +67,7 @@ pub fn render(
                 }
             };
 
-            let mut transformed_vertices = Vec::new();
+            let mut transformed_mesh = Vec::new();
             for vertex in vertices {
                 if let Field::Vec3(vertex) = vertex {
                     let transform = transforms
@@ -107,13 +111,14 @@ pub fn render(
                         .get_view_projection_matrix()
                         .transform_point3(transformed_vertex);
 
-                    transformed_vertices.push(transformed_vertex);
+                    transformed_mesh.push(transformed_vertex);
                 }
             }
 
-            transformed_meshes.insert(mesh.entity, transformed_vertices);
+            transformed_meshes.insert(mesh.entity, transformed_mesh);
         }
 
+        // Rasterize lines from the transformed meshes.
         for (_entity, vertices) in transformed_meshes {
             let mut last = glam::Vec3::ZERO;
             for (i, vertex) in vertices.iter().enumerate() {
@@ -125,12 +130,7 @@ pub fn render(
                     last = vertex;
                     continue;
                 }
-                // dbg!(vertex);
-                // let offset = vertex.x as i32 + vertex.y as i32 * screen_size.0 as i32;
-                // if offset < 0 || offset >= frame.len() as i32 {
-                //     continue;
-                // }
-                // frame[offset as usize] = 0xffffffff;
+
                 line(
                     frame,
                     screen_size.0 as i32,
@@ -140,6 +140,7 @@ pub fn render(
                     vertex.y as i32,
                     0xffffffff,
                 );
+
                 last = vertex;
             }
         }
