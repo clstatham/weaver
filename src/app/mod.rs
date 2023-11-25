@@ -21,8 +21,9 @@ pub struct App {
     window: Window,
     /// Pixels framebuffer handle.
     pixels: Pixels,
-    /// The camera.
-    pub(crate) camera: crate::renderer::camera::PerspectiveCamera,
+
+    /// The renderer.
+    pub(crate) renderer: crate::renderer::Renderer,
 
     /// The time of the last frame.
     last_frame_time: std::time::Instant,
@@ -53,6 +54,7 @@ impl App {
             let surface_texture =
                 SurfaceTexture::new(window_size.width, window_size.height, &window);
             PixelsBuilder::new(window_size.width, window_size.height, surface_texture)
+                .texture_format(pixels::wgpu::TextureFormat::Rgba8UnormSrgb)
                 // .texture_format(pixels::wgpu::TextureFormat::Bgra8UnormSrgb) // compat with raqote's DrawTarget
                 .build()
                 .unwrap()
@@ -61,10 +63,8 @@ impl App {
         // Instantiate ECS world.
         let mut world = crate::ecs::world::World::new();
 
-        // Instantiate camera.
-        let mut camera = crate::renderer::camera::PerspectiveCamera::new();
-        camera.aspect = window_size.width as f32 / window_size.height as f32;
-        camera.position = glam::Vec3::new(0.0, 0.0, 1.0);
+        // Instantiate renderer.
+        let renderer = crate::renderer::Renderer::new(window_size.width, window_size.height);
 
         // Instantiate timer.
         let last_frame_time = std::time::Instant::now();
@@ -80,8 +80,8 @@ impl App {
             window,
             pixels,
             world,
-            camera,
             last_frame_time,
+            renderer,
         }
     }
 
@@ -121,17 +121,7 @@ impl App {
 
                 self.world.update();
 
-                let screen_size = self.window.inner_size();
-
-                let frame = bytemuck::cast_slice_mut(self.pixels.frame_mut());
-                frame.fill(0x000000ff);
-
-                if let Err(err) = crate::renderer::render(
-                    frame,
-                    &self.camera,
-                    &self.world,
-                    (screen_size.width, screen_size.height),
-                ) {
+                if let Err(err) = self.renderer.render(self.pixels.frame_mut(), &self.world) {
                     log::error!("renderer.render() failed: {}", err);
                     *control_flow = ControlFlow::Exit;
                     return;

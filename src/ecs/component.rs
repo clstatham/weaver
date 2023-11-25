@@ -1,3 +1,5 @@
+use crate::renderer::mesh::Mesh;
+
 use super::entity::Entity;
 use rustc_hash::FxHashMap;
 
@@ -22,6 +24,7 @@ pub enum Field {
     Mat3(glam::Mat3),
     Mat4(glam::Mat4),
     List(Vec<Field>),
+    Mesh(Mesh),
 }
 
 /// A collection of fields that describe an [Entity].

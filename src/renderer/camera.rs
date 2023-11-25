@@ -12,7 +12,7 @@ impl PerspectiveCamera {
     pub fn new() -> Self {
         Self {
             fov: 60.0,
-            near: 0.01,
+            near: 0.0001,
             far: 1000.0,
             aspect: 1.0,
             position: glam::Vec3::new(0.0, 0.0, 0.0),
@@ -48,6 +48,20 @@ impl PerspectiveCamera {
     #[inline]
     pub fn get_view_projection_matrix_inverse(&self) -> glam::Mat4 {
         self.get_view_projection_matrix().inverse()
+    }
+
+    pub fn world_to_screen(&self, screen_size: (u32, u32), point: glam::Vec3) -> glam::Vec3 {
+        let mut transformed_vertex = self.get_view_projection_matrix().transform_point3(point);
+
+        transformed_vertex = glam::Vec3::new(
+            transformed_vertex.x * screen_size.0 as f32 / 2.,
+            transformed_vertex.y * screen_size.1 as f32 / 2.,
+            transformed_vertex.z,
+        );
+        transformed_vertex +=
+            glam::Vec3::new(screen_size.0 as f32 / 2., screen_size.1 as f32 / 2., 0.);
+
+        transformed_vertex
     }
 }
 
