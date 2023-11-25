@@ -58,8 +58,6 @@ impl App {
                 SurfaceTexture::new(window_size.width, window_size.height, &window);
             let scale_factor = window.scale_factor() as f32;
             let pixels = PixelsBuilder::new(window_size.width, window_size.height, surface_texture)
-                .texture_format(pixels::wgpu::TextureFormat::Rgba8UnormSrgb)
-                // .texture_format(pixels::wgpu::TextureFormat::Bgra8UnormSrgb) // compat with raqote's DrawTarget
                 .build()
                 .unwrap();
             let gui = crate::gui::Gui::new(
@@ -100,6 +98,7 @@ impl App {
     }
 
     /// Runs the main event loop of the game engine.
+    #[allow(clippy::needless_return)]
     pub fn run(mut self) -> anyhow::Result<()> {
         self.event_loop.run(move |event, _, control_flow| {
             self.window.request_redraw();

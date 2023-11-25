@@ -2,11 +2,7 @@ use ecs::{
     component::{Component, Field},
     system::{Query, ResolvedQuery, System, SystemLogic},
 };
-use renderer::{
-    color::Color,
-    mesh::{Mesh, Vertex},
-    obj_loader::load_obj,
-};
+use renderer::{color::Color, obj_loader::load_obj};
 
 pub mod app;
 #[macro_use]
@@ -54,7 +50,7 @@ fn main() -> anyhow::Result<()> {
     app.renderer.lights.push(renderer::light::PointLight {
         position: glam::Vec3::new(0.0, 1.0, 0.0),
         color: Color::new(1.0, 1.0, 1.0),
-        intensity: 2.0,
+        intensity: 1.0,
     });
 
     let e1 = app.world.create_entity();
@@ -116,12 +112,16 @@ fn main() -> anyhow::Result<()> {
     //     4, 5, 0, 0, 5, 1,
     // ];
 
-    mesh1.add_field("mesh", Field::Mesh(load_obj("assets/suzanne.obj").unwrap()));
+    let mut mesh = load_obj("assets/suzanne.obj").unwrap();
+    for vert in mesh.vertices.iter_mut() {
+        vert.color = Color::new(rand::random(), rand::random(), rand::random());
+    }
+    mesh1.add_field("mesh", Field::Mesh(mesh));
     app.world.add_component(e1, mesh1);
     let mut transform1 = Component::new("transform".to_string());
     transform1.add_field("position", Field::Vec3(glam::Vec3::new(0.0, 0.0, 0.0)));
     transform1.add_field("rotation", Field::Vec3(glam::Vec3::new(0.0, 0.0, 0.0)));
-    transform1.add_field("scale", Field::Vec3(glam::Vec3::new(0.1, 0.1, 0.1)));
+    transform1.add_field("scale", Field::Vec3(glam::Vec3::new(0.2, 0.2, 0.2)));
     app.world.add_component(e1, transform1);
 
     let mut s1 = System::new("test_system".to_string(), SystemLogic::Static(test_system));

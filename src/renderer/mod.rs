@@ -11,7 +11,7 @@ use self::{
     color::Color,
     light::PointLight,
     mesh::{Mesh, Vertex},
-    shader::{Diffuse, DummyShader, FragmentShader, Specular, VertexShader},
+    shader::{DummyShader, FragmentShader, Phong, VertexColor, VertexShader},
 };
 
 pub mod camera;
@@ -360,7 +360,8 @@ impl Renderer {
                         v1,
                         v2,
                         &DummyShader::new(),
-                        &Diffuse::new(&self.lights),
+                        // &Phong::new(&self.lights, self.camera.position, 1.0),
+                        &VertexColor,
                     );
                 }
             }

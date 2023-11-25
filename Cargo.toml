@@ -24,3 +24,4 @@ egui-winit = { version = "0.23", default-features = false, features = [
     "links",
 ] }
 wgpu = "0.17"
+rand = "0.8.5"

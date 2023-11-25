@@ -148,6 +148,26 @@ impl<'a> VertexShader for CameraProjection<'a> {
     }
 }
 
+pub struct VertexColor;
+
+impl VertexColor {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for VertexColor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FragmentShader for VertexColor {
+    fn fragment_shader(&self, vertex_in: Vertex, _color_in: Color) -> Color {
+        vertex_in.color
+    }
+}
+
 pub struct SolidColor {
     pub color: Color,
 }
@@ -192,21 +212,23 @@ impl FragmentShader for Diffuse {
     }
 }
 
-pub struct Specular {
+pub struct Phong {
     pub lights: Vec<PointLight>,
+    pub camera_position: glam::Vec3,
     pub shininess: f32,
 }
 
-impl Specular {
-    pub fn new(lights: &[PointLight], shininess: f32) -> Self {
+impl Phong {
+    pub fn new(lights: &[PointLight], camera_position: glam::Vec3, shininess: f32) -> Self {
         Self {
             lights: lights.to_vec(),
+            camera_position,
             shininess,
         }
     }
 }
 
-impl FragmentShader for Specular {
+impl FragmentShader for Phong {
     fn fragment_shader(&self, vertex_in: Vertex, color_in: Color) -> Color {
         let mut color = color_in;
 
@@ -215,11 +237,11 @@ impl FragmentShader for Specular {
             let normal = vertex_in.normal.unwrap_or(glam::Vec3::Y);
             let light_intensity = light.intensity * normal.dot(light_dir).max(0.0);
 
-            let view_dir = -vertex_in.position.normalize();
+            let view_dir = (self.camera_position - vertex_in.position).normalize();
             let half_dir = (light_dir + view_dir).normalize();
-            let specular = half_dir.dot(normal).max(0.0).powf(self.shininess);
+            let specular = normal.dot(half_dir).max(0.0).powf(self.shininess);
 
-            color = color * light.color * light_intensity * specular;
+            color = color * light.color * light_intensity + specular;
         }
 
         color

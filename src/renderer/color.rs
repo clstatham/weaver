@@ -75,6 +75,22 @@ impl std::ops::AddAssign for Color {
     }
 }
 
+impl std::ops::Add<f32> for Color {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: f32) -> Self {
+        Self::new(self.r + rhs, self.g + rhs, self.b + rhs)
+    }
+}
+
+impl std::ops::AddAssign<f32> for Color {
+    #[inline]
+    fn add_assign(&mut self, rhs: f32) {
+        *self = Self::new(self.r + rhs, self.g + rhs, self.b + rhs);
+    }
+}
+
 impl std::ops::Sub for Color {
     type Output = Self;
 
@@ -88,6 +104,22 @@ impl std::ops::SubAssign for Color {
     #[inline]
     fn sub_assign(&mut self, rhs: Self) {
         *self = Self::new(self.r - rhs.r, self.g - rhs.g, self.b - rhs.b);
+    }
+}
+
+impl std::ops::Sub<f32> for Color {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: f32) -> Self {
+        Self::new(self.r - rhs, self.g - rhs, self.b - rhs)
+    }
+}
+
+impl std::ops::SubAssign<f32> for Color {
+    #[inline]
+    fn sub_assign(&mut self, rhs: f32) {
+        *self = Self::new(self.r - rhs, self.g - rhs, self.b - rhs);
     }
 }
 
