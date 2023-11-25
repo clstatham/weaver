@@ -9,8 +9,9 @@ use crate::ecs::{
 use self::{
     camera::PerspectiveCamera,
     color::Color,
+    light::PointLight,
     mesh::{Mesh, Vertex},
-    shader::{DummyShader, FragmentShader, VertexShader},
+    shader::{Diffuse, DummyShader, FragmentShader, Specular, VertexShader},
 };
 
 pub mod camera;
@@ -18,6 +19,8 @@ pub mod color;
 pub mod mesh;
 #[macro_use]
 pub mod shader;
+pub mod light;
+pub mod obj_loader;
 
 pub struct Renderer {
     pub screen_width: u32,
@@ -25,6 +28,7 @@ pub struct Renderer {
     pub color_buffer: Vec<Color>,
     pub depth_buffer: Vec<f32>,
     pub camera: PerspectiveCamera,
+    pub lights: Vec<PointLight>,
 }
 
 impl Renderer {
@@ -32,13 +36,13 @@ impl Renderer {
         let aspect = screen_width as f32 / screen_height as f32;
         let mut camera = PerspectiveCamera::new();
         camera.aspect = aspect;
-        camera.position = glam::Vec3::new(0.0, 0.0, 1.0);
         Self {
             screen_width,
             screen_height,
             color_buffer: vec![Color::new(0.0, 0.0, 0.0); (screen_width * screen_height) as usize],
             depth_buffer: vec![0.0; (screen_width * screen_height) as usize],
             camera,
+            lights: vec![],
         }
     }
 
@@ -174,16 +178,16 @@ impl Renderer {
     ) {
         let camera_shader =
             shader::CameraProjection::new(&self.camera, (self.screen_width, self.screen_height));
-        let v0 = camera_shader.vertex_shader(vertex_shader.vertex_shader(v0));
-        let v1 = camera_shader.vertex_shader(vertex_shader.vertex_shader(v1));
-        let v2 = camera_shader.vertex_shader(vertex_shader.vertex_shader(v2));
+        let v0_screen = camera_shader.vertex_shader(vertex_shader.vertex_shader(v0));
+        let v1_screen = camera_shader.vertex_shader(vertex_shader.vertex_shader(v1));
+        let v2_screen = camera_shader.vertex_shader(vertex_shader.vertex_shader(v2));
 
-        let x0 = v0.position.x as i32;
-        let y0 = v0.position.y as i32;
-        let x1 = v1.position.x as i32;
-        let y1 = v1.position.y as i32;
-        let x2 = v2.position.x as i32;
-        let y2 = v2.position.y as i32;
+        let x0 = v0_screen.position.x as i32;
+        let y0 = v0_screen.position.y as i32;
+        let x1 = v1_screen.position.x as i32;
+        let y1 = v1_screen.position.y as i32;
+        let x2 = v2_screen.position.x as i32;
+        let y2 = v2_screen.position.y as i32;
 
         // calculate triangle bounding box
         let min_x = x0.min(x1).min(x2);
@@ -219,18 +223,32 @@ impl Renderer {
                         w0 * v0.color.g + w1 * v1.color.g + w2 * v2.color.g,
                         w0 * v0.color.b + w1 * v1.color.b + w2 * v2.color.b,
                     );
-                    // let vertex = Vertex { position, color };
+                    let normal = match (v0.normal, v1.normal, v2.normal) {
+                        (Some(n0), Some(n1), Some(n2)) => Some(glam::Vec3::new(
+                            w0 * n0.x + w1 * n1.x + w2 * n2.x,
+                            w0 * n0.y + w1 * n1.y + w2 * n2.y,
+                            w0 * n0.z + w1 * n1.z + w2 * n2.z,
+                        )),
+                        _ => None,
+                    };
+
+                    let vertex = Vertex {
+                        position,
+                        color,
+                        normal,
+                    };
 
                     // depth test
-                    let depth = w0 * v0.position.z + w1 * v1.position.z + w2 * v2.position.z;
+                    let depth = w0 * v0_screen.position.z
+                        + w1 * v1_screen.position.z
+                        + w2 * v2_screen.position.z;
                     let current_depth = self.get_depth(x as u32, y as u32).unwrap_or(0.0);
                     if depth > current_depth {
                         continue;
                     }
 
                     self.set_depth(x as u32, y as u32, depth);
-                    // let color = Color::new(1.0, 1.0, 1.0);
-                    // let color = fragment_shader.fragment_shader(vertex, color);
+                    let color = fragment_shader.fragment_shader(vertex, vertex.color);
                     self.set_color(x as u32, y as u32, color);
                 }
             }
@@ -307,9 +325,13 @@ impl Renderer {
                 );
                 for vertex in &mesh.vertices {
                     let transformed_position = transform.transform_point3(vertex.position);
+                    let transformed_normal = vertex
+                        .normal
+                        .map(|normal| transform.transform_vector3(normal).normalize());
                     let transformed_vertex = Vertex {
                         position: transformed_position,
                         color: vertex.color,
+                        normal: transformed_normal,
                     };
 
                     transformed_vertices.push(transformed_vertex);
@@ -331,7 +353,13 @@ impl Renderer {
                     let v1 = mesh.vertices[i1];
                     let v2 = mesh.vertices[i2];
 
-                    self.filled_triangle(v0, v1, v2, &DummyShader::new(), &DummyShader::new());
+                    self.filled_triangle(
+                        v0,
+                        v1,
+                        v2,
+                        &DummyShader::new(),
+                        &Diffuse::new(&self.lights),
+                    );
                 }
             }
         }

@@ -40,9 +40,9 @@ impl Color {
     /// Returns the RGB values of the [Color] as a RGBA hex value with the alpha value set to 0xff.
     #[inline]
     pub fn hex(&self) -> u32 {
-        ((self.r * 255.0) as u32) << 24
-            | ((self.g * 255.0) as u32) << 16
-            | ((self.b * 255.0) as u32) << 8
+        ((self.r.clamp(0.0, 1.0) * 255.0) as u32) << 24
+            | ((self.g.clamp(0.0, 1.0) * 255.0) as u32) << 16
+            | ((self.b.clamp(0.0, 1.0) * 255.0) as u32) << 8
             | 0xff
     }
 

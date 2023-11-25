@@ -1,4 +1,4 @@
-use super::{camera::PerspectiveCamera, color::Color, mesh::Vertex};
+use super::{camera::PerspectiveCamera, color::Color, light::PointLight, mesh::Vertex};
 
 pub trait VertexShader {
     fn vertex_shader(&self, vertex_in: Vertex) -> Vertex;
@@ -113,9 +113,13 @@ impl TransformVertexShader {
 impl VertexShader for TransformVertexShader {
     fn vertex_shader(&self, vertex_in: Vertex) -> Vertex {
         let new_pos = self.transform.transform_point3(vertex_in.position);
+        let new_normal = vertex_in
+            .normal
+            .map(|normal| self.transform.transform_vector3(normal).normalize());
         Vertex {
             position: new_pos,
             color: vertex_in.color,
+            normal: new_normal,
         }
     }
 }
@@ -157,5 +161,67 @@ impl SolidColor {
 impl FragmentShader for SolidColor {
     fn fragment_shader(&self, _vertex_in: Vertex, _color_in: Color) -> Color {
         self.color
+    }
+}
+
+pub struct Diffuse {
+    pub lights: Vec<PointLight>,
+}
+
+impl Diffuse {
+    pub fn new(lights: &[PointLight]) -> Self {
+        Self {
+            lights: lights.to_vec(),
+        }
+    }
+}
+
+impl FragmentShader for Diffuse {
+    fn fragment_shader(&self, vertex_in: Vertex, color_in: Color) -> Color {
+        let mut color = color_in;
+
+        for light in &self.lights {
+            let light_dir = (light.position - vertex_in.position).normalize();
+            let normal = vertex_in.normal.unwrap_or(glam::Vec3::Y);
+            let light_intensity = light.intensity * normal.dot(light_dir).max(0.0);
+
+            color = color * light.color * light_intensity;
+        }
+
+        color
+    }
+}
+
+pub struct Specular {
+    pub lights: Vec<PointLight>,
+    pub shininess: f32,
+}
+
+impl Specular {
+    pub fn new(lights: &[PointLight], shininess: f32) -> Self {
+        Self {
+            lights: lights.to_vec(),
+            shininess,
+        }
+    }
+}
+
+impl FragmentShader for Specular {
+    fn fragment_shader(&self, vertex_in: Vertex, color_in: Color) -> Color {
+        let mut color = color_in;
+
+        for light in &self.lights {
+            let light_dir = (light.position - vertex_in.position).normalize();
+            let normal = vertex_in.normal.unwrap_or(glam::Vec3::Y);
+            let light_intensity = light.intensity * normal.dot(light_dir).max(0.0);
+
+            let view_dir = -vertex_in.position.normalize();
+            let half_dir = (light_dir + view_dir).normalize();
+            let specular = half_dir.dot(normal).max(0.0).powf(self.shininess);
+
+            color = color * light.color * light_intensity * specular;
+        }
+
+        color
     }
 }

@@ -1,9 +1,10 @@
 use super::color::Color;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vertex {
     pub position: glam::Vec3,
     pub color: Color,
+    pub normal: Option<glam::Vec3>,
     // pub uv: glam::Vec2,
 }
 
@@ -11,25 +12,19 @@ pub struct Vertex {
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
-    pub normals: Vec<glam::Vec3>,
 }
 
 impl Mesh {
     pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
-        let mut mesh = Self {
-            vertices,
-            indices,
-            normals: vec![],
-        };
-
-        mesh.calculate_normals();
-
-        mesh
+        Self { vertices, indices }
     }
 
     pub fn calculate_normals(&mut self) {
-        self.normals = vec![glam::Vec3::ZERO; self.vertices.len()];
+        for vertex in &mut self.vertices {
+            vertex.normal = Some(glam::Vec3::ZERO);
+        }
 
+        // Calculate normals for each face with counter-clockwise winding.
         for i in (0..self.indices.len()).step_by(3) {
             let i0 = self.indices[i] as usize;
             let i1 = self.indices[i + 1] as usize;
@@ -41,13 +36,13 @@ impl Mesh {
 
             let normal = (v1 - v0).cross(v2 - v0).normalize();
 
-            self.normals[i0] += normal;
-            self.normals[i1] += normal;
-            self.normals[i2] += normal;
+            self.vertices[i0].normal = Some(self.vertices[i0].normal.unwrap() + normal);
+            self.vertices[i1].normal = Some(self.vertices[i1].normal.unwrap() + normal);
+            self.vertices[i2].normal = Some(self.vertices[i2].normal.unwrap() + normal);
         }
 
-        for normal in &mut self.normals {
-            *normal = normal.normalize();
+        for vertex in &mut self.vertices {
+            vertex.normal = Some(vertex.normal.unwrap().normalize());
         }
     }
 }

@@ -1,4 +1,4 @@
-use crate::renderer::mesh::Mesh;
+use crate::renderer::{light::PointLight, mesh::Mesh};
 
 use super::entity::Entity;
 use rustc_hash::FxHashMap;
