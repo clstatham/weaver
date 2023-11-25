@@ -10,11 +10,17 @@ anyhow = "1.0.75"
 env_logger = "0.10.0"
 log = "0.4.20"
 thiserror = "1.0.49"
-pixels = "0.13.0"
-winit = "0.28.7"
-winit_input_helper = "0.14.1"
+pixels = { git = "https://github.com/parasyte/pixels.git" }
+winit = "0.28"
+winit_input_helper = "0.14"
 glam = "0.24.2"
 typed-arena = "2.0.2"
 rustc-hash = "1.1.0"
 bytemuck = "1.14.0"
 tobj = "4.0.0"
+egui = "0.23"
+egui-wgpu = "0.23"
+egui-winit = { version = "0.23", default-features = false, features = [
+    "links",
+] }
+wgpu = "0.17"

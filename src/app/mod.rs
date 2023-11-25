@@ -30,6 +30,9 @@ pub struct App {
 
     /// The ECS World.
     pub(crate) world: crate::ecs::world::World,
+
+    /// The GUI context.
+    pub(crate) gui: crate::gui::Gui,
 }
 
 impl App {
@@ -50,14 +53,24 @@ impl App {
 
         // Instantiate Pixels framebuffer.
         let window_size = window.inner_size();
-        let pixels = {
+        let (pixels, gui) = {
             let surface_texture =
                 SurfaceTexture::new(window_size.width, window_size.height, &window);
-            PixelsBuilder::new(window_size.width, window_size.height, surface_texture)
+            let scale_factor = window.scale_factor() as f32;
+            let pixels = PixelsBuilder::new(window_size.width, window_size.height, surface_texture)
                 .texture_format(pixels::wgpu::TextureFormat::Rgba8UnormSrgb)
                 // .texture_format(pixels::wgpu::TextureFormat::Bgra8UnormSrgb) // compat with raqote's DrawTarget
                 .build()
-                .unwrap()
+                .unwrap();
+            let gui = crate::gui::Gui::new(
+                &event_loop,
+                window_size.width,
+                window_size.height,
+                scale_factor,
+                &pixels,
+            );
+
+            (pixels, gui)
         };
 
         // Instantiate ECS world.
@@ -82,6 +95,7 @@ impl App {
             world,
             last_frame_time,
             renderer,
+            gui,
         }
     }
 
@@ -96,6 +110,10 @@ impl App {
                     *control_flow = ControlFlow::Exit;
                     return;
                 }
+            }
+
+            if let Event::WindowEvent { event, .. } = &event {
+                self.gui.handle_event(event);
             }
 
             if let Event::RedrawRequested(_) = event {
@@ -127,7 +145,14 @@ impl App {
                     return;
                 }
 
-                if let Err(err) = self.pixels.render() {
+                self.gui.prepare(&self.window);
+
+                if let Err(err) = self.pixels.render_with(|encoder, render_target, context| {
+                    context.scaling_renderer.render(encoder, render_target);
+                    self.gui.render(encoder, render_target, context);
+
+                    Ok(())
+                }) {
                     log::error!("pixels.render() failed: {}", err);
                     *control_flow = ControlFlow::Exit;
                     return;

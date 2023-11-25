@@ -40,7 +40,7 @@ impl Renderer {
             screen_width,
             screen_height,
             color_buffer: vec![Color::new(0.0, 0.0, 0.0); (screen_width * screen_height) as usize],
-            depth_buffer: vec![0.0; (screen_width * screen_height) as usize],
+            depth_buffer: vec![f32::INFINITY; (screen_width * screen_height) as usize],
             camera,
             lights: vec![],
         }
@@ -154,7 +154,6 @@ impl Renderer {
     }
 
     /// Draws a wireframe triangle between three world-space vertices.
-    #[allow(clippy::too_many_arguments)]
     pub fn wireframe_triangle<V: VertexShader, F: FragmentShader>(
         &mut self,
         v0: Vertex,
@@ -178,9 +177,12 @@ impl Renderer {
     ) {
         let camera_shader =
             shader::CameraProjection::new(&self.camera, (self.screen_width, self.screen_height));
-        let v0_screen = camera_shader.vertex_shader(vertex_shader.vertex_shader(v0));
-        let v1_screen = camera_shader.vertex_shader(vertex_shader.vertex_shader(v1));
-        let v2_screen = camera_shader.vertex_shader(vertex_shader.vertex_shader(v2));
+        let v0 = vertex_shader.vertex_shader(v0);
+        let v1 = vertex_shader.vertex_shader(v1);
+        let v2 = vertex_shader.vertex_shader(v2);
+        let v0_screen = camera_shader.vertex_shader(v0);
+        let v1_screen = camera_shader.vertex_shader(v1);
+        let v2_screen = camera_shader.vertex_shader(v2);
 
         let x0 = v0_screen.position.x as i32;
         let y0 = v0_screen.position.y as i32;

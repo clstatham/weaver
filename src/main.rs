@@ -11,6 +11,7 @@ use renderer::{
 pub mod app;
 #[macro_use]
 pub mod ecs;
+pub mod gui;
 pub mod renderer;
 
 fn test_system(queries: &mut [ResolvedQuery]) {
