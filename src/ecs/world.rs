@@ -8,7 +8,7 @@ use super::{
 use rustc_hash::FxHashMap;
 
 /// A collection of [Entity]s, [Component]s, and [System]s.
-#[derive(Default)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct World {
     components: FxHashMap<Entity, Vec<RefCell<Component>>>,
     systems: Vec<System>,

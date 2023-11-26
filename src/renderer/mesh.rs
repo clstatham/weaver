@@ -1,6 +1,6 @@
 use super::color::Color;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Vertex {
     pub position: glam::Vec3,
     pub color: Color,
@@ -8,7 +8,7 @@ pub struct Vertex {
     // pub uv: glam::Vec2,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,

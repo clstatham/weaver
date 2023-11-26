@@ -7,40 +7,10 @@ use renderer::{color::Color, obj_loader::load_obj};
 pub mod app;
 #[macro_use]
 pub mod ecs;
+pub mod editor;
+pub mod graph;
 pub mod gui;
 pub mod renderer;
-
-fn test_system(queries: &mut [ResolvedQuery]) {
-    // rotate any meshes
-    let mut dt = 0.0;
-
-    if let ResolvedQuery::Immutable(timer) = &queries[0] {
-        for timer in timer {
-            dt = match timer.fields.get("dt") {
-                Some(Field::F32(dt)) => *dt,
-                _ => {
-                    log::error!("timer component does not have a f32 dt field");
-                    continue;
-                }
-            };
-            log::info!("dt: {}", dt);
-        }
-    }
-    if let ResolvedQuery::Mutable(transforms) = &mut queries[1] {
-        for transform in transforms {
-            let rotation = match transform.fields.get_mut("rotation") {
-                Some(Field::Vec3(rotation)) => rotation,
-                _ => {
-                    log::error!("transform component does not have a rotation field");
-                    continue;
-                }
-            };
-            rotation.x += -2. * dt;
-            rotation.y += 1. * dt;
-            rotation.z += 3. * dt;
-        }
-    }
-}
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -112,7 +82,7 @@ fn main() -> anyhow::Result<()> {
     //     4, 5, 0, 0, 5, 1,
     // ];
 
-    let mut mesh = load_obj("assets/suzanne.obj").unwrap();
+    let mut mesh = load_obj("assets/cube.obj").unwrap();
     for vert in mesh.vertices.iter_mut() {
         vert.color = Color::new(rand::random(), rand::random(), rand::random());
     }
@@ -124,10 +94,8 @@ fn main() -> anyhow::Result<()> {
     transform1.add_field("scale", Field::Vec3(glam::Vec3::new(0.2, 0.2, 0.2)));
     app.world.add_component(e1, transform1);
 
-    let mut s1 = System::new("test_system".to_string(), SystemLogic::Static(test_system));
-    s1.add_query(Query::Immutable("timer".to_string()));
-    s1.add_query(Query::Mutable("transform".to_string()));
-    app.world.add_system(s1);
+    let scene = serde_yaml::to_string(&app.world)?;
+    std::fs::write("assets/editor.yaml", scene)?;
 
     app.run()
 }

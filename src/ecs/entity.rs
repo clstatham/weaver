@@ -1,5 +1,5 @@
 /// A unique identifier for a collection of Components.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Entity {
     id: u32,
 }

@@ -3,6 +3,8 @@ use egui_wgpu::renderer::{Renderer, ScreenDescriptor};
 use pixels::PixelsContext;
 use winit::{event_loop::EventLoopWindowTarget, window::Window};
 
+pub mod element;
+
 pub struct Gui {
     pub ctx: Context,
     pub state: egui_winit::State,

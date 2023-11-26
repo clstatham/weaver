@@ -5,7 +5,7 @@ use crate::ecs::world::World;
 use super::component::Component;
 
 /// A query for [Component]s, used by [System]s to find [Component]s to operate on.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum Query {
     Immutable(String),
     Mutable(String),
@@ -29,7 +29,33 @@ pub enum SystemLogic {
     // todo: dynamic system logic
 }
 
+impl std::fmt::Debug for SystemLogic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SystemLogic::None => write!(f, "None"),
+            SystemLogic::Static(_) => write!(f, "Static"),
+        }
+    }
+}
+
+impl serde::Serialize for SystemLogic {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            SystemLogic::None => serializer.serialize_str("None"),
+            SystemLogic::Static(_) => serializer.serialize_str("Static"),
+        }
+    }
+}
+
+impl<'a> serde::Deserialize<'a> for SystemLogic {
+    fn deserialize<D: serde::Deserializer<'a>>(_deserializer: D) -> Result<Self, D::Error> {
+        // todo: deserialize dynamic system logic
+        Ok(SystemLogic::None)
+    }
+}
+
 /// A System, which operates on components in a [World].
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct System {
     name: String,
     logic: SystemLogic,
