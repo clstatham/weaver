@@ -1,15 +1,16 @@
 pub mod component;
 pub mod entity;
-#[macro_use]
+pub mod query;
 pub mod system;
 pub mod world;
 
+/// Helper trait for downcasting to `Any`.
 pub trait Downcast {
     fn as_any(&self) -> &dyn std::any::Any;
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
-impl<T: std::any::Any> Downcast for T {
+impl<T: 'static> Downcast for T {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

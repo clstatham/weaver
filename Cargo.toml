@@ -28,3 +28,5 @@ rand = "0.8.5"
 serde = { version = "1.0.193", features = ["derive"] }
 serde_yaml = "0.9.27"
 petgraph = "0.6.4"
+tokio = { version = "1.35.0", features = ["full"] }
+futures = "0.3.29"
