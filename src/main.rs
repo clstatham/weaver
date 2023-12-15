@@ -1,31 +1,30 @@
+use app::App;
 use ecs::world::World;
 
 #[macro_use]
 pub mod ecs;
+pub mod app;
 
-fn test_system(world: &mut World) {
+fn test_system(world: &mut World, delta: std::time::Duration) {
     let query = world.write::<(i32, &str)>();
     for (i, s) in query {
         *i += 1;
         println!("{}: {}", i, s);
     }
+    println!("delta: {:?}", delta);
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let mut world = World::new();
+    let mut app = App::new();
 
-    let e1 = world.spawn((42, "Hello, world!"));
-    let e2 = world.spawn((1337, "Goodbye, world!"));
+    let entity = app.spawn((42, "Hello, world!"));
+    app.add_component(entity, 69);
 
-    world.register_system(test_system);
+    app.register_system(test_system);
 
-    world.update();
-    world.update();
-    world.update();
-    world.update();
+    app.run();
 
     Ok(())
 }

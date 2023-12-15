@@ -108,9 +108,17 @@ impl World {
         entity
     }
 
-    pub fn update(&mut self) {
+    pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
+        self.components.insert(entity, component);
+    }
+
+    pub fn remove_component<T: Component>(&mut self, entity: Entity) {
+        self.components.remove::<T>(entity);
+    }
+
+    pub fn update(&mut self, delta: std::time::Duration) {
         for system in self.systems.clone().iter() {
-            system.run(self);
+            system.run(self, delta);
         }
     }
 }
