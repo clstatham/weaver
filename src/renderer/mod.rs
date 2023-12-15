@@ -26,13 +26,13 @@ impl Renderer {
         let mut camera = PerspectiveCamera::new(
             glam::Vec3::new(1.0, 1.0, 1.0),
             glam::Vec3::ZERO,
-            90.0,
+            120.0f32.to_radians(),
             screen_width as f32 / screen_height as f32,
-            0.1,
-            100.0,
+            0.001,
+            100000.0,
         );
         camera.look_at(
-            glam::Vec3::new(3.0, 3.0, 3.0),
+            glam::Vec3::new(4.0, 4.0, 4.0),
             glam::Vec3::new(0.0, 0.0, 0.0),
             glam::Vec3::NEG_Y,
         );
