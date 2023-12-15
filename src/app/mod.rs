@@ -2,7 +2,10 @@ use pixels::Pixels;
 use winit::{event_loop::EventLoop, window::Window};
 use winit_input_helper::WinitInputHelper;
 
-use crate::ecs::{component::Component, entity::Entity, system::System, world::World};
+use crate::{
+    ecs::{component::Component, entity::Entity, system::System, world::World},
+    renderer::Renderer,
+};
 
 pub struct App {
     event_loop: EventLoop<()>,
@@ -12,18 +15,20 @@ pub struct App {
 
     pub(crate) world: World,
 
+    pub(crate) renderer: Renderer,
+
     last_frame: std::time::Instant,
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(screen_width: usize, screen_height: usize) -> Self {
         let event_loop = EventLoop::new();
         let input = WinitInputHelper::new();
         let window = Window::new(&event_loop).unwrap();
         let pixels = {
             let size = window.inner_size();
             let surface_texture = pixels::SurfaceTexture::new(size.width, size.height, &window);
-            Pixels::new(800, 600, surface_texture).unwrap()
+            Pixels::new(screen_width as u32, screen_height as u32, surface_texture).unwrap()
         };
 
         let world = World::new();
@@ -35,6 +40,7 @@ impl App {
             pixels,
             world,
             last_frame: std::time::Instant::now(),
+            renderer: Renderer::new(screen_width, screen_height),
         }
     }
 
@@ -73,16 +79,22 @@ impl App {
                     self.last_frame = now;
                     self.world.update(delta);
 
+                    self.renderer.render(&mut self.world, delta);
+
+                    let frame = self.pixels.frame_mut();
+
+                    for (i, color) in self.renderer.color_buffer().iter().enumerate() {
+                        let (r, g, b) = color.rgb_int();
+                        frame[i * 4] = r;
+                        frame[i * 4 + 1] = g;
+                        frame[i * 4 + 2] = b;
+                        frame[i * 4 + 3] = 255;
+                    }
+
                     self.pixels.render().unwrap();
                 }
                 _ => {}
             }
         });
-    }
-}
-
-impl Default for App {
-    fn default() -> Self {
-        Self::new()
     }
 }

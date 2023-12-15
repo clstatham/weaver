@@ -1,26 +1,28 @@
+use core::{mesh::Mesh, transform::Transform};
+
 use app::App;
 use ecs::world::World;
 
 #[macro_use]
 pub mod ecs;
 pub mod app;
+pub mod core;
+pub mod renderer;
 
 fn test_system(world: &mut World, delta: std::time::Duration) {
-    let query = world.write::<(i32, &str)>();
-    for (i, s) in query {
-        *i += 1;
-        println!("{}: {}", i, s);
+    for (_mesh, transform) in world.write::<Model>() {
+        transform.rotate(1.0 * delta.as_secs_f32(), glam::Vec3::Y);
     }
-    println!("delta: {:?}", delta);
 }
+
+type Model = (Mesh, Transform);
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let mut app = App::new();
+    let mut app = App::new(800, 600);
 
-    let entity = app.spawn((42, "Hello, world!"));
-    app.add_component(entity, 69);
+    let entity = app.spawn((Mesh::load_obj("assets/suzanne.obj")?, Transform::default()));
 
     app.register_system(test_system);
 
