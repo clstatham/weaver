@@ -3,14 +3,15 @@ use std::sync::{Arc, Mutex};
 use rustc_hash::FxHashMap;
 
 use super::{
+    bundle::Bundle,
     component::Component,
     entity::Entity,
-    query::{ReadResult, WriteResult},
+    query::{MultiComponent, ReadResult, WriteResult},
     system::System,
 };
 
 pub struct Components {
-    data: FxHashMap<Entity, Vec<Box<dyn Component>>>,
+    pub(crate) data: FxHashMap<Entity, Vec<Box<dyn Component>>>,
 }
 
 impl Components {
@@ -31,31 +32,31 @@ impl Components {
         }
     }
 
-    pub(crate) fn read<'a, 'b: 'a, T: Component>(&'b self) -> ReadResult<'a, T> {
-        let mut result = Vec::new();
+    // pub(crate) fn read<'a, 'b: 'a, T: Component>(&'b self) -> ReadResult<'a, T> {
+    //     let mut result = Vec::new();
 
-        for components in self.data.values() {
-            for lock in components.iter() {
-                if let Some(component) = lock.as_any().downcast_ref::<T>() {
-                    result.push(component);
-                }
-            }
-        }
-        ReadResult { components: result }
-    }
+    //     for components in self.data.values() {
+    //         for lock in components.iter() {
+    //             if let Some(component) = lock.as_any().downcast_ref::<T>() {
+    //                 result.push(component);
+    //             }
+    //         }
+    //     }
+    //     ReadResult { components: result }
+    // }
 
-    pub(crate) fn write<'a, 'b: 'a, T: Component>(&'b mut self) -> WriteResult<'a, T> {
-        let mut result = Vec::new();
+    // pub(crate) fn write<'a, 'b: 'a, T: Component>(&'b mut self) -> WriteResult<'a, T> {
+    //     let mut result = Vec::new();
 
-        for components in self.data.values_mut() {
-            for lock in components.iter_mut() {
-                if let Some(component) = lock.as_any_mut().downcast_mut::<T>() {
-                    result.push(component);
-                }
-            }
-        }
-        WriteResult { components: result }
-    }
+    //     for components in self.data.values_mut() {
+    //         for lock in components.iter_mut() {
+    //             if let Some(component) = lock.as_any_mut().downcast_mut::<T>() {
+    //                 result.push(component);
+    //             }
+    //         }
+    //     }
+    //     WriteResult { components: result }
+    // }
 }
 
 impl Default for Components {
@@ -65,7 +66,7 @@ impl Default for Components {
 }
 
 pub struct World {
-    components: Components,
+    pub(crate) components: Components,
     systems: Vec<Arc<Mutex<dyn System>>>,
 }
 
@@ -89,14 +90,6 @@ impl World {
         self.systems.push(Arc::new(Mutex::new(system)));
     }
 
-    pub fn read<T: Component>(&self) -> ReadResult<'_, T> {
-        self.components.read()
-    }
-
-    pub fn write<T: Component>(&mut self) -> WriteResult<'_, T> {
-        self.components.write()
-    }
-
     pub fn spawn<T: Component>(&mut self, component: T) -> Entity {
         static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let entity = Entity::new(NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
@@ -110,6 +103,14 @@ impl World {
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) {
         self.components.remove::<T>(entity);
+    }
+
+    pub fn read<T: MultiComponent>(&self) -> ReadResult<'_> {
+        T::read(self)
+    }
+
+    pub fn write<T: MultiComponent>(&mut self) -> WriteResult<'_> {
+        T::write(self)
     }
 
     pub fn update(&mut self, delta: std::time::Duration) {

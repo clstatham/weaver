@@ -1,4 +1,8 @@
-use super::Downcast;
+use super::{
+    query::{ReadResult, WriteResult},
+    world::World,
+    Downcast,
+};
 
 pub trait Component: Downcast + Send + Sync + 'static {}
 

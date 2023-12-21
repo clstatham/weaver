@@ -78,7 +78,7 @@ impl App {
                     self.last_frame = now;
                     self.world.update(delta);
 
-                    self.renderer.render(&mut self.world, delta);
+                    self.renderer.render(&mut self.world);
 
                     let frame = self.pixels.frame_mut();
 

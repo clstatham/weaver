@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{
     core::{camera::PerspectiveCamera, color::Color, mesh::Mesh, transform::Transform},
     ecs::world::World,
@@ -104,10 +102,15 @@ impl Renderer {
         (x, y)
     }
 
-    pub fn render(&mut self, world: &mut World, _delta: Duration) {
+    pub fn render(&mut self, world: &mut World) {
         self.clear(Color::new(0.0, 0.0, 0.0));
 
-        for (mesh, transform) in world.read::<(Mesh, Transform)>() {
+        let query = world.read::<(Mesh, Transform)>();
+        for (mesh, transform) in query
+            .get::<Mesh>()
+            .into_iter()
+            .zip(query.get::<Transform>())
+        {
             for i in (0..mesh.indices.len()).step_by(3) {
                 let i0 = mesh.indices[i] as usize;
                 let i1 = mesh.indices[i + 1] as usize;
@@ -129,4 +132,3 @@ impl Renderer {
         }
     }
 }
-
