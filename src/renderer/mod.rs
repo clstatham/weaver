@@ -105,6 +105,7 @@ impl Renderer {
     pub fn render(&mut self, world: &mut World) {
         self.clear(Color::new(0.0, 0.0, 0.0));
 
+        // query the world for entities that have both a mesh and transform
         let query = world.read::<(Mesh, Transform)>();
         for (mesh, transform) in query
             .get::<Mesh>()

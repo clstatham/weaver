@@ -8,24 +8,29 @@ impl Transform {
         Self(glam::Mat4::IDENTITY)
     }
 
-    pub fn translate(&mut self, x: f32, y: f32, z: f32) {
+    pub fn translate(&mut self, x: f32, y: f32, z: f32) -> Self {
         self.0 *= glam::Mat4::from_translation(glam::Vec3::new(x, y, z));
+        *self
     }
 
-    pub fn rotate(&mut self, angle: f32, axis: glam::Vec3) {
+    pub fn rotate(&mut self, angle: f32, axis: glam::Vec3) -> Self {
         self.0 *= glam::Mat4::from_axis_angle(axis, angle);
+        *self
     }
 
-    pub fn scale(&mut self, x: f32, y: f32, z: f32) {
+    pub fn scale(&mut self, x: f32, y: f32, z: f32) -> Self {
         self.0 *= glam::Mat4::from_scale(glam::Vec3::new(x, y, z));
+        *self
     }
 
-    pub fn look_at(&mut self, eye: glam::Vec3, target: glam::Vec3, up: glam::Vec3) {
+    pub fn look_at(&mut self, eye: glam::Vec3, target: glam::Vec3, up: glam::Vec3) -> Self {
         self.0 = glam::Mat4::look_at_rh(eye, target, up);
+        *self
     }
 
-    pub fn perspective(&mut self, fov: f32, aspect: f32, near: f32, far: f32) {
+    pub fn perspective(&mut self, fov: f32, aspect: f32, near: f32, far: f32) -> Self {
         self.0 = glam::Mat4::perspective_rh(fov, aspect, near, far);
+        *self
     }
 
     pub fn orthographic(
@@ -36,8 +41,9 @@ impl Transform {
         top: f32,
         near: f32,
         far: f32,
-    ) {
+    ) -> Self {
         self.0 = glam::Mat4::orthographic_rh(left, right, bottom, top, near, far);
+        *self
     }
 
     pub fn transform_vertex(&self, vertex: Vertex) -> Vertex {

@@ -1,8 +1,4 @@
-use crate::ecs::{
-    entity::Entity,
-    query::{ReadResult, WriteResult},
-    world::World,
-};
+use crate::ecs::{entity::Entity, world::World};
 
 use super::component::Component;
 

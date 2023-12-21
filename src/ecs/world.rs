@@ -6,7 +6,7 @@ use super::{
     bundle::Bundle,
     component::Component,
     entity::Entity,
-    query::{MultiComponent, ReadResult, WriteResult},
+    query::{MultiComponent, Read, Write},
     system::System,
 };
 
@@ -97,6 +97,10 @@ impl World {
         entity
     }
 
+    pub fn build<T: Bundle>(&mut self, bundle: T) -> Entity {
+        bundle.build(self)
+    }
+
     pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
         self.components.insert(entity, component);
     }
@@ -105,11 +109,11 @@ impl World {
         self.components.remove::<T>(entity);
     }
 
-    pub fn read<T: MultiComponent>(&self) -> ReadResult<'_> {
+    pub fn read<T: MultiComponent>(&self) -> Read<'_> {
         T::read(self)
     }
 
-    pub fn write<T: MultiComponent>(&mut self) -> WriteResult<'_> {
+    pub fn write<T: MultiComponent>(&mut self) -> Write<'_> {
         T::write(self)
     }
 

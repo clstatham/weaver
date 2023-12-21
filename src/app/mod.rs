@@ -3,7 +3,7 @@ use winit::{event_loop::EventLoop, window::Window};
 use winit_input_helper::WinitInputHelper;
 
 use crate::{
-    ecs::{component::Component, entity::Entity, system::System, world::World},
+    ecs::{bundle::Bundle, component::Component, entity::Entity, system::System, world::World},
     renderer::Renderer,
 };
 
@@ -46,6 +46,10 @@ impl App {
 
     pub fn spawn<T: Component>(&mut self, component: T) -> Entity {
         self.world.spawn(component)
+    }
+
+    pub fn build<T: Bundle>(&mut self, bundle: T) -> Entity {
+        bundle.build(&mut self.world)
     }
 
     pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
