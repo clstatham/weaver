@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rustc_hash::FxHashMap;
 
@@ -66,7 +66,7 @@ impl Default for Components {
 
 pub struct World {
     components: Components,
-    systems: Vec<Arc<dyn System>>,
+    systems: Vec<Arc<Mutex<dyn System>>>,
 }
 
 impl World {
@@ -86,11 +86,7 @@ impl World {
     }
 
     pub fn register_system<T: System>(&mut self, system: T) {
-        self.systems.push(Arc::new(system));
-    }
-
-    pub fn unregister_system(&mut self, system: &Arc<dyn System>) {
-        self.systems.retain(|s| !Arc::ptr_eq(s, system));
+        self.systems.push(Arc::new(Mutex::new(system)));
     }
 
     pub fn read<T: Component>(&self) -> ReadResult<'_, T> {
@@ -118,7 +114,12 @@ impl World {
 
     pub fn update(&mut self, delta: std::time::Duration) {
         for system in self.systems.clone().iter() {
-            system.run(self, delta);
+            match system.lock() {
+                Ok(mut system) => system.run(self, delta),
+                Err(_) => {
+                    log::warn!("Failed to acquire lock on system");
+                }
+            }
         }
     }
 }

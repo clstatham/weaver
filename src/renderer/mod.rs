@@ -1,12 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    core::{
-        camera::PerspectiveCamera,
-        color::{self, Color},
-        mesh::Mesh,
-        transform::Transform,
-    },
+    core::{camera::PerspectiveCamera, color::Color, mesh::Mesh, transform::Transform},
     ecs::world::World,
 };
 #[macro_use]
@@ -109,7 +104,7 @@ impl Renderer {
         (x, y)
     }
 
-    pub fn render(&mut self, world: &mut World, delta: Duration) {
+    pub fn render(&mut self, world: &mut World, _delta: Duration) {
         self.clear(Color::new(0.0, 0.0, 0.0));
 
         for (mesh, transform) in world.read::<(Mesh, Transform)>() {
@@ -134,3 +129,4 @@ impl Renderer {
         }
     }
 }
+

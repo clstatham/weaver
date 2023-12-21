@@ -24,7 +24,6 @@ impl PerspectiveCamera {
 
     pub fn world_to_projection(&self, position: glam::Vec3) -> glam::Vec3 {
         let view = self.view_matrix.transform_point3(position);
-        let projection = self.projection_matrix.transform_point3(view);
-        projection
+        self.projection_matrix.transform_point3(view)
     }
 }

@@ -1,4 +1,4 @@
-use crate::core::{color::Color, Vertex};
+use crate::core::Vertex;
 
 use super::{
     shader::{self, FragmentShader, VertexShader},

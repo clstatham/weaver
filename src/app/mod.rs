@@ -66,13 +66,12 @@ impl App {
             self.input.update(&event);
             self.window.request_redraw();
             match event {
-                winit::event::Event::WindowEvent { event, .. } => match event {
-                    winit::event::WindowEvent::CloseRequested => {
-                        *control_flow = winit::event_loop::ControlFlow::Exit;
-                        return;
-                    }
-                    _ => {}
-                },
+                winit::event::Event::WindowEvent {
+                    event: winit::event::WindowEvent::CloseRequested,
+                    ..
+                } => {
+                    *control_flow = winit::event_loop::ControlFlow::Exit;
+                }
                 winit::event::Event::RedrawRequested(_) => {
                     let now = std::time::Instant::now();
                     let delta = now - self.last_frame;
