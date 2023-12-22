@@ -1,11 +1,7 @@
 use core::{color::Color, mesh::Mesh, transform::Transform};
 
 use app::App;
-use ecs::{
-    component::Component,
-    query::{With, Without},
-    world::World,
-};
+use ecs::{component::Component, query::Without, world::World};
 
 #[macro_use]
 pub mod ecs;
@@ -15,7 +11,7 @@ pub mod renderer;
 
 fn test_system(world: &mut World, delta: std::time::Duration) {
     for transform in world
-        .write::<(With<Mesh>, With<Transform>, Without<Mark>)>()
+        .write::<(Mesh, Transform, Without<Mark>)>()
         .get_mut::<Transform>()
     {
         transform.rotate(1.0 * delta.as_secs_f32(), glam::Vec3::Y);

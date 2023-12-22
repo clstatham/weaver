@@ -17,7 +17,7 @@ impl<'a> Read<'a> {
     pub fn get<T: Component>(&self) -> Vec<&T> {
         let mut result = Vec::new();
         for component in self.components.iter() {
-            if let Some(component) = component.as_any().downcast_ref::<T>() {
+            if let Some(component) = component.as_ref().as_any().downcast_ref::<T>() {
                 result.push(component);
             }
         }
@@ -30,7 +30,7 @@ impl<'a> Write<'a> {
     pub fn get<T: Component>(&self) -> Vec<&T> {
         let mut result = Vec::new();
         for component in self.components.iter() {
-            if let Some(component) = component.as_any().downcast_ref::<T>() {
+            if let Some(component) = component.as_ref().as_any().downcast_ref::<T>() {
                 result.push(component);
             }
         }
@@ -41,7 +41,7 @@ impl<'a> Write<'a> {
     pub fn get_mut<T: Component>(&mut self) -> Vec<&mut T> {
         let mut result = Vec::new();
         for component in self.components.iter_mut() {
-            if let Some(component) = component.as_any_mut().downcast_mut::<T>() {
+            if let Some(component) = component.as_mut().as_any_mut().downcast_mut::<T>() {
                 result.push(component);
             }
         }
@@ -68,7 +68,7 @@ macro_rules! impl_query_for_tuple {
 
                 let mut result = $head.clone();
 
-                // For each entity in the head query, check if it exists in all other queries.
+                // For each entity in the head query, check if it exists in all other queries and remove it if it doesn't.
                 for (entity, index) in $head.iter() {
                     $(
                         if !$tail.iter().any(|(e, _)| e == entity) {
@@ -102,11 +102,8 @@ impl_query_for_tuple!(A, B, C, D,);
 impl_query_for_tuple!(A, B, C, D, E,);
 impl_query_for_tuple!(A, B, C, D, E, F,);
 
-pub struct With<T>(std::marker::PhantomData<T>);
-// impl<T: Component> Component for With<T> {}
-
 #[allow(unused_variables, non_snake_case, unused_mut)]
-impl<T: Component> Query for With<T> {
+impl<T: Component> Query for T {
     fn query<'a, 'b: 'a>(world: &'b World) -> Vec<(Entity, usize)> {
         let mut result = Vec::new();
         for (entity, components) in world.components.data.iter() {

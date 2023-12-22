@@ -1,6 +1,6 @@
 use crate::{
     core::{camera::PerspectiveCamera, color::Color, mesh::Mesh, transform::Transform},
-    ecs::{query::With, world::World},
+    ecs::world::World,
 };
 #[macro_use]
 pub mod shader;
@@ -106,7 +106,7 @@ impl Renderer {
         self.clear(Color::new(0.0, 0.0, 0.0));
 
         // query the world for entities that have both a mesh and transform
-        let query = world.read::<(With<Mesh>, With<Transform>)>();
+        let query = world.read::<(Mesh, Transform)>();
         for (mesh, transform) in query
             .get::<Mesh>()
             .into_iter()
