@@ -1,9 +1,13 @@
+use crate::ecs::component::Component;
+
 use super::{color::Color, Vertex};
 
+#[derive(Clone)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
 }
+impl Component for Mesh {}
 
 impl Mesh {
     pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {

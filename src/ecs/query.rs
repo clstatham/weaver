@@ -1,13 +1,15 @@
-use super::{component::Component, world::World};
+use std::cell::{Ref, RefMut};
+
+use super::{component::Component, entity::Entity, world::World};
 
 /// A read-only query. This is used to get immutable references to components found in a `World`.
 pub struct Read<'a> {
-    pub components: Vec<&'a dyn Component>,
+    pub components: Vec<Ref<'a, Box<dyn Component>>>,
 }
 
 /// A read-write query. This is used to get mutable references to components found in a `World`.
 pub struct Write<'a> {
-    pub components: Vec<&'a mut dyn Component>,
+    pub components: Vec<RefMut<'a, Box<dyn Component>>>,
 }
 
 impl<'a> Read<'a> {
@@ -47,83 +49,99 @@ impl<'a> Write<'a> {
     }
 }
 
-pub trait MultiComponent {
-    fn read<'a, 'b: 'a>(world: &'b World) -> Read<'a>;
-    fn write<'a, 'b: 'a>(world: &'b mut World) -> Write<'a>;
+pub trait Query
+where
+    Self: 'static,
+{
+    fn query<'a, 'b: 'a>(world: &'b World) -> Vec<(Entity, usize)>;
 }
 
-macro_rules! impl_multi_component_for_tuple {
+macro_rules! impl_query_for_tuple {
     ($head:ident, $($tail:ident,)*) => {
-        #[allow(unused_variables, non_snake_case)]
-        impl<$head: Component, $($tail: Component,)*> MultiComponent for ($head, $($tail),*)
+        #[allow(unused_variables, non_snake_case, unused_mut)]
+        impl<$head: Query, $($tail: Query,)*> Query for ($head, $($tail),*)
         {
-            fn read<'a, 'b: 'a>(world: &'b World) -> Read<'a> {
-                let mut result = Vec::new();
-                let mut $head = false;
-                $(let mut $tail = false;)*
-                'outer: for (_entity, components) in world.components.data.iter() {
-                    let mut temp = Vec::new();
-                    for comp in components.iter() {
-                        if let Some(_) = comp.as_any().downcast_ref::<$head>() {
-                            temp.push(&**comp);
-                            $head = true;
-                            continue;
+            /// Logical "AND" of all queries. Returns the entities that are in all queries, and the indices of the matching components for each query.
+            fn query<'a, 'b: 'a>(world: &'b World) -> Vec<(Entity, usize)> {
+                let $head = $head::query(world);
+                $(let $tail = $tail::query(world);)*
+
+                let mut result = $head.clone();
+
+                // For each entity in the head query, check if it exists in all other queries.
+                for (entity, index) in $head.iter() {
+                    $(
+                        if !$tail.iter().any(|(e, _)| e == entity) {
+                            result.retain(|(e, _)| e != entity);
                         }
-
-                        $(
-                            if let Some(_) = comp.as_any().downcast_ref::<$tail>() {
-                                temp.push(&**comp);
-                                $tail = true;
-                                continue;
-                            }
-                        )*
-                    }
-
-                    if $head $(&& $tail)* {
-                        result.extend(temp);
-                    }
+                    )*
                 }
 
-                Read { components: result }
-            }
-
-            fn write<'a, 'b: 'a>(world: &'b mut World) -> Write<'a> {
-                let mut result = Vec::new();
-
-                'outer: for (_entity, components) in world.components.data.iter_mut() {
-                    let mut temp = Vec::new();
-                    let mut $head = false;
-                    $(let mut $tail = false;)*
-                    for comp in components.iter_mut() {
-                        if let Some(_) = comp.as_any_mut().downcast_mut::<$head>() {
-                            temp.push(&mut **comp);
-                            $head = true;
-                            continue;
-                        }
-
-                        $(
-                            if let Some(_) = comp.as_any_mut().downcast_mut::<$tail>() {
-                                temp.push(&mut **comp);
-                                $tail = true;
-                                continue;
+                // For each entity in all the head and tail queries, add the indices to the result.
+                let temp = result.clone();
+                for (entity, index) in temp.iter() {
+                    $(
+                        if let Some((_, i)) = $tail.iter().find(|(e, _)| e == entity) {
+                            if !result.iter().any(|(e, _)| e == entity && i == index) {
+                                result.push((*entity, *i));
                             }
-                        )*
-                    }
-
-                    if $head $(&& $tail)* {
-                        result.extend(temp);
-                    }
+                        }
+                    )*
                 }
 
-                Write { components: result }
+                result
             }
         }
     };
 }
 
-impl_multi_component_for_tuple!(A,);
-impl_multi_component_for_tuple!(A, B,);
-impl_multi_component_for_tuple!(A, B, C,);
-impl_multi_component_for_tuple!(A, B, C, D,);
-impl_multi_component_for_tuple!(A, B, C, D, E,);
-impl_multi_component_for_tuple!(A, B, C, D, E, F,);
+impl_query_for_tuple!(A,);
+impl_query_for_tuple!(A, B,);
+impl_query_for_tuple!(A, B, C,);
+impl_query_for_tuple!(A, B, C, D,);
+impl_query_for_tuple!(A, B, C, D, E,);
+impl_query_for_tuple!(A, B, C, D, E, F,);
+
+pub struct With<T>(std::marker::PhantomData<T>);
+// impl<T: Component> Component for With<T> {}
+
+#[allow(unused_variables, non_snake_case, unused_mut)]
+impl<T: Component> Query for With<T> {
+    fn query<'a, 'b: 'a>(world: &'b World) -> Vec<(Entity, usize)> {
+        let mut result = Vec::new();
+        for (entity, components) in world.components.data.iter() {
+            let mut temp = Vec::new();
+            for (i, comp) in components.iter().enumerate() {
+                let comp = comp.borrow();
+                if let Some(t) = comp.as_ref().as_any().downcast_ref::<T>() {
+                    temp.push((*entity, i));
+                }
+            }
+            result.extend(temp);
+        }
+        result
+    }
+}
+
+/// A query that returns all entities that do NOT have a component of type `T`.
+pub struct Without<T>(std::marker::PhantomData<T>);
+// impl<T: Component> Component for Without<T> {}
+
+#[allow(unused_variables, non_snake_case, unused_mut)]
+impl<T: Component> Query for Without<T> {
+    fn query<'a, 'b: 'a>(world: &'b World) -> Vec<(Entity, usize)> {
+        let mut result = Vec::new();
+        'outer: for (entity, components) in world.components.data.iter() {
+            let mut temp = Vec::new();
+            for (i, comp) in components.iter().enumerate() {
+                let comp = comp.borrow();
+                if let Some(t) = comp.as_ref().as_any().downcast_ref::<T>() {
+                    continue 'outer;
+                }
+                temp.push((*entity, i));
+            }
+            result.extend(temp);
+        }
+        result
+    }
+}

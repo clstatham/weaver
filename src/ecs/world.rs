@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    cell::RefCell,
+    sync::{Arc, Mutex},
+};
 
 use rustc_hash::FxHashMap;
 
@@ -6,12 +9,12 @@ use super::{
     bundle::Bundle,
     component::Component,
     entity::Entity,
-    query::{MultiComponent, Read, Write},
+    query::{Query, Read, Write},
     system::System,
 };
 
 pub struct Components {
-    pub(crate) data: FxHashMap<Entity, Vec<Box<dyn Component>>>,
+    pub(crate) data: FxHashMap<Entity, Vec<RefCell<Box<dyn Component>>>>,
 }
 
 impl Components {
@@ -23,40 +26,14 @@ impl Components {
 
     pub fn insert<T: Component>(&mut self, entity: Entity, component: T) {
         let components = self.data.entry(entity).or_default();
-        components.push(Box::new(component));
+        components.push(RefCell::new(Box::new(component)));
     }
 
     pub fn remove<T: Component>(&mut self, entity: Entity) {
         if let Some(components) = self.data.get_mut(&entity) {
-            components.retain(|component| !component.as_any().is::<T>());
+            components.retain(|component| !component.borrow().as_any().is::<T>());
         }
     }
-
-    // pub(crate) fn read<'a, 'b: 'a, T: Component>(&'b self) -> ReadResult<'a, T> {
-    //     let mut result = Vec::new();
-
-    //     for components in self.data.values() {
-    //         for lock in components.iter() {
-    //             if let Some(component) = lock.as_any().downcast_ref::<T>() {
-    //                 result.push(component);
-    //             }
-    //         }
-    //     }
-    //     ReadResult { components: result }
-    // }
-
-    // pub(crate) fn write<'a, 'b: 'a, T: Component>(&'b mut self) -> WriteResult<'a, T> {
-    //     let mut result = Vec::new();
-
-    //     for components in self.data.values_mut() {
-    //         for lock in components.iter_mut() {
-    //             if let Some(component) = lock.as_any_mut().downcast_mut::<T>() {
-    //                 result.push(component);
-    //             }
-    //         }
-    //     }
-    //     WriteResult { components: result }
-    // }
 }
 
 impl Default for Components {
@@ -109,12 +86,23 @@ impl World {
         self.components.remove::<T>(entity);
     }
 
-    pub fn read<T: MultiComponent>(&self) -> Read<'_> {
-        T::read(self)
+    pub fn read<T: Query>(&self) -> Read<'_> {
+        let mut result = Vec::new();
+        for (entity, i) in T::query(self) {
+            let component = self.components.data.get(&entity).unwrap()[i].borrow();
+            result.push(component);
+        }
+        Read { components: result }
     }
 
-    pub fn write<T: MultiComponent>(&mut self) -> Write<'_> {
-        T::write(self)
+    pub fn write<T: Query>(&mut self) -> Write<'_> {
+        let mut result = Vec::new();
+        let query = T::query(self);
+        for (entity, i) in query {
+            let component = self.components.data.get(&entity).unwrap()[i].borrow_mut();
+            result.push(component);
+        }
+        Write { components: result }
     }
 
     pub fn update(&mut self, delta: std::time::Duration) {

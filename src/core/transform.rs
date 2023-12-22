@@ -1,7 +1,10 @@
+use crate::ecs::component::Component;
+
 use super::Vertex;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Transform(pub glam::Mat4);
+impl Component for Transform {}
 
 impl Transform {
     pub fn new() -> Self {
