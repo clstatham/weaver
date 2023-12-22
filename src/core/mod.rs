@@ -2,6 +2,7 @@ use self::color::Color;
 
 pub mod camera;
 pub mod color;
+pub mod input;
 pub mod light;
 pub mod mesh;
 pub mod transform;

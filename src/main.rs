@@ -1,4 +1,4 @@
-use core::{color::Color, mesh::Mesh, transform::Transform};
+use core::{color::Color, input::Input, mesh::Mesh, transform::Transform};
 
 use app::App;
 use ecs::{component::Component, query::Without, world::World};
@@ -10,11 +10,12 @@ pub mod core;
 pub mod renderer;
 
 fn test_system(world: &mut World, delta: std::time::Duration) {
+    let mouse_delta = world.read_resource::<Input>().unwrap().mouse_delta();
     for transform in world
         .write::<(Mesh, Transform, Without<Mark>)>()
         .get_mut::<Transform>()
     {
-        transform.rotate(1.0 * delta.as_secs_f32(), glam::Vec3::Y);
+        transform.rotate(mouse_delta.x * delta.as_secs_f32(), glam::Vec3::Y);
     }
 }
 

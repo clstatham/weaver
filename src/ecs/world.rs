@@ -1,6 +1,7 @@
 use std::{
-    cell::RefCell,
-    sync::{Arc, Mutex},
+    cell::{Ref, RefCell, RefMut},
+    rc::Rc,
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use rustc_hash::FxHashMap;
@@ -10,7 +11,8 @@ use super::{
     component::Component,
     entity::Entity,
     query::{Query, Read, Write},
-    system::System,
+    resource::Resource,
+    system::ExclusiveSystem,
 };
 
 pub struct Components {
@@ -43,13 +45,15 @@ impl Default for Components {
 }
 
 pub struct World {
+    pub(crate) resources: Vec<RefCell<Box<dyn Resource>>>,
     pub(crate) components: Components,
-    systems: Vec<Arc<Mutex<dyn System>>>,
+    systems: Vec<Arc<Mutex<dyn ExclusiveSystem>>>,
 }
 
 impl World {
     pub fn new() -> Self {
         Self {
+            resources: Vec::new(),
             components: Components::new(),
             systems: Vec::new(),
         }
@@ -63,7 +67,7 @@ impl World {
         &mut self.components
     }
 
-    pub fn register_system<T: System>(&mut self, system: T) {
+    pub fn register_system<T: ExclusiveSystem>(&mut self, system: T) {
         self.systems.push(Arc::new(Mutex::new(system)));
     }
 
@@ -86,29 +90,65 @@ impl World {
         self.components.remove::<T>(entity);
     }
 
-    pub fn read<T: Query>(&self) -> Read<'_> {
+    pub fn insert_resource<T: Resource>(&mut self, resource: T) {
+        self.resources.push(RefCell::new(Box::new(resource)));
+    }
+
+    pub fn read<T: Query>(&self) -> Read<'_, T> {
         let mut result = Vec::new();
         for (entity, i) in T::query(self) {
             let component = self.components.data.get(&entity).unwrap()[i].borrow();
             result.push(component);
         }
-        Read { components: result }
+        Read {
+            components: result,
+            _query: std::marker::PhantomData,
+        }
     }
 
-    pub fn write<T: Query>(&mut self) -> Write<'_> {
+    pub fn write<T: Query>(&mut self) -> Write<'_, T> {
         let mut result = Vec::new();
         let query = T::query(self);
         for (entity, i) in query {
             let component = self.components.data.get(&entity).unwrap()[i].borrow_mut();
             result.push(component);
         }
-        Write { components: result }
+        Write {
+            components: result,
+            _query: std::marker::PhantomData,
+        }
+    }
+
+    pub fn read_resource<'a, 'b: 'a, T: Resource>(&'b self) -> Option<Ref<'a, T>> {
+        for resource in self.resources.iter() {
+            if let Ok(lock) = resource.try_borrow() {
+                if lock.as_any().is::<T>() {
+                    return Some(Ref::map(lock, |lock| {
+                        lock.as_any().downcast_ref::<T>().unwrap()
+                    }));
+                }
+            }
+        }
+        None
+    }
+
+    pub fn write_resource<'a, 'b: 'a, T: Resource>(&'b self) -> Option<RefMut<'a, T>> {
+        for resource in self.resources.iter() {
+            if let Ok(lock) = resource.try_borrow_mut() {
+                if lock.as_any().is::<T>() {
+                    return Some(RefMut::map(lock, |lock| {
+                        lock.as_any_mut().downcast_mut::<T>().unwrap()
+                    }));
+                }
+            }
+        }
+        None
     }
 
     pub fn update(&mut self, delta: std::time::Duration) {
         for system in self.systems.clone().iter() {
             match system.lock() {
-                Ok(mut system) => system.run(self, delta),
+                Ok(mut system) => system.run_exclusive(self, delta),
                 Err(_) => {
                     log::warn!("Failed to acquire lock on system");
                 }

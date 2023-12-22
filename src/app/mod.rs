@@ -3,7 +3,10 @@ use winit::{event_loop::EventLoop, window::Window};
 use winit_input_helper::WinitInputHelper;
 
 use crate::{
-    ecs::{bundle::Bundle, component::Component, entity::Entity, system::System, world::World},
+    core::input::Input,
+    ecs::{
+        bundle::Bundle, component::Component, entity::Entity, system::ExclusiveSystem, world::World,
+    },
     renderer::Renderer,
 };
 
@@ -31,7 +34,8 @@ impl App {
             Pixels::new(screen_width as u32, screen_height as u32, surface_texture).unwrap()
         };
 
-        let world = World::new();
+        let mut world = World::new();
+        world.insert_resource(Input::default());
 
         Self {
             event_loop,
@@ -60,15 +64,24 @@ impl App {
         self.world.remove_component::<T>(entity)
     }
 
-    pub fn register_system<T: System>(&mut self, system: T) {
+    pub fn register_system<T: ExclusiveSystem>(&mut self, system: T) {
         self.world.register_system(system)
     }
 
     pub fn run(mut self) {
         self.event_loop.run(move |event, _, control_flow| {
             *control_flow = winit::event_loop::ControlFlow::Poll;
+
             self.input.update(&event);
             self.window.request_redraw();
+            self.world.write_resource::<Input>().unwrap().update(&event);
+
+            let now = std::time::Instant::now();
+            let delta = now - self.last_frame;
+            self.last_frame = now;
+
+            self.world.update(delta);
+
             match event {
                 winit::event::Event::WindowEvent {
                     event: winit::event::WindowEvent::CloseRequested,
@@ -77,11 +90,6 @@ impl App {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
                 }
                 winit::event::Event::RedrawRequested(_) => {
-                    let now = std::time::Instant::now();
-                    let delta = now - self.last_frame;
-                    self.last_frame = now;
-                    self.world.update(delta);
-
                     self.renderer.render(&mut self.world);
 
                     let frame = self.pixels.frame_mut();

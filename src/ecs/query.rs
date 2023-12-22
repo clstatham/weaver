@@ -3,17 +3,18 @@ use std::cell::{Ref, RefMut};
 use super::{component::Component, entity::Entity, world::World};
 
 /// A read-only query. This is used to get immutable references to components found in a `World`.
-pub struct Read<'a> {
+pub struct Read<'a, Q: Query> {
     pub components: Vec<Ref<'a, Box<dyn Component>>>,
+    pub(crate) _query: std::marker::PhantomData<Q>,
 }
 
 /// A read-write query. This is used to get mutable references to components found in a `World`.
-pub struct Write<'a> {
+pub struct Write<'a, Q: Query> {
     pub components: Vec<RefMut<'a, Box<dyn Component>>>,
+    pub(crate) _query: std::marker::PhantomData<Q>,
 }
 
-impl<'a> Read<'a> {
-    /// Returns a vector of references to components of type `T` found with the query.
+impl<'a, Q: Query> Read<'a, Q> {
     pub fn get<T: Component>(&self) -> Vec<&T> {
         let mut result = Vec::new();
         for component in self.components.iter() {
@@ -25,7 +26,7 @@ impl<'a> Read<'a> {
     }
 }
 
-impl<'a> Write<'a> {
+impl<'a, Q: Query> Write<'a, Q> {
     /// Returns a vector of references to components of type `T` found with the query.
     pub fn get<T: Component>(&self) -> Vec<&T> {
         let mut result = Vec::new();
@@ -53,6 +54,7 @@ pub trait Query
 where
     Self: 'static,
 {
+    type Item;
     fn query<'a, 'b: 'a>(world: &'b World) -> Vec<(Entity, usize)>;
 }
 
@@ -61,6 +63,7 @@ macro_rules! impl_query_for_tuple {
         #[allow(unused_variables, non_snake_case, unused_mut)]
         impl<$head: Query, $($tail: Query,)*> Query for ($head, $($tail),*)
         {
+            type Item = ($head::Item, $($tail::Item),*);
             /// Logical "AND" of all queries. Returns the entities that are in all queries, and the indices of the matching components for each query.
             fn query<'a, 'b: 'a>(world: &'b World) -> Vec<(Entity, usize)> {
                 let $head = $head::query(world);
@@ -104,6 +107,7 @@ impl_query_for_tuple!(A, B, C, D, E, F,);
 
 #[allow(unused_variables, non_snake_case, unused_mut)]
 impl<T: Component> Query for T {
+    type Item = T;
     fn query<'a, 'b: 'a>(world: &'b World) -> Vec<(Entity, usize)> {
         let mut result = Vec::new();
         for (entity, components) in world.components.data.iter() {
@@ -126,6 +130,7 @@ pub struct Without<T>(std::marker::PhantomData<T>);
 
 #[allow(unused_variables, non_snake_case, unused_mut)]
 impl<T: Component> Query for Without<T> {
+    type Item = T;
     fn query<'a, 'b: 'a>(world: &'b World) -> Vec<(Entity, usize)> {
         let mut result = Vec::new();
         'outer: for (entity, components) in world.components.data.iter() {
@@ -141,4 +146,17 @@ impl<T: Component> Query for Without<T> {
         }
         result
     }
+}
+
+pub trait SystemQuery<T: Query> {
+    /// Indicates whether the query will request mutable references to components.
+    const MUTABLE: bool;
+}
+
+impl<'a, Q: Query> SystemQuery<Q> for Read<'a, Q> {
+    const MUTABLE: bool = false;
+}
+
+impl<'a, Q: Query> SystemQuery<Q> for Write<'a, Q> {
+    const MUTABLE: bool = true;
 }
