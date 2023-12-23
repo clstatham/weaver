@@ -2,7 +2,6 @@ use rustc_hash::FxHashMap;
 use winit::event::{Event, MouseButton, WindowEvent};
 
 pub use winit::event::VirtualKeyCode as KeyCode;
-use winit_input_helper::WinitInputHelper;
 
 use crate::ecs::resource::Resource;
 
@@ -14,7 +13,6 @@ pub struct Input {
     pub mouse_delta: glam::Vec2,
     pub mouse_wheel_delta: f32,
 }
-
 impl Resource for Input {}
 
 impl Input {
@@ -71,12 +69,14 @@ impl Input {
                 self.mouse_position = position;
             }
             Event::WindowEvent {
-                event: WindowEvent::MouseWheel { delta, .. },
+                event:
+                    WindowEvent::MouseWheel {
+                        delta: winit::event::MouseScrollDelta::LineDelta(_, y),
+                        ..
+                    },
                 ..
             } => {
-                if let winit::event::MouseScrollDelta::LineDelta(_, y) = delta {
-                    self.mouse_wheel_delta = *y;
-                }
+                self.mouse_wheel_delta = *y;
             }
             _ => {}
         }
