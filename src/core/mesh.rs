@@ -1,23 +1,32 @@
 use crate::ecs::component::Component;
 
-use super::{color::Color, Vertex};
+use super::{color::Color, texture::Texture, Vertex};
 
 #[derive(Clone)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
+    pub texture: Option<Texture>,
 }
 impl Component for Mesh {}
 
 impl Mesh {
-    pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
-        Self { vertices, indices }
+    pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>, texture: Option<Texture>) -> Self {
+        Self {
+            vertices,
+            indices,
+            texture,
+        }
     }
 
     pub fn from_vertices(vertices: Vec<Vertex>) -> Self {
         let indices = (0..vertices.len() as u32).collect();
 
-        Self { vertices, indices }
+        Self {
+            vertices,
+            indices,
+            texture: None,
+        }
     }
 
     pub fn recalculate_normals(&mut self) {
@@ -51,6 +60,8 @@ impl Mesh {
         let mut normals = Vec::new();
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
+        let mut uvs = Vec::new();
+        let mut vertex_colors = Vec::new();
 
         let (models, _materials) = tobj::load_obj(
             path.as_ref(),
@@ -81,11 +92,29 @@ impl Mesh {
             normals.push(glam::Vec3::new(x, y, z));
         }
 
-        for (position, normal) in positions.iter().zip(normals.iter()) {
+        for i in 0..mesh.texcoords.len() / 2 {
+            let u = mesh.texcoords[i * 2];
+            let v = mesh.texcoords[i * 2 + 1];
+
+            uvs.push(glam::Vec2::new(u, v));
+        }
+
+        for i in 0..mesh.vertex_color.len() / 3 {
+            let r = mesh.vertex_color[i * 3];
+            let g = mesh.vertex_color[i * 3 + 1];
+            let b = mesh.vertex_color[i * 3 + 2];
+
+            vertex_colors.push(Color::new(r, g, b));
+        }
+
+        for (position, normal, color, uv) in
+            itertools::multizip((positions, normals, vertex_colors, uvs))
+        {
             vertices.push(Vertex {
-                position: *position,
-                color: Color::new(1.0, 1.0, 1.0),
-                normal: *normal,
+                position,
+                color,
+                normal,
+                uv,
             });
         }
 
@@ -99,11 +128,11 @@ impl Mesh {
             indices.push(i2 as u32);
         }
 
-        Ok(Mesh::new(vertices, indices))
+        Ok(Mesh::new(vertices, indices, None))
     }
 
     pub fn load_gltf(path: impl AsRef<std::path::Path>) -> anyhow::Result<Mesh> {
-        let (document, buffers, _images) = gltf::import(path.as_ref())?;
+        let (document, buffers, images) = gltf::import(path.as_ref())?;
 
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
@@ -114,12 +143,16 @@ impl Mesh {
 
                 let positions = reader.read_positions().unwrap();
                 let normals = reader.read_normals().unwrap();
+                let uvs = reader.read_tex_coords(0).unwrap().into_f32();
+                // let vertex_colors = reader.read_colors(0).unwrap().into_rgb_f32();
 
-                for (position, normal) in positions.zip(normals) {
+                for (position, normal, uv) in itertools::multizip((positions, normals, uvs)) {
                     vertices.push(Vertex {
                         position: position.into(),
-                        color: Color::new(1.0, 1.0, 1.0),
+                        // color: Color::new(color[0], color[1], color[2]),
+                        color: Color::WHITE,
                         normal: normal.into(),
+                        uv: uv.into(),
                     });
                 }
 
@@ -130,6 +163,19 @@ impl Mesh {
             }
         }
 
-        Ok(Mesh::new(vertices, indices))
+        // load texture
+        let texture = if let Some(image) = images.into_iter().next() {
+            log::info!("Loading texture");
+            let texture = Texture::from_data_r8g8b8(
+                image.width as usize,
+                image.height as usize,
+                &image.pixels,
+            );
+            Some(texture)
+        } else {
+            None
+        };
+
+        Ok(Mesh::new(vertices, indices, texture))
     }
 }

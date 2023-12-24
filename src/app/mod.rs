@@ -37,7 +37,7 @@ impl App {
             let surface_texture = pixels::SurfaceTexture::new(size.width, size.height, &window);
             Pixels::new(screen_width as u32, screen_height as u32, surface_texture).unwrap()
         };
-        pixels.set_present_mode(wgpu::PresentMode::Mailbox);
+        pixels.set_present_mode(wgpu::PresentMode::Immediate);
 
         let mut world = World::new();
         world.insert_resource(Input::default());

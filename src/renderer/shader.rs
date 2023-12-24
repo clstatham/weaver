@@ -1,5 +1,6 @@
 use crate::core::{
-    camera::PerspectiveCamera, color::Color, light::PointLight, transform::Transform, Vertex,
+    camera::PerspectiveCamera, color::Color, light::PointLight, texture::Texture,
+    transform::Transform, Vertex,
 };
 
 pub trait VertexShader
@@ -46,9 +47,9 @@ impl VertexShader for ChainVertexShader {
     }
 }
 
-pub struct ChainFragmentShader(pub Vec<Box<dyn FragmentShader>>);
+pub struct ChainFragmentShader<'a>(pub Vec<Box<dyn FragmentShader + 'a>>);
 
-impl FragmentShader for ChainFragmentShader {
+impl<'a> FragmentShader for ChainFragmentShader<'a> {
     fn fragment_shader(&self, vertex_in: Vertex, color_in: Color) -> Color {
         let mut color = color_in;
 
@@ -96,6 +97,7 @@ impl VertexShader for TransformVertexShader {
             position,
             normal,
             color,
+            uv: vertex_in.uv,
         }
     }
 }
@@ -146,6 +148,7 @@ impl<'a> VertexShader for CameraProjection<'a> {
             position,
             normal,
             color,
+            uv: vertex_in.uv,
         }
     }
 }
@@ -187,6 +190,23 @@ impl FragmentShader for PhongFragmentShader {
             };
 
             color *= light_color * (ambient + diffuse) + specular;
+        }
+
+        color
+    }
+}
+
+pub struct TextureFragmentShader<'a> {
+    pub texture: &'a Texture,
+}
+
+impl<'a> FragmentShader for TextureFragmentShader<'a> {
+    fn fragment_shader(&self, vertex_in: Vertex, color_in: Color) -> Color {
+        let uv = vertex_in.uv;
+        let mut color = color_in;
+
+        if let Some(texture_color) = self.texture.get_uv(uv.x, uv.y) {
+            color *= texture_color;
         }
 
         color

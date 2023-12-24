@@ -50,10 +50,7 @@ impl<'a, Q: Query> Write<'a, Q> {
     }
 }
 
-pub trait Query
-where
-    Self: 'static,
-{
+pub trait Query {
     type Item;
     fn query<'a, 'b: 'a>(world: &'b World) -> Vec<(Entity, usize)>;
 }

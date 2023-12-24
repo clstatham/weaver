@@ -53,11 +53,13 @@ impl Transform {
         let position = self.0.transform_point3(vertex.position);
         let normal = self.0.transform_vector3(vertex.normal).normalize();
         let color = vertex.color;
+        let uv = vertex.uv;
 
         Vertex {
             position,
             normal,
             color,
+            uv,
         }
     }
 }

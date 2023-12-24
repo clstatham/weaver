@@ -117,13 +117,6 @@ impl Renderer {
         let (x1, y1) = self.view_to_screen((v1.position.x, v1.position.y));
         let (x2, y2) = self.view_to_screen((v2.position.x, v2.position.y));
 
-        let x0 = x0 as i32;
-        let y0 = y0 as i32;
-        let x1 = x1 as i32;
-        let y1 = y1 as i32;
-        let x2 = x2 as i32;
-        let y2 = y2 as i32;
-
         let mut x_min = x0.min(x1).min(x2);
         let mut y_min = y0.min(y1).min(y2);
         let mut x_max = x0.max(x1).max(x2);
@@ -171,10 +164,16 @@ impl Renderer {
                             w0 * v0.normal.z + w1 * v1.normal.z + w2 * v2.normal.z,
                         );
 
+                        let uv = glam::Vec2::new(
+                            w0 * v0.uv.x + w1 * v1.uv.x + w2 * v2.uv.x,
+                            w0 * v0.uv.y + w1 * v1.uv.y + w2 * v2.uv.y,
+                        );
+
                         let vertex = Vertex {
                             position,
                             color,
                             normal,
+                            uv,
                         };
 
                         let color = v0.color * w0 + v1.color * w1 + v2.color * w2;

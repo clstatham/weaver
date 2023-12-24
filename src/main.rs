@@ -10,12 +10,33 @@ pub mod core;
 pub mod renderer;
 
 fn test_system(world: &mut World, delta: std::time::Duration) {
-    let mouse_delta = world.read_resource::<Input>().unwrap().mouse_delta();
+    let (w, s, a, d) = {
+        let input = world.read_resource::<Input>().unwrap();
+        (
+            input.is_key_pressed(winit::event::VirtualKeyCode::W),
+            input.is_key_pressed(winit::event::VirtualKeyCode::S),
+            input.is_key_pressed(winit::event::VirtualKeyCode::A),
+            input.is_key_pressed(winit::event::VirtualKeyCode::D),
+        )
+    };
+    let delta = delta.as_secs_f32();
     for transform in world
-        .write::<(Mesh, Transform, Without<Mark>)>()
+        .write::<(Mesh, Transform, Mark)>()
         .get_mut::<Transform>()
     {
-        transform.rotate(1.0 * delta.as_secs_f32(), glam::Vec3::Y);
+        // transform.rotate(1.0 * delta, glam::Vec3::Y);
+        if w {
+            transform.translate(-1.0 * delta, 0.0, -1.0 * delta);
+        }
+        if s {
+            transform.translate(1.0 * delta, 0.0, 1.0 * delta);
+        }
+        if a {
+            transform.translate(1.0 * delta, 0.0, -1.0 * delta);
+        }
+        if d {
+            transform.translate(-1.0 * delta, 0.0, 1.0 * delta);
+        }
     }
 }
 
@@ -35,11 +56,11 @@ fn main() -> anyhow::Result<()> {
     ));
 
     // let mut mesh = Mesh::load_gltf("assets\\lowpoly_ant\\scene.gltf")?;
-    let mut mesh = Mesh::load_obj("assets\\suzanne.obj")?;
+    let mut mesh = Mesh::load_gltf("assets/woodcube.glb")?;
 
-    for vertex in mesh.vertices.iter_mut() {
-        vertex.color = Color::new(1.0, 0.0, 0.0);
-    }
+    // for vertex in mesh.vertices.iter_mut() {
+    //     vertex.color = Color::new(1.0, 0.0, 0.0);
+    // }
     let monkey1 = app.build((
         mesh.clone(),
         Transform::default().translate(-1.0, 0.0, 0.0),

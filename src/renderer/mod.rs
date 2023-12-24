@@ -20,7 +20,7 @@ pub struct Renderer {
 impl Renderer {
     pub fn new(screen_width: usize, screen_height: usize) -> Self {
         let mut camera = PerspectiveCamera::new(
-            glam::Vec3::new(1.0, 1.0, 1.0),
+            glam::Vec3::new(4.0, 4.0, 4.0),
             glam::Vec3::ZERO,
             120.0f32.to_radians(),
             screen_width as f32 / screen_height as f32,
@@ -63,6 +63,9 @@ impl Renderer {
 
     #[inline]
     pub fn get_color(&self, x: usize, y: usize) -> Color {
+        if x >= self.screen_width || y >= self.screen_height {
+            return Color::BLACK;
+        }
         let index = y * self.screen_width + x;
         self.color_buffer[index]
     }
@@ -78,6 +81,9 @@ impl Renderer {
 
     #[inline]
     pub fn get_depth(&self, x: usize, y: usize) -> f32 {
+        if x >= self.screen_width || y >= self.screen_height {
+            return f32::INFINITY;
+        }
         let index = y * self.screen_width + x;
         self.depth_buffer[index]
     }
@@ -98,10 +104,10 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn view_to_screen(&self, (x, y): (f32, f32)) -> (usize, usize) {
+    pub fn view_to_screen(&self, (x, y): (f32, f32)) -> (i32, i32) {
         let x = (x + 1.0) / 2.0 * self.screen_width as f32;
         let y = (y + 1.0) / 2.0 * self.screen_height as f32;
-        (x as usize, y as usize)
+        (x as i32, y as i32)
     }
 
     #[inline]
@@ -136,6 +142,23 @@ impl Renderer {
                 let v0 = mesh.vertices[i0];
                 let v1 = mesh.vertices[i1];
                 let v2 = mesh.vertices[i2];
+
+                let frag = if let Some(ref texture) = mesh.texture {
+                    fragment_shader!(
+                        shader::TextureFragmentShader { texture },
+                        shader::PhongFragmentShader {
+                            lights: lights.clone(),
+                            camera_position: self.camera.position(),
+                            shininess: 10.0,
+                        }
+                    )
+                } else {
+                    fragment_shader!(shader::PhongFragmentShader {
+                        lights: lights.clone(),
+                        camera_position: self.camera.position(),
+                        shininess: 10.0,
+                    })
+                };
                 self.triangle(
                     v0,
                     v1,
@@ -143,12 +166,7 @@ impl Renderer {
                     &vertex_shader!(shader::TransformVertexShader {
                         transform: *transform,
                     }),
-                    &fragment_shader!(shader::PhongFragmentShader {
-                        lights: lights.clone(),
-                        camera_position: self.camera.position(),
-                        shininess: 10.0,
-                    }),
-                    // &fragment_shader!(shader::VertexColorFragmentShader {}),
+                    &frag,
                 );
             }
         }
