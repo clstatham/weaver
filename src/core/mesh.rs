@@ -101,4 +101,35 @@ impl Mesh {
 
         Ok(Mesh::new(vertices, indices))
     }
+
+    pub fn load_gltf(path: impl AsRef<std::path::Path>) -> anyhow::Result<Mesh> {
+        let (document, buffers, _images) = gltf::import(path.as_ref())?;
+
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        for mesh in document.meshes() {
+            for primitive in mesh.primitives() {
+                let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+
+                let positions = reader.read_positions().unwrap();
+                let normals = reader.read_normals().unwrap();
+
+                for (position, normal) in positions.zip(normals) {
+                    vertices.push(Vertex {
+                        position: position.into(),
+                        color: Color::new(1.0, 1.0, 1.0),
+                        normal: normal.into(),
+                    });
+                }
+
+                let index_reader = reader.read_indices().unwrap().into_u32();
+                for index in index_reader {
+                    indices.push(index);
+                }
+            }
+        }
+
+        Ok(Mesh::new(vertices, indices))
+    }
 }

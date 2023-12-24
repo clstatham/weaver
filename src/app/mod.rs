@@ -21,6 +21,9 @@ pub struct App {
     pub(crate) renderer: Renderer,
 
     last_frame: std::time::Instant,
+
+    fps_frame_count: usize,
+    fps_last_update: std::time::Instant,
 }
 
 impl App {
@@ -28,11 +31,13 @@ impl App {
         let event_loop = EventLoop::new();
         let input = WinitInputHelper::new();
         let window = Window::new(&event_loop).unwrap();
-        let pixels = {
+        window.set_resizable(false);
+        let mut pixels = {
             let size = window.inner_size();
             let surface_texture = pixels::SurfaceTexture::new(size.width, size.height, &window);
             Pixels::new(screen_width as u32, screen_height as u32, surface_texture).unwrap()
         };
+        pixels.set_present_mode(wgpu::PresentMode::Mailbox);
 
         let mut world = World::new();
         world.insert_resource(Input::default());
@@ -45,6 +50,8 @@ impl App {
             world,
             last_frame: std::time::Instant::now(),
             renderer: Renderer::new(screen_width, screen_height),
+            fps_frame_count: 0,
+            fps_last_update: std::time::Instant::now(),
         }
     }
 
@@ -71,9 +78,10 @@ impl App {
     pub fn run(mut self) {
         self.event_loop.run(move |event, _, control_flow| {
             *control_flow = winit::event_loop::ControlFlow::Poll;
+            self.window.request_redraw();
 
             self.input.update(&event);
-            self.window.request_redraw();
+
             self.world.write_resource::<Input>().unwrap().update(&event);
 
             let now = std::time::Instant::now();
@@ -103,6 +111,13 @@ impl App {
                     }
 
                     self.pixels.render().unwrap();
+
+                    if self.fps_last_update.elapsed() > std::time::Duration::from_secs(1) {
+                        log::info!("FPS: {}", self.fps_frame_count);
+                        self.fps_frame_count = 0;
+                        self.fps_last_update = std::time::Instant::now();
+                    }
+                    self.fps_frame_count += 1;
                 }
                 _ => {}
             }

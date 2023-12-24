@@ -1,10 +1,18 @@
-use crate::core::{camera::PerspectiveCamera, color::Color, transform::Transform, Vertex};
+use crate::core::{
+    camera::PerspectiveCamera, color::Color, light::PointLight, transform::Transform, Vertex,
+};
 
-pub trait VertexShader {
+pub trait VertexShader
+where
+    Self: Send + Sync,
+{
     fn vertex_shader(&self, vertex_in: Vertex) -> Vertex;
 }
 
-pub trait FragmentShader {
+pub trait FragmentShader
+where
+    Self: Send + Sync,
+{
     fn fragment_shader(&self, vertex_in: Vertex, color_in: Color) -> Color;
 }
 
@@ -139,5 +147,48 @@ impl<'a> VertexShader for CameraProjection<'a> {
             normal,
             color,
         }
+    }
+}
+
+pub struct PhongFragmentShader {
+    pub lights: Vec<PointLight>,
+    pub camera_position: glam::Vec3,
+    pub shininess: f32,
+}
+
+impl PhongFragmentShader {
+    pub fn new(lights: Vec<PointLight>, camera_position: glam::Vec3, shininess: f32) -> Self {
+        Self {
+            lights,
+            camera_position,
+            shininess,
+        }
+    }
+}
+
+impl FragmentShader for PhongFragmentShader {
+    fn fragment_shader(&self, vertex_in: Vertex, color_in: Color) -> Color {
+        let position = vertex_in.position;
+        let normal = vertex_in.normal;
+        let mut color = color_in;
+
+        for light in self.lights.iter() {
+            let light_direction = (light.position - position).normalize();
+            let light_color = light.color;
+            let light_intensity = light.intensity;
+
+            let ambient = 0.1;
+            let diffuse = (light_direction.dot(normal) * light_intensity).max(0.0);
+            let specular = {
+                let view_direction = (self.camera_position - position).normalize();
+                let half_direction = (light_direction + view_direction).normalize();
+                let specular = (half_direction.dot(normal) * light_intensity).max(0.0);
+                specular.powf(self.shininess)
+            };
+
+            color *= light_color * (ambient + diffuse) + specular;
+        }
+
+        color
     }
 }
