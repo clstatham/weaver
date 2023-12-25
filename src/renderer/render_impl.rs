@@ -47,9 +47,8 @@ impl Renderer {
         // let mut pixels = Vec::new();
 
         (y_min..=y_max)
-            .into_par_iter()
             .flat_map(|y| {
-                (x_min..=x_max).into_par_iter().filter_map(move |x| {
+                (x_min..=x_max).filter_map(move |x| {
                     let w0 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) as f32
                         / ((y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)) as f32;
                     let w1 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) as f32
