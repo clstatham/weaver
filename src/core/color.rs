@@ -1,6 +1,16 @@
 use crate::ecs::component::Component;
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
+#[repr(C)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
@@ -97,10 +107,10 @@ impl Color {
             | 0xff
     }
 
-    /// Returns the [Color] as a [glam::Vec3A].
+    /// Returns the [Color] as a [glam::Vec3].
     #[inline]
-    pub fn vec3(&self) -> glam::Vec3A {
-        glam::Vec3A::new(self.r, self.g, self.b)
+    pub fn vec3(&self) -> glam::Vec3 {
+        glam::Vec3::new(self.r, self.g, self.b)
     }
 
     /// Returns the [Color] as a [glam::Vec4] with the alpha value set to 1.0.

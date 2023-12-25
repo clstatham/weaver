@@ -13,10 +13,10 @@ thiserror = "1.0.49"
 pixels = { git = "https://github.com/parasyte/pixels.git" }
 winit = "0.28"
 winit_input_helper = "0.14"
-glam = { version = "0.24.2", features = ["serde"] }
+glam = { version = "0.24.2", features = ["serde", "bytemuck"] }
 typed-arena = "2.0.2"
 rustc-hash = "1.1.0"
-bytemuck = "1.14.0"
+bytemuck = { version = "1.14.0", features = ["derive"] }
 tobj = "4.0.0"
 egui = "0.23"
 egui-wgpu = "0.23"
@@ -33,6 +33,7 @@ itertools = "0.12.0"
 gltf = "1.4.0"
 rayon = "1.8.0"
 image = "0.24.7"
+pollster = "0.3.0"
 
 [profile.release]
 debug = true

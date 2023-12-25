@@ -97,7 +97,7 @@ impl World {
         let mut result = Vec::new();
         for (entity, i) in T::query(self) {
             let component = self.components.data.get(&entity).unwrap()[i].borrow();
-            result.push(component);
+            result.push((entity, component));
         }
         Read {
             components: result,
@@ -110,7 +110,7 @@ impl World {
         let query = T::query(self);
         for (entity, i) in query {
             let component = self.components.data.get(&entity).unwrap()[i].borrow_mut();
-            result.push(component);
+            result.push((entity, component));
         }
         Write {
             components: result,

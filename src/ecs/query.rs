@@ -4,22 +4,32 @@ use super::{component::Component, entity::Entity, world::World};
 
 /// A read-only query. This is used to get immutable references to components found in a `World`.
 pub struct Read<'a, Q: Query> {
-    pub components: Vec<Ref<'a, Box<dyn Component>>>,
+    pub components: Vec<(Entity, Ref<'a, Box<dyn Component>>)>,
     pub(crate) _query: std::marker::PhantomData<Q>,
 }
 
 /// A read-write query. This is used to get mutable references to components found in a `World`.
 pub struct Write<'a, Q: Query> {
-    pub components: Vec<RefMut<'a, Box<dyn Component>>>,
+    pub components: Vec<(Entity, RefMut<'a, Box<dyn Component>>)>,
     pub(crate) _query: std::marker::PhantomData<Q>,
 }
 
 impl<'a, Q: Query> Read<'a, Q> {
     pub fn get<T: Component>(&self) -> Vec<&T> {
         let mut result = Vec::new();
-        for component in self.components.iter() {
+        for (entity, component) in self.components.iter() {
             if let Some(component) = component.as_ref().as_any().downcast_ref::<T>() {
                 result.push(component);
+            }
+        }
+        result
+    }
+
+    pub fn get_with_entity<T: Component>(&self) -> Vec<(Entity, &T)> {
+        let mut result = Vec::new();
+        for (entity, component) in self.components.iter() {
+            if let Some(component) = component.as_ref().as_any().downcast_ref::<T>() {
+                result.push((*entity, component));
             }
         }
         result
@@ -30,7 +40,7 @@ impl<'a, Q: Query> Write<'a, Q> {
     /// Returns a vector of references to components of type `T` found with the query.
     pub fn get<T: Component>(&self) -> Vec<&T> {
         let mut result = Vec::new();
-        for component in self.components.iter() {
+        for (entity, component) in self.components.iter() {
             if let Some(component) = component.as_ref().as_any().downcast_ref::<T>() {
                 result.push(component);
             }
@@ -41,9 +51,31 @@ impl<'a, Q: Query> Write<'a, Q> {
     /// Returns a vector of mutable references to components of type `T` found with the query.
     pub fn get_mut<T: Component>(&mut self) -> Vec<&mut T> {
         let mut result = Vec::new();
-        for component in self.components.iter_mut() {
+        for (entity, component) in self.components.iter_mut() {
             if let Some(component) = component.as_mut().as_any_mut().downcast_mut::<T>() {
                 result.push(component);
+            }
+        }
+        result
+    }
+
+    /// Returns a vector of references to components of type `T` found with the query, along with the entity that owns the component.
+    pub fn get_with_entity<T: Component>(&self) -> Vec<(Entity, &T)> {
+        let mut result = Vec::new();
+        for (entity, component) in self.components.iter() {
+            if let Some(component) = component.as_ref().as_any().downcast_ref::<T>() {
+                result.push((*entity, component));
+            }
+        }
+        result
+    }
+
+    /// Returns a vector of mutable references to components of type `T` found with the query, along with the entity that owns the component.
+    pub fn get_mut_with_entity<T: Component>(&mut self) -> Vec<(Entity, &mut T)> {
+        let mut result = Vec::new();
+        for (entity, component) in self.components.iter_mut() {
+            if let Some(component) = component.as_mut().as_any_mut().downcast_mut::<T>() {
+                result.push((*entity, component));
             }
         }
         result

@@ -1,12 +1,14 @@
+use wgpu::util::DeviceExt;
+
 use crate::ecs::component::Component;
 
 use super::{color::Color, texture::Texture, Vertex};
 
-#[derive(Clone)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
     pub texture: Option<Texture>,
+    pub shader: Option<String>,
 }
 impl Component for Mesh {}
 
@@ -16,6 +18,7 @@ impl Mesh {
             vertices,
             indices,
             texture,
+            shader: None,
         }
     }
 
@@ -26,12 +29,97 @@ impl Mesh {
             vertices,
             indices,
             texture: None,
+            shader: None,
         }
+    }
+
+    pub fn create_render_pipeline(
+        &self,
+        device: &wgpu::Device,
+        texture_format: wgpu::TextureFormat,
+    ) -> (wgpu::Buffer, wgpu::Buffer, wgpu::RenderPipeline) {
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&self.vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&self.indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        // skip texture stuff for now (todo)
+
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Mesh Shader"),
+            source: wgpu::ShaderSource::Wgsl(
+                self.shader
+                    .clone()
+                    .unwrap_or(include_str!("../../assets/shaders/default_mesh.wgsl").into())
+                    .into(),
+            ),
+        });
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Mesh Render Pipeline Layout"),
+                bind_group_layouts: &[&device.create_bind_group_layout(
+                    &wgpu::BindGroupLayoutDescriptor {
+                        label: Some("Transform Bind Group Layout"),
+                        entries: &[wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::VERTEX,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        }],
+                    },
+                )],
+                push_constant_ranges: &[],
+            });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Mesh Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[Vertex::buffer_layout()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: texture_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+                unclipped_depth: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        (vertex_buffer, index_buffer, render_pipeline)
     }
 
     pub fn recalculate_normals(&mut self) {
         for vertex in self.vertices.iter_mut() {
-            vertex.normal = glam::Vec3A::ZERO;
+            vertex.normal = glam::Vec3::ZERO;
         }
 
         for i in (0..self.indices.len()).step_by(3) {
@@ -81,7 +169,7 @@ impl Mesh {
             let y = mesh.positions[i * 3 + 1];
             let z = mesh.positions[i * 3 + 2];
 
-            positions.push(glam::Vec3A::new(x, y, z));
+            positions.push(glam::Vec3::new(x, y, z));
         }
 
         for i in 0..mesh.normals.len() / 3 {
@@ -89,7 +177,7 @@ impl Mesh {
             let y = mesh.normals[i * 3 + 1];
             let z = mesh.normals[i * 3 + 2];
 
-            normals.push(glam::Vec3A::new(x, y, z));
+            normals.push(glam::Vec3::new(x, y, z));
         }
 
         for i in 0..mesh.texcoords.len() / 2 {

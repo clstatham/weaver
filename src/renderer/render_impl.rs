@@ -2,8 +2,7 @@ use super::{
     shader::{self, VertexShader},
     Pixel, Renderer,
 };
-use crate::core::{color::Color, texture::Texture, Vertex};
-use rayon::prelude::*;
+use crate::core::{texture::Texture, Vertex};
 
 impl Renderer {
     /// Draws a filled triangle between three world-space vertices using the barycentric method.

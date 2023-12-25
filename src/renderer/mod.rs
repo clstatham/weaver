@@ -1,10 +1,6 @@
 use crate::{
     core::{
-        camera::PerspectiveCamera,
-        color::Color,
-        light::{Light, PointLight},
-        mesh::Mesh,
-        transform::Transform,
+        camera::PerspectiveCamera, color::Color, light::Light, mesh::Mesh, transform::Transform,
     },
     ecs::world::World,
 };
@@ -14,16 +10,18 @@ use rayon::prelude::*;
 use self::shader::FragmentShader;
 #[macro_use]
 pub mod shader;
+pub mod gpu;
 mod render_impl;
 
 #[derive(Debug, Clone, Copy)]
+#[repr(C)]
 pub struct Pixel {
     pub x: i32,
     pub y: i32,
     pub color: Color,
     pub depth: f32,
-    pub normal: glam::Vec3A,
-    pub position: glam::Vec3A,
+    pub normal: glam::Vec3,
+    pub position: glam::Vec3,
 }
 
 pub struct Renderer {
@@ -31,33 +29,37 @@ pub struct Renderer {
     screen_height: usize,
     color_buffer: Vec<Color>,
     depth_buffer: Vec<f32>,
-    normal_buffer: Vec<glam::Vec3A>,
-    position_buffer: Vec<glam::Vec3A>,
+    normal_buffer: Vec<glam::Vec3>,
+    position_buffer: Vec<glam::Vec3>,
+
+    pixel_cache: Vec<Pixel>,
+
     camera: PerspectiveCamera,
 }
 
 impl Renderer {
     pub fn new(screen_width: usize, screen_height: usize) -> Self {
         let mut camera = PerspectiveCamera::new(
-            glam::Vec3A::new(4.0, 4.0, 4.0),
-            glam::Vec3A::ZERO,
+            glam::Vec3::new(4.0, 4.0, 4.0),
+            glam::Vec3::ZERO,
             120.0f32.to_radians(),
             screen_width as f32 / screen_height as f32,
             0.001,
             100000.0,
         );
         camera.look_at(
-            glam::Vec3A::new(4.0, 4.0, 4.0),
-            glam::Vec3A::new(0.0, 0.0, 0.0),
-            glam::Vec3A::NEG_Y,
+            glam::Vec3::new(4.0, 4.0, 4.0),
+            glam::Vec3::new(0.0, 0.0, 0.0),
+            glam::Vec3::NEG_Y,
         );
         Self {
             screen_width,
             screen_height,
             color_buffer: vec![Color::new(0.0, 0.0, 0.0); screen_width * screen_height],
             depth_buffer: vec![f32::INFINITY; screen_width * screen_height],
-            normal_buffer: vec![glam::Vec3A::ZERO; screen_width * screen_height],
-            position_buffer: vec![glam::Vec3A::ZERO; screen_width * screen_height],
+            normal_buffer: vec![glam::Vec3::ZERO; screen_width * screen_height],
+            position_buffer: vec![glam::Vec3::ZERO; screen_width * screen_height],
+            pixel_cache: Vec::with_capacity(screen_width * screen_height),
             camera,
         }
     }
@@ -71,8 +73,9 @@ impl Renderer {
     pub fn clear(&mut self, color: Color) {
         self.color_buffer.fill(color);
         self.depth_buffer.fill(f32::INFINITY);
-        self.normal_buffer.fill(glam::Vec3A::ZERO);
-        self.position_buffer.fill(glam::Vec3A::ZERO);
+        self.normal_buffer.fill(glam::Vec3::ZERO);
+        self.position_buffer.fill(glam::Vec3::ZERO);
+        self.pixel_cache.clear();
     }
 
     #[inline]
@@ -112,7 +115,7 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn set_normal(&mut self, x: usize, y: usize, normal: glam::Vec3A) {
+    pub fn set_normal(&mut self, x: usize, y: usize, normal: glam::Vec3) {
         if x >= self.screen_width || y >= self.screen_height {
             return;
         }
@@ -121,16 +124,16 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn get_normal(&self, x: usize, y: usize) -> glam::Vec3A {
+    pub fn get_normal(&self, x: usize, y: usize) -> glam::Vec3 {
         if x >= self.screen_width || y >= self.screen_height {
-            return glam::Vec3A::ZERO;
+            return glam::Vec3::ZERO;
         }
         let index = y * self.screen_width + x;
         self.normal_buffer[index]
     }
 
     #[inline]
-    pub fn set_position(&mut self, x: usize, y: usize, position: glam::Vec3A) {
+    pub fn set_position(&mut self, x: usize, y: usize, position: glam::Vec3) {
         if x >= self.screen_width || y >= self.screen_height {
             return;
         }
@@ -139,9 +142,9 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn get_position(&self, x: usize, y: usize) -> glam::Vec3A {
+    pub fn get_position(&self, x: usize, y: usize) -> glam::Vec3 {
         if x >= self.screen_width || y >= self.screen_height {
-            return glam::Vec3A::ZERO;
+            return glam::Vec3::ZERO;
         }
         let index = y * self.screen_width + x;
         self.position_buffer[index]
@@ -183,7 +186,6 @@ impl Renderer {
         let query = world.read::<(Mesh, Transform)>();
 
         // rasterize each mesh
-        let mut all_pixels = Vec::new();
         for (mesh, transform) in query
             .get::<Mesh>()
             .into_iter()
@@ -213,16 +215,32 @@ impl Renderer {
                 })
                 .flatten()
                 .collect::<Vec<_>>();
-            all_pixels.extend(pixels);
+            self.pixel_cache.extend(pixels);
         }
 
-        for pixel in all_pixels {
-            if self.get_depth(pixel.x as usize, pixel.y as usize) > pixel.depth {
-                self.set_color(pixel.x as usize, pixel.y as usize, pixel.color);
-                self.set_depth(pixel.x as usize, pixel.y as usize, pixel.depth);
-                self.set_normal(pixel.x as usize, pixel.y as usize, pixel.normal);
-                self.set_position(pixel.x as usize, pixel.y as usize, pixel.position);
+        for pixel in self.pixel_cache.drain(..) {
+            // check if pixels is outside screen
+            if pixel.x < 0
+                || pixel.y < 0
+                || pixel.x >= self.screen_width as i32
+                || pixel.y >= self.screen_height as i32
+            {
+                continue;
             }
+            // check depth test
+            if self.depth_buffer[pixel.y as usize * self.screen_width + pixel.x as usize]
+                < pixel.depth
+            {
+                continue;
+            }
+            self.color_buffer[pixel.y as usize * self.screen_width + pixel.x as usize] =
+                pixel.color;
+            self.depth_buffer[pixel.y as usize * self.screen_width + pixel.x as usize] =
+                pixel.depth;
+            self.normal_buffer[pixel.y as usize * self.screen_width + pixel.x as usize] =
+                pixel.normal;
+            self.position_buffer[pixel.y as usize * self.screen_width + pixel.x as usize] =
+                pixel.position;
         }
 
         let lights: Vec<Light> = world
@@ -235,7 +253,6 @@ impl Renderer {
 
         // lighting pass
         let mut lighting_buffers = vec![vec![Color::BLACK; self.color_buffer.len()]; lights.len()];
-
         lighting_buffers
             .iter_mut()
             .enumerate()

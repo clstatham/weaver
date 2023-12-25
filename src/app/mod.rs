@@ -1,4 +1,3 @@
-use pixels::Pixels;
 use winit::{event_loop::EventLoop, window::Window};
 use winit_input_helper::WinitInputHelper;
 
@@ -7,18 +6,17 @@ use crate::{
     ecs::{
         bundle::Bundle, component::Component, entity::Entity, system::ExclusiveSystem, world::World,
     },
-    renderer::Renderer,
+    renderer::{gpu::GpuRenderer, Renderer},
 };
 
 pub struct App {
     event_loop: EventLoop<()>,
     input: WinitInputHelper,
     window: Window,
-    pixels: Pixels,
 
     pub(crate) world: World,
 
-    pub(crate) renderer: Renderer,
+    pub(crate) renderer: GpuRenderer,
 
     last_frame: std::time::Instant,
 
@@ -36,25 +34,18 @@ impl App {
             screen_height as f64,
         ));
         window.set_resizable(false);
-        let mut pixels = {
-            let size = window.inner_size();
-            let surface_texture = pixels::SurfaceTexture::new(size.width, size.height, &window);
-            Pixels::new(screen_width as u32, screen_height as u32, surface_texture).unwrap()
-        };
-        pixels.set_present_mode(wgpu::PresentMode::Immediate);
-        pixels.enable_vsync(false);
-
         let mut world = World::new();
         world.insert_resource(Input::default());
+
+        let renderer = pollster::block_on(GpuRenderer::new(&window));
 
         Self {
             event_loop,
             input,
+            renderer,
             window,
-            pixels,
             world,
             last_frame: std::time::Instant::now(),
-            renderer: Renderer::new(screen_width, screen_height),
             fps_frame_count: 0,
             fps_last_update: std::time::Instant::now(),
         }
@@ -103,19 +94,17 @@ impl App {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
                 }
                 winit::event::Event::RedrawRequested(_) => {
-                    self.renderer.render(&mut self.world);
+                    self.renderer.render(&mut self.world).unwrap();
 
-                    let frame = self.pixels.frame_mut();
+                    // let frame = self.pixels.frame_mut();
 
-                    for (i, color) in self.renderer.color_buffer().iter().enumerate() {
-                        let (r, g, b) = color.rgb_int();
-                        frame[i * 4] = r;
-                        frame[i * 4 + 1] = g;
-                        frame[i * 4 + 2] = b;
-                        frame[i * 4 + 3] = 255;
-                    }
-
-                    self.pixels.render().unwrap();
+                    // for (i, color) in self.renderer.color_buffer().iter().enumerate() {
+                    //     let (r, g, b) = color.rgb_int();
+                    //     frame[i * 4] = r;
+                    //     frame[i * 4 + 1] = g;
+                    //     frame[i * 4 + 2] = b;
+                    //     frame[i * 4 + 3] = 255;
+                    // }
 
                     self.fps_frame_count += 1;
                     if self.fps_last_update.elapsed() > std::time::Duration::from_secs(1) {

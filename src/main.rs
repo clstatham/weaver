@@ -1,13 +1,13 @@
 use core::{
     color::Color,
     input::Input,
-    light::{DirectionalLight, Light, PointLight, SpotLight},
+    light::{DirectionalLight, Light, SpotLight},
     mesh::Mesh,
     transform::Transform,
 };
 
 use app::App;
-use ecs::{component::Component, query::Without, world::World};
+use ecs::{component::Component, world::World};
 
 #[macro_use]
 pub mod ecs;
@@ -30,7 +30,7 @@ fn test_system(world: &mut World, delta: std::time::Duration) {
         .write::<(Mesh, Transform, Mark)>()
         .get_mut::<Transform>()
     {
-        transform.rotate(1.0 * delta, glam::Vec3A::Y);
+        transform.rotate(1.0 * delta, glam::Vec3::Y);
         // if w {
         //     transform.translate(-1.0 * delta, 0.0, -1.0 * delta);
         // }
@@ -71,20 +71,20 @@ fn main() -> anyhow::Result<()> {
 
     // add lights
     app.spawn(Light::Directional(DirectionalLight::new(
-        glam::Vec3A::new(1.0, 0.0, 0.0).normalize(),
+        glam::Vec3::new(1.0, 0.0, 0.0).normalize(),
         Color::new(1.0, 1.0, 1.0),
         1.0,
     )));
     app.spawn(Light::Spot(SpotLight::new(
-        glam::Vec3A::new(-10.0, 0.0, 0.0),
-        glam::Vec3A::new(1.0, 0.0, 0.0).normalize(),
+        glam::Vec3::new(-10.0, 0.0, 0.0),
+        glam::Vec3::new(1.0, 0.0, 0.0).normalize(),
         Color::new(0.0, 1.0, 0.0),
         1.0,
         30.0,
     )));
     app.spawn(Light::Spot(SpotLight::new(
-        glam::Vec3A::new(0.0, -10.0, 0.0),
-        glam::Vec3A::new(0.0, 10.0, 0.0).normalize(),
+        glam::Vec3::new(0.0, -10.0, 0.0),
+        glam::Vec3::new(0.0, 10.0, 0.0).normalize(),
         Color::new(0.0, 0.0, 1.0),
         1.0,
         30.0,
@@ -95,11 +95,7 @@ fn main() -> anyhow::Result<()> {
     // for vertex in mesh.vertices.iter_mut() {
     //     vertex.color = Color::new(1.0, 0.0, 0.0);
     // }
-    app.build((
-        mesh.clone(),
-        Transform::default().translate(0.0, 0.0, 0.0),
-        Mark,
-    ));
+    app.build((mesh, Transform::default().translate(0.0, 0.0, 0.0), Mark));
 
     // for vertex in mesh.vertices.iter_mut() {
     //     vertex.color = Color::new(0.0, 1.0, 0.0);
