@@ -1,20 +1,21 @@
-use crate::core::{color::Color, texture::Texture, Vertex};
-
 use super::{
-    shader::{self, FragmentShader, VertexShader},
-    Renderer,
+    shader::{self, VertexShader},
+    Pixel, Renderer,
 };
+use crate::core::{color::Color, texture::Texture, Vertex};
+use rayon::prelude::*;
 
 impl Renderer {
     /// Draws a filled triangle between three world-space vertices using the barycentric method.
+    #[allow(clippy::too_many_arguments)]
     pub fn triangle<V: VertexShader>(
-        &mut self,
+        &self,
         v0: Vertex,
         v1: Vertex,
         v2: Vertex,
         vertex_shader: &V,
         texture: Option<&Texture>,
-    ) {
+    ) -> Vec<Pixel> {
         let camera_shader =
             shader::CameraProjection::new(&self.camera, self.screen_width, self.screen_height);
         let v0 = camera_shader.vertex_shader(vertex_shader.vertex_shader(v0));
@@ -43,39 +44,52 @@ impl Renderer {
             y_max = self.screen_height as i32 - 1;
         }
 
-        for y in y_min..=y_max {
-            for x in x_min..=x_max {
-                let w0 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) as f32
-                    / ((y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)) as f32;
-                let w1 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) as f32
-                    / ((y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)) as f32;
+        // let mut pixels = Vec::new();
 
-                if w0 >= 0.0 && w1 >= 0.0 && w0 + w1 <= 1.0 {
-                    let w2 = 1.0 - w0 - w1;
+        (y_min..=y_max)
+            .into_par_iter()
+            .flat_map(|y| {
+                (x_min..=x_max).into_par_iter().filter_map(move |x| {
+                    let w0 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) as f32
+                        / ((y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)) as f32;
+                    let w1 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) as f32
+                        / ((y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)) as f32;
 
-                    let z = w0 * v0.position.z + w1 * v1.position.z + w2 * v2.position.z;
-                    if z < self.get_depth(x as usize, y as usize) {
-                        let position = v0.position * w0 + v1.position * w1 + v2.position * w2;
-                        let normal = v0.normal * w0 + v1.normal * w1 + v2.normal * w2;
-                        let uv = v0.uv * w0 + v1.uv * w1 + v2.uv * w2;
-                        let color = v0.color * w0 + v1.color * w1 + v2.color * w2;
+                    if w0 >= 0.0 && w1 >= 0.0 && w0 + w1 <= 1.0 {
+                        let w2 = 1.0 - w0 - w1;
 
-                        if let Some(texture) = texture {
-                            if let Some(texture_color) = texture.get_uv(uv.x, uv.y) {
-                                self.set_color(x as usize, y as usize, color * texture_color);
+                        let z = w0 * v0.position.z + w1 * v1.position.z + w2 * v2.position.z;
+                        if z < self.get_depth(x as usize, y as usize) {
+                            let position = v0.position * w0 + v1.position * w1 + v2.position * w2;
+                            let normal = v0.normal * w0 + v1.normal * w1 + v2.normal * w2;
+                            let uv = v0.uv * w0 + v1.uv * w1 + v2.uv * w2;
+                            let color = v0.color * w0 + v1.color * w1 + v2.color * w2;
+
+                            let color = if let Some(texture) = texture {
+                                if let Some(texture_color) = texture.get_uv(uv.x, uv.y) {
+                                    // self.set_color(x as usize, y as usize, color * texture_color);
+                                    color * texture_color
+                                } else {
+                                    color
+                                }
                             } else {
-                                self.set_color(x as usize, y as usize, color);
-                            }
-                        } else {
-                            self.set_color(x as usize, y as usize, color);
-                        }
+                                color
+                            };
 
-                        self.set_depth(x as usize, y as usize, z);
-                        self.set_normal(x as usize, y as usize, normal);
-                        self.set_position(x as usize, y as usize, position);
+                            return Some(Pixel {
+                                x,
+                                y,
+                                color,
+                                position,
+                                normal,
+                                depth: z,
+                            });
+                        }
                     }
-                }
-            }
-        }
+
+                    None
+                })
+            })
+            .collect()
     }
 }
