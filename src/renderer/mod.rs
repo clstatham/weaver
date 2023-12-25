@@ -237,7 +237,7 @@ impl Renderer {
         let mut lighting_buffers = vec![vec![Color::BLACK; self.color_buffer.len()]; lights.len()];
 
         lighting_buffers
-            .par_iter_mut()
+            .iter_mut()
             .enumerate()
             .for_each(|(i, buffer)| {
                 let light = lights[i];
@@ -255,29 +255,16 @@ impl Renderer {
                 });
             });
 
-        // combine lighting buffers
-        let unlit_color_buffer = self.color_buffer.clone();
-        self.color_buffer.fill(Color::BLACK);
-        for buffer in lighting_buffers.iter() {
-            self.color_buffer
-                .par_iter_mut()
-                .zip(buffer.par_iter())
-                .for_each(|(color, light_color)| {
-                    *color += *light_color;
-                });
-        }
-
-        // multiply by unlit color
+        // add lights and multiply by unlit color
         self.color_buffer
             .par_iter_mut()
-            .zip(unlit_color_buffer.par_iter())
-            .for_each(|(color, unlit_color)| {
-                *color *= *unlit_color;
+            .enumerate()
+            .for_each(|(i, color)| {
+                let mut light_color = Color::BLACK;
+                for buffer in lighting_buffers.iter() {
+                    light_color += buffer[i];
+                }
+                *color *= light_color;
             });
-
-        // // gamma correct
-        // for color in self.color_buffer.iter_mut() {
-        //     *color = color.gamma_corrected(2.2).clamp(0.0, 1.0);
-        // }
     }
 }
