@@ -1,4 +1,10 @@
-use core::{color::Color, input::Input, light::PointLight, mesh::Mesh, transform::Transform};
+use core::{
+    color::Color,
+    input::Input,
+    light::{DirectionalLight, Light, PointLight, SpotLight},
+    mesh::Mesh,
+    transform::Transform,
+};
 
 use app::App;
 use ecs::{component::Component, query::Without, world::World};
@@ -24,18 +30,33 @@ fn test_system(world: &mut World, delta: std::time::Duration) {
         .write::<(Mesh, Transform, Mark)>()
         .get_mut::<Transform>()
     {
-        // transform.rotate(1.0 * delta, glam::Vec3::Y);
-        if w {
-            transform.translate(-1.0 * delta, 0.0, -1.0 * delta);
-        }
-        if s {
-            transform.translate(1.0 * delta, 0.0, 1.0 * delta);
-        }
-        if a {
-            transform.translate(1.0 * delta, 0.0, -1.0 * delta);
-        }
-        if d {
-            transform.translate(-1.0 * delta, 0.0, 1.0 * delta);
+        transform.rotate(1.0 * delta, glam::Vec3::Y);
+        // if w {
+        //     transform.translate(-1.0 * delta, 0.0, -1.0 * delta);
+        // }
+        // if s {
+        //     transform.translate(1.0 * delta, 0.0, 1.0 * delta);
+        // }
+        // if a {
+        //     transform.translate(1.0 * delta, 0.0, -1.0 * delta);
+        // }
+        // if d {
+        //     transform.translate(-1.0 * delta, 0.0, 1.0 * delta);
+        // }
+    }
+
+    for light in world.write::<Light>().get_mut::<Light>() {
+        if let Light::Spot(light) = light {
+            if w {
+                light.angle += 1.0 * delta;
+                light.angle = light.angle.clamp(0.0, 90.0);
+                dbg!(light.angle);
+            }
+            if s {
+                light.angle -= 1.0 * delta;
+                light.angle = light.angle.clamp(0.0, 90.0);
+                dbg!(light.angle);
+            }
         }
     }
 }
@@ -49,22 +70,27 @@ fn main() -> anyhow::Result<()> {
     let mut app = App::new(800, 600);
 
     // add lights
-    app.spawn(PointLight::new(
-        glam::Vec3::new(10.0, 10.0, 10.0),
+    app.spawn(Light::Directional(DirectionalLight::new(
+        glam::Vec3::new(1.0, 0.0, 0.0).normalize(),
         Color::new(1.0, 1.0, 1.0),
         1.0,
-    ));
+    )));
+    app.spawn(Light::Spot(SpotLight::new(
+        glam::Vec3::new(-10.0, 0.0, 0.0),
+        glam::Vec3::new(1.0, 0.0, 0.0).normalize(),
+        Color::new(1.0, 0.0, 0.0),
+        1.0,
+        30.0,
+    )));
 
-    // let mut mesh = Mesh::load_gltf("assets\\lowpoly_ant\\scene.gltf")?;
-    let mut mesh = Mesh::load_gltf("assets/woodcube.glb")?;
+    let mesh = Mesh::load_gltf("assets/wooden_monkey.glb")?;
 
     // for vertex in mesh.vertices.iter_mut() {
     //     vertex.color = Color::new(1.0, 0.0, 0.0);
     // }
-    let monkey1 = app.build((
+    app.build((
         mesh.clone(),
-        Transform::default().translate(-1.0, 0.0, 0.0),
-        // .scale(0.1, 0.1, 0.1),
+        Transform::default().translate(0.0, 0.0, 0.0),
         Mark,
     ));
 

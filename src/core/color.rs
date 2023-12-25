@@ -108,6 +108,20 @@ impl Color {
     pub fn vec4(&self) -> glam::Vec4 {
         glam::Vec4::new(self.r, self.g, self.b, 1.0)
     }
+
+    #[inline]
+    pub fn gamma_corrected(&self, gamma: f32) -> Self {
+        Self::new(self.r.powf(gamma), self.g.powf(gamma), self.b.powf(gamma))
+    }
+
+    #[inline]
+    pub fn clamp(&self, min: f32, max: f32) -> Self {
+        Self::new(
+            self.r.clamp(min, max),
+            self.g.clamp(min, max),
+            self.b.clamp(min, max),
+        )
+    }
 }
 
 impl std::ops::Add for Color {

@@ -31,6 +31,10 @@ impl App {
         let event_loop = EventLoop::new();
         let input = WinitInputHelper::new();
         let window = Window::new(&event_loop).unwrap();
+        window.set_inner_size(winit::dpi::LogicalSize::new(
+            screen_width as f64,
+            screen_height as f64,
+        ));
         window.set_resizable(false);
         let mut pixels = {
             let size = window.inner_size();
@@ -112,12 +116,12 @@ impl App {
 
                     self.pixels.render().unwrap();
 
+                    self.fps_frame_count += 1;
                     if self.fps_last_update.elapsed() > std::time::Duration::from_secs(1) {
                         log::info!("FPS: {}", self.fps_frame_count);
                         self.fps_frame_count = 0;
                         self.fps_last_update = std::time::Instant::now();
                     }
-                    self.fps_frame_count += 1;
                 }
                 _ => {}
             }

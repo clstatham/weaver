@@ -1,10 +1,15 @@
 use crate::{
     core::{
-        camera::PerspectiveCamera, color::Color, light::PointLight, mesh::Mesh,
+        camera::PerspectiveCamera,
+        color::Color,
+        light::{Light, PointLight},
+        mesh::Mesh,
         transform::Transform,
     },
     ecs::world::World,
 };
+
+use self::shader::FragmentShader;
 #[macro_use]
 pub mod shader;
 mod render_impl;
@@ -14,6 +19,8 @@ pub struct Renderer {
     screen_height: usize,
     color_buffer: Vec<Color>,
     depth_buffer: Vec<f32>,
+    normal_buffer: Vec<glam::Vec3>,
+    position_buffer: Vec<glam::Vec3>,
     camera: PerspectiveCamera,
 }
 
@@ -37,6 +44,8 @@ impl Renderer {
             screen_height,
             color_buffer: vec![Color::new(0.0, 0.0, 0.0); screen_width * screen_height],
             depth_buffer: vec![f32::INFINITY; screen_width * screen_height],
+            normal_buffer: vec![glam::Vec3::ZERO; screen_width * screen_height],
+            position_buffer: vec![glam::Vec3::ZERO; screen_width * screen_height],
             camera,
         }
     }
@@ -50,6 +59,8 @@ impl Renderer {
     pub fn clear(&mut self, color: Color) {
         self.color_buffer.fill(color);
         self.depth_buffer.fill(f32::INFINITY);
+        self.normal_buffer.fill(glam::Vec3::ZERO);
+        self.position_buffer.fill(glam::Vec3::ZERO);
     }
 
     #[inline]
@@ -89,6 +100,42 @@ impl Renderer {
     }
 
     #[inline]
+    pub fn set_normal(&mut self, x: usize, y: usize, normal: glam::Vec3) {
+        if x >= self.screen_width || y >= self.screen_height {
+            return;
+        }
+        let index = y * self.screen_width + x;
+        self.normal_buffer[index] = normal;
+    }
+
+    #[inline]
+    pub fn get_normal(&self, x: usize, y: usize) -> glam::Vec3 {
+        if x >= self.screen_width || y >= self.screen_height {
+            return glam::Vec3::ZERO;
+        }
+        let index = y * self.screen_width + x;
+        self.normal_buffer[index]
+    }
+
+    #[inline]
+    pub fn set_position(&mut self, x: usize, y: usize, position: glam::Vec3) {
+        if x >= self.screen_width || y >= self.screen_height {
+            return;
+        }
+        let index = y * self.screen_width + x;
+        self.position_buffer[index] = position;
+    }
+
+    #[inline]
+    pub fn get_position(&self, x: usize, y: usize) -> glam::Vec3 {
+        if x >= self.screen_width || y >= self.screen_height {
+            return glam::Vec3::ZERO;
+        }
+        let index = y * self.screen_width + x;
+        self.position_buffer[index]
+    }
+
+    #[inline]
     pub fn camera(&self) -> &PerspectiveCamera {
         &self.camera
     }
@@ -122,13 +169,8 @@ impl Renderer {
 
         // query the world for entities that have both a mesh and transform
         let query = world.read::<(Mesh, Transform)>();
-        let lights: Vec<PointLight> = world
-            .read::<PointLight>()
-            .get::<PointLight>()
-            .iter()
-            .copied()
-            .map(|l| l.to_owned())
-            .collect();
+
+        // rasterize each mesh
         for (mesh, transform) in query
             .get::<Mesh>()
             .into_iter()
@@ -143,22 +185,6 @@ impl Renderer {
                 let v1 = mesh.vertices[i1];
                 let v2 = mesh.vertices[i2];
 
-                let frag = if let Some(ref texture) = mesh.texture {
-                    fragment_shader!(
-                        shader::TextureFragmentShader { texture },
-                        shader::PhongFragmentShader {
-                            lights: lights.clone(),
-                            camera_position: self.camera.position(),
-                            shininess: 10.0,
-                        }
-                    )
-                } else {
-                    fragment_shader!(shader::PhongFragmentShader {
-                        lights: lights.clone(),
-                        camera_position: self.camera.position(),
-                        shininess: 10.0,
-                    })
-                };
                 self.triangle(
                     v0,
                     v1,
@@ -166,9 +192,54 @@ impl Renderer {
                     &vertex_shader!(shader::TransformVertexShader {
                         transform: *transform,
                     }),
-                    &frag,
+                    mesh.texture.as_ref(),
                 );
             }
         }
+
+        let lights: Vec<Light> = world
+            .read::<Light>()
+            .get::<Light>()
+            .iter()
+            .copied()
+            .map(|l| l.to_owned())
+            .collect();
+
+        // lighting pass
+        let mut lighting_buffers = vec![self.color_buffer.clone(); lights.len()];
+        for (light, buffer) in lights.iter().zip(lighting_buffers.iter_mut()) {
+            let shader = shader::PhongFragmentShader {
+                light: *light,
+                camera_position: self.camera.position(),
+                shininess: 1.0,
+            };
+            for (color, normal, position, depth) in itertools::multizip((
+                buffer.iter_mut(),
+                self.normal_buffer.iter(),
+                self.position_buffer.iter(),
+                self.depth_buffer.iter(),
+            )) {
+                *color = shader.fragment_shader(*position, *normal, *depth, *color);
+            }
+        }
+
+        // combine lighting buffers
+        let unlit_color_buffer = self.color_buffer.clone();
+        self.color_buffer.fill(Color::BLACK);
+        for buffer in lighting_buffers.iter() {
+            for (color, light_color) in self.color_buffer.iter_mut().zip(buffer.iter()) {
+                *color += *light_color;
+            }
+        }
+
+        // multiply by unlit color
+        for (color, unlit_color) in self.color_buffer.iter_mut().zip(unlit_color_buffer.iter()) {
+            *color *= *unlit_color;
+        }
+
+        // // gamma correct
+        // for color in self.color_buffer.iter_mut() {
+        //     *color = color.gamma_corrected(2.2).clamp(0.0, 1.0);
+        // }
     }
 }
