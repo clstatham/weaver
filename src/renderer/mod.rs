@@ -206,7 +206,7 @@ impl Renderer {
             .collect();
 
         // lighting pass
-        let mut lighting_buffers = vec![self.color_buffer.clone(); lights.len()];
+        let mut lighting_buffers = vec![vec![Color::BLACK; self.color_buffer.len()]; lights.len()];
         for (light, buffer) in lights.iter().zip(lighting_buffers.iter_mut()) {
             let shader = shader::PhongFragmentShader {
                 light: *light,

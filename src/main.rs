@@ -78,7 +78,14 @@ fn main() -> anyhow::Result<()> {
     app.spawn(Light::Spot(SpotLight::new(
         glam::Vec3::new(-10.0, 0.0, 0.0),
         glam::Vec3::new(1.0, 0.0, 0.0).normalize(),
-        Color::new(1.0, 0.0, 0.0),
+        Color::new(0.0, 1.0, 0.0),
+        1.0,
+        30.0,
+    )));
+    app.spawn(Light::Spot(SpotLight::new(
+        glam::Vec3::new(0.0, -10.0, 0.0),
+        glam::Vec3::new(0.0, 10.0, 0.0).normalize(),
+        Color::new(0.0, 0.0, 1.0),
         1.0,
         30.0,
     )));

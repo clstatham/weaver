@@ -226,10 +226,16 @@ impl FragmentShader for PhongFragmentShader {
             }
             Light::Point(ref point_light) => {
                 let intensity = light_direction.dot(normal).max(0.0);
+                // point lights are affected by distance
+                let distance = (point_light.position - position_in).length();
+                let intensity = intensity / (distance * distance);
                 point_light.color * point_light.intensity * intensity
             }
             Light::Spot(ref spot_light) => {
                 let intensity = light_direction.dot(normal).max(0.0);
+                // spot lights are affected by distance
+                let distance = (spot_light.position - position_in).length();
+                let intensity = intensity / (distance * distance);
                 spot_light.color * spot_light.intensity * intensity
             }
         };
@@ -261,6 +267,6 @@ impl FragmentShader for PhongFragmentShader {
             }
         };
 
-        color_in * diffuse + specular
+        diffuse + specular
     }
 }
