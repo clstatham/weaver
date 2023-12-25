@@ -20,8 +20,8 @@ where
 {
     fn fragment_shader(
         &self,
-        position_in: glam::Vec3,
-        normal_in: glam::Vec3,
+        position_in: glam::Vec3A,
+        normal_in: glam::Vec3A,
         depth_in: f32,
         color_in: Color,
     ) -> Color;
@@ -40,8 +40,8 @@ pub struct DefaultFragmentShader;
 impl FragmentShader for DefaultFragmentShader {
     fn fragment_shader(
         &self,
-        _position_in: glam::Vec3,
-        _normal_in: glam::Vec3,
+        _position_in: glam::Vec3A,
+        _normal_in: glam::Vec3A,
         _depth_in: f32,
         color_in: Color,
     ) -> Color {
@@ -68,8 +68,8 @@ pub struct ChainFragmentShader<'a>(pub Vec<Box<dyn FragmentShader + 'a>>);
 impl<'a> FragmentShader for ChainFragmentShader<'a> {
     fn fragment_shader(
         &self,
-        position_in: glam::Vec3,
-        normal_in: glam::Vec3,
+        position_in: glam::Vec3A,
+        normal_in: glam::Vec3A,
         depth_in: f32,
         color_in: Color,
     ) -> Color {
@@ -110,8 +110,8 @@ impl VertexShader for TransformVertexShader {
         let (scale, rotation, translation) = self.transform.0.to_scale_rotation_translation();
 
         let position = rotation * position;
-        let position = position * scale;
-        let position = position + translation;
+        let position = position * glam::Vec3A::from(scale);
+        let position = position + glam::Vec3A::from(translation);
 
         let normal = (rotation * normal).normalize();
 
@@ -131,8 +131,8 @@ pub struct SolidColorFragmentShader {
 impl FragmentShader for SolidColorFragmentShader {
     fn fragment_shader(
         &self,
-        position_in: glam::Vec3,
-        normal_in: glam::Vec3,
+        position_in: glam::Vec3A,
+        normal_in: glam::Vec3A,
         depth_in: f32,
         color_in: Color,
     ) -> Color {
@@ -175,12 +175,12 @@ impl<'a> VertexShader for CameraProjection<'a> {
 
 pub struct PhongFragmentShader {
     pub light: Light,
-    pub camera_position: glam::Vec3,
+    pub camera_position: glam::Vec3A,
     pub shininess: f32,
 }
 
 impl PhongFragmentShader {
-    pub fn new(light: Light, camera_position: glam::Vec3, shininess: f32) -> Self {
+    pub fn new(light: Light, camera_position: glam::Vec3A, shininess: f32) -> Self {
         Self {
             light,
             camera_position,
@@ -192,8 +192,8 @@ impl PhongFragmentShader {
 impl FragmentShader for PhongFragmentShader {
     fn fragment_shader(
         &self,
-        position_in: glam::Vec3,
-        normal_in: glam::Vec3,
+        position_in: glam::Vec3A,
+        normal_in: glam::Vec3A,
         _depth_in: f32,
         color_in: Color,
     ) -> Color {

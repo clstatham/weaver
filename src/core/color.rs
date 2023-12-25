@@ -97,10 +97,10 @@ impl Color {
             | 0xff
     }
 
-    /// Returns the [Color] as a [glam::Vec3].
+    /// Returns the [Color] as a [glam::Vec3A].
     #[inline]
-    pub fn vec3(&self) -> glam::Vec3 {
-        glam::Vec3::new(self.r, self.g, self.b)
+    pub fn vec3(&self) -> glam::Vec3A {
+        glam::Vec3A::new(self.r, self.g, self.b)
     }
 
     /// Returns the [Color] as a [glam::Vec4] with the alpha value set to 1.0.

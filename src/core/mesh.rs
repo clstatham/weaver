@@ -31,7 +31,7 @@ impl Mesh {
 
     pub fn recalculate_normals(&mut self) {
         for vertex in self.vertices.iter_mut() {
-            vertex.normal = glam::Vec3::ZERO;
+            vertex.normal = glam::Vec3A::ZERO;
         }
 
         for i in (0..self.indices.len()).step_by(3) {
@@ -81,7 +81,7 @@ impl Mesh {
             let y = mesh.positions[i * 3 + 1];
             let z = mesh.positions[i * 3 + 2];
 
-            positions.push(glam::Vec3::new(x, y, z));
+            positions.push(glam::Vec3A::new(x, y, z));
         }
 
         for i in 0..mesh.normals.len() / 3 {
@@ -89,7 +89,7 @@ impl Mesh {
             let y = mesh.normals[i * 3 + 1];
             let z = mesh.normals[i * 3 + 2];
 
-            normals.push(glam::Vec3::new(x, y, z));
+            normals.push(glam::Vec3A::new(x, y, z));
         }
 
         for i in 0..mesh.texcoords.len() / 2 {

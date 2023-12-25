@@ -22,8 +22,8 @@ pub struct Pixel {
     pub y: i32,
     pub color: Color,
     pub depth: f32,
-    pub normal: glam::Vec3,
-    pub position: glam::Vec3,
+    pub normal: glam::Vec3A,
+    pub position: glam::Vec3A,
 }
 
 pub struct Renderer {
@@ -31,33 +31,33 @@ pub struct Renderer {
     screen_height: usize,
     color_buffer: Vec<Color>,
     depth_buffer: Vec<f32>,
-    normal_buffer: Vec<glam::Vec3>,
-    position_buffer: Vec<glam::Vec3>,
+    normal_buffer: Vec<glam::Vec3A>,
+    position_buffer: Vec<glam::Vec3A>,
     camera: PerspectiveCamera,
 }
 
 impl Renderer {
     pub fn new(screen_width: usize, screen_height: usize) -> Self {
         let mut camera = PerspectiveCamera::new(
-            glam::Vec3::new(4.0, 4.0, 4.0),
-            glam::Vec3::ZERO,
+            glam::Vec3A::new(4.0, 4.0, 4.0),
+            glam::Vec3A::ZERO,
             120.0f32.to_radians(),
             screen_width as f32 / screen_height as f32,
             0.001,
             100000.0,
         );
         camera.look_at(
-            glam::Vec3::new(4.0, 4.0, 4.0),
-            glam::Vec3::new(0.0, 0.0, 0.0),
-            glam::Vec3::NEG_Y,
+            glam::Vec3A::new(4.0, 4.0, 4.0),
+            glam::Vec3A::new(0.0, 0.0, 0.0),
+            glam::Vec3A::NEG_Y,
         );
         Self {
             screen_width,
             screen_height,
             color_buffer: vec![Color::new(0.0, 0.0, 0.0); screen_width * screen_height],
             depth_buffer: vec![f32::INFINITY; screen_width * screen_height],
-            normal_buffer: vec![glam::Vec3::ZERO; screen_width * screen_height],
-            position_buffer: vec![glam::Vec3::ZERO; screen_width * screen_height],
+            normal_buffer: vec![glam::Vec3A::ZERO; screen_width * screen_height],
+            position_buffer: vec![glam::Vec3A::ZERO; screen_width * screen_height],
             camera,
         }
     }
@@ -71,8 +71,8 @@ impl Renderer {
     pub fn clear(&mut self, color: Color) {
         self.color_buffer.fill(color);
         self.depth_buffer.fill(f32::INFINITY);
-        self.normal_buffer.fill(glam::Vec3::ZERO);
-        self.position_buffer.fill(glam::Vec3::ZERO);
+        self.normal_buffer.fill(glam::Vec3A::ZERO);
+        self.position_buffer.fill(glam::Vec3A::ZERO);
     }
 
     #[inline]
@@ -112,7 +112,7 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn set_normal(&mut self, x: usize, y: usize, normal: glam::Vec3) {
+    pub fn set_normal(&mut self, x: usize, y: usize, normal: glam::Vec3A) {
         if x >= self.screen_width || y >= self.screen_height {
             return;
         }
@@ -121,16 +121,16 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn get_normal(&self, x: usize, y: usize) -> glam::Vec3 {
+    pub fn get_normal(&self, x: usize, y: usize) -> glam::Vec3A {
         if x >= self.screen_width || y >= self.screen_height {
-            return glam::Vec3::ZERO;
+            return glam::Vec3A::ZERO;
         }
         let index = y * self.screen_width + x;
         self.normal_buffer[index]
     }
 
     #[inline]
-    pub fn set_position(&mut self, x: usize, y: usize, position: glam::Vec3) {
+    pub fn set_position(&mut self, x: usize, y: usize, position: glam::Vec3A) {
         if x >= self.screen_width || y >= self.screen_height {
             return;
         }
@@ -139,9 +139,9 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn get_position(&self, x: usize, y: usize) -> glam::Vec3 {
+    pub fn get_position(&self, x: usize, y: usize) -> glam::Vec3A {
         if x >= self.screen_width || y >= self.screen_height {
-            return glam::Vec3::ZERO;
+            return glam::Vec3A::ZERO;
         }
         let index = y * self.screen_width + x;
         self.position_buffer[index]

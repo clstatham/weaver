@@ -16,8 +16,8 @@ impl Transform {
         *self
     }
 
-    pub fn rotate(&mut self, angle: f32, axis: glam::Vec3) -> Self {
-        self.0 *= glam::Mat4::from_axis_angle(axis, angle);
+    pub fn rotate(&mut self, angle: f32, axis: glam::Vec3A) -> Self {
+        self.0 *= glam::Mat4::from_axis_angle(axis.into(), angle);
         *self
     }
 
@@ -26,32 +26,9 @@ impl Transform {
         *self
     }
 
-    pub fn look_at(&mut self, eye: glam::Vec3, target: glam::Vec3, up: glam::Vec3) -> Self {
-        self.0 = glam::Mat4::look_at_rh(eye, target, up);
-        *self
-    }
-
-    pub fn perspective(&mut self, fov: f32, aspect: f32, near: f32, far: f32) -> Self {
-        self.0 = glam::Mat4::perspective_rh(fov, aspect, near, far);
-        *self
-    }
-
-    pub fn orthographic(
-        &mut self,
-        left: f32,
-        right: f32,
-        bottom: f32,
-        top: f32,
-        near: f32,
-        far: f32,
-    ) -> Self {
-        self.0 = glam::Mat4::orthographic_rh(left, right, bottom, top, near, far);
-        *self
-    }
-
     pub fn transform_vertex(&self, vertex: Vertex) -> Vertex {
-        let position = self.0.transform_point3(vertex.position);
-        let normal = self.0.transform_vector3(vertex.normal).normalize();
+        let position = self.0.transform_point3a(vertex.position);
+        let normal = self.0.transform_vector3a(vertex.normal).normalize();
         let color = vertex.color;
         let uv = vertex.uv;
 
