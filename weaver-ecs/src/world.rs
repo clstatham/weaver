@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use rustc_hash::FxHashMap;
 
-use crate::{Component, Entity, Read, System};
+use crate::{Bundle, Component, Entity, Read, System};
 
 #[derive(Default)]
 pub struct World {
@@ -20,6 +20,10 @@ impl World {
 
         let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Entity::new(id, 0)
+    }
+
+    pub fn build<T: Bundle>(&mut self, bundle: T) -> Entity {
+        bundle.build(self)
     }
 
     pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {

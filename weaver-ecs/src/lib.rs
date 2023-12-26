@@ -1,4 +1,5 @@
 pub mod archetype;
+pub mod bundle;
 pub mod component;
 pub mod entity;
 pub mod query;
@@ -7,6 +8,6 @@ pub mod system;
 pub mod world;
 
 pub use {
-    component::Component, entity::Entity, query::Read, resource::Resource, system::System,
-    world::World,
+    bundle::Bundle, component::Component, entity::Entity, query::Read, resource::Resource,
+    system::System, world::World,
 };

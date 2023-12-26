@@ -24,8 +24,8 @@ fn main() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use weaver_ecs::{Component, Read};
-    use weaver_proc_macro::system;
+    use weaver_ecs::{Bundle, Component, Read};
+    use weaver_proc_macro::{system, Bundle, Component};
 
     struct FooComponent(pub i32);
 
@@ -63,6 +63,29 @@ mod tests {
         world.add_component(entity, FooComponent(42));
         world.add_component(entity, BarComponent(4.2069));
         world.add_system(Bar);
+
+        world.update();
+    }
+
+    #[test]
+    fn test_bundle() {
+        #[derive(Debug, Component)]
+        struct Foo(i32);
+
+        #[derive(Debug, Component)]
+        struct Bar(f32);
+
+        #[derive(Debug, Bundle)]
+        struct FooBarBundle {
+            foo: Foo,
+            bar: Bar,
+        }
+
+        let mut world = weaver_ecs::World::new();
+        let entity = world.build(FooBarBundle {
+            foo: Foo(42),
+            bar: Bar(4.2069),
+        });
 
         world.update();
     }

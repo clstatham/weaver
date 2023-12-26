@@ -1,5 +1,5 @@
 use proc_macro::*;
-use quote::quote;
+use quote::{format_ident, quote};
 
 static COMPONENT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -116,6 +116,75 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                     let #arg_names = world.query::<#arg_types>();
                 )*;
                 #name(#(#arg_names),*);
+            }
+        }
+    };
+    gen.into()
+}
+
+#[proc_macro]
+pub fn impl_bundle_for_tuple(input: TokenStream) -> TokenStream {
+    let mut types = Vec::new();
+    let mut names = Vec::new();
+    for (i, arg) in syn::parse::<syn::TypeTuple>(input)
+        .unwrap()
+        .elems
+        .into_iter()
+        .enumerate()
+    {
+        // let name = syn::Index::from(i);
+        let name = format_ident!("t{}", i);
+        types.push(arg);
+        names.push(name);
+    }
+
+    let gen = quote! {
+        impl<#(#names),*> Bundle for (#(#names),*)
+        where
+            #(#names: Component),*
+        {
+            fn build(self, world: &mut World) -> Entity {
+                let (#(#names),*) = self;
+                let entity = world.create_entity();
+                #(
+                    world.add_component(entity, #names);
+                )*
+                entity
+            }
+        }
+    };
+    gen.into()
+}
+
+#[proc_macro_derive(Bundle)]
+pub fn bundle_derive(input: TokenStream) -> TokenStream {
+    let ast = syn::parse(input).unwrap();
+    impl_bundle_macro(&ast)
+}
+
+fn impl_bundle_macro(ast: &syn::DeriveInput) -> TokenStream {
+    let name = &ast.ident;
+    let fields = match &ast.data {
+        syn::Data::Struct(data) => match &data.fields {
+            syn::Fields::Named(fields) => &fields.named,
+            _ => panic!("Invalid struct"),
+        },
+        _ => panic!("Invalid struct"),
+    };
+    let fields = fields.iter().map(|field| {
+        let name = &field.ident;
+        quote! {
+            #name
+        }
+    });
+    let gen = quote! {
+        impl weaver_ecs::Bundle for #name {
+            fn build(self, world: &mut weaver_ecs::World) -> weaver_ecs::Entity {
+                let entity = world.create_entity();
+                #(
+                    world.add_component(entity, self.#fields);
+                )*
+                entity
             }
         }
     };
