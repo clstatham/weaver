@@ -1,14 +1,8 @@
 use app::App;
-use weaver_proc_macro::system;
 
 pub mod app;
 pub mod core;
 pub mod renderer;
-
-// #[system]
-// fn test_system(foo: i32, bar: f32) {
-//     println!("test_system {foo} {bar}");
-// }
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -24,8 +18,7 @@ fn main() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use weaver_ecs::{Component, Entity, Read, Write};
-    use weaver_proc_macro::{system, Bundle, Component};
+    use weaver_ecs::{system, Bundle, Component, Read, Write};
 
     struct FooComponent(pub i32);
 

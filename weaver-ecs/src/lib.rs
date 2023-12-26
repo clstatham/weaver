@@ -15,3 +15,5 @@ pub use {
     system::System,
     world::World,
 };
+
+pub use weaver_proc_macro::{system, Bundle, Component};
