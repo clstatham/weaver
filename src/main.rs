@@ -24,7 +24,7 @@ fn main() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use weaver_ecs::{Bundle, Component, Read};
+    use weaver_ecs::{Component, Entity, Read, Write};
     use weaver_proc_macro::{system, Bundle, Component};
 
     struct FooComponent(pub i32);
@@ -49,44 +49,44 @@ mod tests {
         }
     }
 
-    #[system(Bar)]
-    fn bar_system(foo: Read<FooComponent>, bar: Read<BarComponent>) {
-        foo.iter().zip(bar.iter()).for_each(|(foo, bar)| {
-            println!("bar_system {} {}", foo.0, bar.0);
-        });
-    }
-
-    #[test]
-    fn foo() {
-        let mut world = weaver_ecs::World::new();
-        let entity = world.create_entity();
-        world.add_component(entity, FooComponent(42));
-        world.add_component(entity, BarComponent(4.2069));
-        world.add_system(Bar);
-
-        world.update();
+    #[system(BarSys)]
+    fn bar_system(foo: Read<FooComponent>, mut bar: Write<BarComponent>) {
+        for foo in foo.iter() {
+            println!("bar_system foo={}", foo.0);
+        }
+        for bar in bar.iter_mut() {
+            bar.0 += 1.0;
+            println!("bar_system bar={}", bar.0);
+        }
     }
 
     #[test]
     fn test_bundle() {
-        #[derive(Debug, Component)]
-        struct Foo(i32);
-
-        #[derive(Debug, Component)]
-        struct Bar(f32);
-
-        #[derive(Debug, Bundle)]
+        #[derive(Bundle)]
         struct FooBarBundle {
-            foo: Foo,
-            bar: Bar,
+            foo: FooComponent,
+            bar: BarComponent,
         }
 
         let mut world = weaver_ecs::World::new();
         let entity = world.build(FooBarBundle {
-            foo: Foo(42),
-            bar: Bar(4.2069),
+            foo: FooComponent(42),
+            bar: BarComponent(4.2069),
         });
+        let entity2 = world.create_entity();
+        world.add_component(entity2, BarComponent(69.420));
+
+        world.add_system(BarSys);
 
         world.update();
+        world.update();
+        world.update();
+
+        let foo = world.read::<FooComponent>();
+        let bar = world.read::<BarComponent>();
+
+        assert_eq!(foo.get(entity).unwrap().0, 42);
+        assert_eq!(bar.get(entity).unwrap().0, 7.2069);
+        assert_eq!(bar.get(entity2).unwrap().0, 72.420);
     }
 }

@@ -2,6 +2,7 @@ use proc_macro::*;
 use quote::{format_ident, quote};
 
 static COMPONENT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static RESOURCE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 #[proc_macro_derive(Component)]
 pub fn component_derive(input: TokenStream) -> TokenStream {
@@ -30,8 +31,13 @@ pub fn resource_derive(input: TokenStream) -> TokenStream {
 
 fn impl_resource_macro(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
+    let id = RESOURCE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let gen = quote! {
-        impl weaver_ecs::resource::Resource for #name {}
+        impl weaver_ecs::resource::Resource for #name {
+            fn resource_id() -> u64 {
+                #id
+            }
+        }
     };
     gen.into()
 }
@@ -51,8 +57,9 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
     let args = &ast.sig.inputs;
 
     let mut arg_types = Vec::new();
+    let mut arg_read_or_write = Vec::new();
 
-    // assert that all arguments are `Read`
+    // assert that all arguments are `Read` or `Write`
     for arg in args {
         match arg {
             syn::FnArg::Typed(pat_type) => {
@@ -62,7 +69,11 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                         let segments = &path.path.segments;
                         let segment = segments.last().unwrap();
                         let ident = &segment.ident;
-                        if ident != "Read" {
+                        if ident == "Read" {
+                            arg_read_or_write.push(format_ident!("read"));
+                        } else if ident == "Write" {
+                            arg_read_or_write.push(format_ident!("write"));
+                        } else {
                             panic!("Invalid argument type");
                         }
 
@@ -96,13 +107,29 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
         }
     }
 
-    let arg_names = args
-        .iter()
-        .map(|arg| match arg {
-            syn::FnArg::Typed(pat_type) => &pat_type.pat,
+    let mut arg_names = Vec::new();
+    let mut arg_decls = Vec::new();
+    for arg in args.iter() {
+        match arg {
+            syn::FnArg::Typed(pat_type) => {
+                let pat = &pat_type.pat;
+                match &**pat {
+                    syn::Pat::Ident(ident) => {
+                        let muta = &ident.mutability;
+                        let ident = &ident.ident;
+                        arg_decls.push(quote! {
+                            #muta #ident
+                        });
+                        arg_names.push(quote! {
+                            #ident
+                        });
+                    }
+                    _ => panic!("Invalid argument type"),
+                }
+            }
             _ => panic!("Invalid argument type"),
-        })
-        .collect::<Vec<_>>();
+        }
+    }
 
     let gen = quote! {
         #ast
@@ -111,10 +138,11 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
         #vis struct #system_struct_name;
 
         impl weaver_ecs::system::System for #system_struct_name {
+            #[allow(unused_mut)]
             fn run(&self, world: &weaver_ecs::World) {
                 #(
-                    let #arg_names = world.query::<#arg_types>();
-                )*;
+                    let #arg_decls = world.#arg_read_or_write::<#arg_types>();
+                )*
                 #name(#(#arg_names),*);
             }
         }

@@ -2,12 +2,13 @@ use std::sync::{Arc, RwLock};
 
 use rustc_hash::FxHashMap;
 
-use crate::{Bundle, Component, Entity, Read, System};
+use crate::{query::Write, resource::Res, Bundle, Component, Entity, Read, Resource, System};
 
 #[derive(Default)]
 pub struct World {
     pub(crate) entities_components: FxHashMap<Entity, Vec<Arc<RwLock<dyn Component>>>>,
     pub(crate) systems: Vec<Box<dyn System>>,
+    pub(crate) resources: FxHashMap<u64, Arc<RwLock<dyn crate::resource::Resource>>>,
 }
 
 impl World {
@@ -40,8 +41,22 @@ impl World {
         }
     }
 
-    pub fn query<T: Component>(&self) -> Read<T> {
+    pub fn insert_resource<T: Resource>(&mut self, resource: T) {
+        let resource = Arc::new(RwLock::new(resource));
+        self.resources.insert(T::resource_id(), resource);
+    }
+
+    pub fn read_resource<T: Resource>(&self) -> Res<T> {
+        let resource = self.resources.get(&T::resource_id()).unwrap();
+        Res::new(resource.read().unwrap())
+    }
+
+    pub fn read<T: Component>(&self) -> Read<'_, T> {
         Read::new(self)
+    }
+
+    pub fn write<T: Component>(&self) -> Write<'_, T> {
+        Write::new(self)
     }
 
     pub fn add_system<S: System + 'static>(&mut self, system: S) {
