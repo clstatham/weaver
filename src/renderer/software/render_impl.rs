@@ -1,10 +1,10 @@
 use super::{
     shader::{self, VertexShader},
-    Pixel, Renderer,
+    Pixel, SoftwareRenderer,
 };
-use crate::core::{texture::Texture, Vertex};
+use crate::core::{camera::PerspectiveCamera, texture::Texture, Vertex};
 
-impl Renderer {
+impl SoftwareRenderer {
     /// Draws a filled triangle between three world-space vertices using the barycentric method.
     #[allow(clippy::too_many_arguments)]
     pub fn triangle<V: VertexShader>(
@@ -14,9 +14,10 @@ impl Renderer {
         v2: Vertex,
         vertex_shader: &V,
         texture: Option<&Texture>,
+        camera: &PerspectiveCamera,
     ) -> Vec<Pixel> {
         let camera_shader =
-            shader::CameraProjection::new(&self.camera, self.screen_width, self.screen_height);
+            shader::CameraProjection::new(camera, self.screen_width, self.screen_height);
         let v0 = camera_shader.vertex_shader(vertex_shader.vertex_shader(v0));
         let v1 = camera_shader.vertex_shader(vertex_shader.vertex_shader(v1));
         let v2 = camera_shader.vertex_shader(vertex_shader.vertex_shader(v2));

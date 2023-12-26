@@ -4,19 +4,20 @@ use winit_input_helper::WinitInputHelper;
 use crate::{
     core::input::Input,
     ecs::{
-        bundle::Bundle, component::Component, entity::Entity, system::ExclusiveSystem, world::World,
+        bundle::Bundle, component::Component, entity::Entity, resource::Resource,
+        system::ExclusiveSystem, world::World,
     },
     renderer::{gpu::GpuRenderer, Renderer},
 };
 
-pub struct App {
+pub struct App<R: Renderer + 'static> {
     event_loop: EventLoop<()>,
     input: WinitInputHelper,
     window: Window,
 
     pub(crate) world: World,
 
-    pub(crate) renderer: GpuRenderer,
+    pub(crate) renderer: R,
 
     last_frame: std::time::Instant,
 
@@ -24,7 +25,7 @@ pub struct App {
     fps_last_update: std::time::Instant,
 }
 
-impl App {
+impl<R: Renderer> App<R> {
     pub fn new(screen_width: usize, screen_height: usize) -> Self {
         let event_loop = EventLoop::new();
         let input = WinitInputHelper::new();
@@ -37,7 +38,8 @@ impl App {
         let mut world = World::new();
         world.insert_resource(Input::default());
 
-        let renderer = pollster::block_on(GpuRenderer::new(&window));
+        // let renderer = pollster::block_on(GpuRenderer::new(&window));
+        let renderer = R::create(&window).unwrap();
 
         Self {
             event_loop,
@@ -69,6 +71,10 @@ impl App {
 
     pub fn register_system<T: ExclusiveSystem>(&mut self, system: T) {
         self.world.register_system(system)
+    }
+
+    pub fn insert_resource<T: Resource>(&mut self, resource: T) {
+        self.world.insert_resource(resource)
     }
 
     pub fn run(mut self) {

@@ -2,9 +2,11 @@ use rustc_hash::FxHashMap;
 use winit::window::Window;
 
 use crate::{
-    core::{mesh::Mesh, transform::Transform, Vertex},
+    core::{mesh::Mesh, transform::Transform},
     ecs::{entity::Entity, world::World},
 };
+
+use super::Renderer;
 
 struct MeshRenderInfo {
     vertex_buffer: wgpu::Buffer,
@@ -84,7 +86,7 @@ impl GpuRenderer {
         }
     }
 
-    pub fn render(&mut self, world: &mut World) -> anyhow::Result<()> {
+    pub fn render_impl(&mut self, world: &mut World) -> anyhow::Result<()> {
         let output = self.surface.get_current_texture()?;
 
         let view = output
@@ -163,5 +165,17 @@ impl GpuRenderer {
         output.present();
 
         Ok(())
+    }
+}
+
+impl Renderer for GpuRenderer {
+    fn create(window: &winit::window::Window) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(pollster::block_on(Self::new(window)))
+    }
+    fn render(&mut self, world: &mut World) -> anyhow::Result<()> {
+        self.render_impl(world)
     }
 }

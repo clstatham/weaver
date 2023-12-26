@@ -1,8 +1,11 @@
+use crate::ecs::resource::Resource;
+
 pub struct PerspectiveCamera {
     pub view_matrix: glam::Mat4,
     pub projection_matrix: glam::Mat4,
     inverse_view_matrix: glam::Mat4,
 }
+impl Resource for PerspectiveCamera {}
 
 impl PerspectiveCamera {
     pub fn new(

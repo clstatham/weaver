@@ -1,4 +1,5 @@
 use core::{
+    camera::PerspectiveCamera,
     color::Color,
     input::Input,
     light::{DirectionalLight, Light, SpotLight},
@@ -8,6 +9,7 @@ use core::{
 
 use app::App;
 use ecs::{component::Component, world::World};
+use renderer::{gpu::GpuRenderer, software::SoftwareRenderer};
 
 #[macro_use]
 pub mod ecs;
@@ -67,7 +69,17 @@ impl Component for Mark {}
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let mut app = App::new(800, 600);
+    let mut app = App::<SoftwareRenderer>::new(800, 600);
+
+    // add camera
+    app.insert_resource(PerspectiveCamera::new(
+        glam::Vec3::new(5.0, 5.0, 5.0),
+        glam::Vec3::ZERO,
+        90.0,
+        800.0 / 600.0,
+        0.001,
+        10000.0,
+    ));
 
     // add lights
     app.spawn(Light::Directional(DirectionalLight::new(

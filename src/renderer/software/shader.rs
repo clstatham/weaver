@@ -81,14 +81,14 @@ impl<'a> FragmentShader for ChainFragmentShader<'a> {
 #[macro_export]
 macro_rules! vertex_shader {
     ($($shader:expr),*) => {
-        $crate::renderer::shader::ChainVertexShader(vec![$(Box::new($shader)),*])
+        $crate::renderer::software::shader::ChainVertexShader(vec![$(Box::new($shader)),*])
     };
 }
 
 #[macro_export]
 macro_rules! fragment_shader {
     ($($shader:expr),*) => {
-        $crate::renderer::shader::ChainFragmentShader(vec![$(Box::new($shader)),*])
+        $crate::renderer::software::shader::ChainFragmentShader(vec![$(Box::new($shader)),*])
     };
 }
 
