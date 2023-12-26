@@ -5,19 +5,12 @@ pub mod color;
 pub mod input;
 pub mod light;
 pub mod mesh;
+pub mod model;
 pub mod texture;
+pub mod time;
 pub mod transform;
 
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    PartialEq,
-    serde::Serialize,
-    serde::Deserialize,
-    bytemuck::Pod,
-    bytemuck::Zeroable,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Vertex {
     pub position: glam::Vec3,

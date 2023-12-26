@@ -1,2 +1,4 @@
 /target
 /profile.json
+/weaver-proc-macro/target
+/weaver-ecs/target

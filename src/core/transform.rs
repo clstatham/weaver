@@ -1,14 +1,9 @@
-use wgpu::util::DeviceExt;
-
-use crate::ecs::component::Component;
-
 use super::Vertex;
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, weaver_proc_macro::Component)]
 pub struct Transform {
     pub matrix: glam::Mat4,
 }
-impl Component for Transform {}
 
 impl Transform {
     pub fn new() -> Self {
@@ -44,42 +39,6 @@ impl Transform {
             color,
             uv,
         }
-    }
-
-    pub fn create_bind_group_and_buffer(
-        &self,
-        device: &wgpu::Device,
-    ) -> (wgpu::BindGroup, wgpu::Buffer) {
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Transform Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Transform Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[self.matrix]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Transform Bind Group"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(uniform_buffer.as_entire_buffer_binding()),
-            }],
-        });
-
-        (bind_group, uniform_buffer)
     }
 }
 

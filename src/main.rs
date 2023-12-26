@@ -1,136 +1,69 @@
-use core::{
-    camera::PerspectiveCamera,
-    color::Color,
-    input::Input,
-    light::{DirectionalLight, Light, SpotLight},
-    mesh::Mesh,
-    transform::Transform,
-};
-
 use app::App;
-use ecs::{component::Component, world::World};
-use renderer::{gpu::GpuRenderer, software::SoftwareRenderer};
+use weaver_proc_macro::system;
 
-#[macro_use]
-pub mod ecs;
 pub mod app;
 pub mod core;
 pub mod renderer;
 
-fn test_system(world: &mut World, delta: std::time::Duration) {
-    let (w, s, a, d) = {
-        let input = world.read_resource::<Input>().unwrap();
-        (
-            input.is_key_pressed(winit::event::VirtualKeyCode::W),
-            input.is_key_pressed(winit::event::VirtualKeyCode::S),
-            input.is_key_pressed(winit::event::VirtualKeyCode::A),
-            input.is_key_pressed(winit::event::VirtualKeyCode::D),
-        )
-    };
-    let delta = delta.as_secs_f32();
-    for transform in world
-        .write::<(Mesh, Transform, Mark)>()
-        .get_mut::<Transform>()
-    {
-        transform.rotate(1.0 * delta, glam::Vec3::Y);
-        // if w {
-        //     transform.translate(-1.0 * delta, 0.0, -1.0 * delta);
-        // }
-        // if s {
-        //     transform.translate(1.0 * delta, 0.0, 1.0 * delta);
-        // }
-        // if a {
-        //     transform.translate(1.0 * delta, 0.0, -1.0 * delta);
-        // }
-        // if d {
-        //     transform.translate(-1.0 * delta, 0.0, 1.0 * delta);
-        // }
-    }
-
-    for light in world.write::<Light>().get_mut::<Light>() {
-        if let Light::Spot(light) = light {
-            if w {
-                light.angle += 1.0 * delta;
-                light.angle = light.angle.clamp(0.0, 90.0);
-                dbg!(light.angle);
-            }
-            if s {
-                light.angle -= 1.0 * delta;
-                light.angle = light.angle.clamp(0.0, 90.0);
-                dbg!(light.angle);
-            }
-        }
-    }
-}
-
-struct Mark;
-impl Component for Mark {}
+// #[system]
+// fn test_system(foo: i32, bar: f32) {
+//     println!("test_system {foo} {bar}");
+// }
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let mut app = App::<SoftwareRenderer>::new(800, 600);
+    let mut app = App::builder(1600, 900).build();
 
-    // add camera
-    app.insert_resource(PerspectiveCamera::new(
-        glam::Vec3::new(5.0, 5.0, 5.0),
-        glam::Vec3::ZERO,
-        90.0,
-        800.0 / 600.0,
-        0.001,
-        10000.0,
-    ));
-
-    // add lights
-    app.spawn(Light::Directional(DirectionalLight::new(
-        glam::Vec3::new(1.0, 0.0, 0.0).normalize(),
-        Color::new(1.0, 1.0, 1.0),
-        1.0,
-    )));
-    app.spawn(Light::Spot(SpotLight::new(
-        glam::Vec3::new(-10.0, 0.0, 0.0),
-        glam::Vec3::new(1.0, 0.0, 0.0).normalize(),
-        Color::new(0.0, 1.0, 0.0),
-        1.0,
-        30.0,
-    )));
-    app.spawn(Light::Spot(SpotLight::new(
-        glam::Vec3::new(0.0, -10.0, 0.0),
-        glam::Vec3::new(0.0, 10.0, 0.0).normalize(),
-        Color::new(0.0, 0.0, 1.0),
-        1.0,
-        30.0,
-    )));
-
-    let mesh = Mesh::load_gltf("assets/wooden_monkey.glb")?;
-
-    // for vertex in mesh.vertices.iter_mut() {
-    //     vertex.color = Color::new(1.0, 0.0, 0.0);
-    // }
-    app.build((mesh, Transform::default().translate(0.0, 0.0, 0.0), Mark));
-
-    // for vertex in mesh.vertices.iter_mut() {
-    //     vertex.color = Color::new(0.0, 1.0, 0.0);
-    // }
-    // let monkey2 = app.build((mesh.clone(), Transform::default().translate(1.0, 0.0, 0.0)));
-
-    // for vertex in mesh.vertices.iter_mut() {
-    //     vertex.color = Color::new(0.0, 0.0, 1.0);
-    // }
-    // let monkey3 = app.build((mesh.clone(), Transform::default().translate(0.0, 1.0, 0.0)));
-
-    // for vertex in mesh.vertices.iter_mut() {
-    //     vertex.color = Color::new(1.0, 1.0, 0.0);
-    // }
-    // let monkey4 = app.build((
-    //     mesh.clone(),
-    //     Transform::default().translate(0.0, -1.0, 0.0),
-    //     Mark,
-    // ));
-
-    app.register_system(test_system);
+    let model1 = app.load_model("assets/wooden_monkey.glb")?;
 
     app.run();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use weaver_ecs::{Component, Read};
+    use weaver_proc_macro::system;
+
+    struct FooComponent(pub i32);
+
+    unsafe impl Component for FooComponent {
+        fn component_id() -> u64
+        where
+            Self: Sized,
+        {
+            0
+        }
+    }
+
+    struct BarComponent(pub f32);
+
+    unsafe impl Component for BarComponent {
+        fn component_id() -> u64
+        where
+            Self: Sized,
+        {
+            1
+        }
+    }
+
+    #[system(Bar)]
+    fn bar_system(foo: Read<FooComponent>, bar: Read<BarComponent>) {
+        foo.iter().zip(bar.iter()).for_each(|(foo, bar)| {
+            println!("bar_system {} {}", foo.0, bar.0);
+        });
+    }
+
+    #[test]
+    fn foo() {
+        let mut world = weaver_ecs::World::new();
+        let entity = world.create_entity();
+        world.add_component(entity, FooComponent(42));
+        world.add_component(entity, BarComponent(4.2069));
+        world.add_system(Bar);
+
+        world.update();
+    }
 }

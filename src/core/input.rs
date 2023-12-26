@@ -3,8 +3,6 @@ use winit::event::{Event, MouseButton, WindowEvent};
 
 pub use winit::event::VirtualKeyCode as KeyCode;
 
-use crate::ecs::resource::Resource;
-
 #[derive(Default)]
 pub struct Input {
     pub keys: FxHashMap<KeyCode, bool>,
@@ -13,7 +11,6 @@ pub struct Input {
     pub mouse_delta: glam::Vec2,
     pub mouse_wheel_delta: f32,
 }
-impl Resource for Input {}
 
 impl Input {
     pub fn is_key_pressed(&self, key: KeyCode) -> bool {

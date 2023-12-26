@@ -1,22 +1,10 @@
-use crate::ecs::component::Component;
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    serde::Serialize,
-    serde::Deserialize,
-    bytemuck::Pod,
-    bytemuck::Zeroable,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
     pub b: f32,
 }
-impl Component for Color {}
 
 impl Color {
     pub const BLACK: Color = Color {

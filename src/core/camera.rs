@@ -1,43 +1,63 @@
-use crate::ecs::resource::Resource;
-
-pub struct PerspectiveCamera {
-    pub view_matrix: glam::Mat4,
-    pub projection_matrix: glam::Mat4,
-    inverse_view_matrix: glam::Mat4,
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+pub struct CameraUniform {
+    pub view_projection_matrix: glam::Mat4,
+    pub camera_position: glam::Vec4,
 }
-impl Resource for PerspectiveCamera {}
 
-impl PerspectiveCamera {
+impl CameraUniform {
+    pub fn new() -> Self {
+        Self {
+            view_projection_matrix: glam::Mat4::IDENTITY,
+            camera_position: glam::Vec4::ZERO,
+        }
+    }
+
+    pub fn update(&mut self, camera: &Camera) {
+        self.view_projection_matrix = camera.view_projection_matrix();
+        self.camera_position = camera.eye.extend(1.0);
+    }
+}
+
+impl Default for CameraUniform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct Camera {
+    pub eye: glam::Vec3,
+    pub target: glam::Vec3,
+    pub up: glam::Vec3,
+    pub fov: f32,
+    pub aspect: f32,
+    pub near: f32,
+    pub far: f32,
+}
+
+impl Camera {
     pub fn new(
-        position: glam::Vec3,
-        look_at: glam::Vec3,
+        eye: glam::Vec3,
+        target: glam::Vec3,
+        up: glam::Vec3,
         fov: f32,
         aspect: f32,
         near: f32,
         far: f32,
     ) -> Self {
-        let view_matrix = glam::Mat4::look_at_rh(position, look_at, glam::Vec3::NEG_Y);
-        let projection_matrix = glam::Mat4::perspective_rh(fov, aspect, near, far);
-        let inverse_view_matrix = view_matrix.inverse();
-
         Self {
-            view_matrix,
-            projection_matrix,
-            inverse_view_matrix,
+            eye,
+            target,
+            up,
+            fov,
+            aspect,
+            near,
+            far,
         }
     }
 
-    pub fn position(&self) -> glam::Vec3 {
-        self.inverse_view_matrix.col(3).truncate()
-    }
-
-    pub fn look_at(&mut self, eye: glam::Vec3, target: glam::Vec3, up: glam::Vec3) {
-        self.view_matrix = glam::Mat4::look_at_rh(eye, target, up);
-        self.inverse_view_matrix = self.view_matrix.inverse();
-    }
-
-    pub fn world_to_projection(&self, position: glam::Vec3) -> glam::Vec3 {
-        let view = self.view_matrix.transform_point3(position);
-        self.projection_matrix.transform_point3(view)
+    pub fn view_projection_matrix(&self) -> glam::Mat4 {
+        glam::Mat4::perspective_rh_gl(self.fov, self.aspect, self.near, self.far)
+            * glam::Mat4::look_at_rh(self.eye, self.target, self.up)
     }
 }

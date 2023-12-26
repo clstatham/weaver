@@ -1,5 +1,3 @@
-use crate::ecs::component::Component;
-
 use super::color::Color;
 
 #[derive(Debug, Clone, Copy)]
@@ -8,7 +6,6 @@ pub enum Light {
     Directional(DirectionalLight),
     Spot(SpotLight),
 }
-impl Component for Light {}
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointLight {
@@ -16,7 +13,6 @@ pub struct PointLight {
     pub color: Color,
     pub intensity: f32,
 }
-impl Component for PointLight {}
 
 impl PointLight {
     pub fn new(position: glam::Vec3, color: Color, intensity: f32) -> Self {
@@ -34,7 +30,6 @@ pub struct DirectionalLight {
     pub color: Color,
     pub intensity: f32,
 }
-impl Component for DirectionalLight {}
 
 impl DirectionalLight {
     pub fn new(direction: glam::Vec3, color: Color, intensity: f32) -> Self {
@@ -54,7 +49,6 @@ pub struct SpotLight {
     pub intensity: f32,
     pub angle: f32,
 }
-impl Component for SpotLight {}
 
 impl SpotLight {
     pub fn new(
