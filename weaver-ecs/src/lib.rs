@@ -7,8 +7,13 @@ pub mod system;
 pub mod world;
 
 pub use {
-    bundle::Bundle, component::Component, entity::Entity, query::Read, resource::Resource,
-    system::System, world::World,
+    bundle::Bundle,
+    component::Component,
+    entity::Entity,
+    query::{Query, Queryable, Read, Write},
+    resource::Resource,
+    system::System,
+    world::World,
 };
 
 pub use weaver_proc_macro::{system, Bundle, Component, Resource};

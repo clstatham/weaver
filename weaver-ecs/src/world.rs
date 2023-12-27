@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use rustc_hash::FxHashMap;
 
 use crate::{
-    query::{Query, Write},
+    query::Write,
     resource::{Res, ResMut},
     Bundle, Component, Entity, Read, Resource, System,
 };
