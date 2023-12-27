@@ -249,47 +249,64 @@ pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
         tuple_indices.push(syn::Index::from(i));
     }
 
+    let first_query_name = &query_names[0];
+
+    let rest_query_names = &query_names[1..];
+
     let gen = quote! {
-        impl<'world, 'query, 'item, #(#query_names),*> Queryable<'world, 'query, 'item> for (#(#query_names),*)
+        impl<'w, 'q, #(#query_names),*> Queryable<'w, 'q> for (#(#query_names),*)
         where
-            'world: 'query,
-            'query: 'item,
-            #(#query_names: Queryable<'world, 'query, 'item>),*,
+            'w: 'q,
+            #(#query_names: Queryable<'w, 'q>),*
         {
             type Item = (#(#item_names),*);
             type ItemRef = (#(#item_refs),*);
+            type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'q>;
 
-            fn can_write() -> bool {
+            fn create(world: &'w World) -> Self {
+                (#(
+                    #query_names::create(world)
+                ),*)
+            }
+
+            fn entities(&self) -> BTreeSet<Entity> {
+                let (#(#query_names),*) = self;
+                let mut entities = #first_query_name.entities();
                 #(
-                    #query_names::can_write() ||
+                    entities = entities.bitand(&#rest_query_names.entities());
                 )*
-                false
+                entities
             }
 
-            fn construct(world: &'world World) -> Self {
-                (
-                    #(
-                        #query_names::construct(world),
-                    )*
+            fn get(&'q self, entity: Entity) -> Option<Self::ItemRef> {
+                let entities = self.entities();
+                let (#(#query_names),*) = self;
+                if entities.contains(&entity) {
+                    Some((
+                        #first_query_name.get(entity)?,
+                        #(
+                            #rest_query_names.get(entity)?
+                        ),*
+                    ))
+                } else {
+                    None
+                }
+            }
+
+            fn iter(&'q self) -> Self::Iter {
+                let entities = self.entities();
+                let (#(#query_names),*) = self;
+
+                Box::new(
+                    entities
+                        .into_iter()
+                        .map(|entity| (
+                            #first_query_name.get(entity).unwrap(),
+                            #(
+                                #rest_query_names.get(entity).unwrap()
+                            ),*
+                        ))
                 )
-            }
-
-            fn get(&'query mut self, entity: Entity) -> Option<Self::ItemRef> {
-                let (#(#query_names),*) = self;
-                Some((
-                    #(
-                        #query_names.get(entity)?,
-                    )*
-                ))
-            }
-
-            fn iter(&'query mut self) -> Box<dyn Iterator<Item = Self::ItemRef> + 'item> {
-                let (#(#query_names),*) = self;
-                Box::new(itertools::multizip((
-                    #(
-                        #query_names.iter(),
-                    )*
-                )))
             }
         }
     };

@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use rustc_hash::FxHashMap;
 
 use crate::{
-    query::{Query, Queryable, Write},
+    query::{Query, Write},
     resource::{Res, ResMut},
     Bundle, Component, Entity, Read, Resource, System,
 };
@@ -68,14 +68,11 @@ impl World {
         Write::new(self)
     }
 
-    pub fn query<'world, 'query, 'item, Q: Queryable<'world, 'query, 'item>>(
-        &'world self,
-    ) -> Query<'world, 'query, 'item, Q>
+    pub fn query<'w, 'q, Q: crate::query::Queryable<'w, 'q>>(&'w self) -> Q
     where
-        'world: 'query,
-        'query: 'item,
+        'w: 'q,
     {
-        Query::new(self)
+        Q::create(self)
     }
 
     pub fn add_system<S: System + 'static>(&mut self, system: S) {

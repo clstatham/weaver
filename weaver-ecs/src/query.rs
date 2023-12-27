@@ -1,219 +1,208 @@
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    collections::{BTreeMap, BTreeSet},
+    ops::BitAnd,
+    sync::{RwLockReadGuard, RwLockWriteGuard},
+};
 
-use rustc_hash::FxHashMap;
-use weaver_proc_macro::impl_queryable_for_n_tuple;
+use crate::{Component, Entity, World};
 
-use crate::{component::Component, entity::Entity, World};
-
-pub trait Queryable<'world, 'query, 'item>
+pub trait Queryable<'w, 'q>
 where
-    'world: 'query,
-    'query: 'item,
+    'w: 'q,
 {
-    type Item: 'item;
-    type ItemRef: 'item;
+    type Item;
+    type ItemRef;
+    type Iter;
 
-    fn can_write() -> bool
-    where
-        Self: Sized;
-
-    fn construct(world: &'world World) -> Self
-    where
-        Self: Sized;
-
-    fn get(&'query mut self, entity: Entity) -> Option<Self::ItemRef>;
-    fn iter(&'query mut self) -> Box<dyn Iterator<Item = Self::ItemRef> + 'item>;
+    fn create(world: &'w World) -> Self;
+    fn entities(&self) -> BTreeSet<Entity>;
+    fn get(&'q self, entity: Entity) -> Option<Self::ItemRef>;
+    fn iter(&'q self) -> Self::Iter;
 }
 
-/// A `read` query. This is used to query for immutable references to components of a specific type.
-pub struct Read<'a, T>
-where
-    T: Component,
-{
-    entries: FxHashMap<Entity, RwLockReadGuard<'a, dyn Component>>,
-    _phantom: std::marker::PhantomData<T>,
+pub struct Read<'a, T> {
+    entries: BTreeMap<Entity, RefCell<RwLockReadGuard<'a, dyn Component>>>,
+    _marker: std::marker::PhantomData<T>,
 }
 
 impl<'a, T> Read<'a, T>
 where
     T: Component,
 {
-    /// Creates a new `read` query containing immutable references to components in the given `World`.
-    pub(crate) fn new(world: &'a World) -> Self {
-        let entries = world
-            .entities_components
-            .iter()
-            .filter_map(|(entity, components)| {
-                components
+    pub(crate) fn new(world: &'a crate::World) -> Self {
+        let entries = world.entities_components.iter().fold(
+            BTreeMap::new(),
+            |mut entries, (entity, components)| {
+                if let Some(component) = components
                     .iter()
                     .find(|component| component.read().unwrap().as_any().is::<T>())
-                    .map(|component| (*entity, component.read().unwrap()))
-            })
-            .collect();
-
+                {
+                    entries.insert(*entity, RefCell::new(component.read().unwrap()));
+                }
+                entries
+            },
+        );
         Self {
             entries,
-            _phantom: std::marker::PhantomData,
+            _marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<'world, 'query, 'item, T> Queryable<'world, 'query, 'item> for Read<'world, T>
+impl<'w, 'q, T> Queryable<'w, 'q> for Read<'w, T>
 where
-    'world: 'query,
-    'query: 'item,
+    'w: 'q,
     T: Component,
 {
     type Item = T;
-    type ItemRef = &'item T;
+    type ItemRef = Ref<'q, T>;
+    type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'q>;
 
-    fn can_write() -> bool {
-        false
-    }
-
-    fn construct(world: &'world World) -> Self
-    where
-        Self: Sized,
-    {
+    fn create(world: &'w World) -> Self {
         Self::new(world)
     }
 
-    /// Gets an immutable reference to the component for the given `Entity`.
-    fn get(&'query mut self, entity: Entity) -> Option<&'item T> {
-        self.entries
-            .get(&entity)
-            .map(|entry| &**entry)
-            .map(|entry| entry.as_any().downcast_ref::<T>().unwrap())
+    fn entities(&self) -> BTreeSet<Entity> {
+        self.entries.keys().copied().collect()
     }
 
-    /// Returns an iterator over the components in the query. This iterator will yield immutable references.
-    fn iter(&'query mut self) -> Box<dyn Iterator<Item = &'item T> + '_> {
-        Box::new(self.entries.values().map(|entry| &**entry).map(|entry| {
-            entry
-                .as_any()
-                .downcast_ref::<T>()
-                .expect("failed to downcast component")
+    fn get(&'q self, entity: Entity) -> Option<Self::ItemRef> {
+        self.entries
+            .get(&entity)
+            .filter(|component| component.borrow().as_any().is::<T>())
+            .map(|component| {
+                Ref::map(component.borrow(), |component| {
+                    component
+                        .as_any()
+                        .downcast_ref::<T>()
+                        .expect("Failed to downcast component")
+                })
+            })
+    }
+
+    fn iter(&'q self) -> Self::Iter {
+        Box::new(self.entries.values().map(|component| {
+            Ref::map(component.borrow(), |component| {
+                component
+                    .as_any()
+                    .downcast_ref::<T>()
+                    .expect("Failed to downcast component")
+            })
         }))
     }
 }
 
-/// A `write` query. This is used to query for mutable references to components of a specific type.
-pub struct Write<'a, T>
-where
-    T: Component,
-{
-    entries: FxHashMap<Entity, RwLockWriteGuard<'a, dyn Component>>,
-    _phantom: std::marker::PhantomData<T>,
+pub struct Write<'a, T> {
+    entries: BTreeMap<Entity, RefCell<RwLockWriteGuard<'a, dyn Component>>>,
+    _marker: std::marker::PhantomData<T>,
 }
 
 impl<'a, T> Write<'a, T>
 where
     T: Component,
 {
-    /// Creates a new `write` query containing mutable references to components in the given `World`.
-    pub(crate) fn new(world: &'a World) -> Self {
-        let entries = world
-            .entities_components
-            .iter()
-            .filter_map(|(entity, components)| {
-                components
+    pub(crate) fn new(world: &'a crate::World) -> Self {
+        let entries = world.entities_components.iter().fold(
+            BTreeMap::new(),
+            |mut entries, (entity, components)| {
+                if let Some(component) = components
                     .iter()
                     .find(|component| component.read().unwrap().as_any().is::<T>())
-                    .map(|component| (*entity, component.write().unwrap()))
-            })
-            .collect();
-
+                {
+                    entries.insert(*entity, RefCell::new(component.write().unwrap()));
+                }
+                entries
+            },
+        );
         Self {
             entries,
-            _phantom: std::marker::PhantomData,
+            _marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<'world, 'query, 'item, T> Queryable<'world, 'query, 'item> for Write<'world, T>
+impl<'w, 'q, T> Queryable<'w, 'q> for Write<'w, T>
 where
-    'world: 'query,
-    'query: 'item,
+    'w: 'q,
     T: Component,
 {
     type Item = T;
-    type ItemRef = &'item mut T;
+    type ItemRef = RefMut<'q, T>;
+    type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'q>;
 
-    fn can_write() -> bool {
-        true
-    }
-
-    fn construct(world: &'world World) -> Self
-    where
-        Self: Sized,
-    {
+    fn create(world: &'w World) -> Self {
         Self::new(world)
     }
 
-    /// Gets a mutable reference to the component for the given `Entity`.
-    fn get(&'query mut self, entity: Entity) -> Option<Self::ItemRef> {
-        self.entries
-            .get_mut(&entity)
-            .map(|entry| &mut **entry)
-            .map(|entry| entry.as_any_mut().downcast_mut::<T>().unwrap())
+    fn entities(&self) -> BTreeSet<Entity> {
+        self.entries.keys().copied().collect()
     }
 
-    /// Returns an iterator over the components in the query. This iterator will yield mutable references.
-    fn iter(&'query mut self) -> Box<dyn Iterator<Item = Self::ItemRef> + 'item> {
-        Box::new(
-            self.entries
-                .values_mut()
-                .map(|entry| &mut **entry)
-                .map(|entry| {
-                    entry
+    fn get(&'q self, entity: Entity) -> Option<Self::ItemRef> {
+        self.entries
+            .get(&entity)
+            .filter(|component| component.borrow().as_any().is::<T>())
+            .map(|component| {
+                RefMut::map(component.borrow_mut(), |component| {
+                    component
                         .as_any_mut()
                         .downcast_mut::<T>()
-                        .expect("failed to downcast component")
-                }),
-        )
+                        .expect("Failed to downcast component")
+                })
+            })
+    }
+
+    fn iter(&'q self) -> Self::Iter {
+        Box::new(self.entries.values().map(|component| {
+            RefMut::map(component.borrow_mut(), |component| {
+                component
+                    .as_any_mut()
+                    .downcast_mut::<T>()
+                    .expect("Failed to downcast component")
+            })
+        }))
     }
 }
 
-impl_queryable_for_n_tuple!(2);
-// impl_queryable_for_n_tuple!(3);
-// impl_queryable_for_n_tuple!(4);
+weaver_proc_macro::impl_queryable_for_n_tuple!(2);
+// weaver_proc_macro::impl_queryable_for_n_tuple!(3);
+// weaver_proc_macro::impl_queryable_for_n_tuple!(4);
 
-/// A query that can be used to request references to components from a `World`.
-///
-/// By default, only entities that contain all components in the query will be returned.
-/// Include a `Without` query in the type parameter to request entities that do not contain the component.
-/// Include a `Maybe` query in the type parameter to request entities that may or may not contain the component.
-pub struct Query<'world, 'query, 'item, Q>
+pub struct Query<'w, 'q, T>
 where
-    'world: 'query,
-    'query: 'item,
-    Q: Queryable<'world, 'query, 'item>,
+    'w: 'q,
+    T: Queryable<'w, 'q>,
 {
-    inner: Q,
-    _phantom: std::marker::PhantomData<(&'world (), &'query (), &'item ())>,
+    query: T,
+    _marker: std::marker::PhantomData<(&'w (), &'q ())>,
 }
 
-impl<'world, 'query, 'item, Q> Query<'world, 'query, 'item, Q>
+impl<'w, 'q, T> Queryable<'w, 'q> for Query<'w, 'q, T>
 where
-    'world: 'query,
-    'query: 'item,
-    Q: Queryable<'world, 'query, 'item>,
+    'w: 'q,
+    T: Queryable<'w, 'q>,
 {
-    /// Creates a new query containing references to components in the given `World`.
-    pub(crate) fn new(world: &'world World) -> Self {
+    type Item = T::Item;
+    type ItemRef = T::ItemRef;
+    type Iter = T::Iter;
+
+    fn create(world: &'w World) -> Self {
         Self {
-            inner: Q::construct(world),
-            _phantom: std::marker::PhantomData,
+            query: T::create(world),
+            _marker: std::marker::PhantomData,
         }
     }
 
-    /// Gets a reference to the component for the given `Entity`.
-    pub fn get(&'query mut self, entity: Entity) -> Option<Q::ItemRef> {
-        self.inner.get(entity)
+    fn entities(&self) -> BTreeSet<Entity> {
+        self.query.entities()
     }
 
-    /// Returns an iterator over the components in the query.
-    pub fn iter(&'query mut self) -> Box<dyn Iterator<Item = Q::ItemRef> + 'item> {
-        self.inner.iter()
+    fn get(&'q self, entity: Entity) -> Option<Self::ItemRef> {
+        self.query.get(entity)
+    }
+
+    fn iter(&'q self) -> Self::Iter {
+        self.query.iter()
     }
 }

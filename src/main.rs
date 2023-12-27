@@ -45,41 +45,29 @@ mod tests {
         }
     }
 
+    struct FooBarSystem;
+
+    impl System for FooBarSystem {
+        fn run(&self, world: &World) {
+            let foobars = world.query::<Query<(Read<FooComponent>, Read<BarComponent>)>>();
+            for (foo, bar) in foobars.iter() {
+                println!("Foo: {}, Bar: {}", foo.0, bar.0);
+            }
+        }
+    }
+
     #[system(Foo)]
-    fn foo_system(foo: Query<Read<FooComponent>>) {
-        for foo in foo.iter() {
-            println!("foo: {}", foo.0);
+    fn foo_system(foos: Query<Read<FooComponent>>) {
+        for foo in foos.iter() {
+            println!("Foo: {}", foo.0);
         }
     }
 
     #[system(Bar)]
-    fn bar_system(bar: Query<Read<BarComponent>>) {
-        for bar in bar.iter() {
-            println!("bar: {}", bar.0);
-        }
-    }
-
-    #[system(FooBar)]
-    fn foobar_system(foo: Query<(Read<FooComponent>, Write<BarComponent>)>) {
-        for (foo, bar) in foo.iter() {
+    fn bar_system(bars: Query<Write<BarComponent>>) {
+        for mut bar in bars.iter() {
             bar.0 += 1.0;
-            println!("foobar: {} {}", foo.0, bar.0);
+            println!("Bar: {}", bar.0);
         }
-    }
-
-    #[test]
-    fn test() {
-        let mut world = weaver_ecs::World::new();
-        world.add_system(Foo);
-        world.add_system(Bar);
-        world.add_system(FooBar);
-
-        let entity = world.create_entity();
-        world.add_component(entity, FooComponent(42));
-        world.add_component(entity, BarComponent(6.9));
-
-        world.update();
-        world.update();
-        world.update();
     }
 }
