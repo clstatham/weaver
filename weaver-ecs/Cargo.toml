@@ -9,3 +9,4 @@ edition = "2021"
 rustc-hash = "1.1"
 weaver-proc-macro = { path = "../weaver-proc-macro" }
 itertools = "0.12"
+thiserror = "1.0.52"

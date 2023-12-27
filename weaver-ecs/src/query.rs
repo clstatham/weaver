@@ -33,12 +33,19 @@ where
     pub(crate) fn new(world: &'a crate::World) -> Self {
         let entries = world.entities_components.iter().fold(
             BTreeMap::new(),
-            |mut entries, (entity, components)| {
-                if let Some(component) = components
-                    .iter()
-                    .find(|component| component.read().unwrap().as_any().is::<T>())
-                {
-                    entries.insert(*entity, RefCell::new(component.read().unwrap()));
+            |mut entries, (&entity, components)| {
+                if let Some(component) = components.get(&T::component_id()) {
+                    match world.borrow_intent.try_read::<T>(entity) {
+                        Some(Ok(())) => {
+                            entries.insert(entity, RefCell::new(component.read().unwrap()));
+                        }
+                        Some(Err(e)) => {
+                            panic!("Failed to borrow component: {:?}", e);
+                        }
+                        None => {
+                            // component doesn't exist for the entity; keep going
+                        }
+                    }
                 }
                 entries
             },
@@ -105,12 +112,19 @@ where
     pub(crate) fn new(world: &'a crate::World) -> Self {
         let entries = world.entities_components.iter().fold(
             BTreeMap::new(),
-            |mut entries, (entity, components)| {
-                if let Some(component) = components
-                    .iter()
-                    .find(|component| component.read().unwrap().as_any().is::<T>())
-                {
-                    entries.insert(*entity, RefCell::new(component.write().unwrap()));
+            |mut entries, (&entity, components)| {
+                if let Some(component) = components.get(&T::component_id()) {
+                    match world.borrow_intent.try_write::<T>(entity) {
+                        Some(Ok(())) => {
+                            entries.insert(entity, RefCell::new(component.write().unwrap()));
+                        }
+                        Some(Err(e)) => {
+                            panic!("Failed to borrow component: {:?}", e);
+                        }
+                        None => {
+                            // component doesn't exist for the entity; keep going
+                        }
+                    }
                 }
                 entries
             },
@@ -166,8 +180,8 @@ where
 }
 
 weaver_proc_macro::impl_queryable_for_n_tuple!(2);
-// weaver_proc_macro::impl_queryable_for_n_tuple!(3);
-// weaver_proc_macro::impl_queryable_for_n_tuple!(4);
+weaver_proc_macro::impl_queryable_for_n_tuple!(3);
+weaver_proc_macro::impl_queryable_for_n_tuple!(4);
 
 pub struct Query<'w, 'q, T>
 where

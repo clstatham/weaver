@@ -1,8 +1,12 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    borrow::BorrowMut,
+    sync::{Arc, RwLock},
+};
 
 use rustc_hash::FxHashMap;
 
 use crate::{
+    component::{BorrowIntent, BorrowStatus},
     query::Write,
     resource::{Res, ResMut},
     Bundle, Component, Entity, Read, Resource, System,
@@ -10,9 +14,11 @@ use crate::{
 
 #[derive(Default)]
 pub struct World {
-    pub(crate) entities_components: FxHashMap<Entity, Vec<Arc<RwLock<dyn Component>>>>,
+    pub(crate) entities_components: FxHashMap<Entity, FxHashMap<u64, Arc<RwLock<dyn Component>>>>,
     pub(crate) systems: Vec<Box<dyn System>>,
     pub(crate) resources: FxHashMap<u64, Arc<RwLock<dyn crate::resource::Resource>>>,
+
+    pub(crate) borrow_intent: BorrowIntent,
 }
 
 impl World {
@@ -24,10 +30,17 @@ impl World {
         static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
         let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Entity::new(id, 0)
+        let entity = Entity::new(id, 0);
+        self.entities_components
+            .insert(entity, FxHashMap::default());
+        self.borrow_intent
+            .intended_borrow
+            .borrow_mut()
+            .insert(entity, FxHashMap::default());
+        entity
     }
 
-    pub fn build<T: Bundle>(&mut self, bundle: T) -> Entity {
+    pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
         bundle.build(self)
     }
 
@@ -36,12 +49,27 @@ impl World {
         self.entities_components
             .entry(entity)
             .or_default()
-            .push(component);
+            .insert(T::component_id(), component);
+        self.borrow_intent
+            .intended_borrow
+            .borrow_mut()
+            .entry(entity)
+            .or_default()
+            .insert(T::component_id(), BorrowStatus::None);
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) {
         if let Some(components) = self.entities_components.get_mut(&entity) {
-            components.retain(|component| !component.read().unwrap().as_any().is::<T>());
+            components.remove(&T::component_id());
+        }
+
+        if let Some(components) = self
+            .borrow_intent
+            .intended_borrow
+            .borrow_mut()
+            .get_mut(&entity)
+        {
+            components.remove(&T::component_id());
         }
     }
 
@@ -60,14 +88,6 @@ impl World {
         ResMut::new(resource.write().unwrap())
     }
 
-    pub fn read<T: Component>(&self) -> Read<'_, T> {
-        Read::new(self)
-    }
-
-    pub fn write<T: Component>(&self) -> Write<'_, T> {
-        Write::new(self)
-    }
-
     pub fn query<'w, 'q, Q: crate::query::Queryable<'w, 'q>>(&'w self) -> Q
     where
         'w: 'q,
@@ -79,7 +99,11 @@ impl World {
         self.systems.push(Box::new(system));
     }
 
-    pub fn update(&self) {
+    pub fn update(&mut self) {
+        // SAFE: this is the only time per update that the borrow intent is reset
+        unsafe {
+            self.borrow_intent.borrow_mut().reset();
+        }
         for system in &self.systems {
             system.run(self);
         }
