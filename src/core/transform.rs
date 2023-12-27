@@ -1,6 +1,8 @@
+use weaver_proc_macro::Component;
+
 use super::Vertex;
 
-#[derive(Debug, Clone, Copy, PartialEq, weaver_proc_macro::Component)]
+#[derive(Debug, Clone, Copy, PartialEq, Component)]
 pub struct Transform {
     pub matrix: glam::Mat4,
 }

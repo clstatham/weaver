@@ -2,7 +2,11 @@ use std::sync::{Arc, RwLock};
 
 use rustc_hash::FxHashMap;
 
-use crate::{query::Write, resource::Res, Bundle, Component, Entity, Read, Resource, System};
+use crate::{
+    query::{Query, Queryable, Write},
+    resource::{Res, ResMut},
+    Bundle, Component, Entity, Read, Resource, System,
+};
 
 #[derive(Default)]
 pub struct World {
@@ -51,12 +55,24 @@ impl World {
         Res::new(resource.read().unwrap())
     }
 
+    pub fn write_resource<T: Resource>(&self) -> ResMut<T> {
+        let resource = self.resources.get(&T::resource_id()).unwrap();
+        ResMut::new(resource.write().unwrap())
+    }
+
     pub fn read<T: Component>(&self) -> Read<'_, T> {
         Read::new(self)
     }
 
     pub fn write<T: Component>(&self) -> Write<'_, T> {
         Write::new(self)
+    }
+
+    pub fn query<'a, 'b, Q: Queryable<'a, 'b>>(&'a self) -> Query<'a, 'b, Q>
+    where
+        'a: 'b,
+    {
+        Query::new(self)
     }
 
     pub fn add_system<S: System + 'static>(&mut self, system: S) {

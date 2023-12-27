@@ -50,54 +50,59 @@ pub fn system(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
     let vis = &ast.vis;
-    let name = &ast.sig.ident;
-    // let system_struct_name = format_ident!("{}System", name);
     // get the name from the first attr
     let system_struct_name = syn::parse::<syn::Ident>(attr).unwrap();
     let args = &ast.sig.inputs;
 
-    let mut arg_types = Vec::new();
-    let mut arg_read_or_write = Vec::new();
+    let mut queries = Vec::new();
 
-    // assert that all arguments are `Read` or `Write`
-    for arg in args {
+    // arguments should all be Query<T>
+    for arg in args.iter() {
         match arg {
             syn::FnArg::Typed(pat_type) => {
+                let pat = &pat_type.pat;
                 let ty = &pat_type.ty;
-                match &**ty {
-                    syn::Type::Path(path) => {
-                        let segments = &path.path.segments;
-                        let segment = segments.last().unwrap();
-                        let ident = &segment.ident;
-                        if ident == "Read" {
-                            arg_read_or_write.push(format_ident!("read"));
-                        } else if ident == "Write" {
-                            arg_read_or_write.push(format_ident!("write"));
-                        } else {
-                            panic!("Invalid argument type");
-                        }
-
-                        let generic_args = &segment.arguments;
-                        match generic_args {
-                            syn::PathArguments::AngleBracketed(args) => {
-                                let arg = args.args.first().unwrap();
-                                match arg {
-                                    syn::GenericArgument::Type(ty) => {
-                                        arg_types.push(ty);
-                                    }
-                                    syn::GenericArgument::Lifetime(_) => {
-                                        let arg = args.args.iter().nth(1).unwrap();
-                                        match arg {
-                                            syn::GenericArgument::Type(ty) => {
-                                                arg_types.push(ty);
+                match (&**pat, &**ty) {
+                    (syn::Pat::Ident(_ident), syn::Type::Path(path)) => {
+                        let ty_seg = &path.path.segments.last().unwrap();
+                        if ty_seg.ident == "Query" {
+                            match ty_seg.arguments {
+                                syn::PathArguments::AngleBracketed(ref args) => {
+                                    let arg = args.args.first().unwrap();
+                                    match arg {
+                                        syn::GenericArgument::Lifetime(_) => {}
+                                        syn::GenericArgument::Type(ty) => {
+                                            // parse the tuple of Read<T> and Write<T>
+                                            let ty = &ty;
+                                            match ty {
+                                                syn::Type::Tuple(tup) => {
+                                                    queries.push(quote! {
+                                                        #tup
+                                                    });
+                                                }
+                                                syn::Type::Path(path) => {
+                                                    let ty_seg =
+                                                        &path.path.segments.last().unwrap();
+                                                    if ty_seg.ident == "Read"
+                                                        || ty_seg.ident == "Write"
+                                                    {
+                                                        queries.push(quote! {
+                                                            #path
+                                                        });
+                                                    } else {
+                                                        panic!("Invalid argument type: expected Read or Write")
+                                                    }
+                                                }
+                                                _ => panic!(
+                                                    "Invalid argument type: expected path or tuple"
+                                                ),
                                             }
-                                            _ => panic!("Invalid argument type"),
                                         }
+                                        _ => panic!("Invalid argument type"),
                                     }
-                                    _ => panic!("Invalid argument type"),
                                 }
+                                _ => panic!("Invalid argument type"),
                             }
-                            _ => panic!("Invalid argument type"),
                         }
                     }
                     _ => panic!("Invalid argument type"),
@@ -131,9 +136,9 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
         }
     }
 
-    let gen = quote! {
-        #ast
+    let body = &ast.block;
 
+    let gen = quote! {
         #[allow(non_camel_case_types, dead_code)]
         #vis struct #system_struct_name;
 
@@ -141,9 +146,11 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
             #[allow(unused_mut)]
             fn run(&self, world: &weaver_ecs::World) {
                 #(
-                    let #arg_decls = world.#arg_read_or_write::<#arg_types>();
+                    let #arg_decls = world.query::<#queries>();
                 )*
-                #name(#(#arg_names),*);
+                {
+                    #body
+                }
             }
         }
     };
@@ -216,5 +223,99 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> TokenStream {
             }
         }
     };
+    gen.into()
+}
+
+#[proc_macro]
+pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
+    let mut query_names = Vec::new();
+    let mut component_names = Vec::new();
+    let mut component_refs_lt = Vec::new();
+    let mut component_mut_refs_lt = Vec::new();
+    let mut tuple_indices = Vec::new();
+
+    let count = syn::parse::<syn::LitInt>(input.clone())
+        .unwrap()
+        .base10_parse::<usize>()
+        .unwrap();
+
+    for i in 0..count {
+        let query_name = format_ident!("q{}", i);
+        query_names.push(query_name.clone());
+        component_names.push(quote! {
+            #query_name::Item
+        });
+        component_refs_lt.push(quote! {
+            #query_name::ItemRef
+        });
+        component_mut_refs_lt.push(quote! {
+            #query_name::ItemMut
+        });
+        tuple_indices.push(syn::Index::from(i));
+    }
+
+    let gen = quote! {
+        impl<'a, 'b, #(#query_names),*> Queryable<'a, 'b> for (#(#query_names),*)
+        where
+            'a: 'b,
+            #(#query_names: Queryable<'a, 'b>),*,
+        {
+            type Item = (#(#component_names),*);
+            type ItemRef = (#(#component_refs_lt),*);
+            type ItemMut = (#(#component_mut_refs_lt),*);
+
+            fn can_write() -> bool {
+                #(
+                    #query_names::can_write() ||
+                )*
+                false
+            }
+
+            fn construct(world: &'a World) -> Self {
+                (
+                    #(
+                        #query_names::construct(world),
+                    )*
+                )
+            }
+
+            fn get(&'a self, entity: Entity) -> Option<Self::ItemRef> {
+                Some((
+                    #(
+                        self.#tuple_indices.get(entity)?,
+                    )*
+                ))
+            }
+
+            fn get_mut(&'a mut self, entity: Entity) -> Option<Self::ItemMut> {
+                Some((
+                    #(
+                        self.#tuple_indices.get_mut(entity)?,
+                    )*
+                ))
+            }
+
+            fn iter(&'a self) -> Box<dyn Iterator<Item = Self::ItemRef> + 'b> {
+                Box::new(
+                    itertools::multizip((
+                        #(
+                            self.#tuple_indices.iter()
+                        ),*
+                    ))
+                )
+            }
+
+            fn iter_mut(&'a mut self) -> Box<dyn Iterator<Item = Self::ItemMut> + 'b> {
+                Box::new(
+                    itertools::multizip((
+                        #(
+                            self.#tuple_indices.iter_mut()
+                        ),*
+                    ))
+                )
+            }
+        }
+    };
+
     gen.into()
 }

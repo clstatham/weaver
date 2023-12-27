@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 rustc-hash = "1.1"
 weaver-proc-macro = { path = "../weaver-proc-macro" }
+itertools = "0.12"

@@ -1,9 +1,10 @@
 use rustc_hash::FxHashMap;
+use weaver_proc_macro::Resource;
 use winit::event::{Event, MouseButton, WindowEvent};
 
 pub use winit::event::VirtualKeyCode as KeyCode;
 
-#[derive(Default)]
+#[derive(Default, Resource)]
 pub struct Input {
     pub keys: FxHashMap<KeyCode, bool>,
     pub mouse_buttons: FxHashMap<MouseButton, bool>,
@@ -13,6 +14,10 @@ pub struct Input {
 }
 
 impl Input {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn is_key_pressed(&self, key: KeyCode) -> bool {
         self.keys.get(&key).copied().unwrap_or(false)
     }

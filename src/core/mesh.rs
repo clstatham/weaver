@@ -1,7 +1,9 @@
+use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
 
 use super::{color::Color, Vertex};
 
+#[derive(Component)]
 pub struct Mesh {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,

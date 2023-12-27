@@ -7,7 +7,7 @@ pub mod renderer;
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let mut app = App::builder(1600, 900).build();
+    let mut app = App::new(1600, 900);
 
     let model1 = app.load_model("assets/wooden_monkey.glb")?;
 
@@ -18,7 +18,10 @@ fn main() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use weaver_ecs::{system, Bundle, Component, Read, Write};
+    use weaver_ecs::{
+        query::{Query, Queryable},
+        system, Bundle, Component, Read, System, World,
+    };
 
     struct FooComponent(pub i32);
 
@@ -42,44 +45,38 @@ mod tests {
         }
     }
 
-    #[system(BarSys)]
-    fn bar_system(foo: Read<FooComponent>, mut bar: Write<BarComponent>) {
+    #[system(Foo)]
+    fn foo_system(foo: Query<Read<FooComponent>>) {
         for foo in foo.iter() {
-            println!("bar_system foo={}", foo.0);
+            println!("foo: {}", foo.0);
         }
-        for bar in bar.iter_mut() {
-            bar.0 += 1.0;
-            println!("bar_system bar={}", bar.0);
+    }
+
+    #[system(Bar)]
+    fn bar_system(bar: Query<Read<BarComponent>>) {
+        for bar in bar.iter() {
+            println!("bar: {}", bar.0);
+        }
+    }
+
+    #[system(FooBar)]
+    fn foobar_system(foo: Query<(Read<FooComponent>, Read<BarComponent>)>) {
+        for (foo, bar) in foo.iter() {
+            println!("foobar: {} {}", foo.0, bar.0);
         }
     }
 
     #[test]
-    fn test_bundle() {
-        #[derive(Bundle)]
-        struct FooBarBundle {
-            foo: FooComponent,
-            bar: BarComponent,
-        }
-
+    fn test() {
         let mut world = weaver_ecs::World::new();
-        let entity = world.build(FooBarBundle {
-            foo: FooComponent(42),
-            bar: BarComponent(4.2069),
-        });
-        let entity2 = world.create_entity();
-        world.add_component(entity2, BarComponent(69.420));
+        world.add_system(Foo);
+        world.add_system(Bar);
+        world.add_system(FooBar);
 
-        world.add_system(BarSys);
+        let entity = world.create_entity();
+        world.add_component(entity, FooComponent(42));
+        world.add_component(entity, BarComponent(6.9));
 
         world.update();
-        world.update();
-        world.update();
-
-        let foo = world.read::<FooComponent>();
-        let bar = world.read::<BarComponent>();
-
-        assert_eq!(foo.get(entity).unwrap().0, 42);
-        assert_eq!(bar.get(entity).unwrap().0, 7.2069);
-        assert_eq!(bar.get(entity2).unwrap().0, 72.420);
     }
 }

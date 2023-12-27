@@ -1,7 +1,10 @@
 use std::path::Path;
 
+use weaver_proc_macro::Bundle;
+
 use super::{mesh::Mesh, transform::Transform};
 
+#[derive(Bundle)]
 pub struct Model {
     pub mesh: Mesh,
     pub transform: Transform,

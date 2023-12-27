@@ -1,5 +1,6 @@
-use legion::system;
+use weaver_proc_macro::Resource;
 
+#[derive(Resource)]
 pub struct Time {
     start_time: std::time::Instant,
     last_update_time: std::time::Instant,
@@ -29,9 +30,4 @@ impl Default for Time {
     fn default() -> Self {
         Self::new()
     }
-}
-
-#[system]
-pub fn update_time(#[resource] time: &mut Time) {
-    time.update();
 }

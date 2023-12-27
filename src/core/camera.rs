@@ -1,3 +1,5 @@
+use weaver_proc_macro::Resource;
+
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct CameraUniform {
@@ -25,6 +27,7 @@ impl Default for CameraUniform {
     }
 }
 
+#[derive(Debug, Resource)]
 pub struct Camera {
     pub eye: glam::Vec3,
     pub target: glam::Vec3,
