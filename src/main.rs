@@ -19,7 +19,7 @@ fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use weaver_ecs::{
-        query::{Query, Queryable},
+        query::{Query, Queryable, Write},
         system, Bundle, Component, Read, System, World,
     };
 
@@ -60,8 +60,9 @@ mod tests {
     }
 
     #[system(FooBar)]
-    fn foobar_system(foo: Query<(Read<FooComponent>, Read<BarComponent>)>) {
+    fn foobar_system(foo: Query<(Read<FooComponent>, Write<BarComponent>)>) {
         for (foo, bar) in foo.iter() {
+            bar.0 += 1.0;
             println!("foobar: {} {}", foo.0, bar.0);
         }
     }
@@ -77,6 +78,8 @@ mod tests {
         world.add_component(entity, FooComponent(42));
         world.add_component(entity, BarComponent(6.9));
 
+        world.update();
+        world.update();
         world.update();
     }
 }

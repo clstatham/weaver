@@ -68,9 +68,12 @@ impl World {
         Write::new(self)
     }
 
-    pub fn query<'a, 'b, Q: Queryable<'a, 'b>>(&'a self) -> Query<'a, 'b, Q>
+    pub fn query<'world, 'query, 'item, Q: Queryable<'world, 'query, 'item>>(
+        &'world self,
+    ) -> Query<'world, 'query, 'item, Q>
     where
-        'a: 'b,
+        'world: 'query,
+        'query: 'item,
     {
         Query::new(self)
     }

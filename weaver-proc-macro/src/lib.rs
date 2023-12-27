@@ -120,10 +120,9 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                 let pat = &pat_type.pat;
                 match &**pat {
                     syn::Pat::Ident(ident) => {
-                        let muta = &ident.mutability;
                         let ident = &ident.ident;
                         arg_decls.push(quote! {
-                            #muta #ident
+                            #ident
                         });
                         arg_names.push(quote! {
                             #ident
@@ -146,7 +145,7 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
             #[allow(unused_mut)]
             fn run(&self, world: &weaver_ecs::World) {
                 #(
-                    let #arg_decls = world.query::<#queries>();
+                    let mut #arg_decls = world.query::<#queries>();
                 )*
                 {
                     #body
@@ -229,9 +228,8 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> TokenStream {
 #[proc_macro]
 pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
     let mut query_names = Vec::new();
-    let mut component_names = Vec::new();
-    let mut component_refs_lt = Vec::new();
-    let mut component_mut_refs_lt = Vec::new();
+    let mut item_names = Vec::new();
+    let mut item_refs = Vec::new();
     let mut tuple_indices = Vec::new();
 
     let count = syn::parse::<syn::LitInt>(input.clone())
@@ -240,29 +238,26 @@ pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
         .unwrap();
 
     for i in 0..count {
-        let query_name = format_ident!("q{}", i);
+        let query_name = format_ident!("Q{}", i);
         query_names.push(query_name.clone());
-        component_names.push(quote! {
+        item_names.push(quote! {
             #query_name::Item
         });
-        component_refs_lt.push(quote! {
+        item_refs.push(quote! {
             #query_name::ItemRef
-        });
-        component_mut_refs_lt.push(quote! {
-            #query_name::ItemMut
         });
         tuple_indices.push(syn::Index::from(i));
     }
 
     let gen = quote! {
-        impl<'a, 'b, #(#query_names),*> Queryable<'a, 'b> for (#(#query_names),*)
+        impl<'world, 'query, 'item, #(#query_names),*> Queryable<'world, 'query, 'item> for (#(#query_names),*)
         where
-            'a: 'b,
-            #(#query_names: Queryable<'a, 'b>),*,
+            'world: 'query,
+            'query: 'item,
+            #(#query_names: Queryable<'world, 'query, 'item>),*,
         {
-            type Item = (#(#component_names),*);
-            type ItemRef = (#(#component_refs_lt),*);
-            type ItemMut = (#(#component_mut_refs_lt),*);
+            type Item = (#(#item_names),*);
+            type ItemRef = (#(#item_refs),*);
 
             fn can_write() -> bool {
                 #(
@@ -271,7 +266,7 @@ pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
                 false
             }
 
-            fn construct(world: &'a World) -> Self {
+            fn construct(world: &'world World) -> Self {
                 (
                     #(
                         #query_names::construct(world),
@@ -279,40 +274,22 @@ pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
                 )
             }
 
-            fn get(&'a self, entity: Entity) -> Option<Self::ItemRef> {
+            fn get(&'query mut self, entity: Entity) -> Option<Self::ItemRef> {
+                let (#(#query_names),*) = self;
                 Some((
                     #(
-                        self.#tuple_indices.get(entity)?,
+                        #query_names.get(entity)?,
                     )*
                 ))
             }
 
-            fn get_mut(&'a mut self, entity: Entity) -> Option<Self::ItemMut> {
-                Some((
+            fn iter(&'query mut self) -> Box<dyn Iterator<Item = Self::ItemRef> + 'item> {
+                let (#(#query_names),*) = self;
+                Box::new(itertools::multizip((
                     #(
-                        self.#tuple_indices.get_mut(entity)?,
+                        #query_names.iter(),
                     )*
-                ))
-            }
-
-            fn iter(&'a self) -> Box<dyn Iterator<Item = Self::ItemRef> + 'b> {
-                Box::new(
-                    itertools::multizip((
-                        #(
-                            self.#tuple_indices.iter()
-                        ),*
-                    ))
-                )
-            }
-
-            fn iter_mut(&'a mut self) -> Box<dyn Iterator<Item = Self::ItemMut> + 'b> {
-                Box::new(
-                    itertools::multizip((
-                        #(
-                            self.#tuple_indices.iter_mut()
-                        ),*
-                    ))
-                )
+                )))
             }
         }
     };
