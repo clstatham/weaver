@@ -18,7 +18,7 @@ fn main() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use weaver_ecs::{system, Bundle, Component, Query, Queryable, Read, System, World, Write};
+    use weaver_ecs::{system, Bundle, Component, Queryable, Read, World, Write};
 
     struct CompA(pub i32);
 

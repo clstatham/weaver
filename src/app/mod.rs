@@ -31,12 +31,7 @@ impl App {
         ));
         window.set_resizable(false);
 
-        let renderer = pollster::block_on(Renderer::new(&window));
-
-        let mut world = World::new();
-        world.insert_resource(Time::new());
-        world.insert_resource(Input::new());
-        world.insert_resource(Camera::new(
+        let mut camera = Camera::new(
             glam::Vec3::new(5.0, 5.0, 5.0),
             glam::Vec3::new(0.0, 0.0, 0.0),
             glam::Vec3::Y,
@@ -44,7 +39,14 @@ impl App {
             screen_width as f32 / screen_height as f32,
             0.1,
             100.0,
-        ));
+        );
+
+        let renderer = pollster::block_on(Renderer::new(&window, &mut camera));
+
+        let mut world = World::new();
+        world.insert_resource(Time::new());
+        world.insert_resource(Input::new());
+        world.insert_resource(camera);
 
         Self {
             event_loop,

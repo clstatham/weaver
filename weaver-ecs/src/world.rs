@@ -1,7 +1,4 @@
-use std::{
-    borrow::BorrowMut,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
 use rustc_hash::FxHashMap;
 
@@ -87,9 +84,10 @@ impl World {
         ResMut::new(resource.write().unwrap())
     }
 
-    pub fn query<'w, 'q, Q: crate::query::Queryable<'w, 'q>>(&'w self) -> Q
+    pub fn query<'w, 'q, 'i, Q: crate::query::Queryable<'w, 'q, 'i>>(&'w self) -> Q
     where
         'w: 'q,
+        'q: 'i,
     {
         Q::create(self)
     }

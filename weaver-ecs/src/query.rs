@@ -7,13 +7,14 @@ use std::{
 
 use crate::{Component, Entity, World};
 
-pub trait Queryable<'w, 'q>
+pub trait Queryable<'w, 'q, 'i>
 where
     'w: 'q,
+    'q: 'i,
 {
     type Item;
-    type ItemRef;
-    type Iter;
+    type ItemRef: 'i;
+    type Iter: Iterator<Item = Self::ItemRef> + 'i;
 
     fn create(world: &'w World) -> Self;
     fn entities(&self) -> BTreeSet<Entity>;
@@ -64,14 +65,15 @@ where
     }
 }
 
-impl<'w, 'q, T> Queryable<'w, 'q> for Read<'w, T>
+impl<'w, 'q, 'i, T> Queryable<'w, 'q, 'i> for Read<'w, T>
 where
     'w: 'q,
+    'q: 'i,
     T: Component,
 {
     type Item = T;
-    type ItemRef = Ref<'q, T>;
-    type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'q>;
+    type ItemRef = Ref<'i, T>;
+    type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'i>;
 
     fn create(world: &'w World) -> Self {
         Self::new(world)
@@ -157,14 +159,15 @@ where
     }
 }
 
-impl<'w, 'q, T> Queryable<'w, 'q> for Write<'w, T>
+impl<'w, 'q, 'i, T> Queryable<'w, 'q, 'i> for Write<'w, T>
 where
     'w: 'q,
+    'q: 'i,
     T: Component,
 {
     type Item = T;
-    type ItemRef = RefMut<'q, T>;
-    type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'q>;
+    type ItemRef = RefMut<'i, T>;
+    type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'i>;
 
     fn create(world: &'w World) -> Self {
         Self::new(world)
@@ -218,19 +221,21 @@ weaver_proc_macro::impl_queryable_for_n_tuple!(2);
 weaver_proc_macro::impl_queryable_for_n_tuple!(3);
 weaver_proc_macro::impl_queryable_for_n_tuple!(4);
 
-pub struct Query<'w, 'q, T>
+pub struct Query<'w, 'q, 'i, T>
 where
     'w: 'q,
-    T: Queryable<'w, 'q>,
+    'q: 'i,
+    T: Queryable<'w, 'q, 'i>,
 {
     query: T,
-    _marker: std::marker::PhantomData<(&'w (), &'q ())>,
+    _marker: std::marker::PhantomData<(&'w (), &'q (), &'i ())>,
 }
 
-impl<'w, 'q, T> Queryable<'w, 'q> for Query<'w, 'q, T>
+impl<'w, 'q, 'i, T> Queryable<'w, 'q, 'i> for Query<'w, 'q, 'i, T>
 where
     'w: 'q,
-    T: Queryable<'w, 'q>,
+    'q: 'i,
+    T: Queryable<'w, 'q, 'i>,
 {
     type Item = T::Item;
     type ItemRef = T::ItemRef;

@@ -383,14 +383,15 @@ pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
     let rest_query_names = &query_names[1..];
 
     let gen = quote! {
-        impl<'w, 'q, #(#query_names),*> Queryable<'w, 'q> for (#(#query_names),*)
+        impl<'w, 'q, 'i, #(#query_names),*> Queryable<'w, 'q, 'i> for (#(#query_names),*)
         where
             'w: 'q,
-            #(#query_names: Queryable<'w, 'q>),*
+            'q: 'i,
+            #(#query_names: Queryable<'w, 'q, 'i>),*
         {
             type Item = (#(#item_names),*);
             type ItemRef = (#(#item_refs),*);
-            type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'q>;
+            type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'i>;
 
             fn create(world: &'w World) -> Self {
                 (#(
