@@ -56,11 +56,11 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
 
     let mut query_types = Vec::new();
     let mut res_types = Vec::new();
-    // let mut resmut_types = Vec::new();
+    let mut resmut_types = Vec::new();
 
     let mut query_names = Vec::new();
     let mut res_names = Vec::new();
-    // let mut resmut_names = Vec::new();
+    let mut resmut_names = Vec::new();
 
     let mut seen_types = Vec::new();
 
@@ -108,6 +108,123 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                                     }
                                     _ => panic!("Invalid argument type: Expected Query<...>"),
                                 };
+
+                                match &inner_ty {
+                                    syn::Type::Tuple(tuple) => {
+                                        for inner_ty in &tuple.elems {
+                                            match inner_ty {
+                                                syn::Type::Path(path) => {
+                                                    // make sure it's Read<T> or Write<T> and verify that the inner T has not yet been seen
+                                                    let path = &path.path;
+                                                    let path_ident =
+                                                        &path.segments.last().unwrap().ident;
+                                                    let path_ident = path_ident.to_string();
+                                                    match path_ident.as_str() {
+                                                        "Read" | "Write" => {
+                                                            let inner_ty = match &path
+                                                                .segments
+                                                                .last()
+                                                                .unwrap()
+                                                                .arguments
+                                                            {
+                                                                syn::PathArguments::AngleBracketed(
+                                                                    args,
+                                                                ) => {
+                                                                    let inner_ty = &args.args[0];
+                                                                    match inner_ty {
+                                                                        syn::GenericArgument::Type(
+                                                                            ty,
+                                                                        ) => ty,
+                                                                        _ => panic!(
+                                                                            "Invalid argument type: Expected Query<...>"
+                                                                        ),
+                                                                    }
+                                                                }
+                                                                _ => panic!("Invalid argument type: Expected Query<...>"),
+                                                            };
+                                                            let inner_ty = match inner_ty {
+                                                                syn::Type::Path(path) => {
+                                                                    let path = &path.path;
+                                                                    let path_ident = &path
+                                                                        .segments
+                                                                        .last()
+                                                                        .unwrap()
+                                                                        .ident;
+                                                                    path_ident.clone()
+                                                                }
+                                                                _ => panic!(
+                                                                    "Invalid argument type: Expected Query<...>"
+                                                                ),
+                                                            };
+                                                            if seen_types.contains(&inner_ty.to_string()) {
+                                                                panic!(
+                                                                    "Conflicting queries: {} is already being queried",
+                                                                    inner_ty
+                                                                )
+                                                            }
+                                                            seen_types.push(inner_ty.to_string());
+                                                        }
+                                                        _ => panic!(
+                                                            "Invalid argument type: Expected Query<...>"
+                                                        ),
+                                                    }
+                                                }
+                                                _ => panic!(
+                                                    "Invalid argument type: Expected Query<...>"
+                                                ),
+                                            }
+                                        }
+                                    }
+                                    syn::Type::Path(path) => {
+                                        let path = &path.path;
+                                        let path_ident = &path.segments.last().unwrap().ident;
+
+                                        match path_ident.to_string().as_str() {
+                                            "Read" | "Write" => {
+                                                let inner_ty = match &path
+                                                    .segments
+                                                    .last()
+                                                    .unwrap()
+                                                    .arguments
+                                                {
+                                                    syn::PathArguments::AngleBracketed(args) => {
+                                                        let inner_ty = &args.args[0];
+                                                        match inner_ty {
+                                                            syn::GenericArgument::Type(ty) => ty,
+                                                            _ => panic!(
+                                                                "Invalid argument type: Expected Query<...>"
+                                                            ),
+                                                        }
+                                                    }
+                                                    _ => panic!("Invalid argument type: Expected Query<...>"),
+                                                };
+                                                let inner_ty = match inner_ty {
+                                                    syn::Type::Path(path) => {
+                                                        let path = &path.path;
+                                                        let path_ident =
+                                                            &path.segments.last().unwrap().ident;
+                                                        path_ident.clone()
+                                                    }
+                                                    _ => panic!(
+                                                        "Invalid argument type: Expected Query<...>"
+                                                    ),
+                                                };
+                                                if seen_types.contains(&inner_ty.to_string()) {
+                                                    panic!(
+                                                        "Conflicting queries: {} is already being queried",
+                                                        inner_ty
+                                                    )
+                                                }
+                                                seen_types.push(inner_ty.to_string());
+                                            }
+                                            _ => {
+                                                panic!("Invalid argument type: Expected Query<...>")
+                                            }
+                                        }
+                                    }
+                                    _ => panic!("Invalid argument type: Expected Query<...>"),
+                                }
+
                                 query_types.push(inner_ty.clone());
                             }
                             "Res" => {
@@ -134,6 +251,12 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                                         let path = &path.path;
                                         let path_ident = &path.segments.last().unwrap().ident;
                                         res_types.push(path_ident.clone());
+                                        if seen_types.contains(&path_ident.to_string()) {
+                                            panic!(
+                                                "Conflicting queries: {} is already being queried",
+                                                path_ident
+                                            )
+                                        }
                                         seen_types.push(path_ident.to_string());
                                     }
                                     _ => {
@@ -142,7 +265,45 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                                 }
                             }
                             "ResMut" => {
-                                todo!("ResMut")
+                                let resmut_name = match outer_pat.as_ref() {
+                                    syn::Pat::Ident(ident) => ident.ident.clone(),
+                                    _ => panic!("Invalid argument type"),
+                                };
+                                resmut_names.push(resmut_name.clone());
+                                let inner_ty = match &path.segments.last().unwrap().arguments {
+                                    syn::PathArguments::AngleBracketed(args) => {
+                                        let inner_ty = &args.args[0];
+                                        match inner_ty {
+                                            syn::GenericArgument::Type(ty) => ty,
+                                            _ => {
+                                                panic!(
+                                                    "Invalid argument type: Expected ResMut<...>"
+                                                )
+                                            }
+                                        }
+                                    }
+                                    _ => panic!("Invalid argument type: Expected ResMut<...>"),
+                                };
+                                match &inner_ty {
+                                    syn::Type::Tuple(tuple) => {
+                                        panic!("ResMut cannot take a tuple as its inner type")
+                                    }
+                                    syn::Type::Path(path) => {
+                                        let path = &path.path;
+                                        let path_ident = &path.segments.last().unwrap().ident;
+                                        resmut_types.push(path_ident.clone());
+                                        if seen_types.contains(&path_ident.to_string()) {
+                                            panic!(
+                                                "Conflicting queries: {} is already being queried",
+                                                path_ident
+                                            )
+                                        }
+                                        seen_types.push(path_ident.to_string());
+                                    }
+                                    _ => {
+                                        panic!("Invalid argument type: Expected ResMut<...>")
+                                    }
+                                }
                             }
                             _ => panic!(
                                 "Invalid argument type: Expected one of `Query`, `Res`, or `ResMut`"
@@ -171,9 +332,9 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                 #(
                     let #res_names = world.read_resource::<#res_types>();
                 )*
-                // #(
-                //     let mut #resmut_names = world.write_resource::<#resmut_types>();
-                // )*
+                #(
+                    let mut #resmut_names = world.write_resource::<#resmut_types>();
+                )*
                 {
                     #body
                 }
