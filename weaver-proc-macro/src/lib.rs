@@ -56,7 +56,13 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
 
     let mut queries = Vec::new();
 
-    // arguments should all be Query<T>
+    let mut reads = Vec::new();
+    let mut writes = Vec::new();
+
+    // do some compiletime checks to make sure the queries are valid
+    // 1. no conflicting writes
+    // 2. no conflicting reads
+    // 3. arguments should all be Query<_>
     for arg in args.iter() {
         match arg {
             syn::FnArg::Typed(pat_type) => {
@@ -83,12 +89,69 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                                                 syn::Type::Path(path) => {
                                                     let ty_seg =
                                                         &path.path.segments.last().unwrap();
+                                                    let inner = &ty_seg.arguments;
                                                     if ty_seg.ident == "Read"
                                                         || ty_seg.ident == "Write"
                                                     {
                                                         queries.push(quote! {
                                                             #path
                                                         });
+                                                        match inner {
+                                                            syn::PathArguments::AngleBracketed(
+                                                                ref args,
+                                                            ) => {
+                                                                let arg = args.args.first().unwrap();
+                                                                match arg {
+                                                                    syn::GenericArgument::Type(
+                                                                        ty,
+                                                                    ) => {
+                                                                        match ty {
+                                                                            syn::Type::Path(path) => {
+                                                                                if ty_seg.ident
+                                                                                    == "Read"
+                                                                                {
+                                                                                    let ident = path
+                                                                                        .path
+                                                                                        .segments
+                                                                                        .last()
+                                                                                        .unwrap()
+                                                                                        .ident
+                                                                                        .to_string().to_owned();
+                                                                                    if reads.contains(&ident) {
+                                                                                        panic!("Conflicting reads: {}", ident);
+                                                                                    }
+                                                                                    if writes.contains(&ident) {
+                                                                                        panic!("Conflicting reads: {}", ident);
+                                                                                    }
+                                                                                    reads.push(
+                                                                                        ident
+                                                                                    );
+                                                                                } else {
+                                                                                    let ident = path
+                                                                                        .path
+                                                                                        .segments
+                                                                                        .last()
+                                                                                        .unwrap()
+                                                                                        .ident.to_string().to_owned();
+                                                                                    if reads.contains(&ident) {
+                                                                                        panic!("Conflicting writes: {}", ident);
+                                                                                    }
+                                                                                    if writes.contains(&ident) {
+                                                                                        panic!("Conflicting writes: {}", ident);
+                                                                                    }
+                                                                                    writes.push(
+                                                                                        ident
+                                                                                    );
+                                                                                }
+                                                                            }
+                                                                            _ => panic!("Invalid argument type: expected path"),
+                                                                        }
+                                                                    }
+                                                                    _ => panic!("Invalid argument type: expected type"),
+                                                                }
+                                                            }
+                                                            _ => panic!("Invalid argument type: expected angle bracketed arguments"),
+                                                        }
                                                     } else {
                                                         panic!("Invalid argument type: expected Read or Write")
                                                     }
