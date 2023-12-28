@@ -1,5 +1,4 @@
 use weaver_proc_macro::Resource;
-use wgpu::util::DeviceExt;
 
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
@@ -33,8 +32,7 @@ pub struct Camera {
     pub near: f32,
     pub far: f32,
 
-    uniform: CameraUniform,
-    pub(crate) buffer: Option<wgpu::Buffer>,
+    pub(crate) uniform: CameraUniform,
 }
 
 impl Camera {
@@ -56,30 +54,15 @@ impl Camera {
             near,
             far,
             uniform: CameraUniform::new(),
-            buffer: None,
         };
         this.uniform.view_projection_matrix = this.view_projection_matrix();
         this.uniform.camera_position = this.eye.extend(1.0);
         this
     }
 
-    pub fn create_buffer(&mut self, device: &wgpu::Device) {
-        self.buffer = Some(
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Camera Uniform Buffer"),
-                contents: bytemuck::cast_slice(&[self.uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }),
-        );
-    }
-
-    pub fn update(&mut self, queue: &wgpu::Queue) {
+    pub fn update(&mut self) {
         self.uniform.view_projection_matrix = self.view_projection_matrix();
         self.uniform.camera_position = self.eye.extend(1.0);
-
-        if let Some(buffer) = &self.buffer {
-            queue.write_buffer(buffer, 0, bytemuck::cast_slice(&[self.uniform]));
-        }
     }
 
     pub fn view_projection_matrix(&self) -> glam::Mat4 {

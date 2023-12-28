@@ -2,9 +2,10 @@ use weaver_ecs::{Query, Queryable, Read, World};
 use winit::window::Window;
 
 use crate::core::{
-    camera::Camera,
+    camera::{Camera, CameraUniform},
     mesh::Mesh,
     model::Model,
+    texture::Texture,
     transform::{self, Transform},
 };
 
@@ -16,14 +17,17 @@ pub struct Renderer {
     pub(crate) queue: wgpu::Queue,
     pub(crate) config: wgpu::SurfaceConfiguration,
 
+    pub(crate) camera_uniform_buffer: wgpu::Buffer,
+
+    pub(crate) depth_texture: Texture,
+
     // shared and rewritten for every model
-    model_transform_buffer: wgpu::Buffer,
-    model_pipeline: wgpu::RenderPipeline,
-    model_bind_group: wgpu::BindGroup,
+    pub(crate) model_transform_buffer: wgpu::Buffer,
+    pub(crate) model_pipeline: wgpu::RenderPipeline,
 }
 
 impl Renderer {
-    pub async fn new(window: &Window, camera: &mut Camera) -> Self {
+    pub async fn new(window: &Window) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -82,14 +86,18 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
-        if camera.buffer.is_none() {
-            camera.create_buffer(&device);
-        }
+        let camera_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Camera Transform Buffer"),
+            size: std::mem::size_of::<CameraUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
-        let model_bind_group = Model::bind_group(
+        let depth_texture = Texture::create_depth_texture(
             &device,
-            &model_transform_buffer,
-            camera.buffer.as_ref().unwrap(),
+            config.width as usize,
+            config.height as usize,
+            Some("Depth Texture"),
         );
 
         Self {
@@ -99,7 +107,8 @@ impl Renderer {
             config,
             model_pipeline,
             model_transform_buffer,
-            model_bind_group,
+            camera_uniform_buffer,
+            depth_texture,
         }
     }
 
@@ -113,7 +122,13 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
         let mut camera = world.write_resource::<Camera>();
-        camera.update(&self.queue);
+        camera.update();
+
+        self.queue.write_buffer(
+            &self.camera_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[camera.uniform]),
+        );
 
         // clear the screen
         {
@@ -127,7 +142,14 @@ impl Renderer {
                         store: true,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: true,
+                    }),
+                    stencil_ops: None,
+                }),
             });
         }
 
@@ -150,11 +172,18 @@ impl Renderer {
                             store: true,
                         },
                     })],
-                    depth_stencil_attachment: None,
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.depth_texture.view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: true,
+                        }),
+                        stencil_ops: None,
+                    }),
                 });
 
                 render_pass.set_pipeline(&self.model_pipeline);
-                render_pass.set_bind_group(0, &self.model_bind_group, &[]);
+                render_pass.set_bind_group(0, &mesh.bind_group, &[]);
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);

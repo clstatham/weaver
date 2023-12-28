@@ -2,7 +2,7 @@ use std::path::Path;
 
 use weaver_proc_macro::Bundle;
 
-use super::{mesh::Mesh, transform::Transform};
+use super::{mesh::Mesh, texture::Texture, transform::Transform};
 
 #[derive(Bundle)]
 pub struct Model {
@@ -15,8 +15,17 @@ impl Model {
         Self { mesh, transform }
     }
 
-    pub fn load_gltf(path: impl AsRef<Path>, device: &wgpu::Device) -> anyhow::Result<Self> {
-        let mesh = Mesh::load_gltf(path, device)?;
+    pub fn load_gltf(
+        path: impl AsRef<Path>,
+        renderer: &crate::renderer::Renderer,
+    ) -> anyhow::Result<Self> {
+        let mesh = Mesh::load_gltf(
+            path,
+            &renderer.device,
+            &renderer.queue,
+            &renderer.model_transform_buffer,
+            &renderer.camera_uniform_buffer,
+        )?;
         let transform = Transform::new();
 
         Ok(Self::new(mesh, transform))
@@ -48,6 +57,24 @@ impl Model {
                     },
                     count: None,
                 },
+                // Texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // Sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         })
     }
@@ -56,6 +83,8 @@ impl Model {
         device: &wgpu::Device,
         transform_buffer: &wgpu::Buffer,
         camera_buffer: &wgpu::Buffer,
+        texture_view: &wgpu::TextureView,
+        texture_sampler: &wgpu::Sampler,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Model Bind Group"),
@@ -70,6 +99,16 @@ impl Model {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: camera_buffer.as_entire_binding(),
+                },
+                // Texture
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(texture_view),
+                },
+                // Sampler
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(texture_sampler),
                 },
             ],
         })
@@ -94,7 +133,6 @@ impl Model {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[
-                    // vertex buffer
                     wgpu::VertexBufferLayout {
                         array_stride: std::mem::size_of::<crate::core::Vertex>() as wgpu::BufferAddress,
                         step_mode: wgpu::VertexStepMode::Vertex,
@@ -125,7 +163,15 @@ impl Model {
             //     stencil: Default::default(),
             //     bias: Default::default(),
             // }),
-            depth_stencil: None,
+            depth_stencil: Some(
+                wgpu::DepthStencilState {
+                    format: Texture::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }
+            ),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         })

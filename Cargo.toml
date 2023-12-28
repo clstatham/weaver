@@ -34,6 +34,7 @@ pollster = "0.3.0"
 weaver-ecs = { path = "weaver-ecs" }
 weaver-proc-macro = { path = "weaver-proc-macro" }
 static_assertions = "1.1.0"
+image = "0.24.7"
 
 [profile.release]
 debug = true

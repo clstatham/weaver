@@ -31,7 +31,7 @@ impl App {
         ));
         window.set_resizable(false);
 
-        let mut camera = Camera::new(
+        let camera = Camera::new(
             glam::Vec3::new(5.0, 5.0, 5.0),
             glam::Vec3::new(0.0, 0.0, 0.0),
             glam::Vec3::Y,
@@ -41,7 +41,7 @@ impl App {
             100.0,
         );
 
-        let renderer = pollster::block_on(Renderer::new(&window, &mut camera));
+        let renderer = pollster::block_on(Renderer::new(&window));
 
         let mut world = World::new();
         world.insert_resource(Time::new());
@@ -68,7 +68,7 @@ impl App {
     }
 
     pub fn load_model(&mut self, path: &str) -> anyhow::Result<Entity> {
-        let model = Model::load_gltf(path, &self.renderer.device)?;
+        let model = Model::load_gltf(path, &self.renderer)?;
         Ok(self.spawn(model))
     }
 
