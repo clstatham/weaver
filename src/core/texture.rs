@@ -39,13 +39,10 @@ impl Texture {
             view_formats: &[],
         });
 
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
         queue.write_texture(
-            wgpu::ImageCopyTexture {
-                aspect: wgpu::TextureAspect::All,
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-            },
+            texture.as_image_copy(),
             &rgba,
             wgpu::ImageDataLayout {
                 offset: 0,
@@ -54,8 +51,6 @@ impl Texture {
             },
             texture_extent,
         );
-
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: None,

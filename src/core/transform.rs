@@ -36,12 +36,7 @@ impl Transform {
         let color = vertex.color;
         let uv = vertex.uv;
 
-        Vertex {
-            position,
-            normal,
-            color,
-            uv,
-        }
+        Vertex::new(position, normal, color, uv)
     }
 }
 

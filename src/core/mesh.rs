@@ -34,12 +34,12 @@ impl Mesh {
                 let uvs = reader.read_tex_coords(0).unwrap().into_f32();
 
                 for (position, normal, uv) in itertools::multizip((positions, normals, uvs)) {
-                    vertices.push(Vertex {
-                        position: position.into(),
-                        color: Color::WHITE,
-                        normal: normal.into(),
-                        uv: uv.into(),
-                    });
+                    vertices.push(Vertex::new(
+                        glam::Vec3::from(position),
+                        glam::Vec3::from(normal),
+                        Color::WHITE,
+                        glam::Vec2::from(uv),
+                    ));
                 }
 
                 let index_reader = reader.read_indices().unwrap().into_u32();
