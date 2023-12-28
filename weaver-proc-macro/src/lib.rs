@@ -85,6 +85,56 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                                                     queries.push(quote! {
                                                         #tup
                                                     });
+
+                                                    // verify that the tuple doesn't have any duplicate reads or writes
+
+                                                    for elem in tup.elems.iter() {
+                                                        match elem {
+                                                            syn::Type::Path(path) => {
+                                                                let ty_seg = &path.path.segments.last().unwrap();
+                                                                if ty_seg.ident == "Read" || ty_seg.ident == "Write" {
+                                                                    match ty_seg.arguments {
+                                                                        syn::PathArguments::AngleBracketed(ref args) => {
+                                                                            let arg = args.args.first().unwrap();
+                                                                            match arg {
+                                                                                syn::GenericArgument::Type(ty) => {
+                                                                                    match ty {
+                                                                                        syn::Type::Path(path) => {
+                                                                                            if ty_seg.ident == "Read" {
+                                                                                                let ident = path.path.segments.last().unwrap().ident.to_string().to_owned();
+                                                                                                if reads.contains(&ident) {
+                                                                                                    panic!("Conflicting reads: {}", ident);
+                                                                                                }
+                                                                                                if writes.contains(&ident) {
+                                                                                                    panic!("Conflicting reads: {}", ident);
+                                                                                                }
+                                                                                                reads.push(ident);
+                                                                                            } else {
+                                                                                                let ident = path.path.segments.last().unwrap().ident.to_string().to_owned();
+                                                                                                if reads.contains(&ident) {
+                                                                                                    panic!("Conflicting writes: {}", ident);
+                                                                                                }
+                                                                                                if writes.contains(&ident) {
+                                                                                                    panic!("Conflicting writes: {}", ident);
+                                                                                                }
+                                                                                                writes.push(ident);
+                                                                                            }
+                                                                                        }
+                                                                                        _ => panic!("Invalid argument type: expected path"),
+                                                                                    }
+                                                                                }
+                                                                                _ => panic!("Invalid argument type: expected type"),
+                                                                            }
+                                                                        }
+                                                                        _ => panic!("Invalid argument type: expected angle bracketed arguments"),
+                                                                    }
+                                                                } else {
+                                                                    panic!("Invalid argument type: expected Read or Write")
+                                                                }
+                                                            }
+                                                            _ => panic!("Invalid argument type: expected path or tuple"),
+                                                        }
+                                                    }
                                                 }
                                                 syn::Type::Path(path) => {
                                                     let ty_seg =
