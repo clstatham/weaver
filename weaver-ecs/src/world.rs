@@ -13,8 +13,6 @@ pub struct World {
     pub(crate) entities_components: FxHashMap<Entity, FxHashMap<u64, Arc<RwLock<dyn Component>>>>,
     pub(crate) systems: Vec<Box<dyn System>>,
     pub(crate) resources: FxHashMap<u64, Arc<RwLock<dyn crate::resource::Resource>>>,
-
-    pub(crate) borrow_intent: BorrowIntent,
 }
 
 impl World {
@@ -29,10 +27,6 @@ impl World {
         let entity = Entity::new(id, 0);
         self.entities_components
             .insert(entity, FxHashMap::default());
-        self.borrow_intent
-            .intended_borrow
-            .borrow_mut()
-            .insert(entity, FxHashMap::default());
         entity
     }
 
@@ -46,25 +40,10 @@ impl World {
             .entry(entity)
             .or_default()
             .insert(T::component_id(), component);
-        self.borrow_intent
-            .intended_borrow
-            .borrow_mut()
-            .entry(entity)
-            .or_default()
-            .insert(T::component_id(), BorrowStatus::None);
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) {
         if let Some(components) = self.entities_components.get_mut(&entity) {
-            components.remove(&T::component_id());
-        }
-
-        if let Some(components) = self
-            .borrow_intent
-            .intended_borrow
-            .borrow_mut()
-            .get_mut(&entity)
-        {
             components.remove(&T::component_id());
         }
     }
@@ -97,10 +76,6 @@ impl World {
     }
 
     pub fn update(&mut self) {
-        // SAFE: this is the only time per update that the borrow intent is reset
-        unsafe {
-            self.borrow_intent.reset();
-        }
         for system in &self.systems {
             system.run(self);
         }

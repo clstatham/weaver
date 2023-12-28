@@ -2,7 +2,7 @@ use std::path::Path;
 
 use weaver_proc_macro::Bundle;
 
-use super::{mesh::Mesh, texture::Texture, transform::Transform};
+use super::{light::PointLight, mesh::Mesh, texture::Texture, transform::Transform};
 
 #[derive(Bundle)]
 pub struct Model {
@@ -117,7 +117,10 @@ impl Model {
     pub fn pipeline_layout(device: &wgpu::Device) -> wgpu::PipelineLayout {
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Model Pipeline Layout"),
-            bind_group_layouts: &[&Self::bind_group_layout(device)],
+            bind_group_layouts: &[
+                &Self::bind_group_layout(device),
+                &PointLight::bind_group_layout(device),
+            ],
             push_constant_ranges: &[],
         })
     }

@@ -3,6 +3,7 @@ use winit::window::Window;
 
 use crate::core::{
     camera::{Camera, CameraUniform},
+    light::PointLight,
     mesh::Mesh,
     model::Model,
     texture::Texture,
@@ -18,6 +19,9 @@ pub struct Renderer {
     pub(crate) config: wgpu::SurfaceConfiguration,
 
     pub(crate) camera_uniform_buffer: wgpu::Buffer,
+
+    pub(crate) light_uniform_buffer: wgpu::Buffer,
+    pub(crate) light_bind_group: wgpu::BindGroup,
 
     pub(crate) depth_texture: Texture,
 
@@ -93,6 +97,22 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
+        let light_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Light Uniform Buffer"),
+            size: std::mem::size_of::<PointLight>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Light Bind Group"),
+            layout: &PointLight::bind_group_layout(&device),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: light_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
         let depth_texture = Texture::create_depth_texture(
             &device,
             config.width as usize,
@@ -108,6 +128,8 @@ impl Renderer {
             model_pipeline,
             model_transform_buffer,
             camera_uniform_buffer,
+            light_uniform_buffer,
+            light_bind_group,
             depth_texture,
         }
     }
@@ -155,6 +177,15 @@ impl Renderer {
 
         let query = world.query::<Query<(Read<Mesh>, Read<Transform>)>>();
 
+        let light_query = world.query::<Query<Read<PointLight>>>();
+        let light = light_query.iter().next().unwrap();
+
+        self.queue.write_buffer(
+            &self.light_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[*light]),
+        );
+
         for (mesh, transform) in query.iter() {
             self.queue.write_buffer(
                 &self.model_transform_buffer,
@@ -184,6 +215,7 @@ impl Renderer {
 
                 render_pass.set_pipeline(&self.model_pipeline);
                 render_pass.set_bind_group(0, &mesh.bind_group, &[]);
+                render_pass.set_bind_group(1, &self.light_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);

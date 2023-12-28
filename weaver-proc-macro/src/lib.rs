@@ -54,192 +54,100 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
     let system_struct_name = syn::parse::<syn::Ident>(attr).unwrap();
     let args = &ast.sig.inputs;
 
-    let mut queries = Vec::new();
+    let mut query_types = Vec::new();
+    let mut res_types = Vec::new();
+    // let mut resmut_types = Vec::new();
 
-    let mut reads = Vec::new();
-    let mut writes = Vec::new();
+    let mut query_names = Vec::new();
+    let mut res_names = Vec::new();
+    // let mut resmut_names = Vec::new();
 
-    // do some compiletime checks to make sure the queries are valid
+    let mut seen_types = Vec::new();
+
+    // populate the above Vecs and do some compiletime checks to make sure the queries are valid
     // 1. no conflicting writes
     // 2. no conflicting reads
-    // 3. arguments should all be Query<_>
+    // 3. arguments should all be Query<_>, Res<_>, or ResMut<_>
+    // 4. Queries can take tuples as their inner types, but Res and ResMut cannot
+    // examples:
+    // #[system(A)]
+    // fn system_a(a: Query<Read<CompA>>) {}
+    // #[system(B)]
+    // fn system_b(a: Query<Read<CompA>>, b: Query<Write<CompB>>) {}
+    // #[system(C)]
+    // fn system_c(a: Query<(Read<CompA>, Write<CompB>)>) {}
+    // #[system(D)]
+    // fn system_d(a: Query<Read<CompA>>, b: Res<ResA>, c: ResMut<ResB>) {}
+
     for arg in args.iter() {
         match arg {
-            syn::FnArg::Typed(pat_type) => {
-                let pat = &pat_type.pat;
-                let ty = &pat_type.ty;
-                match (&**pat, &**ty) {
-                    (syn::Pat::Ident(_ident), syn::Type::Path(path)) => {
-                        let ty_seg = &path.path.segments.last().unwrap();
-                        if ty_seg.ident == "Query" {
-                            match ty_seg.arguments {
-                                syn::PathArguments::AngleBracketed(ref args) => {
-                                    let arg = args.args.first().unwrap();
-                                    match arg {
-                                        syn::GenericArgument::Lifetime(_) => {}
-                                        syn::GenericArgument::Type(ty) => {
-                                            // parse the tuple of Read<T> and Write<T>
-                                            let ty = &ty;
-                                            match ty {
-                                                syn::Type::Tuple(tup) => {
-                                                    queries.push(quote! {
-                                                        #tup
-                                                    });
+            syn::FnArg::Typed(outer) => {
+                let outer_pat = &outer.pat;
+                let outer_ty = &outer.ty;
 
-                                                    // verify that the tuple doesn't have any duplicate reads or writes
-
-                                                    for elem in tup.elems.iter() {
-                                                        match elem {
-                                                            syn::Type::Path(path) => {
-                                                                let ty_seg = &path.path.segments.last().unwrap();
-                                                                if ty_seg.ident == "Read" || ty_seg.ident == "Write" {
-                                                                    match ty_seg.arguments {
-                                                                        syn::PathArguments::AngleBracketed(ref args) => {
-                                                                            let arg = args.args.first().unwrap();
-                                                                            match arg {
-                                                                                syn::GenericArgument::Type(ty) => {
-                                                                                    match ty {
-                                                                                        syn::Type::Path(path) => {
-                                                                                            if ty_seg.ident == "Read" {
-                                                                                                let ident = path.path.segments.last().unwrap().ident.to_string().to_owned();
-                                                                                                if reads.contains(&ident) {
-                                                                                                    panic!("Conflicting reads: {}", ident);
-                                                                                                }
-                                                                                                if writes.contains(&ident) {
-                                                                                                    panic!("Conflicting reads: {}", ident);
-                                                                                                }
-                                                                                                reads.push(ident);
-                                                                                            } else {
-                                                                                                let ident = path.path.segments.last().unwrap().ident.to_string().to_owned();
-                                                                                                if reads.contains(&ident) {
-                                                                                                    panic!("Conflicting writes: {}", ident);
-                                                                                                }
-                                                                                                if writes.contains(&ident) {
-                                                                                                    panic!("Conflicting writes: {}", ident);
-                                                                                                }
-                                                                                                writes.push(ident);
-                                                                                            }
-                                                                                        }
-                                                                                        _ => panic!("Invalid argument type: expected path"),
-                                                                                    }
-                                                                                }
-                                                                                _ => panic!("Invalid argument type: expected type"),
-                                                                            }
-                                                                        }
-                                                                        _ => panic!("Invalid argument type: expected angle bracketed arguments"),
-                                                                    }
-                                                                } else {
-                                                                    panic!("Invalid argument type: expected Read or Write")
-                                                                }
-                                                            }
-                                                            _ => panic!("Invalid argument type: expected path or tuple"),
-                                                        }
-                                                    }
-                                                }
-                                                syn::Type::Path(path) => {
-                                                    let ty_seg =
-                                                        &path.path.segments.last().unwrap();
-                                                    let inner = &ty_seg.arguments;
-                                                    if ty_seg.ident == "Read"
-                                                        || ty_seg.ident == "Write"
-                                                    {
-                                                        queries.push(quote! {
-                                                            #path
-                                                        });
-                                                        match inner {
-                                                            syn::PathArguments::AngleBracketed(
-                                                                ref args,
-                                                            ) => {
-                                                                let arg = args.args.first().unwrap();
-                                                                match arg {
-                                                                    syn::GenericArgument::Type(
-                                                                        ty,
-                                                                    ) => {
-                                                                        match ty {
-                                                                            syn::Type::Path(path) => {
-                                                                                if ty_seg.ident
-                                                                                    == "Read"
-                                                                                {
-                                                                                    let ident = path
-                                                                                        .path
-                                                                                        .segments
-                                                                                        .last()
-                                                                                        .unwrap()
-                                                                                        .ident
-                                                                                        .to_string().to_owned();
-                                                                                    if reads.contains(&ident) {
-                                                                                        panic!("Conflicting reads: {}", ident);
-                                                                                    }
-                                                                                    if writes.contains(&ident) {
-                                                                                        panic!("Conflicting reads: {}", ident);
-                                                                                    }
-                                                                                    reads.push(
-                                                                                        ident
-                                                                                    );
-                                                                                } else {
-                                                                                    let ident = path
-                                                                                        .path
-                                                                                        .segments
-                                                                                        .last()
-                                                                                        .unwrap()
-                                                                                        .ident.to_string().to_owned();
-                                                                                    if reads.contains(&ident) {
-                                                                                        panic!("Conflicting writes: {}", ident);
-                                                                                    }
-                                                                                    if writes.contains(&ident) {
-                                                                                        panic!("Conflicting writes: {}", ident);
-                                                                                    }
-                                                                                    writes.push(
-                                                                                        ident
-                                                                                    );
-                                                                                }
-                                                                            }
-                                                                            _ => panic!("Invalid argument type: expected path"),
-                                                                        }
-                                                                    }
-                                                                    _ => panic!("Invalid argument type: expected type"),
-                                                                }
-                                                            }
-                                                            _ => panic!("Invalid argument type: expected angle bracketed arguments"),
-                                                        }
-                                                    } else {
-                                                        panic!("Invalid argument type: expected Read or Write")
-                                                    }
-                                                }
-                                                _ => panic!(
-                                                    "Invalid argument type: expected path or tuple"
-                                                ),
+                match outer_ty.as_ref() {
+                    syn::Type::Path(path) => {
+                        let path = &path.path;
+                        let path_ident = path.segments.last().unwrap().ident.to_string();
+                        match path_ident.as_str() {
+                            "Query" => {
+                                let query_name = match outer_pat.as_ref() {
+                                    syn::Pat::Ident(ident) => ident.ident.clone(),
+                                    _ => panic!("Invalid argument type"),
+                                };
+                                query_names.push(query_name.clone());
+                                let inner_ty = match &path.segments.last().unwrap().arguments {
+                                    syn::PathArguments::AngleBracketed(args) => {
+                                        let inner_ty = &args.args[0];
+                                        match inner_ty {
+                                            syn::GenericArgument::Type(ty) => ty,
+                                            _ => {
+                                                panic!("Invalid argument type: Expected Query<...>")
                                             }
                                         }
-                                        _ => panic!("Invalid argument type"),
+                                    }
+                                    _ => panic!("Invalid argument type: Expected Query<...>"),
+                                };
+                                query_types.push(inner_ty.clone());
+                            }
+                            "Res" => {
+                                let res_name = match outer_pat.as_ref() {
+                                    syn::Pat::Ident(ident) => ident.ident.clone(),
+                                    _ => panic!("Invalid argument type"),
+                                };
+                                res_names.push(res_name.clone());
+                                let inner_ty = match &path.segments.last().unwrap().arguments {
+                                    syn::PathArguments::AngleBracketed(args) => {
+                                        let inner_ty = &args.args[0];
+                                        match inner_ty {
+                                            syn::GenericArgument::Type(ty) => ty,
+                                            _ => panic!("Invalid argument type: Expected Res<...>"),
+                                        }
+                                    }
+                                    _ => panic!("Invalid argument type: Expected Res<...>"),
+                                };
+                                match &inner_ty {
+                                    syn::Type::Tuple(tuple) => {
+                                        panic!("Res cannot take a tuple as its inner type")
+                                    }
+                                    syn::Type::Path(path) => {
+                                        let path = &path.path;
+                                        let path_ident = &path.segments.last().unwrap().ident;
+                                        res_types.push(path_ident.clone());
+                                        seen_types.push(path_ident.to_string());
+                                    }
+                                    _ => {
+                                        panic!("Invalid argument type: Expected Res<...>")
                                     }
                                 }
-                                _ => panic!("Invalid argument type"),
                             }
+                            "ResMut" => {
+                                todo!("ResMut")
+                            }
+                            _ => panic!(
+                                "Invalid argument type: Expected one of `Query`, `Res`, or `ResMut`"
+                            ),
                         }
-                    }
-                    _ => panic!("Invalid argument type"),
-                }
-            }
-            _ => panic!("Invalid argument type"),
-        }
-    }
-
-    let mut arg_names = Vec::new();
-    let mut arg_decls = Vec::new();
-    for arg in args.iter() {
-        match arg {
-            syn::FnArg::Typed(pat_type) => {
-                let pat = &pat_type.pat;
-                match &**pat {
-                    syn::Pat::Ident(ident) => {
-                        let ident = &ident.ident;
-                        arg_decls.push(quote! {
-                            #ident
-                        });
-                        arg_names.push(quote! {
-                            #ident
-                        });
                     }
                     _ => panic!("Invalid argument type"),
                 }
@@ -258,8 +166,14 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
             #[allow(unused_mut)]
             fn run(&self, world: &weaver_ecs::World) {
                 #(
-                    let mut #arg_decls = world.query::<#queries>();
+                    let mut #query_names = world.query::<#query_types>();
                 )*
+                #(
+                    let #res_names = world.read_resource::<#res_types>();
+                )*
+                // #(
+                //     let mut #resmut_names = world.write_resource::<#resmut_types>();
+                // )*
                 {
                     #body
                 }
@@ -268,7 +182,7 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
             fn components_read(&self) -> Vec<u64> {
                 let mut components = Vec::new();
                 #(
-                    components.extend_from_slice(&<#queries>::components_read());
+                    components.extend_from_slice(&<#query_types>::components_read());
                 )*
                 components
             }
@@ -276,7 +190,7 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
             fn components_written(&self) -> Vec<u64> {
                 let mut components = Vec::new();
                 #(
-                    components.extend_from_slice(&<#queries>::components_written());
+                    components.extend_from_slice(&<#query_types>::components_written());
                 )*
                 components
             }

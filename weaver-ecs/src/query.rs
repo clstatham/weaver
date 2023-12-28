@@ -43,17 +43,7 @@ where
             BTreeMap::new(),
             |mut entries, (&entity, components)| {
                 if let Some(component) = components.get(&T::component_id()) {
-                    match world.borrow_intent.try_read::<T>(entity) {
-                        Some(Ok(())) => {
-                            entries.insert(entity, RefCell::new(component.read().unwrap()));
-                        }
-                        Some(Err(e)) => {
-                            panic!("Failed to borrow component: {:?}", e);
-                        }
-                        None => {
-                            // component doesn't exist for the entity; keep going
-                        }
-                    }
+                    entries.insert(entity, RefCell::new(component.read().unwrap()));
                 }
                 entries
             },
@@ -137,17 +127,7 @@ where
             BTreeMap::new(),
             |mut entries, (&entity, components)| {
                 if let Some(component) = components.get(&T::component_id()) {
-                    match world.borrow_intent.try_write::<T>(entity) {
-                        Some(Ok(())) => {
-                            entries.insert(entity, RefCell::new(component.write().unwrap()));
-                        }
-                        Some(Err(e)) => {
-                            panic!("Failed to borrow component: {:?}", e);
-                        }
-                        None => {
-                            // component doesn't exist for the entity; keep going
-                        }
-                    }
+                    entries.insert(entity, RefCell::new(component.write().unwrap()));
                 }
                 entries
             },

@@ -4,6 +4,7 @@ pub struct Color {
     pub r: f32,
     pub g: f32,
     pub b: f32,
+    _padding: u32,
 }
 
 impl Color {
@@ -11,53 +12,66 @@ impl Color {
         r: 0.0,
         g: 0.0,
         b: 0.0,
+        _padding: 0,
     };
 
     pub const WHITE: Color = Color {
         r: 1.0,
         g: 1.0,
         b: 1.0,
+        _padding: 0,
     };
 
     pub const RED: Color = Color {
         r: 1.0,
         g: 0.0,
         b: 0.0,
+        _padding: 0,
     };
 
     pub const GREEN: Color = Color {
         r: 0.0,
         g: 1.0,
         b: 0.0,
+        _padding: 0,
     };
 
     pub const BLUE: Color = Color {
         r: 0.0,
         g: 0.0,
         b: 1.0,
+        _padding: 0,
     };
 
     pub const YELLOW: Color = Color {
         r: 1.0,
         g: 1.0,
         b: 0.0,
+        _padding: 0,
     };
 
     pub const CYAN: Color = Color {
         r: 0.0,
         g: 1.0,
         b: 1.0,
+        _padding: 0,
     };
 
     pub const MAGENTA: Color = Color {
         r: 1.0,
         g: 0.0,
         b: 1.0,
+        _padding: 0,
     };
 
     /// Creates a new [Color] from the given RGB values.
     pub fn new(r: f32, g: f32, b: f32) -> Self {
-        Self { r, g, b }
+        Self {
+            r,
+            g,
+            b,
+            _padding: 0,
+        }
     }
 
     /// Creates a new [Color] from the given hex value.
@@ -67,6 +81,7 @@ impl Color {
             r: ((hex >> 24) & 0xff) as f32 / 255.0,
             g: ((hex >> 16) & 0xff) as f32 / 255.0,
             b: ((hex >> 8) & 0xff) as f32 / 255.0,
+            _padding: 0,
         }
     }
 

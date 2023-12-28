@@ -1,15 +1,35 @@
+use core::{mesh::Mesh, time::Time, transform::Transform};
+
 use app::App;
+use weaver_ecs::{resource::Res, *};
+use weaver_proc_macro::system;
 
 pub mod app;
 pub mod core;
 pub mod renderer;
+
+#[system(Update)]
+fn update(model: Query<(Read<Mesh>, Write<Transform>)>, timey: Res<Time>) {
+    let delta = timey.delta_time;
+    for (_mesh, mut transform) in model.iter() {
+        transform.rotate(0.5f32 * delta, glam::Vec3::Y);
+    }
+}
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     let mut app = App::new(1600, 900);
 
+    let light = app.spawn(core::light::PointLight::new(
+        glam::Vec3::new(5.0, 5.0, 5.0),
+        core::color::Color::WHITE,
+        1.0,
+    ));
+
     let model1 = app.load_model("assets/wooden_monkey.glb")?;
+
+    app.add_system(Update);
 
     app.run();
 

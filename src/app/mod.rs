@@ -1,4 +1,4 @@
-use weaver_ecs::{Bundle, Entity, Resource, World};
+use weaver_ecs::{Bundle, Entity, Resource, System, World};
 use winit::{event_loop::EventLoop, window::Window};
 use winit_input_helper::WinitInputHelper;
 
@@ -65,6 +65,10 @@ impl App {
 
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
         bundle.build(&mut self.world)
+    }
+
+    pub fn add_system<T: System + 'static>(&mut self, system: T) {
+        self.world.add_system(system);
     }
 
     pub fn load_model(&mut self, path: &str) -> anyhow::Result<Entity> {
