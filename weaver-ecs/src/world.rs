@@ -7,9 +7,8 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     component::{BorrowIntent, BorrowStatus},
-    query::Write,
     resource::{Res, ResMut},
-    Bundle, Component, Entity, Read, Resource, System,
+    Bundle, Component, Entity, Resource, System,
 };
 
 #[derive(Default)]
@@ -102,7 +101,7 @@ impl World {
     pub fn update(&mut self) {
         // SAFE: this is the only time per update that the borrow intent is reset
         unsafe {
-            self.borrow_intent.borrow_mut().reset();
+            self.borrow_intent.reset();
         }
         for system in &self.systems {
             system.run(self);

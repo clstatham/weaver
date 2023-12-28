@@ -151,6 +151,22 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                     #body
                 }
             }
+
+            fn components_read(&self) -> Vec<u64> {
+                let mut components = Vec::new();
+                #(
+                    components.extend_from_slice(&<#queries>::components_read());
+                )*
+                components
+            }
+
+            fn components_written(&self) -> Vec<u64> {
+                let mut components = Vec::new();
+                #(
+                    components.extend_from_slice(&<#queries>::components_written());
+                )*
+                components
+            }
         }
     };
     gen.into()
@@ -276,6 +292,28 @@ pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
                     entities = entities.bitand(&#rest_query_names.entities());
                 )*
                 entities
+            }
+
+            fn components_read() -> Vec<u64>
+            where
+                Self: Sized,
+            {
+                let mut components = Vec::new();
+                #(
+                    components.extend_from_slice(&#query_names::components_read());
+                )*
+                components
+            }
+
+            fn components_written() -> Vec<u64>
+            where
+                Self: Sized,
+            {
+                let mut components = Vec::new();
+                #(
+                    components.extend_from_slice(&#query_names::components_written());
+                )*
+                components
             }
 
             fn get(&'q self, entity: Entity) -> Option<Self::ItemRef> {

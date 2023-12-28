@@ -19,6 +19,13 @@ where
     fn entities(&self) -> BTreeSet<Entity>;
     fn get(&'q self, entity: Entity) -> Option<Self::ItemRef>;
     fn iter(&'q self) -> Self::Iter;
+
+    fn components_read() -> Vec<u64>
+    where
+        Self: Sized;
+    fn components_written() -> Vec<u64>
+    where
+        Self: Sized;
 }
 
 pub struct Read<'a, T> {
@@ -72,6 +79,20 @@ where
 
     fn entities(&self) -> BTreeSet<Entity> {
         self.entries.keys().copied().collect()
+    }
+
+    fn components_read() -> Vec<u64>
+    where
+        Self: Sized,
+    {
+        vec![T::component_id()]
+    }
+
+    fn components_written() -> Vec<u64>
+    where
+        Self: Sized,
+    {
+        vec![]
     }
 
     fn get(&'q self, entity: Entity) -> Option<Self::ItemRef> {
@@ -153,6 +174,20 @@ where
         self.entries.keys().copied().collect()
     }
 
+    fn components_read() -> Vec<u64>
+    where
+        Self: Sized,
+    {
+        vec![]
+    }
+
+    fn components_written() -> Vec<u64>
+    where
+        Self: Sized,
+    {
+        vec![T::component_id()]
+    }
+
     fn get(&'q self, entity: Entity) -> Option<Self::ItemRef> {
         self.entries
             .get(&entity)
@@ -210,6 +245,20 @@ where
 
     fn entities(&self) -> BTreeSet<Entity> {
         self.query.entities()
+    }
+
+    fn components_read() -> Vec<u64>
+    where
+        Self: Sized,
+    {
+        T::components_read()
+    }
+
+    fn components_written() -> Vec<u64>
+    where
+        Self: Sized,
+    {
+        T::components_written()
     }
 
     fn get(&'q self, entity: Entity) -> Option<Self::ItemRef> {
