@@ -7,37 +7,50 @@ use super::{color::Color, texture::Texture};
 /// PBR material based on Bevy
 #[derive(Component)]
 pub struct Material {
-    pub base_color: Color,
-    pub base_color_texture: Option<Texture>,
+    pub diffuse: Color,
+    pub diffuse_texture: Option<Texture>,
     pub metallic: f32,
     pub normal_texture: Option<Texture>,
+
+    pub texture_scaling: f32,
+
     pub(crate) bind_group: Option<wgpu::BindGroup>,
 }
 
 impl Default for Material {
     fn default() -> Self {
         Self {
-            base_color: Color::WHITE,
-            base_color_texture: None,
+            diffuse: Color::WHITE,
+            diffuse_texture: None,
             metallic: 2.0,
             normal_texture: None,
+            texture_scaling: 1.0,
             bind_group: None,
         }
     }
 }
 
 impl Material {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(base_color_texture: Option<Texture>, normal_texture: Option<Texture>) -> Self {
+        Self {
+            diffuse_texture: base_color_texture,
+            normal_texture,
+            ..Default::default()
+        }
     }
 
-    pub fn with_base_color(mut self, base_color: Color) -> Self {
-        self.base_color = base_color;
+    pub fn with_diffuse(mut self, diffuse: Color) -> Self {
+        self.diffuse = diffuse;
         self
     }
 
-    pub fn with_base_color_texture(mut self, base_color_texture: Texture) -> Self {
-        self.base_color_texture = Some(base_color_texture);
+    pub fn with_diffuse_texture(mut self, diffuse_texture: Texture) -> Self {
+        self.diffuse_texture = Some(diffuse_texture);
+        self
+    }
+
+    pub fn with_normal_texture(mut self, normal_texture: Texture) -> Self {
+        self.normal_texture = Some(normal_texture);
         self
     }
 
@@ -51,7 +64,8 @@ impl Material {
     }
 
     pub fn create_bind_group(&mut self, device: &wgpu::Device, render_pass: &PbrRenderPass) {
-        let base_color_texture = self.base_color_texture.as_ref().unwrap();
+        let diffuse_texture = self.diffuse_texture.as_ref().unwrap();
+        let normal_texture = self.normal_texture.as_ref().unwrap();
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Material Bind Group"),
             layout: &render_pass.bind_group_layout,
@@ -82,16 +96,26 @@ impl Material {
                 // tex
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&base_color_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
                 },
                 // tex_sampler
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: wgpu::BindingResource::Sampler(&base_color_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                },
+                // normal_tex
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&normal_texture.view),
+                },
+                // normal_tex_sampler
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::Sampler(&normal_texture.sampler),
                 },
                 // lights
                 wgpu::BindGroupEntry {
-                    binding: 5,
+                    binding: 7,
                     resource: wgpu::BindingResource::Buffer(
                         render_pass.lights_buffer.as_entire_buffer_binding(),
                     ),
@@ -106,16 +130,16 @@ impl Material {
 #[repr(C)]
 pub struct MaterialUniform {
     pub base_color: [f32; 4],
-    pub metallic: f32,
-    _padding: [u32; 3],
+    pub metallic: [f32; 4],
+    pub texture_scaling: [f32; 4],
 }
 
 impl From<&Material> for MaterialUniform {
     fn from(material: &Material) -> Self {
         Self {
-            base_color: material.base_color.vec4().into(),
-            metallic: material.metallic,
-            _padding: [0; 3],
+            base_color: material.diffuse.vec4().into(),
+            metallic: [material.metallic; 4],
+            texture_scaling: [material.texture_scaling; 4],
         }
     }
 }

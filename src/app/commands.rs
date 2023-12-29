@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use weaver_ecs::{Bundle, Entity, World};
 
 use crate::{
-    core::{mesh::Mesh, model::Model},
+    core::{mesh::Mesh, model::Model, texture::Texture},
     renderer::Renderer,
 };
 
@@ -27,5 +27,15 @@ impl<'a> Commands<'a> {
     pub fn load_gltf(&self, path: &str) -> Model {
         let renderer = self.renderer.borrow();
         Model::load_gltf(path, &renderer).unwrap()
+    }
+
+    pub fn load_obj(&self, path: &str) -> Model {
+        let renderer = self.renderer.borrow();
+        Model::load_obj(path, &renderer).unwrap()
+    }
+
+    pub fn load_texture(&self, path: &str, is_normal_map: bool) -> Texture {
+        let renderer = self.renderer.borrow();
+        Texture::load(path, &renderer.device, &renderer.queue, None, is_normal_map)
     }
 }

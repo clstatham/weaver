@@ -9,6 +9,8 @@ pub struct Vertex {
     pub position: glam::Vec3,
     pub normal: glam::Vec3,
     pub uv: glam::Vec2,
+    pub tangent: glam::Vec3,
+    pub bitangent: glam::Vec3,
 }
 
 impl Vertex {
@@ -34,6 +36,20 @@ impl Vertex {
                     offset: (std::mem::size_of::<glam::Vec3>() * 2) as u64,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x2,
+                },
+                // tangent
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<glam::Vec3>() * 2
+                        + std::mem::size_of::<glam::Vec2>()) as u64,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                // bitangent
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<glam::Vec3>() * 3
+                        + std::mem::size_of::<glam::Vec2>()) as u64,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Float32x3,
                 },
             ],
         }

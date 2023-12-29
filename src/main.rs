@@ -27,23 +27,22 @@ fn main() -> anyhow::Result<()> {
 
     app.spawn(core::light::PointLight::new(
         glam::Vec3::new(5.0, 5.0, 5.0),
-        core::color::Color::RED,
-        1.0,
-    ));
-
-    app.spawn(core::light::PointLight::new(
-        glam::Vec3::new(-5.0, 5.0, 5.0),
-        core::color::Color::GREEN,
+        core::color::Color::WHITE,
         1.0,
     ));
 
     app.build(|commands| {
         let mut model = commands.load_gltf("assets/woodcube.glb");
         model.transform.translate(-2.0, 0.0, 0.0);
-        commands.spawn(model);
-
-        let mut model = commands.load_gltf("assets/wooden_monkey.glb");
-        model.transform.translate(2.0, 0.0, 0.0);
+        // model.material.texture_scaling = 4.0;
+        model.material.diffuse_texture = Some(commands.load_texture(
+            "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_basecolor.jpg",
+            false,
+        ));
+        model.material.normal_texture = Some(commands.load_texture(
+            "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_normal.jpg",
+            true,
+        ));
         commands.spawn(model);
     });
 
