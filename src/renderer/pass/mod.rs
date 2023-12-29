@@ -2,8 +2,7 @@ use weaver_ecs::World;
 
 use crate::core::texture::Texture;
 
-pub mod model;
-pub mod phong;
+pub mod pbr;
 
 pub fn preprocess_shader(shader: &str) -> String {
     let mut output = String::new();

@@ -2,6 +2,8 @@ use weaver_proc_macro::Component;
 
 use super::color::Color;
 
+pub const MAX_LIGHTS: usize = 16;
+
 #[derive(Debug, Clone, Copy, Component)]
 pub enum Light {
     Point(PointLight),

@@ -1,12 +1,7 @@
-use core::{
-    mesh::Mesh,
-    model::Model,
-    time::Time,
-    transform::{self, Transform},
-};
+use core::{mesh::Mesh, model::Model, time::Time, transform::Transform};
 
 use app::App;
-use weaver_ecs::{resource::Res, *};
+use weaver_ecs::*;
 use weaver_proc_macro::system;
 
 pub mod app;
@@ -30,24 +25,26 @@ fn main() -> anyhow::Result<()> {
 
     let mut app = App::new(1600, 900);
 
-    let light = app.spawn(core::light::PointLight::new(
+    app.spawn(core::light::PointLight::new(
         glam::Vec3::new(5.0, 5.0, 5.0),
-        core::color::Color::WHITE,
+        core::color::Color::RED,
+        1.0,
+    ));
+
+    app.spawn(core::light::PointLight::new(
+        glam::Vec3::new(-5.0, 5.0, 5.0),
+        core::color::Color::GREEN,
         1.0,
     ));
 
     app.build(|commands| {
-        let mesh = commands.load_gltf("assets/woodcube.glb").unwrap();
-        commands.spawn(Model::new(
-            mesh,
-            Transform::from_translation(glam::Vec3::new(0.0, 0.0, 0.0)),
-        ));
+        let mut model = commands.load_gltf("assets/woodcube.glb");
+        model.transform.translate(-2.0, 0.0, 0.0);
+        commands.spawn(model);
 
-        let mesh = commands.load_gltf("assets/wooden_monkey.glb").unwrap();
-        commands.spawn(Model::new(
-            mesh,
-            Transform::from_translation(glam::Vec3::new(2.0, 0.0, 0.0)),
-        ));
+        let mut model = commands.load_gltf("assets/wooden_monkey.glb");
+        model.transform.translate(2.0, 0.0, 0.0);
+        commands.spawn(model);
     });
 
     app.add_system(Update);

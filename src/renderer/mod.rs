@@ -3,7 +3,7 @@ use winit::window::Window;
 
 use crate::core::texture::Texture;
 
-use self::pass::{model::ModelRenderPass, Pass};
+use self::pass::{pbr::PbrRenderPass, Pass};
 
 pub mod pass;
 
@@ -17,7 +17,7 @@ pub struct Renderer {
     pub(crate) depth_texture: Texture,
     pub(crate) normal_texture: Texture,
 
-    pub(crate) model_pass: ModelRenderPass,
+    pub(crate) pbr_pass: PbrRenderPass,
     pub(crate) passes: Vec<Box<dyn pass::Pass>>,
 }
 
@@ -97,7 +97,7 @@ impl Renderer {
                 | wgpu::TextureUsages::TEXTURE_BINDING,
         );
 
-        let model_pass = ModelRenderPass::new(&device, size.width, size.height).unwrap();
+        let pbr_pass = PbrRenderPass::new(&device);
 
         let mut this = Self {
             surface,
@@ -107,12 +107,12 @@ impl Renderer {
             color_texture,
             depth_texture,
             normal_texture,
-            model_pass,
+            pbr_pass,
             passes: vec![],
         };
-        this.push_render_pass(
-            pass::phong::PhongRenderPass::new(&this.device, &this.config).unwrap(),
-        );
+        // this.push_render_pass(
+        //     pass::phong::PhongRenderPass::new(&this.device, &this.config).unwrap(),
+        // );
 
         this
     }
@@ -162,7 +162,7 @@ impl Renderer {
 
         self.queue.submit(std::iter::once(encoder.finish()));
 
-        self.model_pass.render(
+        self.pbr_pass.render(
             &self.device,
             &self.queue,
             &self.color_texture,

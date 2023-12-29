@@ -2,6 +2,7 @@ pub mod camera;
 pub mod color;
 pub mod input;
 pub mod light;
+pub mod material;
 pub mod mesh;
 pub mod model;
 pub mod texture;

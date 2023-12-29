@@ -1,8 +1,11 @@
 use std::cell::RefCell;
 
-use weaver_ecs::{Bundle, World};
+use weaver_ecs::{Bundle, Entity, World};
 
-use crate::{core::mesh::Mesh, renderer::Renderer};
+use crate::{
+    core::{mesh::Mesh, model::Model},
+    renderer::Renderer,
+};
 
 pub struct Commands<'a> {
     world: RefCell<&'a mut World>,
@@ -21,15 +24,8 @@ impl<'a> Commands<'a> {
         self.world.borrow_mut().spawn(bundle);
     }
 
-    pub fn load_gltf(&self, path: &str) -> anyhow::Result<Mesh> {
+    pub fn load_gltf(&self, path: &str) -> Model {
         let renderer = self.renderer.borrow();
-        Mesh::load_gltf(
-            path,
-            &renderer.device,
-            &renderer.queue,
-            &renderer.model_pass.model_buffer,
-            &renderer.model_pass.view_buffer,
-            &renderer.model_pass.proj_buffer,
-        )
+        Model::load_gltf(path, &renderer).unwrap()
     }
 }

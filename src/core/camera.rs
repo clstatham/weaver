@@ -1,6 +1,30 @@
 use weaver_proc_macro::Resource;
 
-#[derive(Debug, Resource)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+pub struct CameraUniform {
+    pub view_proj: glam::Mat4,
+    pub inv_view_proj: glam::Mat4,
+    pub camera_position: glam::Vec3,
+    _padding: u32,
+}
+
+impl From<Camera> for CameraUniform {
+    fn from(camera: Camera) -> Self {
+        let view_proj = camera.projection_matrix() * camera.view_matrix();
+        let inv_view_proj = view_proj.inverse();
+        let camera_position = camera.eye;
+
+        Self {
+            view_proj,
+            inv_view_proj,
+            camera_position,
+            _padding: 0,
+        }
+    }
+}
+
+#[derive(Debug, Resource, Clone, Copy)]
 pub struct Camera {
     pub eye: glam::Vec3,
     pub target: glam::Vec3,

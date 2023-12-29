@@ -1,7 +1,7 @@
 use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
 
-use super::{model::Model, texture::Texture};
+use super::{material::Material, model::Model, texture::Texture};
 
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
@@ -10,94 +10,39 @@ pub struct Vertex {
     pub normal: glam::Vec3,
     pub uv: glam::Vec2,
 }
+
+impl Vertex {
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                // position
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                // normal
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<glam::Vec3>() as u64,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                // uv
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<glam::Vec3>() * 2) as u64,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+            ],
+        }
+    }
+}
+
 #[derive(Component)]
 pub struct Mesh {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
-    pub(crate) texture: Texture,
-    pub(crate) bind_group: wgpu::BindGroup,
     pub(crate) num_indices: u32,
-}
-
-impl Mesh {
-    pub fn load_gltf(
-        path: impl AsRef<std::path::Path>,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        model_buffer: &wgpu::Buffer,
-        view_buffer: &wgpu::Buffer,
-        proj_buffer: &wgpu::Buffer,
-    ) -> anyhow::Result<Mesh> {
-        let (document, buffers, images) = gltf::import(path.as_ref())?;
-
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-
-        for mesh in document.meshes() {
-            for primitive in mesh.primitives() {
-                let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-
-                let positions = reader.read_positions().unwrap();
-                let normals = reader.read_normals().unwrap();
-                let uvs = reader.read_tex_coords(0).unwrap().into_f32();
-
-                for (position, normal, uv) in itertools::multizip((positions, normals, uvs)) {
-                    vertices.push(Vertex {
-                        position: glam::Vec3::from(position),
-                        normal: glam::Vec3::from(normal),
-                        uv: glam::Vec2::from(uv),
-                    });
-                }
-
-                let index_reader = reader.read_indices().unwrap().into_u32();
-                for index in index_reader {
-                    indices.push(index);
-                }
-            }
-        }
-
-        let texture = if let Some(image) = images.into_iter().next() {
-            Texture::from_data_r8g8b8(
-                image.width as usize,
-                image.height as usize,
-                &image.pixels,
-                device,
-                queue,
-                Some("GLTF Mesh Texture"),
-            )
-        } else {
-            todo!("load default texture")
-        };
-
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
-        let num_indices = indices.len() as u32;
-
-        let bind_group = Model::bind_group(
-            device,
-            model_buffer,
-            view_buffer,
-            proj_buffer,
-            &texture.view,
-            &texture.sampler,
-        );
-
-        Ok(Self {
-            vertex_buffer,
-            index_buffer,
-            num_indices,
-            texture,
-            bind_group,
-        })
-    }
 }
