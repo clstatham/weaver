@@ -15,7 +15,6 @@ struct VertexOutput {
     @location(5) tangent_view_position: vec3<f32>,
     @location(6) world_tangent: vec3<f32>,
     @location(7) world_bitangent: vec3<f32>,
-
 }
 
 struct CameraUniform {
