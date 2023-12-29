@@ -95,7 +95,7 @@ impl App {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
                 }
                 winit::event::Event::RedrawRequested(_) => {
-                    self.renderer.render(&mut self.world).unwrap();
+                    self.renderer.render(&self.world).unwrap();
 
                     self.fps_frame_count += 1;
                     if self.fps_last_update.elapsed() > std::time::Duration::from_secs(1) {

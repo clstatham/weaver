@@ -1,8 +1,15 @@
 use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
 
-use super::{color::Color, model::Model, texture::Texture, Vertex};
+use super::{model::Model, texture::Texture};
 
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+pub struct Vertex {
+    pub position: glam::Vec3,
+    pub normal: glam::Vec3,
+    pub uv: glam::Vec2,
+}
 #[derive(Component)]
 pub struct Mesh {
     pub vertex_buffer: wgpu::Buffer,
@@ -17,8 +24,9 @@ impl Mesh {
         path: impl AsRef<std::path::Path>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        transform_buffer: &wgpu::Buffer,
-        camera_transform_buffer: &wgpu::Buffer,
+        model_buffer: &wgpu::Buffer,
+        view_buffer: &wgpu::Buffer,
+        proj_buffer: &wgpu::Buffer,
     ) -> anyhow::Result<Mesh> {
         let (document, buffers, images) = gltf::import(path.as_ref())?;
 
@@ -34,12 +42,11 @@ impl Mesh {
                 let uvs = reader.read_tex_coords(0).unwrap().into_f32();
 
                 for (position, normal, uv) in itertools::multizip((positions, normals, uvs)) {
-                    vertices.push(Vertex::new(
-                        glam::Vec3::from(position),
-                        glam::Vec3::from(normal),
-                        Color::WHITE,
-                        glam::Vec2::from(uv),
-                    ));
+                    vertices.push(Vertex {
+                        position: glam::Vec3::from(position),
+                        normal: glam::Vec3::from(normal),
+                        uv: glam::Vec2::from(uv),
+                    });
                 }
 
                 let index_reader = reader.read_indices().unwrap().into_u32();
@@ -78,8 +85,9 @@ impl Mesh {
 
         let bind_group = Model::bind_group(
             device,
-            transform_buffer,
-            camera_transform_buffer,
+            model_buffer,
+            view_buffer,
+            proj_buffer,
             &texture.view,
             &texture.sampler,
         );

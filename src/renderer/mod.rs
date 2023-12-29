@@ -1,14 +1,9 @@
-use weaver_ecs::{Query, Queryable, Read, World};
+use weaver_ecs::World;
 use winit::window::Window;
 
-use crate::core::{
-    camera::{Camera, CameraUniform},
-    light::PointLight,
-    mesh::Mesh,
-    model::Model,
-    texture::Texture,
-    transform::{self, Transform},
-};
+use crate::core::texture::Texture;
+
+use self::pass::{model::ModelRenderPass, Pass};
 
 pub mod pass;
 
@@ -18,16 +13,12 @@ pub struct Renderer {
     pub(crate) queue: wgpu::Queue,
     pub(crate) config: wgpu::SurfaceConfiguration,
 
-    pub(crate) camera_uniform_buffer: wgpu::Buffer,
-
-    pub(crate) light_uniform_buffer: wgpu::Buffer,
-    pub(crate) light_bind_group: wgpu::BindGroup,
-
+    pub(crate) color_texture: Texture,
     pub(crate) depth_texture: Texture,
+    pub(crate) normal_texture: Texture,
 
-    // shared and rewritten for every model
-    pub(crate) model_transform_buffer: wgpu::Buffer,
-    pub(crate) model_pipeline: wgpu::RenderPipeline,
+    pub(crate) model_pass: ModelRenderPass,
+    pub(crate) passes: Vec<Box<dyn pass::Pass>>,
 }
 
 impl Renderer {
@@ -63,15 +54,10 @@ impl Renderer {
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(surface_caps.formats[0]);
+        let surface_format = wgpu::TextureFormat::Rgba8UnormSrgb;
 
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
             format: surface_format,
             width: size.width,
             height: size.height,
@@ -81,89 +67,88 @@ impl Renderer {
         };
         surface.configure(&device, &config);
 
-        let model_pipeline = Model::create_render_pipeline(&device);
-
-        let model_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Model Transform Buffer"),
-            size: std::mem::size_of::<Transform>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let camera_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Camera Transform Buffer"),
-            size: std::mem::size_of::<CameraUniform>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let light_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Light Uniform Buffer"),
-            size: std::mem::size_of::<PointLight>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Light Bind Group"),
-            layout: &PointLight::bind_group_layout(&device),
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: light_uniform_buffer.as_entire_binding(),
-            }],
-        });
+        let color_texture = Texture::create_color_texture(
+            &device,
+            config.width as usize,
+            config.height as usize,
+            Some("Color Texture"),
+            wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+        );
 
         let depth_texture = Texture::create_depth_texture(
             &device,
             config.width as usize,
             config.height as usize,
             Some("Depth Texture"),
+            wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
         );
 
-        Self {
+        let normal_texture = Texture::create_normal_texture(
+            &device,
+            config.width as usize,
+            config.height as usize,
+            Some("Normal Texture"),
+            wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+        );
+
+        let model_pass = ModelRenderPass::new(&device, size.width, size.height).unwrap();
+
+        let mut this = Self {
             surface,
             device,
             queue,
             config,
-            model_pipeline,
-            model_transform_buffer,
-            camera_uniform_buffer,
-            light_uniform_buffer,
-            light_bind_group,
+            color_texture,
             depth_texture,
-        }
+            normal_texture,
+            model_pass,
+            passes: vec![],
+        };
+        this.push_render_pass(
+            pass::phong::PhongRenderPass::new(&this.device, &this.config).unwrap(),
+        );
+
+        this
     }
 
-    pub fn render(&mut self, world: &mut World) -> anyhow::Result<()> {
+    pub fn push_render_pass<T: Pass + 'static>(&mut self, pass: T) {
+        self.passes.push(Box::new(pass));
+    }
+
+    pub fn render(&mut self, world: &World) -> anyhow::Result<()> {
         let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-        let mut camera = world.write_resource::<Camera>();
-        camera.update();
-
-        self.queue.write_buffer(
-            &self.camera_uniform_buffer,
-            0,
-            bytemuck::cast_slice(&[camera.uniform]),
-        );
 
         // clear the screen
         {
             let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: true,
-                    },
-                })],
+                color_attachments: &[
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &self.color_texture.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: true,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &self.normal_texture.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: true,
+                        },
+                    }),
+                ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture.view,
                     depth_ops: Some(wgpu::Operations {
@@ -175,53 +160,36 @@ impl Renderer {
             });
         }
 
-        let query = world.query::<Query<(Read<Mesh>, Read<Transform>)>>();
+        self.model_pass.render(
+            &mut encoder,
+            &self.queue,
+            &self.color_texture,
+            &self.normal_texture,
+            &self.depth_texture,
+            world,
+        )?;
 
-        let light_query = world.query::<Query<Read<PointLight>>>();
-        let light = light_query.iter().next().unwrap();
-
-        self.queue.write_buffer(
-            &self.light_uniform_buffer,
-            0,
-            bytemuck::cast_slice(&[*light]),
-        );
-
-        for (mesh, transform) in query.iter() {
-            self.queue.write_buffer(
-                &self.model_transform_buffer,
-                0,
-                bytemuck::cast_slice(&[*transform]),
-            );
-            {
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: true,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.depth_texture.view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: true,
-                        }),
-                        stencil_ops: None,
-                    }),
-                });
-
-                render_pass.set_pipeline(&self.model_pipeline);
-                render_pass.set_bind_group(0, &mesh.bind_group, &[]);
-                render_pass.set_bind_group(1, &self.light_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                render_pass
-                    .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
-            }
+        for pass in self.passes.iter() {
+            pass.render(
+                &mut encoder,
+                &self.queue,
+                &self.color_texture,
+                &self.normal_texture,
+                &self.depth_texture,
+                world,
+            )?;
         }
+
+        // copy color texture to the output
+        encoder.copy_texture_to_texture(
+            self.color_texture.texture.as_image_copy(),
+            output.texture.as_image_copy(),
+            wgpu::Extent3d {
+                width: self.config.width,
+                height: self.config.height,
+                depth_or_array_layers: 1,
+            },
+        );
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();

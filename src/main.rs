@@ -12,7 +12,7 @@ pub mod renderer;
 fn update(model: Query<(Read<Mesh>, Write<Transform>)>, timey: Res<Time>) {
     let delta = timey.delta_time;
     for (_mesh, mut transform) in model.iter() {
-        transform.rotate(0.5f32 * delta, glam::Vec3::Y);
+        transform.rotate(1.0f32 * delta, glam::Vec3::Y);
     }
 }
 

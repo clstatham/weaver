@@ -1,7 +1,5 @@
 use weaver_proc_macro::Component;
 
-use super::Vertex;
-
 #[derive(Debug, Clone, Copy, PartialEq, Component, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Transform {
@@ -28,15 +26,6 @@ impl Transform {
     pub fn scale(&mut self, x: f32, y: f32, z: f32) -> Self {
         self.matrix *= glam::Mat4::from_scale(glam::Vec3::new(x, y, z));
         *self
-    }
-
-    pub fn transform_vertex(&self, vertex: Vertex) -> Vertex {
-        let position = self.matrix.transform_point3(vertex.position);
-        let normal = self.matrix.transform_vector3(vertex.normal).normalize();
-        let color = vertex.color;
-        let uv = vertex.uv;
-
-        Vertex::new(position, normal, color, uv)
     }
 }
 
