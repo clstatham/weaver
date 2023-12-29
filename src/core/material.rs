@@ -22,7 +22,7 @@ impl Default for Material {
         Self {
             diffuse: Color::WHITE,
             diffuse_texture: None,
-            metallic: 2.0,
+            metallic: 0.0,
             normal_texture: None,
             texture_scaling: 1.0,
             bind_group: None,

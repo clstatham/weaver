@@ -1,3 +1,5 @@
+const PI: f32 = 3.1415926535897932384626433832795;
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -38,6 +40,7 @@ struct LightUniform {
     _pad3: array<u32, 3>,
 };
 
+
 @group(0) @binding(0) var<uniform> model_transform: mat4x4<f32>;
 @group(0) @binding(1) var<uniform> camera: CameraUniform;
 @group(0) @binding(2) var<uniform> material: MaterialUniform;
@@ -46,6 +49,17 @@ struct LightUniform {
 @group(0) @binding(5) var          normal_tex: texture_2d<f32>;
 @group(0) @binding(6) var          normal_tex_sampler: sampler;
 @group(0) @binding(7) var<storage> lights: array<LightUniform>;
+
+fn frensel_factor(f0: vec3<f32>, product: f32) -> vec3<f32> {
+    return mix(f0, vec3<f32>(1.0, 1.0, 1.0), pow(1.01 - product, 5.0));
+}
+
+fn phong_specular(v: vec3<f32>, l: vec3<f32>, n: vec3<f32>, specular: vec3<f32>, roughness: f32) -> vec3<f32> {
+    let r = reflect(-l, n);
+    let spec = max(dot(r, v), 0.0);
+    let k = 1.999 / (roughness * roughness);
+    return min(1.0, 3.0 * 0.0398 * k) * pow(spec, min(10000.0, k)) * specular;
+}
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
@@ -80,7 +94,7 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
     let tangent_normal = normalize(tex_normal * 2.0 - 1.0);
 
-    var out_color = vec3<f32>(0.0, 0.0, 0.0);
+    var out_color = tex_color;
 
     for (var i = 0u; i < arrayLength(&lights); i = i + 1u) {
         let light = lights[i];
@@ -88,18 +102,39 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
         let tangent_matrix = transpose(mat3x3<f32>(vertex.world_tangent, vertex.world_bitangent, vertex.world_normal));
         let tangent_light_pos = tangent_matrix * light.position;
 
-        let light_dir = normalize(tangent_light_pos - vertex.tangent_position);
-        let view_dir = normalize(vertex.tangent_view_position - vertex.tangent_position);
-        let half_dir = normalize(light_dir + view_dir);
+        let a = 20.0 / dot(tangent_light_pos - vertex.tangent_position, tangent_light_pos - vertex.tangent_position);
 
-        let diffuse = max(dot(tangent_normal, light_dir), 0.0);
-        let specular = pow(max(dot(tangent_normal, half_dir), 0.0), metallic);
-        out_color += light.color * (diffuse + specular) * light.intensity;
+        let l = normalize(tangent_light_pos - vertex.tangent_position);
+        let v = normalize(vertex.tangent_view_position - vertex.tangent_position);
+        let h = normalize(l + v);
+        let nn = normalize(tangent_normal);
+
+        let binormal = cross(vertex.world_normal, vertex.world_tangent);
+        let nb = normalize(binormal);
+        let tbn = mat3x3<f32>(nb, cross(nn, nb), nn);
+
+        let n = tbn * tangent_normal;
+        let roughness = 0.5;
+        let metallic = material.metallic.x;
+
+        let f0 = vec3<f32>(0.04, 0.04, 0.04);
+
+        let n_dot_l = max(dot(n, l), 0.0);
+        let n_dot_v = max(dot(n, v), 0.001);
+        let n_dot_h = max(dot(n, h), 0.001);
+        let h_dot_v = max(dot(h, v), 0.001);
+        let l_dot_v = max(dot(l, v), 0.001);
+
+        let specular_frensel = frensel_factor(f0, n_dot_v);
+        let spec = phong_specular(v, l, n, specular_frensel, roughness) * n_dot_l;
+
+        let diffuse = (1.0 - specular_frensel) * (1.0 / PI) * n_dot_l;
+
+        let reflected_light = spec * light.color * light.intensity;
+        let diffuse_light = diffuse * light.color * light.intensity;
+
+        out_color += reflected_light + (diffuse_light * mix(tex_color, vec3<f32>(0.0, 0.0, 0.0), metallic));
     }
-
-    out_color += 0.1; // ambient
-
-    out_color *= tex_color;
 
     return vec4<f32>(out_color, 1.0);
 }
