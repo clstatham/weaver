@@ -15,7 +15,6 @@ use super::Pass;
 
 pub struct PbrRenderPass {
     pub(crate) bind_group_layout: wgpu::BindGroupLayout,
-    pub(crate) pipeline_layout: wgpu::PipelineLayout,
     pub(crate) pipeline: wgpu::RenderPipeline,
 
     pub(crate) model_transform_buffer: wgpu::Buffer,
@@ -27,8 +26,7 @@ pub struct PbrRenderPass {
 impl PbrRenderPass {
     pub fn new(device: &wgpu::Device) -> Self {
         let bind_group_layout = Self::bind_group_layout(device);
-        let pipeline_layout = Self::pipeline_layout(device);
-        let pipeline = Self::create_pipeline(device, &pipeline_layout);
+        let pipeline = Self::create_pipeline(device, &Self::pipeline_layout(device));
 
         let model_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Model Transform Buffer"),
@@ -60,7 +58,6 @@ impl PbrRenderPass {
 
         Self {
             bind_group_layout,
-            pipeline_layout,
             pipeline,
             model_transform_buffer,
             camera_buffer,

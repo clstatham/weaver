@@ -1,6 +1,6 @@
 use weaver_proc_macro::Component;
 
-use crate::renderer::pass::{pbr::PbrRenderPass, Pass};
+use crate::renderer::pass::pbr::PbrRenderPass;
 
 use super::{color::Color, texture::Texture};
 

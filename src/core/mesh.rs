@@ -1,7 +1,4 @@
 use weaver_proc_macro::Component;
-use wgpu::util::DeviceExt;
-
-use super::{material::Material, model::Model, texture::Texture};
 
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]

@@ -99,7 +99,7 @@ impl Renderer {
 
         let pbr_pass = PbrRenderPass::new(&device);
 
-        let mut this = Self {
+        Self {
             surface,
             device,
             queue,
@@ -109,12 +109,7 @@ impl Renderer {
             normal_texture,
             pbr_pass,
             passes: vec![],
-        };
-        // this.push_render_pass(
-        //     pass::phong::PhongRenderPass::new(&this.device, &this.config).unwrap(),
-        // );
-
-        this
+        }
     }
 
     pub fn push_render_pass<T: Pass + 'static>(&mut self, pass: T) {

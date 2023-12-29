@@ -3,7 +3,6 @@ use std::sync::{Arc, RwLock};
 use rustc_hash::FxHashMap;
 
 use crate::{
-    component::{BorrowIntent, BorrowStatus},
     resource::{Res, ResMut},
     Bundle, Component, Entity, Resource, System,
 };

@@ -244,7 +244,7 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                                     _ => panic!("Invalid argument type: Expected Res<...>"),
                                 };
                                 match &inner_ty {
-                                    syn::Type::Tuple(tuple) => {
+                                    syn::Type::Tuple(_tuple) => {
                                         panic!("Res cannot take a tuple as its inner type")
                                     }
                                     syn::Type::Path(path) => {
@@ -285,7 +285,7 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                                     _ => panic!("Invalid argument type: Expected ResMut<...>"),
                                 };
                                 match &inner_ty {
-                                    syn::Type::Tuple(tuple) => {
+                                    syn::Type::Tuple(_tuple) => {
                                         panic!("ResMut cannot take a tuple as its inner type")
                                     }
                                     syn::Type::Path(path) => {

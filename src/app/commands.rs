@@ -1,9 +1,9 @@
 use std::cell::RefCell;
 
-use weaver_ecs::{Bundle, Entity, World};
+use weaver_ecs::{Bundle, World};
 
 use crate::{
-    core::{mesh::Mesh, model::Model, texture::Texture},
+    core::{model::Model, texture::Texture},
     renderer::Renderer,
 };
 
