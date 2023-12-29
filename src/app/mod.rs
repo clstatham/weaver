@@ -3,9 +3,11 @@ use winit::{event_loop::EventLoop, window::Window};
 use winit_input_helper::WinitInputHelper;
 
 use crate::{
-    core::{camera::Camera, input::Input, model::Model, time::Time},
+    core::{camera::Camera, input::Input, time::Time},
     renderer::Renderer,
 };
+
+pub mod commands;
 
 pub struct App {
     event_loop: EventLoop<()>,
@@ -71,9 +73,13 @@ impl App {
         self.world.add_system(system);
     }
 
-    pub fn load_model(&mut self, path: &str) -> anyhow::Result<Entity> {
-        let model = Model::load_gltf(path, &self.renderer)?;
-        Ok(self.spawn(model))
+    // todo: this is a temporary workaround until we have proper "setup" systems, and systems can take `Commands` as an argument
+    pub fn build<'a, F>(&'a mut self, f: F)
+    where
+        F: FnOnce(commands::Commands<'a>),
+    {
+        let commands = commands::Commands::new(&mut self.world, &mut self.renderer);
+        f(commands);
     }
 
     pub fn run(mut self) {

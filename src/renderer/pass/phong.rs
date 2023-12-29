@@ -293,13 +293,17 @@ impl Pass for PhongRenderPass {
 
     fn render(
         &self,
-        encoder: &mut wgpu::CommandEncoder,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         color_texture: &Texture,
         normal_texture: &Texture,
         depth_texture: &Texture,
         world: &weaver_ecs::World,
     ) -> anyhow::Result<()> {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Phong Render Pass Initial Encoder"),
+        });
+
         let camera = world.read_resource::<Camera>();
         queue.write_buffer(
             &self.inverse_camera_proj_buffer,
@@ -342,9 +346,15 @@ impl Pass for PhongRenderPass {
             },
         );
 
+        queue.submit(std::iter::once(encoder.finish()));
+
         let query = world.query::<Query<Read<PointLight>>>();
 
         for light in query.iter() {
+            let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Phong Render Pass Buffer Write Encoder"),
+            });
+
             let light_uniform = LightUniform {
                 position: light.position,
                 _padding: 0,
@@ -360,22 +370,31 @@ impl Pass for PhongRenderPass {
                 bytemuck::cast_slice(&[light_uniform]),
             );
 
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Phong Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &color_texture.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
+            queue.submit(std::iter::once(encoder.finish()));
 
-            render_pass.set_pipeline(self.pipeline());
-            render_pass.set_bind_group(0, &self.bind_group, &[]);
-            render_pass.draw(0..6, 0..1);
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Phong Render Pass Encoder"),
+            });
+            {
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Phong Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &color_texture.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: true,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                });
+
+                render_pass.set_pipeline(self.pipeline());
+                render_pass.set_bind_group(0, &self.bind_group, &[]);
+                render_pass.draw(0..6, 0..1);
+            }
+
+            queue.submit(std::iter::once(encoder.finish()));
         }
 
         Ok(())

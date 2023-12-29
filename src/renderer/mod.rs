@@ -130,7 +130,7 @@ impl Renderer {
         // clear the screen
         {
             let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
+                label: Some("Clear Screen"),
                 color_attachments: &[
                     Some(wgpu::RenderPassColorAttachment {
                         view: &self.color_texture.view,
@@ -160,8 +160,10 @@ impl Renderer {
             });
         }
 
+        self.queue.submit(std::iter::once(encoder.finish()));
+
         self.model_pass.render(
-            &mut encoder,
+            &self.device,
             &self.queue,
             &self.color_texture,
             &self.normal_texture,
@@ -171,7 +173,7 @@ impl Renderer {
 
         for pass in self.passes.iter() {
             pass.render(
-                &mut encoder,
+                &self.device,
                 &self.queue,
                 &self.color_texture,
                 &self.normal_texture,
@@ -179,6 +181,12 @@ impl Renderer {
                 world,
             )?;
         }
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Copy Color Texture Encoder"),
+            });
 
         // copy color texture to the output
         encoder.copy_texture_to_texture(

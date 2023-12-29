@@ -23,7 +23,7 @@ macro_rules! include_shader {
 pub trait Pass {
     fn render(
         &self,
-        encoder: &mut wgpu::CommandEncoder,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         color_texture: &Texture,
         normal_texture: &Texture,

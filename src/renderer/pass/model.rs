@@ -203,13 +203,17 @@ impl Pass for ModelRenderPass {
 
     fn render(
         &self,
-        encoder: &mut wgpu::CommandEncoder,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         color_texture: &Texture,
         normal_texture: &Texture,
         depth_texture: &Texture,
         world: &World,
     ) -> anyhow::Result<()> {
+        let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Model Render Pass Initial Encoder"),
+        });
+
         // write camera buffers
         let camera = world.read_resource::<Camera>();
         queue.write_buffer(
@@ -223,47 +227,64 @@ impl Pass for ModelRenderPass {
             bytemuck::cast_slice(&[camera.projection_matrix()]),
         );
 
+        queue.submit(std::iter::once(encoder.finish()));
+
         // render models
         let query = world.query::<Query<(Read<Mesh>, Read<Transform>)>>();
         for (mesh, transform) in query.iter() {
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Model Render Pass Buffer Write Encoder"),
+            });
+
             // write model transform buffer
             queue.write_buffer(&self.model_buffer, 0, bytemuck::cast_slice(&[*transform]));
 
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &color_texture.view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: true,
-                        },
-                    }),
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &normal_texture.view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: true,
-                        },
-                    }),
-                ],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_texture.view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    }),
-                    stencil_ops: None,
-                }),
+            queue.submit(std::iter::once(encoder.finish()));
+
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Model Render Pass Encoder"),
             });
 
-            render_pass.set_pipeline(&self.pipeline);
-            render_pass.set_bind_group(0, &mesh.bind_group, &[]);
-            render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+            {
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Model Render Pass"),
+                    color_attachments: &[
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &color_texture.view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: true,
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &normal_texture.view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: true,
+                            },
+                        }),
+                    ],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &depth_texture.view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: true,
+                        }),
+                        stencil_ops: None,
+                    }),
+                });
+
+                render_pass.set_pipeline(&self.pipeline);
+                render_pass.set_bind_group(0, &mesh.bind_group, &[]);
+                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                render_pass
+                    .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+            }
+
+            queue.submit(std::iter::once(encoder.finish()));
         }
 
         Ok(())

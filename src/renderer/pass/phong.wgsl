@@ -18,11 +18,12 @@ struct LightUniform {
 @group(0) @binding(8) var<uniform> camera_pos: vec3<f32>;
 
 fn screen_to_world(coord: vec2<f32>, depth_sample: f32) -> vec3<f32> {
-    let posClip = vec4(coord.x * 2.0 - 1.0, (1.0 - coord.y) * 2.0 - 1.0, depth_sample, 1.0);
-    let posWorldW = inv_camera_projection * posClip;
-    let posWorld = posWorldW.xyz / posWorldW.www;
-    return posWorld;
+    let pos_clip = vec4(coord.x * 2.0 - 1.0, (1.0 - coord.y) * 2.0 - 1.0, depth_sample, 1.0);
+    let pos_world_w = inv_camera_projection * pos_clip;
+    let pos_world = pos_world_w.xyz / pos_world_w.www;
+    return pos_world;
 }
+
 @vertex
 fn vs_main(@builtin(vertex_index) idx: u32) -> @builtin(position) vec4<f32> {
     var pos = array(

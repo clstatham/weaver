@@ -1,4 +1,9 @@
-use core::{mesh::Mesh, time::Time, transform::Transform};
+use core::{
+    mesh::Mesh,
+    model::Model,
+    time::Time,
+    transform::{self, Transform},
+};
 
 use app::App;
 use weaver_ecs::{resource::Res, *};
@@ -11,8 +16,12 @@ pub mod renderer;
 #[system(Update)]
 fn update(model: Query<(Read<Mesh>, Write<Transform>)>, timey: Res<Time>) {
     let delta = timey.delta_time;
-    for (_mesh, mut transform) in model.iter() {
-        transform.rotate(1.0f32 * delta, glam::Vec3::Y);
+    for (i, (_mesh, mut transform)) in model.iter().enumerate() {
+        if i % 2 == 0 {
+            transform.rotate(delta, glam::Vec3::Y);
+        } else {
+            transform.rotate(-delta, glam::Vec3::Y);
+        }
     }
 }
 
@@ -27,7 +36,19 @@ fn main() -> anyhow::Result<()> {
         1.0,
     ));
 
-    let model1 = app.load_model("assets/wooden_monkey.glb")?;
+    app.build(|commands| {
+        let mesh = commands.load_gltf("assets/woodcube.glb").unwrap();
+        commands.spawn(Model::new(
+            mesh,
+            Transform::from_translation(glam::Vec3::new(0.0, 0.0, 0.0)),
+        ));
+
+        let mesh = commands.load_gltf("assets/wooden_monkey.glb").unwrap();
+        commands.spawn(Model::new(
+            mesh,
+            Transform::from_translation(glam::Vec3::new(2.0, 0.0, 0.0)),
+        ));
+    });
 
     app.add_system(Update);
 

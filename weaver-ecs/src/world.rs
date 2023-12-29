@@ -10,6 +10,7 @@ use crate::{
 
 #[derive(Default)]
 pub struct World {
+    next_entity_id: u32,
     pub(crate) entities_components: FxHashMap<Entity, FxHashMap<u64, Arc<RwLock<dyn Component>>>>,
     pub(crate) systems: Vec<Box<dyn System>>,
     pub(crate) resources: FxHashMap<u64, Arc<RwLock<dyn crate::resource::Resource>>>,
@@ -21,9 +22,8 @@ impl World {
     }
 
     pub fn create_entity(&mut self) -> Entity {
-        static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-
-        let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = self.next_entity_id;
+        self.next_entity_id += 1;
         let entity = Entity::new(id, 0);
         self.entities_components
             .insert(entity, FxHashMap::default());
