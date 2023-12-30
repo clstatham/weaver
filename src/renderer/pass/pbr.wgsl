@@ -31,7 +31,7 @@ struct MaterialUniform {
     texture_scale: vec4<f32>,
 };
 
-struct LightUniform {
+struct PointLight {
     position: vec3<f32>,
     _pad1: u32,
     color: vec3<f32>,
@@ -40,15 +40,27 @@ struct LightUniform {
     _pad3: array<u32, 3>,
 };
 
+struct DirectionalLight {
+    direction: vec3<f32>,
+    _pad1: u32,
+    color: vec3<f32>,
+    _pad2: u32,
+    intensity: f32,
+    _pad3: array<u32, 3>,
+};
 
-@group(0) @binding(0) var<uniform> model_transform: mat4x4<f32>;
-@group(0) @binding(1) var<uniform> camera: CameraUniform;
-@group(0) @binding(2) var<uniform> material: MaterialUniform;
-@group(0) @binding(3) var          tex: texture_2d<f32>;
-@group(0) @binding(4) var          tex_sampler: sampler;
-@group(0) @binding(5) var          normal_tex: texture_2d<f32>;
-@group(0) @binding(6) var          normal_tex_sampler: sampler;
-@group(0) @binding(7) var<storage> lights: array<LightUniform>;
+
+@group(0) @binding(0)  var<uniform> model_transform: mat4x4<f32>;
+@group(0) @binding(1)  var<uniform> camera: CameraUniform;
+@group(0) @binding(2)  var<uniform> material: MaterialUniform;
+@group(0) @binding(3)  var          tex: texture_2d<f32>;
+@group(0) @binding(4)  var          tex_sampler: sampler;
+@group(0) @binding(5)  var          normal_tex: texture_2d<f32>;
+@group(0) @binding(6)  var          normal_tex_sampler: sampler;
+@group(0) @binding(7)  var          roughness_tex: texture_2d<f32>;
+@group(0) @binding(8)  var          roughness_tex_sampler: sampler;
+@group(0) @binding(9)  var<storage> point_lights: array<PointLight>;
+@group(0) @binding(10) var<storage> directional_lights: array<DirectionalLight>;
 
 fn frensel_factor(f0: vec3<f32>, product: f32) -> vec3<f32> {
     return mix(f0, vec3<f32>(1.0, 1.0, 1.0), pow(1.01 - product, 5.0));
@@ -59,6 +71,59 @@ fn phong_specular(v: vec3<f32>, l: vec3<f32>, n: vec3<f32>, specular: vec3<f32>,
     let spec = max(dot(r, v), 0.0);
     let k = 1.999 / (roughness * roughness);
     return min(1.0, 3.0 * 0.0398 * k) * pow(spec, min(10000.0, k)) * specular;
+}
+
+fn calculate_lighting(
+    vertex: VertexOutput,
+    tex_color: vec3<f32>,
+    tex_normal: vec3<f32>,
+    light_direction: vec3<f32>,
+    light_color: vec3<f32>,
+    light_intensity: f32
+) -> vec3<f32> {
+    let metallic = material.metallic.x;
+
+    let l = normalize(light_direction);
+    let v = normalize(vertex.world_position - camera.camera_position);
+    let h = normalize(l + v);
+    let nn = normalize(vertex.world_normal);
+
+    let nb = normalize(cross(vertex.world_normal, vertex.world_tangent));
+    let tbn = mat3x3<f32>(nb, vertex.world_tangent, nn);
+
+    // normal mapping
+    let n = normalize(tbn * (tex_normal * 2.0 - 1.0));
+
+    // roughness mapping
+    let roughness = textureSample(roughness_tex, roughness_tex_sampler, vertex.uv).x * material.metallic.y;
+
+    let base = material.base_color.xyz;
+
+    let specular = mix(vec3<f32>(0.04, 0.04, 0.04), base, metallic);
+
+    // todo: environment cube mapping
+
+    let ndl = max(dot(n, l), 0.0);
+    let ndv = max(dot(n, v), 0.001);
+    let ndh = max(dot(n, h), 0.001);
+    let hdv = max(dot(h, v), 0.001);
+    let ldv = max(dot(l, v), 0.001);
+
+    // phong specular
+    let specfresnel = frensel_factor(specular, ndv);
+    let specref = phong_specular(v, l, n, specfresnel, material.metallic.y) * ndl;
+
+    // diffuse
+    let diffref = (1.0 - specfresnel) * (1.0 / PI) * ndl;
+
+    // ambient
+    let ambient = vec3<f32>(0.03, 0.03, 0.03) * base;
+
+    let reflected_light = specref * light_color * light_intensity;
+    let diffuse_light = diffref * light_color * light_intensity;
+    let ambient_light = ambient * light_color * light_intensity;
+
+    return reflected_light + diffuse_light + ambient_light;
 }
 
 @vertex
@@ -91,49 +156,17 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let tex_color = textureSample(tex, tex_sampler, uv).xyz;
     let tex_normal = textureSample(normal_tex, normal_tex_sampler, uv).xyz;
 
-    let tangent_normal = normalize(tex_normal * 2.0 - 1.0);
+    var out_color = vec3<f32>(0.0, 0.0, 0.0);
 
-    var out_color = tex_color;
-
-    for (var i = 0u; i < arrayLength(&lights); i = i + 1u) {
-        let light = lights[i];
-
-        let tangent_matrix = transpose(mat3x3<f32>(vertex.world_tangent, vertex.world_bitangent, vertex.world_normal));
-        let tangent_light_pos = tangent_matrix * light.position;
-
-        let a = 20.0 / dot(tangent_light_pos - vertex.tangent_position, tangent_light_pos - vertex.tangent_position);
-
-        let l = normalize(tangent_light_pos - vertex.tangent_position);
-        let v = normalize(vertex.tangent_view_position - vertex.tangent_position);
-        let h = normalize(l + v);
-        let nn = normalize(tangent_normal);
-
-        let binormal = cross(vertex.world_normal, vertex.world_tangent);
-        let nb = normalize(binormal);
-        let tbn = mat3x3<f32>(nb, cross(nn, nb), nn);
-
-        let n = tbn * tangent_normal;
-        let roughness = material.metallic.y;
-        let metallic = material.metallic.x;
-
-        let f0 = vec3<f32>(0.04, 0.04, 0.04);
-
-        let n_dot_l = max(dot(n, l), 0.0);
-        let n_dot_v = max(dot(n, v), 0.001);
-        let n_dot_h = max(dot(n, h), 0.001);
-        let h_dot_v = max(dot(h, v), 0.001);
-        let l_dot_v = max(dot(l, v), 0.001);
-
-        let specular_frensel = frensel_factor(f0, n_dot_v);
-        let spec = phong_specular(v, l, n, specular_frensel, roughness) * n_dot_l;
-
-        let diffuse = (1.0 - specular_frensel) * (1.0 / PI) * n_dot_l;
-
-        let reflected_light = spec * light.color * light.intensity;
-        let diffuse_light = diffuse * light.color * light.intensity;
-
-        out_color += reflected_light + (diffuse_light * mix(tex_color, vec3<f32>(0.0, 0.0, 0.0), metallic));
+    for (var i = 0u; i < arrayLength(&point_lights); i = i + 1u) {
+        out_color += calculate_lighting(vertex, point_lights[i].position, tex_color, tex_normal, point_lights[i].color, point_lights[i].intensity);
     }
+
+    for (var i = 0u; i < arrayLength(&directional_lights); i = i + 1u) {
+        out_color += calculate_lighting(vertex, directional_lights[i].direction, tex_color, tex_normal, directional_lights[i].color, directional_lights[i].intensity);
+    }
+
+    out_color *= tex_color;
 
     return vec4<f32>(out_color, 1.0);
 }

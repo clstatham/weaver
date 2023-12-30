@@ -11,7 +11,7 @@ pub use {
     component::Component,
     entity::Entity,
     query::{Query, Queryable, Read, Write},
-    resource::Resource,
+    resource::{Res, ResMut, Resource},
     system::System,
     world::World,
 };

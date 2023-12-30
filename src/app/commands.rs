@@ -24,9 +24,9 @@ impl<'a> Commands<'a> {
         self.world.borrow_mut().spawn(bundle);
     }
 
-    pub fn load_gltf(&self, path: &str) -> Model {
+    pub fn load_gltf(&self, path: &str, use_texture: bool) -> Model {
         let renderer = self.renderer.borrow();
-        Model::load_gltf(path, &renderer).unwrap()
+        Model::load_gltf(path, &renderer, use_texture).unwrap()
     }
 
     pub fn load_obj(&self, path: &str) -> Model {

@@ -12,6 +12,7 @@ pub struct Material {
     pub metallic: f32,
     pub normal_texture: Option<Texture>,
     pub roughness: f32,
+    pub roughness_texture: Option<Texture>,
 
     pub texture_scaling: f32,
 
@@ -26,6 +27,7 @@ impl Default for Material {
             metallic: 1.0,
             normal_texture: None,
             roughness: 1.0,
+            roughness_texture: None,
             texture_scaling: 1.0,
             bind_group: None,
         }
@@ -33,10 +35,15 @@ impl Default for Material {
 }
 
 impl Material {
-    pub fn new(base_color_texture: Option<Texture>, normal_texture: Option<Texture>) -> Self {
+    pub fn new(
+        base_color_texture: Option<Texture>,
+        normal_texture: Option<Texture>,
+        roughness_texture: Option<Texture>,
+    ) -> Self {
         Self {
             diffuse_texture: base_color_texture,
             normal_texture,
+            roughness_texture,
             ..Default::default()
         }
     }
@@ -61,6 +68,16 @@ impl Material {
         self
     }
 
+    pub fn with_roughness(mut self, roughness: f32) -> Self {
+        self.roughness = roughness;
+        self
+    }
+
+    pub fn with_roughness_texture(mut self, roughness_texture: Texture) -> Self {
+        self.roughness_texture = Some(roughness_texture);
+        self
+    }
+
     pub fn has_bind_group(&self) -> bool {
         self.bind_group.is_some()
     }
@@ -68,6 +85,7 @@ impl Material {
     pub fn create_bind_group(&mut self, device: &wgpu::Device, render_pass: &PbrRenderPass) {
         let diffuse_texture = self.diffuse_texture.as_ref().unwrap();
         let normal_texture = self.normal_texture.as_ref().unwrap();
+        let roughness_texture = self.roughness_texture.as_ref().unwrap();
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Material Bind Group"),
             layout: &render_pass.bind_group_layout,
@@ -115,11 +133,30 @@ impl Material {
                     binding: 6,
                     resource: wgpu::BindingResource::Sampler(&normal_texture.sampler),
                 },
-                // lights
+                // roughness_tex
                 wgpu::BindGroupEntry {
                     binding: 7,
+                    resource: wgpu::BindingResource::TextureView(&roughness_texture.view),
+                },
+                // roughness_tex_sampler
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: wgpu::BindingResource::Sampler(&roughness_texture.sampler),
+                },
+                // point lights
+                wgpu::BindGroupEntry {
+                    binding: 9,
                     resource: wgpu::BindingResource::Buffer(
-                        render_pass.lights_buffer.as_entire_buffer_binding(),
+                        render_pass.point_light_buffer.as_entire_buffer_binding(),
+                    ),
+                },
+                // directional lights
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: wgpu::BindingResource::Buffer(
+                        render_pass
+                            .directional_light_buffer
+                            .as_entire_buffer_binding(),
                     ),
                 },
             ],

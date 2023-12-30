@@ -55,7 +55,7 @@ impl Renderer {
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        let surface_format = Texture::SDR_FORMAT;
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,

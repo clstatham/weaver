@@ -21,6 +21,7 @@ impl Model {
     pub fn load_gltf(
         path: impl AsRef<Path>,
         renderer: &crate::renderer::Renderer,
+        use_texture: bool,
     ) -> anyhow::Result<Self> {
         let path = path;
         let device = &renderer.device;
@@ -55,16 +56,20 @@ impl Model {
             }
         }
 
-        let texture = if let Some(image) = images.into_iter().next() {
-            Some(Texture::from_data_r8g8b8(
-                image.width as usize,
-                image.height as usize,
-                &image.pixels,
-                device,
-                queue,
-                Some("GLTF Mesh Texture"),
-                false,
-            ))
+        let texture = if use_texture {
+            if let Some(image) = images.into_iter().next() {
+                Some(Texture::from_data_r8g8b8(
+                    image.width as usize,
+                    image.height as usize,
+                    &image.pixels,
+                    device,
+                    queue,
+                    Some("GLTF Mesh Texture"),
+                    false,
+                ))
+            } else {
+                None
+            }
         } else {
             None
         };

@@ -1,7 +1,5 @@
 use std::path::Path;
 
-use image::codecs::hdr::HdrDecoder;
-
 pub struct Texture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -9,6 +7,9 @@ pub struct Texture {
 }
 
 impl Texture {
+    pub const SDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+    pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+    pub const NORMAL_MAP_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
     pub fn load(
@@ -51,9 +52,9 @@ impl Texture {
         };
 
         let format = if is_normal_map {
-            wgpu::TextureFormat::Rgba8Unorm
+            Self::NORMAL_MAP_FORMAT
         } else {
-            wgpu::TextureFormat::Rgba8UnormSrgb
+            Self::SDR_FORMAT
         };
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -137,7 +138,7 @@ impl Texture {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: format.unwrap_or(wgpu::TextureFormat::Rgba8UnormSrgb),
+            format: format.unwrap_or(Self::SDR_FORMAT),
             usage,
             view_formats: &[],
         });
@@ -225,7 +226,7 @@ impl Texture {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba32Float,
+            format: Self::NORMAL_MAP_FORMAT,
             usage,
             view_formats: &[],
         });
@@ -270,7 +271,7 @@ impl Texture {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: format.unwrap_or(wgpu::TextureFormat::Rgba8UnormSrgb),
+            format: format.unwrap_or(Self::SDR_FORMAT),
             usage,
             view_formats: &[],
         });

@@ -7,10 +7,7 @@ use core::{
 };
 
 use app::App;
-use weaver_ecs::{
-    resource::{Res, ResMut},
-    *,
-};
+use weaver_ecs::*;
 use weaver_proc_macro::system;
 
 pub mod app;
@@ -42,14 +39,14 @@ fn main() -> anyhow::Result<()> {
 
     let mut app = App::new(1600, 900);
 
-    app.spawn(core::light::PointLight::new(
-        glam::Vec3::new(5.0, 5.0, 5.0),
+    app.spawn(core::light::DirectionalLight::new(
+        glam::Vec3::new(-1.0, -1.0, -1.0).normalize(),
         core::color::Color::WHITE,
-        1.0,
+        20.0,
     ));
 
     app.build(|commands| {
-        let mut model = commands.load_gltf("assets/woodcube.glb");
+        let mut model = commands.load_gltf("assets/woodcube.glb", false);
         model.transform.translate(0.0, -2.0, 0.0);
         model.transform.scale(100.0, 1.0, 100.0);
         model.material.texture_scaling = 200.0;
@@ -61,10 +58,14 @@ fn main() -> anyhow::Result<()> {
             "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_Normal.jpg",
             true,
         ));
+        model.material.roughness_texture = Some(commands.load_texture(
+            "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_Roughness.jpg",
+            false,
+        ));
         model.material.roughness = 0.5;
         commands.spawn(model);
 
-        let mut model = commands.load_gltf("assets/woodcube.glb");
+        let mut model = commands.load_gltf("assets/woodcube.glb", false);
         model.transform.translate(-2.0, 0.0, 0.0);
         model.material.texture_scaling = 2.0;
         model.material.diffuse_texture = Some(commands.load_texture(
@@ -75,9 +76,13 @@ fn main() -> anyhow::Result<()> {
             "assets/materials/Wall_Stone_021_SD/Substance_graph_Normal.jpg",
             true,
         ));
+        model.material.roughness_texture = Some(commands.load_texture(
+            "assets/materials/Wall_Stone_021_SD/Substance_graph_Roughness.jpg",
+            false,
+        ));
         commands.spawn((model.mesh, model.material, model.transform, Object));
 
-        let mut model = commands.load_gltf("assets/woodcube.glb");
+        let mut model = commands.load_gltf("assets/woodcube.glb", false);
         model.transform.translate(2.0, 0.0, 0.0);
         model.material.texture_scaling = 2.0;
         model.material.diffuse_texture = Some(commands.load_texture(
@@ -87,6 +92,10 @@ fn main() -> anyhow::Result<()> {
         model.material.normal_texture = Some(commands.load_texture(
             "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_normal.jpg",
             true,
+        ));
+        model.material.roughness_texture = Some(commands.load_texture(
+            "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_roughness.jpg",
+            false,
         ));
         commands.spawn((model.mesh, model.material, model.transform, Object));
     });

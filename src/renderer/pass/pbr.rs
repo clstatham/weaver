@@ -3,7 +3,7 @@ use weaver_ecs::{Query, Queryable, Read, Write};
 use crate::{
     core::{
         camera::{Camera, CameraUniform, FlyCamera},
-        light::{PointLight, MAX_LIGHTS},
+        light::{DirectionalLight, PointLight, MAX_LIGHTS},
         material::{Material, MaterialUniform},
         mesh::{Mesh, Vertex},
         transform::Transform,
@@ -20,7 +20,8 @@ pub struct PbrRenderPass {
     pub(crate) model_transform_buffer: wgpu::Buffer,
     pub(crate) camera_buffer: wgpu::Buffer,
     pub(crate) material_buffer: wgpu::Buffer,
-    pub(crate) lights_buffer: wgpu::Buffer,
+    pub(crate) point_light_buffer: wgpu::Buffer,
+    pub(crate) directional_light_buffer: wgpu::Buffer,
 }
 
 impl PbrRenderPass {
@@ -49,9 +50,16 @@ impl PbrRenderPass {
             mapped_at_creation: false,
         });
 
-        let lights_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Lights Buffer"),
+        let point_light_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Point Lights Buffer"),
             size: (std::mem::size_of::<PointLight>() * MAX_LIGHTS) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let directional_light_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Directional Lights Buffer"),
+            size: (std::mem::size_of::<DirectionalLight>() * MAX_LIGHTS) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -62,7 +70,8 @@ impl PbrRenderPass {
             model_transform_buffer,
             camera_buffer,
             material_buffer,
-            lights_buffer,
+            point_light_buffer,
+            directional_light_buffer,
         }
     }
 
@@ -131,10 +140,21 @@ impl Pass for PbrRenderPass {
             bytemuck::cast_slice(&[CameraUniform::from(*camera)]),
         );
         {
+            // write point lights buffer
             let lights = world.query::<Query<Read<PointLight>>>();
             let lights_uniform = lights.iter().map(|l| *l).collect::<Vec<_>>();
             queue.write_buffer(
-                &self.lights_buffer,
+                &self.point_light_buffer,
+                0,
+                bytemuck::cast_slice(&lights_uniform),
+            );
+        }
+        {
+            // write directional lights buffer
+            let lights = world.query::<Query<Read<DirectionalLight>>>();
+            let lights_uniform = lights.iter().map(|l| *l).collect::<Vec<_>>();
+            queue.write_buffer(
+                &self.directional_light_buffer,
                 0,
                 bytemuck::cast_slice(&lights_uniform),
             );
@@ -215,7 +235,7 @@ impl Pass for PbrRenderPass {
                 // model_transform
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -281,9 +301,38 @@ impl Pass for PbrRenderPass {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
-                // lights
+                // roughness_tex
                 wgpu::BindGroupLayoutEntry {
                     binding: 7,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // roughness_tex_sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // point lights
+                wgpu::BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // directional lights
+                wgpu::BindGroupLayoutEntry {
+                    binding: 10,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
