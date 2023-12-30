@@ -3,10 +3,7 @@ use weaver_ecs::{Query, Queryable, Read, Write};
 use crate::{
     core::{
         camera::{CameraUniform, FlyCamera},
-        light::{
-            DirectionalLight, DirectionalLightBuffer, DirectionalLightUniform, PointLight,
-            PointLightBuffer, PointLightUniform, MAX_LIGHTS,
-        },
+        light::{DirectionalLight, DirectionalLightBuffer, PointLight, PointLightBuffer},
         material::{Material, MaterialUniform},
         mesh::{Mesh, Vertex},
         transform::Transform,

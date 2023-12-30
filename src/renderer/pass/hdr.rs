@@ -6,9 +6,6 @@ pub struct HdrRenderPass {
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     pub(crate) texture: Texture,
-    width: u32,
-    height: u32,
-    format: wgpu::TextureFormat,
 }
 
 impl HdrRenderPass {
@@ -58,7 +55,7 @@ impl HdrRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: Texture::SDR_FORMAT,
+                    format: Texture::WINDOW_FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -76,9 +73,6 @@ impl HdrRenderPass {
             pipeline,
             bind_group,
             texture,
-            width,
-            height,
-            format,
         }
     }
 }

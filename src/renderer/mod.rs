@@ -55,7 +55,7 @@ impl Renderer {
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = Texture::SDR_FORMAT;
+        let surface_format = Texture::WINDOW_FORMAT;
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
@@ -76,7 +76,7 @@ impl Renderer {
             wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::COPY_SRC
                 | wgpu::TextureUsages::TEXTURE_BINDING,
-            None,
+            Some(Texture::WINDOW_FORMAT),
         );
 
         let depth_texture = Texture::create_depth_texture(

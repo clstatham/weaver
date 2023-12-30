@@ -1,5 +1,8 @@
 use weaver_ecs::{Bundle, Entity, Resource, System, World};
-use winit::{event_loop::EventLoop, window::Window};
+use winit::{
+    event_loop::EventLoop,
+    window::{Window, WindowBuilder},
+};
 use winit_input_helper::WinitInputHelper;
 
 use crate::{
@@ -26,12 +29,15 @@ impl App {
     pub fn new(screen_width: usize, screen_height: usize) -> Self {
         let event_loop = EventLoop::new();
         let input = WinitInputHelper::new();
-        let window = Window::new(&event_loop).unwrap();
-        window.set_inner_size(winit::dpi::LogicalSize::new(
-            screen_width as f64,
-            screen_height as f64,
-        ));
-        window.set_resizable(false);
+        let window = WindowBuilder::new()
+            .with_title("Weaver")
+            .with_inner_size(winit::dpi::LogicalSize::new(
+                screen_width as f64,
+                screen_height as f64,
+            ))
+            .with_resizable(false)
+            .build(&event_loop)
+            .unwrap();
 
         // let camera = Camera::new(
         //     glam::Vec3::new(5.0, 5.0, 5.0),
