@@ -1,18 +1,9 @@
 use weaver_ecs::{Bundle, Entity, Resource, System, World};
-use winit::{
-    dpi::{LogicalPosition, PhysicalPosition},
-    event_loop::EventLoop,
-    window::Window,
-};
+use winit::{event_loop::EventLoop, window::Window};
 use winit_input_helper::WinitInputHelper;
 
 use crate::{
-    core::{
-        camera::{Camera, FlyCamera},
-        input::Input,
-        time::Time,
-        transform::Transform,
-    },
+    core::{camera::FlyCamera, input::Input, time::Time, transform::Transform},
     renderer::Renderer,
 };
 

@@ -1,8 +1,7 @@
-use glam::Vec4Swizzles;
 use weaver_proc_macro::Resource;
 use winit::event::VirtualKeyCode;
 
-use super::{input::Input, transform::Transform};
+use super::input::Input;
 
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
@@ -99,7 +98,7 @@ pub struct FlyCamera {
 impl FlyCamera {
     pub fn update(&mut self, input: &Input, delta_time: f32) {
         let mouse_delta = input.mouse_delta();
-        let (mut yaw, mut pitch, roll) = self.rotation.to_euler(glam::EulerRot::YXZ);
+        let (mut yaw, mut pitch, _roll) = self.rotation.to_euler(glam::EulerRot::YXZ);
 
         let forward = self.rotation * glam::Vec3::NEG_Z;
         let right = self.rotation * glam::Vec3::X;

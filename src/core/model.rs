@@ -44,6 +44,7 @@ impl Model {
                         position: glam::Vec3::from(position),
                         normal: glam::Vec3::from(normal),
                         uv: glam::Vec2::from(uv),
+                        binormal: glam::Vec3::ZERO,
                         tangent: glam::Vec3::ZERO,
                         bitangent: glam::Vec3::ZERO,
                     });
@@ -74,9 +75,7 @@ impl Model {
             None
         };
 
-        // tangents and bitangents
-
-        let mut triangles_included = vec![0; vertices.len()];
+        // calculate tangent, binormal, bitangent
 
         for c in indices.chunks(3) {
             let i0 = c[0] as usize;
@@ -108,15 +107,12 @@ impl Model {
             vertices[i0].bitangent += bitangent;
             vertices[i1].bitangent += bitangent;
             vertices[i2].bitangent += bitangent;
-
-            triangles_included[i0] += 1;
-            triangles_included[i1] += 1;
-            triangles_included[i2] += 1;
         }
 
-        for (vertex, triangles) in vertices.iter_mut().zip(triangles_included.iter()) {
-            vertex.tangent /= *triangles as f32;
-            vertex.bitangent /= *triangles as f32;
+        for vertex in vertices.iter_mut() {
+            vertex.tangent = vertex.tangent.normalize();
+            vertex.bitangent = vertex.bitangent.normalize();
+            vertex.binormal = vertex.normal.cross(vertex.tangent).normalize();
         }
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -133,146 +129,8 @@ impl Model {
 
         let num_indices = indices.len() as u32;
 
-        let mut material = Material::default();
-        material.diffuse_texture = texture;
+        let material = Material::new(texture, None, None);
         let transform = Transform::new();
-
-        Ok(Self {
-            mesh: Mesh {
-                vertex_buffer,
-                index_buffer,
-                num_indices,
-            },
-            transform,
-            material,
-        })
-    }
-
-    pub fn load_obj(
-        path: impl AsRef<Path>,
-        renderer: &crate::renderer::Renderer,
-    ) -> anyhow::Result<Self> {
-        let path = path;
-        let device = &renderer.device;
-        let queue = &renderer.queue;
-
-        let (models, materials) = tobj::load_obj(path.as_ref(), &tobj::LoadOptions::default())?;
-
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-
-        for model in models {
-            let mesh = model.mesh;
-
-            for index in mesh.indices {
-                let i = index as usize;
-                let position = [
-                    mesh.positions[3 * i],
-                    mesh.positions[3 * i + 1],
-                    mesh.positions[3 * i + 2],
-                ];
-                let normal = [
-                    mesh.normals[3 * i],
-                    mesh.normals[3 * i + 1],
-                    mesh.normals[3 * i + 2],
-                ];
-                let uv = [mesh.texcoords[2 * i], mesh.texcoords[2 * i + 1]];
-
-                vertices.push(Vertex {
-                    position: glam::Vec3::from(position),
-                    normal: glam::Vec3::from(normal),
-                    uv: glam::Vec2::from(uv),
-                    tangent: glam::Vec3::ZERO,
-                    bitangent: glam::Vec3::ZERO,
-                });
-                indices.push(index);
-            }
-        }
-
-        // tangents and bitangents
-
-        let mut triangles_included = vec![0; vertices.len()];
-
-        for c in indices.chunks(3) {
-            let i0 = c[0] as usize;
-            let i1 = c[1] as usize;
-            let i2 = c[2] as usize;
-
-            let v0 = vertices[i0].position;
-            let v1 = vertices[i1].position;
-            let v2 = vertices[i2].position;
-
-            let uv0 = vertices[i0].uv;
-            let uv1 = vertices[i1].uv;
-            let uv2 = vertices[i2].uv;
-
-            let delta_pos1 = v1 - v0;
-            let delta_pos2 = v2 - v0;
-
-            let delta_uv1 = uv1 - uv0;
-            let delta_uv2 = uv2 - uv0;
-
-            let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
-            let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
-            let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
-
-            vertices[i0].tangent += tangent;
-            vertices[i1].tangent += tangent;
-            vertices[i2].tangent += tangent;
-
-            vertices[i0].bitangent += bitangent;
-            vertices[i1].bitangent += bitangent;
-            vertices[i2].bitangent += bitangent;
-
-            triangles_included[i0] += 1;
-            triangles_included[i1] += 1;
-            triangles_included[i2] += 1;
-        }
-
-        for (vertex, triangles) in vertices.iter_mut().zip(triangles_included.iter()) {
-            vertex.tangent /= *triangles as f32;
-            vertex.bitangent /= *triangles as f32;
-        }
-
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
-        let num_indices = indices.len() as u32;
-
-        let transform = Transform::new();
-
-        let mut material = Material::default();
-        if let Some(obj_material) = materials?.into_iter().next() {
-            if let Some(diffuse_texture) = obj_material.diffuse_texture {
-                let texture = Texture::load(
-                    diffuse_texture,
-                    device,
-                    queue,
-                    Some("OBJ Mesh Diffuse Texture"),
-                    false,
-                );
-                material.diffuse_texture = Some(texture);
-            }
-            if let Some(normal_texture) = obj_material.normal_texture {
-                let texture = Texture::load(
-                    normal_texture,
-                    device,
-                    queue,
-                    Some("OBJ Mesh Normal Texture"),
-                    true,
-                );
-                material.normal_texture = Some(texture);
-            }
-        }
 
         Ok(Self {
             mesh: Mesh {

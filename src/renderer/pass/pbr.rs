@@ -2,8 +2,11 @@ use weaver_ecs::{Query, Queryable, Read, Write};
 
 use crate::{
     core::{
-        camera::{Camera, CameraUniform, FlyCamera},
-        light::{DirectionalLight, PointLight, MAX_LIGHTS},
+        camera::{CameraUniform, FlyCamera},
+        light::{
+            DirectionalLight, DirectionalLightBuffer, DirectionalLightUniform, PointLight,
+            PointLightBuffer, PointLightUniform, MAX_LIGHTS,
+        },
         material::{Material, MaterialUniform},
         mesh::{Mesh, Vertex},
         transform::Transform,
@@ -52,14 +55,14 @@ impl PbrRenderPass {
 
         let point_light_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Point Lights Buffer"),
-            size: (std::mem::size_of::<PointLight>() * MAX_LIGHTS) as u64,
+            size: std::mem::size_of::<PointLightBuffer>() as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let directional_light_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Directional Lights Buffer"),
-            size: (std::mem::size_of::<DirectionalLight>() * MAX_LIGHTS) as u64,
+            size: std::mem::size_of::<DirectionalLightBuffer>() as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -146,7 +149,7 @@ impl Pass for PbrRenderPass {
             queue.write_buffer(
                 &self.point_light_buffer,
                 0,
-                bytemuck::cast_slice(&lights_uniform),
+                bytemuck::cast_slice(&[PointLightBuffer::from(lights_uniform.as_slice())]),
             );
         }
         {
@@ -156,7 +159,7 @@ impl Pass for PbrRenderPass {
             queue.write_buffer(
                 &self.directional_light_buffer,
                 0,
-                bytemuck::cast_slice(&lights_uniform),
+                bytemuck::cast_slice(&[DirectionalLightBuffer::from(lights_uniform.as_slice())]),
             );
         }
 

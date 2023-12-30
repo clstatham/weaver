@@ -24,9 +24,9 @@ impl Default for Material {
         Self {
             diffuse: Color::WHITE,
             diffuse_texture: None,
-            metallic: 1.0,
+            metallic: 0.0,
             normal_texture: None,
-            roughness: 1.0,
+            roughness: 0.5,
             roughness_texture: None,
             texture_scaling: 1.0,
             bind_group: None,

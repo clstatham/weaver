@@ -1,6 +1,7 @@
 use core::{
-    camera::{Camera, FlyCamera},
+    camera::FlyCamera,
     input::Input,
+    light::{DirectionalLight, PointLight},
     mesh::Mesh,
     time::Time,
     transform::Transform,
@@ -15,14 +16,29 @@ pub mod core;
 pub mod renderer;
 
 #[system(Update)]
-fn update(model: Query<(Read<Mesh>, Write<Transform>, Read<Object>)>, timey: Res<Time>) {
+fn update(
+    model: Query<(Read<Mesh>, Write<Transform>, Read<Object>)>,
+    lights: Query<Write<PointLight>>,
+    timey: Res<Time>,
+) {
     let delta = timey.delta_time;
     for (i, (_mesh, mut transform, _)) in model.iter().enumerate() {
-        if i % 2 == 0 {
-            transform.rotate(delta, glam::Vec3::Y);
-        } else {
-            transform.rotate(-delta, glam::Vec3::Y);
-        }
+        transform.set_translation(glam::Vec3::new(
+            5.0 * timey.total_time.sin(),
+            5.0,
+            5.0 * timey.total_time.cos(),
+        ));
+    }
+    for mut light in lights.iter() {
+        light.position.x = 5.0 * timey.total_time.sin();
+        light.position.z = 5.0 * timey.total_time.cos();
+    }
+}
+
+#[system(Spin)]
+fn spin(model: Query<(Read<Mesh>, Write<Transform>, Read<Spinner>)>, timey: Res<Time>) {
+    for (i, (_mesh, mut transform, _)) in model.iter().enumerate() {
+        transform.rotate(timey.delta_time * 1.5, glam::Vec3::Y);
     }
 }
 
@@ -34,16 +50,31 @@ fn cammera_update(mut camera: ResMut<FlyCamera>, time: Res<Time>, input: Res<Inp
 #[derive(Component)]
 struct Object;
 
+#[derive(Component)]
+struct Spinner;
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     let mut app = App::new(1600, 900);
 
-    app.spawn(core::light::DirectionalLight::new(
-        glam::Vec3::new(-1.0, -1.0, -1.0).normalize(),
+    // app.spawn(DirectionalLight::new(
+    //     glam::Vec3::new(1.0, 1.0, 1.0).normalize(),
+    //     core::color::Color::WHITE,
+    //     20.0,
+    // ));
+
+    app.spawn(PointLight::new(
+        glam::Vec3::new(5.0, 5.0, 5.0),
         core::color::Color::WHITE,
         20.0,
     ));
+
+    // app.spawn(PointLight::new(
+    //     glam::Vec3::new(0.0, 5.0, 0.0),
+    //     core::color::Color::WHITE,
+    //     20.0,
+    // ));
 
     app.build(|commands| {
         let mut model = commands.load_gltf("assets/woodcube.glb", false);
@@ -66,7 +97,7 @@ fn main() -> anyhow::Result<()> {
         commands.spawn(model);
 
         let mut model = commands.load_gltf("assets/woodcube.glb", false);
-        model.transform.translate(-2.0, 0.0, 0.0);
+        model.transform.translate(0.0, 0.0, 0.0);
         model.material.texture_scaling = 2.0;
         model.material.diffuse_texture = Some(commands.load_texture(
             "assets/materials/Wall_Stone_021_SD/Substance_graph_BaseColor.jpg",
@@ -80,7 +111,7 @@ fn main() -> anyhow::Result<()> {
             "assets/materials/Wall_Stone_021_SD/Substance_graph_Roughness.jpg",
             false,
         ));
-        commands.spawn((model.mesh, model.material, model.transform, Object));
+        commands.spawn((model.mesh, model.material, model.transform, Spinner));
 
         let mut model = commands.load_gltf("assets/woodcube.glb", false);
         model.transform.translate(2.0, 0.0, 0.0);
@@ -102,6 +133,7 @@ fn main() -> anyhow::Result<()> {
 
     app.add_system(CameraUpdate);
     app.add_system(Update);
+    app.add_system(Spin);
 
     app.run();
 

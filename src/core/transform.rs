@@ -78,6 +78,27 @@ impl Transform {
     pub fn get_scale(&self) -> glam::Vec3 {
         self.matrix.to_scale_rotation_translation().0
     }
+
+    #[inline]
+    pub fn set_translation(&mut self, translation: glam::Vec3) -> Self {
+        let (scale, rotation, _) = self.matrix.to_scale_rotation_translation();
+        self.matrix = glam::Mat4::from_scale_rotation_translation(scale, rotation, translation);
+        *self
+    }
+
+    #[inline]
+    pub fn set_rotation(&mut self, rotation: glam::Quat) -> Self {
+        let (scale, _, translation) = self.matrix.to_scale_rotation_translation();
+        self.matrix = glam::Mat4::from_scale_rotation_translation(scale, rotation, translation);
+        *self
+    }
+
+    #[inline]
+    pub fn set_scale(&mut self, scale: glam::Vec3) -> Self {
+        let (_, rotation, translation) = self.matrix.to_scale_rotation_translation();
+        self.matrix = glam::Mat4::from_scale_rotation_translation(scale, rotation, translation);
+        *self
+    }
 }
 
 impl Default for Transform {
