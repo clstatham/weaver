@@ -11,6 +11,7 @@ pub struct Material {
     pub diffuse_texture: Option<Texture>,
     pub metallic: f32,
     pub normal_texture: Option<Texture>,
+    pub roughness: f32,
 
     pub texture_scaling: f32,
 
@@ -22,8 +23,9 @@ impl Default for Material {
         Self {
             diffuse: Color::WHITE,
             diffuse_texture: None,
-            metallic: 0.0,
+            metallic: 1.0,
             normal_texture: None,
+            roughness: 1.0,
             texture_scaling: 1.0,
             bind_group: None,
         }
@@ -130,7 +132,7 @@ impl Material {
 #[repr(C)]
 pub struct MaterialUniform {
     pub base_color: [f32; 4],
-    pub metallic: [f32; 4],
+    pub metallic_roughness: [f32; 4],
     pub texture_scaling: [f32; 4],
 }
 
@@ -138,7 +140,7 @@ impl From<&Material> for MaterialUniform {
     fn from(material: &Material) -> Self {
         Self {
             base_color: material.diffuse.vec4().into(),
-            metallic: [material.metallic; 4],
+            metallic_roughness: [material.metallic, material.roughness, 0.0, 0.0],
             texture_scaling: [material.texture_scaling; 4],
         }
     }

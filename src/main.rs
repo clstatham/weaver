@@ -1,7 +1,16 @@
-use core::{mesh::Mesh, time::Time, transform::Transform};
+use core::{
+    camera::{Camera, FlyCamera},
+    input::Input,
+    mesh::Mesh,
+    time::Time,
+    transform::Transform,
+};
 
 use app::App;
-use weaver_ecs::*;
+use weaver_ecs::{
+    resource::{Res, ResMut},
+    *,
+};
 use weaver_proc_macro::system;
 
 pub mod app;
@@ -9,9 +18,9 @@ pub mod core;
 pub mod renderer;
 
 #[system(Update)]
-fn update(model: Query<(Read<Mesh>, Write<Transform>)>, timey: Res<Time>) {
+fn update(model: Query<(Read<Mesh>, Write<Transform>, Read<Object>)>, timey: Res<Time>) {
     let delta = timey.delta_time;
-    for (i, (_mesh, mut transform)) in model.iter().enumerate() {
+    for (i, (_mesh, mut transform, _)) in model.iter().enumerate() {
         if i % 2 == 0 {
             transform.rotate(delta, glam::Vec3::Y);
         } else {
@@ -19,6 +28,14 @@ fn update(model: Query<(Read<Mesh>, Write<Transform>)>, timey: Res<Time>) {
         }
     }
 }
+
+#[system(CameraUpdate)]
+fn cammera_update(mut camera: ResMut<FlyCamera>, time: Res<Time>, input: Res<Input>) {
+    camera.update(&input, time.delta_time);
+}
+
+#[derive(Component)]
+struct Object;
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -33,6 +50,21 @@ fn main() -> anyhow::Result<()> {
 
     app.build(|commands| {
         let mut model = commands.load_gltf("assets/woodcube.glb");
+        model.transform.translate(0.0, -2.0, 0.0);
+        model.transform.scale(100.0, 1.0, 100.0);
+        model.material.texture_scaling = 200.0;
+        model.material.diffuse_texture = Some(commands.load_texture(
+            "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_BaseColor.jpg",
+            false,
+        ));
+        model.material.normal_texture = Some(commands.load_texture(
+            "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_Normal.jpg",
+            true,
+        ));
+        model.material.roughness = 0.5;
+        commands.spawn(model);
+
+        let mut model = commands.load_gltf("assets/woodcube.glb");
         model.transform.translate(-2.0, 0.0, 0.0);
         model.material.texture_scaling = 2.0;
         model.material.diffuse_texture = Some(commands.load_texture(
@@ -43,7 +75,7 @@ fn main() -> anyhow::Result<()> {
             "assets/materials/Wall_Stone_021_SD/Substance_graph_Normal.jpg",
             true,
         ));
-        commands.spawn(model);
+        commands.spawn((model.mesh, model.material, model.transform, Object));
 
         let mut model = commands.load_gltf("assets/woodcube.glb");
         model.transform.translate(2.0, 0.0, 0.0);
@@ -56,22 +88,10 @@ fn main() -> anyhow::Result<()> {
             "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_normal.jpg",
             true,
         ));
-        commands.spawn(model);
-
-        let mut model = commands.load_gltf("assets/woodcube.glb");
-        model.transform.translate(0.0, 0.0, 3.0);
-        model.material.texture_scaling = 2.0;
-        model.material.diffuse_texture = Some(commands.load_texture(
-            "assets\\materials\\Wood_Herringbone_Tiles_004_SD\\Substance_Graph_BaseColor.jpg",
-            false,
-        ));
-        model.material.normal_texture = Some(commands.load_texture(
-            "assets\\materials\\Wood_Herringbone_Tiles_004_SD\\Substance_Graph_Normal.jpg",
-            true,
-        ));
-        commands.spawn(model);
+        commands.spawn((model.mesh, model.material, model.transform, Object));
     });
 
+    app.add_system(CameraUpdate);
     app.add_system(Update);
 
     app.run();

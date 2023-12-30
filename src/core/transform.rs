@@ -58,6 +58,13 @@ impl Transform {
     }
 
     #[inline]
+    pub fn looking_at(&mut self, target: glam::Vec3, up: glam::Vec3) -> Self {
+        let eye = self.get_translation();
+        self.matrix = glam::Mat4::look_at_rh(eye, target, up).inverse();
+        *self
+    }
+
+    #[inline]
     pub fn get_translation(&self) -> glam::Vec3 {
         self.matrix.to_scale_rotation_translation().2
     }

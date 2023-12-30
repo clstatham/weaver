@@ -1,9 +1,18 @@
 use weaver_ecs::{Bundle, Entity, Resource, System, World};
-use winit::{event_loop::EventLoop, window::Window};
+use winit::{
+    dpi::{LogicalPosition, PhysicalPosition},
+    event_loop::EventLoop,
+    window::Window,
+};
 use winit_input_helper::WinitInputHelper;
 
 use crate::{
-    core::{camera::Camera, input::Input, time::Time},
+    core::{
+        camera::{Camera, FlyCamera},
+        input::Input,
+        time::Time,
+        transform::Transform,
+    },
     renderer::Renderer,
 };
 
@@ -33,15 +42,29 @@ impl App {
         ));
         window.set_resizable(false);
 
-        let camera = Camera::new(
-            glam::Vec3::new(5.0, 5.0, 5.0),
-            glam::Vec3::new(0.0, 0.0, 0.0),
-            glam::Vec3::Y,
-            45.0f32.to_radians(),
-            screen_width as f32 / screen_height as f32,
-            0.1,
-            100.0,
-        );
+        // let camera = Camera::new(
+        //     glam::Vec3::new(5.0, 5.0, 5.0),
+        //     glam::Vec3::new(0.0, 0.0, 0.0),
+        //     glam::Vec3::Y,
+        //     45.0f32.to_radians(),
+        //     screen_width as f32 / screen_height as f32,
+        //     0.1,
+        //     100.0,
+        // );
+
+        let initial_camera_transform = Transform::default()
+            .translate(5.0, 5.0, 5.0)
+            .looking_at(glam::Vec3::ZERO, glam::Vec3::Y);
+        let camera = FlyCamera {
+            speed: 5.0,
+            sensitivity: 0.1,
+            translation: initial_camera_transform.get_translation(),
+            rotation: initial_camera_transform.get_rotation(),
+            fov: 90.0f32.to_radians(),
+            aspect: screen_width as f32 / screen_height as f32,
+            near: 0.1,
+            far: 100.0,
+        };
 
         let renderer = pollster::block_on(Renderer::new(&window));
 
@@ -87,8 +110,14 @@ impl App {
             *control_flow = winit::event_loop::ControlFlow::Poll;
             self.window.request_redraw();
             self.world.write_resource::<Time>().update();
-
             self.input.update(&event);
+            // self.window
+            //     .set_cursor_position(PhysicalPosition::new(
+            //         self.window.inner_size().width as f64 / 2.0,
+            //         self.window.inner_size().height as f64 / 2.0,
+            //     ))
+            //     .unwrap();
+
             self.world.write_resource::<Input>().update(&event);
 
             self.world.update();
@@ -99,6 +128,16 @@ impl App {
                     ..
                 } => {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
+                }
+                winit::event::Event::WindowEvent {
+                    event: winit::event::WindowEvent::KeyboardInput { input, .. },
+                    ..
+                } => {
+                    if let Some(key_code) = input.virtual_keycode {
+                        if key_code == winit::event::VirtualKeyCode::Escape {
+                            *control_flow = winit::event_loop::ControlFlow::Exit;
+                        }
+                    }
                 }
                 winit::event::Event::RedrawRequested(_) => {
                     self.renderer.render(&self.world).unwrap();

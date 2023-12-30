@@ -46,8 +46,8 @@ impl Renderer {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::default(),
+                    features: wgpu::Features::all_webgpu_mask(),
+                    limits: wgpu::Limits::downlevel_defaults(),
                 },
                 None,
             )

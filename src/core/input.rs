@@ -11,6 +11,7 @@ pub struct Input {
     pub mouse_position: glam::Vec2,
     pub mouse_delta: glam::Vec2,
     pub mouse_wheel_delta: f32,
+    pub mouse_grabbed: bool,
 }
 
 impl Input {

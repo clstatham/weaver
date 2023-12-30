@@ -86,7 +86,6 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let texture_scale = material.texture_scale.x;
-    let metallic = material.metallic.x;
 
     let uv = vertex.uv * texture_scale;
     let tex_color = textureSample(tex, tex_sampler, uv).xyz;
@@ -114,7 +113,7 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
         let tbn = mat3x3<f32>(nb, cross(nn, nb), nn);
 
         let n = tbn * tangent_normal;
-        let roughness = 0.5;
+        let roughness = material.metallic.y;
         let metallic = material.metallic.x;
 
         let f0 = vec3<f32>(0.04, 0.04, 0.04);

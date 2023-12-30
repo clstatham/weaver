@@ -2,7 +2,7 @@ use weaver_ecs::{Query, Queryable, Read, Write};
 
 use crate::{
     core::{
-        camera::{Camera, CameraUniform},
+        camera::{Camera, CameraUniform, FlyCamera},
         light::{PointLight, MAX_LIGHTS},
         material::{Material, MaterialUniform},
         mesh::{Mesh, Vertex},
@@ -124,7 +124,7 @@ impl Pass for PbrRenderPass {
         });
 
         // write buffers
-        let camera = world.read_resource::<Camera>();
+        let camera = world.read_resource::<FlyCamera>();
         queue.write_buffer(
             &self.camera_buffer,
             0,
