@@ -2,6 +2,7 @@ use weaver_ecs::World;
 
 use crate::core::texture::Texture;
 
+pub mod hdr;
 pub mod pbr;
 
 pub fn preprocess_shader(shader: &str) -> String {

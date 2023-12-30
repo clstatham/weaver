@@ -121,6 +121,7 @@ impl Texture {
         height: usize,
         label: Option<&str>,
         usage: wgpu::TextureUsages,
+        format: Option<wgpu::TextureFormat>,
     ) -> Self {
         let size = wgpu::Extent3d {
             width: width as u32,
@@ -134,7 +135,7 @@ impl Texture {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: format.unwrap_or(wgpu::TextureFormat::Rgba8UnormSrgb),
             usage,
             view_formats: &[],
         });

@@ -3,7 +3,7 @@ use winit::window::Window;
 
 use crate::core::texture::Texture;
 
-use self::pass::{pbr::PbrRenderPass, Pass};
+use self::pass::{hdr::HdrRenderPass, pbr::PbrRenderPass, Pass};
 
 pub mod pass;
 
@@ -17,6 +17,7 @@ pub struct Renderer {
     pub(crate) depth_texture: Texture,
     pub(crate) normal_texture: Texture,
 
+    pub(crate) hdr_pass: HdrRenderPass,
     pub(crate) pbr_pass: PbrRenderPass,
     pub(crate) passes: Vec<Box<dyn pass::Pass>>,
 }
@@ -75,6 +76,7 @@ impl Renderer {
             wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::COPY_SRC
                 | wgpu::TextureUsages::TEXTURE_BINDING,
+            None,
         );
 
         let depth_texture = Texture::create_depth_texture(
@@ -97,6 +99,8 @@ impl Renderer {
                 | wgpu::TextureUsages::TEXTURE_BINDING,
         );
 
+        let hdr_pass = HdrRenderPass::new(&device, config.width, config.height);
+
         let pbr_pass = PbrRenderPass::new(&device);
 
         Self {
@@ -107,6 +111,7 @@ impl Renderer {
             color_texture,
             depth_texture,
             normal_texture,
+            hdr_pass,
             pbr_pass,
             passes: vec![],
         }
@@ -128,7 +133,7 @@ impl Renderer {
                 label: Some("Clear Screen"),
                 color_attachments: &[
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.color_texture.view,
+                        view: &self.hdr_pass.texture.view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -160,7 +165,7 @@ impl Renderer {
         self.pbr_pass.render(
             &self.device,
             &self.queue,
-            &self.color_texture,
+            &self.hdr_pass.texture,
             &self.normal_texture,
             &self.depth_texture,
             world,
@@ -170,12 +175,21 @@ impl Renderer {
             pass.render(
                 &self.device,
                 &self.queue,
-                &self.color_texture,
+                &self.hdr_pass.texture,
                 &self.normal_texture,
                 &self.depth_texture,
                 world,
             )?;
         }
+
+        self.hdr_pass.render(
+            &self.device,
+            &self.queue,
+            &self.color_texture,
+            &self.normal_texture,
+            &self.depth_texture,
+            world,
+        )?;
 
         let mut encoder = self
             .device
