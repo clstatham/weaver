@@ -13,6 +13,7 @@ pub struct Material {
     pub normal_texture: Option<Texture>,
     pub roughness: f32,
     pub roughness_texture: Option<Texture>,
+    pub ambient_occlusion_texture: Option<Texture>,
 
     pub texture_scaling: f32,
 
@@ -28,6 +29,7 @@ impl Default for Material {
             normal_texture: None,
             roughness: 0.5,
             roughness_texture: None,
+            ambient_occlusion_texture: None,
             texture_scaling: 1.0,
             bind_group: None,
         }
@@ -36,14 +38,16 @@ impl Default for Material {
 
 impl Material {
     pub fn new(
-        base_color_texture: Option<Texture>,
+        diffuse_texture: Option<Texture>,
         normal_texture: Option<Texture>,
         roughness_texture: Option<Texture>,
+        ambient_occlusion_texture: Option<Texture>,
     ) -> Self {
         Self {
-            diffuse_texture: base_color_texture,
+            diffuse_texture,
             normal_texture,
             roughness_texture,
+            ambient_occlusion_texture,
             ..Default::default()
         }
     }
@@ -86,6 +90,7 @@ impl Material {
         let diffuse_texture = self.diffuse_texture.as_ref().unwrap();
         let normal_texture = self.normal_texture.as_ref().unwrap();
         let roughness_texture = self.roughness_texture.as_ref().unwrap();
+        let ambient_occlusion_texture = self.ambient_occlusion_texture.as_ref().unwrap();
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Material Bind Group"),
             layout: &render_pass.bind_group_layout,
@@ -143,16 +148,26 @@ impl Material {
                     binding: 8,
                     resource: wgpu::BindingResource::Sampler(&roughness_texture.sampler),
                 },
-                // point lights
+                // ambient occlusion texture
                 wgpu::BindGroupEntry {
                     binding: 9,
+                    resource: wgpu::BindingResource::TextureView(&ambient_occlusion_texture.view),
+                },
+                // ambient occlusion texture sampler
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: wgpu::BindingResource::Sampler(&ambient_occlusion_texture.sampler),
+                },
+                // point lights
+                wgpu::BindGroupEntry {
+                    binding: 11,
                     resource: wgpu::BindingResource::Buffer(
                         render_pass.point_light_buffer.as_entire_buffer_binding(),
                     ),
                 },
                 // directional lights
                 wgpu::BindGroupEntry {
-                    binding: 10,
+                    binding: 12,
                     resource: wgpu::BindingResource::Buffer(
                         render_pass
                             .directional_light_buffer

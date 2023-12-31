@@ -5,6 +5,8 @@ use weaver_proc_macro::Resource;
 
 use crate::renderer::pass::{sky::SkyRenderPass, Pass};
 
+use super::color::Color;
+
 pub struct Texture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -122,6 +124,57 @@ impl Texture {
         }
 
         Self::from_data_rgba8(width, height, &rgba, device, queue, label, is_normal_map)
+    }
+
+    pub fn solid_color(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        color: Color,
+        width: u32,
+        height: u32,
+        label: Option<&str>,
+    ) -> Self {
+        let (r, g, b) = color.rgb_int();
+        let mut data = Vec::with_capacity((width * height * 4) as usize);
+        for _ in 0..width * height {
+            data.extend_from_slice(&[r, g, b, 255]);
+        }
+
+        Self::from_data_rgba8(
+            width as usize,
+            height as usize,
+            &data,
+            device,
+            queue,
+            label,
+            false,
+        )
+    }
+
+    pub fn default_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        let width = 128;
+        let height = 128;
+        let mut data = Vec::with_capacity((width * height * 4) as usize);
+        for x in 0..width {
+            for y in 0..height {
+                // pink/white checkerboard
+                let (r, g, b) = match (x < width / 2, y < height / 2) {
+                    (true, true) | (false, false) => (255, 0, 255),
+                    (true, false) | (false, true) => (255, 255, 255),
+                };
+                data.extend_from_slice(&[r, g, b, 255]);
+            }
+        }
+
+        Self::from_data_rgba8(
+            width as usize,
+            height as usize,
+            &data,
+            device,
+            queue,
+            Some("Default Texture"),
+            false,
+        )
     }
 
     pub fn create_color_texture(

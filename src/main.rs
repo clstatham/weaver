@@ -2,12 +2,14 @@ use core::{
     camera::FlyCamera,
     input::Input,
     light::{DirectionalLight, PointLight},
+    material::Material,
     mesh::Mesh,
+    texture::Texture,
     time::Time,
     transform::Transform,
 };
 
-use app::App;
+use app::{commands::Commands, App};
 use weaver_ecs::*;
 use weaver_proc_macro::system;
 
@@ -53,6 +55,115 @@ struct Object;
 #[derive(Component)]
 struct Spinner;
 
+enum Materials {
+    Wood,
+    Metal,
+    WoodTile,
+    BrickWall,
+    StoneWall,
+}
+
+impl Materials {
+    fn load(&self, commands: &Commands) -> Material {
+        match self {
+            // Wood_025
+            Materials::Wood => Material::new(
+                Some(
+                    commands
+                        .load_texture("assets/materials/Wood_025_SD/Wood_025_basecolor.jpg", false),
+                ),
+                Some(
+                    commands.load_texture("assets/materials/Wood_025_SD/Wood_025_normal.jpg", true),
+                ),
+                Some(
+                    commands
+                        .load_texture("assets/materials/Wood_025_SD/Wood_025_roughness.jpg", false),
+                ),
+                Some(commands.load_texture(
+                    "assets/materials/Wood_025_SD/Wood_025_ambientOcclusion.jpg",
+                    false,
+                )),
+            ),
+            // Metal_006
+            Materials::Metal => Material::new(
+                Some(commands.load_texture(
+                    "assets/materials/Metal_006_SD/Metal_006_basecolor.jpg",
+                    false,
+                )),
+                Some(
+                    commands
+                        .load_texture("assets/materials/Metal_006_SD/Metal_006_normal.jpg", true),
+                ),
+                Some(commands.load_texture(
+                    "assets/materials/Metal_006_SD/Metal_006_roughness.jpg",
+                    false,
+                )),
+                Some(commands.load_texture(
+                    "assets/materials/Metal_006_SD/Metal_006_ambientOcclusion.jpg",
+                    false,
+                )),
+            ),
+            // Wood_Herringbone_Tiles_004
+            Materials::WoodTile => Material::new(
+                Some(commands.load_texture(
+                    "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_BaseColor.jpg",
+                    false,
+                )),
+                Some(commands.load_texture(
+                    "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_Normal.jpg",
+                    true,
+                )),
+                Some(commands.load_texture(
+                    "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_Roughness.jpg",
+                    false,
+                )),
+                Some(commands.load_texture(
+                    "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_AmbientOcclusion.jpg",
+                    false,
+                )),
+            ),
+            // Brick_Wall_017
+            Materials::BrickWall => Material::new(
+                Some(commands.load_texture(
+                    "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_basecolor.jpg",
+                    false,
+                )),
+                Some(commands.load_texture(
+                    "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_normal.jpg",
+                    true,
+                )),
+                Some(commands.load_texture(
+                    "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_roughness.jpg",
+                    false,
+                )),
+                Some(commands.load_texture(
+                    "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_ambientOcclusion.jpg",
+                    false,
+                )),
+            ),
+            // Wall_Stone_021
+            Materials::StoneWall => Material::new(
+                Some(commands.load_texture(
+                    "assets/materials/Wall_Stone_021_SD/Wall_Stone_021_basecolor.jpg",
+                    false,
+                )),
+                Some(commands.load_texture(
+                    "assets/materials/Wall_Stone_021_SD/Wall_Stone_021_normal.jpg",
+                    true,
+                )),
+                Some(commands.load_texture(
+                    "assets/materials/Wall_Stone_021_SD/Wall_Stone_021_roughness.jpg",
+                    false,
+                )),
+                Some(commands.load_texture(
+                    "assets/materials/Wall_Stone_021_SD/Wall_Stone_021_ambientOcclusion.jpg",
+                    false,
+                )),
+            )
+        }
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
@@ -80,23 +191,12 @@ fn main() -> anyhow::Result<()> {
         let mut model = commands.load_gltf("assets/woodcube.glb", false);
         model.transform.translate(0.0, -2.0, 0.0);
         model.transform.scale(100.0, 1.0, 100.0);
+        model.material = Materials::WoodTile.load(&commands);
         model.material.texture_scaling = 200.0;
-        model.material.diffuse_texture = Some(commands.load_texture(
-            "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_BaseColor.jpg",
-            false,
-        ));
-        model.material.normal_texture = Some(commands.load_texture(
-            "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_Normal.jpg",
-            true,
-        ));
-        model.material.roughness_texture = Some(commands.load_texture(
-            "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_Roughness.jpg",
-            false,
-        ));
-        model.material.roughness = 0.5;
         commands.spawn(model);
 
-        let mut model = commands.load_gltf("assets/metalmonkey.glb", true);
+        let mut model = commands.load_gltf("assets/woodmonkey_highpoly.glb", false);
+        model.material = Materials::Metal.load(&commands);
         model.transform.translate(0.0, 0.0, 0.0);
         commands.spawn(model);
     });

@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use rustc_hash::FxHashMap;
 use weaver_proc_macro::Bundle;
 use wgpu::util::DeviceExt;
 
@@ -134,6 +135,7 @@ impl Model {
                     }
                 } else {
                     log::warn!("GLTF Mesh has no diffuse texture");
+                    mat.diffuse_texture = Some(Texture::default_texture(device, queue));
                 }
                 if let Some(texture) = material.normal_texture() {
                     let image = images.get(texture.texture().source().index()).unwrap();
@@ -201,6 +203,38 @@ impl Model {
                     }
                 } else {
                     log::warn!("GLTF Mesh has no roughness texture");
+                }
+                if let Some(ao_texture) = material.occlusion_texture() {
+                    let image = images.get(ao_texture.texture().source().index()).unwrap();
+                    match image.format {
+                        gltf::image::Format::R8G8B8 => {
+                            mat.ambient_occlusion_texture = Some(Texture::from_data_r8g8b8(
+                                image.width as usize,
+                                image.height as usize,
+                                &image.pixels,
+                                device,
+                                queue,
+                                Some("GLTF Mesh Ambient Occlusion Texture"),
+                                false,
+                            ));
+                        }
+                        gltf::image::Format::R8G8B8A8 => {
+                            mat.ambient_occlusion_texture = Some(Texture::from_data_rgba8(
+                                image.width as usize,
+                                image.height as usize,
+                                &image.pixels,
+                                device,
+                                queue,
+                                Some("GLTF Mesh Ambient Occlusion Texture"),
+                                false,
+                            ));
+                        }
+                        _ => {
+                            todo!("Unsupported GLTF Texture Format");
+                        }
+                    }
+                } else {
+                    log::warn!("GLTF Mesh has no ambient occlusion texture");
                 }
 
                 mat.roughness = material.pbr_metallic_roughness().roughness_factor();
