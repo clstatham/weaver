@@ -6,21 +6,27 @@ use super::input::Input;
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct CameraUniform {
-    pub view_proj: glam::Mat4,
-    pub inv_view_proj: glam::Mat4,
+    pub view: glam::Mat4,
+    pub proj: glam::Mat4,
+    pub inv_view: glam::Mat4,
+    pub inv_proj: glam::Mat4,
     pub camera_position: glam::Vec3,
     _padding: u32,
 }
 
 impl From<Camera> for CameraUniform {
     fn from(camera: Camera) -> Self {
-        let view_proj = camera.projection_matrix() * camera.view_matrix();
-        let inv_view_proj = view_proj.inverse();
+        let view = camera.view_matrix();
+        let proj = camera.projection_matrix();
+        let inv_view = view.inverse();
+        let inv_proj = proj.inverse();
         let camera_position = camera.eye;
 
         Self {
-            view_proj,
-            inv_view_proj,
+            view,
+            proj,
+            inv_view,
+            inv_proj,
             camera_position,
             _padding: 0,
         }
@@ -29,13 +35,17 @@ impl From<Camera> for CameraUniform {
 
 impl From<FlyCamera> for CameraUniform {
     fn from(camera: FlyCamera) -> Self {
-        let view_proj = camera.projection_matrix() * camera.view_matrix();
-        let inv_view_proj = view_proj.inverse();
+        let view = camera.view_matrix();
+        let proj = camera.projection_matrix();
+        let inv_view = view.inverse();
+        let inv_proj = proj.inverse();
         let camera_position = camera.translation;
 
         Self {
-            view_proj,
-            inv_view_proj,
+            view,
+            proj,
+            inv_view,
+            inv_proj,
             camera_position,
             _padding: 0,
         }

@@ -21,8 +21,10 @@ struct VertexOutput {
 }
 
 struct CameraUniform {
-    view_proj: mat4x4<f32>,
-    inv_view_proj: mat4x4<f32>,
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    inv_view: mat4x4<f32>,
+    inv_proj: mat4x4<f32>,
     camera_position: vec3<f32>,
 };
 
@@ -68,6 +70,10 @@ struct DirectionalLights {
 @group(0) @binding(8)  var          roughness_tex_sampler: sampler;
 @group(0) @binding(9)  var<storage> point_lights: PointLights;
 @group(0) @binding(10) var<storage> directional_lights: DirectionalLights;
+
+@group(1) @binding(0)  var<uniform> _also_the_camera: CameraUniform;
+@group(1) @binding(1)  var          env_map: texture_cube<f32>;
+@group(1) @binding(2)  var          env_map_sampler: sampler;
 
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
@@ -137,15 +143,19 @@ fn calculate_lighting(
     var kD = vec3(1.0) - kS;
     kD *= 1.0 - metallic;
 
+    // reflections
+    let R = reflect(-V, N);
+    let prefiltered_color = textureSample(env_map, env_map_sampler, R).rgb;
+
     let NdotL = max(dot(N, L), 0.0);
-    return (kD * albedo / PI + specular) * radiance * NdotL;
+    return (kD * albedo / PI + specular + prefiltered_color * metallic) * radiance * NdotL;
 }
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
     output.world_position = (model_transform * vec4<f32>(input.position, 1.0)).xyz;
-    output.clip_position = camera.view_proj * vec4<f32>(output.world_position, 1.0);
+    output.clip_position = camera.proj * camera.view * vec4<f32>(output.world_position, 1.0);
     output.uv = input.uv;
 
     // get just the rotation part of the model transform

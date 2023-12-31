@@ -4,6 +4,7 @@ use crate::core::texture::Texture;
 
 pub mod hdr;
 pub mod pbr;
+pub mod sky;
 
 pub fn preprocess_shader(shader: &str) -> String {
     let mut output = String::new();

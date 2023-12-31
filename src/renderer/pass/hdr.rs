@@ -10,7 +10,7 @@ pub struct HdrRenderPass {
 
 impl HdrRenderPass {
     pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
-        let format = wgpu::TextureFormat::Rgba16Float;
+        let format = Texture::HDR_FORMAT;
 
         let texture = Texture::create_color_texture(
             device,
@@ -127,7 +127,7 @@ impl Pass for HdrRenderPass {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
                     },
                     count: None,
@@ -135,7 +135,7 @@ impl Pass for HdrRenderPass {
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                     count: None,
                 },
             ],

@@ -1,4 +1,9 @@
-use std::path::Path;
+use std::{io::Read, path::Path};
+
+use image::codecs::hdr::HdrDecoder;
+use weaver_proc_macro::Resource;
+
+use crate::renderer::pass::{sky::SkyRenderPass, Pass};
 
 pub struct Texture {
     pub texture: wgpu::Texture,
@@ -9,7 +14,7 @@ pub struct Texture {
 impl Texture {
     pub const WINDOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
     pub const SDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
-    pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+    pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba32Float;
     pub const NORMAL_MAP_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
@@ -151,7 +156,7 @@ impl Texture {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
@@ -300,5 +305,191 @@ impl Texture {
             view,
             sampler,
         }
+    }
+}
+
+#[derive(Resource)]
+pub struct HdrCubeMap {
+    pub texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    pub sampler: wgpu::Sampler,
+}
+
+impl HdrCubeMap {
+    pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 6,
+        };
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("HDR Cube Map"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: Texture::HDR_FORMAT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("HDR Cube Map View"),
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("HDR Cube Map Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        Self {
+            texture,
+            view,
+            sampler,
+        }
+    }
+}
+
+pub struct HdrLoader {
+    pub(crate) pipeline: wgpu::ComputePipeline,
+    layout: wgpu::BindGroupLayout,
+}
+
+impl HdrLoader {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let shader = device.create_shader_module(wgpu::include_wgsl!("hdr_loader.wgsl"));
+
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("HDR Loader Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: Texture::HDR_FORMAT,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("HDR Loader Pipeline Layout"),
+            bind_group_layouts: &[&layout],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("HDR Loader Pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: "main",
+        });
+
+        Self { pipeline, layout }
+    }
+
+    pub fn load(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        dst_size: u32,
+        path: impl AsRef<Path>,
+    ) -> anyhow::Result<HdrCubeMap> {
+        let mut file = std::fs::File::open(path)?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf)?;
+        drop(file);
+
+        let hdr_decoder = HdrDecoder::new(buf.as_slice())?;
+        let meta = hdr_decoder.metadata();
+        let mut pixels = vec![[0.0, 0.0, 0.0, 0.0]; meta.width as usize * meta.height as usize];
+        hdr_decoder.read_image_transform(
+            |pix| {
+                let rgb = pix.to_hdr();
+                [rgb[0], rgb[1], rgb[2], 1.0f32]
+            },
+            &mut pixels,
+        )?;
+
+        let src = Texture::create_color_texture(
+            device,
+            meta.width as usize,
+            meta.height as usize,
+            Some("HDR Source Texture"),
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            Some(Texture::HDR_FORMAT),
+        );
+
+        queue.write_texture(
+            src.texture.as_image_copy(),
+            bytemuck::cast_slice(&pixels),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(meta.width * std::mem::size_of::<[f32; 4]>() as u32),
+                rows_per_image: Some(meta.height),
+            },
+            wgpu::Extent3d {
+                width: meta.width,
+                height: meta.height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let dst = HdrCubeMap::new(device, dst_size, dst_size);
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("HDR Loader Bind Group"),
+            layout: &self.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&src.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&dst.view),
+                },
+            ],
+        });
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("HDR Loader Encoder"),
+        });
+
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("HDR Loader Compute Pass"),
+            });
+            let num_workgroups = (dst_size + 15) / 16;
+            cpass.set_pipeline(&self.pipeline);
+            cpass.set_bind_group(0, &bind_group, &[]);
+            cpass.dispatch_workgroups(num_workgroups, num_workgroups, 6);
+        }
+
+        queue.submit(std::iter::once(encoder.finish()));
+
+        Ok(dst)
     }
 }

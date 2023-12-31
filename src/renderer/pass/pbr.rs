@@ -11,7 +11,7 @@ use crate::{
     include_shader,
 };
 
-use super::Pass;
+use super::{sky::SkyRenderPass, Pass};
 
 pub struct PbrRenderPass {
     pub(crate) bind_group_layout: wgpu::BindGroupLayout,
@@ -96,8 +96,8 @@ impl PbrRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba16Float,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    format: crate::core::texture::Texture::HDR_FORMAT,
+                    blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -116,16 +116,14 @@ impl PbrRenderPass {
             multiview: None,
         })
     }
-}
 
-impl Pass for PbrRenderPass {
-    fn render(
+    pub fn render(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         color_texture: &crate::core::texture::Texture,
-        normal_texture: &crate::core::texture::Texture,
         depth_texture: &crate::core::texture::Texture,
+        env_map_bind_group: &wgpu::BindGroup,
         world: &weaver_ecs::World,
     ) -> anyhow::Result<()> {
         let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -216,6 +214,7 @@ impl Pass for PbrRenderPass {
 
                 render_pass.set_pipeline(&self.pipeline);
                 render_pass.set_bind_group(0, bind_group, &[]);
+                render_pass.set_bind_group(1, env_map_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -351,7 +350,10 @@ impl Pass for PbrRenderPass {
     {
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("PBR Pipeline Layout"),
-            bind_group_layouts: &[&Self::bind_group_layout(device)],
+            bind_group_layouts: &[
+                &Self::bind_group_layout(device),
+                &SkyRenderPass::bind_group_layout(device),
+            ],
             push_constant_ranges: &[],
         })
     }

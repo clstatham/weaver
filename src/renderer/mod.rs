@@ -1,13 +1,15 @@
 use weaver_ecs::World;
 use winit::window::Window;
 
-use crate::core::texture::Texture;
+use crate::core::texture::{HdrLoader, Texture};
 
-use self::pass::{hdr::HdrRenderPass, pbr::PbrRenderPass, Pass};
+use self::pass::{hdr::HdrRenderPass, pbr::PbrRenderPass, sky::SkyRenderPass, Pass};
 
 pub mod pass;
 
 pub struct Renderer {
+    pub hdr_loader: HdrLoader,
+
     pub(crate) surface: wgpu::Surface,
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
@@ -19,6 +21,7 @@ pub struct Renderer {
 
     pub(crate) hdr_pass: HdrRenderPass,
     pub(crate) pbr_pass: PbrRenderPass,
+    pub(crate) sky_pass: SkyRenderPass,
     pub(crate) passes: Vec<Box<dyn pass::Pass>>,
 }
 
@@ -103,7 +106,16 @@ impl Renderer {
 
         let pbr_pass = PbrRenderPass::new(&device);
 
-        Self {
+        let hdr_loader = HdrLoader::new(&device);
+
+        let skybox = hdr_loader
+            .load(&device, &queue, 2048, "assets/meadow_2k.hdr")
+            .unwrap();
+
+        let sky_pass = SkyRenderPass::new(&device, skybox);
+
+        let mut this = Self {
+            hdr_loader,
             surface,
             device,
             queue,
@@ -113,8 +125,13 @@ impl Renderer {
             normal_texture,
             hdr_pass,
             pbr_pass,
+            sky_pass,
             passes: vec![],
-        }
+        };
+
+        // todo: add more render passes
+
+        this
     }
 
     pub fn push_render_pass<T: Pass + 'static>(&mut self, pass: T) {
@@ -166,8 +183,8 @@ impl Renderer {
             &self.device,
             &self.queue,
             &self.hdr_pass.texture,
-            &self.normal_texture,
             &self.depth_texture,
+            &self.sky_pass.bind_group,
             world,
         )?;
 
@@ -181,6 +198,15 @@ impl Renderer {
                 world,
             )?;
         }
+
+        self.sky_pass.render(
+            &self.device,
+            &self.queue,
+            &self.hdr_pass.texture,
+            &self.normal_texture,
+            &self.depth_texture,
+            world,
+        )?;
 
         self.hdr_pass.render(
             &self.device,
