@@ -19,6 +19,18 @@ impl PointLight {
             intensity,
         }
     }
+
+    pub fn view_transform_in_direction(&self, direction: glam::Vec3, up: glam::Vec3) -> glam::Mat4 {
+        glam::Mat4::look_at_lh(self.position, self.position + direction, up)
+    }
+
+    pub fn projection_transform(&self) -> glam::Mat4 {
+        let aspect = 1.0;
+        let fov = 90.0f32.to_radians();
+        let near = 1.0;
+        let far = 100.0;
+        glam::Mat4::perspective_lh(fov, aspect, near, far)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -26,6 +38,7 @@ impl PointLight {
 pub struct PointLightUniform {
     pub position: [f32; 4],
     pub color: [f32; 4],
+    pub projection_transform: glam::Mat4,
     pub intensity: f32,
     _pad: [f32; 3],
 }
@@ -35,6 +48,7 @@ impl From<&PointLight> for PointLightUniform {
         Self {
             position: [light.position.x, light.position.y, light.position.z, 1.0],
             color: [light.color.r, light.color.g, light.color.b, 1.0],
+            projection_transform: light.projection_transform(),
             intensity: light.intensity,
             _pad: [0.0; 3],
         }

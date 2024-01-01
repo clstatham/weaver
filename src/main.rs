@@ -40,7 +40,7 @@ fn update(
 #[system(Spin)]
 fn spin(model: Query<(Read<Mesh>, Write<Transform>, Read<Spinner>)>, timey: Res<Time>) {
     for (i, (_mesh, mut transform, _)) in model.iter().enumerate() {
-        transform.rotate(timey.delta_time * 1.5, glam::Vec3::Y);
+        transform.rotate(timey.delta_time * 1.75, glam::Vec3::Y);
     }
 }
 
@@ -144,19 +144,19 @@ impl Materials {
             // Wall_Stone_021
             Materials::StoneWall => Material::new(
                 Some(commands.load_texture(
-                    "assets/materials/Wall_Stone_021_SD/Wall_Stone_021_basecolor.jpg",
+                    "assets/materials/Wall_Stone_021_SD/Substance_graph_BaseColor.jpg",
                     false,
                 )),
                 Some(commands.load_texture(
-                    "assets/materials/Wall_Stone_021_SD/Wall_Stone_021_normal.jpg",
+                    "assets/materials/Wall_Stone_021_SD/Substance_graph_Normal.jpg",
                     true,
                 )),
                 Some(commands.load_texture(
-                    "assets/materials/Wall_Stone_021_SD/Wall_Stone_021_roughness.jpg",
+                    "assets/materials/Wall_Stone_021_SD/Substance_graph_Roughness.jpg",
                     false,
                 )),
                 Some(commands.load_texture(
-                    "assets/materials/Wall_Stone_021_SD/Wall_Stone_021_ambientOcclusion.jpg",
+                    "assets/materials/Wall_Stone_021_SD/Substance_graph_AmbientOcclusion.jpg",
                     false,
                 )),
             )
@@ -169,17 +169,17 @@ fn main() -> anyhow::Result<()> {
 
     let mut app = App::new(1600, 900);
 
-    app.spawn(DirectionalLight::new(
-        glam::Vec3::new(1.0, -1.0, 1.0).normalize(),
-        core::color::Color::WHITE,
-        40.0,
-    ));
-
-    // app.spawn(PointLight::new(
-    //     glam::Vec3::new(5.0, 5.0, 5.0),
+    // app.spawn(DirectionalLight::new(
+    //     glam::Vec3::new(1.0, -1.0, 1.0).normalize(),
     //     core::color::Color::WHITE,
-    //     20.0,
+    //     40.0,
     // ));
+
+    app.spawn(PointLight::new(
+        glam::Vec3::new(5.0, 5.0, 5.0),
+        core::color::Color::WHITE,
+        20.0,
+    ));
 
     // app.spawn(PointLight::new(
     //     glam::Vec3::new(0.0, 5.0, 0.0),
@@ -187,18 +187,53 @@ fn main() -> anyhow::Result<()> {
     //     20.0,
     // ));
 
+    let room_scale = 30.0;
+
     app.build(|commands| {
+        // floor
         let mut model = commands.load_gltf("assets/woodcube.glb", false);
         model.transform.translate(0.0, -2.0, 0.0);
-        model.transform.scale(100.0, 1.0, 100.0);
+        model.transform.scale(room_scale, 1.0, room_scale);
         model.material = Materials::WoodTile.load(&commands);
-        model.material.texture_scaling = 200.0;
+        model.material.texture_scaling = room_scale * 2.0;
         commands.spawn(model);
+
+        // // wall
+        // let mut model = commands.load_gltf("assets/woodcube.glb", false);
+        // model.transform.translate(0.0, 0.0, -room_scale / 2.0);
+        // model.transform.scale(room_scale, room_scale, 1.0);
+        // model.material = Materials::BrickWall.load(&commands);
+        // model.material.texture_scaling = room_scale * 2.0;
+        // commands.spawn(model);
+
+        // // wall
+        // let mut model = commands.load_gltf("assets/woodcube.glb", false);
+        // model.transform.translate(0.0, 0.0, room_scale / 2.0);
+        // model.transform.scale(room_scale, room_scale, 1.0);
+        // model.material = Materials::BrickWall.load(&commands);
+        // model.material.texture_scaling = room_scale * 2.0;
+        // commands.spawn(model);
+
+        // // wall
+        // let mut model = commands.load_gltf("assets/woodcube.glb", false);
+        // model.transform.translate(-room_scale / 2.0, 0.0, 0.0);
+        // model.transform.scale(1.0, room_scale, room_scale);
+        // model.material = Materials::StoneWall.load(&commands);
+        // model.material.texture_scaling = room_scale * 2.0;
+        // commands.spawn(model);
+
+        // // wall
+        // let mut model = commands.load_gltf("assets/woodcube.glb", false);
+        // model.transform.translate(room_scale / 2.0, 0.0, 0.0);
+        // model.transform.scale(1.0, room_scale, room_scale);
+        // model.material = Materials::StoneWall.load(&commands);
+        // model.material.texture_scaling = room_scale * 2.0;
+        // commands.spawn(model);
 
         let mut model = commands.load_gltf("assets/woodmonkey_highpoly.glb", false);
         model.material = Materials::Metal.load(&commands);
         model.transform.translate(0.0, 0.0, 0.0);
-        commands.spawn((model.mesh, model.transform, model.material, Spinner));
+        commands.spawn((model.mesh, model.transform, model.material));
     });
 
     app.add_system(CameraUpdate);

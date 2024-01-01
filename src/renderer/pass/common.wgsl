@@ -2,6 +2,7 @@ const PI: f32 = 3.1415926535897932384626433832795;
 const MAX_LIGHTS: u32 = 16u;
 
 struct VertexInput {
+    @builtin(instance_index) instance_index: u32,
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) binormal: vec3<f32>,
@@ -39,6 +40,7 @@ struct MaterialUniform {
 struct PointLight {
     position: vec4<f32>,
     color: vec4<f32>,
+    proj_transform: mat4x4<f32>,
     intensity: f32,
     _pad: f32,
 };

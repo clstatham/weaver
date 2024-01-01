@@ -1,7 +1,7 @@
 use crate::{
     core::{
         camera::{CameraUniform, FlyCamera},
-        texture::{HdrCubeMap, Texture},
+        texture::Texture,
     },
     include_shader,
 };
@@ -9,7 +9,7 @@ use crate::{
 use super::Pass;
 
 pub struct SkyRenderPass {
-    skybox: HdrCubeMap,
+    skybox: Texture,
     skybox_view: wgpu::TextureView,
     pub(crate) bind_group: wgpu::BindGroup,
     pub(crate) bind_group_layout: wgpu::BindGroupLayout,
@@ -19,7 +19,7 @@ pub struct SkyRenderPass {
 }
 
 impl SkyRenderPass {
-    pub fn new(device: &wgpu::Device, skybox: HdrCubeMap) -> Self {
+    pub fn new(device: &wgpu::Device, skybox: Texture) -> Self {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("HDR Cube Map Fragment Bind Group Layout"),
             entries: &[

@@ -360,17 +360,13 @@ impl Texture {
             sampler,
         }
     }
-}
 
-#[derive(Resource)]
-pub struct HdrCubeMap {
-    pub texture: wgpu::Texture,
-    pub view: wgpu::TextureView,
-    pub sampler: wgpu::Sampler,
-}
-
-impl HdrCubeMap {
-    pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
+    pub fn new_hdr_cubemap(
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        view_dimension: Option<wgpu::TextureViewDimension>,
+    ) -> Self {
         let size = wgpu::Extent3d {
             width,
             height,
@@ -384,13 +380,15 @@ impl HdrCubeMap {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: Texture::HDR_FORMAT,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::STORAGE_BINDING
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
             label: Some("HDR Cube Map View"),
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            dimension: view_dimension,
             ..Default::default()
         });
 
@@ -402,6 +400,49 @@ impl HdrCubeMap {
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        Self {
+            texture,
+            view,
+            sampler,
+        }
+    }
+
+    pub fn new_depth_cubemap(device: &wgpu::Device, size: u32) -> Self {
+        let size = wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 6,
+        };
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Depth Cube Map"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: Texture::DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("Depth Cube Map View"),
+            dimension: Some(wgpu::TextureViewDimension::Cube),
+            ..Default::default()
+        });
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Depth Cube Map Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: None,
             ..Default::default()
         });
 
@@ -470,7 +511,7 @@ impl HdrLoader {
         queue: &wgpu::Queue,
         dst_size: u32,
         path: impl AsRef<Path>,
-    ) -> anyhow::Result<HdrCubeMap> {
+    ) -> anyhow::Result<Texture> {
         let mut file = std::fs::File::open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
@@ -511,7 +552,12 @@ impl HdrLoader {
             },
         );
 
-        let dst = HdrCubeMap::new(device, dst_size, dst_size);
+        let dst = Texture::new_hdr_cubemap(
+            device,
+            dst_size,
+            dst_size,
+            Some(wgpu::TextureViewDimension::D2Array),
+        );
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("HDR Loader Bind Group"),

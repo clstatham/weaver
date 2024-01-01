@@ -3,10 +3,7 @@ use std::cell::RefCell;
 use weaver_ecs::{Bundle, Resource, World};
 
 use crate::{
-    core::{
-        model::Model,
-        texture::{HdrCubeMap, Texture},
-    },
+    core::{model::Model, texture::Texture},
     renderer::Renderer,
 };
 
@@ -31,9 +28,9 @@ impl<'a> Commands<'a> {
         self.world.borrow_mut().insert_resource(resource);
     }
 
-    pub fn load_gltf(&self, path: &str, use_texture: bool) -> Model {
+    pub fn load_gltf(&self, path: &str, use_material: bool) -> Model {
         let renderer = self.renderer.borrow();
-        Model::load_gltf(path, &renderer, use_texture).unwrap()
+        Model::load_gltf(path, &renderer, use_material).unwrap()
     }
 
     pub fn load_obj(&self, path: &str, use_texture: bool) -> Model {
@@ -46,7 +43,7 @@ impl<'a> Commands<'a> {
         Texture::load(path, &renderer.device, &renderer.queue, None, is_normal_map)
     }
 
-    pub fn load_cubemap(&self, path: &str, dst_size: u32) -> HdrCubeMap {
+    pub fn load_cubemap(&self, path: &str, dst_size: u32) -> Texture {
         let renderer = self.renderer.borrow();
         renderer
             .hdr_loader

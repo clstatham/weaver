@@ -64,7 +64,7 @@ impl Model {
     pub fn load_gltf(
         path: impl AsRef<Path>,
         renderer: &Renderer,
-        use_texture: bool,
+        use_material: bool,
     ) -> anyhow::Result<Self> {
         let path = path;
         let device = &renderer.device;
@@ -102,7 +102,7 @@ impl Model {
 
         let mut mat = Material::default();
 
-        if use_texture {
+        if use_material {
             for material in document.materials() {
                 if let Some(texture) = material.pbr_metallic_roughness().base_color_texture() {
                     let image = images.get(texture.texture().source().index()).unwrap();
@@ -274,7 +274,7 @@ impl Model {
     pub fn load_obj(
         path: impl AsRef<Path>,
         renderer: &Renderer,
-        use_texture: bool,
+        use_material: bool,
     ) -> anyhow::Result<Self> {
         let path = path;
         let device = &renderer.device;
@@ -325,7 +325,7 @@ impl Model {
 
         let mut mat = Material::default();
 
-        if use_texture {
+        if use_material {
             if let Some(material) = materials?.into_iter().next() {
                 if let Some(path) = material.diffuse_texture {
                     mat.diffuse_texture = Some(Texture::load(

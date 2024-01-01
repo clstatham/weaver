@@ -8,6 +8,25 @@
 @group(0) @binding(5) var<uniform> light: DirectionalLight;
 @group(0) @binding(6) var<uniform> model_transform: mat4x4<f32>;
 
+fn shadow_map_visiblity(pos: vec3<f32>) -> f32 {
+    var visibility = 0.0;
+    let one_over_shadow_tex_size = 1.0 / 2048.0;
+    for (var y = -1; y <= 1; y = y + 1) {
+        for (var x = -1; x <= 1; x = x + 1) {
+            let offset = vec2<f32>(vec2(x, y)) * one_over_shadow_tex_size;
+
+            let uv = pos.xy + offset;
+            visibility += textureSampleCompare(
+                shadow_map, shadow_map_sampler,
+                uv, pos.z - 0.001
+            );
+        }
+    }
+    visibility /= 9.0;
+
+    return visibility;
+}
+
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
@@ -25,20 +44,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    var visibility = 0.0;
-    let one_over_shadow_tex_size = 1.0 / 2048.0;
-    for (var y = -1; y <= 1; y = y + 1) {
-        for (var x = -1; x <= 1; x = x + 1) {
-            let offset = vec2<f32>(vec2(x, y)) * one_over_shadow_tex_size;
-
-            let uv = input.shadow_pos.xy + offset;
-            visibility += textureSampleCompare(
-                shadow_map, shadow_map_sampler,
-                uv, input.shadow_pos.z - 0.001
-            );
-        }
-    }
-    visibility /= 9.0;
+    let visibility = shadow_map_visiblity(input.shadow_pos);
 
     // get the fragment's UV coordinates in screen space
     var uv = input.clip_position.xy / vec2<f32>(textureDimensions(color_in));
