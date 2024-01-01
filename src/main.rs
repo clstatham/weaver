@@ -169,17 +169,17 @@ fn main() -> anyhow::Result<()> {
 
     let mut app = App::new(1600, 900);
 
-    // app.spawn(DirectionalLight::new(
-    //     glam::Vec3::new(1.0, 1.0, 1.0).normalize(),
+    app.spawn(DirectionalLight::new(
+        glam::Vec3::new(1.0, -1.0, 1.0).normalize(),
+        core::color::Color::WHITE,
+        40.0,
+    ));
+
+    // app.spawn(PointLight::new(
+    //     glam::Vec3::new(5.0, 5.0, 5.0),
     //     core::color::Color::WHITE,
     //     20.0,
     // ));
-
-    app.spawn(PointLight::new(
-        glam::Vec3::new(5.0, 5.0, 5.0),
-        core::color::Color::WHITE,
-        20.0,
-    ));
 
     // app.spawn(PointLight::new(
     //     glam::Vec3::new(0.0, 5.0, 0.0),
@@ -198,7 +198,7 @@ fn main() -> anyhow::Result<()> {
         let mut model = commands.load_gltf("assets/woodmonkey_highpoly.glb", false);
         model.material = Materials::Metal.load(&commands);
         model.transform.translate(0.0, 0.0, 0.0);
-        commands.spawn(model);
+        commands.spawn((model.mesh, model.transform, model.material, Spinner));
     });
 
     app.add_system(CameraUpdate);

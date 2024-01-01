@@ -3,7 +3,9 @@ use winit::window::Window;
 
 use crate::core::texture::{HdrLoader, Texture};
 
-use self::pass::{hdr::HdrRenderPass, pbr::PbrRenderPass, sky::SkyRenderPass, Pass};
+use self::pass::{
+    hdr::HdrRenderPass, pbr::PbrRenderPass, shadow::ShadowRenderPass, sky::SkyRenderPass, Pass,
+};
 
 pub mod pass;
 
@@ -104,8 +106,6 @@ impl Renderer {
 
         let hdr_pass = HdrRenderPass::new(&device, config.width, config.height);
 
-        let pbr_pass = PbrRenderPass::new(&device);
-
         let hdr_loader = HdrLoader::new(&device);
 
         let skybox = hdr_loader
@@ -114,7 +114,11 @@ impl Renderer {
 
         let sky_pass = SkyRenderPass::new(&device, skybox);
 
-        let mut this = Self {
+        let pbr_pass = PbrRenderPass::new(&device, &sky_pass.bind_group_layout);
+
+        let shadow_pass = ShadowRenderPass::new(&device, config.width, config.height);
+
+        Self {
             hdr_loader,
             surface,
             device,
@@ -126,12 +130,8 @@ impl Renderer {
             hdr_pass,
             pbr_pass,
             sky_pass,
-            passes: vec![],
-        };
-
-        // todo: add more render passes
-
-        this
+            passes: vec![Box::new(shadow_pass)],
+        }
     }
 
     pub fn push_render_pass<T: Pass + 'static>(&mut self, pass: T) {
@@ -193,7 +193,6 @@ impl Renderer {
                 &self.device,
                 &self.queue,
                 &self.hdr_pass.texture,
-                &self.normal_texture,
                 &self.depth_texture,
                 world,
             )?;
@@ -203,7 +202,6 @@ impl Renderer {
             &self.device,
             &self.queue,
             &self.hdr_pass.texture,
-            &self.normal_texture,
             &self.depth_texture,
             world,
         )?;
@@ -212,7 +210,6 @@ impl Renderer {
             &self.device,
             &self.queue,
             &self.color_texture,
-            &self.normal_texture,
             &self.depth_texture,
             world,
         )?;

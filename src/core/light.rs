@@ -85,6 +85,24 @@ impl DirectionalLight {
             intensity,
         }
     }
+
+    pub fn view_transform(&self) -> glam::Mat4 {
+        glam::Mat4::look_at_rh(
+            glam::Vec3::ZERO,
+            glam::Vec3::new(self.direction.x, self.direction.y, self.direction.z),
+            glam::Vec3::Y,
+        )
+    }
+
+    pub fn projection_transform(&self) -> glam::Mat4 {
+        let left = -80.0;
+        let right = 80.0;
+        let bottom = -80.0;
+        let top = 80.0;
+        let near = -200.0;
+        let far = 300.0;
+        glam::Mat4::orthographic_rh(left, right, bottom, top, near, far)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -92,6 +110,8 @@ impl DirectionalLight {
 pub struct DirectionalLightUniform {
     pub direction: [f32; 4],
     pub color: [f32; 4],
+    pub view_transform: glam::Mat4,
+    pub projection_transform: glam::Mat4,
     pub intensity: f32,
     _pad: [f32; 3],
 }
@@ -101,6 +121,8 @@ impl From<&DirectionalLight> for DirectionalLightUniform {
         Self {
             direction: [light.direction.x, light.direction.y, light.direction.z, 0.0],
             color: [light.color.r, light.color.g, light.color.b, 1.0],
+            view_transform: light.view_transform(),
+            projection_transform: light.projection_transform(),
             intensity: light.intensity,
             _pad: [0.0; 3],
         }

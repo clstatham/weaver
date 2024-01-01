@@ -1,6 +1,9 @@
-use crate::core::{
-    camera::{CameraUniform, FlyCamera},
-    texture::HdrCubeMap,
+use crate::{
+    core::{
+        camera::{CameraUniform, FlyCamera},
+        texture::{HdrCubeMap, Texture},
+    },
+    include_shader,
 };
 
 use super::Pass;
@@ -9,17 +12,56 @@ pub struct SkyRenderPass {
     skybox: HdrCubeMap,
     skybox_view: wgpu::TextureView,
     pub(crate) bind_group: wgpu::BindGroup,
-    bind_group_layout: wgpu::BindGroupLayout,
+    pub(crate) bind_group_layout: wgpu::BindGroupLayout,
+    pipeline_layout: wgpu::PipelineLayout,
     camera_buffer: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
 }
 
 impl SkyRenderPass {
     pub fn new(device: &wgpu::Device, skybox: HdrCubeMap) -> Self {
-        let bind_group_layout = Self::bind_group_layout(device);
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("HDR Cube Map Fragment Bind Group Layout"),
+            entries: &[
+                // camera
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
+                },
+            ],
+        });
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("sky.wgsl"));
-        let pipeline_layout = Self::pipeline_layout(device);
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Sky Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_shader!("sky.wgsl").into()),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("HDR Cube Map Pipeline Layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Sky Render Pipeline"),
@@ -33,7 +75,7 @@ impl SkyRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: crate::core::texture::Texture::HDR_FORMAT,
+                    format: Texture::HDR_FORMAT,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -43,7 +85,7 @@ impl SkyRenderPass {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: crate::core::texture::Texture::DEPTH_FORMAT,
+                format: Texture::DEPTH_FORMAT,
                 depth_write_enabled: false,
                 depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: Default::default(),
@@ -89,6 +131,7 @@ impl SkyRenderPass {
         });
 
         Self {
+            pipeline_layout,
             skybox,
             skybox_view,
             pipeline,
@@ -104,9 +147,8 @@ impl Pass for SkyRenderPass {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        color_texture: &crate::core::texture::Texture,
-        normal_texture: &crate::core::texture::Texture,
-        depth_texture: &crate::core::texture::Texture,
+        color_target: &Texture,
+        depth_target: &Texture,
         world: &weaver_ecs::World,
     ) -> anyhow::Result<()> {
         let camera = world.read_resource::<FlyCamera>();
@@ -130,7 +172,7 @@ impl Pass for SkyRenderPass {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Sky Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &color_texture.view,
+                    view: &color_target.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -138,7 +180,7 @@ impl Pass for SkyRenderPass {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_texture.view,
+                    view: &depth_target.view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: true,
@@ -155,60 +197,5 @@ impl Pass for SkyRenderPass {
         queue.submit(std::iter::once(encoder.finish()));
 
         Ok(())
-    }
-
-    fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
-    where
-        Self: Sized,
-    {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("HDR Cube Map Fragment Bind Group Layout"),
-            entries: &[
-                // camera
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::Cube,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                    count: None,
-                },
-            ],
-        })
-    }
-
-    fn pipeline_layout(device: &wgpu::Device) -> wgpu::PipelineLayout
-    where
-        Self: Sized,
-    {
-        let bind_group_layout = Self::bind_group_layout(device);
-
-        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("HDR Cube Map Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        })
-    }
-
-    fn pipeline(&self) -> &wgpu::RenderPipeline {
-        &self.pipeline
     }
 }

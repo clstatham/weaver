@@ -1,16 +1,37 @@
+use std::io::Read;
+
 use weaver_ecs::World;
 
 use crate::core::texture::Texture;
 
 pub mod hdr;
 pub mod pbr;
+pub mod shadow;
 pub mod sky;
 
 pub fn preprocess_shader(shader: &str) -> String {
     let mut output = String::new();
-    output.push_str(include_str!("common.wgsl"));
-    output.push('\n');
-    output.push_str(shader);
+
+    // find all #import directives
+    let lines = shader.lines();
+    for line in lines {
+        if line.starts_with("//#import") {
+            let mut path = line.split('"');
+            path.next();
+            let path = path.next().unwrap();
+            let path = std::path::Path::new(path);
+
+            let mut file = std::fs::File::open(path).unwrap();
+            let mut file_contents = String::new();
+            file.read_to_string(&mut file_contents).unwrap();
+
+            output.push_str(&preprocess_shader(&file_contents));
+        } else {
+            output.push_str(line);
+            output.push('\n');
+        }
+    }
+
     output
 }
 
@@ -26,19 +47,8 @@ pub trait Pass {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        color_texture: &Texture,
-        normal_texture: &Texture,
-        depth_texture: &Texture,
+        color_target: &Texture,
+        depth_target: &Texture,
         world: &World,
     ) -> anyhow::Result<()>;
-
-    fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
-    where
-        Self: Sized;
-
-    fn pipeline_layout(device: &wgpu::Device) -> wgpu::PipelineLayout
-    where
-        Self: Sized;
-
-    fn pipeline(&self) -> &wgpu::RenderPipeline;
 }
