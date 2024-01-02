@@ -10,12 +10,17 @@ use crate::{
     renderer::Renderer,
 };
 
+use self::asset_server::AssetServer;
+
+pub mod asset_server;
 pub mod commands;
 
 pub struct App {
     event_loop: EventLoop<()>,
     input: WinitInputHelper,
     window: Window,
+
+    asset_server: AssetServer,
 
     pub(crate) world: World,
 
@@ -65,6 +70,8 @@ impl App {
 
         let renderer = pollster::block_on(Renderer::new(&window));
 
+        let asset_server = AssetServer::new(renderer.device.clone(), renderer.queue.clone());
+
         let mut world = World::new();
         world.insert_resource(Time::new());
         world.insert_resource(Input::new());
@@ -78,6 +85,7 @@ impl App {
             fps_frame_count: 0,
             fps_last_update: std::time::Instant::now(),
             world,
+            asset_server,
         }
     }
 
@@ -96,10 +104,10 @@ impl App {
     // todo: this is a temporary workaround until we have proper "setup" systems, and systems can take `Commands` as an argument
     pub fn build<'a, F>(&'a mut self, f: F)
     where
-        F: FnOnce(commands::Commands<'a>),
+        F: FnOnce(commands::Commands<'a>, &'a mut AssetServer),
     {
         let commands = commands::Commands::new(&mut self.world, &mut self.renderer);
-        f(commands);
+        f(commands, &mut self.asset_server);
     }
 
     pub fn run(mut self) {

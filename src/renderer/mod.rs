@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use weaver_ecs::World;
 use winit::window::Window;
 
@@ -9,12 +11,17 @@ use self::pass::{
 
 pub mod pass;
 
+/// A trait for types that can be cloned on the GPU.
+pub trait GpuClone {
+    fn gpu_clone(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Self;
+}
+
 pub struct Renderer {
     pub hdr_loader: HdrLoader,
 
     pub(crate) surface: wgpu::Surface,
-    pub(crate) device: wgpu::Device,
-    pub(crate) queue: wgpu::Queue,
+    pub(crate) device: Arc<wgpu::Device>,
+    pub(crate) queue: Arc<wgpu::Queue>,
     pub(crate) config: wgpu::SurfaceConfiguration,
 
     pub(crate) color_texture: Texture,
@@ -116,13 +123,16 @@ impl Renderer {
 
         let pbr_pass = PbrRenderPass::new(&device, &sky_pass.bind_group_layout);
 
-        let shadow_pass = ShadowRenderPass::new(&device, config.width, config.height);
+        let passes: Vec<Box<dyn pass::Pass>> = vec![
+            // shadow pass
+            Box::new(ShadowRenderPass::new(&device, config.width, config.height)),
+        ];
 
         Self {
             hdr_loader,
             surface,
-            device,
-            queue,
+            device: Arc::new(device),
+            queue: Arc::new(queue),
             config,
             color_texture,
             depth_texture,
@@ -130,7 +140,7 @@ impl Renderer {
             hdr_pass,
             pbr_pass,
             sky_pass,
-            passes: vec![Box::new(shadow_pass)],
+            passes,
         }
     }
 
@@ -150,7 +160,7 @@ impl Renderer {
                 label: Some("Clear Screen"),
                 color_attachments: &[
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.hdr_pass.texture.view,
+                        view: &self.hdr_pass.texture.view(),
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -158,7 +168,7 @@ impl Renderer {
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.normal_texture.view,
+                        view: &self.normal_texture.view(),
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -167,7 +177,7 @@ impl Renderer {
                     }),
                 ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view,
+                    view: &self.depth_texture.view(),
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: true,
@@ -222,7 +232,7 @@ impl Renderer {
 
         // copy color texture to the output
         encoder.copy_texture_to_texture(
-            self.color_texture.texture.as_image_copy(),
+            self.color_texture.texture().as_image_copy(),
             output.texture.as_image_copy(),
             wgpu::Extent3d {
                 width: self.config.width,

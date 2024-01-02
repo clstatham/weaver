@@ -1,5 +1,3 @@
-use std::num::NonZeroU32;
-
 use super::Pass;
 use crate::{
     core::{
@@ -13,7 +11,7 @@ use crate::{
 };
 use weaver_ecs::{Query, Queryable, Read, World};
 
-const SHADOW_DEPTH_TEXTURE_SIZE: u32 = 2048;
+const SHADOW_DEPTH_TEXTURE_SIZE: u32 = 1024;
 
 pub struct ShadowRenderPass {
     // the first stage creates the shadow map
@@ -82,7 +80,7 @@ impl ShadowRenderPass {
 
         let mut shadow_cube_views = Vec::new();
         for i in 0..6 {
-            shadow_cube_views.push(shadow_cube_texture.texture.create_view(
+            shadow_cube_views.push(shadow_cube_texture.texture().create_view(
                 &wgpu::TextureViewDescriptor {
                     dimension: Some(wgpu::TextureViewDimension::D2),
                     array_layer_count: None,
@@ -97,7 +95,7 @@ impl ShadowRenderPass {
 
         let mut shadow_cube_depth_target_views = Vec::new();
         for i in 0..6 {
-            shadow_cube_depth_target_views.push(shadow_cube_depth_target.texture.create_view(
+            shadow_cube_depth_target_views.push(shadow_cube_depth_target.texture().create_view(
                 &wgpu::TextureViewDescriptor {
                     dimension: Some(wgpu::TextureViewDimension::D2),
                     array_layer_count: None,
@@ -426,19 +424,19 @@ impl ShadowRenderPass {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&shadow_depth_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&shadow_depth_texture.view()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&shadow_depth_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&shadow_depth_texture.sampler()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&color_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&color_texture.view()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&color_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&color_texture.sampler()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
@@ -589,19 +587,19 @@ impl ShadowRenderPass {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&shadow_cube_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&shadow_cube_texture.view()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&shadow_cube_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&shadow_cube_texture.sampler()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&color_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&color_texture.view()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&color_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&color_texture.sampler()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
@@ -717,7 +715,7 @@ impl ShadowRenderPass {
                 label: Some("Shadow Render Pass"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_depth_texture.view,
+                    view: &self.shadow_depth_texture.view(),
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: true,
@@ -776,7 +774,7 @@ impl ShadowRenderPass {
                     label: Some("Shadow Render Pass"),
                     color_attachments: &[],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.shadow_depth_texture.view,
+                        view: &self.shadow_depth_texture.view(),
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: true,
@@ -787,10 +785,10 @@ impl ShadowRenderPass {
 
                 render_pass.set_pipeline(&self.shadow_map_pipeline);
                 render_pass.set_bind_group(0, &self.shadow_map_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
                 render_pass
-                    .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+                    .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..1);
             }
 
             queue.submit(std::iter::once(encoder.finish()));
@@ -921,10 +919,10 @@ impl ShadowRenderPass {
 
                     render_pass.set_pipeline(&self.shadow_cube_map_pipeline);
                     render_pass.set_bind_group(0, &self.shadow_cube_map_bind_group, &[]);
-                    render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                    render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
                     render_pass
-                        .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+                        .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
+                    render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..1);
                 }
 
                 queue.submit(std::iter::once(encoder.finish()));
@@ -973,11 +971,11 @@ impl ShadowRenderPass {
 
             // copy the color target to our own copy
             encoder.copy_texture_to_texture(
-                color_target.texture.as_image_copy(),
-                self.color_texture.texture.as_image_copy(),
+                color_target.texture().as_image_copy(),
+                self.color_texture.texture().as_image_copy(),
                 wgpu::Extent3d {
-                    width: color_target.texture.width(),
-                    height: color_target.texture.height(),
+                    width: color_target.texture().width(),
+                    height: color_target.texture().height(),
                     depth_or_array_layers: 1,
                 },
             );
@@ -992,7 +990,7 @@ impl ShadowRenderPass {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Shadow Overlay Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &color_target.view,
+                        view: &color_target.view(),
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -1000,7 +998,7 @@ impl ShadowRenderPass {
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &depth_target.view,
+                        view: &depth_target.view(),
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: true,
@@ -1011,10 +1009,10 @@ impl ShadowRenderPass {
 
                 render_pass.set_pipeline(&self.shadow_overlay_pipeline);
                 render_pass.set_bind_group(0, &self.shadow_overlay_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
                 render_pass
-                    .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+                    .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..1);
             }
             queue.submit(std::iter::once(encoder.finish()));
         }
@@ -1061,11 +1059,11 @@ impl ShadowRenderPass {
 
             // copy the color target to our own copy
             encoder.copy_texture_to_texture(
-                color_target.texture.as_image_copy(),
-                self.color_texture.texture.as_image_copy(),
+                color_target.texture().as_image_copy(),
+                self.color_texture.texture().as_image_copy(),
                 wgpu::Extent3d {
-                    width: color_target.texture.width(),
-                    height: color_target.texture.height(),
+                    width: color_target.texture().width(),
+                    height: color_target.texture().height(),
                     depth_or_array_layers: 1,
                 },
             );
@@ -1080,7 +1078,7 @@ impl ShadowRenderPass {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Shadow Cube Overlay Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &color_target.view,
+                        view: &color_target.view(),
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -1088,7 +1086,7 @@ impl ShadowRenderPass {
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &depth_target.view,
+                        view: &depth_target.view(),
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: true,
@@ -1099,10 +1097,10 @@ impl ShadowRenderPass {
 
                 render_pass.set_pipeline(&self.shadow_cube_overlay_pipeline);
                 render_pass.set_bind_group(0, &self.shadow_cube_overlay_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
                 render_pass
-                    .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+                    .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..1);
             }
 
             queue.submit(std::iter::once(encoder.finish()));

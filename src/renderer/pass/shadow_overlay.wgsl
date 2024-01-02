@@ -10,7 +10,7 @@
 
 fn shadow_map_visiblity(pos: vec3<f32>) -> f32 {
     var visibility = 0.0;
-    let one_over_shadow_tex_size = 1.0 / 2048.0;
+    let one_over_shadow_tex_size = 1.0 / 1024.0;
     for (var y = -1; y <= 1; y = y + 1) {
         for (var x = -1; x <= 1; x = x + 1) {
             let offset = vec2<f32>(vec2(x, y)) * one_over_shadow_tex_size;

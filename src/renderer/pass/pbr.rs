@@ -295,7 +295,7 @@ impl PbrRenderPass {
             if !material.has_bind_group() {
                 material.create_bind_group(device, self);
             }
-            let bind_group = material.bind_group.as_ref().unwrap();
+            let bind_group = material.bind_group().unwrap();
 
             let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("PBR Render Pass Buffer Write Encoder"),
@@ -325,7 +325,7 @@ impl PbrRenderPass {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("PBR Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &color_texture.view,
+                        view: color_texture.view(),
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -333,7 +333,7 @@ impl PbrRenderPass {
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &depth_texture.view,
+                        view: depth_texture.view(),
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: true,
@@ -345,10 +345,10 @@ impl PbrRenderPass {
                 render_pass.set_pipeline(&self.pipeline);
                 render_pass.set_bind_group(0, bind_group, &[]);
                 render_pass.set_bind_group(1, env_map_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
                 render_pass
-                    .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+                    .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..1);
             }
 
             queue.submit(std::iter::once(encoder.finish()));

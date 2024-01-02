@@ -52,11 +52,11 @@ impl HdrRenderPass {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture.view),
+                    resource: wgpu::BindingResource::TextureView(texture.view()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(texture.sampler()),
                 },
             ],
             label: Some("HDR Texture Bind Group"),
@@ -122,7 +122,7 @@ impl Pass for HdrRenderPass {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("HDR Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &color_target.view,
+                    view: color_target.view(),
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,

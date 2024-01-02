@@ -1,16 +1,21 @@
-use std::{io::Read, path::Path};
+use std::{io::Read, path::Path, sync::Arc};
 
 use image::codecs::hdr::HdrDecoder;
-use weaver_proc_macro::Resource;
+use weaver_proc_macro::{Component, Resource};
 
 use crate::renderer::pass::{sky::SkyRenderPass, Pass};
 
 use super::color::Color;
 
+struct TextureInner {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    sampler: wgpu::Sampler,
+}
+
+#[derive(Clone, Component)]
 pub struct Texture {
-    pub texture: wgpu::Texture,
-    pub view: wgpu::TextureView,
-    pub sampler: wgpu::Sampler,
+    inner: Arc<TextureInner>,
 }
 
 impl Texture {
@@ -101,9 +106,11 @@ impl Texture {
         });
 
         Self {
-            texture,
-            view,
-            sampler,
+            inner: Arc::new(TextureInner {
+                texture,
+                view,
+                sampler,
+            }),
         }
     }
 
@@ -216,9 +223,11 @@ impl Texture {
         });
 
         Self {
-            texture,
-            view,
-            sampler,
+            inner: Arc::new(TextureInner {
+                texture,
+                view,
+                sampler,
+            }),
         }
     }
 
@@ -261,9 +270,11 @@ impl Texture {
         });
 
         Self {
-            texture,
-            view,
-            sampler,
+            inner: Arc::new(TextureInner {
+                texture,
+                view,
+                sampler,
+            }),
         }
     }
 
@@ -305,9 +316,11 @@ impl Texture {
         });
 
         Self {
-            texture,
-            view,
-            sampler,
+            inner: Arc::new(TextureInner {
+                texture,
+                view,
+                sampler,
+            }),
         }
     }
 
@@ -355,9 +368,11 @@ impl Texture {
         });
 
         Self {
-            texture,
-            view,
-            sampler,
+            inner: Arc::new(TextureInner {
+                texture,
+                view,
+                sampler,
+            }),
         }
     }
 
@@ -404,9 +419,11 @@ impl Texture {
         });
 
         Self {
-            texture,
-            view,
-            sampler,
+            inner: Arc::new(TextureInner {
+                texture,
+                view,
+                sampler,
+            }),
         }
     }
 
@@ -447,10 +464,24 @@ impl Texture {
         });
 
         Self {
-            texture,
-            view,
-            sampler,
+            inner: Arc::new(TextureInner {
+                texture,
+                view,
+                sampler,
+            }),
         }
+    }
+
+    pub fn texture(&self) -> &wgpu::Texture {
+        &self.inner.texture
+    }
+
+    pub fn view(&self) -> &wgpu::TextureView {
+        &self.inner.view
+    }
+
+    pub fn sampler(&self) -> &wgpu::Sampler {
+        &self.inner.sampler
     }
 }
 
@@ -538,7 +569,7 @@ impl HdrLoader {
         );
 
         queue.write_texture(
-            src.texture.as_image_copy(),
+            src.texture().as_image_copy(),
             bytemuck::cast_slice(&pixels),
             wgpu::ImageDataLayout {
                 offset: 0,
@@ -565,11 +596,11 @@ impl HdrLoader {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&src.view),
+                    resource: wgpu::BindingResource::TextureView(src.view()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&dst.view),
+                    resource: wgpu::BindingResource::TextureView(dst.view()),
                 },
             ],
         });

@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, sync::Arc};
 
 use rustc_hash::FxHashMap;
 
@@ -27,6 +27,42 @@ pub unsafe trait Component: Downcast + Send + Sync {
     fn component_id() -> u64
     where
         Self: Sized;
+}
+
+unsafe impl<T: Component> Component for Option<T> {
+    fn component_id() -> u64
+    where
+        Self: Sized,
+    {
+        T::component_id()
+    }
+}
+
+unsafe impl<T: Component> Component for Vec<T> {
+    fn component_id() -> u64
+    where
+        Self: Sized,
+    {
+        T::component_id()
+    }
+}
+
+unsafe impl<T: Component> Component for Box<T> {
+    fn component_id() -> u64
+    where
+        Self: Sized,
+    {
+        T::component_id()
+    }
+}
+
+unsafe impl<T: Component> Component for Arc<T> {
+    fn component_id() -> u64
+    where
+        Self: Sized,
+    {
+        T::component_id()
+    }
 }
 
 /// An indicator of whether a component is borrowed for reading and/or writing.

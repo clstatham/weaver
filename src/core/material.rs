@@ -1,3 +1,5 @@
+use std::{path::Path, sync::Arc};
+
 use weaver_proc_macro::Component;
 
 use crate::renderer::pass::pbr::PbrRenderPass;
@@ -5,7 +7,7 @@ use crate::renderer::pass::pbr::PbrRenderPass;
 use super::{color::Color, texture::Texture};
 
 /// PBR material based on Bevy
-#[derive(Component)]
+#[derive(Clone, Component)]
 pub struct Material {
     pub diffuse: Color,
     pub diffuse_texture: Option<Texture>,
@@ -17,7 +19,7 @@ pub struct Material {
 
     pub texture_scaling: f32,
 
-    pub(crate) bind_group: Option<wgpu::BindGroup>,
+    bind_group: Option<Arc<wgpu::BindGroup>>,
 }
 
 impl Default for Material {
@@ -86,6 +88,10 @@ impl Material {
         self.bind_group.is_some()
     }
 
+    pub fn bind_group(&self) -> Option<&wgpu::BindGroup> {
+        self.bind_group.as_ref().map(|b| b.as_ref())
+    }
+
     pub fn create_bind_group(&mut self, device: &wgpu::Device, render_pass: &PbrRenderPass) {
         let diffuse_texture = self.diffuse_texture.as_ref().unwrap();
         let normal_texture = self.normal_texture.as_ref().unwrap();
@@ -121,42 +127,42 @@ impl Material {
                 // tex
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                    resource: wgpu::BindingResource::TextureView(diffuse_texture.view()),
                 },
                 // tex_sampler
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(diffuse_texture.sampler()),
                 },
                 // normal_tex
                 wgpu::BindGroupEntry {
                     binding: 5,
-                    resource: wgpu::BindingResource::TextureView(&normal_texture.view),
+                    resource: wgpu::BindingResource::TextureView(normal_texture.view()),
                 },
                 // normal_tex_sampler
                 wgpu::BindGroupEntry {
                     binding: 6,
-                    resource: wgpu::BindingResource::Sampler(&normal_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(normal_texture.sampler()),
                 },
                 // roughness_tex
                 wgpu::BindGroupEntry {
                     binding: 7,
-                    resource: wgpu::BindingResource::TextureView(&roughness_texture.view),
+                    resource: wgpu::BindingResource::TextureView(roughness_texture.view()),
                 },
                 // roughness_tex_sampler
                 wgpu::BindGroupEntry {
                     binding: 8,
-                    resource: wgpu::BindingResource::Sampler(&roughness_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(roughness_texture.sampler()),
                 },
                 // ambient occlusion texture
                 wgpu::BindGroupEntry {
                     binding: 9,
-                    resource: wgpu::BindingResource::TextureView(&ambient_occlusion_texture.view),
+                    resource: wgpu::BindingResource::TextureView(ambient_occlusion_texture.view()),
                 },
                 // ambient occlusion texture sampler
                 wgpu::BindGroupEntry {
                     binding: 10,
-                    resource: wgpu::BindingResource::Sampler(&ambient_occlusion_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(ambient_occlusion_texture.sampler()),
                 },
                 // point lights
                 wgpu::BindGroupEntry {
@@ -176,7 +182,159 @@ impl Material {
                 },
             ],
         });
-        self.bind_group = Some(bind_group);
+        self.bind_group = Some(Arc::new(bind_group));
+    }
+
+    pub fn load_gltf(
+        path: impl AsRef<Path>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> anyhow::Result<Vec<Self>> {
+        let (document, buffers, images) = gltf::import(path.as_ref())?;
+        let mut materials = Vec::new();
+
+        for material in document.materials() {
+            let mut mat = Material::default();
+            if let Some(texture) = material.pbr_metallic_roughness().base_color_texture() {
+                let image = images.get(texture.texture().source().index()).unwrap();
+                match image.format {
+                    gltf::image::Format::R8G8B8 => {
+                        mat.diffuse_texture = Some(Texture::from_data_r8g8b8(
+                            image.width as usize,
+                            image.height as usize,
+                            &image.pixels,
+                            device,
+                            queue,
+                            Some("GLTF Mesh Diffuse Texture"),
+                            false,
+                        ));
+                    }
+                    gltf::image::Format::R8G8B8A8 => {
+                        mat.diffuse_texture = Some(Texture::from_data_rgba8(
+                            image.width as usize,
+                            image.height as usize,
+                            &image.pixels,
+                            device,
+                            queue,
+                            Some("GLTF Mesh Diffuse Texture"),
+                            false,
+                        ));
+                    }
+                    _ => {
+                        todo!("Unsupported GLTF Texture Format");
+                    }
+                }
+            } else {
+                log::warn!("GLTF Mesh has no diffuse texture");
+                mat.diffuse_texture = Some(Texture::default_texture(device, queue));
+            }
+            if let Some(texture) = material.normal_texture() {
+                let image = images.get(texture.texture().source().index()).unwrap();
+                match image.format {
+                    gltf::image::Format::R8G8B8 => {
+                        mat.normal_texture = Some(Texture::from_data_r8g8b8(
+                            image.width as usize,
+                            image.height as usize,
+                            &image.pixels,
+                            device,
+                            queue,
+                            Some("GLTF Mesh Normal Texture"),
+                            true,
+                        ));
+                    }
+                    gltf::image::Format::R8G8B8A8 => {
+                        mat.normal_texture = Some(Texture::from_data_rgba8(
+                            image.width as usize,
+                            image.height as usize,
+                            &image.pixels,
+                            device,
+                            queue,
+                            Some("GLTF Mesh Normal Texture"),
+                            true,
+                        ));
+                    }
+                    _ => {
+                        todo!("Unsupported GLTF Texture Format");
+                    }
+                }
+            } else {
+                log::warn!("GLTF Mesh has no normal texture");
+            }
+            if let Some(texture) = material
+                .pbr_metallic_roughness()
+                .metallic_roughness_texture()
+            {
+                let image = images.get(texture.texture().source().index()).unwrap();
+                match image.format {
+                    gltf::image::Format::R8G8B8 => {
+                        mat.roughness_texture = Some(Texture::from_data_r8g8b8(
+                            image.width as usize,
+                            image.height as usize,
+                            &image.pixels,
+                            device,
+                            queue,
+                            Some("GLTF Mesh Roughness Texture"),
+                            false,
+                        ));
+                    }
+                    gltf::image::Format::R8G8B8A8 => {
+                        mat.roughness_texture = Some(Texture::from_data_rgba8(
+                            image.width as usize,
+                            image.height as usize,
+                            &image.pixels,
+                            device,
+                            queue,
+                            Some("GLTF Mesh Roughness Texture"),
+                            false,
+                        ));
+                    }
+                    _ => {
+                        todo!("Unsupported GLTF Texture Format");
+                    }
+                }
+            } else {
+                log::warn!("GLTF Mesh has no roughness texture");
+            }
+            if let Some(ao_texture) = material.occlusion_texture() {
+                let image = images.get(ao_texture.texture().source().index()).unwrap();
+                match image.format {
+                    gltf::image::Format::R8G8B8 => {
+                        mat.ambient_occlusion_texture = Some(Texture::from_data_r8g8b8(
+                            image.width as usize,
+                            image.height as usize,
+                            &image.pixels,
+                            device,
+                            queue,
+                            Some("GLTF Mesh Ambient Occlusion Texture"),
+                            false,
+                        ));
+                    }
+                    gltf::image::Format::R8G8B8A8 => {
+                        mat.ambient_occlusion_texture = Some(Texture::from_data_rgba8(
+                            image.width as usize,
+                            image.height as usize,
+                            &image.pixels,
+                            device,
+                            queue,
+                            Some("GLTF Mesh Ambient Occlusion Texture"),
+                            false,
+                        ));
+                    }
+                    _ => {
+                        todo!("Unsupported GLTF Texture Format");
+                    }
+                }
+            } else {
+                log::warn!("GLTF Mesh has no ambient occlusion texture");
+            }
+
+            mat.roughness = material.pbr_metallic_roughness().roughness_factor();
+            mat.metallic = material.pbr_metallic_roughness().metallic_factor();
+
+            materials.push(mat);
+        }
+
+        Ok(materials)
     }
 }
 

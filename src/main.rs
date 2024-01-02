@@ -9,7 +9,7 @@ use core::{
     transform::Transform,
 };
 
-use app::{commands::Commands, App};
+use app::{asset_server::AssetServer, commands::Commands, App};
 use weaver_ecs::*;
 use weaver_proc_macro::system;
 
@@ -64,102 +64,125 @@ enum Materials {
 }
 
 impl Materials {
-    fn load(&self, commands: &Commands) -> Material {
+    pub fn load(&self, asset_server: &mut AssetServer) -> anyhow::Result<Material> {
         match self {
             // Wood_025
-            Materials::Wood => Material::new(
-                Some(
-                    commands
-                        .load_texture("assets/materials/Wood_025_SD/Wood_025_basecolor.jpg", false),
-                ),
-                Some(
-                    commands.load_texture("assets/materials/Wood_025_SD/Wood_025_normal.jpg", true),
-                ),
-                Some(
-                    commands
-                        .load_texture("assets/materials/Wood_025_SD/Wood_025_roughness.jpg", false),
-                ),
-                Some(commands.load_texture(
+            Materials::Wood => {
+                let base_color = asset_server
+                    .load_texture("assets/materials/Wood_025_SD/Wood_025_basecolor.jpg", false)?;
+                let normal = asset_server
+                    .load_texture("assets/materials/Wood_025_SD/Wood_025_normal.jpg", true)?;
+                let roughness = asset_server
+                    .load_texture("assets/materials/Wood_025_SD/Wood_025_roughness.jpg", false)?;
+                let ao = asset_server.load_texture(
                     "assets/materials/Wood_025_SD/Wood_025_ambientOcclusion.jpg",
                     false,
-                )),
-            ),
+                )?;
+                Ok(Material::new(
+                    Some(base_color),
+                    Some(normal),
+                    Some(roughness),
+                    Some(ao),
+                ))
+            }
             // Metal_006
-            Materials::Metal => Material::new(
-                Some(commands.load_texture(
+            Materials::Metal => {
+                let base_color = asset_server.load_texture(
                     "assets/materials/Metal_006_SD/Metal_006_basecolor.jpg",
                     false,
-                )),
-                Some(
-                    commands
-                        .load_texture("assets/materials/Metal_006_SD/Metal_006_normal.jpg", true),
-                ),
-                Some(commands.load_texture(
+                )?;
+                let normal = asset_server
+                    .load_texture("assets/materials/Metal_006_SD/Metal_006_normal.jpg", true)?;
+                let roughness = asset_server.load_texture(
                     "assets/materials/Metal_006_SD/Metal_006_roughness.jpg",
                     false,
-                )),
-                Some(commands.load_texture(
+                )?;
+                let ao = asset_server.load_texture(
                     "assets/materials/Metal_006_SD/Metal_006_ambientOcclusion.jpg",
                     false,
-                )),
-            ),
+                )?;
+                Ok(Material::new(
+                    Some(base_color),
+                    Some(normal),
+                    Some(roughness),
+                    Some(ao),
+                ))
+            }
             // Wood_Herringbone_Tiles_004
-            Materials::WoodTile => Material::new(
-                Some(commands.load_texture(
+            Materials::WoodTile => {
+                let base_color = asset_server.load_texture(
                     "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_BaseColor.jpg",
                     false,
-                )),
-                Some(commands.load_texture(
+                )?;
+                let normal = asset_server.load_texture(
                     "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_Normal.jpg",
                     true,
-                )),
-                Some(commands.load_texture(
+                )?;
+                let roughness = asset_server.load_texture(
                     "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_Roughness.jpg",
                     false,
-                )),
-                Some(commands.load_texture(
+                )?;
+                let ao = asset_server.load_texture(
                     "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_AmbientOcclusion.jpg",
                     false,
-                )),
-            ),
+                )?;
+                Ok(Material::new(
+                    Some(base_color),
+                    Some(normal),
+                    Some(roughness),
+                    Some(ao),
+                ))
+            }
             // Brick_Wall_017
-            Materials::BrickWall => Material::new(
-                Some(commands.load_texture(
+            Materials::BrickWall => {
+                let base_color = asset_server.load_texture(
                     "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_basecolor.jpg",
                     false,
-                )),
-                Some(commands.load_texture(
+                )?;
+                let normal = asset_server.load_texture(
                     "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_normal.jpg",
                     true,
-                )),
-                Some(commands.load_texture(
+                )?;
+                let roughness = asset_server.load_texture(
                     "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_roughness.jpg",
                     false,
-                )),
-                Some(commands.load_texture(
+                )?;
+                let ao = asset_server.load_texture(
                     "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_ambientOcclusion.jpg",
                     false,
-                )),
-            ),
+                )?;
+                Ok(Material::new(
+                    Some(base_color),
+                    Some(normal),
+                    Some(roughness),
+                    Some(ao),
+                ))
+            }
             // Wall_Stone_021
-            Materials::StoneWall => Material::new(
-                Some(commands.load_texture(
+            Materials::StoneWall => {
+                let base_color = asset_server.load_texture(
                     "assets/materials/Wall_Stone_021_SD/Substance_graph_BaseColor.jpg",
                     false,
-                )),
-                Some(commands.load_texture(
+                )?;
+                let normal = asset_server.load_texture(
                     "assets/materials/Wall_Stone_021_SD/Substance_graph_Normal.jpg",
                     true,
-                )),
-                Some(commands.load_texture(
+                )?;
+                let roughness = asset_server.load_texture(
                     "assets/materials/Wall_Stone_021_SD/Substance_graph_Roughness.jpg",
                     false,
-                )),
-                Some(commands.load_texture(
+                )?;
+                let ao = asset_server.load_texture(
                     "assets/materials/Wall_Stone_021_SD/Substance_graph_AmbientOcclusion.jpg",
                     false,
-                )),
-            )
+                )?;
+                Ok(Material::new(
+                    Some(base_color),
+                    Some(normal),
+                    Some(roughness),
+                    Some(ao),
+                ))
+            }
         }
     }
 }
@@ -189,51 +212,37 @@ fn main() -> anyhow::Result<()> {
 
     let room_scale = 30.0;
 
-    app.build(|commands| {
+    app.build(|commands, asset_server| {
         // floor
-        let mut model = commands.load_gltf("assets/woodcube.glb", false);
-        model.transform.translate(0.0, -2.0, 0.0);
-        model.transform.scale(room_scale, 1.0, room_scale);
-        model.material = Materials::WoodTile.load(&commands);
-        model.material.texture_scaling = room_scale * 2.0;
-        commands.spawn(model);
+        let mesh = asset_server.load_mesh("assets/woodcube.glb").unwrap();
+        let mut material = Materials::WoodTile.load(asset_server).unwrap();
+        material.texture_scaling = room_scale;
+        commands.spawn((
+            mesh,
+            material,
+            Transform::new()
+                .scale(room_scale, 1.0, room_scale)
+                .translate(0.0, -2.0, 0.0),
+        ));
 
-        // // wall
-        // let mut model = commands.load_gltf("assets/woodcube.glb", false);
-        // model.transform.translate(0.0, 0.0, -room_scale / 2.0);
-        // model.transform.scale(room_scale, room_scale, 1.0);
-        // model.material = Materials::BrickWall.load(&commands);
-        // model.material.texture_scaling = room_scale * 2.0;
-        // commands.spawn(model);
+        // object circle
+        let num_objects = 10;
+        let radius = 5.0;
 
-        // // wall
-        // let mut model = commands.load_gltf("assets/woodcube.glb", false);
-        // model.transform.translate(0.0, 0.0, room_scale / 2.0);
-        // model.transform.scale(room_scale, room_scale, 1.0);
-        // model.material = Materials::BrickWall.load(&commands);
-        // model.material.texture_scaling = room_scale * 2.0;
-        // commands.spawn(model);
+        for i in 0..num_objects {
+            let angle = (i as f32 / num_objects as f32) * std::f32::consts::TAU;
+            let x = angle.cos() * radius;
+            let z = angle.sin() * radius;
 
-        // // wall
-        // let mut model = commands.load_gltf("assets/woodcube.glb", false);
-        // model.transform.translate(-room_scale / 2.0, 0.0, 0.0);
-        // model.transform.scale(1.0, room_scale, room_scale);
-        // model.material = Materials::StoneWall.load(&commands);
-        // model.material.texture_scaling = room_scale * 2.0;
-        // commands.spawn(model);
-
-        // // wall
-        // let mut model = commands.load_gltf("assets/woodcube.glb", false);
-        // model.transform.translate(room_scale / 2.0, 0.0, 0.0);
-        // model.transform.scale(1.0, room_scale, room_scale);
-        // model.material = Materials::StoneWall.load(&commands);
-        // model.material.texture_scaling = room_scale * 2.0;
-        // commands.spawn(model);
-
-        let mut model = commands.load_gltf("assets/woodmonkey_highpoly.glb", false);
-        model.material = Materials::Metal.load(&commands);
-        model.transform.translate(0.0, 0.0, 0.0);
-        commands.spawn((model.mesh, model.transform, model.material));
+            let mesh = asset_server.load_mesh("assets/woodmonkey.glb").unwrap();
+            let material = Materials::Metal.load(asset_server).unwrap();
+            commands.spawn((
+                mesh,
+                material,
+                Transform::new().translate(x, 0.0, z),
+                Spinner,
+            ));
+        }
     });
 
     app.add_system(CameraUpdate);
