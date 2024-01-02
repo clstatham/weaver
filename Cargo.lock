@@ -2271,6 +2271,7 @@ name = "weaver-ecs"
 version = "0.1.0"
 dependencies = [
  "itertools",
+ "rayon",
  "rustc-hash",
  "thiserror",
  "weaver-proc-macro",

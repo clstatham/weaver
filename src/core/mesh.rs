@@ -109,7 +109,7 @@ struct MeshInner {
     pub asset_id: AssetId,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
-    pub num_indices: u32,
+    pub num_indices: usize,
 }
 
 #[derive(Clone, Component)]
@@ -169,14 +169,18 @@ impl Mesh {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let num_indices = indices.len() as u32;
+        log::info!("Loaded mesh: {}", path.as_ref().display());
+        log::info!("  Vertices: {}", vertices.len());
+        log::info!("    Size: {} bytes", vertex_buffer.size());
+        log::info!("  Indices: {}", indices.len());
+        log::info!("    Size: {} bytes", index_buffer.size());
 
         Ok(Self {
             inner: Arc::new(MeshInner {
                 asset_id,
                 vertex_buffer,
                 index_buffer,
-                num_indices,
+                num_indices: indices.len(),
             }),
         })
     }
@@ -193,7 +197,7 @@ impl Mesh {
         &self.inner.index_buffer
     }
 
-    pub fn num_indices(&self) -> u32 {
+    pub fn num_indices(&self) -> usize {
         self.inner.num_indices
     }
 }

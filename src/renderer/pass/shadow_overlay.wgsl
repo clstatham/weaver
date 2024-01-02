@@ -27,6 +27,13 @@ fn shadow_map_visiblity(pos: vec3<f32>) -> f32 {
     return visibility;
 }
 
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) world_position: vec3<f32>,
+    @location(1) instance_index: u32,
+    @location(2) shadow_pos: vec3<f32>,
+}
+
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
@@ -49,13 +56,14 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let visibility = shadow_map_visiblity(input.shadow_pos);
-
     // get the fragment's UV coordinates in screen space
     var uv = input.clip_position.xy / vec2<f32>(textureDimensions(color_in));
 
     // get the color from the texture
     var color = textureSample(color_in, color_in_sampler, uv).rgb;
+
+    // get the shadow map visibility
+    let visibility = shadow_map_visiblity(input.shadow_pos);
 
     // apply the shadow
     color *= visibility;

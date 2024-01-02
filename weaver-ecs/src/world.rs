@@ -3,8 +3,9 @@ use std::sync::{Arc, RwLock};
 use rustc_hash::FxHashMap;
 
 use crate::{
-    resource::{Res, ResMut},
-    Bundle, Component, Entity, Resource, System,
+    query::Queryable,
+    resource::{Res, ResMut, Resource},
+    Bundle, Component, Entity, System,
 };
 
 #[derive(Default)]
@@ -12,7 +13,7 @@ pub struct World {
     next_entity_id: u32,
     pub(crate) entities_components: FxHashMap<Entity, FxHashMap<u64, Arc<RwLock<dyn Component>>>>,
     pub(crate) systems: Vec<Box<dyn System>>,
-    pub(crate) resources: FxHashMap<u64, Arc<RwLock<dyn crate::resource::Resource>>>,
+    pub(crate) resources: FxHashMap<u64, Arc<RwLock<dyn Resource>>>,
 }
 
 impl World {
@@ -62,10 +63,11 @@ impl World {
         ResMut::new(resource.write().unwrap())
     }
 
-    pub fn query<'w, 'q, 'i, Q: crate::query::Queryable<'w, 'q, 'i>>(&'w self) -> Q
+    pub fn query<'w, 'q, 'i, Q>(&'w self) -> Q
     where
         'w: 'q,
         'q: 'i,
+        Q: Queryable<'w, 'q, 'i>,
     {
         Q::create(self)
     }
@@ -74,7 +76,7 @@ impl World {
         self.systems.push(Box::new(system));
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&self) {
         for system in &self.systems {
             system.run(self);
         }

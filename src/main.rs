@@ -1,20 +1,26 @@
-use core::{
-    camera::FlyCamera,
-    input::Input,
-    light::{DirectionalLight, PointLight},
-    material::Material,
-    mesh::Mesh,
-    time::Time,
-    transform::Transform,
-};
-
-use app::{asset_server::AssetServer, App};
-use weaver_ecs::*;
-use weaver_proc_macro::system;
-
 pub mod app;
 pub mod core;
 pub mod renderer;
+
+pub mod prelude {
+    pub use crate::app::App;
+    pub use crate::core::{
+        camera::FlyCamera,
+        color::Color,
+        input::Input,
+        light::{DirectionalLight, PointLight},
+        material::Material,
+        mesh::Mesh,
+        time::Time,
+        transform::Transform,
+    };
+    pub use crate::renderer::Renderer;
+    pub use weaver_ecs::*;
+    pub use weaver_proc_macro::system;
+}
+
+use app::asset_server::AssetServer;
+use prelude::*;
 
 #[system(LightUpdate)]
 fn light_update(lights: Query<Write<PointLight>>, timey: Res<Time>) {
@@ -246,7 +252,7 @@ fn main() -> anyhow::Result<()> {
 
     app.build(|commands, asset_server| {
         // floor
-        let mesh = asset_server.load_mesh("assets/woodcube.glb").unwrap();
+        let mesh = asset_server.load_mesh("assets/meshes/cube.glb").unwrap();
         let material = Materials::WoodTile.load(asset_server, room_scale).unwrap();
         commands.spawn((
             mesh,
@@ -257,7 +263,7 @@ fn main() -> anyhow::Result<()> {
         ));
 
         // object circle
-        let num_objects = 8;
+        let num_objects = 10;
         let radius = 10.0;
         let texture_scaling = 2.0;
         let material1 = Materials::Metal
@@ -270,23 +276,23 @@ fn main() -> anyhow::Result<()> {
         let material4 = Materials::Banana
             .load(asset_server, texture_scaling)
             .unwrap();
+        let material5 = Materials::StoneWall
+            .load(asset_server, texture_scaling)
+            .unwrap();
         for i in 0..num_objects {
             let angle = (i as f32 / num_objects as f32) * std::f32::consts::TAU;
             let x = angle.cos() * radius;
             let z = angle.sin() * radius;
 
-            let mesh = asset_server
-                .load_mesh("assets/woodmonkey_highpoly.glb")
-                .unwrap();
+            let mesh = asset_server.load_mesh("assets/meshes/cube.glb").unwrap();
 
-            let material = if i % 4 == 0 {
-                material1.clone()
-            } else if i % 4 == 1 {
-                material2.clone()
-            } else if i % 4 == 2 {
-                material3.clone()
-            } else {
-                material4.clone()
+            let material = match i % 5 {
+                0 => material1.clone(),
+                1 => material2.clone(),
+                2 => material3.clone(),
+                3 => material4.clone(),
+                4 => material5.clone(),
+                _ => unreachable!(),
             };
 
             commands.spawn((

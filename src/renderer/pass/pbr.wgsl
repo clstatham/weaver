@@ -118,6 +118,17 @@ fn calculate_lighting(
     return result;
 }
 
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) world_position: vec3<f32>,
+    @location(1) world_normal: vec3<f32>,
+    @location(2) world_binormal: vec3<f32>,
+    @location(3) world_tangent: vec3<f32>,
+    @location(4) world_bitangent: vec3<f32>,
+    @location(5) uv: vec2<f32>,
+    @location(6) instance_index: u32,
+}
+
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
@@ -155,6 +166,11 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let tex_ao = textureSample(ao_tex, ao_tex_sampler, uv).r;
     var tex_normal = textureSample(normal_tex, normal_tex_sampler, uv).xyz;
     tex_normal = normalize(tex_normal * 2.0 - 1.0);
+
+    // viewport culling
+    if vertex.clip_position.w < 0.0 {
+        discard;
+    }
 
     // create TBN matrix
     let TBN = mat3x3<f32>(
