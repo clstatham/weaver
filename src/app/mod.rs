@@ -120,7 +120,7 @@ impl App {
                     winit::event::WindowEvent::CloseRequested => {
                         *control_flow = winit::event_loop::ControlFlow::Exit;
                     }
-                    winit::event::WindowEvent::Resized(size) => {
+                    winit::event::WindowEvent::Resized(_size) => {
                         // todo
                     }
                     _ => {}

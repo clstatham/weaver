@@ -11,11 +11,7 @@ use self::pass::{
 
 pub mod pass;
 
-/// A trait for types that can be cloned on the GPU.
-pub trait GpuClone {
-    fn gpu_clone(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Self;
-}
-
+#[allow(dead_code)]
 pub struct Renderer {
     pub hdr_loader: HdrLoader,
 

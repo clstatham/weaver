@@ -376,9 +376,8 @@ impl PbrRenderPass {
     }
 
     pub fn prepare_components(&self, world: &weaver_ecs::World, renderer: &crate::Renderer) {
-        let query = world.query::<Query<(Write<Material>, Write<Mesh>)>>();
-        for entity in query.entities() {
-            let (mut material, mut mesh) = query.get(entity).unwrap();
+        let query = world.query::<Query<Write<Material>>>();
+        for mut material in query.iter() {
             if !material.has_bind_group() {
                 material.create_bind_group(
                     &renderer.device,

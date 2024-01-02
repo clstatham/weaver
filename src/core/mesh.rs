@@ -118,7 +118,7 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub fn load_gltf(
+    pub(crate) fn load_gltf(
         path: impl AsRef<Path>,
         device: &wgpu::Device,
         asset_id: AssetId,
