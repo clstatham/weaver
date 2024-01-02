@@ -3,8 +3,6 @@ use std::{path::Path, sync::Arc};
 use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
 
-use crate::renderer::GpuClone;
-
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Vertex {
@@ -115,13 +113,9 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub fn load_gltf(
-        path: impl AsRef<Path>,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    ) -> anyhow::Result<Self> {
+    pub fn load_gltf(path: impl AsRef<Path>, device: &wgpu::Device) -> anyhow::Result<Self> {
         let path = path;
-        let (document, buffers, images) = gltf::import(path.as_ref())?;
+        let (document, buffers, _images) = gltf::import(path.as_ref())?;
 
         let mut vertices = Vec::new();
         let mut indices = Vec::new();

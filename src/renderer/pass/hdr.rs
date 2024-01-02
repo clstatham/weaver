@@ -2,6 +2,7 @@ use crate::core::texture::Texture;
 
 use super::Pass;
 
+#[allow(dead_code)]
 pub struct HdrRenderPass {
     pipeline_layout: wgpu::PipelineLayout,
     pipeline: wgpu::RenderPipeline,
@@ -111,8 +112,8 @@ impl Pass for HdrRenderPass {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         color_target: &Texture,
-        depth_target: &Texture,
-        world: &weaver_ecs::World,
+        _depth_target: &Texture,
+        _world: &weaver_ecs::World,
     ) -> anyhow::Result<()> {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("HDR Render Pass Encoder"),

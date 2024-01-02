@@ -8,6 +8,7 @@ use crate::{
 
 use super::Pass;
 
+#[allow(dead_code)]
 pub struct SkyRenderPass {
     skybox: Texture,
     skybox_view: wgpu::TextureView,
@@ -125,7 +126,7 @@ impl SkyRenderPass {
                 // cubemap sampler
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&skybox.sampler()),
+                    resource: wgpu::BindingResource::Sampler(skybox.sampler()),
                 },
             ],
         });
@@ -172,7 +173,7 @@ impl Pass for SkyRenderPass {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Sky Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &color_target.view(),
+                    view: color_target.view(),
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -180,7 +181,7 @@ impl Pass for SkyRenderPass {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_target.view(),
+                    view: depth_target.view(),
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: true,

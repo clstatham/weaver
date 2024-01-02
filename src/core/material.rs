@@ -190,7 +190,7 @@ impl Material {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> anyhow::Result<Vec<Self>> {
-        let (document, buffers, images) = gltf::import(path.as_ref())?;
+        let (document, _buffers, images) = gltf::import(path.as_ref())?;
         let mut materials = Vec::new();
 
         for material in document.materials() {

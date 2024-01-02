@@ -1,9 +1,7 @@
 use std::{io::Read, path::Path, sync::Arc};
 
 use image::codecs::hdr::HdrDecoder;
-use weaver_proc_macro::{Component, Resource};
-
-use crate::renderer::pass::{sky::SkyRenderPass, Pass};
+use weaver_proc_macro::Component;
 
 use super::color::Color;
 

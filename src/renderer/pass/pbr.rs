@@ -356,8 +356,4 @@ impl PbrRenderPass {
 
         Ok(())
     }
-
-    fn pipeline(&self) -> &wgpu::RenderPipeline {
-        &self.pipeline
-    }
 }

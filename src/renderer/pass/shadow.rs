@@ -13,6 +13,7 @@ use weaver_ecs::{Query, Queryable, Read, World};
 
 const SHADOW_DEPTH_TEXTURE_SIZE: u32 = 1024;
 
+#[allow(dead_code)]
 pub struct ShadowRenderPass {
     // the first stage creates the shadow map
     shadow_map_pipeline_layout: wgpu::PipelineLayout,
@@ -424,19 +425,19 @@ impl ShadowRenderPass {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&shadow_depth_texture.view()),
+                    resource: wgpu::BindingResource::TextureView(shadow_depth_texture.view()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&shadow_depth_texture.sampler()),
+                    resource: wgpu::BindingResource::Sampler(shadow_depth_texture.sampler()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&color_texture.view()),
+                    resource: wgpu::BindingResource::TextureView(color_texture.view()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&color_texture.sampler()),
+                    resource: wgpu::BindingResource::Sampler(color_texture.sampler()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
@@ -587,19 +588,19 @@ impl ShadowRenderPass {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&shadow_cube_texture.view()),
+                    resource: wgpu::BindingResource::TextureView(shadow_cube_texture.view()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&shadow_cube_texture.sampler()),
+                    resource: wgpu::BindingResource::Sampler(shadow_cube_texture.sampler()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&color_texture.view()),
+                    resource: wgpu::BindingResource::TextureView(color_texture.view()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&color_texture.sampler()),
+                    resource: wgpu::BindingResource::Sampler(color_texture.sampler()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
@@ -701,8 +702,6 @@ impl ShadowRenderPass {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        color_target: &Texture,
-        depth_target: &Texture,
         world: &World,
     ) -> anyhow::Result<()> {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -715,7 +714,7 @@ impl ShadowRenderPass {
                 label: Some("Shadow Render Pass"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_depth_texture.view(),
+                    view: self.shadow_depth_texture.view(),
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: true,
@@ -752,7 +751,7 @@ impl ShadowRenderPass {
 
         let query = world.query::<Query<(Read<Mesh>, Read<Transform>)>>();
         for (mesh, transform) in query.iter() {
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Shadow Buffer Write Encoder"),
             });
 
@@ -774,7 +773,7 @@ impl ShadowRenderPass {
                     label: Some("Shadow Render Pass"),
                     color_attachments: &[],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.shadow_depth_texture.view(),
+                        view: self.shadow_depth_texture.view(),
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: true,
@@ -801,8 +800,6 @@ impl ShadowRenderPass {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        color_target: &Texture,
-        depth_target: &Texture,
         world: &World,
     ) -> anyhow::Result<()> {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -990,7 +987,7 @@ impl ShadowRenderPass {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Shadow Overlay Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &color_target.view(),
+                        view: color_target.view(),
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -998,7 +995,7 @@ impl ShadowRenderPass {
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &depth_target.view(),
+                        view: depth_target.view(),
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: true,
@@ -1078,7 +1075,7 @@ impl ShadowRenderPass {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Shadow Cube Overlay Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &color_target.view(),
+                        view: color_target.view(),
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -1086,7 +1083,7 @@ impl ShadowRenderPass {
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &depth_target.view(),
+                        view: depth_target.view(),
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: true,
@@ -1119,8 +1116,8 @@ impl Pass for ShadowRenderPass {
         depth_target: &Texture,
         world: &World,
     ) -> anyhow::Result<()> {
-        self.render_cube_map(device, queue, color_target, depth_target, world)?;
-        self.render_shadow_map(device, queue, color_target, depth_target, world)?;
+        self.render_cube_map(device, queue, world)?;
+        self.render_shadow_map(device, queue, world)?;
         self.overlay_shadow_map(device, queue, color_target, depth_target, world)?;
         self.overlay_cube_shadow_map(device, queue, color_target, depth_target, world)?;
         Ok(())

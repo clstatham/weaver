@@ -2,10 +2,7 @@ use std::cell::RefCell;
 
 use weaver_ecs::{Bundle, Resource, World};
 
-use crate::{
-    core::{model::Model, texture::Texture},
-    renderer::Renderer,
-};
+use crate::{core::texture::Texture, renderer::Renderer};
 
 pub struct Commands<'a> {
     world: RefCell<&'a mut World>,

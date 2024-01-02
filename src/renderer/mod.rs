@@ -160,7 +160,7 @@ impl Renderer {
                 label: Some("Clear Screen"),
                 color_attachments: &[
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.hdr_pass.texture.view(),
+                        view: self.hdr_pass.texture.view(),
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -168,7 +168,7 @@ impl Renderer {
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.normal_texture.view(),
+                        view: self.normal_texture.view(),
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -177,7 +177,7 @@ impl Renderer {
                     }),
                 ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view(),
+                    view: self.depth_texture.view(),
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: true,

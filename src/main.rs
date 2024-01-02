@@ -4,12 +4,11 @@ use core::{
     light::{DirectionalLight, PointLight},
     material::Material,
     mesh::Mesh,
-    texture::Texture,
     time::Time,
     transform::Transform,
 };
 
-use app::{asset_server::AssetServer, commands::Commands, App};
+use app::{asset_server::AssetServer, App};
 use weaver_ecs::*;
 use weaver_proc_macro::system;
 
@@ -23,8 +22,7 @@ fn update(
     lights: Query<Write<PointLight>>,
     timey: Res<Time>,
 ) {
-    let delta = timey.delta_time;
-    for (i, (_mesh, mut transform, _)) in model.iter().enumerate() {
+    for (_i, (_mesh, mut transform, _)) in model.iter().enumerate() {
         transform.set_translation(glam::Vec3::new(
             5.0 * timey.total_time.sin(),
             5.0,
@@ -39,7 +37,7 @@ fn update(
 
 #[system(Spin)]
 fn spin(model: Query<(Read<Mesh>, Write<Transform>, Read<Spinner>)>, timey: Res<Time>) {
-    for (i, (_mesh, mut transform, _)) in model.iter().enumerate() {
+    for (_i, (_mesh, mut transform, _)) in model.iter().enumerate() {
         transform.rotate(timey.delta_time * 1.75, glam::Vec3::Y);
     }
 }
@@ -55,6 +53,7 @@ struct Object;
 #[derive(Component)]
 struct Spinner;
 
+#[allow(dead_code)]
 enum Materials {
     Wood,
     Metal,
@@ -226,15 +225,17 @@ fn main() -> anyhow::Result<()> {
         ));
 
         // object circle
-        let num_objects = 10;
-        let radius = 5.0;
+        let num_objects = 20;
+        let radius = 10.0;
 
         for i in 0..num_objects {
             let angle = (i as f32 / num_objects as f32) * std::f32::consts::TAU;
             let x = angle.cos() * radius;
             let z = angle.sin() * radius;
 
-            let mesh = asset_server.load_mesh("assets/woodmonkey.glb").unwrap();
+            let mesh = asset_server
+                .load_mesh("assets/woodmonkey_highpoly.glb")
+                .unwrap();
             let material = Materials::Metal.load(asset_server).unwrap();
             commands.spawn((
                 mesh,
