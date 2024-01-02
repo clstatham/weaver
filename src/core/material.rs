@@ -2,13 +2,14 @@ use std::{path::Path, sync::Arc};
 
 use weaver_proc_macro::Component;
 
-use crate::renderer::pass::pbr::PbrRenderPass;
+use crate::{app::asset_server::AssetId, renderer::pass::pbr::PbrRenderPass};
 
 use super::{color::Color, texture::Texture};
 
 /// PBR material based on Bevy
 #[derive(Clone, Component)]
 pub struct Material {
+    asset_id: AssetId,
     pub diffuse: Color,
     pub diffuse_texture: Option<Texture>,
     pub metallic: f32,
@@ -25,6 +26,7 @@ pub struct Material {
 impl Default for Material {
     fn default() -> Self {
         Self {
+            asset_id: AssetId::PLACEHOLDER,
             diffuse: Color::WHITE,
             diffuse_texture: None,
             metallic: 0.0,
@@ -39,19 +41,25 @@ impl Default for Material {
 }
 
 impl Material {
-    pub fn new(
+    pub(crate) fn new(
         diffuse_texture: Option<Texture>,
         normal_texture: Option<Texture>,
         roughness_texture: Option<Texture>,
         ambient_occlusion_texture: Option<Texture>,
+        asset_id: AssetId,
     ) -> Self {
         Self {
+            asset_id,
             diffuse_texture,
             normal_texture,
             roughness_texture,
             ambient_occlusion_texture,
             ..Default::default()
         }
+    }
+
+    pub fn asset_id(&self) -> AssetId {
+        self.asset_id
     }
 
     pub fn with_diffuse(mut self, diffuse: Color) -> Self {

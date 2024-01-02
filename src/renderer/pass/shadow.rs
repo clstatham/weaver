@@ -1,17 +1,43 @@
 use super::Pass;
 use crate::{
+    app::asset_server::AssetId,
     core::{
         camera::{CameraUniform, FlyCamera},
         light::{DirectionalLight, DirectionalLightUniform, PointLight, PointLightUniform},
-        mesh::{Mesh, Vertex},
+        mesh::{Mesh, Vertex, MAX_MESHES},
         texture::Texture,
         transform::Transform,
     },
     include_shader,
 };
+use rustc_hash::FxHashMap;
 use weaver_ecs::{Query, Queryable, Read, World};
 
 const SHADOW_DEPTH_TEXTURE_SIZE: u32 = 1024;
+
+struct UniqueMesh {
+    mesh: Mesh,
+    transforms: Vec<Transform>,
+}
+
+impl UniqueMesh {
+    fn gather(world: &World) -> FxHashMap<AssetId, Self> {
+        let mut meshes = FxHashMap::default();
+
+        let query = world.query::<Query<(Read<Mesh>, Read<Transform>)>>();
+        for (mesh, transform) in query.iter() {
+            let mesh = mesh.clone();
+            let mesh_id = mesh.asset_id();
+            let unique_mesh = meshes.entry(mesh_id).or_insert(Self {
+                mesh,
+                transforms: Vec::new(),
+            });
+            unique_mesh.transforms.push(*transform);
+        }
+
+        meshes
+    }
+}
 
 #[allow(dead_code)]
 pub struct ShadowRenderPass {
@@ -119,8 +145,8 @@ impl ShadowRenderPass {
 
         let model_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Model Transform Buffer"),
-            size: std::mem::size_of::<glam::Mat4>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            size: (std::mem::size_of::<glam::Mat4>() * MAX_MESHES) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -163,7 +189,7 @@ impl ShadowRenderPass {
                         binding: 0,
                         visibility: wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
                             min_binding_size: None,
                         },
@@ -244,7 +270,7 @@ impl ShadowRenderPass {
                         binding: 0,
                         visibility: wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
                             min_binding_size: None,
                         },
@@ -410,7 +436,7 @@ impl ShadowRenderPass {
                         binding: 6,
                         visibility: wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
                             min_binding_size: None,
                         },
@@ -573,7 +599,7 @@ impl ShadowRenderPass {
                         binding: 6,
                         visibility: wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
                             min_binding_size: None,
                         },
@@ -749,8 +775,10 @@ impl ShadowRenderPass {
 
         queue.submit(std::iter::once(encoder.finish()));
 
-        let query = world.query::<Query<(Read<Mesh>, Read<Transform>)>>();
-        for (mesh, transform) in query.iter() {
+        let unique_meshes = UniqueMesh::gather(world);
+        for unique_mesh in unique_meshes.values() {
+            let UniqueMesh { mesh, transforms } = unique_mesh;
+
             let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Shadow Buffer Write Encoder"),
             });
@@ -758,7 +786,7 @@ impl ShadowRenderPass {
             queue.write_buffer(
                 &self.model_transform_buffer,
                 0,
-                bytemuck::cast_slice(&[transform.matrix]),
+                bytemuck::cast_slice(transforms.as_slice()),
             );
 
             queue.submit(std::iter::once(encoder.finish()));
@@ -787,7 +815,7 @@ impl ShadowRenderPass {
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..1);
+                render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..transforms.len() as u32);
             }
 
             queue.submit(std::iter::once(encoder.finish()));
@@ -846,8 +874,9 @@ impl ShadowRenderPass {
 
         queue.submit(std::iter::once(encoder.finish()));
 
-        let query = world.query::<Query<(Read<Mesh>, Read<Transform>)>>();
-        for (mesh, transform) in query.iter() {
+        let unique_meshes = UniqueMesh::gather(world);
+        for unique_mesh in unique_meshes.values() {
+            let UniqueMesh { mesh, transforms } = unique_mesh;
             let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Shadow Cube Map Buffer Write Encoder"),
             });
@@ -855,7 +884,7 @@ impl ShadowRenderPass {
             queue.write_buffer(
                 &self.model_transform_buffer,
                 0,
-                bytemuck::cast_slice(&[transform.matrix]),
+                bytemuck::cast_slice(transforms.as_slice()),
             );
 
             queue.submit(std::iter::once(encoder.finish()));
@@ -919,7 +948,7 @@ impl ShadowRenderPass {
                     render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
                     render_pass
                         .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-                    render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..1);
+                    render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..transforms.len() as u32);
                 }
 
                 queue.submit(std::iter::once(encoder.finish()));
@@ -952,10 +981,10 @@ impl ShadowRenderPass {
 
         queue.submit(std::iter::once(encoder.finish()));
 
-        let query = world.query::<Query<(Read<Mesh>, Read<Transform>)>>();
-
         // overlay the built shadow map on the screen
-        for (mesh, transform) in query.iter() {
+        let unique_meshes = UniqueMesh::gather(world);
+        for unique_mesh in unique_meshes.values() {
+            let UniqueMesh { mesh, transforms } = unique_mesh;
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Shadow Overlay Buffer Write Encoder"),
             });
@@ -963,7 +992,7 @@ impl ShadowRenderPass {
             queue.write_buffer(
                 &self.model_transform_buffer,
                 0,
-                bytemuck::cast_slice(&[transform.matrix]),
+                bytemuck::cast_slice(transforms.as_slice()),
             );
 
             // copy the color target to our own copy
@@ -1009,7 +1038,7 @@ impl ShadowRenderPass {
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..1);
+                render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..transforms.len() as u32);
             }
             queue.submit(std::iter::once(encoder.finish()));
         }
@@ -1040,10 +1069,10 @@ impl ShadowRenderPass {
 
         queue.submit(std::iter::once(encoder.finish()));
 
-        let query = world.query::<Query<(Read<Mesh>, Read<Transform>)>>();
-
         // overlay the built shadow cube map on the screen
-        for (mesh, transform) in query.iter() {
+        let unique_meshes = UniqueMesh::gather(world);
+        for unique_mesh in unique_meshes.values() {
+            let UniqueMesh { mesh, transforms } = unique_mesh;
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Shadow Cube Overlay Buffer Write Encoder"),
             });
@@ -1051,7 +1080,7 @@ impl ShadowRenderPass {
             queue.write_buffer(
                 &self.model_transform_buffer,
                 0,
-                bytemuck::cast_slice(&[transform.matrix]),
+                bytemuck::cast_slice(transforms.as_slice()),
             );
 
             // copy the color target to our own copy
@@ -1097,7 +1126,7 @@ impl ShadowRenderPass {
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..1);
+                render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..transforms.len() as u32);
             }
 
             queue.submit(std::iter::once(encoder.finish()));

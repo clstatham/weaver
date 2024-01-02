@@ -9,7 +9,7 @@ const FAR_PLANE: f32 = 100.0;
 @group(0) @binding(3) var color_in_sampler: sampler;
 @group(0) @binding(4) var<uniform> camera: CameraUniform;
 @group(0) @binding(5) var<uniform> light: PointLight;
-@group(0) @binding(6) var<uniform> model_transform: mat4x4<f32>;
+@group(0) @binding(6) var<storage> model_transforms: array<mat4x4<f32>>;
 
 fn linearize_depth(depth: f32) -> f32 {
     let z = depth * 2.0 - 1.0;
@@ -19,8 +19,12 @@ fn linearize_depth(depth: f32) -> f32 {
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
+
+    let model_transform = model_transforms[input.instance_index];
+
     output.clip_position = camera.proj * camera.view * model_transform * vec4(input.position, 1.0);
     output.world_position = (model_transform * vec4(input.position, 1.0)).xyz;
+    output.instance_index = input.instance_index;
     return output;
 }
 

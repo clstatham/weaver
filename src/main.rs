@@ -77,7 +77,7 @@ impl Materials {
                     "assets/materials/Wood_025_SD/Wood_025_ambientOcclusion.jpg",
                     false,
                 )?;
-                Ok(Material::new(
+                Ok(asset_server.create_material(
                     Some(base_color),
                     Some(normal),
                     Some(roughness),
@@ -100,7 +100,7 @@ impl Materials {
                     "assets/materials/Metal_006_SD/Metal_006_ambientOcclusion.jpg",
                     false,
                 )?;
-                Ok(Material::new(
+                Ok(asset_server.create_material(
                     Some(base_color),
                     Some(normal),
                     Some(roughness),
@@ -125,7 +125,7 @@ impl Materials {
                     "assets/materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_AmbientOcclusion.jpg",
                     false,
                 )?;
-                Ok(Material::new(
+                Ok(asset_server.create_material(
                     Some(base_color),
                     Some(normal),
                     Some(roughness),
@@ -150,7 +150,7 @@ impl Materials {
                     "assets/materials/Brick_Wall_017_SD/Brick_Wall_017_ambientOcclusion.jpg",
                     false,
                 )?;
-                Ok(Material::new(
+                Ok(asset_server.create_material(
                     Some(base_color),
                     Some(normal),
                     Some(roughness),
@@ -175,7 +175,7 @@ impl Materials {
                     "assets/materials/Wall_Stone_021_SD/Substance_graph_AmbientOcclusion.jpg",
                     false,
                 )?;
-                Ok(Material::new(
+                Ok(asset_server.create_material(
                     Some(base_color),
                     Some(normal),
                     Some(roughness),
@@ -225,7 +225,7 @@ fn main() -> anyhow::Result<()> {
         ));
 
         // object circle
-        let num_objects = 20;
+        let num_objects = 10;
         let radius = 10.0;
 
         for i in 0..num_objects {
@@ -233,9 +233,7 @@ fn main() -> anyhow::Result<()> {
             let x = angle.cos() * radius;
             let z = angle.sin() * radius;
 
-            let mesh = asset_server
-                .load_mesh("assets/woodmonkey_highpoly.glb")
-                .unwrap();
+            let mesh = asset_server.load_mesh("assets/woodmonkey.glb").unwrap();
             let material = Materials::Metal.load(asset_server).unwrap();
             commands.spawn((
                 mesh,

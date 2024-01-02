@@ -1,15 +1,46 @@
+use rustc_hash::FxHashMap;
 use weaver_ecs::{Query, Queryable, Read, Write};
 
 use crate::{
+    app::asset_server::AssetId,
     core::{
         camera::{CameraUniform, FlyCamera},
         light::{DirectionalLight, DirectionalLightBuffer, PointLight, PointLightBuffer},
         material::{Material, MaterialUniform},
-        mesh::{Mesh, Vertex},
+        mesh::{Mesh, Vertex, MAX_MESHES},
         transform::Transform,
     },
     include_shader,
 };
+
+struct UniqueMesh {
+    mesh: Mesh,
+    material: Material,
+    transforms: Vec<Transform>,
+}
+
+impl UniqueMesh {
+    fn gather(world: &weaver_ecs::World) -> FxHashMap<(AssetId, AssetId), Self> {
+        let query = world.query::<Query<(Write<Material>, Read<Mesh>, Read<Transform>)>>();
+        // gather all entities that share a mesh
+        let mut unique_meshes = FxHashMap::default();
+        for entity in query.entities() {
+            let (material, mesh, transform) = query.get(entity).unwrap();
+            let mesh_id = mesh.asset_id();
+            let material_id = material.asset_id();
+            unique_meshes
+                .entry((mesh_id, material_id))
+                .or_insert_with(|| UniqueMesh {
+                    mesh: mesh.clone(),
+                    material: material.clone(),
+                    transforms: Vec::new(),
+                })
+                .transforms
+                .push(*transform);
+        }
+        unique_meshes
+    }
+}
 
 pub struct PbrRenderPass {
     pub(crate) bind_group_layout: wgpu::BindGroupLayout,
@@ -26,8 +57,8 @@ impl PbrRenderPass {
     pub fn new(device: &wgpu::Device, env_map_bind_group_layout: &wgpu::BindGroupLayout) -> Self {
         let model_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Model Transform Buffer"),
-            size: std::mem::size_of::<glam::Mat4>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            size: (std::mem::size_of::<glam::Mat4>() * MAX_MESHES) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -67,7 +98,7 @@ impl PbrRenderPass {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -290,8 +321,15 @@ impl PbrRenderPass {
 
         queue.submit(Some(encoder.finish()));
 
-        let query = world.query::<Query<(Write<Material>, Read<Mesh>, Read<Transform>)>>();
-        for (mut material, mesh, transform) in query.iter() {
+        let mut unique_meshes = UniqueMesh::gather(world);
+
+        for unique_mesh in unique_meshes.values_mut() {
+            let UniqueMesh {
+                mesh,
+                material,
+                transforms,
+            } = unique_mesh;
+
             if !material.has_bind_group() {
                 material.create_bind_group(device, self);
             }
@@ -305,7 +343,7 @@ impl PbrRenderPass {
             queue.write_buffer(
                 &self.model_transform_buffer,
                 0,
-                bytemuck::cast_slice(&[*transform]),
+                bytemuck::cast_slice(transforms.as_slice()),
             );
 
             // write material buffer
@@ -315,7 +353,7 @@ impl PbrRenderPass {
                 bytemuck::cast_slice(&[MaterialUniform::from(&*material)]),
             );
 
-            queue.submit(std::iter::once(encoder.finish()));
+            queue.submit(Some(encoder.finish()));
 
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("PBR Render Pass Encoder"),
@@ -348,10 +386,10 @@ impl PbrRenderPass {
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..1);
+                render_pass.draw_indexed(0..mesh.num_indices(), 0, 0..transforms.len() as u32);
             }
 
-            queue.submit(std::iter::once(encoder.finish()));
+            queue.submit(Some(encoder.finish()));
         }
 
         Ok(())

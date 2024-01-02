@@ -3,6 +3,10 @@ use std::{path::Path, sync::Arc};
 use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
 
+use crate::app::asset_server::AssetId;
+
+pub const MAX_MESHES: usize = 1000;
+
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Vertex {
@@ -102,9 +106,10 @@ fn calculate_tangents(vertices: &mut [Vertex], indices: &[u32]) {
 }
 
 struct MeshInner {
+    pub asset_id: AssetId,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
-    pub(crate) num_indices: u32,
+    pub num_indices: u32,
 }
 
 #[derive(Clone, Component)]
@@ -113,7 +118,11 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub fn load_gltf(path: impl AsRef<Path>, device: &wgpu::Device) -> anyhow::Result<Self> {
+    pub fn load_gltf(
+        path: impl AsRef<Path>,
+        device: &wgpu::Device,
+        asset_id: AssetId,
+    ) -> anyhow::Result<Self> {
         let path = path;
         let (document, buffers, _images) = gltf::import(path.as_ref())?;
 
@@ -164,11 +173,16 @@ impl Mesh {
 
         Ok(Self {
             inner: Arc::new(MeshInner {
+                asset_id,
                 vertex_buffer,
                 index_buffer,
                 num_indices,
             }),
         })
+    }
+
+    pub fn asset_id(&self) -> AssetId {
+        self.inner.asset_id
     }
 
     pub fn vertex_buffer(&self) -> &wgpu::Buffer {

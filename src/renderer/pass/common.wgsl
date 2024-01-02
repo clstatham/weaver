@@ -21,6 +21,7 @@ struct VertexOutput {
     @location(5) uv: vec2<f32>,
     @location(6) shadow_pos: vec3<f32>,
     @location(7) screen_uv: vec2<f32>,
+    @location(8) instance_index: u32,
 }
 
 struct CameraUniform {

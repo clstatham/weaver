@@ -1,6 +1,8 @@
 //#import "src/renderer/pass/common.wgsl"
 
-@group(0) @binding(0)  var<uniform> model_transform: mat4x4<f32>;
+// for now, let's assume every instance is using the same material
+
+@group(0) @binding(0)  var<storage> model_transforms: array<mat4x4<f32>>;
 @group(0) @binding(1)  var<uniform> camera: CameraUniform;
 @group(0) @binding(2)  var<uniform> material: MaterialUniform;
 @group(0) @binding(3)  var          tex: texture_2d<f32>;
@@ -119,6 +121,9 @@ fn calculate_lighting(
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
+
+    let model_transform = model_transforms[input.instance_index];
+
     output.world_position = (model_transform * vec4<f32>(input.position, 1.0)).xyz;
     output.clip_position = camera.proj * camera.view * vec4<f32>(output.world_position, 1.0);
     output.uv = input.uv;
@@ -134,6 +139,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     output.world_binormal = normalize(normal_transform * input.binormal);
     output.world_tangent = normalize(normal_transform * input.tangent);
     output.world_bitangent = normalize(normal_transform * input.bitangent);
+
+    output.instance_index = input.instance_index;
 
     return output;
 }

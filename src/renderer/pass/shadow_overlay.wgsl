@@ -6,7 +6,7 @@
 @group(0) @binding(3) var color_in_sampler: sampler;
 @group(0) @binding(4) var<uniform> camera: CameraUniform;
 @group(0) @binding(5) var<uniform> light: DirectionalLight;
-@group(0) @binding(6) var<uniform> model_transform: mat4x4<f32>;
+@group(0) @binding(6) var<storage> model_transforms: array<mat4x4<f32>>;
 
 fn shadow_map_visiblity(pos: vec3<f32>) -> f32 {
     var visibility = 0.0;
@@ -30,6 +30,9 @@ fn shadow_map_visiblity(pos: vec3<f32>) -> f32 {
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
+
+    let model_transform = model_transforms[input.instance_index];
+
     let pos_from_light = light.proj_transform * light.view_transform * model_transform * vec4(input.position, 1.0);
 
     output.shadow_pos = vec3(
@@ -38,6 +41,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     );
 
     output.clip_position = camera.proj * camera.view * model_transform * vec4(input.position, 1.0);
+
+    output.instance_index = input.instance_index;
 
     return output;
 }

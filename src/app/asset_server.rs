@@ -8,6 +8,10 @@ use crate::core::{material::Material, mesh::Mesh, texture::Texture};
 #[repr(transparent)]
 pub struct AssetId(pub u64);
 
+impl AssetId {
+    pub const PLACEHOLDER: Self = Self(u64::MAX);
+}
+
 pub struct AssetServer {
     next_id: u64,
     ids: FxHashMap<PathBuf, AssetId>,
@@ -41,7 +45,7 @@ impl AssetServer {
         let path = path.into();
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id();
-            let mesh = Mesh::load_gltf(path.clone(), self.device.as_ref())?;
+            let mesh = Mesh::load_gltf(path.clone(), self.device.as_ref(), id)?;
             self.ids.insert(path.clone(), id);
             self.meshes.insert(id, mesh);
         }
@@ -94,5 +98,24 @@ impl AssetServer {
             .and_then(|id| self.textures.get(id))
             .unwrap()
             .clone())
+    }
+
+    pub fn create_material(
+        &mut self,
+        diffuse_texture: Option<Texture>,
+        normal_texture: Option<Texture>,
+        roughness_texture: Option<Texture>,
+        ambient_occlusion_texture: Option<Texture>,
+    ) -> Material {
+        let id = self.alloc_id();
+        let material = Material::new(
+            diffuse_texture,
+            normal_texture,
+            roughness_texture,
+            ambient_occlusion_texture,
+            id,
+        );
+        self.materials.insert(id, material.clone());
+        material
     }
 }
