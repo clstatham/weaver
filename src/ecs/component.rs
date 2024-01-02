@@ -2,7 +2,7 @@ use std::{cell::RefCell, sync::Arc};
 
 use rustc_hash::FxHashMap;
 
-use crate::Entity;
+use super::Entity;
 
 pub trait Downcast: std::any::Any {
     fn as_any(&self) -> &dyn std::any::Any;

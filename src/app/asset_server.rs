@@ -1,8 +1,12 @@
 use std::{path::PathBuf, sync::Arc};
 
 use rustc_hash::FxHashMap;
+use weaver_proc_macro::Resource;
 
-use crate::core::{material::Material, mesh::Mesh, texture::Texture};
+use crate::{
+    core::{material::Material, mesh::Mesh, texture::Texture},
+    ecs::World,
+};
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -12,6 +16,7 @@ impl AssetId {
     pub const PLACEHOLDER: Self = Self(u64::MAX);
 }
 
+#[derive(Resource)]
 pub struct AssetServer {
     next_id: u64,
     ids: FxHashMap<PathBuf, AssetId>,
@@ -23,7 +28,10 @@ pub struct AssetServer {
 }
 
 impl AssetServer {
-    pub fn new(device: Arc<wgpu::Device>, queue: Arc<wgpu::Queue>) -> Self {
+    pub fn new(world: &World) -> Self {
+        let renderer = world.read_resource::<crate::renderer::Renderer>();
+        let device = renderer.device.clone();
+        let queue = renderer.queue.clone();
         Self {
             next_id: 0,
             ids: FxHashMap::default(),

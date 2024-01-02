@@ -14,7 +14,7 @@ fn impl_component_macro(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let id = COMPONENT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let gen = quote! {
-        unsafe impl weaver_ecs::component::Component for #name {
+        unsafe impl crate::ecs::component::Component for #name {
             fn component_id() -> u64 {
                 #id
             }
@@ -33,7 +33,7 @@ fn impl_resource_macro(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let id = RESOURCE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let gen = quote! {
-        impl weaver_ecs::resource::Resource for #name {
+        impl crate::ecs::resource::Resource for #name {
             fn resource_id() -> u64 {
                 #id
             }
@@ -67,8 +67,10 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
     // populate the above Vecs and do some compiletime checks to make sure the queries are valid
     // 1. no conflicting writes
     // 2. no conflicting reads
-    // 3. arguments should all be Query<_>, Res<_>, or ResMut<_>
-    // 4. Queries can take tuples as their inner types, but Res and ResMut cannot
+    // 3. arguments should all be Query<_>, Res<_>, ResMut<_>
+    // 4. Queries can take tuples of Read<_> or Write<_> as their inner types, but Res and ResMut cannot
+    // 5. Queries can take Read<_> or Write<_> as their inner types, but Res and ResMut cannot
+    // 6. only one Commands argument is allowed, same for AssetServer
     // examples:
     // #[system(A)]
     // fn system_a(a: Query<Read<CompA>>) {}
@@ -305,6 +307,7 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                                     }
                                 }
                             }
+
                             _ => panic!(
                                 "Invalid argument type: Expected one of `Query`, `Res`, or `ResMut`"
                             ),
@@ -323,9 +326,9 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
         #[allow(non_camel_case_types, dead_code)]
         #vis struct #system_struct_name;
 
-        impl weaver_ecs::system::System for #system_struct_name {
+        impl crate::ecs::system::System for #system_struct_name {
             #[allow(unused_mut)]
-            fn run(&self, world: &weaver_ecs::World) {
+            fn run(&self, world: &crate::ecs::World) {
                 #(
                     let mut #query_names = world.query::<#query_types>();
                 )*
@@ -416,8 +419,8 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> TokenStream {
         }
     });
     let gen = quote! {
-        impl weaver_ecs::Bundle for #name {
-            fn build(self, world: &mut weaver_ecs::World) -> weaver_ecs::Entity {
+        impl crate::ecs::Bundle for #name {
+            fn build(self, world: &mut crate::ecs::World) -> crate::ecs::Entity {
                 let entity = world.create_entity();
                 #(
                     world.add_component(entity, self.#fields);
@@ -468,9 +471,9 @@ pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
             type ItemRef = (#(#item_refs),*);
             type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'i>;
 
-            fn create(world: &'w World) -> Self {
+            fn create(entities_components: &'w EntitiesAndComponents) -> Self {
                 (#(
-                    #query_names::create(world)
+                    #query_names::create(entities_components)
                 ),*)
             }
 

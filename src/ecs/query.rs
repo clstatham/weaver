@@ -5,7 +5,7 @@ use std::{
     sync::{RwLockReadGuard, RwLockWriteGuard},
 };
 
-use crate::{Component, Entity, World};
+use super::{world::EntitiesAndComponents, Component, Entity};
 
 pub trait Queryable<'w, 'q, 'i>
 where
@@ -16,7 +16,7 @@ where
     type ItemRef: 'i;
     type Iter: Iterator<Item = Self::ItemRef> + 'i;
 
-    fn create(world: &'w World) -> Self;
+    fn create(entities_components: &'w EntitiesAndComponents) -> Self;
     fn entities(&self) -> BTreeSet<Entity>;
     fn get(&'q self, entity: Entity) -> Option<Self::ItemRef>;
     fn iter(&'q self) -> Self::Iter;
@@ -38,12 +38,12 @@ impl<'a, T> Read<'a, T>
 where
     T: Component,
 {
-    pub(crate) fn new(world: &'a crate::World) -> Self {
-        let entries = world.entities_components.iter().fold(
+    pub(crate) fn new(entities_components: &'a EntitiesAndComponents) -> Self {
+        let entries = entities_components.iter().fold(
             BTreeMap::new(),
             |mut entries, (&entity, components)| {
                 if let Some(component) = components.get(&T::component_id()) {
-                    entries.insert(entity, RefCell::new(component.read().unwrap()));
+                    entries.insert(entity, RefCell::new(component.try_read().unwrap()));
                 }
                 entries
             },
@@ -65,8 +65,8 @@ where
     type ItemRef = Ref<'i, T>;
     type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'i>;
 
-    fn create(world: &'w World) -> Self {
-        Self::new(world)
+    fn create(entities_components: &'w EntitiesAndComponents) -> Self {
+        Self::new(entities_components)
     }
 
     fn entities(&self) -> BTreeSet<Entity> {
@@ -122,12 +122,12 @@ impl<'a, T> Write<'a, T>
 where
     T: Component,
 {
-    pub(crate) fn new(world: &'a crate::World) -> Self {
-        let entries = world.entities_components.iter().fold(
+    pub(crate) fn new(entities_components: &'a EntitiesAndComponents) -> Self {
+        let entries = entities_components.iter().fold(
             BTreeMap::new(),
             |mut entries, (&entity, components)| {
                 if let Some(component) = components.get(&T::component_id()) {
-                    entries.insert(entity, RefCell::new(component.write().unwrap()));
+                    entries.insert(entity, RefCell::new(component.try_write().unwrap()));
                 }
                 entries
             },
@@ -149,8 +149,8 @@ where
     type ItemRef = RefMut<'i, T>;
     type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'i>;
 
-    fn create(world: &'w World) -> Self {
-        Self::new(world)
+    fn create(entities_components: &'w EntitiesAndComponents) -> Self {
+        Self::new(entities_components)
     }
 
     fn entities(&self) -> BTreeSet<Entity> {
@@ -221,9 +221,9 @@ where
     type ItemRef = T::ItemRef;
     type Iter = T::Iter;
 
-    fn create(world: &'w World) -> Self {
+    fn create(entities_components: &'w EntitiesAndComponents) -> Self {
         Self {
-            query: T::create(world),
+            query: T::create(entities_components),
             _marker: std::marker::PhantomData,
         }
     }

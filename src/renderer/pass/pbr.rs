@@ -1,5 +1,4 @@
 use rustc_hash::FxHashMap;
-use weaver_ecs::{Query, Queryable, Read, Write};
 
 use crate::{
     app::asset_server::AssetId,
@@ -8,8 +7,10 @@ use crate::{
         light::{DirectionalLight, DirectionalLightBuffer, PointLight, PointLightBuffer},
         material::{Material, MaterialUniform},
         mesh::{Mesh, Vertex, MAX_MESHES},
+        texture::Texture,
         transform::Transform,
     },
+    ecs::{Query, Queryable, Read, World, Write},
     include_shader,
 };
 
@@ -20,7 +21,7 @@ struct UniqueMesh {
 }
 
 impl UniqueMesh {
-    fn gather(world: &weaver_ecs::World) -> FxHashMap<(AssetId, AssetId), Self> {
+    fn gather(world: &World) -> FxHashMap<(AssetId, AssetId), Self> {
         let query = world.query::<Query<(Read<Material>, Read<Mesh>, Read<Transform>)>>();
         // gather all entities that share a mesh
         let mut unique_meshes = FxHashMap::default();
@@ -225,7 +226,7 @@ impl PbrRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: crate::core::texture::Texture::HDR_FORMAT,
+                    format: Texture::HDR_FORMAT,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -236,7 +237,7 @@ impl PbrRenderPass {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: crate::core::texture::Texture::DEPTH_FORMAT,
+                format: Texture::DEPTH_FORMAT,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: Default::default(),
@@ -261,10 +262,10 @@ impl PbrRenderPass {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        color_texture: &crate::core::texture::Texture,
-        depth_texture: &crate::core::texture::Texture,
+        color_texture: &Texture,
+        depth_texture: &Texture,
         env_map_bind_group: &wgpu::BindGroup,
-        world: &weaver_ecs::World,
+        world: &World,
     ) -> anyhow::Result<()> {
         let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("PBR Render Pass Initial Encoder"),
@@ -375,7 +376,7 @@ impl PbrRenderPass {
         Ok(())
     }
 
-    pub fn prepare_components(&self, world: &weaver_ecs::World, renderer: &crate::Renderer) {
+    pub fn prepare_components(&self, world: &World, renderer: &crate::Renderer) {
         let query = world.query::<Query<Write<Material>>>();
         for mut material in query.iter() {
             if !material.has_bind_group() {

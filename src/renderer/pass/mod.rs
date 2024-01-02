@@ -1,8 +1,6 @@
 use std::io::Read;
 
-use weaver_ecs::World;
-
-use crate::core::texture::Texture;
+use crate::{core::texture::Texture, ecs::World};
 
 pub mod hdr;
 pub mod pbr;

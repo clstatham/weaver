@@ -1,8 +1,8 @@
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
-use crate::component::Downcast;
+use super::component::Downcast;
 
-pub trait Resource: Downcast + Send + Sync + 'static {
+pub trait Resource: Downcast + 'static {
     fn resource_id() -> u64
     where
         Self: Sized;

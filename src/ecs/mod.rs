@@ -1,6 +1,7 @@
 pub mod bundle;
 pub mod component;
 pub mod entity;
+pub mod graph;
 pub mod query;
 pub mod resource;
 pub mod system;

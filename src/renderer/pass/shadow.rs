@@ -8,10 +8,10 @@ use crate::{
         texture::Texture,
         transform::Transform,
     },
+    ecs::{Query, Queryable, Read, World},
     include_shader,
 };
 use rustc_hash::FxHashMap;
-use weaver_ecs::{Query, Queryable, Read, World};
 
 const SHADOW_DEPTH_TEXTURE_SIZE: u32 = 1024;
 

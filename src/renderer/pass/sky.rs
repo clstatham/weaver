@@ -3,6 +3,7 @@ use crate::{
         camera::{CameraUniform, FlyCamera},
         texture::Texture,
     },
+    ecs::World,
     include_shader,
 };
 
@@ -150,7 +151,7 @@ impl Pass for SkyRenderPass {
         queue: &wgpu::Queue,
         color_target: &Texture,
         depth_target: &Texture,
-        world: &weaver_ecs::World,
+        world: &World,
     ) -> anyhow::Result<()> {
         let camera = world.read_resource::<FlyCamera>();
 

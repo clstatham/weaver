@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
-use weaver_ecs::World;
+use weaver_proc_macro::Resource;
 use winit::window::Window;
 
-use crate::core::texture::{HdrLoader, Texture};
+use crate::{
+    core::texture::{HdrLoader, Texture},
+    ecs::World,
+};
 
 use self::pass::{
     hdr::HdrRenderPass, pbr::PbrRenderPass, shadow::ShadowRenderPass, sky::SkyRenderPass, Pass,
@@ -11,6 +14,7 @@ use self::pass::{
 
 pub mod pass;
 
+#[derive(Resource)]
 #[allow(dead_code)]
 pub struct Renderer {
     pub hdr_loader: HdrLoader,
@@ -226,7 +230,7 @@ impl Renderer {
         self.pbr_pass.prepare_components(world, self);
     }
 
-    pub fn render(&mut self, world: &World) -> anyhow::Result<()> {
+    pub fn render(&self, world: &World) -> anyhow::Result<()> {
         let output = self.surface.get_current_texture()?;
         let mut encoder = self
             .device
