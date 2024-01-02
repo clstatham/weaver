@@ -62,7 +62,7 @@ impl AssetServer {
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id();
             let mut materials =
-                Material::load_gltf(path.clone(), self.device.as_ref(), self.queue.as_ref())?;
+                Material::load_gltf(path.clone(), self.device.as_ref(), self.queue.as_ref(), id)?;
             self.ids.insert(path.clone(), id);
             self.materials.insert(id, materials.remove(0));
         }
@@ -100,12 +100,16 @@ impl AssetServer {
             .clone())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create_material(
         &mut self,
         diffuse_texture: Option<Texture>,
         normal_texture: Option<Texture>,
         roughness_texture: Option<Texture>,
         ambient_occlusion_texture: Option<Texture>,
+        metallic: Option<f32>,
+        roughness: Option<f32>,
+        texture_scaling: Option<f32>,
     ) -> Material {
         let id = self.alloc_id();
         let material = Material::new(
@@ -113,6 +117,9 @@ impl AssetServer {
             normal_texture,
             roughness_texture,
             ambient_occlusion_texture,
+            metallic,
+            roughness,
+            texture_scaling,
             id,
         );
         self.materials.insert(id, material.clone());

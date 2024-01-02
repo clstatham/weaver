@@ -16,19 +16,8 @@ pub mod app;
 pub mod core;
 pub mod renderer;
 
-#[system(Update)]
-fn update(
-    model: Query<(Read<Mesh>, Write<Transform>, Read<Object>)>,
-    lights: Query<Write<PointLight>>,
-    timey: Res<Time>,
-) {
-    for (_i, (_mesh, mut transform, _)) in model.iter().enumerate() {
-        transform.set_translation(glam::Vec3::new(
-            5.0 * timey.total_time.sin(),
-            5.0,
-            5.0 * timey.total_time.cos(),
-        ));
-    }
+#[system(LightUpdate)]
+fn light_update(lights: Query<Write<PointLight>>, timey: Res<Time>) {
     for mut light in lights.iter() {
         light.position.x = 5.0 * timey.total_time.sin();
         light.position.z = 5.0 * timey.total_time.cos();
@@ -60,10 +49,15 @@ enum Materials {
     WoodTile,
     BrickWall,
     StoneWall,
+    Banana,
 }
 
 impl Materials {
-    pub fn load(&self, asset_server: &mut AssetServer) -> anyhow::Result<Material> {
+    pub fn load(
+        &self,
+        asset_server: &mut AssetServer,
+        texture_scaling: f32,
+    ) -> anyhow::Result<Material> {
         match self {
             // Wood_025
             Materials::Wood => {
@@ -82,6 +76,9 @@ impl Materials {
                     Some(normal),
                     Some(roughness),
                     Some(ao),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(texture_scaling),
                 ))
             }
             // Metal_006
@@ -105,6 +102,9 @@ impl Materials {
                     Some(normal),
                     Some(roughness),
                     Some(ao),
+                    Some(1.0),
+                    Some(1.0),
+                    Some(texture_scaling),
                 ))
             }
             // Wood_Herringbone_Tiles_004
@@ -130,6 +130,9 @@ impl Materials {
                     Some(normal),
                     Some(roughness),
                     Some(ao),
+                    Some(0.0),
+                    Some(0.5),
+                    Some(texture_scaling),
                 ))
             }
             // Brick_Wall_017
@@ -155,6 +158,9 @@ impl Materials {
                     Some(normal),
                     Some(roughness),
                     Some(ao),
+                    Some(0.0),
+                    Some(1.0),
+                    Some(texture_scaling),
                 ))
             }
             // Wall_Stone_021
@@ -180,6 +186,33 @@ impl Materials {
                     Some(normal),
                     Some(roughness),
                     Some(ao),
+                    Some(0.0),
+                    Some(1.0),
+                    Some(texture_scaling),
+                ))
+            }
+            // Food_0003
+            Materials::Banana => {
+                let base_color = asset_server
+                    .load_texture("assets/materials/Food_0003/food_0003_color_1k.jpg", false)?;
+                let normal = asset_server.load_texture(
+                    "assets/materials/Food_0003/food_0003_normal_opengl_1k.png",
+                    true,
+                )?;
+                let roughness = asset_server.load_texture(
+                    "assets/materials/Food_0003/food_0003_roughness_1k.jpg",
+                    false,
+                )?;
+                let ao = asset_server
+                    .load_texture("assets/materials/Food_0003/food_0003_ao_1k.jpg", false)?;
+                Ok(asset_server.create_material(
+                    Some(base_color),
+                    Some(normal),
+                    Some(roughness),
+                    Some(ao),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(texture_scaling),
                 ))
             }
         }
@@ -200,7 +233,7 @@ fn main() -> anyhow::Result<()> {
     app.spawn(PointLight::new(
         glam::Vec3::new(5.0, 5.0, 5.0),
         core::color::Color::WHITE,
-        20.0,
+        10.0,
     ));
 
     // app.spawn(PointLight::new(
@@ -214,8 +247,7 @@ fn main() -> anyhow::Result<()> {
     app.build(|commands, asset_server| {
         // floor
         let mesh = asset_server.load_mesh("assets/woodcube.glb").unwrap();
-        let mut material = Materials::WoodTile.load(asset_server).unwrap();
-        material.texture_scaling = room_scale;
+        let material = Materials::WoodTile.load(asset_server, room_scale).unwrap();
         commands.spawn((
             mesh,
             material,
@@ -225,16 +257,38 @@ fn main() -> anyhow::Result<()> {
         ));
 
         // object circle
-        let num_objects = 10;
+        let num_objects = 8;
         let radius = 10.0;
-
+        let texture_scaling = 2.0;
+        let material1 = Materials::Metal
+            .load(asset_server, texture_scaling)
+            .unwrap();
+        let material2 = Materials::Wood.load(asset_server, texture_scaling).unwrap();
+        let material3 = Materials::BrickWall
+            .load(asset_server, texture_scaling)
+            .unwrap();
+        let material4 = Materials::Banana
+            .load(asset_server, texture_scaling)
+            .unwrap();
         for i in 0..num_objects {
             let angle = (i as f32 / num_objects as f32) * std::f32::consts::TAU;
             let x = angle.cos() * radius;
             let z = angle.sin() * radius;
 
-            let mesh = asset_server.load_mesh("assets/woodmonkey.glb").unwrap();
-            let material = Materials::Metal.load(asset_server).unwrap();
+            let mesh = asset_server
+                .load_mesh("assets/woodmonkey_highpoly.glb")
+                .unwrap();
+
+            let material = if i % 4 == 0 {
+                material1.clone()
+            } else if i % 4 == 1 {
+                material2.clone()
+            } else if i % 4 == 2 {
+                material3.clone()
+            } else {
+                material4.clone()
+            };
+
             commands.spawn((
                 mesh,
                 material,
@@ -245,7 +299,7 @@ fn main() -> anyhow::Result<()> {
     });
 
     app.add_system(CameraUpdate);
-    app.add_system(Update);
+    app.add_system(LightUpdate);
     app.add_system(Spin);
 
     app.run();

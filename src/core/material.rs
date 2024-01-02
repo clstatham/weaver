@@ -23,29 +23,16 @@ pub struct Material {
     bind_group: Option<Arc<wgpu::BindGroup>>,
 }
 
-impl Default for Material {
-    fn default() -> Self {
-        Self {
-            asset_id: AssetId::PLACEHOLDER,
-            diffuse: Color::WHITE,
-            diffuse_texture: None,
-            metallic: 0.0,
-            normal_texture: None,
-            roughness: 0.5,
-            roughness_texture: None,
-            ambient_occlusion_texture: None,
-            texture_scaling: 1.0,
-            bind_group: None,
-        }
-    }
-}
-
 impl Material {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         diffuse_texture: Option<Texture>,
         normal_texture: Option<Texture>,
         roughness_texture: Option<Texture>,
         ambient_occlusion_texture: Option<Texture>,
+        metallic: Option<f32>,
+        roughness: Option<f32>,
+        texture_scaling: Option<f32>,
         asset_id: AssetId,
     ) -> Self {
         Self {
@@ -54,7 +41,11 @@ impl Material {
             normal_texture,
             roughness_texture,
             ambient_occlusion_texture,
-            ..Default::default()
+            texture_scaling: texture_scaling.unwrap_or(1.0),
+            diffuse: Color::WHITE,
+            metallic: metallic.unwrap_or(1.0),
+            roughness: roughness.unwrap_or(1.0),
+            bind_group: None,
         }
     }
 
@@ -193,16 +184,28 @@ impl Material {
         self.bind_group = Some(Arc::new(bind_group));
     }
 
-    pub fn load_gltf(
+    pub(crate) fn load_gltf(
         path: impl AsRef<Path>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        id: AssetId,
     ) -> anyhow::Result<Vec<Self>> {
         let (document, _buffers, images) = gltf::import(path.as_ref())?;
         let mut materials = Vec::new();
 
         for material in document.materials() {
-            let mut mat = Material::default();
+            let metallic = material.pbr_metallic_roughness().metallic_factor();
+            let roughness = material.pbr_metallic_roughness().roughness_factor();
+            let mut mat = Self::new(
+                None,
+                None,
+                None,
+                None,
+                Some(metallic),
+                Some(roughness),
+                None,
+                id,
+            );
             if let Some(texture) = material.pbr_metallic_roughness().base_color_texture() {
                 let image = images.get(texture.texture().source().index()).unwrap();
                 match image.format {
@@ -336,9 +339,6 @@ impl Material {
                 log::warn!("GLTF Mesh has no ambient occlusion texture");
             }
 
-            mat.roughness = material.pbr_metallic_roughness().roughness_factor();
-            mat.metallic = material.pbr_metallic_roughness().metallic_factor();
-
             materials.push(mat);
         }
 
@@ -350,7 +350,7 @@ impl Material {
 #[repr(C)]
 pub struct MaterialUniform {
     pub base_color: [f32; 4],
-    pub metallic_roughness: [f32; 4],
+    pub properties: [f32; 4], // metallic, roughness, 0, 0
     pub texture_scaling: [f32; 4],
 }
 
@@ -358,7 +358,7 @@ impl From<&Material> for MaterialUniform {
     fn from(material: &Material) -> Self {
         Self {
             base_color: material.diffuse.vec4().into(),
-            metallic_roughness: [material.metallic, material.roughness, 0.0, 0.0],
+            properties: [material.metallic, material.roughness, 0.0, 0.0],
             texture_scaling: [material.texture_scaling; 4],
         }
     }
