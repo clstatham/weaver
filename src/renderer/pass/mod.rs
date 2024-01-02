@@ -51,4 +51,6 @@ pub trait Pass {
         depth_target: &Texture,
         world: &World,
     ) -> anyhow::Result<()>;
+
+    // fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32);
 }

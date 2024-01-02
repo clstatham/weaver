@@ -279,12 +279,13 @@ fn main() -> anyhow::Result<()> {
         let material5 = Materials::StoneWall
             .load(asset_server, texture_scaling)
             .unwrap();
+        let mesh = asset_server
+            .load_mesh("assets/meshes/monkey_flat.glb")
+            .unwrap();
         for i in 0..num_objects {
             let angle = (i as f32 / num_objects as f32) * std::f32::consts::TAU;
             let x = angle.cos() * radius;
             let z = angle.sin() * radius;
-
-            let mesh = asset_server.load_mesh("assets/meshes/cube.glb").unwrap();
 
             let material = match i % 5 {
                 0 => material1.clone(),
@@ -296,7 +297,7 @@ fn main() -> anyhow::Result<()> {
             };
 
             commands.spawn((
-                mesh,
+                mesh.clone(),
                 material,
                 Transform::new().translate(x, 0.0, z),
                 Spinner,

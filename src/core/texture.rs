@@ -8,7 +8,6 @@ use super::color::Color;
 struct TextureInner {
     texture: wgpu::Texture,
     view: wgpu::TextureView,
-    sampler: wgpu::Sampler,
 }
 
 #[derive(Clone, Component)]
@@ -92,23 +91,8 @@ impl Texture {
             texture_extent,
         );
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: None,
-            address_mode_u: wgpu::AddressMode::MirrorRepeat,
-            address_mode_v: wgpu::AddressMode::MirrorRepeat,
-            address_mode_w: wgpu::AddressMode::MirrorRepeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-
         Self {
-            inner: Arc::new(TextureInner {
-                texture,
-                view,
-                sampler,
-            }),
+            inner: Arc::new(TextureInner { texture, view }),
         }
     }
 
@@ -184,15 +168,15 @@ impl Texture {
 
     pub fn create_color_texture(
         device: &wgpu::Device,
-        width: usize,
-        height: usize,
+        width: u32,
+        height: u32,
         label: Option<&str>,
         usage: wgpu::TextureUsages,
         format: Option<wgpu::TextureFormat>,
     ) -> Self {
         let size = wgpu::Extent3d {
-            width: width as u32,
-            height: height as u32,
+            width,
+            height,
             depth_or_array_layers: 1,
         };
 
@@ -209,36 +193,21 @@ impl Texture {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: None,
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
         Self {
-            inner: Arc::new(TextureInner {
-                texture,
-                view,
-                sampler,
-            }),
+            inner: Arc::new(TextureInner { texture, view }),
         }
     }
 
     pub fn create_depth_texture(
         device: &wgpu::Device,
-        width: usize,
-        height: usize,
+        width: u32,
+        height: u32,
         label: Option<&str>,
         usage: wgpu::TextureUsages,
     ) -> Self {
         let size = wgpu::Extent3d {
-            width: width as u32,
-            height: height as u32,
+            width,
+            height,
             depth_or_array_layers: 1,
         };
 
@@ -255,24 +224,8 @@ impl Texture {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: None,
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: Some(wgpu::CompareFunction::LessEqual),
-            ..Default::default()
-        });
-
         Self {
-            inner: Arc::new(TextureInner {
-                texture,
-                view,
-                sampler,
-            }),
+            inner: Arc::new(TextureInner { texture, view }),
         }
     }
 
@@ -302,23 +255,8 @@ impl Texture {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: None,
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
         Self {
-            inner: Arc::new(TextureInner {
-                texture,
-                view,
-                sampler,
-            }),
+            inner: Arc::new(TextureInner { texture, view }),
         }
     }
 
@@ -354,23 +292,8 @@ impl Texture {
             ..Default::default()
         });
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: None,
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
         Self {
-            inner: Arc::new(TextureInner {
-                texture,
-                view,
-                sampler,
-            }),
+            inner: Arc::new(TextureInner { texture, view }),
         }
     }
 
@@ -405,23 +328,8 @@ impl Texture {
             ..Default::default()
         });
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("HDR Cube Map Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
         Self {
-            inner: Arc::new(TextureInner {
-                texture,
-                view,
-                sampler,
-            }),
+            inner: Arc::new(TextureInner { texture, view }),
         }
     }
 
@@ -449,24 +357,8 @@ impl Texture {
             ..Default::default()
         });
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Depth Cube Map Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: None,
-            ..Default::default()
-        });
-
         Self {
-            inner: Arc::new(TextureInner {
-                texture,
-                view,
-                sampler,
-            }),
+            inner: Arc::new(TextureInner { texture, view }),
         }
     }
 
@@ -476,10 +368,6 @@ impl Texture {
 
     pub fn view(&self) -> &wgpu::TextureView {
         &self.inner.view
-    }
-
-    pub fn sampler(&self) -> &wgpu::Sampler {
-        &self.inner.sampler
     }
 }
 
@@ -559,8 +447,8 @@ impl HdrLoader {
 
         let src = Texture::create_color_texture(
             device,
-            meta.width as usize,
-            meta.height as usize,
+            meta.width,
+            meta.height,
             Some("HDR Source Texture"),
             wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             Some(Texture::HDR_FORMAT),

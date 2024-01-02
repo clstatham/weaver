@@ -87,11 +87,17 @@ pub struct ShadowRenderPass {
 }
 
 impl ShadowRenderPass {
-    pub fn new(device: &wgpu::Device, screen_width: u32, screen_height: u32) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        screen_width: u32,
+        screen_height: u32,
+        color_sampler: &wgpu::Sampler,
+        depth_sampler: &wgpu::Sampler,
+    ) -> Self {
         let shadow_depth_texture = Texture::create_depth_texture(
             device,
-            SHADOW_DEPTH_TEXTURE_SIZE as usize,
-            SHADOW_DEPTH_TEXTURE_SIZE as usize,
+            SHADOW_DEPTH_TEXTURE_SIZE,
+            SHADOW_DEPTH_TEXTURE_SIZE,
             Some("Shadow Depth Texture"),
             wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::COPY_SRC
@@ -134,8 +140,8 @@ impl ShadowRenderPass {
 
         let color_texture = Texture::create_color_texture(
             device,
-            screen_width as usize,
-            screen_height as usize,
+            screen_width,
+            screen_height,
             Some("Shadow Color Texture"),
             wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::RENDER_ATTACHMENT
@@ -455,7 +461,7 @@ impl ShadowRenderPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(shadow_depth_texture.sampler()),
+                    resource: wgpu::BindingResource::Sampler(depth_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -463,7 +469,7 @@ impl ShadowRenderPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(color_texture.sampler()),
+                    resource: wgpu::BindingResource::Sampler(color_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
@@ -566,16 +572,9 @@ impl ShadowRenderPass {
                         },
                         count: None,
                     },
-                    // color texture sampler
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                        count: None,
-                    },
                     // camera uniform
                     wgpu::BindGroupLayoutEntry {
-                        binding: 4,
+                        binding: 3,
                         visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
@@ -586,7 +585,7 @@ impl ShadowRenderPass {
                     },
                     // point light uniform
                     wgpu::BindGroupLayoutEntry {
-                        binding: 5,
+                        binding: 4,
                         visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
@@ -597,7 +596,7 @@ impl ShadowRenderPass {
                     },
                     // model transform
                     wgpu::BindGroupLayoutEntry {
-                        binding: 6,
+                        binding: 5,
                         visibility: wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -619,7 +618,7 @@ impl ShadowRenderPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(shadow_cube_texture.sampler()),
+                    resource: wgpu::BindingResource::Sampler(color_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -627,18 +626,14 @@ impl ShadowRenderPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(color_texture.sampler()),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
                     resource: camera_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 5,
+                    binding: 4,
                     resource: point_light_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 6,
+                    binding: 5,
                     resource: model_transform_buffer.as_entire_binding(),
                 },
             ],

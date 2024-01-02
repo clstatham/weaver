@@ -2,19 +2,16 @@
 
 // for now, let's assume every instance is using the same material
 
-@group(0) @binding(0)  var<storage> model_transforms: array<mat4x4<f32>>;
-@group(0) @binding(1)  var<uniform> camera: CameraUniform;
-@group(0) @binding(2)  var<uniform> material: MaterialUniform;
-@group(0) @binding(3)  var          tex: texture_2d<f32>;
-@group(0) @binding(4)  var          tex_sampler: sampler;
-@group(0) @binding(5)  var          normal_tex: texture_2d<f32>;
-@group(0) @binding(6)  var          normal_tex_sampler: sampler;
-@group(0) @binding(7)  var          roughness_tex: texture_2d<f32>;
-@group(0) @binding(8)  var          roughness_tex_sampler: sampler;
-@group(0) @binding(9)  var          ao_tex: texture_2d<f32>;
-@group(0) @binding(10) var          ao_tex_sampler: sampler;
-@group(0) @binding(11) var<storage> point_lights: PointLights;
-@group(0) @binding(12) var<storage> directional_lights: DirectionalLights;
+@group(0) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
+@group(0) @binding(1) var<uniform> camera: CameraUniform;
+@group(0) @binding(2) var<uniform> material: MaterialUniform;
+@group(0) @binding(3) var          tex_sampler: sampler;
+@group(0) @binding(4) var          tex: texture_2d<f32>;
+@group(0) @binding(5) var          normal_tex: texture_2d<f32>;
+@group(0) @binding(6) var          roughness_tex: texture_2d<f32>;
+@group(0) @binding(7) var          ao_tex: texture_2d<f32>;
+@group(0) @binding(8) var<storage> point_lights: PointLights;
+@group(0) @binding(9) var<storage> directional_lights: DirectionalLights;
 
 // group 1 binding 0 is the camera uniform buffer that we already have
 @group(1) @binding(1)  var          env_map: texture_cube<f32>;
@@ -62,7 +59,7 @@ fn calculate_lighting(
 ) -> vec3<f32> {
     let metallic = material.properties.x;
     // roughness mapping
-    let roughness = textureSample(roughness_tex, roughness_tex_sampler, vertex.uv).r * material.properties.y;
+    let roughness = textureSample(roughness_tex, tex_sampler, vertex.uv).r * material.properties.y;
 
     let N = normalize(normal);
     let V = normalize(view_direction);
@@ -163,8 +160,8 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
     // sample color texture and normal map
     let tex_color = textureSample(tex, tex_sampler, uv).xyz;
-    let tex_ao = textureSample(ao_tex, ao_tex_sampler, uv).r;
-    var tex_normal = textureSample(normal_tex, normal_tex_sampler, uv).xyz;
+    let tex_ao = textureSample(ao_tex, tex_sampler, uv).r;
+    var tex_normal = textureSample(normal_tex, tex_sampler, uv).xyz;
     tex_normal = normalize(tex_normal * 2.0 - 1.0);
 
     // viewport culling

@@ -3,12 +3,11 @@
 const FAR_PLANE: f32 = 100.0;
 
 @group(0) @binding(0) var shadow_cube_map: texture_cube<f32>;
-@group(0) @binding(1) var shadow_cube_map_sampler: sampler;
+@group(0) @binding(1) var tex_sampler: sampler;
 @group(0) @binding(2) var color_in: texture_2d<f32>;
-@group(0) @binding(3) var color_in_sampler: sampler;
-@group(0) @binding(4) var<uniform> camera: CameraUniform;
-@group(0) @binding(5) var<uniform> light: PointLight;
-@group(0) @binding(6) var<storage> model_transforms: array<mat4x4<f32>>;
+@group(0) @binding(3) var<uniform> camera: CameraUniform;
+@group(0) @binding(4) var<uniform> light: PointLight;
+@group(0) @binding(5) var<storage> model_transforms: array<mat4x4<f32>>;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -31,7 +30,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let uv = input.clip_position.xy / vec2<f32>(textureDimensions(color_in));
-    var color = textureSample(color_in, color_in_sampler, uv).rgb;
+    var color = textureSample(color_in, tex_sampler, uv).rgb;
 
     let to_light = input.world_position - light.position.xyz;
     let current_depth = length(to_light);
@@ -41,7 +40,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         for (var j: i32 = -1; j <= 1; j += 1) {
             for (var k: i32 = -1; k <= 1; k += 1) {
                 let offset = vec3<f32>(f32(i), f32(j), f32(k)) * radius;
-                let sample_depth = textureSample(shadow_cube_map, shadow_cube_map_sampler, to_light + offset).r * FAR_PLANE;
+                let sample_depth = textureSample(shadow_cube_map, tex_sampler, to_light + offset).r * FAR_PLANE;
 
                 // we have to do the culling here because WGSL sucks and won't let us return before we do all the sampling calls
                 if input.clip_position.w < 0.0 {

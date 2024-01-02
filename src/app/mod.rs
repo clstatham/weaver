@@ -27,6 +27,7 @@ pub struct App {
     pub(crate) renderer: Renderer,
 
     fps_frame_count: usize,
+    frame_time: std::time::Duration,
     fps_last_update: std::time::Instant,
 }
 
@@ -43,16 +44,6 @@ impl App {
             .with_resizable(false)
             .build(&event_loop)
             .unwrap();
-
-        // let camera = Camera::new(
-        //     glam::Vec3::new(5.0, 5.0, 5.0),
-        //     glam::Vec3::new(0.0, 0.0, 0.0),
-        //     glam::Vec3::Y,
-        //     45.0f32.to_radians(),
-        //     screen_width as f32 / screen_height as f32,
-        //     0.1,
-        //     100.0,
-        // );
 
         let initial_camera_transform = Transform::default()
             .translate(5.0, 5.0, 5.0)
@@ -84,6 +75,7 @@ impl App {
             window,
             fps_frame_count: 0,
             fps_last_update: std::time::Instant::now(),
+            frame_time: std::time::Duration::from_secs(0),
             world,
             asset_server,
         }
@@ -111,47 +103,47 @@ impl App {
     }
 
     pub fn run(mut self) {
+        self.renderer.prepare_components(&self.world);
+
         self.event_loop.run(move |event, _, control_flow| {
             *control_flow = winit::event_loop::ControlFlow::Poll;
             self.window.request_redraw();
             self.world.write_resource::<Time>().update();
             self.input.update(&event);
-            // self.window
-            //     .set_cursor_position(PhysicalPosition::new(
-            //         self.window.inner_size().width as f64 / 2.0,
-            //         self.window.inner_size().height as f64 / 2.0,
-            //     ))
-            //     .unwrap();
 
             self.world.write_resource::<Input>().update(&event);
 
             self.world.update();
 
             match event {
-                winit::event::Event::WindowEvent {
-                    event: winit::event::WindowEvent::CloseRequested,
-                    ..
-                } => {
-                    *control_flow = winit::event_loop::ControlFlow::Exit;
-                }
-                winit::event::Event::WindowEvent {
-                    event: winit::event::WindowEvent::KeyboardInput { input, .. },
-                    ..
-                } => {
-                    if let Some(key_code) = input.virtual_keycode {
-                        if key_code == winit::event::VirtualKeyCode::Escape {
-                            *control_flow = winit::event_loop::ControlFlow::Exit;
-                        }
+                winit::event::Event::WindowEvent { event, .. } => match event {
+                    winit::event::WindowEvent::CloseRequested => {
+                        *control_flow = winit::event_loop::ControlFlow::Exit;
                     }
-                }
+                    winit::event::WindowEvent::Resized(size) => {
+                        // todo
+                    }
+                    _ => {}
+                },
                 winit::event::Event::RedrawRequested(_) => {
+                    let tick = std::time::Instant::now();
                     self.renderer.render(&self.world).unwrap();
+                    self.frame_time += std::time::Instant::now() - tick;
 
                     self.fps_frame_count += 1;
                     if self.fps_last_update.elapsed() > std::time::Duration::from_secs(1) {
                         log::info!("FPS: {}", self.fps_frame_count);
+                        log::info!(
+                            "Frame time: {}ms",
+                            self.frame_time.as_millis() as f32 / self.fps_frame_count as f32
+                        );
+                        log::info!(
+                            "Time spent rendering: {}%",
+                            self.frame_time.as_secs_f32() * 100.0
+                        );
                         self.fps_frame_count = 0;
                         self.fps_last_update = std::time::Instant::now();
+                        self.frame_time = std::time::Duration::from_secs(0);
                     }
                 }
                 _ => {}

@@ -91,7 +91,12 @@ impl Material {
         self.bind_group.as_ref().map(|b| b.as_ref())
     }
 
-    pub fn create_bind_group(&mut self, device: &wgpu::Device, render_pass: &PbrRenderPass) {
+    pub fn create_bind_group(
+        &mut self,
+        device: &wgpu::Device,
+        render_pass: &PbrRenderPass,
+        texture_sampler: &wgpu::Sampler,
+    ) {
         let diffuse_texture = self.diffuse_texture.as_ref().unwrap();
         let normal_texture = self.normal_texture.as_ref().unwrap();
         let roughness_texture = self.roughness_texture.as_ref().unwrap();
@@ -123,56 +128,41 @@ impl Material {
                         render_pass.material_buffer.as_entire_buffer_binding(),
                     ),
                 },
-                // tex
+                // texture sampler
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(diffuse_texture.view()),
+                    resource: wgpu::BindingResource::Sampler(texture_sampler),
                 },
-                // tex_sampler
+                // diffuse texture
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: wgpu::BindingResource::Sampler(diffuse_texture.sampler()),
+                    resource: wgpu::BindingResource::TextureView(diffuse_texture.view()),
                 },
-                // normal_tex
+                // normal texture
                 wgpu::BindGroupEntry {
                     binding: 5,
                     resource: wgpu::BindingResource::TextureView(normal_texture.view()),
                 },
-                // normal_tex_sampler
+                // roughness texture
                 wgpu::BindGroupEntry {
                     binding: 6,
-                    resource: wgpu::BindingResource::Sampler(normal_texture.sampler()),
-                },
-                // roughness_tex
-                wgpu::BindGroupEntry {
-                    binding: 7,
                     resource: wgpu::BindingResource::TextureView(roughness_texture.view()),
-                },
-                // roughness_tex_sampler
-                wgpu::BindGroupEntry {
-                    binding: 8,
-                    resource: wgpu::BindingResource::Sampler(roughness_texture.sampler()),
                 },
                 // ambient occlusion texture
                 wgpu::BindGroupEntry {
-                    binding: 9,
+                    binding: 7,
                     resource: wgpu::BindingResource::TextureView(ambient_occlusion_texture.view()),
-                },
-                // ambient occlusion texture sampler
-                wgpu::BindGroupEntry {
-                    binding: 10,
-                    resource: wgpu::BindingResource::Sampler(ambient_occlusion_texture.sampler()),
                 },
                 // point lights
                 wgpu::BindGroupEntry {
-                    binding: 11,
+                    binding: 8,
                     resource: wgpu::BindingResource::Buffer(
                         render_pass.point_light_buffer.as_entire_buffer_binding(),
                     ),
                 },
                 // directional lights
                 wgpu::BindGroupEntry {
-                    binding: 12,
+                    binding: 9,
                     resource: wgpu::BindingResource::Buffer(
                         render_pass
                             .directional_light_buffer

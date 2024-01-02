@@ -32,6 +32,12 @@ pub struct Renderer {
     pub(crate) pbr_pass: PbrRenderPass,
     pub(crate) sky_pass: SkyRenderPass,
     pub(crate) passes: Vec<Box<dyn pass::Pass>>,
+
+    pub(crate) sampler_clamp_nearest: wgpu::Sampler,
+    pub(crate) sampler_clamp_linear: wgpu::Sampler,
+    pub(crate) sampler_repeat_nearest: wgpu::Sampler,
+    pub(crate) sampler_repeat_linear: wgpu::Sampler,
+    pub(crate) sampler_depth: wgpu::Sampler,
 }
 
 impl Renderer {
@@ -82,8 +88,8 @@ impl Renderer {
 
         let color_texture = Texture::create_color_texture(
             &device,
-            config.width as usize,
-            config.height as usize,
+            config.width,
+            config.height,
             Some("Color Texture"),
             wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::COPY_SRC
@@ -93,8 +99,8 @@ impl Renderer {
 
         let depth_texture = Texture::create_depth_texture(
             &device,
-            config.width as usize,
-            config.height as usize,
+            config.width,
+            config.height,
             Some("Depth Texture"),
             wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::COPY_SRC
@@ -111,7 +117,68 @@ impl Renderer {
                 | wgpu::TextureUsages::TEXTURE_BINDING,
         );
 
-        let hdr_pass = HdrRenderPass::new(&device, config.width, config.height);
+        let sampler_clamp_nearest = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Clamp Nearest Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: None,
+            ..Default::default()
+        });
+
+        let sampler_clamp_linear = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Clamp Linear Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            compare: None,
+            ..Default::default()
+        });
+
+        let sampler_repeat_nearest = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Repeat Nearest Sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: None,
+            ..Default::default()
+        });
+
+        let sampler_repeat_linear = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Repeat Linear Sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            compare: None,
+            ..Default::default()
+        });
+
+        let sampler_depth = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Depth Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+
+        let hdr_pass =
+            HdrRenderPass::new(&device, config.width, config.height, &sampler_clamp_nearest);
 
         let hdr_loader = HdrLoader::new(&device);
 
@@ -119,13 +186,19 @@ impl Renderer {
             .load(&device, &queue, 2048, "assets/meadow_2k.hdr")
             .unwrap();
 
-        let sky_pass = SkyRenderPass::new(&device, skybox);
+        let sky_pass = SkyRenderPass::new(&device, skybox, &sampler_clamp_nearest);
 
         let pbr_pass = PbrRenderPass::new(&device, &sky_pass.bind_group_layout);
 
         let passes: Vec<Box<dyn pass::Pass>> = vec![
             // shadow pass
-            Box::new(ShadowRenderPass::new(&device, config.width, config.height)),
+            Box::new(ShadowRenderPass::new(
+                &device,
+                config.width,
+                config.height,
+                &sampler_clamp_nearest,
+                &sampler_depth,
+            )),
         ];
 
         Self {
@@ -141,11 +214,20 @@ impl Renderer {
             pbr_pass,
             sky_pass,
             passes,
+            sampler_clamp_nearest,
+            sampler_clamp_linear,
+            sampler_repeat_nearest,
+            sampler_repeat_linear,
+            sampler_depth,
         }
     }
 
     pub fn push_render_pass<T: Pass + 'static>(&mut self, pass: T) {
         self.passes.push(Box::new(pass));
+    }
+
+    pub fn prepare_components(&self, world: &World) {
+        self.pbr_pass.prepare_components(world, self);
     }
 
     pub fn render(&mut self, world: &World) -> anyhow::Result<()> {

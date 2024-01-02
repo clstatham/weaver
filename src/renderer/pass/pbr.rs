@@ -21,7 +21,7 @@ struct UniqueMesh {
 
 impl UniqueMesh {
     fn gather(world: &weaver_ecs::World) -> FxHashMap<(AssetId, AssetId), Self> {
-        let query = world.query::<Query<(Write<Material>, Read<Mesh>, Read<Transform>)>>();
+        let query = world.query::<Query<(Read<Material>, Read<Mesh>, Read<Transform>)>>();
         // gather all entities that share a mesh
         let mut unique_meshes = FxHashMap::default();
         for entity in query.entities() {
@@ -126,22 +126,22 @@ impl PbrRenderPass {
                     },
                     count: None,
                 },
-                // tex
+                // tex_sampler
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // tex
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2,
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     },
-                    count: None,
-                },
-                // tex_sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
                 // normal_tex
@@ -155,14 +155,18 @@ impl PbrRenderPass {
                     },
                     count: None,
                 },
-                // normal_tex_sampler
+                // roughness_tex
                 wgpu::BindGroupLayoutEntry {
                     binding: 6,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
                     count: None,
                 },
-                // roughness_tex
+                // ambient occlusion texture
                 wgpu::BindGroupLayoutEntry {
                     binding: 7,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -173,34 +177,9 @@ impl PbrRenderPass {
                     },
                     count: None,
                 },
-                // roughness_tex_sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 8,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                // ambient occlusion texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 9,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // ambient occlusion texture sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 10,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
                 // point lights
                 wgpu::BindGroupLayoutEntry {
-                    binding: 11,
+                    binding: 8,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -211,7 +190,7 @@ impl PbrRenderPass {
                 },
                 // directional lights
                 wgpu::BindGroupLayoutEntry {
-                    binding: 12,
+                    binding: 9,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -330,9 +309,6 @@ impl PbrRenderPass {
                 transforms,
             } = unique_mesh;
 
-            if !material.has_bind_group() {
-                material.create_bind_group(device, self);
-            }
             let bind_group = material.bind_group().unwrap();
 
             let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -397,5 +373,19 @@ impl PbrRenderPass {
         }
 
         Ok(())
+    }
+
+    pub fn prepare_components(&self, world: &weaver_ecs::World, renderer: &crate::Renderer) {
+        let query = world.query::<Query<(Write<Material>, Write<Mesh>)>>();
+        for entity in query.entities() {
+            let (mut material, mut mesh) = query.get(entity).unwrap();
+            if !material.has_bind_group() {
+                material.create_bind_group(
+                    &renderer.device,
+                    &renderer.pbr_pass,
+                    &renderer.sampler_repeat_linear,
+                );
+            }
+        }
     }
 }

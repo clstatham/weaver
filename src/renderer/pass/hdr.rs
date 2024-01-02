@@ -12,13 +12,13 @@ pub struct HdrRenderPass {
 }
 
 impl HdrRenderPass {
-    pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
+    pub fn new(device: &wgpu::Device, width: u32, height: u32, sampler: &wgpu::Sampler) -> Self {
         let format = Texture::HDR_FORMAT;
 
         let texture = Texture::create_color_texture(
             device,
-            width as usize,
-            height as usize,
+            width,
+            height,
             Some("HDR Texture"),
             wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::RENDER_ATTACHMENT
@@ -57,7 +57,7 @@ impl HdrRenderPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(texture.sampler()),
+                    resource: wgpu::BindingResource::Sampler(sampler),
                 },
             ],
             label: Some("HDR Texture Bind Group"),

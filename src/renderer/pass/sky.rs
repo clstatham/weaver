@@ -20,7 +20,7 @@ pub struct SkyRenderPass {
 }
 
 impl SkyRenderPass {
-    pub fn new(device: &wgpu::Device, skybox: Texture) -> Self {
+    pub fn new(device: &wgpu::Device, skybox: Texture, sampler: &wgpu::Sampler) -> Self {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("HDR Cube Map Fragment Bind Group Layout"),
             entries: &[
@@ -126,7 +126,7 @@ impl SkyRenderPass {
                 // cubemap sampler
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(skybox.sampler()),
+                    resource: wgpu::BindingResource::Sampler(sampler),
                 },
             ],
         });
