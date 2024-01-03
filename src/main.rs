@@ -65,9 +65,6 @@ fn pick_screen(
     }
 }
 
-#[system(DoDaDoodads)]
-fn do_da_doodads() {}
-
 #[derive(Component)]
 struct Object;
 
@@ -314,7 +311,6 @@ fn main() -> anyhow::Result<()> {
     app.add_system(UiUpdate);
     app.add_system(CameraUpdate);
     app.add_system(PickScreen);
-    app.add_system(DoDaDoodads);
 
     app.run()?;
 
