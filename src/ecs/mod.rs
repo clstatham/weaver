@@ -42,3 +42,47 @@ pub enum EcsError {
     #[error("System dependency cycle detected")]
     SystemDependencyCycleDetected,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Component)]
+    struct TestComponent {
+        value: u32,
+    }
+
+    #[derive(Resource)]
+    struct TestResource {
+        value: u32,
+    }
+
+    #[system(TestSystem)]
+    fn test_system(test_resource: Res<TestResource>, mut query: Query<Write<TestComponent>>) {
+        assert_eq!(test_resource.value, 42);
+        for mut component in query.iter() {
+            component.value += 1;
+        }
+    }
+
+    #[test]
+    fn test_ecs() -> anyhow::Result<()> {
+        let mut world = World::new();
+        let entity = world.create_entity();
+        world.add_component(entity, TestComponent { value: 69 })?;
+        assert!(world.has_component::<TestComponent>(entity));
+        world.insert_resource(TestResource { value: 42 })?;
+        world.add_system(TestSystem);
+        world.update()?;
+        assert_eq!(
+            world
+                .query::<Read<TestComponent>>()
+                .iter()
+                .next()
+                .unwrap()
+                .value,
+            70
+        );
+        Ok(())
+    }
+}
