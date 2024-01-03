@@ -14,11 +14,14 @@ pub mod prelude {
         mesh::Mesh,
         time::Time,
         transform::Transform,
+        ui::EguiContext,
     };
     pub use crate::ecs::*;
     pub use crate::renderer::Renderer;
     pub use weaver_proc_macro::system;
 }
+
+use core::ui::builtin::FpsUi;
 
 use prelude::*;
 
@@ -38,8 +41,17 @@ fn spin(model: Query<(Read<Mesh>, Write<Transform>, Read<Spinner>)>, timey: Res<
 }
 
 #[system(CameraUpdate)]
-fn cammera_update(mut camera: ResMut<FlyCamera>, time: Res<Time>, input: Res<Input>) {
+fn camera_update(mut camera: ResMut<FlyCamera>, time: Res<Time>, input: Res<Input>) {
     camera.update(&input, time.delta_time);
+}
+
+#[system(UiUpdate)]
+fn ui_update(mut ctx: ResMut<EguiContext>, mut fps_ui: Query<Write<FpsUi>>) {
+    for mut fps_ui in fps_ui.iter() {
+        ctx.draw_if_ready(|ctx| {
+            fps_ui.run_ui(ctx);
+        })
+    }
 }
 
 #[derive(Component)]
@@ -289,6 +301,8 @@ fn main() -> anyhow::Result<()> {
 
     let mut app = App::new(1600, 900)?;
 
+    app.spawn(FpsUi::new())?;
+
     // app.spawn(DirectionalLight::new(
     //     glam::Vec3::new(1.0, -1.0, 1.0).normalize(),
     //     core::color::Color::WHITE,
@@ -312,6 +326,7 @@ fn main() -> anyhow::Result<()> {
     //     20.0,
     // ));
 
+    app.add_system(UiUpdate);
     app.add_system(CameraUpdate);
     app.add_system(LightUpdate);
     app.add_system(Spin);

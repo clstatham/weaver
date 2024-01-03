@@ -27,8 +27,6 @@ pub struct App {
     pub(crate) world: RefCell<World>,
     pub(crate) asset_server: AssetServer,
 
-    ui: EguiContext,
-
     fps_frame_count: usize,
     frame_time: std::time::Duration,
     fps_last_update: std::time::Instant,
@@ -70,6 +68,7 @@ impl App {
         world.insert_resource(Time::new())?;
         world.insert_resource(Input::new())?;
         world.insert_resource(camera)?;
+        world.insert_resource(ui)?;
 
         let asset_server = AssetServer::new(&world)?;
 
@@ -82,7 +81,6 @@ impl App {
             frame_time: std::time::Duration::from_secs(0),
             world: RefCell::new(world),
             asset_server,
-            ui,
         })
     }
 
@@ -172,15 +170,25 @@ impl App {
             self.window.request_redraw();
             {
                 let world = self.world.borrow();
-                world.write_resource::<Time>().unwrap().update();
+
                 self.input.update(&event);
                 world.write_resource::<Input>().unwrap().update(&event);
-                world.update().unwrap();
-            }
 
+                world.write_resource::<Time>().unwrap().update();
+                world
+                    .write_resource::<EguiContext>()
+                    .unwrap()
+                    .begin_frame(&self.window);
+                world.update().unwrap();
+                world.write_resource::<EguiContext>().unwrap().end_frame();
+            }
             match event {
                 winit::event::Event::WindowEvent { event, .. } => {
-                    self.ui.handle_input(&event);
+                    {
+                        let world = self.world.borrow();
+                        let mut ui = world.write_resource::<EguiContext>().unwrap();
+                        ui.handle_input(&event);
+                    }
                     match event {
                         winit::event::WindowEvent::CloseRequested => {
                             *control_flow = winit::event_loop::ControlFlow::Exit;
@@ -194,11 +202,13 @@ impl App {
                 winit::event::Event::RedrawRequested(_) => {
                     {
                         let world = self.world.borrow();
+
                         let renderer = world.read_resource::<Renderer>().unwrap();
+                        let mut ui = world.write_resource::<EguiContext>().unwrap();
                         let tick = std::time::Instant::now();
                         let output = renderer.prepare();
                         renderer.render(&world, &output).unwrap();
-                        renderer.render_ui(&mut self.ui, &self.window, &output, &world);
+                        renderer.render_ui(&mut ui, &self.window, &output, &world);
                         renderer.present(output);
                         self.frame_time += std::time::Instant::now() - tick;
                     }

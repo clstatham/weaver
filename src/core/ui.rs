@@ -1,61 +1,87 @@
 use egui::Context;
 use egui_wgpu::renderer::ScreenDescriptor;
 use egui_winit::State;
-use weaver_proc_macro::Component;
+use weaver_proc_macro::{Component, Resource};
 use winit::window::Window;
 
 use super::texture::Texture;
 
-// TODO: Make this whole implemention more ECS-friendly.
+pub mod builtin {
+    use std::collections::VecDeque;
 
-//       - Ideally, we'd be able to have the `RunUi` functionality be implementable by any component.
-//         This would eliminate the need for the catch-all `UiElement` component.
-//         We could then have a `UiSystem` that queries for components that implement `RunUi`.
-//         But then, how would we query for components that implement `RunUi`?
-//         We'd need to be able to query for components that implement a trait, which is not possible.
+    use egui_plot::Line;
 
-//       - We could also just keep track of all components that implement `RunUi` separately in the `World`.
-//         But that would be a little hacky.
+    use super::*;
 
-//       - We could also just have a `run_ui` be a basic functionality of a component, that by default does nothing.
-//         But how would we change the `run_ui` function of a component?
+    #[derive(Component)]
+    pub struct FpsUi {
+        last_frame: std::time::Instant,
+        last_update: std::time::Instant,
+        update_interval: std::time::Duration,
+        history: VecDeque<f32>,
+        fps_buffer: Vec<f32>,
+        fps: f32,
+    }
 
-pub trait RunUi: Send + Sync + 'static {
-    fn run_ui(&mut self, ctx: &Context);
-    fn into_element(self) -> UiElement
-    where
-        Self: Sized,
-    {
-        UiElement {
-            run_ui: Box::new(self),
+    impl FpsUi {
+        #[allow(clippy::new_without_default)]
+        pub fn new() -> Self {
+            Self {
+                last_frame: std::time::Instant::now(),
+                last_update: std::time::Instant::now(),
+                update_interval: std::time::Duration::from_millis(100),
+                history: VecDeque::new(),
+                fps_buffer: Vec::new(),
+                fps: 0.0,
+            }
+        }
+
+        pub fn run_ui(&mut self, ctx: &Context) {
+            let now = std::time::Instant::now();
+
+            let delta = now - self.last_frame;
+            self.last_frame = now;
+
+            let frame_time = delta.as_secs_f32();
+            let fps = 1.0 / frame_time;
+            self.fps_buffer.push(fps);
+
+            if now - self.last_update > self.update_interval {
+                self.last_update = now;
+                self.fps = self.fps_buffer.iter().sum::<f32>() / self.fps_buffer.len() as f32;
+                self.fps_buffer.clear();
+                self.history.push_back(self.fps);
+                if self.history.len() > 100 {
+                    self.history.pop_front();
+                }
+            }
+
+            let line = Line::new(
+                self.history
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(i, fps)| [i as f64, fps as f64])
+                    .collect::<Vec<_>>(),
+            )
+            .color(egui::Color32::from_rgb(0, 255, 0));
+
+            egui::Window::new("FPS").show(ctx, |ui| {
+                ui.vertical_centered_justified(|ui| {
+                    ui.heading(format!("FPS: {:.2}", self.fps));
+                });
+                egui_plot::Plot::new("FPS").show(ui, |plot| plot.line(line))
+            });
         }
     }
 }
 
-impl<F> RunUi for F
-where
-    F: FnMut(&Context) + Send + Sync + 'static,
-{
-    fn run_ui(&mut self, ctx: &Context) {
-        self(ctx);
-    }
-}
-
-#[derive(Component)]
-pub struct UiElement {
-    pub run_ui: Box<dyn RunUi>,
-}
-
-impl RunUi for UiElement {
-    fn run_ui(&mut self, ctx: &Context) {
-        self.run_ui.run_ui(ctx);
-    }
-}
-
+#[derive(Resource)]
 pub struct EguiContext {
-    pub ctx: Context,
+    ctx: Context,
     state: State,
     renderer: egui_wgpu::Renderer,
+    full_output: Option<egui::FullOutput>,
 }
 
 impl EguiContext {
@@ -67,11 +93,30 @@ impl EguiContext {
             ctx,
             state,
             renderer,
+            full_output: None,
         }
     }
 
     pub fn handle_input(&mut self, event: &winit::event::WindowEvent) {
         let _ = self.state.on_window_event(&self.ctx, event);
+    }
+
+    pub fn begin_frame(&mut self, window: &Window) {
+        if self.full_output.is_none() {
+            self.ctx.begin_frame(self.state.take_egui_input(window));
+        }
+    }
+
+    pub fn end_frame(&mut self) {
+        if self.full_output.is_none() {
+            self.full_output = Some(self.ctx.end_frame());
+        }
+    }
+
+    pub fn draw_if_ready<F: FnOnce(&Context)>(&self, f: F) {
+        if self.full_output.is_none() {
+            f(&self.ctx);
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -83,11 +128,12 @@ impl EguiContext {
         window: &Window,
         window_surface_view: &wgpu::TextureView,
         screen_descriptor: &ScreenDescriptor,
-        run_ui: impl FnOnce(&Context),
     ) {
+        if self.full_output.is_none() {
+            return;
+        }
+        let full_output = self.full_output.take().unwrap();
         let pixels_per_point = screen_descriptor.pixels_per_point;
-        let raw_input = self.state.take_egui_input(window);
-        let full_output = self.ctx.run(raw_input, |ui| run_ui(ui));
 
         self.state
             .handle_platform_output(window, &self.ctx, full_output.platform_output);

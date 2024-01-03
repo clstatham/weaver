@@ -7,7 +7,7 @@ use winit::window::Window;
 use crate::{
     core::{
         texture::{HdrLoader, Texture},
-        ui::{EguiContext, RunUi, UiElement},
+        ui::EguiContext,
     },
     ecs::{Query, Queryable, World, Write},
 };
@@ -84,7 +84,7 @@ impl Renderer {
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Immediate,
+            present_mode: wgpu::PresentMode::AutoNoVsync,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
         };
@@ -241,8 +241,6 @@ impl Renderer {
         output: &wgpu::SurfaceTexture,
         world: &World,
     ) {
-        let query = world.query::<Query<Write<UiElement>>>();
-
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -262,11 +260,6 @@ impl Renderer {
             &ScreenDescriptor {
                 size_in_pixels: [self.config.width, self.config.height],
                 pixels_per_point: window.scale_factor() as f32,
-            },
-            |cx| {
-                for mut elem in query.iter() {
-                    elem.run_ui(cx);
-                }
             },
         );
 

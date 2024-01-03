@@ -5,8 +5,6 @@ use std::{
 
 use rustc_hash::FxHashMap;
 
-use crate::core::ui::RunUi;
-
 use super::{
     query::Queryable,
     resource::{Res, ResMut, Resource},
@@ -71,14 +69,6 @@ impl World {
         } else {
             false
         }
-    }
-
-    pub fn add_ui_component<T: RunUi>(
-        &mut self,
-        entity: Entity,
-        component: T,
-    ) -> anyhow::Result<()> {
-        self.add_component(entity, component.into_element())
     }
 
     pub fn insert_resource<T: Resource>(&mut self, resource: T) -> anyhow::Result<()> {
