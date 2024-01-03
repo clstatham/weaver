@@ -68,7 +68,7 @@ impl Renderer {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::all_webgpu_mask() | wgpu::Features::MULTIVIEW,
+                    features: wgpu::Features::all_webgpu_mask(),
                     limits: wgpu::Limits::downlevel_defaults(),
                 },
                 None,
@@ -77,11 +77,10 @@ impl Renderer {
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = Texture::WINDOW_FORMAT;
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
-            format: surface_format,
+            format: Texture::WINDOW_FORMAT,
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::AutoNoVsync,

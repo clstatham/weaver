@@ -18,6 +18,8 @@ pub mod builtin {
         last_frame: std::time::Instant,
         last_update: std::time::Instant,
         update_interval: std::time::Duration,
+        last_print: std::time::Instant,
+        print_interval: std::time::Duration,
         history: VecDeque<f32>,
         fps_buffer: Vec<f32>,
         fps: f32,
@@ -29,7 +31,9 @@ pub mod builtin {
             Self {
                 last_frame: std::time::Instant::now(),
                 last_update: std::time::Instant::now(),
-                update_interval: std::time::Duration::from_millis(100),
+                last_print: std::time::Instant::now(),
+                update_interval: std::time::Duration::from_millis(50),
+                print_interval: std::time::Duration::from_secs(1),
                 history: VecDeque::new(),
                 fps_buffer: Vec::new(),
                 fps: 0.0,
@@ -51,9 +55,20 @@ pub mod builtin {
                 self.fps = self.fps_buffer.iter().sum::<f32>() / self.fps_buffer.len() as f32;
                 self.fps_buffer.clear();
                 self.history.push_back(self.fps);
-                if self.history.len() > 100 {
+                if self.history.len() > 500 {
                     self.history.pop_front();
                 }
+
+                // check for FPS spikes based on our history's average
+                let avg = self.history.iter().sum::<f32>() / self.history.len() as f32;
+                if self.fps < avg * 0.9 {
+                    eprintln!("FPS spike: {:.2}", self.fps);
+                }
+            }
+
+            if now - self.last_print > self.print_interval {
+                self.last_print = now;
+                log::info!("FPS: {:.2}", self.fps);
             }
 
             let line = Line::new(

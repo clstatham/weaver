@@ -327,9 +327,9 @@ fn main() -> anyhow::Result<()> {
     // ));
 
     app.add_system(UiUpdate);
-    app.add_system(CameraUpdate);
-    app.add_system(LightUpdate);
-    app.add_system(Spin);
+    // app.add_system(CameraUpdate);
+    // app.add_system(LightUpdate);
+    // app.add_system(Spin);
 
     app.run()?;
 

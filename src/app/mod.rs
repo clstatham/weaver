@@ -26,10 +26,6 @@ pub struct App {
 
     pub(crate) world: RefCell<World>,
     pub(crate) asset_server: AssetServer,
-
-    fps_frame_count: usize,
-    frame_time: std::time::Duration,
-    fps_last_update: std::time::Instant,
 }
 
 impl App {
@@ -76,9 +72,6 @@ impl App {
             event_loop,
             input,
             window,
-            fps_frame_count: 0,
-            fps_last_update: std::time::Instant::now(),
-            frame_time: std::time::Duration::from_secs(0),
             world: RefCell::new(world),
             asset_server,
         })
@@ -200,34 +193,14 @@ impl App {
                     }
                 }
                 winit::event::Event::RedrawRequested(_) => {
-                    {
-                        let world = self.world.borrow();
+                    let world = self.world.borrow();
 
-                        let renderer = world.read_resource::<Renderer>().unwrap();
-                        let mut ui = world.write_resource::<EguiContext>().unwrap();
-                        let tick = std::time::Instant::now();
-                        let output = renderer.prepare();
-                        renderer.render(&world, &output).unwrap();
-                        renderer.render_ui(&mut ui, &self.window, &output);
-                        renderer.present(output);
-                        self.frame_time += std::time::Instant::now() - tick;
-                    }
-
-                    self.fps_frame_count += 1;
-                    if self.fps_last_update.elapsed() > std::time::Duration::from_secs(1) {
-                        log::info!("FPS: {}", self.fps_frame_count);
-                        log::info!(
-                            "Frame time: {}ms",
-                            self.frame_time.as_millis() as f32 / self.fps_frame_count as f32
-                        );
-                        log::info!(
-                            "Time spent rendering: {}%",
-                            self.frame_time.as_secs_f32() * 100.0
-                        );
-                        self.fps_frame_count = 0;
-                        self.fps_last_update = std::time::Instant::now();
-                        self.frame_time = std::time::Duration::from_secs(0);
-                    }
+                    let renderer = world.read_resource::<Renderer>().unwrap();
+                    let mut ui = world.write_resource::<EguiContext>().unwrap();
+                    let output = renderer.prepare();
+                    renderer.render(&world, &output).unwrap();
+                    renderer.render_ui(&mut ui, &self.window, &output);
+                    renderer.present(output);
                 }
                 _ => {}
             }
