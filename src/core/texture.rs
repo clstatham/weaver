@@ -498,6 +498,7 @@ impl HdrLoader {
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("HDR Loader Compute Pass"),
+                timestamp_writes: None,
             });
             let num_workgroups = (dst_size + 15) / 16;
             cpass.set_pipeline(&self.pipeline);

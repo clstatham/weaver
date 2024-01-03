@@ -740,10 +740,12 @@ impl ShadowRenderPass {
                     view: self.shadow_depth_texture.view(),
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,
                 }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
             });
         }
 
@@ -801,10 +803,12 @@ impl ShadowRenderPass {
                         view: self.shadow_depth_texture.view(),
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         }),
                         stencil_ops: None,
                     }),
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
                 });
 
                 render_pass.set_pipeline(&self.shadow_map_pipeline);
@@ -849,17 +853,19 @@ impl ShadowRenderPass {
                             b: 0.0,
                             a: 0.0,
                         }),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.shadow_cube_depth_target_views[i],
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,
                 }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
             });
         }
 
@@ -931,17 +937,19 @@ impl ShadowRenderPass {
                             resolve_target: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Load,
-                                store: true,
+                                store: wgpu::StoreOp::Store,
                             },
                         })],
                         depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                             view: &self.shadow_cube_depth_target_views[i],
                             depth_ops: Some(wgpu::Operations {
                                 load: wgpu::LoadOp::Load,
-                                store: true,
+                                store: wgpu::StoreOp::Store,
                             }),
                             stencil_ops: None,
                         }),
+                        occlusion_query_set: None,
+                        timestamp_writes: None,
                     });
 
                     render_pass.set_pipeline(&self.shadow_cube_map_pipeline);
@@ -1025,17 +1033,19 @@ impl ShadowRenderPass {
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                         view: depth_target.view(),
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         }),
                         stencil_ops: None,
                     }),
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
                 });
 
                 render_pass.set_pipeline(&self.shadow_overlay_pipeline);
@@ -1117,17 +1127,19 @@ impl ShadowRenderPass {
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                         view: depth_target.view(),
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         }),
                         stencil_ops: None,
                     }),
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
                 });
 
                 render_pass.set_pipeline(&self.shadow_cube_overlay_pipeline);

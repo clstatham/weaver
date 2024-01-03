@@ -7,7 +7,7 @@ use winit::{
 use winit_input_helper::WinitInputHelper;
 
 use crate::{
-    core::{camera::FlyCamera, input::Input, time::Time, transform::Transform},
+    core::{camera::FlyCamera, input::Input, time::Time, transform::Transform, ui::Egui},
     ecs::{system::SystemId, Bundle, Entity, Resource, System, World},
     renderer::Renderer,
 };
@@ -26,6 +26,8 @@ pub struct App {
 
     pub(crate) world: RefCell<World>,
     pub(crate) asset_server: AssetServer,
+
+    ui: Egui,
 
     fps_frame_count: usize,
     frame_time: std::time::Duration,
@@ -62,6 +64,8 @@ impl App {
 
         let renderer = pollster::block_on(Renderer::new(&window));
 
+        let ui = Egui::new(&renderer.device, &window, 1);
+
         let mut world = World::new();
         world.insert_resource(renderer);
         world.insert_resource(Time::new());
@@ -79,6 +83,7 @@ impl App {
             frame_time: std::time::Duration::from_secs(0),
             world: RefCell::new(world),
             asset_server,
+            ui,
         }
     }
 
@@ -94,8 +99,56 @@ impl App {
         self.world.borrow_mut().add_system(system)
     }
 
+    pub fn add_system_before<T: System + 'static>(
+        &mut self,
+        system: T,
+        before: SystemId,
+    ) -> SystemId {
+        self.world.borrow_mut().add_system_before(system, before)
+    }
+
+    pub fn add_system_after<T: System + 'static>(
+        &mut self,
+        system: T,
+        after: SystemId,
+    ) -> SystemId {
+        self.world.borrow_mut().add_system_after(system, after)
+    }
+
+    pub fn add_system_dependency(&mut self, dependency: SystemId, dependent: SystemId) {
+        self.world
+            .borrow_mut()
+            .add_system_dependency(dependency, dependent);
+    }
+
     pub fn add_startup_system<T: System + 'static>(&mut self, system: T) -> SystemId {
         self.world.borrow_mut().add_startup_system(system)
+    }
+
+    pub fn add_startup_system_before<T: System + 'static>(
+        &mut self,
+        system: T,
+        before: SystemId,
+    ) -> SystemId {
+        self.world
+            .borrow_mut()
+            .add_startup_system_before(system, before)
+    }
+
+    pub fn add_startup_system_after<T: System + 'static>(
+        &mut self,
+        system: T,
+        after: SystemId,
+    ) -> SystemId {
+        self.world
+            .borrow_mut()
+            .add_startup_system_after(system, after)
+    }
+
+    pub fn add_startup_system_dependency(&mut self, dependency: SystemId, dependent: SystemId) {
+        self.world
+            .borrow_mut()
+            .add_startup_system_dependency(dependency, dependent);
     }
 
     pub fn build<F>(&mut self, f: F)
@@ -127,21 +180,31 @@ impl App {
             }
 
             match event {
-                winit::event::Event::WindowEvent { event, .. } => match event {
-                    winit::event::WindowEvent::CloseRequested => {
-                        *control_flow = winit::event_loop::ControlFlow::Exit;
+                winit::event::Event::WindowEvent { event, .. } => {
+                    self.ui.handle_input(&event);
+                    match event {
+                        winit::event::WindowEvent::CloseRequested => {
+                            *control_flow = winit::event_loop::ControlFlow::Exit;
+                        }
+                        winit::event::WindowEvent::Resized(_size) => {
+                            // todo
+                        }
+                        _ => {}
                     }
-                    winit::event::WindowEvent::Resized(_size) => {
-                        // todo
-                    }
-                    _ => {}
-                },
+                }
                 winit::event::Event::RedrawRequested(_) => {
                     {
                         let world = self.world.borrow();
                         let renderer = world.read_resource::<Renderer>();
                         let tick = std::time::Instant::now();
-                        renderer.render(&world).unwrap();
+                        let output = renderer.prepare();
+                        renderer.render(&world, &output).unwrap();
+                        renderer.render_ui(&mut self.ui, &self.window, &output, |cx| {
+                            egui::Window::new("Hello world!").show(cx, |ui| {
+                                ui.label("Hello world!");
+                            });
+                        });
+                        renderer.present(output);
                         self.frame_time += std::time::Instant::now() - tick;
                     }
 

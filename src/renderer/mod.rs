@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
+use egui_wgpu::renderer::ScreenDescriptor;
 use weaver_proc_macro::Resource;
 use winit::window::Window;
 
 use crate::{
-    core::texture::{HdrLoader, Texture},
+    core::{
+        texture::{HdrLoader, Texture},
+        ui::Egui,
+    },
     ecs::World,
 };
 
@@ -230,8 +234,40 @@ impl Renderer {
         self.pbr_pass.prepare_components(world, self);
     }
 
-    pub fn render(&self, world: &World) -> anyhow::Result<()> {
-        let output = self.surface.get_current_texture()?;
+    pub fn render_ui(
+        &self,
+        ui: &mut Egui,
+        window: &Window,
+        output: &wgpu::SurfaceTexture,
+        draw_fn: impl FnOnce(&egui::Context),
+    ) {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render UI Encoder"),
+            });
+
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        ui.draw(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            window,
+            &view,
+            &ScreenDescriptor {
+                size_in_pixels: [self.config.width, self.config.height],
+                pixels_per_point: window.scale_factor() as f32,
+            },
+            draw_fn,
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    pub fn render(&self, world: &World, output: &wgpu::SurfaceTexture) -> anyhow::Result<()> {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -246,7 +282,7 @@ impl Renderer {
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
@@ -254,7 +290,7 @@ impl Renderer {
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     }),
                 ],
@@ -262,10 +298,12 @@ impl Renderer {
                     view: self.depth_texture.view(),
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,
                 }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
             });
         }
 
@@ -324,8 +362,15 @@ impl Renderer {
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
 
         Ok(())
+    }
+
+    pub fn prepare(&self) -> wgpu::SurfaceTexture {
+        self.surface.get_current_texture().unwrap()
+    }
+
+    pub fn present(&self, output: wgpu::SurfaceTexture) {
+        output.present();
     }
 }

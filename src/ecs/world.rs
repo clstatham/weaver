@@ -106,6 +106,12 @@ impl World {
             .add_system_before(Box::new(system), before)
     }
 
+    pub fn add_startup_system_dependency(&self, dependency: SystemId, dependent: SystemId) {
+        self.startup_systems
+            .borrow_mut()
+            .add_dependency(dependency, dependent);
+    }
+
     pub fn add_system<S: System + 'static>(&self, system: S) -> SystemId {
         self.systems.borrow_mut().add_system(Box::new(system))
     }
@@ -120,6 +126,12 @@ impl World {
         self.systems
             .borrow_mut()
             .add_system_before(Box::new(system), before)
+    }
+
+    pub fn add_system_dependency(&self, dependency: SystemId, dependent: SystemId) {
+        self.systems
+            .borrow_mut()
+            .add_dependency(dependency, dependent);
     }
 
     pub fn startup(&self) {
