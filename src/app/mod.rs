@@ -208,7 +208,7 @@ impl App {
                         let tick = std::time::Instant::now();
                         let output = renderer.prepare();
                         renderer.render(&world, &output).unwrap();
-                        renderer.render_ui(&mut ui, &self.window, &output, &world);
+                        renderer.render_ui(&mut ui, &self.window, &output);
                         renderer.present(output);
                         self.frame_time += std::time::Instant::now() - tick;
                     }

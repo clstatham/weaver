@@ -9,7 +9,7 @@ use crate::{
         texture::{HdrLoader, Texture},
         ui::EguiContext,
     },
-    ecs::{Query, Queryable, World, Write},
+    ecs::World,
 };
 
 use self::pass::{
@@ -234,13 +234,7 @@ impl Renderer {
         self.pbr_pass.prepare_components(world, self);
     }
 
-    pub fn render_ui(
-        &self,
-        ui: &mut EguiContext,
-        window: &Window,
-        output: &wgpu::SurfaceTexture,
-        world: &World,
-    ) {
+    pub fn render_ui(&self, ui: &mut EguiContext, window: &Window, output: &wgpu::SurfaceTexture) {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
