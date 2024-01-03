@@ -7,7 +7,7 @@ use winit::{
 use winit_input_helper::WinitInputHelper;
 
 use crate::{
-    core::{camera::FlyCamera, input::Input, time::Time, transform::Transform, ui::Egui},
+    core::{camera::FlyCamera, input::Input, time::Time, transform::Transform, ui::EguiContext},
     ecs::{system::SystemId, Bundle, Entity, Resource, System, World},
     renderer::Renderer,
 };
@@ -27,7 +27,7 @@ pub struct App {
     pub(crate) world: RefCell<World>,
     pub(crate) asset_server: AssetServer,
 
-    ui: Egui,
+    ui: EguiContext,
 
     fps_frame_count: usize,
     frame_time: std::time::Duration,
@@ -35,7 +35,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(screen_width: usize, screen_height: usize) -> Self {
+    pub fn new(screen_width: usize, screen_height: usize) -> anyhow::Result<Self> {
         let event_loop = EventLoop::new();
         let input = WinitInputHelper::new();
         let window = WindowBuilder::new()
@@ -45,8 +45,7 @@ impl App {
                 screen_height as f64,
             ))
             .with_resizable(false)
-            .build(&event_loop)
-            .unwrap();
+            .build(&event_loop)?;
 
         let initial_camera_transform = Transform::default()
             .translate(5.0, 5.0, 5.0)
@@ -64,17 +63,17 @@ impl App {
 
         let renderer = pollster::block_on(Renderer::new(&window));
 
-        let ui = Egui::new(&renderer.device, &window, 1);
+        let ui = EguiContext::new(&renderer.device, &window, 1);
 
         let mut world = World::new();
-        world.insert_resource(renderer);
-        world.insert_resource(Time::new());
-        world.insert_resource(Input::new());
-        world.insert_resource(camera);
+        world.insert_resource(renderer)?;
+        world.insert_resource(Time::new())?;
+        world.insert_resource(Input::new())?;
+        world.insert_resource(camera)?;
 
-        let asset_server = AssetServer::new(&world);
+        let asset_server = AssetServer::new(&world)?;
 
-        Self {
+        Ok(Self {
             event_loop,
             input,
             window,
@@ -84,14 +83,14 @@ impl App {
             world: RefCell::new(world),
             asset_server,
             ui,
-        }
+        })
     }
 
-    pub fn insert_resource<T: Resource>(&mut self, resource: T) {
-        self.world.borrow_mut().insert_resource(resource);
+    pub fn insert_resource<T: Resource>(&mut self, resource: T) -> anyhow::Result<()> {
+        self.world.borrow_mut().insert_resource(resource)
     }
 
-    pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
+    pub fn spawn<T: Bundle>(&mut self, bundle: T) -> anyhow::Result<Entity> {
         bundle.build(&mut self.world.borrow_mut())
     }
 
@@ -151,20 +150,20 @@ impl App {
             .add_startup_system_dependency(dependency, dependent);
     }
 
-    pub fn build<F>(&mut self, f: F)
+    pub fn build<F>(&mut self, f: F) -> anyhow::Result<()>
     where
-        F: FnOnce(&mut Commands, &mut AssetServer),
+        F: FnOnce(&mut Commands, &mut AssetServer) -> anyhow::Result<()>,
     {
         let mut world = self.world.borrow_mut();
         let mut commands = Commands::new(&mut world);
-        f(&mut commands, &mut self.asset_server);
+        f(&mut commands, &mut self.asset_server)
     }
 
-    pub fn run(mut self) {
+    pub fn run(mut self) -> anyhow::Result<()> {
         {
             let world = self.world.borrow();
-            world.startup();
-            let renderer = world.read_resource::<Renderer>();
+            world.startup()?;
+            let renderer = world.read_resource::<Renderer>()?;
             renderer.prepare_components(&world);
         }
 
@@ -173,10 +172,10 @@ impl App {
             self.window.request_redraw();
             {
                 let world = self.world.borrow();
-                world.write_resource::<Time>().update();
+                world.write_resource::<Time>().unwrap().update();
                 self.input.update(&event);
-                world.write_resource::<Input>().update(&event);
-                world.update();
+                world.write_resource::<Input>().unwrap().update(&event);
+                world.update().unwrap();
             }
 
             match event {
@@ -195,15 +194,11 @@ impl App {
                 winit::event::Event::RedrawRequested(_) => {
                     {
                         let world = self.world.borrow();
-                        let renderer = world.read_resource::<Renderer>();
+                        let renderer = world.read_resource::<Renderer>().unwrap();
                         let tick = std::time::Instant::now();
                         let output = renderer.prepare();
                         renderer.render(&world, &output).unwrap();
-                        renderer.render_ui(&mut self.ui, &self.window, &output, |cx| {
-                            egui::Window::new("Hello world!").show(cx, |ui| {
-                                ui.label("Hello world!");
-                            });
-                        });
+                        renderer.render_ui(&mut self.ui, &self.window, &output, &world);
                         renderer.present(output);
                         self.frame_time += std::time::Instant::now() - tick;
                     }

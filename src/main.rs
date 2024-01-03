@@ -4,7 +4,7 @@ pub mod ecs;
 pub mod renderer;
 
 pub mod prelude {
-    pub use crate::app::App;
+    pub use crate::app::{asset_server::AssetServer, commands::Commands, App};
     pub use crate::core::{
         camera::FlyCamera,
         color::Color,
@@ -20,7 +20,6 @@ pub mod prelude {
     pub use weaver_proc_macro::system;
 }
 
-use app::{asset_server::AssetServer, commands::Commands};
 use prelude::*;
 
 #[system(LightUpdate)]
@@ -33,7 +32,7 @@ fn light_update(lights: Query<Write<PointLight>>, timey: Res<Time>) {
 
 #[system(Spin)]
 fn spin(model: Query<(Read<Mesh>, Write<Transform>, Read<Spinner>)>, timey: Res<Time>) {
-    for (_i, (_mesh, mut transform, _)) in model.iter().enumerate() {
+    for (_, mut transform, _) in model.iter() {
         transform.rotate(timey.delta_time * 1.75, glam::Vec3::Y);
     }
 }
@@ -226,7 +225,7 @@ impl Materials {
     }
 }
 
-fn setup(commands: &mut Commands, asset_server: &mut AssetServer) {
+fn setup(commands: &mut Commands, asset_server: &mut AssetServer) -> anyhow::Result<()> {
     let room_scale = 30.0;
 
     // floor
@@ -238,7 +237,7 @@ fn setup(commands: &mut Commands, asset_server: &mut AssetServer) {
         Transform::new()
             .scale(room_scale, 1.0, room_scale)
             .translate(0.0, -2.0, 0.0),
-    ));
+    ))?;
 
     // object circle
     let num_objects = 10;
@@ -279,14 +278,16 @@ fn setup(commands: &mut Commands, asset_server: &mut AssetServer) {
             material,
             Transform::new().translate(x, 0.0, z),
             Spinner,
-        ));
+        ))?;
     }
+
+    Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let mut app = App::new(1600, 900);
+    let mut app = App::new(1600, 900)?;
 
     // app.spawn(DirectionalLight::new(
     //     glam::Vec3::new(1.0, -1.0, 1.0).normalize(),
@@ -298,11 +299,12 @@ fn main() -> anyhow::Result<()> {
         glam::Vec3::new(5.0, 5.0, 5.0),
         core::color::Color::WHITE,
         10.0,
-    ));
+    ))?;
 
     app.build(|commands, asset_server| {
-        setup(commands, asset_server);
-    });
+        setup(commands, asset_server)?;
+        Ok(())
+    })?;
 
     // app.spawn(PointLight::new(
     //     glam::Vec3::new(0.0, 5.0, 0.0),
@@ -314,7 +316,7 @@ fn main() -> anyhow::Result<()> {
     app.add_system(LightUpdate);
     app.add_system(Spin);
 
-    app.run();
+    app.run()?;
 
     Ok(())
 }

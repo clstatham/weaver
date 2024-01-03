@@ -5,7 +5,7 @@ use std::{
     sync::{RwLockReadGuard, RwLockWriteGuard},
 };
 
-use super::{world::EntitiesAndComponents, Component, Entity};
+use super::{world::Components, Component, Entity};
 
 pub trait Queryable<'w, 'q, 'i>
 where
@@ -16,7 +16,7 @@ where
     type ItemRef: 'i;
     type Iter: Iterator<Item = Self::ItemRef> + 'i;
 
-    fn create(entities_components: &'w EntitiesAndComponents) -> Self;
+    fn create(entities_components: &'w Components) -> Self;
     fn entities(&self) -> BTreeSet<Entity>;
     fn get(&'q self, entity: Entity) -> Option<Self::ItemRef>;
     fn iter(&'q self) -> Self::Iter;
@@ -38,12 +38,19 @@ impl<'a, T> Read<'a, T>
 where
     T: Component,
 {
-    pub(crate) fn new(entities_components: &'a EntitiesAndComponents) -> Self {
+    pub(crate) fn new(entities_components: &'a Components) -> Self {
         let entries = entities_components.iter().fold(
             BTreeMap::new(),
             |mut entries, (&entity, components)| {
                 if let Some(component) = components.get(&T::component_id()) {
-                    entries.insert(entity, RefCell::new(component.try_read().unwrap()));
+                    entries.insert(
+                        entity,
+                        RefCell::new(
+                            component
+                                .try_read()
+                                .expect("BUG: Failed to lock component for reading"),
+                        ),
+                    );
                 }
                 entries
             },
@@ -65,7 +72,7 @@ where
     type ItemRef = Ref<'i, T>;
     type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'i>;
 
-    fn create(entities_components: &'w EntitiesAndComponents) -> Self {
+    fn create(entities_components: &'w Components) -> Self {
         Self::new(entities_components)
     }
 
@@ -96,7 +103,7 @@ where
                     component
                         .as_any()
                         .downcast_ref::<T>()
-                        .expect("Failed to downcast component")
+                        .expect("BUG: Failed to downcast component")
                 })
             })
     }
@@ -107,7 +114,7 @@ where
                 component
                     .as_any()
                     .downcast_ref::<T>()
-                    .expect("Failed to downcast component")
+                    .expect("BUG: Failed to downcast component")
             })
         }))
     }
@@ -122,12 +129,19 @@ impl<'a, T> Write<'a, T>
 where
     T: Component,
 {
-    pub(crate) fn new(entities_components: &'a EntitiesAndComponents) -> Self {
+    pub(crate) fn new(entities_components: &'a Components) -> Self {
         let entries = entities_components.iter().fold(
             BTreeMap::new(),
             |mut entries, (&entity, components)| {
                 if let Some(component) = components.get(&T::component_id()) {
-                    entries.insert(entity, RefCell::new(component.try_write().unwrap()));
+                    entries.insert(
+                        entity,
+                        RefCell::new(
+                            component
+                                .try_write()
+                                .expect("BUG: Failed to lock component for writing"),
+                        ),
+                    );
                 }
                 entries
             },
@@ -149,7 +163,7 @@ where
     type ItemRef = RefMut<'i, T>;
     type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'i>;
 
-    fn create(entities_components: &'w EntitiesAndComponents) -> Self {
+    fn create(entities_components: &'w Components) -> Self {
         Self::new(entities_components)
     }
 
@@ -180,7 +194,7 @@ where
                     component
                         .as_any_mut()
                         .downcast_mut::<T>()
-                        .expect("Failed to downcast component")
+                        .expect("BUG: Failed to downcast component")
                 })
             })
     }
@@ -191,7 +205,7 @@ where
                 component
                     .as_any_mut()
                     .downcast_mut::<T>()
-                    .expect("Failed to downcast component")
+                    .expect("BUG: Failed to downcast component")
             })
         }))
     }
@@ -221,7 +235,7 @@ where
     type ItemRef = T::ItemRef;
     type Iter = T::Iter;
 
-    fn create(entities_components: &'w EntitiesAndComponents) -> Self {
+    fn create(entities_components: &'w Components) -> Self {
         Self {
             query: T::create(entities_components),
             _marker: std::marker::PhantomData,

@@ -28,11 +28,11 @@ pub struct AssetServer {
 }
 
 impl AssetServer {
-    pub fn new(world: &World) -> Self {
-        let renderer = world.read_resource::<crate::renderer::Renderer>();
+    pub fn new(world: &World) -> anyhow::Result<Self> {
+        let renderer = world.read_resource::<crate::renderer::Renderer>()?;
         let device = renderer.device.clone();
         let queue = renderer.queue.clone();
-        Self {
+        Ok(Self {
             next_id: 0,
             ids: FxHashMap::default(),
             meshes: FxHashMap::default(),
@@ -40,7 +40,7 @@ impl AssetServer {
             textures: FxHashMap::default(),
             device,
             queue,
-        }
+        })
     }
 
     fn alloc_id(&mut self) -> AssetId {

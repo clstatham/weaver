@@ -1,17 +1,64 @@
 use egui::Context;
 use egui_wgpu::renderer::ScreenDescriptor;
-use egui_winit::{pixels_per_point, State};
+use egui_winit::State;
+use weaver_proc_macro::Component;
 use winit::window::Window;
 
 use super::texture::Texture;
 
-pub struct Egui {
+// TODO: Make this whole implemention more ECS-friendly.
+
+//       - Ideally, we'd be able to have the `RunUi` functionality be implementable by any component.
+//         This would eliminate the need for the catch-all `UiElement` component.
+//         We could then have a `UiSystem` that queries for components that implement `RunUi`.
+//         But then, how would we query for components that implement `RunUi`?
+//         We'd need to be able to query for components that implement a trait, which is not possible.
+
+//       - We could also just keep track of all components that implement `RunUi` separately in the `World`.
+//         But that would be a little hacky.
+
+//       - We could also just have a `run_ui` be a basic functionality of a component, that by default does nothing.
+//         But how would we change the `run_ui` function of a component?
+
+pub trait RunUi: Send + Sync + 'static {
+    fn run_ui(&mut self, ctx: &Context);
+    fn into_element(self) -> UiElement
+    where
+        Self: Sized,
+    {
+        UiElement {
+            run_ui: Box::new(self),
+        }
+    }
+}
+
+impl<F> RunUi for F
+where
+    F: FnMut(&Context) + Send + Sync + 'static,
+{
+    fn run_ui(&mut self, ctx: &Context) {
+        self(ctx);
+    }
+}
+
+#[derive(Component)]
+pub struct UiElement {
+    pub run_ui: Box<dyn RunUi>,
+}
+
+impl RunUi for UiElement {
+    fn run_ui(&mut self, ctx: &Context) {
+        self.run_ui.run_ui(ctx);
+    }
+}
+
+pub struct EguiContext {
     pub ctx: Context,
     state: State,
     renderer: egui_wgpu::Renderer,
 }
 
-impl Egui {
+impl EguiContext {
     pub fn new(device: &wgpu::Device, window: &Window, msaa_samples: u32) -> Self {
         let ctx = Context::default();
         let state = State::new(ctx.viewport_id(), window, None, None);
@@ -28,7 +75,7 @@ impl Egui {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn draw(
+    pub fn render(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,

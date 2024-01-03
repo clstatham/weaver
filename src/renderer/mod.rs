@@ -7,9 +7,9 @@ use winit::window::Window;
 use crate::{
     core::{
         texture::{HdrLoader, Texture},
-        ui::Egui,
+        ui::{EguiContext, RunUi, UiElement},
     },
-    ecs::World,
+    ecs::{Query, Queryable, World, Write},
 };
 
 use self::pass::{
@@ -236,11 +236,13 @@ impl Renderer {
 
     pub fn render_ui(
         &self,
-        ui: &mut Egui,
+        ui: &mut EguiContext,
         window: &Window,
         output: &wgpu::SurfaceTexture,
-        draw_fn: impl FnOnce(&egui::Context),
+        world: &World,
     ) {
+        let query = world.query::<Query<Write<UiElement>>>();
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -251,7 +253,7 @@ impl Renderer {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        ui.draw(
+        ui.render(
             &self.device,
             &self.queue,
             &mut encoder,
@@ -261,7 +263,11 @@ impl Renderer {
                 size_in_pixels: [self.config.width, self.config.height],
                 pixels_per_point: window.scale_factor() as f32,
             },
-            draw_fn,
+            |cx| {
+                for mut elem in query.iter() {
+                    elem.run_ui(cx);
+                }
+            },
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));

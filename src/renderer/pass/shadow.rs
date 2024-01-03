@@ -749,7 +749,7 @@ impl ShadowRenderPass {
             });
         }
 
-        let camera = world.read_resource::<FlyCamera>();
+        let camera = world.read_resource::<FlyCamera>()?;
         let camera_uniform = CameraUniform::from(*camera);
 
         queue.write_buffer(
@@ -983,7 +983,7 @@ impl ShadowRenderPass {
             label: Some("Shadow Overlay Initial Encoder"),
         });
 
-        let camera = world.read_resource::<FlyCamera>();
+        let camera = world.read_resource::<FlyCamera>()?;
         let camera_uniform = CameraUniform::from(*camera);
 
         queue.write_buffer(
@@ -1077,7 +1077,7 @@ impl ShadowRenderPass {
             label: Some("Shadow Cube Overlay Initial Encoder"),
         });
 
-        let camera = world.read_resource::<FlyCamera>();
+        let camera = world.read_resource::<FlyCamera>()?;
         let camera_uniform = CameraUniform::from(*camera);
 
         queue.write_buffer(

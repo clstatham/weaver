@@ -5,19 +5,21 @@ use std::{
 
 use rustc_hash::FxHashMap;
 
+use crate::core::ui::RunUi;
+
 use super::{
     query::Queryable,
     resource::{Res, ResMut, Resource},
     system::{SystemGraph, SystemId},
-    Bundle, Component, Entity, System,
+    Bundle, Component, EcsError, Entity, System,
 };
 
-pub type EntitiesAndComponents = FxHashMap<Entity, FxHashMap<u64, Arc<RwLock<dyn Component>>>>;
+pub type Components = FxHashMap<Entity, FxHashMap<u64, Arc<RwLock<dyn Component>>>>;
 
 #[derive(Default)]
 pub struct World {
     next_entity_id: AtomicU32,
-    pub(crate) entities_components: EntitiesAndComponents,
+    pub(crate) components: Components,
     pub(crate) startup_systems: RefCell<SystemGraph>,
     pub(crate) systems: RefCell<SystemGraph>,
     pub(crate) resources: FxHashMap<u64, Arc<RwLock<dyn Resource>>>,
@@ -33,42 +35,79 @@ impl World {
             .next_entity_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let entity = Entity::new(id, 0);
-        self.entities_components
-            .insert(entity, FxHashMap::default());
+        self.components.insert(entity, FxHashMap::default());
         entity
     }
 
-    pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
+    pub fn spawn<T: Bundle>(&mut self, bundle: T) -> anyhow::Result<Entity> {
         bundle.build(self)
     }
 
-    pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
+    pub fn add_component<T: Component>(
+        &mut self,
+        entity: Entity,
+        component: T,
+    ) -> anyhow::Result<()> {
+        if self.has_component::<T>(entity) {
+            return Err(EcsError::ComponentAlreadyExists.into());
+        }
         let component = Arc::new(RwLock::new(component));
-        self.entities_components
+        self.components
             .entry(entity)
             .or_default()
             .insert(T::component_id(), component);
+        Ok(())
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) {
-        if let Some(components) = self.entities_components.get_mut(&entity) {
+        if let Some(components) = self.components.get_mut(&entity) {
             components.remove(&T::component_id());
         }
     }
 
-    pub fn insert_resource<T: Resource>(&mut self, resource: T) {
+    pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
+        if let Some(components) = self.components.get(&entity) {
+            components.contains_key(&T::component_id())
+        } else {
+            false
+        }
+    }
+
+    pub fn add_ui_component<T: RunUi>(
+        &mut self,
+        entity: Entity,
+        component: T,
+    ) -> anyhow::Result<()> {
+        self.add_component(entity, component.into_element())
+    }
+
+    pub fn insert_resource<T: Resource>(&mut self, resource: T) -> anyhow::Result<()> {
+        if self.has_resource::<T>() {
+            return Err(EcsError::ResourceAlreadyExists.into());
+        }
         let resource = Arc::new(RwLock::new(resource));
         self.resources.insert(T::resource_id(), resource);
+        Ok(())
     }
 
-    pub fn read_resource<T: Resource>(&self) -> Res<T> {
-        let resource = self.resources.get(&T::resource_id()).unwrap();
-        Res::new(resource.try_read().unwrap())
+    pub fn read_resource<T: Resource>(&self) -> anyhow::Result<Res<T>> {
+        let resource = self
+            .resources
+            .get(&T::resource_id())
+            .ok_or(EcsError::ResourceDoesNotExist)?;
+        Ok(Res::new(resource.try_read().unwrap()))
     }
 
-    pub fn write_resource<T: Resource>(&self) -> ResMut<T> {
-        let resource = self.resources.get(&T::resource_id()).unwrap();
-        ResMut::new(resource.try_write().unwrap())
+    pub fn write_resource<T: Resource>(&self) -> anyhow::Result<ResMut<T>> {
+        let resource = self
+            .resources
+            .get(&T::resource_id())
+            .ok_or(EcsError::ResourceDoesNotExist)?;
+        Ok(ResMut::new(resource.try_write().unwrap()))
+    }
+
+    pub fn has_resource<T: Resource>(&self) -> bool {
+        self.resources.contains_key(&T::resource_id())
     }
 
     pub fn query<'w, 'q, 'i, Q>(&'w self) -> Q
@@ -77,7 +116,11 @@ impl World {
         'q: 'i,
         Q: Queryable<'w, 'q, 'i>,
     {
-        Q::create(&self.entities_components)
+        Q::create(&self.components)
+    }
+
+    pub fn has_startup_system(&self, system: SystemId) -> bool {
+        self.startup_systems.borrow().has_system(system)
     }
 
     pub fn add_startup_system<S: System + 'static>(&self, system: S) -> SystemId {
@@ -112,6 +155,10 @@ impl World {
             .add_dependency(dependency, dependent);
     }
 
+    pub fn has_system(&self, system: SystemId) -> bool {
+        self.systems.borrow().has_system(system)
+    }
+
     pub fn add_system<S: System + 'static>(&self, system: S) -> SystemId {
         self.systems.borrow_mut().add_system(Box::new(system))
     }
@@ -134,11 +181,20 @@ impl World {
             .add_dependency(dependency, dependent);
     }
 
-    pub fn startup(&self) {
-        self.startup_systems.borrow().run(self);
+    pub fn startup(&self) -> anyhow::Result<()> {
+        {
+            let mut startup_systems = self.startup_systems.borrow_mut();
+            startup_systems.fix_parallel_writes();
+        }
+        {
+            let mut systems = self.systems.borrow_mut();
+            systems.fix_parallel_writes();
+        }
+
+        self.startup_systems.borrow().run(self)
     }
 
-    pub fn update(&self) {
-        self.systems.borrow().run(self);
+    pub fn update(&self) -> anyhow::Result<()> {
+        self.systems.borrow().run(self)
     }
 }

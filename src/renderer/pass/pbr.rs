@@ -272,7 +272,7 @@ impl PbrRenderPass {
         });
 
         // write buffers
-        let camera = world.read_resource::<FlyCamera>();
+        let camera = world.read_resource::<FlyCamera>()?;
         queue.write_buffer(
             &self.camera_buffer,
             0,

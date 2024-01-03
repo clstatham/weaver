@@ -4,20 +4,20 @@ use super::{Component, Entity, World};
 
 /// A collection of components that can be built and added to an entity.
 pub trait Bundle {
-    fn build(self, world: &mut World) -> Entity;
+    fn build(self, world: &mut World) -> anyhow::Result<Entity>;
 }
 
 impl Bundle for () {
-    fn build(self, world: &mut World) -> Entity {
-        world.create_entity()
+    fn build(self, world: &mut World) -> anyhow::Result<Entity> {
+        Ok(world.create_entity())
     }
 }
 
 impl<T: Component> Bundle for T {
-    fn build(self, world: &mut World) -> Entity {
+    fn build(self, world: &mut World) -> anyhow::Result<Entity> {
         let entity = world.create_entity();
-        world.add_component(entity, self);
-        entity
+        world.add_component(entity, self)?;
+        Ok(entity)
     }
 }
 

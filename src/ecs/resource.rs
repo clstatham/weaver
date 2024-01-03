@@ -26,7 +26,10 @@ impl<'a, T: Resource> std::ops::Deref for Res<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        (*self.resource).as_any().downcast_ref::<T>().unwrap()
+        (*self.resource)
+            .as_any()
+            .downcast_ref::<T>()
+            .expect("BUG: Failed to downcast resource")
     }
 }
 

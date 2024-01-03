@@ -328,19 +328,20 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
 
         impl crate::ecs::system::System for #system_struct_name {
             #[allow(unused_mut)]
-            fn run(&self, world: &crate::ecs::World) {
+            fn run(&self, world: &crate::ecs::World) -> anyhow::Result<()> {
                 #(
                     let mut #query_names = world.query::<#query_types>();
                 )*
                 #(
-                    let #res_names = world.read_resource::<#res_types>();
+                    let #res_names = world.read_resource::<#res_types>()?;
                 )*
                 #(
-                    let mut #resmut_names = world.write_resource::<#resmut_types>();
+                    let mut #resmut_names = world.write_resource::<#resmut_types>()?;
                 )*
                 {
                     #body
                 }
+                Ok(())
             }
 
             fn components_read(&self) -> Vec<u64> {
@@ -384,13 +385,13 @@ pub fn impl_bundle_for_tuple(input: TokenStream) -> TokenStream {
         where
             #(#names: Component),*
         {
-            fn build(self, world: &mut World) -> Entity {
+            fn build(self, world: &mut World) -> anyhow::Result<Entity> {
                 let (#(#names),*) = self;
                 let entity = world.create_entity();
                 #(
-                    world.add_component(entity, #names);
+                    world.add_component(entity, #names)?;
                 )*
-                entity
+                Ok(entity)
             }
         }
     };
@@ -420,12 +421,12 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> TokenStream {
     });
     let gen = quote! {
         impl crate::ecs::Bundle for #name {
-            fn build(self, world: &mut crate::ecs::World) -> crate::ecs::Entity {
+            fn build(self, world: &mut crate::ecs::World) -> anyhow::Result<crate::ecs::Entity> {
                 let entity = world.create_entity();
                 #(
-                    world.add_component(entity, self.#fields);
+                    world.add_component(entity, self.#fields)?;
                 )*
-                entity
+                Ok(entity)
             }
         }
     };
@@ -471,7 +472,7 @@ pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
             type ItemRef = (#(#item_refs),*);
             type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'i>;
 
-            fn create(entities_components: &'w EntitiesAndComponents) -> Self {
+            fn create(entities_components: &'w Components) -> Self {
                 (#(
                     #query_names::create(entities_components)
                 ),*)
