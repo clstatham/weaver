@@ -17,6 +17,7 @@ use self::pass::{
 };
 
 pub mod pass;
+pub mod picking;
 
 #[derive(Resource)]
 #[allow(dead_code)]

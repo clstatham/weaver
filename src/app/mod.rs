@@ -4,7 +4,6 @@ use winit::{
     event_loop::EventLoop,
     window::{Window, WindowBuilder},
 };
-use winit_input_helper::WinitInputHelper;
 
 use crate::{
     core::{camera::FlyCamera, input::Input, time::Time, transform::Transform, ui::EguiContext},
@@ -19,7 +18,6 @@ pub mod commands;
 
 pub struct App {
     event_loop: EventLoop<()>,
-    input: WinitInputHelper,
 
     #[allow(dead_code)]
     window: Window,
@@ -31,7 +29,6 @@ pub struct App {
 impl App {
     pub fn new(screen_width: usize, screen_height: usize) -> anyhow::Result<Self> {
         let event_loop = EventLoop::new();
-        let input = WinitInputHelper::new();
         let window = WindowBuilder::new()
             .with_title("Weaver")
             .with_inner_size(winit::dpi::LogicalSize::new(
@@ -70,7 +67,6 @@ impl App {
 
         Ok(Self {
             event_loop,
-            input,
             window,
             world: RefCell::new(world),
             asset_server,
@@ -150,7 +146,7 @@ impl App {
         f(&mut commands, &mut self.asset_server)
     }
 
-    pub fn run(mut self) -> anyhow::Result<()> {
+    pub fn run(self) -> anyhow::Result<()> {
         {
             let world = self.world.borrow();
             world.startup()?;
@@ -164,16 +160,11 @@ impl App {
             {
                 let world = self.world.borrow();
 
-                self.input.update(&event);
-                world.write_resource::<Input>().unwrap().update(&event);
-
-                world.write_resource::<Time>().unwrap().update();
                 world
-                    .write_resource::<EguiContext>()
+                    .write_resource::<Input>()
                     .unwrap()
-                    .begin_frame(&self.window);
-                world.update().unwrap();
-                world.write_resource::<EguiContext>().unwrap().end_frame();
+                    .input
+                    .update(&event);
             }
             match event {
                 winit::event::Event::WindowEvent { event, .. } => {
@@ -194,6 +185,14 @@ impl App {
                 }
                 winit::event::Event::RedrawRequested(_) => {
                     let world = self.world.borrow();
+
+                    world.write_resource::<Time>().unwrap().update();
+                    world
+                        .write_resource::<EguiContext>()
+                        .unwrap()
+                        .begin_frame(&self.window);
+                    world.update().unwrap();
+                    world.write_resource::<EguiContext>().unwrap().end_frame();
 
                     let renderer = world.read_resource::<Renderer>().unwrap();
                     let mut ui = world.write_resource::<EguiContext>().unwrap();

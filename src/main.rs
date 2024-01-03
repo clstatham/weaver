@@ -24,21 +24,7 @@ pub mod prelude {
 use core::ui::builtin::FpsUi;
 
 use prelude::*;
-
-#[system(LightUpdate)]
-fn light_update(lights: Query<Write<PointLight>>, timey: Res<Time>) {
-    for mut light in lights.iter() {
-        light.position.x = 5.0 * timey.total_time.sin();
-        light.position.z = 5.0 * timey.total_time.cos();
-    }
-}
-
-#[system(Spin)]
-fn spin(model: Query<(Read<Mesh>, Write<Transform>, Read<Spinner>)>, timey: Res<Time>) {
-    for (_, mut transform, _) in model.iter() {
-        transform.rotate(timey.delta_time * 1.75, glam::Vec3::Y);
-    }
-}
+use renderer::picking::ScreenPicker;
 
 #[system(CameraUpdate)]
 fn camera_update(mut camera: ResMut<FlyCamera>, time: Res<Time>, input: Res<Input>) {
@@ -47,18 +33,34 @@ fn camera_update(mut camera: ResMut<FlyCamera>, time: Res<Time>, input: Res<Inpu
 
 #[system(UiUpdate)]
 fn ui_update(mut ctx: ResMut<EguiContext>, mut fps_ui: Query<Write<FpsUi>>) {
-    for mut fps_ui in fps_ui.iter() {
-        ctx.draw_if_ready(|ctx| {
+    ctx.draw_if_ready(|ctx| {
+        for mut fps_ui in fps_ui.iter() {
             fps_ui.run_ui(ctx);
-        })
+        }
+    });
+}
+
+#[system(PickScreen)]
+fn pick_screen(
+    picker: Res<ScreenPicker>,
+    renderer: Res<Renderer>,
+    camera: Res<FlyCamera>,
+    input: Res<Input>,
+    lights: Query<(Write<PointLight>, Read<Object>)>,
+) {
+    if input.is_mouse_button_pressed(winit::event::MouseButton::Left) {
+        if let Some(mouse_position) = input.mouse_position() {
+            let result = picker.pick(mouse_position, &renderer, &camera).unwrap();
+
+            for (mut light, _) in lights.iter() {
+                light.position = result.position;
+            }
+        }
     }
 }
 
 #[derive(Component)]
 struct Object;
-
-#[derive(Component)]
-struct Spinner;
 
 #[allow(dead_code)]
 enum Materials {
@@ -238,6 +240,9 @@ impl Materials {
 }
 
 fn setup(commands: &mut Commands, asset_server: &mut AssetServer) -> anyhow::Result<()> {
+    let picker = ScreenPicker::new(&*commands.read_resource::<Renderer>()?);
+    commands.insert_resource(picker)?;
+
     let room_scale = 30.0;
 
     // floor
@@ -251,47 +256,15 @@ fn setup(commands: &mut Commands, asset_server: &mut AssetServer) -> anyhow::Res
             .translate(0.0, -2.0, 0.0),
     ))?;
 
-    // object circle
-    let num_objects = 10;
-    let radius = 10.0;
     let texture_scaling = 2.0;
-    let material1 = Materials::Metal
-        .load(asset_server, texture_scaling)
-        .unwrap();
-    let material2 = Materials::Wood.load(asset_server, texture_scaling).unwrap();
-    let material3 = Materials::BrickWall
-        .load(asset_server, texture_scaling)
-        .unwrap();
-    let material4 = Materials::Banana
-        .load(asset_server, texture_scaling)
-        .unwrap();
-    let material5 = Materials::StoneWall
+    let material = Materials::Metal
         .load(asset_server, texture_scaling)
         .unwrap();
     let mesh = asset_server
         .load_mesh("assets/meshes/monkey_flat.glb")
         .unwrap();
-    for i in 0..num_objects {
-        let angle = (i as f32 / num_objects as f32) * std::f32::consts::TAU;
-        let x = angle.cos() * radius;
-        let z = angle.sin() * radius;
 
-        let material = match i % 5 {
-            0 => material1.clone(),
-            1 => material2.clone(),
-            2 => material3.clone(),
-            3 => material4.clone(),
-            4 => material5.clone(),
-            _ => unreachable!(),
-        };
-
-        commands.spawn((
-            mesh.clone(),
-            material,
-            Transform::new().translate(x, 0.0, z),
-            Spinner,
-        ))?;
-    }
+    commands.spawn((mesh.clone(), material.clone(), Transform::new()))?;
 
     Ok(())
 }
@@ -309,10 +282,13 @@ fn main() -> anyhow::Result<()> {
     //     40.0,
     // ));
 
-    app.spawn(PointLight::new(
-        glam::Vec3::new(5.0, 5.0, 5.0),
-        core::color::Color::WHITE,
-        10.0,
+    app.spawn((
+        PointLight::new(
+            glam::Vec3::new(5.0, 5.0, 5.0),
+            core::color::Color::WHITE,
+            10.0,
+        ),
+        Object,
     ))?;
 
     app.build(|commands, asset_server| {
@@ -327,9 +303,8 @@ fn main() -> anyhow::Result<()> {
     // ));
 
     app.add_system(UiUpdate);
-    // app.add_system(CameraUpdate);
-    // app.add_system(LightUpdate);
-    // app.add_system(Spin);
+    app.add_system(CameraUpdate);
+    app.add_system(PickScreen);
 
     app.run()?;
 

@@ -157,11 +157,11 @@ impl FlyCamera {
         self.rotation = self.rotation.normalize();
     }
 
-    fn view_matrix(&self) -> glam::Mat4 {
+    pub fn view_matrix(&self) -> glam::Mat4 {
         glam::Mat4::from_rotation_translation(self.rotation, self.translation).inverse()
     }
 
     pub fn projection_matrix(&self) -> glam::Mat4 {
-        glam::Mat4::perspective_rh_gl(self.fov, self.aspect, self.near, self.far)
+        glam::Mat4::perspective_rh(self.fov, self.aspect, self.near, self.far)
     }
 }

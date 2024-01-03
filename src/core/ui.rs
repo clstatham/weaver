@@ -33,7 +33,7 @@ pub mod builtin {
                 last_update: std::time::Instant::now(),
                 last_print: std::time::Instant::now(),
                 update_interval: std::time::Duration::from_millis(50),
-                print_interval: std::time::Duration::from_secs(1),
+                print_interval: std::time::Duration::from_secs(2),
                 history: VecDeque::new(),
                 fps_buffer: Vec::new(),
                 fps: 0.0,
@@ -59,11 +59,11 @@ pub mod builtin {
                     self.history.pop_front();
                 }
 
-                // check for FPS spikes based on our history's average
-                let avg = self.history.iter().sum::<f32>() / self.history.len() as f32;
-                if self.fps < avg * 0.9 {
-                    eprintln!("FPS spike: {:.2}", self.fps);
-                }
+                // // check for FPS spikes based on our history's average
+                // let avg = self.history.iter().sum::<f32>() / self.history.len() as f32;
+                // if self.fps < avg * 0.9 {
+                //     eprintln!("FPS spike: {:.2}", self.fps);
+                // }
             }
 
             if now - self.last_print > self.print_interval {

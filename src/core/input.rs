@@ -1,87 +1,50 @@
-use rustc_hash::FxHashMap;
 use weaver_proc_macro::Resource;
-use winit::event::{Event, MouseButton, WindowEvent};
+use winit::event::MouseButton;
 
 pub use winit::event::VirtualKeyCode as KeyCode;
+use winit_input_helper::WinitInputHelper;
 
-#[derive(Default, Resource)]
+#[derive(Resource)]
 pub struct Input {
-    pub keys: FxHashMap<KeyCode, bool>,
-    pub mouse_buttons: FxHashMap<MouseButton, bool>,
-    pub mouse_position: glam::Vec2,
-    pub mouse_delta: glam::Vec2,
-    pub mouse_wheel_delta: f32,
-    pub mouse_grabbed: bool,
+    pub input: WinitInputHelper,
 }
 
 impl Input {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            input: WinitInputHelper::new(),
+        }
     }
 
     pub fn is_key_pressed(&self, key: KeyCode) -> bool {
-        self.keys.get(&key).copied().unwrap_or(false)
+        self.input.key_held(key)
     }
 
     pub fn is_mouse_button_pressed(&self, button: MouseButton) -> bool {
-        self.mouse_buttons.get(&button).copied().unwrap_or(false)
+        let b = match button {
+            MouseButton::Left => 0,
+            MouseButton::Right => 1,
+            MouseButton::Middle => 2,
+            MouseButton::Other(_) => return false,
+        };
+        self.input.mouse_held(b)
     }
 
-    pub fn mouse_position(&self) -> glam::Vec2 {
-        self.mouse_position
+    pub fn mouse_position(&self) -> Option<glam::Vec2> {
+        self.input.mouse().map(|(x, y)| glam::Vec2::new(x, y))
     }
 
     pub fn mouse_delta(&self) -> glam::Vec2 {
-        self.mouse_delta
+        self.input.mouse_diff().into()
     }
 
     pub fn mouse_wheel_delta(&self) -> f32 {
-        self.mouse_wheel_delta
+        self.input.scroll_diff()
     }
+}
 
-    pub fn prepare(&mut self) {
-        self.mouse_delta = glam::Vec2::ZERO;
-        self.mouse_wheel_delta = 0.0;
-    }
-
-    pub fn update(&mut self, input: &Event<'_, ()>) {
-        self.prepare();
-        match input {
-            Event::WindowEvent {
-                event: WindowEvent::KeyboardInput { input, .. },
-                ..
-            } => {
-                if let Some(key_code) = input.virtual_keycode {
-                    self.keys
-                        .insert(key_code, input.state == winit::event::ElementState::Pressed);
-                }
-            }
-            Event::WindowEvent {
-                event: WindowEvent::MouseInput { button, state, .. },
-                ..
-            } => {
-                self.mouse_buttons
-                    .insert(*button, *state == winit::event::ElementState::Pressed);
-            }
-            Event::WindowEvent {
-                event: WindowEvent::CursorMoved { position, .. },
-                ..
-            } => {
-                let position = glam::Vec2::new(position.x as f32, position.y as f32);
-                self.mouse_delta = position - self.mouse_position;
-                self.mouse_position = position;
-            }
-            Event::WindowEvent {
-                event:
-                    WindowEvent::MouseWheel {
-                        delta: winit::event::MouseScrollDelta::LineDelta(_, y),
-                        ..
-                    },
-                ..
-            } => {
-                self.mouse_wheel_delta = *y;
-            }
-            _ => {}
-        }
+impl Default for Input {
+    fn default() -> Self {
+        Self::new()
     }
 }
