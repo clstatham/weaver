@@ -2,6 +2,7 @@ use std::io::Read;
 
 use crate::{core::texture::Texture, ecs::World};
 
+pub mod doodads;
 pub mod hdr;
 pub mod pbr;
 pub mod shadow;

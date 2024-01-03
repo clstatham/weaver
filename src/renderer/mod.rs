@@ -13,7 +13,8 @@ use crate::{
 };
 
 use self::pass::{
-    hdr::HdrRenderPass, pbr::PbrRenderPass, shadow::ShadowRenderPass, sky::SkyRenderPass, Pass,
+    doodads::DoodadRenderPass, hdr::HdrRenderPass, pbr::PbrRenderPass, shadow::ShadowRenderPass,
+    sky::SkyRenderPass, Pass,
 };
 
 pub mod pass;
@@ -203,6 +204,8 @@ impl Renderer {
                 &sampler_clamp_nearest,
                 &sampler_depth,
             )),
+            // doodad pass
+            Box::new(DoodadRenderPass::new(&device, &config)),
         ];
 
         Self {

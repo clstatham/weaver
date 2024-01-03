@@ -21,7 +21,10 @@ pub mod prelude {
     pub use weaver_proc_macro::system;
 }
 
-use core::ui::builtin::FpsUi;
+use core::{
+    doodads::{Cube, Doodad, Doodads},
+    ui::builtin::FpsUi,
+};
 
 use prelude::*;
 use renderer::picking::ScreenPicker;
@@ -46,18 +49,24 @@ fn pick_screen(
     renderer: Res<Renderer>,
     camera: Res<FlyCamera>,
     input: Res<Input>,
-    lights: Query<(Write<PointLight>, Read<Object>)>,
+    mut doodads: ResMut<Doodads>,
 ) {
     if input.is_mouse_button_pressed(winit::event::MouseButton::Left) {
         if let Some(mouse_position) = input.mouse_position() {
             let result = picker.pick(mouse_position, &renderer, &camera).unwrap();
 
-            for (mut light, _) in lights.iter() {
-                light.position = result.position;
-            }
+            doodads.push(Doodad::Cube(Cube::new(
+                result.position,
+                glam::Quat::IDENTITY,
+                glam::Vec3::new(0.3, 0.3, 0.3),
+                Color::RED,
+            )));
         }
     }
 }
+
+#[system(DoDaDoodads)]
+fn do_da_doodads() {}
 
 #[derive(Component)]
 struct Object;
@@ -305,6 +314,7 @@ fn main() -> anyhow::Result<()> {
     app.add_system(UiUpdate);
     app.add_system(CameraUpdate);
     app.add_system(PickScreen);
+    app.add_system(DoDaDoodads);
 
     app.run()?;
 

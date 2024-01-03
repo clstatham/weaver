@@ -1,5 +1,6 @@
 pub mod camera;
 pub mod color;
+pub mod doodads;
 pub mod input;
 pub mod light;
 pub mod material;

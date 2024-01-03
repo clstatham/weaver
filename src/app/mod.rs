@@ -6,7 +6,10 @@ use winit::{
 };
 
 use crate::{
-    core::{camera::FlyCamera, input::Input, time::Time, transform::Transform, ui::EguiContext},
+    core::{
+        camera::FlyCamera, doodads::Doodads, input::Input, time::Time, transform::Transform,
+        ui::EguiContext,
+    },
     ecs::{system::SystemId, Bundle, Entity, Resource, System, World},
     renderer::Renderer,
 };
@@ -62,6 +65,7 @@ impl App {
         world.insert_resource(Input::new())?;
         world.insert_resource(camera)?;
         world.insert_resource(ui)?;
+        world.insert_resource(Doodads::default())?;
 
         let asset_server = AssetServer::new(&world)?;
 
