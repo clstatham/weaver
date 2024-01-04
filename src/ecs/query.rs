@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 
 use super::{entity::Entity, world::Components, Bundle, Component};
 
@@ -71,8 +71,8 @@ pub trait QueryFilter<'a> {
                 components
                     .get(&entity)
                     .unwrap()
-                    .iter()
-                    .map(move |(component_id, component)| QueryEntry {
+                    .values()
+                    .map(move |component| QueryEntry {
                         entity,
                         component: component.clone(),
                     })

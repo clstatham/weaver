@@ -9,20 +9,16 @@ use crate::{
 };
 
 pub struct Commands<'a> {
-    world: &'a mut World,
+    world: &'a World,
 }
 
 impl<'a> Commands<'a> {
-    pub fn new(world: &'a mut World) -> Self {
+    pub fn new(world: &'a World) -> Self {
         Self { world }
     }
 
-    pub fn spawn<T: Bundle>(&mut self, bundle: T) -> anyhow::Result<Entity> {
+    pub fn spawn<T: Bundle>(&self, bundle: T) -> anyhow::Result<Entity> {
         bundle.build(self.world)
-    }
-
-    pub fn insert_resource<T: Resource>(&mut self, resource: T) -> anyhow::Result<()> {
-        self.world.insert_resource(resource)
     }
 
     pub fn read_resource<T: Resource>(&self) -> anyhow::Result<Res<T>> {

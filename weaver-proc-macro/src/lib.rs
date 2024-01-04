@@ -64,12 +64,14 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
 
     let mut seen_types = Vec::new();
 
+    let mut commands_binding = None;
+
     // populate the above Vecs and do some compiletime checks to make sure the queries are valid
     // 1. no conflicting writes
     // 2. no conflicting reads
-    // 3. arguments should all be Query<_>, Res<_>, ResMut<_>
+    // 3. arguments should all be Query<_>, Res<_>, ResMut<_>, Commands
     // 4. Queries can take &T or &mut T
-    // 5. only one Commands argument is allowed, same for AssetServer
+    // 5. only one Commands argument is allowed
     // examples:
     // fn system(query: Query<&A>) {}
     // fn system(query: Query<&A>, query2: Query<&B>) {}
@@ -221,7 +223,12 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                                     }
                                 }
                             }
-
+                            "Commands" => {
+                                if commands_binding.is_some() {
+                                    panic!("Only one Commands argument is allowed")
+                                }
+                                commands_binding = Some(outer_pat.clone());
+                            }
                             _ => panic!(
                                 "Invalid argument type: Expected one of `Query`, `Res`, or `ResMut`"
                             ),
@@ -235,6 +242,13 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
     }
 
     let body = &ast.block;
+
+    let commands = match commands_binding {
+        Some(commands) => quote! {
+            let mut #commands = Commands::new(&world);
+        },
+        None => quote! {},
+    };
 
     let gen = quote! {
         #[allow(non_camel_case_types, dead_code)]
@@ -252,6 +266,7 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                 #(
                     let mut #resmut_names = world.write_resource::<#resmut_types>()?;
                 )*
+                #commands
                 {
                     #body
                 }

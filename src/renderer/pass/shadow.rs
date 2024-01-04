@@ -8,7 +8,7 @@ use crate::{
         texture::Texture,
         transform::Transform,
     },
-    ecs::{Query, World},
+    ecs::World,
     include_shader,
 };
 use rustc_hash::FxHashMap;

@@ -26,7 +26,6 @@ pub struct App {
     window: Window,
 
     pub(crate) world: RefCell<World>,
-    pub(crate) asset_server: AssetServer,
 }
 
 impl App {
@@ -69,16 +68,21 @@ impl App {
 
         let asset_server = AssetServer::new(&world)?;
 
+        world.insert_resource(asset_server)?;
+
         Ok(Self {
             event_loop,
             window,
             world: RefCell::new(world),
-            asset_server,
         })
     }
 
-    pub fn insert_resource<T: Resource>(&mut self, resource: T) -> anyhow::Result<()> {
+    pub fn insert_resource<T: Resource>(&self, resource: T) -> anyhow::Result<()> {
         self.world.borrow_mut().insert_resource(resource)
+    }
+
+    pub fn world(&self) -> std::cell::Ref<'_, World> {
+        self.world.borrow()
     }
 
     pub fn spawn<T: Bundle>(&self, bundle: T) -> anyhow::Result<Entity> {
@@ -145,9 +149,10 @@ impl App {
     where
         F: FnOnce(&mut Commands, &mut AssetServer) -> anyhow::Result<()>,
     {
-        let mut world = self.world.borrow_mut();
-        let mut commands = Commands::new(&mut world);
-        f(&mut commands, &mut self.asset_server)
+        let world = self.world.borrow_mut();
+        let mut commands = Commands::new(&world);
+        let mut asset_server = world.write_resource::<AssetServer>()?;
+        f(&mut commands, &mut asset_server)
     }
 
     pub fn run(self) -> anyhow::Result<()> {
