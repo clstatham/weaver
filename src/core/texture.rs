@@ -248,7 +248,7 @@ impl Texture {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: Self::NORMAL_MAP_FORMAT,
+            format: Self::HDR_FORMAT,
             usage,
             view_formats: &[],
         });

@@ -126,6 +126,11 @@ struct VertexOutput {
     @location(6) instance_index: u32,
 }
 
+struct FragmentOutput {
+    @location(0) color: vec4<f32>,
+    @location(1) normal: vec4<f32>,
+}
+
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
@@ -154,7 +159,9 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 }
 
 @fragment
-fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_main(vertex: VertexOutput) -> FragmentOutput {
+    var output: FragmentOutput;
+
     let texture_scale = material.texture_scale.x;
     let uv = vertex.uv * texture_scale;
 
@@ -179,6 +186,8 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     // transform normal from tangent space to world space
     let normal = normalize(TBN * tex_normal);
 
+    output.normal = vec4<f32>(normal, 1.0);
+
     let view_direction = normalize(camera.camera_position - vertex.world_position);
 
     // calculate lighting for all lights
@@ -201,5 +210,7 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
     let out_color = tex_color * tex_ao * illumination;
 
-    return vec4<f32>(out_color, 1.0);
+    output.color = vec4<f32>(out_color, 1.0);
+
+    return output;
 }

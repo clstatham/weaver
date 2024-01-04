@@ -27,7 +27,7 @@ use core::{
 };
 
 use prelude::*;
-use renderer::picking::ScreenPicker;
+use renderer::compute::picking::ScreenPicker;
 use winit::event::VirtualKeyCode;
 
 #[system(CameraUpdate)]
@@ -59,6 +59,15 @@ fn pick_screen(
             let result = picker.pick(mouse_position, &renderer, &camera).unwrap();
 
             if let Some(result) = result {
+                let rot = glam::Quat::from_rotation_arc(glam::Vec3::Y, result.normal);
+
+                doodads.push(Doodad::Cube(Cube::new(
+                    result.position + result.normal * 0.5,
+                    rot,
+                    glam::Vec3::new(0.1, 1.0, 0.1),
+                    Color::WHITE,
+                )));
+
                 let ray_origin = camera.translation;
                 let ray_direction = (result.position - ray_origin).normalize();
 

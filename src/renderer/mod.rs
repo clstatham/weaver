@@ -17,8 +17,8 @@ use self::pass::{
     sky::SkyRenderPass, Pass,
 };
 
+pub mod compute;
 pub mod pass;
-pub mod picking;
 
 #[derive(Resource)]
 #[allow(dead_code)]
@@ -310,6 +310,7 @@ impl Renderer {
             &self.queue,
             &self.hdr_pass.texture,
             &self.depth_texture,
+            &self.normal_texture,
             &self.sky_pass.bind_group,
             world,
         )?;

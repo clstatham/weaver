@@ -225,11 +225,18 @@ impl PbrRenderPass {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: Texture::HDR_FORMAT,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+                targets: &[
+                    Some(wgpu::ColorTargetState {
+                        format: Texture::HDR_FORMAT,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                    Some(wgpu::ColorTargetState {
+                        format: Texture::HDR_FORMAT,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                ],
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -258,12 +265,14 @@ impl PbrRenderPass {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         color_texture: &Texture,
         depth_texture: &Texture,
+        normal_texture: &Texture,
         env_map_bind_group: &wgpu::BindGroup,
         world: &World,
     ) -> anyhow::Result<()> {
@@ -339,14 +348,26 @@ impl PbrRenderPass {
             {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("PBR Render Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: color_texture.view(),
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
+                    color_attachments: &[
+                        // color
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: color_texture.view(),
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                        // normal
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: normal_texture.view(),
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                    ],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                         view: depth_texture.view(),
                         depth_ops: Some(wgpu::Operations {
