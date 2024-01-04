@@ -104,6 +104,50 @@ fn cube_vertices() -> Vec<DoodadVertex> {
     vertices
 }
 
+fn cone_vertices(n: usize) -> Vec<DoodadVertex> {
+    let mut vertices = Vec::new();
+
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+
+    for i in 0..n {
+        let theta = 2.0 * std::f32::consts::PI * (i as f32 / n as f32);
+        let x = theta.cos();
+        let y = theta.sin();
+
+        positions.push(glam::Vec3::new(x, y, 0.0));
+        normals.push(glam::Vec3::new(0.0, 0.0, 1.0));
+    }
+
+    positions.push(glam::Vec3::new(0.0, 0.0, 1.0));
+    normals.push(glam::Vec3::new(0.0, 0.0, 1.0));
+
+    for (position, normal) in positions.iter().zip(normals.iter()) {
+        vertices.push(DoodadVertex {
+            position: *position,
+            normal: *normal,
+        });
+    }
+
+    vertices
+}
+
+fn cone_indices(n: usize) -> Vec<u32> {
+    let mut indices = Vec::new();
+
+    for i in 0..n {
+        let i0 = i;
+        let i1 = (i + 1) % n;
+        let i2 = n;
+
+        indices.push(i0 as u32);
+        indices.push(i1 as u32);
+        indices.push(i2 as u32);
+    }
+
+    indices
+}
+
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 struct DoodadVertex {
@@ -125,8 +169,12 @@ pub struct DoodadRenderPass {
     bind_group_layout: wgpu::BindGroupLayout,
     depth_texture: Texture,
     camera_buffer: wgpu::Buffer,
+
     cube_vertex_buffer: wgpu::Buffer,
     cube_index_buffer: wgpu::Buffer,
+    cone_vertex_buffer: wgpu::Buffer,
+    cone_index_buffer: wgpu::Buffer,
+
     model_transform_buffer: wgpu::Buffer,
     doodad_color_buffer: wgpu::Buffer,
 }
@@ -171,6 +219,18 @@ impl DoodadRenderPass {
         let cube_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("doodad cube index buffer"),
             contents: bytemuck::cast_slice(CUBE_INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let cone_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("doodad cone vertex buffer"),
+            contents: bytemuck::cast_slice(&cone_vertices(32)),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let cone_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("doodad cone index buffer"),
+            contents: bytemuck::cast_slice(&cone_indices(32)),
             usage: wgpu::BufferUsages::INDEX,
         });
 
@@ -290,6 +350,8 @@ impl DoodadRenderPass {
             camera_buffer,
             cube_vertex_buffer,
             cube_index_buffer,
+            cone_vertex_buffer,
+            cone_index_buffer,
             model_transform_buffer,
             doodad_color_buffer,
         }
@@ -401,6 +463,68 @@ impl Pass for DoodadRenderPass {
                         );
                         render_pass.set_vertex_buffer(0, self.cube_vertex_buffer.slice(..));
                         render_pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..1);
+                    }
+
+                    queue.submit(std::iter::once(encoder.finish()));
+                }
+                Doodad::Cone(cone) => {
+                    let transform = glam::Mat4::from_scale_rotation_translation(
+                        cone.scale,
+                        cone.rotation,
+                        cone.position,
+                    );
+
+                    let mut encoder =
+                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("doodad encoder"),
+                        });
+
+                    queue.write_buffer(
+                        &self.model_transform_buffer,
+                        0,
+                        bytemuck::cast_slice(&[transform]),
+                    );
+
+                    queue.write_buffer(
+                        &self.doodad_color_buffer,
+                        0,
+                        bytemuck::cast_slice(&[cone.color]),
+                    );
+
+                    {
+                        let mut render_pass =
+                            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: Some("doodad render pass"),
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: color_target.view(),
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Load,
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                })],
+                                depth_stencil_attachment: Some(
+                                    wgpu::RenderPassDepthStencilAttachment {
+                                        view: self.depth_texture.view(),
+                                        depth_ops: Some(wgpu::Operations {
+                                            load: wgpu::LoadOp::Load,
+                                            store: wgpu::StoreOp::Store,
+                                        }),
+                                        stencil_ops: None,
+                                    },
+                                ),
+                                timestamp_writes: None,
+                                occlusion_query_set: None,
+                            });
+
+                        render_pass.set_pipeline(&self.pipeline);
+                        render_pass.set_bind_group(0, &self.bind_group, &[]);
+                        render_pass.set_index_buffer(
+                            self.cone_index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                        render_pass.set_vertex_buffer(0, self.cone_vertex_buffer.slice(..));
+                        render_pass.draw_indexed(0..cone_indices(32).len() as u32, 0, 0..1);
                     }
 
                     queue.submit(std::iter::once(encoder.finish()));

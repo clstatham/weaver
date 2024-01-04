@@ -41,19 +41,20 @@ impl Transform {
 
     #[inline]
     pub fn translate(&mut self, x: f32, y: f32, z: f32) -> Self {
-        self.matrix *= glam::Mat4::from_translation(glam::Vec3::new(x, y, z));
+        self.matrix = glam::Mat4::from_translation(glam::Vec3::new(x, y, z)) * self.matrix;
         *self
     }
 
     #[inline]
     pub fn rotate(&mut self, angle: f32, axis: glam::Vec3) -> Self {
-        self.matrix *= glam::Mat4::from_axis_angle(axis, angle);
+        // self.matrix *= glam::Mat4::from_axis_angle(axis, angle);
+        self.matrix = glam::Mat4::from_axis_angle(axis, angle) * self.matrix;
         *self
     }
 
     #[inline]
     pub fn scale(&mut self, x: f32, y: f32, z: f32) -> Self {
-        self.matrix *= glam::Mat4::from_scale(glam::Vec3::new(x, y, z));
+        self.matrix = glam::Mat4::from_scale(glam::Vec3::new(x, y, z)) * self.matrix;
         *self
     }
 
@@ -65,7 +66,7 @@ impl Transform {
     }
 
     #[inline]
-    pub fn get_translation(&self) -> glam::Vec3 {
+    pub fn get_translation(self) -> glam::Vec3 {
         self.matrix.to_scale_rotation_translation().2
     }
 

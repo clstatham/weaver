@@ -28,6 +28,7 @@ use core::{
 
 use prelude::*;
 use renderer::picking::ScreenPicker;
+use winit::event::VirtualKeyCode;
 
 #[system(CameraUpdate)]
 fn camera_update(mut camera: ResMut<FlyCamera>, time: Res<Time>, input: Res<Input>) {
@@ -46,23 +47,158 @@ fn ui_update(mut ctx: ResMut<EguiContext>, mut fps_ui: Query<Write<FpsUi>>) {
 #[system(PickScreen)]
 fn pick_screen(
     picker: Res<ScreenPicker>,
+    editor: ResMut<EditorState>,
     renderer: Res<Renderer>,
     camera: Res<FlyCamera>,
     input: Res<Input>,
     mut doodads: ResMut<Doodads>,
+    meshes_transforms: Query<(Read<Mesh>, Write<Transform>)>,
 ) {
     if input.is_mouse_button_pressed(winit::event::MouseButton::Left) {
         if let Some(mouse_position) = input.mouse_position() {
             let result = picker.pick(mouse_position, &renderer, &camera).unwrap();
 
-            doodads.push(Doodad::Cube(Cube::new(
-                result.position,
-                glam::Quat::IDENTITY,
-                glam::Vec3::new(0.3, 0.3, 0.3),
-                Color::RED,
-            )));
+            if let Some(result) = result {
+                let ray_origin = camera.translation;
+                let ray_direction = (result.position - ray_origin).normalize();
+
+                if editor.selected_entity.is_none() {
+                    let mut entities_by_distance = Vec::new();
+                    for entity in meshes_transforms.entities() {
+                        let (mesh, transform) = meshes_transforms.get(entity).unwrap();
+                        let aabb = mesh.aabb().transformed(*transform);
+                        if let Some(distance) = aabb.intersect_ray(ray_origin, ray_direction) {
+                            entities_by_distance.push((entity, distance));
+                        }
+                    }
+                    entities_by_distance.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+                    if let Some((entity, _)) = entities_by_distance.first() {
+                        editor.selected_entity = Some(*entity);
+
+                        let (mesh, transform) = meshes_transforms.get(*entity).unwrap();
+                        let aabb = mesh.aabb().transformed(*transform);
+
+                        editor.selection_plane = Some(Plane {
+                            position: aabb.center(),
+                            normal: (aabb.center() - ray_origin).normalize(),
+                        });
+                    }
+                }
+
+                if let (Some(entity), Some(plane)) =
+                    (editor.selected_entity, editor.selection_plane)
+                {
+                    let (mesh, mut transform) = meshes_transforms.get(entity).unwrap();
+                    let aabb = mesh.aabb().transformed(*transform);
+                    let aabb_center_delta = aabb.center() - transform.get_translation();
+
+                    let mut color = Color::WHITE;
+
+                    // blender-style translation
+                    if input.is_key_pressed(VirtualKeyCode::G) {
+                        let distance = ray_direction.dot(aabb.center() - ray_origin);
+                        let mut translation = ray_origin + ray_direction * distance;
+
+                        transform.set_translation(translation + aabb_center_delta);
+
+                        color = Color::GREEN;
+                    }
+                    // blender-style rotation
+                    if input.is_key_pressed(VirtualKeyCode::R) {
+                        // get the intersection of the selection plane with the ray
+                        let distance = (plane.position - ray_origin).dot(plane.normal)
+                            / ray_direction.dot(plane.normal);
+                        let intersection = ray_origin + ray_direction * distance;
+
+                        // get the vector from the plane's center to the intersection
+                        let mut vector = intersection - plane.position;
+
+                        if let Some(rotation_reference_vector) = editor.rotation_reference_vector {
+                            // get the angle between the reference vector and the intersection vector
+                            let mut angle = vector.angle_between(rotation_reference_vector);
+
+                            // get the cross product of the reference vector and the intersection vector
+                            let cross = rotation_reference_vector.cross(vector);
+
+                            // get the dot product of the cross product and the plane's normal
+                            let dot = cross.dot(plane.normal);
+
+                            // if the dot product is negative, the angle is negative
+                            if dot < 0.0 {
+                                angle = -angle;
+                            }
+
+                            // rotate the transform by the angle
+                            let (scale, rotation, translation) =
+                                transform.matrix.to_scale_rotation_translation();
+                            let rotation =
+                                glam::Quat::from_axis_angle(plane.normal, angle) * rotation;
+                            transform.matrix = glam::Mat4::from_scale_rotation_translation(
+                                scale,
+                                rotation,
+                                translation,
+                            );
+                        }
+
+                        // set the reference vector to the intersection vector
+                        editor.rotation_reference_vector = Some(vector);
+
+                        color = Color::RED;
+                    }
+                    // blender-style scale
+                    if input.is_key_pressed(VirtualKeyCode::C) {
+                        // get the intersection of the selection plane with the ray
+                        let distance = (plane.position - ray_origin).dot(plane.normal)
+                            / ray_direction.dot(plane.normal);
+                        let intersection = ray_origin + ray_direction * distance;
+
+                        // get the vector from the plane's center to the intersection
+                        let mut vector = intersection - plane.position;
+
+                        // get the scaling amount from the vector's length
+                        let scale = vector.length();
+
+                        let (_, rotation, translation) =
+                            transform.matrix.to_scale_rotation_translation();
+
+                        // set the transform's scale to the scaling amount
+                        transform.matrix = glam::Mat4::from_scale_rotation_translation(
+                            glam::Vec3::ONE * scale,
+                            rotation,
+                            translation,
+                        );
+
+                        color = Color::BLUE;
+                    }
+
+                    let aabb = mesh.aabb().transformed(*transform);
+                    doodads.push(Doodad::Cube(Cube::new(
+                        aabb.center(),
+                        glam::Quat::IDENTITY,
+                        glam::Vec3::ONE * 0.3,
+                        color,
+                    )));
+                }
+            }
         }
+    } else {
+        editor.selected_entity = None;
+        editor.selection_plane = None;
+        editor.rotation_reference_vector = None;
     }
+}
+
+#[derive(Clone, Copy)]
+struct Plane {
+    pub position: glam::Vec3,
+    pub normal: glam::Vec3,
+}
+
+#[derive(Resource, Default)]
+struct EditorState {
+    pub selected_entity: Option<Entity>,
+    pub selection_plane: Option<Plane>,
+    pub rotation_reference_vector: Option<glam::Vec3>,
 }
 
 #[derive(Component)]
@@ -248,6 +384,7 @@ impl Materials {
 fn setup(commands: &mut Commands, asset_server: &mut AssetServer) -> anyhow::Result<()> {
     let picker = ScreenPicker::new(&*commands.read_resource::<Renderer>()?);
     commands.insert_resource(picker)?;
+    commands.insert_resource(EditorState::default())?;
 
     let room_scale = 30.0;
 

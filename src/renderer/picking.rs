@@ -32,15 +32,13 @@ impl ScreenPicker {
         screen_pos: glam::Vec2,
         renderer: &Renderer,
         camera: &FlyCamera,
-    ) -> anyhow::Result<PickResult> {
+    ) -> anyhow::Result<Option<PickResult>> {
         let width = renderer.config.width as f32;
         let height = renderer.config.height as f32;
 
         if screen_pos.x < 0.0 || screen_pos.x > width || screen_pos.y < 0.0 || screen_pos.y > height
         {
-            return Ok(PickResult {
-                position: glam::Vec3::ZERO,
-            });
+            return Ok(None);
         }
 
         let mut encoder = renderer
@@ -86,27 +84,21 @@ impl ScreenPicker {
                 [screen_pos.y as usize * renderer.config.width as usize + screen_pos.x as usize]
                 as f32;
 
-            if depth == 1.0 {
-                PickResult {
-                    position: glam::Vec3::ZERO,
-                }
-            } else {
-                let x = screen_pos.x / width * 2.0 - 1.0;
-                let y = -(screen_pos.y / height * 2.0 - 1.0);
+            let x = screen_pos.x / width * 2.0 - 1.0;
+            let y = -(screen_pos.y / height * 2.0 - 1.0);
 
-                let inv_view_proj = (camera.projection_matrix() * camera.view_matrix()).inverse();
+            let inv_view_proj = (camera.projection_matrix() * camera.view_matrix()).inverse();
 
-                depth = depth * 2.0 - 1.0;
+            depth = depth * 2.0 - 1.0;
 
-                let ndc = glam::Vec4::new(x, y, depth, 1.0);
+            let ndc = glam::Vec4::new(x, y, depth, 1.0);
 
-                let mut position = inv_view_proj * ndc;
-                position /= position.w;
+            let mut position = inv_view_proj * ndc;
+            position /= position.w;
 
-                PickResult {
-                    position: position.truncate(),
-                }
-            }
+            Some(PickResult {
+                position: position.truncate(),
+            })
         };
 
         self.buffer.unmap();

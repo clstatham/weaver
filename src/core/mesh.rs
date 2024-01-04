@@ -3,7 +3,7 @@ use std::{path::Path, sync::Arc};
 use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
 
-use crate::app::asset_server::AssetId;
+use crate::{app::asset_server::AssetId, core::aabb::Aabb};
 
 pub const MAX_MESHES: usize = 1000;
 
@@ -110,6 +110,7 @@ struct MeshInner {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: usize,
+    pub aabb: Aabb,
 }
 
 #[derive(Clone, Component)]
@@ -157,6 +158,8 @@ impl Mesh {
 
         calculate_tangents(&mut vertices, &indices);
 
+        let aabb = Aabb::from_points(&vertices.iter().map(|v| v.position).collect::<Vec<_>>());
+
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(&vertices),
@@ -181,6 +184,7 @@ impl Mesh {
                 vertex_buffer,
                 index_buffer,
                 num_indices: indices.len(),
+                aabb,
             }),
         })
     }
@@ -199,5 +203,9 @@ impl Mesh {
 
     pub fn num_indices(&self) -> usize {
         self.inner.num_indices
+    }
+
+    pub fn aabb(&self) -> Aabb {
+        self.inner.aabb
     }
 }
