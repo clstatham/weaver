@@ -237,6 +237,29 @@ fn ui_update(mut ctx: ResMut<EguiContext>, mut fps_ui: Query<&mut FpsUi>) {
     });
 }
 
+#[system(SpawnStuff)]
+fn spawn_stuff(
+    commands: Commands,
+    mut asset_server: ResMut<AssetServer>,
+    input: Res<Input>,
+    picker: Res<ScreenPicker>,
+    camera: Res<FlyCamera>,
+    renderer: Res<Renderer>,
+) {
+    if input.key_just_pressed(VirtualKeyCode::F) {
+        if let Some(mouse_position) = input.mouse_position() {
+            let result = picker.pick(mouse_position, &renderer, &camera).unwrap();
+
+            if let Some(result) = result {
+                let mesh = asset_server.load_mesh("assets/meshes/cube.glb").unwrap();
+                let material = Materials::Wood.load(&mut asset_server, 2.0).unwrap();
+                let transform = Transform::from_translation(result.position);
+                commands.spawn((mesh, material, transform))?;
+            }
+        }
+    }
+}
+
 #[system(PickScreen)]
 fn pick_screen(
     picker: Res<ScreenPicker>,
@@ -247,7 +270,7 @@ fn pick_screen(
     mut doodads: ResMut<Doodads>,
     meshes_transforms: Query<(&Mesh, &mut Transform)>,
 ) {
-    if input.is_mouse_button_pressed(winit::event::MouseButton::Left) {
+    if input.mouse_button_pressed(winit::event::MouseButton::Left) {
         if let Some(mouse_position) = input.mouse_position() {
             let result = picker.pick(mouse_position, &renderer, &camera).unwrap();
 
@@ -288,7 +311,7 @@ fn pick_screen(
                     let mut color = Color::WHITE;
 
                     // blender-style translation
-                    if input.is_key_pressed(VirtualKeyCode::G) {
+                    if input.key_pressed(VirtualKeyCode::G) {
                         let distance = ray_direction.dot(aabb.center() - ray_origin);
                         let mut translation = ray_origin + ray_direction * distance;
 
@@ -297,7 +320,7 @@ fn pick_screen(
                         color = Color::GREEN;
                     }
                     // blender-style rotation
-                    if input.is_key_pressed(VirtualKeyCode::R) {
+                    if input.key_pressed(VirtualKeyCode::R) {
                         // get the intersection of the selection plane with the ray
                         let distance = (plane.position - ray_origin).dot(plane.normal)
                             / ray_direction.dot(plane.normal);
@@ -339,7 +362,7 @@ fn pick_screen(
                         color = Color::RED;
                     }
                     // blender-style scale
-                    if input.is_key_pressed(VirtualKeyCode::C) {
+                    if input.key_pressed(VirtualKeyCode::C) {
                         // get the intersection of the selection plane with the ray
                         let distance = (plane.position - ray_origin).dot(plane.normal)
                             / ray_direction.dot(plane.normal);
@@ -434,6 +457,7 @@ fn main() -> anyhow::Result<()> {
     app.add_system(UiUpdate);
     app.add_system(CameraUpdate);
     app.add_system(PickScreen);
+    app.add_system(SpawnStuff);
 
     app.run()?;
 

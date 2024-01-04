@@ -16,11 +16,15 @@ impl Input {
         }
     }
 
-    pub fn is_key_pressed(&self, key: KeyCode) -> bool {
+    pub fn key_pressed(&self, key: KeyCode) -> bool {
         self.input.key_held(key)
     }
 
-    pub fn is_mouse_button_pressed(&self, button: MouseButton) -> bool {
+    pub fn key_just_pressed(&self, key: KeyCode) -> bool {
+        self.input.key_pressed(key)
+    }
+
+    pub fn mouse_button_pressed(&self, button: MouseButton) -> bool {
         let b = match button {
             MouseButton::Left => 0,
             MouseButton::Right => 1,
@@ -28,6 +32,16 @@ impl Input {
             MouseButton::Other(_) => return false,
         };
         self.input.mouse_held(b)
+    }
+
+    pub fn mouse_button_just_pressed(&self, button: MouseButton) -> bool {
+        let b = match button {
+            MouseButton::Left => 0,
+            MouseButton::Right => 1,
+            MouseButton::Middle => 2,
+            MouseButton::Other(_) => return false,
+        };
+        self.input.mouse_pressed(b)
     }
 
     pub fn mouse_position(&self) -> Option<glam::Vec2> {

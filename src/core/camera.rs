@@ -115,34 +115,34 @@ impl FlyCamera {
 
         let mut velocity = glam::Vec3::ZERO;
 
-        if input.is_key_pressed(VirtualKeyCode::W) {
+        if input.key_pressed(VirtualKeyCode::W) {
             velocity += forward;
         }
-        if input.is_key_pressed(VirtualKeyCode::S) {
+        if input.key_pressed(VirtualKeyCode::S) {
             velocity -= forward;
         }
-        if input.is_key_pressed(VirtualKeyCode::D) {
+        if input.key_pressed(VirtualKeyCode::D) {
             velocity += right;
         }
-        if input.is_key_pressed(VirtualKeyCode::A) {
+        if input.key_pressed(VirtualKeyCode::A) {
             velocity -= right;
         }
-        if input.is_key_pressed(VirtualKeyCode::Space) {
+        if input.key_pressed(VirtualKeyCode::Space) {
             velocity += glam::Vec3::Y;
         }
-        if input.is_key_pressed(VirtualKeyCode::LControl) {
+        if input.key_pressed(VirtualKeyCode::LControl) {
             velocity -= glam::Vec3::Y;
         }
 
         velocity = velocity.normalize_or_zero() * self.speed * delta_time;
 
-        if input.is_key_pressed(VirtualKeyCode::LShift) {
+        if input.key_pressed(VirtualKeyCode::LShift) {
             velocity *= 2.0;
         }
 
         self.translation += velocity;
 
-        if input.is_mouse_button_pressed(winit::event::MouseButton::Right) {
+        if input.mouse_button_pressed(winit::event::MouseButton::Right) {
             yaw += -(mouse_delta.x * self.sensitivity).to_radians();
             pitch += -(mouse_delta.y * self.sensitivity).to_radians();
         }

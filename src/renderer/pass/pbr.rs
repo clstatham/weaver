@@ -319,6 +319,15 @@ impl PbrRenderPass {
                 transforms,
             } = unique_mesh;
 
+            if !material.has_bind_group() {
+                material.create_bind_group(
+                    device,
+                    self,
+                    &world
+                        .read_resource::<crate::Renderer>()?
+                        .sampler_repeat_linear,
+                );
+            }
             let bind_group = material.bind_group().unwrap();
 
             let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
