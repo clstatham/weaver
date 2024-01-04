@@ -6,18 +6,18 @@ use std::{
 use rustc_hash::FxHashMap;
 
 use super::{
-    query::Queryable,
+    query::QueryFilter,
     resource::{Res, ResMut, Resource},
     system::{SystemGraph, SystemId},
-    Bundle, Component, EcsError, Entity, System,
+    Bundle, Component, EcsError, Entity, Query, System,
 };
 
-pub type Components = FxHashMap<Entity, FxHashMap<u64, Arc<RwLock<dyn Component>>>>;
+pub type Components = FxHashMap<Entity, FxHashMap<u64, Arc<RefCell<dyn Component>>>>;
 
 #[derive(Default)]
 pub struct World {
     next_entity_id: AtomicU32,
-    pub(crate) components: Components,
+    pub(crate) components: Arc<RefCell<Components>>,
     pub(crate) startup_systems: RefCell<SystemGraph>,
     pub(crate) systems: RefCell<SystemGraph>,
     pub(crate) resources: FxHashMap<u64, Arc<RwLock<dyn Resource>>>,
@@ -28,29 +28,28 @@ impl World {
         Self::default()
     }
 
-    pub fn create_entity(&mut self) -> Entity {
+    pub fn create_entity(&self) -> Entity {
         let id = self
             .next_entity_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let entity = Entity::new(id, 0);
-        self.components.insert(entity, FxHashMap::default());
+        self.components
+            .borrow_mut()
+            .insert(entity, FxHashMap::default());
         entity
     }
 
-    pub fn spawn<T: Bundle>(&mut self, bundle: T) -> anyhow::Result<Entity> {
+    pub fn spawn<T: Bundle>(&self, bundle: T) -> anyhow::Result<Entity> {
         bundle.build(self)
     }
 
-    pub fn add_component<T: Component>(
-        &mut self,
-        entity: Entity,
-        component: T,
-    ) -> anyhow::Result<()> {
+    pub fn add_component<T: Component>(&self, entity: Entity, component: T) -> anyhow::Result<()> {
         if self.has_component::<T>(entity) {
             return Err(EcsError::ComponentAlreadyExists.into());
         }
-        let component = Arc::new(RwLock::new(component));
+        let component = Arc::new(RefCell::new(component));
         self.components
+            .borrow_mut()
             .entry(entity)
             .or_default()
             .insert(T::component_id(), component);
@@ -58,13 +57,13 @@ impl World {
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) {
-        if let Some(components) = self.components.get_mut(&entity) {
+        if let Some(components) = self.components.borrow_mut().get_mut(&entity) {
             components.remove(&T::component_id());
         }
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
-        if let Some(components) = self.components.get(&entity) {
+        if let Some(components) = self.components.borrow().get(&entity) {
             components.contains_key(&T::component_id())
         } else {
             false
@@ -100,13 +99,8 @@ impl World {
         self.resources.contains_key(&T::resource_id())
     }
 
-    pub fn query<'w, 'q, 'i, Q>(&'w self) -> Q
-    where
-        'w: 'q,
-        'q: 'i,
-        Q: Queryable<'w, 'q, 'i>,
-    {
-        Q::create(&self.components)
+    pub fn query<'a, T: QueryFilter<'a>>(&self) -> Query<'a, T> {
+        Query::new(&self.components.borrow())
     }
 
     pub fn has_startup_system(&self, system: SystemId) -> bool {

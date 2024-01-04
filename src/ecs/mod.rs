@@ -11,7 +11,7 @@ pub use {
     bundle::Bundle,
     component::Component,
     entity::Entity,
-    query::{Query, Queryable, Read, Write},
+    query::{Query, QueryFilter},
     resource::{Res, ResMut, Resource},
     system::System,
     world::World,
@@ -45,44 +45,107 @@ pub enum EcsError {
 
 #[cfg(test)]
 mod tests {
+    use rustc_hash::FxHashSet;
+
     use super::*;
 
-    #[derive(Component)]
-    struct TestComponent {
-        value: u32,
+    #[derive(Component, Debug)]
+    struct Position {
+        x: f32,
+        y: f32,
     }
 
-    #[derive(Resource)]
-    struct TestResource {
-        value: u32,
+    #[derive(Component, Debug)]
+    struct Velocity {
+        x: f32,
+        y: f32,
     }
 
-    #[system(TestSystem)]
-    fn test_system(test_resource: Res<TestResource>, mut query: Query<Write<TestComponent>>) {
-        assert_eq!(test_resource.value, 42);
-        for mut component in query.iter() {
-            component.value += 1;
+    #[derive(Bundle)]
+    struct PhysicsBundle {
+        position: Position,
+        velocity: Velocity,
+    }
+
+    #[system(Physics)]
+    fn physics(physics: Query<(&mut Position, &Velocity)>) {
+        for (mut position, velocity) in physics.iter() {
+            position.x += velocity.x;
+            position.y += velocity.y;
         }
     }
 
     #[test]
-    fn test_ecs() -> anyhow::Result<()> {
-        let mut world = World::new();
-        let entity = world.create_entity();
-        world.add_component(entity, TestComponent { value: 69 })?;
-        assert!(world.has_component::<TestComponent>(entity));
-        world.insert_resource(TestResource { value: 42 })?;
-        world.add_system(TestSystem);
-        world.update()?;
+    fn test_query_trait() -> anyhow::Result<()> {
         assert_eq!(
-            world
-                .query::<Read<TestComponent>>()
-                .iter()
-                .next()
-                .unwrap()
-                .value,
-            70
+            <&Position>::reads(),
+            Some(FxHashSet::from_iter(vec![Position::component_id()]))
         );
+        assert_eq!(<&Position>::writes(), None);
+        assert_eq!(
+            <&mut Position>::writes(),
+            Some(FxHashSet::from_iter(vec![Position::component_id()]))
+        );
+        assert_eq!(
+            <&Velocity>::reads(),
+            Some(FxHashSet::from_iter(vec![Velocity::component_id()]))
+        );
+        assert_eq!(<&Velocity>::writes(), None);
+        assert_eq!(
+            <&mut Velocity>::writes(),
+            Some(FxHashSet::from_iter(vec![Velocity::component_id()]))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_query_world() -> anyhow::Result<()> {
+        let world = World::new();
+
+        let entity = world.spawn(PhysicsBundle {
+            position: Position { x: 0.0, y: 0.0 },
+            velocity: Velocity { x: 1.0, y: 1.0 },
+        })?;
+
+        let position = world.query::<&Position>();
+        let position = position.get(entity).unwrap();
+        assert_eq!(position.x, 0.0);
+        assert_eq!(position.y, 0.0);
+
+        let velocity = world.query::<&Velocity>();
+        let velocity = velocity.get(entity).unwrap();
+        assert_eq!(velocity.x, 1.0);
+        assert_eq!(velocity.y, 1.0);
+
+        let physics = world.query::<(&Position, &Velocity)>();
+        let (position, velocity) = physics.get(entity).unwrap();
+        assert_eq!(position.x, 0.0);
+        assert_eq!(position.y, 0.0);
+        assert_eq!(velocity.x, 1.0);
+        assert_eq!(velocity.y, 1.0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_system() -> anyhow::Result<()> {
+        let world = World::new();
+
+        let entity = world.spawn(PhysicsBundle {
+            position: Position { x: 0.0, y: 0.0 },
+            velocity: Velocity { x: 1.0, y: 1.0 },
+        })?;
+
+        world.add_system(Physics);
+
+        world.update()?;
+
+        let position = world.query::<&Position>();
+        let position = position.get(entity).unwrap();
+        assert_eq!(position.x, 1.0);
+        assert_eq!(position.y, 1.0);
+
         Ok(())
     }
 }

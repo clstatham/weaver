@@ -36,7 +36,7 @@ fn camera_update(mut camera: ResMut<FlyCamera>, time: Res<Time>, input: Res<Inpu
 }
 
 #[system(UiUpdate)]
-fn ui_update(mut ctx: ResMut<EguiContext>, mut fps_ui: Query<Write<FpsUi>>) {
+fn ui_update(mut ctx: ResMut<EguiContext>, mut fps_ui: Query<&mut FpsUi>) {
     ctx.draw_if_ready(|ctx| {
         for mut fps_ui in fps_ui.iter() {
             fps_ui.run_ui(ctx);
@@ -52,7 +52,7 @@ fn pick_screen(
     camera: Res<FlyCamera>,
     input: Res<Input>,
     mut doodads: ResMut<Doodads>,
-    meshes_transforms: Query<(Read<Mesh>, Write<Transform>)>,
+    meshes_transforms: Query<(&Mesh, &mut Transform)>,
 ) {
     if input.is_mouse_button_pressed(winit::event::MouseButton::Left) {
         if let Some(mouse_position) = input.mouse_position() {

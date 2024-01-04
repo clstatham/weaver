@@ -68,18 +68,16 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
     // 1. no conflicting writes
     // 2. no conflicting reads
     // 3. arguments should all be Query<_>, Res<_>, ResMut<_>
-    // 4. Queries can take tuples of Read<_> or Write<_> as their inner types, but Res and ResMut cannot
-    // 5. Queries can take Read<_> or Write<_> as their inner types, but Res and ResMut cannot
-    // 6. only one Commands argument is allowed, same for AssetServer
+    // 4. Queries can take &T or &mut T
+    // 5. only one Commands argument is allowed, same for AssetServer
     // examples:
-    // #[system(A)]
-    // fn system_a(a: Query<Read<CompA>>) {}
-    // #[system(B)]
-    // fn system_b(a: Query<Read<CompA>>, b: Query<Write<CompB>>) {}
-    // #[system(C)]
-    // fn system_c(a: Query<(Read<CompA>, Write<CompB>)>) {}
-    // #[system(D)]
-    // fn system_d(a: Query<Read<CompA>>, b: Res<ResA>, c: ResMut<ResB>) {}
+    // fn system(query: Query<&A>) {}
+    // fn system(query: Query<&A>, query2: Query<&B>) {}
+    // fn system(query: Query<&A>, res: Res<B>) {}
+    // fn system(query: Query<&A>, res: ResMut<B>) {}
+    // fn system(query: Query<&A>, res: ResMut<B>, res2: ResMut<C>) {}
+    // fn system(query: Query<&A>, res: ResMut<B>, res2: ResMut<C>, query2: Query<&mut B>) {}
+    // etc...
 
     for arg in args.iter() {
         match arg {
@@ -110,124 +108,40 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                                     }
                                     _ => panic!("Invalid argument type: Expected Query<...>"),
                                 };
-
                                 match &inner_ty {
                                     syn::Type::Tuple(tuple) => {
-                                        for inner_ty in &tuple.elems {
-                                            match inner_ty {
-                                                syn::Type::Path(path) => {
-                                                    // make sure it's Read<T> or Write<T> and verify that the inner T has not yet been seen
-                                                    let path = &path.path;
-                                                    let path_ident =
-                                                        &path.segments.last().unwrap().ident;
-                                                    let path_ident = path_ident.to_string();
-                                                    match path_ident.as_str() {
-                                                        "Read" | "Write" => {
-                                                            let inner_ty = match &path
-                                                                .segments
-                                                                .last()
-                                                                .unwrap()
-                                                                .arguments
-                                                            {
-                                                                syn::PathArguments::AngleBracketed(
-                                                                    args,
-                                                                ) => {
-                                                                    let inner_ty = &args.args[0];
-                                                                    match inner_ty {
-                                                                        syn::GenericArgument::Type(
-                                                                            ty,
-                                                                        ) => ty,
-                                                                        _ => panic!(
-                                                                            "Invalid argument type: Expected Query<...>"
-                                                                        ),
-                                                                    }
-                                                                }
-                                                                _ => panic!("Invalid argument type: Expected Query<...>"),
-                                                            };
-                                                            let inner_ty = match inner_ty {
-                                                                syn::Type::Path(path) => {
-                                                                    let path = &path.path;
-                                                                    let path_ident = &path
-                                                                        .segments
-                                                                        .last()
-                                                                        .unwrap()
-                                                                        .ident;
-                                                                    path_ident.clone()
-                                                                }
-                                                                _ => panic!(
-                                                                    "Invalid argument type: Expected Query<...>"
-                                                                ),
-                                                            };
-                                                            if seen_types.contains(&inner_ty.to_string()) {
-                                                                panic!(
-                                                                    "Conflicting queries: {} is already being queried",
-                                                                    inner_ty
-                                                                )
-                                                            }
-                                                            seen_types.push(inner_ty.to_string());
-                                                        }
-                                                        _ => panic!(
-                                                            "Invalid argument type: Expected Query<...>"
-                                                        ),
-                                                    }
-                                                }
-                                                _ => panic!(
-                                                    "Invalid argument type: Expected Query<...>"
-                                                ),
-                                            }
-                                        }
+                                        query_types.push(quote! {
+                                            #tuple
+                                        });
                                     }
-                                    syn::Type::Path(path) => {
-                                        let path = &path.path;
-                                        let path_ident = &path.segments.last().unwrap().ident;
-
-                                        match path_ident.to_string().as_str() {
-                                            "Read" | "Write" => {
-                                                let inner_ty = match &path
-                                                    .segments
-                                                    .last()
-                                                    .unwrap()
-                                                    .arguments
-                                                {
-                                                    syn::PathArguments::AngleBracketed(args) => {
-                                                        let inner_ty = &args.args[0];
-                                                        match inner_ty {
-                                                            syn::GenericArgument::Type(ty) => ty,
-                                                            _ => panic!(
-                                                                "Invalid argument type: Expected Query<...>"
-                                                            ),
-                                                        }
-                                                    }
-                                                    _ => panic!("Invalid argument type: Expected Query<...>"),
-                                                };
-                                                let inner_ty = match inner_ty {
-                                                    syn::Type::Path(path) => {
-                                                        let path = &path.path;
-                                                        let path_ident =
-                                                            &path.segments.last().unwrap().ident;
-                                                        path_ident.clone()
-                                                    }
-                                                    _ => panic!(
-                                                        "Invalid argument type: Expected Query<...>"
-                                                    ),
-                                                };
-                                                if seen_types.contains(&inner_ty.to_string()) {
+                                    syn::Type::Reference(reference) => {
+                                        let inner_ty = &reference.elem;
+                                        match inner_ty.as_ref() {
+                                            syn::Type::Path(path) => {
+                                                let path = &path.path;
+                                                let path_ident =
+                                                    &path.segments.last().unwrap().ident;
+                                                let muta = reference.mutability.is_some();
+                                                if muta {
+                                                    query_types.push(quote! { &mut #path_ident });
+                                                } else {
+                                                    query_types.push(quote! { &#path_ident });
+                                                }
+                                                if seen_types.contains(&path_ident.to_string()) {
                                                     panic!(
                                                         "Conflicting queries: {} is already being queried",
-                                                        inner_ty
+                                                        path_ident
                                                     )
                                                 }
-                                                seen_types.push(inner_ty.to_string());
+                                                seen_types.push(path_ident.to_string());
                                             }
-                                            _ => {
-                                                panic!("Invalid argument type: Expected Query<...>")
-                                            }
+                                            _ => panic!("Invalid argument type"),
                                         }
                                     }
-                                    _ => panic!("Invalid argument type: Expected Query<...>"),
+                                    _ => {
+                                        panic!("Invalid argument type: Expected Query<...>")
+                                    }
                                 }
-
-                                query_types.push(inner_ty.clone());
                             }
                             "Res" => {
                                 let res_name = match outer_pat.as_ref() {
@@ -345,17 +259,19 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
             }
 
             fn components_read(&self) -> Vec<u64> {
+                use crate::ecs::query::QueryFilter;
                 let mut components = Vec::new();
                 #(
-                    components.extend_from_slice(&<#query_types>::components_read());
+                    components.extend_from_slice(&<#query_types>::reads().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
                 components
             }
 
             fn components_written(&self) -> Vec<u64> {
+                use crate::ecs::query::QueryFilter;
                 let mut components = Vec::new();
                 #(
-                    components.extend_from_slice(&<#query_types>::components_written());
+                    components.extend_from_slice(&<#query_types>::writes().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
                 components
             }
@@ -385,7 +301,7 @@ pub fn impl_bundle_for_tuple(input: TokenStream) -> TokenStream {
         where
             #(#names: Component),*
         {
-            fn build(self, world: &mut World) -> anyhow::Result<Entity> {
+            fn build(self, world: &World) -> anyhow::Result<Entity> {
                 let (#(#names),*) = self;
                 let entity = world.create_entity();
                 #(
@@ -421,7 +337,7 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> TokenStream {
     });
     let gen = quote! {
         impl crate::ecs::Bundle for #name {
-            fn build(self, world: &mut crate::ecs::World) -> anyhow::Result<crate::ecs::Entity> {
+            fn build(self, world: &crate::ecs::World) -> anyhow::Result<crate::ecs::Entity> {
                 let entity = world.create_entity();
                 #(
                     world.add_component(entity, self.#fields)?;
@@ -434,110 +350,47 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> TokenStream {
 }
 
 #[proc_macro]
-pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
-    let mut query_names = Vec::new();
-    let mut item_names = Vec::new();
-    let mut item_refs = Vec::new();
-    let mut tuple_indices = Vec::new();
-
-    let count = syn::parse::<syn::LitInt>(input.clone())
+pub fn impl_query_for_n_tuple(input: TokenStream) -> TokenStream {
+    let mut names = Vec::new();
+    let n = syn::parse::<syn::LitInt>(input)
         .unwrap()
         .base10_parse::<usize>()
         .unwrap();
-
-    for i in 0..count {
-        let query_name = format_ident!("Q{}", i);
-        query_names.push(query_name.clone());
-        item_names.push(quote! {
-            #query_name::Item
-        });
-        item_refs.push(quote! {
-            #query_name::ItemRef
-        });
-        tuple_indices.push(syn::Index::from(i));
+    for i in 0..n {
+        let name = format_ident!("t{}", i);
+        names.push(name);
     }
 
-    let first_query_name = &query_names[0];
-
-    let rest_query_names = &query_names[1..];
-
     let gen = quote! {
-        impl<'w, 'q, 'i, #(#query_names),*> Queryable<'w, 'q, 'i> for (#(#query_names),*)
+        impl<'a, #(#names),*> crate::ecs::query::QueryFilter<'a> for (#(#names),*)
         where
-            'w: 'q,
-            'q: 'i,
-            #(#query_names: Queryable<'w, 'q, 'i>),*
+            #(#names: crate::ecs::query::QueryFilter<'a>,)*
+            #(#names::Item: crate::ecs::Component,)*
         {
-            type Item = (#(#item_names),*);
-            type ItemRef = (#(#item_refs),*);
-            type Iter = Box<dyn Iterator<Item = Self::ItemRef> + 'i>;
+            type Item = (#(#names::Item),*);
+            type ItemRef = (#(#names::ItemRef),*);
 
-            fn create(entities_components: &'w Components) -> Self {
-                (#(
-                    #query_names::create(entities_components)
-                ),*)
-            }
-
-            fn entities(&self) -> BTreeSet<Entity> {
-                let (#(#query_names),*) = self;
-                let mut entities = #first_query_name.entities();
+            fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
                 #(
-                    entities = entities.bitand(&#rest_query_names.entities());
+                    let #names = #names::get(entity, entries)?;
                 )*
-                entities
+                Some((#(#names),*))
             }
 
-            fn components_read() -> Vec<u64>
-            where
-                Self: Sized,
-            {
-                let mut components = Vec::new();
+            fn reads() -> Option<crate::ecs::query::FxHashSet<u64>> {
+                let mut reads = crate::ecs::query::FxHashSet::default();
                 #(
-                    components.extend_from_slice(&#query_names::components_read());
+                    reads.extend(&#names::reads().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
-                components
+                Some(reads)
             }
 
-            fn components_written() -> Vec<u64>
-            where
-                Self: Sized,
-            {
-                let mut components = Vec::new();
+            fn writes() -> Option<crate::ecs::query::FxHashSet<u64>> {
+                let mut writes = crate::ecs::query::FxHashSet::default();
                 #(
-                    components.extend_from_slice(&#query_names::components_written());
+                    writes.extend(&#names::writes().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
-                components
-            }
-
-            fn get(&'q self, entity: Entity) -> Option<Self::ItemRef> {
-                let entities = self.entities();
-                let (#(#query_names),*) = self;
-                if entities.contains(&entity) {
-                    Some((
-                        #first_query_name.get(entity)?,
-                        #(
-                            #rest_query_names.get(entity)?
-                        ),*
-                    ))
-                } else {
-                    None
-                }
-            }
-
-            fn iter(&'q self) -> Self::Iter {
-                let entities = self.entities();
-                let (#(#query_names),*) = self;
-
-                Box::new(
-                    entities
-                        .into_iter()
-                        .map(|entity| (
-                            #first_query_name.get(entity).unwrap(),
-                            #(
-                                #rest_query_names.get(entity).unwrap()
-                            ),*
-                        ))
-                )
+                Some(writes)
             }
         }
     };

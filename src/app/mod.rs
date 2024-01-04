@@ -81,8 +81,8 @@ impl App {
         self.world.borrow_mut().insert_resource(resource)
     }
 
-    pub fn spawn<T: Bundle>(&mut self, bundle: T) -> anyhow::Result<Entity> {
-        bundle.build(&mut self.world.borrow_mut())
+    pub fn spawn<T: Bundle>(&self, bundle: T) -> anyhow::Result<Entity> {
+        bundle.build(&self.world.borrow_mut())
     }
 
     pub fn add_system<T: System + 'static>(&mut self, system: T) -> SystemId {

@@ -17,7 +17,7 @@
                     "build",
                     "--bin=weaver",
                     "--package=weaver",
-                    "--release",
+                    // "--release",
                 ],
                 "filter": {
                     "name": "weaver",
@@ -41,7 +41,7 @@
                     "--no-run",
                     "--bin=weaver",
                     "--package=weaver",
-                    "--release",
+                    // "--release",
                 ],
                 "filter": {
                     "name": "weaver",

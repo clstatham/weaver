@@ -10,7 +10,7 @@ use crate::{
         texture::Texture,
         transform::Transform,
     },
-    ecs::{Query, Queryable, Read, World, Write},
+    ecs::{Query, World},
     include_shader,
 };
 
@@ -22,7 +22,7 @@ struct UniqueMesh {
 
 impl UniqueMesh {
     fn gather(world: &World) -> FxHashMap<(AssetId, AssetId), Self> {
-        let query = world.query::<Query<(Read<Material>, Read<Mesh>, Read<Transform>)>>();
+        let query = world.query::<(&Material, &Mesh, &Transform)>();
         // gather all entities that share a mesh
         let mut unique_meshes = FxHashMap::default();
         for entity in query.entities() {
@@ -289,7 +289,7 @@ impl PbrRenderPass {
         );
         {
             // write point lights buffer
-            let lights = world.query::<Query<Read<PointLight>>>();
+            let lights = world.query::<&PointLight>();
             let lights_uniform = lights.iter().map(|l| *l).collect::<Vec<_>>();
             queue.write_buffer(
                 &self.point_light_buffer,
@@ -299,7 +299,7 @@ impl PbrRenderPass {
         }
         {
             // write directional lights buffer
-            let lights = world.query::<Query<Read<DirectionalLight>>>();
+            let lights = world.query::<&DirectionalLight>();
             let lights_uniform = lights.iter().map(|l| *l).collect::<Vec<_>>();
             queue.write_buffer(
                 &self.directional_light_buffer,
@@ -400,7 +400,7 @@ impl PbrRenderPass {
     }
 
     pub fn prepare_components(&self, world: &World, renderer: &crate::Renderer) {
-        let query = world.query::<Query<Write<Material>>>();
+        let query = world.query::<&mut Material>();
         for mut material in query.iter() {
             if !material.has_bind_group() {
                 material.create_bind_group(
