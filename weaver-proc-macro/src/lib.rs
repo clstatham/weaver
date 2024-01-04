@@ -365,7 +365,7 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> TokenStream {
 }
 
 #[proc_macro]
-pub fn impl_query_for_n_tuple(input: TokenStream) -> TokenStream {
+pub fn impl_queryfilter_for_n_tuple(input: TokenStream) -> TokenStream {
     let mut names = Vec::new();
     let n = syn::parse::<syn::LitInt>(input)
         .unwrap()

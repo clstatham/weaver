@@ -1,6 +1,7 @@
 use std::{
     cell::{Ref, RefCell, RefMut},
     fmt::Debug,
+    marker::PhantomData,
     sync::Arc,
 };
 
@@ -32,28 +33,40 @@ pub trait QueryFilter<'a> {
 
         let reads = Self::reads().unwrap_or_default();
         let writes = Self::writes().unwrap_or_default();
+        let withs = Self::withs().unwrap_or_default();
+        let withouts = Self::withouts().unwrap_or_default();
+        let ors = Self::ors().unwrap_or_default();
+        // we don't care about the maybes, since they're not required to match
 
-        for (&entity, components) in components.iter() {
-            let mut has_all_reads = true;
+        'outer: for (&entity, components) in components.iter() {
             for read in &reads {
                 if !components.contains_key(read) {
-                    has_all_reads = false;
-                    break;
+                    continue 'outer;
                 }
-            }
-            if !has_all_reads {
-                continue;
             }
 
-            let mut has_all_writes = true;
             for write in &writes {
                 if !components.contains_key(write) {
-                    has_all_writes = false;
-                    break;
+                    continue 'outer;
                 }
             }
-            if !has_all_writes {
-                continue;
+
+            for with in &withs {
+                if !components.contains_key(with) {
+                    continue 'outer;
+                }
+            }
+
+            for without in &withouts {
+                if components.contains_key(without) {
+                    continue 'outer;
+                }
+            }
+
+            for (a, b) in &ors {
+                if !components.contains_key(a) && !components.contains_key(b) {
+                    continue 'outer;
+                }
             }
 
             matches.insert(entity);
@@ -112,6 +125,10 @@ where
 
     fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
+            if entry.component.try_borrow().is_err() {
+                // component must already be borrowed by another query
+                return None;
+            }
             if entry.entity == entity && entry.component.borrow().as_any().is::<T>() {
                 Some(Ref::map(entry.component.borrow(), |component| {
                     component.as_any().downcast_ref::<T>().unwrap()
@@ -136,7 +153,11 @@ where
 
     fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
-            if entry.entity == entity && entry.component.borrow().as_any().is::<T>() {
+            if entry.component.try_borrow_mut().is_err() {
+                // component must already be mutably borrowed by another query
+                return None;
+            }
+            if entry.entity == entity && entry.component.borrow_mut().as_any().is::<T>() {
                 Some(RefMut::map(entry.component.borrow_mut(), |component| {
                     component.as_any_mut().downcast_mut::<T>().unwrap()
                 }))
@@ -151,6 +172,29 @@ where
     }
 }
 
+/// A query filter that always matches, returning an Option<T> where T is the queried component.
+/// If the component exists, it will be Some(T), otherwise it will be None.
+impl<'a, T> QueryFilter<'a> for Option<T>
+where
+    T: QueryFilter<'a>,
+    <T as QueryFilter<'a>>::Item: Component,
+{
+    type Item = Option<T::Item>;
+    type ItemRef = Option<T::ItemRef>;
+
+    fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
+        if let Some(item) = T::get(entity, entries) {
+            Some(Some(item))
+        } else {
+            Some(None)
+        }
+    }
+
+    fn maybes() -> Option<FxHashSet<u64>> {
+        Some(FxHashSet::from_iter(vec![T::Item::component_id()]))
+    }
+}
+
 pub struct Query<'a, T>
 where
     T: QueryFilter<'a>,
@@ -160,10 +204,10 @@ where
 
     reads: FxHashSet<u64>,
     writes: FxHashSet<u64>,
-    // withs: FxHashSet<u64>,
-    // withouts: FxHashSet<u64>,
-    // ors: FxHashSet<(u64, u64)>,
-    // maybes: FxHashSet<u64>,
+    withs: FxHashSet<u64>,
+    withouts: FxHashSet<u64>,
+    ors: FxHashSet<(u64, u64)>,
+    maybes: FxHashSet<u64>,
     _phantom: std::marker::PhantomData<&'a T>,
 }
 
@@ -176,20 +220,20 @@ where
 
         let reads = T::reads().unwrap_or_default();
         let writes = T::writes().unwrap_or_default();
-        // let withs = T::withs().unwrap_or_default();
-        // let withouts = T::withouts().unwrap_or_default();
-        // let ors = T::ors().unwrap_or_default();
-        // let maybes = T::maybes().unwrap_or_default();
+        let withs = T::withs().unwrap_or_default();
+        let withouts = T::withouts().unwrap_or_default();
+        let ors = T::ors().unwrap_or_default();
+        let maybes = T::maybes().unwrap_or_default();
 
         Self {
             entries,
 
             reads,
             writes,
-            // withs,
-            // withouts,
-            // ors,
-            // maybes,
+            withs,
+            withouts,
+            ors,
+            maybes,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -208,10 +252,5 @@ where
     }
 }
 
-weaver_proc_macro::impl_query_for_n_tuple!(2);
-weaver_proc_macro::impl_query_for_n_tuple!(3);
-weaver_proc_macro::impl_query_for_n_tuple!(4);
-weaver_proc_macro::impl_query_for_n_tuple!(5);
-weaver_proc_macro::impl_query_for_n_tuple!(6);
-weaver_proc_macro::impl_query_for_n_tuple!(7);
-weaver_proc_macro::impl_query_for_n_tuple!(8);
+weaver_proc_macro::impl_queryfilter_for_n_tuple!(2);
+weaver_proc_macro::impl_queryfilter_for_n_tuple!(3);

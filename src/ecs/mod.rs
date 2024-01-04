@@ -75,6 +75,19 @@ mod tests {
         }
     }
 
+    #[system(OptionPhysics)]
+    fn option_physics(physics: Query<(&mut Position, Option<&Velocity>)>) {
+        for (mut position, velocity) in physics.iter() {
+            if let Some(velocity) = velocity {
+                position.x += velocity.x;
+                position.y += velocity.y;
+            } else {
+                position.x -= 1.0;
+                position.y -= 1.0;
+            }
+        }
+    }
+
     #[test]
     fn test_query_trait() -> anyhow::Result<()> {
         assert_eq!(
@@ -145,6 +158,39 @@ mod tests {
         let position = position.get(entity).unwrap();
         assert_eq!(position.x, 1.0);
         assert_eq!(position.y, 1.0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_query_option() -> anyhow::Result<()> {
+        let world = World::new();
+
+        let entity = world.spawn(PhysicsBundle {
+            position: Position { x: 0.0, y: 0.0 },
+            velocity: Velocity { x: 1.0, y: 1.0 },
+        })?;
+
+        world.add_system(OptionPhysics);
+
+        world.update()?;
+
+        {
+            let position = world.query::<&Position>();
+            let position = position.get(entity).unwrap();
+            assert_eq!(position.x, 1.0);
+            assert_eq!(position.y, 1.0);
+        }
+
+        let entity2 = world.spawn(Position { x: 0.0, y: 0.0 })?;
+
+        world.update()?;
+        {
+            let position = world.query::<&Position>();
+            let position = position.get(entity2).unwrap();
+            assert_eq!(position.x, -1.0);
+            assert_eq!(position.y, -1.0);
+        }
 
         Ok(())
     }
