@@ -42,7 +42,7 @@ where
         let maybes = Self::maybes().unwrap_or_default();
 
         for (&entity, components) in components.iter() {
-            // check if the entity has the required components
+            // check if the entity has the right combination of components
             // it needs to have ALL of the components in `reads`, `writes`, and `withs`
             // it needs to have NONE of the components in `withouts`
             // we don't care about the maybes, they're optional anyway
@@ -184,24 +184,16 @@ where
 
 /// Very similar to a Queryable, but instead of yielding a reference to the component, it is just used for filtering.
 pub trait QueryFilter<'a> {
-    fn matches(entry: &QueryEntry) -> bool;
     fn withs() -> Option<FxHashSet<u64>> {
         None
     }
     fn withouts() -> Option<FxHashSet<u64>> {
         None
     }
-    fn ors() -> Option<FxHashSet<(u64, u64)>> {
-        None
-    }
 }
 
 /// Default pass-through filter that yields all entries.
-impl<'a> QueryFilter<'a> for () {
-    fn matches(_entry: &QueryEntry) -> bool {
-        true
-    }
-}
+impl<'a> QueryFilter<'a> for () {}
 
 pub struct With<'a, T>(std::marker::PhantomData<&'a T>)
 where
@@ -211,9 +203,6 @@ impl<'a, T> QueryFilter<'a> for With<'a, T>
 where
     T: Component,
 {
-    fn matches(entry: &QueryEntry) -> bool {
-        entry.component.borrow().as_any().is::<T>()
-    }
     fn withs() -> Option<FxHashSet<u64>> {
         Some(FxHashSet::from_iter(vec![T::component_id()]))
     }
@@ -227,9 +216,6 @@ impl<'a, T> QueryFilter<'a> for Without<'a, T>
 where
     T: Component,
 {
-    fn matches(entry: &QueryEntry) -> bool {
-        !entry.component.borrow().as_any().is::<T>()
-    }
     fn withouts() -> Option<FxHashSet<u64>> {
         Some(FxHashSet::from_iter(vec![T::component_id()]))
     }
@@ -288,13 +274,6 @@ macro_rules! impl_queryfilter_for_tuple {
         where
             $($name: QueryFilter<'a>,)*
         {
-            fn matches(entry: &QueryEntry) -> bool {
-                $(
-                    $name::matches(entry) &&
-                )*
-                true
-            }
-
             fn withs() -> Option<FxHashSet<u64>> {
                 let mut all = FxHashSet::default();
                 $(
@@ -313,19 +292,6 @@ macro_rules! impl_queryfilter_for_tuple {
                 $(
                     if let Some(mut withouts) = $name::withouts() {
                         all.extend(withouts.drain());
-                    }
-                )*
-                if all.is_empty() {
-                    return None;
-                }
-                Some(all)
-            }
-
-            fn ors() -> Option<FxHashSet<(u64, u64)>> {
-                let mut all = FxHashSet::default();
-                $(
-                    if let Some(mut ors) = $name::ors() {
-                        all.extend(ors.drain());
                     }
                 )*
                 if all.is_empty() {

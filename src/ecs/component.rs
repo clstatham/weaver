@@ -23,13 +23,6 @@ pub unsafe trait Component: Downcast + Send + Sync {
     fn component_id() -> u64
     where
         Self: Sized;
-
-    fn component_id_sized(&self) -> u64
-    where
-        Self: Sized,
-    {
-        Self::component_id()
-    }
 }
 
 unsafe impl<T: Component> Component for Option<T> {
