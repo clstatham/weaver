@@ -23,12 +23,17 @@ pub mod prelude {
 
 use core::{
     doodads::{Cube, Doodad, Doodads},
+    physics::{Physics, RapierContext, RigidBody},
     ui::builtin::FpsUi,
 };
 
 use prelude::*;
+use rapier3d::{dynamics::RigidBodyBuilder, geometry::ColliderBuilder, pipeline::QueryFilter};
 use renderer::compute::picking::ScreenPicker;
-use winit::event::VirtualKeyCode;
+use winit::event::{MouseButton, VirtualKeyCode};
+
+#[derive(Component)]
+struct Handle;
 
 #[derive(Clone, Copy)]
 struct Plane {
@@ -40,11 +45,9 @@ struct Plane {
 struct EditorState {
     pub selected_entity: Option<Entity>,
     pub selection_plane: Option<Plane>,
-    pub rotation_reference_vector: Option<glam::Vec3>,
+    pub grabby_thing: Option<Entity>,
+    pub grabby_radius: f32,
 }
-
-#[derive(Component)]
-struct Object;
 
 #[allow(dead_code)]
 enum Materials {
@@ -241,166 +244,121 @@ fn ui_update(mut ctx: ResMut<EguiContext>, mut fps_ui: Query<&mut FpsUi>) {
 fn spawn_stuff(
     commands: Commands,
     mut asset_server: ResMut<AssetServer>,
-    input: Res<Input>,
-    picker: Res<ScreenPicker>,
-    camera: Res<FlyCamera>,
+    mut picker: ResMut<ScreenPicker>,
     renderer: Res<Renderer>,
+    camera: Res<FlyCamera>,
+    mut input: ResMut<Input>,
 ) {
     if input.key_just_pressed(VirtualKeyCode::F) {
-        if let Some(mouse_position) = input.mouse_position() {
-            let result = picker.pick(mouse_position, &renderer, &camera).unwrap();
-
-            if let Some(result) = result {
+        if let Some(mouse_pos) = input.mouse_position() {
+            if let Some(result) = picker.pick(mouse_pos, &renderer, &camera).unwrap() {
+                let texture_scaling = 2.0;
+                let material = Materials::Metal
+                    .load(&mut asset_server, texture_scaling)
+                    .unwrap();
                 let mesh = asset_server.load_mesh("assets/meshes/cube.glb").unwrap();
-                let material = Materials::Wood.load(&mut asset_server, 2.0).unwrap();
-                let transform = Transform::from_translation(result.position);
-                commands.spawn((mesh, material, transform))?;
+
+                commands.spawn((
+                    mesh.clone(),
+                    material.clone(),
+                    RigidBody::new(
+                        RigidBodyBuilder::dynamic()
+                            .position(result.position.into())
+                            .angular_damping(0.99)
+                            .linear_damping(0.9)
+                            .build(),
+                        ColliderBuilder::cuboid(1.0, 1.0, 1.0).build(),
+                        glam::Vec3::ONE,
+                    ),
+                ))?;
             }
         }
     }
 }
 
-#[system(PickScreen)]
-fn pick_screen(
-    picker: Res<ScreenPicker>,
-    editor: ResMut<EditorState>,
+#[system(Ropes)]
+fn ropes(
+    mut doodads: ResMut<Doodads>,
+    mut picker: ResMut<ScreenPicker>,
     renderer: Res<Renderer>,
     camera: Res<FlyCamera>,
-    input: Res<Input>,
-    mut doodads: ResMut<Doodads>,
-    meshes_transforms: Query<(&Mesh, &mut Transform)>,
+    mut editor_state: ResMut<EditorState>,
+    mut input: ResMut<Input>,
+    commands: Commands,
+    mut physics: ResMut<RapierContext>,
+    query: Query<&mut RigidBody>,
 ) {
-    if input.mouse_button_pressed(winit::event::MouseButton::Left) {
-        if let Some(mouse_position) = input.mouse_position() {
-            let result = picker.pick(mouse_position, &renderer, &camera).unwrap();
+    if input.mouse_button_pressed(MouseButton::Left) {
+        if let Some(mouse_pos) = input.mouse_position() {
+            if let Some(result) = picker.pick(mouse_pos, &renderer, &camera)? {
+                if let Some(grabby_thing) = editor_state.grabby_thing {
+                    if let Some(mut rb) = query.get(grabby_thing) {
+                        let rb_handle = rb.body_handle(&mut physics);
+                        let mut body = physics.bodies.get_mut(rb_handle).unwrap();
 
-            if let Some(result) = result {
-                let ray_origin = camera.translation;
-                let ray_direction = (result.position - ray_origin).normalize();
+                        let ray_origin = camera.translation;
+                        let ray_direction = (result.position - ray_origin).normalize();
 
-                if editor.selected_entity.is_none() {
-                    let mut entities_by_distance = Vec::new();
-                    for entity in meshes_transforms.entities() {
-                        let (mesh, transform) = meshes_transforms.get(entity).unwrap();
-                        let aabb = mesh.aabb().transformed(*transform);
-                        if let Some(distance) = aabb.intersect_ray(ray_origin, ray_direction) {
-                            entities_by_distance.push((entity, distance));
-                        }
+                        let intersection = ray_origin + ray_direction * editor_state.grabby_radius;
+
+                        body.set_position(intersection.into(), true);
+
+                        doodads.push(Doodad::Cube(Cube::new(
+                            result.position,
+                            glam::Quat::IDENTITY,
+                            glam::Vec3::ONE * 0.2,
+                            Color::MAGENTA,
+                        )));
                     }
-                    entities_by_distance.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-                    if let Some((entity, _)) = entities_by_distance.first() {
-                        editor.selected_entity = Some(*entity);
-
-                        let (mesh, transform) = meshes_transforms.get(*entity).unwrap();
-                        let aabb = mesh.aabb().transformed(*transform);
-
-                        editor.selection_plane = Some(Plane {
-                            position: aabb.center(),
-                            normal: (aabb.center() - ray_origin).normalize(),
-                        });
-                    }
-                }
-
-                if let (Some(entity), Some(plane)) =
-                    (editor.selected_entity, editor.selection_plane)
-                {
-                    let (mesh, mut transform) = meshes_transforms.get(entity).unwrap();
-                    let aabb = mesh.aabb().transformed(*transform);
-                    let aabb_center_delta = aabb.center() - transform.get_translation();
-
-                    let mut color = Color::WHITE;
-
-                    // blender-style translation
-                    if input.key_pressed(VirtualKeyCode::G) {
-                        let distance = ray_direction.dot(aabb.center() - ray_origin);
-                        let mut translation = ray_origin + ray_direction * distance;
-
-                        transform.set_translation(translation + aabb_center_delta);
-
-                        color = Color::GREEN;
-                    }
-                    // blender-style rotation
-                    if input.key_pressed(VirtualKeyCode::R) {
-                        // get the intersection of the selection plane with the ray
-                        let distance = (plane.position - ray_origin).dot(plane.normal)
-                            / ray_direction.dot(plane.normal);
-                        let intersection = ray_origin + ray_direction * distance;
-
-                        // get the vector from the plane's center to the intersection
-                        let mut vector = intersection - plane.position;
-
-                        if let Some(rotation_reference_vector) = editor.rotation_reference_vector {
-                            // get the angle between the reference vector and the intersection vector
-                            let mut angle = vector.angle_between(rotation_reference_vector);
-
-                            // get the cross product of the reference vector and the intersection vector
-                            let cross = rotation_reference_vector.cross(vector);
-
-                            // get the dot product of the cross product and the plane's normal
-                            let dot = cross.dot(plane.normal);
-
-                            // if the dot product is negative, the angle is negative
-                            if dot < 0.0 {
-                                angle = -angle;
+                } else {
+                    let ray_origin = camera.translation;
+                    let ray_direction = (result.position - ray_origin).normalize();
+                    let ray = rapier3d::geometry::Ray::new(ray_origin.into(), ray_direction.into());
+                    if let Some((collider, t)) = physics.cast_ray(ray, f32::MAX, QueryFilter::new())
+                    {
+                        #[allow(clippy::manual_filter)]
+                        let body = query.entities().find_map(|entity| {
+                            if let Some(mut rb) = query.get(entity) {
+                                if rb.collider_handle(&mut physics) == collider {
+                                    Some(rb)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
                             }
+                        });
 
-                            // rotate the transform by the angle
-                            let (scale, rotation, translation) =
-                                transform.matrix.to_scale_rotation_translation();
-                            let rotation =
-                                glam::Quat::from_axis_angle(plane.normal, angle) * rotation;
-                            transform.matrix = glam::Mat4::from_scale_rotation_translation(
-                                scale,
-                                rotation,
-                                translation,
+                        if let Some(mut body) = body {
+                            let mut grabby_rb = RigidBody::new_no_collisions(
+                                RigidBodyBuilder::dynamic()
+                                    .position(result.position.into())
+                                    .build(),
+                                glam::Vec3::ONE,
                             );
+                            body.add_rope_joint(&mut grabby_rb, &mut physics);
+                            let grabby_thing = commands.spawn((Handle, grabby_rb))?;
+
+                            editor_state.grabby_thing = Some(grabby_thing);
+
+                            let mut plane = Plane {
+                                position: result.position,
+                                normal: (camera.translation - result.position).normalize(),
+                            };
+
+                            editor_state.selection_plane = Some(plane);
+                            editor_state.grabby_radius = t;
                         }
-
-                        // set the reference vector to the intersection vector
-                        editor.rotation_reference_vector = Some(vector);
-
-                        color = Color::RED;
                     }
-                    // blender-style scale
-                    if input.key_pressed(VirtualKeyCode::C) {
-                        // get the intersection of the selection plane with the ray
-                        let distance = (plane.position - ray_origin).dot(plane.normal)
-                            / ray_direction.dot(plane.normal);
-                        let intersection = ray_origin + ray_direction * distance;
-
-                        // get the vector from the plane's center to the intersection
-                        let mut vector = intersection - plane.position;
-
-                        // get the scaling amount from the vector's length
-                        let scale = vector.length();
-
-                        let (current_scale, rotation, translation) =
-                            transform.matrix.to_scale_rotation_translation();
-
-                        // set the transform's scale to the scaling amount
-                        transform.matrix = glam::Mat4::from_scale_rotation_translation(
-                            current_scale.normalize() * scale,
-                            rotation,
-                            translation,
-                        );
-
-                        color = Color::BLUE;
-                    }
-
-                    let aabb = mesh.aabb().transformed(*transform);
-                    doodads.push(Doodad::Cube(Cube::new(
-                        aabb.center(),
-                        glam::Quat::IDENTITY,
-                        glam::Vec3::ONE * 0.3,
-                        color,
-                    )));
                 }
             }
         }
     } else {
-        editor.selected_entity = None;
-        editor.selection_plane = None;
-        editor.rotation_reference_vector = None;
+        if let Some(grabby_thing) = editor_state.grabby_thing {
+            commands.remove_entity(grabby_thing);
+        }
+        editor_state.grabby_thing = None;
+        editor_state.selection_plane = None;
     }
 }
 
@@ -408,13 +366,10 @@ fn pick_screen(
 fn setup(commands: Commands, mut asset_server: ResMut<AssetServer>) -> anyhow::Result<()> {
     commands.spawn(FpsUi::new())?;
 
-    commands.spawn((
-        PointLight::new(
-            glam::Vec3::new(5.0, 5.0, 5.0),
-            core::color::Color::WHITE,
-            10.0,
-        ),
-        Object,
+    commands.spawn(PointLight::new(
+        glam::Vec3::new(5.0, 5.0, 5.0),
+        core::color::Color::WHITE,
+        10.0,
     ))?;
 
     let room_scale = 30.0;
@@ -427,20 +382,35 @@ fn setup(commands: Commands, mut asset_server: ResMut<AssetServer>) -> anyhow::R
     commands.spawn((
         mesh,
         material,
-        Transform::new()
-            .scale(room_scale, 1.0, room_scale)
-            .translate(0.0, -2.0, 0.0),
+        RigidBody::new(
+            RigidBodyBuilder::fixed()
+                .position(glam::Vec3::new(0.0, -2.0, 0.0).into())
+                .build(),
+            ColliderBuilder::cuboid(room_scale, 1.0, room_scale).build(),
+            glam::Vec3::new(room_scale, 1.0, room_scale),
+        ),
     ))?;
 
     let texture_scaling = 2.0;
     let material = Materials::Metal
         .load(&mut asset_server, texture_scaling)
         .unwrap();
-    let mesh = asset_server
-        .load_mesh("assets/meshes/monkey_flat.glb")
-        .unwrap();
+    let mesh = asset_server.load_mesh("assets/meshes/cube.glb").unwrap();
 
-    commands.spawn((mesh.clone(), material.clone(), Transform::new()))?;
+    commands.spawn((
+        mesh.clone(),
+        material.clone(),
+        RigidBody::new(
+            RigidBodyBuilder::dynamic()
+                .position(glam::Vec3::new(0.0, 5.0, 0.0).into())
+                .rotation(glam::Vec3::new(10.0f32.to_radians(), 0.0, 10.0f32.to_radians()).into())
+                .angular_damping(0.99)
+                .linear_damping(0.9)
+                .build(),
+            ColliderBuilder::cuboid(1.0, 1.0, 1.0).build(),
+            glam::Vec3::ONE,
+        ),
+    ))?;
 }
 
 fn main() -> anyhow::Result<()> {
@@ -451,12 +421,14 @@ fn main() -> anyhow::Result<()> {
     let picker = ScreenPicker::new(&*app.world().read_resource()?);
     app.insert_resource(picker)?;
     app.insert_resource(EditorState::default())?;
+    app.insert_resource(RapierContext::new(glam::Vec3::new(0.0, -9.81, 0.0)))?;
 
     app.add_startup_system(Setup);
 
+    app.add_system(Physics);
     app.add_system(UiUpdate);
     app.add_system(CameraUpdate);
-    app.add_system(PickScreen);
+    app.add_system(Ropes);
     app.add_system(SpawnStuff);
 
     app.run()?;

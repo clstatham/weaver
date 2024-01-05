@@ -5,6 +5,7 @@ use crate::{
         camera::{CameraUniform, FlyCamera},
         light::{DirectionalLight, DirectionalLightUniform, PointLight, PointLightUniform},
         mesh::{Mesh, Vertex, MAX_MESHES},
+        physics::{RapierContext, RigidBody},
         texture::Texture,
         transform::Transform,
     },
@@ -24,6 +25,7 @@ impl UniqueMesh {
     fn gather(world: &World) -> FxHashMap<AssetId, Self> {
         let mut meshes = FxHashMap::default();
 
+        // gather all the meshes with transforms
         let query = Query::<(&Mesh, &Transform)>::new(world);
         for (mesh, transform) in query.iter() {
             let mesh = mesh.clone();
@@ -33,6 +35,22 @@ impl UniqueMesh {
                 transforms: Vec::new(),
             });
             unique_mesh.transforms.push(*transform);
+        }
+
+        // gather all the meshes with rigid bodies
+        if let Ok(mut ctx) = world.write_resource::<RapierContext>() {
+            let query = Query::<(&Mesh, &mut RigidBody)>::new(world);
+            for (mesh, mut rigid_body) in query.iter() {
+                let mesh = mesh.clone();
+                let mesh_id = mesh.asset_id();
+                let unique_mesh = meshes.entry(mesh_id).or_insert(Self {
+                    mesh,
+                    transforms: Vec::new(),
+                });
+                unique_mesh
+                    .transforms
+                    .push(rigid_body.get_transform(&mut ctx));
+            }
         }
 
         meshes

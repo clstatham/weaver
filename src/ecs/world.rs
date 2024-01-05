@@ -69,6 +69,10 @@ impl World {
         }
     }
 
+    pub fn remove_entity(&self, entity: Entity) {
+        self.components.borrow_mut().remove(&entity);
+    }
+
     pub fn insert_resource<T: Resource>(&mut self, resource: T) -> anyhow::Result<()> {
         if self.has_resource::<T>() {
             return Err(EcsError::ResourceAlreadyExists.into());

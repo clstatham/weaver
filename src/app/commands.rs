@@ -21,6 +21,10 @@ impl<'a> Commands<'a> {
         bundle.build(self.world)
     }
 
+    pub fn remove_entity(&self, entity: Entity) {
+        self.world.remove_entity(entity);
+    }
+
     pub fn read_resource<T: Resource>(&self) -> anyhow::Result<Res<T>> {
         self.world.read_resource()
     }

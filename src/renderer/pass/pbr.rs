@@ -7,6 +7,7 @@ use crate::{
         light::{DirectionalLight, DirectionalLightBuffer, PointLight, PointLightBuffer},
         material::{Material, MaterialUniform},
         mesh::{Mesh, Vertex, MAX_MESHES},
+        physics::{RapierContext, RigidBody},
         texture::Texture,
         transform::Transform,
     },
@@ -22,9 +23,10 @@ struct UniqueMesh {
 
 impl UniqueMesh {
     fn gather(world: &World) -> FxHashMap<(AssetId, AssetId), Self> {
-        let query = Query::<(&Material, &Mesh, &Transform)>::new(world);
         // gather all entities that share a mesh
         let mut unique_meshes = FxHashMap::default();
+        // check for meshes with Transform
+        let query = Query::<(&Material, &Mesh, &Transform)>::new(world);
         for entity in query.entities() {
             let (material, mesh, transform) = query.get(entity).unwrap();
             let mesh_id = mesh.asset_id();
@@ -39,6 +41,26 @@ impl UniqueMesh {
                 .transforms
                 .push(*transform);
         }
+        // check for meshes with RigidBody
+        if let Ok(mut ctx) = world.write_resource::<RapierContext>() {
+            let query = Query::<(&Material, &Mesh, &mut RigidBody)>::new(world);
+
+            for entity in query.entities() {
+                let (material, mesh, mut rigid_body) = query.get(entity).unwrap();
+                let mesh_id = mesh.asset_id();
+                let material_id = material.asset_id();
+                unique_meshes
+                    .entry((mesh_id, material_id))
+                    .or_insert_with(|| UniqueMesh {
+                        mesh: mesh.clone(),
+                        material: material.clone(),
+                        transforms: Vec::new(),
+                    })
+                    .transforms
+                    .push(rigid_body.get_transform(&mut ctx));
+            }
+        }
+
         unique_meshes
     }
 }

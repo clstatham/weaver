@@ -7,6 +7,7 @@ pub mod light;
 pub mod material;
 pub mod mesh;
 pub mod model;
+pub mod physics;
 pub mod texture;
 pub mod time;
 pub mod transform;
