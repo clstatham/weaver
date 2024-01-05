@@ -8,7 +8,7 @@ use crate::{
         texture::Texture,
         transform::Transform,
     },
-    ecs::World,
+    ecs::{Query, World},
     include_shader,
 };
 use rustc_hash::FxHashMap;
@@ -24,7 +24,7 @@ impl UniqueMesh {
     fn gather(world: &World) -> FxHashMap<AssetId, Self> {
         let mut meshes = FxHashMap::default();
 
-        let query = world.query::<(&Mesh, &Transform)>();
+        let query = Query::<(&Mesh, &Transform)>::new(world);
         for (mesh, transform) in query.iter() {
             let mesh = mesh.clone();
             let mesh_id = mesh.asset_id();
@@ -758,7 +758,7 @@ impl ShadowRenderPass {
             bytemuck::cast_slice(&[camera_uniform]),
         );
 
-        let light_query = world.query::<&DirectionalLight>();
+        let light_query = Query::<&DirectionalLight>::new(world);
         let directional_light = light_query.iter().next();
         if directional_light.is_none() {
             return Ok(());
@@ -869,7 +869,7 @@ impl ShadowRenderPass {
             });
         }
 
-        let light_query = world.query::<&PointLight>();
+        let light_query = Query::<&PointLight>::new(world);
         let point_light = light_query.iter().next().unwrap();
         let point_light_uniform = PointLightUniform::from(&*point_light);
 

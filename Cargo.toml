@@ -37,6 +37,7 @@ image = "0.24.7"
 petgraph = "0.6.4"
 egui_plot = "0.24.2"
 futures-channel = "0.3.30"
+bit-set = "0.5.3"
 
 [profile.release]
 debug = true

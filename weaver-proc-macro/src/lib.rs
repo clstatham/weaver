@@ -55,6 +55,7 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
     let args = &ast.sig.inputs;
 
     let mut query_types = Vec::new();
+    let mut filter_types = Vec::new();
     let mut res_types = Vec::new();
     let mut resmut_types = Vec::new();
 
@@ -71,7 +72,8 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
     // 2. no conflicting reads
     // 3. arguments should all be Query<_>, Res<_>, ResMut<_>, Commands
     // 4. Queries can take &T or &mut T
-    // 5. only one Commands argument is allowed
+    // 5. Queries can also take filters in the form of Query<T, F> where F: QueryFilter
+    // 6. only one Commands argument is allowed
     // examples:
     // fn system(query: Query<&A>) {}
     // fn system(query: Query<&A>, query2: Query<&B>) {}
@@ -98,52 +100,38 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                                     _ => panic!("Invalid argument type"),
                                 };
                                 query_names.push(query_name.clone());
-                                let inner_ty = match &path.segments.last().unwrap().arguments {
+
+                                let seg = path.segments.last().unwrap();
+
+                                match &seg.arguments {
                                     syn::PathArguments::AngleBracketed(args) => {
-                                        let inner_ty = &args.args[0];
-                                        match inner_ty {
-                                            syn::GenericArgument::Type(ty) => ty,
-                                            _ => {
-                                                panic!("Invalid argument type: Expected Query<...>")
+                                        let args =
+                                            args.args.clone().into_iter().collect::<Vec<_>>();
+                                        let query = &args[0];
+                                        let filter = args.get(1);
+
+                                        // skip the checks for now
+
+                                        match query {
+                                            syn::GenericArgument::Type(ty) => {
+                                                query_types.push(ty.clone());
                                             }
+                                            _ => panic!("Invalid argument type"),
                                         }
-                                    }
-                                    _ => panic!("Invalid argument type: Expected Query<...>"),
-                                };
-                                match &inner_ty {
-                                    syn::Type::Tuple(tuple) => {
-                                        query_types.push(quote! {
-                                            #tuple
-                                        });
-                                    }
-                                    syn::Type::Reference(reference) => {
-                                        let inner_ty = &reference.elem;
-                                        match inner_ty.as_ref() {
-                                            syn::Type::Path(path) => {
-                                                let path = &path.path;
-                                                let path_ident =
-                                                    &path.segments.last().unwrap().ident;
-                                                let muta = reference.mutability.is_some();
-                                                if muta {
-                                                    query_types.push(quote! { &mut #path_ident });
-                                                } else {
-                                                    query_types.push(quote! { &#path_ident });
-                                                }
-                                                if seen_types.contains(&path_ident.to_string()) {
-                                                    panic!(
-                                                        "Conflicting queries: {} is already being queried",
-                                                        path_ident
-                                                    )
-                                                }
-                                                seen_types.push(path_ident.to_string());
+
+                                        match filter {
+                                            Some(syn::GenericArgument::Type(ty)) => {
+                                                filter_types.push(ty.clone());
+                                            }
+                                            None => {
+                                                filter_types
+                                                    .push(syn::parse2(quote! { () }).unwrap());
                                             }
                                             _ => panic!("Invalid argument type"),
                                         }
                                     }
-                                    _ => {
-                                        panic!("Invalid argument type: Expected Query<...>")
-                                    }
-                                }
+                                    _ => panic!("Invalid argument type: Expected Query<...>"),
+                                };
                             }
                             "Res" => {
                                 let res_name = match outer_pat.as_ref() {
@@ -258,7 +246,7 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
             #[allow(unused_mut)]
             fn run(&self, world: &crate::ecs::World) -> anyhow::Result<()> {
                 #(
-                    let mut #query_names = world.query::<#query_types>();
+                    let mut #query_names: Query<#query_types, #filter_types> = Query::new(world);
                 )*
                 #(
                     let #res_names = world.read_resource::<#res_types>()?;
@@ -274,19 +262,19 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
             }
 
             fn components_read(&self) -> Vec<u64> {
-                use crate::ecs::query::QueryFilter;
+                use crate::ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend_from_slice(&<#query_types>::reads().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    components.extend_from_slice(&<#query_types as Queryable<#filter_types>>::reads().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
                 components
             }
 
             fn components_written(&self) -> Vec<u64> {
-                use crate::ecs::query::QueryFilter;
+                use crate::ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend_from_slice(&<#query_types>::writes().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    components.extend_from_slice(&<#query_types as Queryable<#filter_types>>::writes().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
                 components
             }
@@ -365,7 +353,7 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> TokenStream {
 }
 
 #[proc_macro]
-pub fn impl_queryfilter_for_n_tuple(input: TokenStream) -> TokenStream {
+pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
     let mut names = Vec::new();
     let n = syn::parse::<syn::LitInt>(input)
         .unwrap()
@@ -377,9 +365,10 @@ pub fn impl_queryfilter_for_n_tuple(input: TokenStream) -> TokenStream {
     }
 
     let gen = quote! {
-        impl<'a, #(#names),*> crate::ecs::query::QueryFilter<'a> for (#(#names),*)
+        impl<'a, #(#names),*, F> crate::ecs::query::Queryable<'a, F> for (#(#names),*)
         where
-            #(#names: crate::ecs::query::QueryFilter<'a>,)*
+            F: crate::ecs::query::QueryFilter<'a>,
+            #(#names: crate::ecs::query::Queryable<'a, F>,)*
             #(#names::Item: crate::ecs::Component,)*
         {
             type Item = (#(#names::Item),*);

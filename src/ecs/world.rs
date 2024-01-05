@@ -6,10 +6,9 @@ use std::{
 use rustc_hash::FxHashMap;
 
 use super::{
-    query::QueryFilter,
     resource::{Res, ResMut, Resource},
     system::{SystemGraph, SystemId},
-    Bundle, Component, EcsError, Entity, Query, System,
+    Bundle, Component, EcsError, Entity, System,
 };
 
 pub type Components = FxHashMap<Entity, FxHashMap<u64, Arc<RefCell<dyn Component>>>>;
@@ -97,10 +96,6 @@ impl World {
 
     pub fn has_resource<T: Resource>(&self) -> bool {
         self.resources.contains_key(&T::resource_id())
-    }
-
-    pub fn query<'a, T: QueryFilter<'a>>(&self) -> Query<'a, T> {
-        Query::new(&self.components.borrow())
     }
 
     pub fn has_startup_system(&self, system: SystemId) -> bool {

@@ -1,13 +1,12 @@
 use std::{
     cell::{Ref, RefCell, RefMut},
     fmt::Debug,
-    marker::PhantomData,
     sync::Arc,
 };
 
 use rustc_hash::FxHashSet;
 
-use super::{entity::Entity, world::Components, Bundle, Component};
+use super::{entity::Entity, world::Components, Bundle, Component, World};
 
 #[derive(Clone)]
 pub struct QueryEntry {
@@ -23,19 +22,22 @@ impl Debug for QueryEntry {
     }
 }
 
-pub trait QueryFilter<'a> {
+pub trait Queryable<'a, F>
+where
+    F: QueryFilter<'a>,
+{
     type Item: Bundle;
     type ItemRef: 'a;
 
-    /// Returns a set of entities that match the filter, based on their components.
+    /// Returns a set of entities that match the query, based on their components.
     fn matching_entities(components: &Components) -> FxHashSet<Entity> {
         let mut matches = FxHashSet::default();
 
         let reads = Self::reads().unwrap_or_default();
         let writes = Self::writes().unwrap_or_default();
+        let ors = Self::ors().unwrap_or_default();
         let withs = Self::withs().unwrap_or_default();
         let withouts = Self::withouts().unwrap_or_default();
-        let ors = Self::ors().unwrap_or_default();
         // we don't care about the maybes, since they're not required to match
 
         'outer: for (&entity, components) in components.iter() {
@@ -47,6 +49,12 @@ pub trait QueryFilter<'a> {
 
             for write in &writes {
                 if !components.contains_key(write) {
+                    continue 'outer;
+                }
+            }
+
+            for (a, b) in &ors {
+                if !components.contains_key(a) && !components.contains_key(b) {
                     continue 'outer;
                 }
             }
@@ -63,20 +71,14 @@ pub trait QueryFilter<'a> {
                 }
             }
 
-            for (a, b) in &ors {
-                if !components.contains_key(a) && !components.contains_key(b) {
-                    continue 'outer;
-                }
-            }
-
             matches.insert(entity);
         }
 
         matches
     }
 
-    /// Filters the components based on the filter, returning a list of entries.
-    fn filter(components: &Components) -> Vec<QueryEntry> {
+    /// Collects the components that match the query, based on the given entities.
+    fn collect(components: &Components) -> Vec<QueryEntry> {
         let entities = Self::matching_entities(components);
         entities
             .into_iter()
@@ -89,6 +91,7 @@ pub trait QueryFilter<'a> {
                         entity,
                         component: component.clone(),
                     })
+                    .filter(|entry| F::matches(entry))
             })
             .collect()
     }
@@ -103,10 +106,10 @@ pub trait QueryFilter<'a> {
         None
     }
     fn withs() -> Option<FxHashSet<u64>> {
-        None
+        F::withs()
     }
     fn withouts() -> Option<FxHashSet<u64>> {
-        None
+        F::withouts()
     }
     fn ors() -> Option<FxHashSet<(u64, u64)>> {
         None
@@ -116,9 +119,10 @@ pub trait QueryFilter<'a> {
     }
 }
 
-impl<'a, T> QueryFilter<'a> for &'a T
+impl<'a, T, F> Queryable<'a, F> for &'a T
 where
     T: Component,
+    F: QueryFilter<'a>,
 {
     type Item = T;
     type ItemRef = Ref<'a, T>;
@@ -130,9 +134,13 @@ where
                 return None;
             }
             if entry.entity == entity && entry.component.borrow().as_any().is::<T>() {
-                Some(Ref::map(entry.component.borrow(), |component| {
-                    component.as_any().downcast_ref::<T>().unwrap()
-                }))
+                if F::matches(entry) {
+                    Some(Ref::map(entry.component.borrow(), |component| {
+                        component.as_any().downcast_ref::<T>().unwrap()
+                    }))
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -144,9 +152,10 @@ where
     }
 }
 
-impl<'a, T> QueryFilter<'a> for &'a mut T
+impl<'a, T, F> Queryable<'a, F> for &'a mut T
 where
     T: Component,
+    F: QueryFilter<'a>,
 {
     type Item = T;
     type ItemRef = RefMut<'a, T>;
@@ -158,9 +167,13 @@ where
                 return None;
             }
             if entry.entity == entity && entry.component.borrow_mut().as_any().is::<T>() {
-                Some(RefMut::map(entry.component.borrow_mut(), |component| {
-                    component.as_any_mut().downcast_mut::<T>().unwrap()
-                }))
+                if F::matches(entry) {
+                    Some(RefMut::map(entry.component.borrow_mut(), |component| {
+                        component.as_any_mut().downcast_mut::<T>().unwrap()
+                    }))
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -172,12 +185,13 @@ where
     }
 }
 
-/// A query filter that always matches, returning an Option<T> where T is the queried component.
+/// A query that always matches, returning an Option<T> where T is the queried component.
 /// If the component exists, it will be Some(T), otherwise it will be None.
-impl<'a, T> QueryFilter<'a> for Option<T>
+impl<'a, T, F> Queryable<'a, F> for Option<T>
 where
-    T: QueryFilter<'a>,
-    <T as QueryFilter<'a>>::Item: Component,
+    T: Queryable<'a, F>,
+    <T as Queryable<'a, F>>::Item: Component,
+    F: QueryFilter<'a>,
 {
     type Item = Option<T::Item>;
     type ItemRef = Option<T::ItemRef>;
@@ -195,45 +209,77 @@ where
     }
 }
 
-pub struct Query<'a, T>
+/// Very similar to a Queryable, but instead of yielding a reference to the component, it is just used for filtering.
+pub trait QueryFilter<'a> {
+    fn matches(entry: &QueryEntry) -> bool;
+    fn withs() -> Option<FxHashSet<u64>> {
+        None
+    }
+    fn withouts() -> Option<FxHashSet<u64>> {
+        None
+    }
+}
+
+/// Default pass-through filter that returns all entries.
+impl<'a> QueryFilter<'a> for () {
+    fn matches(_entry: &QueryEntry) -> bool {
+        true
+    }
+}
+
+pub struct With<'a, T>(std::marker::PhantomData<&'a T>)
 where
-    T: QueryFilter<'a>,
+    T: Component;
+
+impl<'a, T> QueryFilter<'a> for With<'a, T>
+where
+    T: Component,
+{
+    fn matches(entry: &QueryEntry) -> bool {
+        entry.component.borrow().as_any().is::<T>()
+    }
+    fn withs() -> Option<FxHashSet<u64>> {
+        Some(FxHashSet::from_iter(vec![T::component_id()]))
+    }
+}
+
+pub struct Without<'a, T>(std::marker::PhantomData<&'a T>)
+where
+    T: Component;
+
+impl<'a, T> QueryFilter<'a> for Without<'a, T>
+where
+    T: Component,
+{
+    fn matches(entry: &QueryEntry) -> bool {
+        !entry.component.borrow().as_any().is::<T>()
+    }
+    fn withouts() -> Option<FxHashSet<u64>> {
+        Some(FxHashSet::from_iter(vec![T::component_id()]))
+    }
+}
+
+pub struct Query<'a, T, F = ()>
+where
+    T: Queryable<'a, F>,
+    F: QueryFilter<'a>,
 {
     // component id, entities/components
     pub(crate) entries: Vec<QueryEntry>,
 
-    reads: FxHashSet<u64>,
-    writes: FxHashSet<u64>,
-    withs: FxHashSet<u64>,
-    withouts: FxHashSet<u64>,
-    ors: FxHashSet<(u64, u64)>,
-    maybes: FxHashSet<u64>,
-    _phantom: std::marker::PhantomData<&'a T>,
+    _phantom: std::marker::PhantomData<&'a (T, F)>,
 }
 
-impl<'a, T> Query<'a, T>
+impl<'a, T, F> Query<'a, T, F>
 where
-    T: QueryFilter<'a>,
+    T: Queryable<'a, F>,
+    F: QueryFilter<'a>,
 {
-    pub(crate) fn new(components: &Components) -> Self {
-        let entries = T::filter(components);
-
-        let reads = T::reads().unwrap_or_default();
-        let writes = T::writes().unwrap_or_default();
-        let withs = T::withs().unwrap_or_default();
-        let withouts = T::withouts().unwrap_or_default();
-        let ors = T::ors().unwrap_or_default();
-        let maybes = T::maybes().unwrap_or_default();
+    pub(crate) fn new(world: &World) -> Self {
+        let entries = T::collect(&world.components.borrow());
 
         Self {
             entries,
-
-            reads,
-            writes,
-            withs,
-            withouts,
-            ors,
-            maybes,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -252,5 +298,27 @@ where
     }
 }
 
-weaver_proc_macro::impl_queryfilter_for_n_tuple!(2);
-weaver_proc_macro::impl_queryfilter_for_n_tuple!(3);
+weaver_proc_macro::impl_queryable_for_n_tuple!(2);
+weaver_proc_macro::impl_queryable_for_n_tuple!(3);
+weaver_proc_macro::impl_queryable_for_n_tuple!(4);
+
+macro_rules! impl_queryfilter_for_tuple {
+    ($($name:ident),*) => {
+        impl<'a, $($name),*> QueryFilter<'a> for ($($name,)*)
+        where
+            $($name: QueryFilter<'a>,)*
+        {
+            fn matches(entry: &QueryEntry) -> bool {
+                $(
+                    $name::matches(entry) &&
+                )*
+                true
+            }
+        }
+    };
+}
+
+impl_queryfilter_for_tuple!(A);
+impl_queryfilter_for_tuple!(A, B);
+impl_queryfilter_for_tuple!(A, B, C);
+impl_queryfilter_for_tuple!(A, B, C, D);

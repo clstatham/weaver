@@ -11,7 +11,7 @@ pub use {
     bundle::Bundle,
     component::Component,
     entity::Entity,
-    query::{Query, QueryFilter},
+    query::{Query, Queryable},
     resource::{Res, ResMut, Resource},
     system::System,
     world::World,
@@ -47,7 +47,10 @@ pub enum EcsError {
 mod tests {
     use rustc_hash::FxHashSet;
 
-    use super::*;
+    use super::{
+        query::{With, Without},
+        *,
+    };
 
     #[derive(Component, Debug)]
     struct Position {
@@ -75,37 +78,24 @@ mod tests {
         }
     }
 
-    #[system(OptionPhysics)]
-    fn option_physics(physics: Query<(&mut Position, Option<&Velocity>)>) {
-        for (mut position, velocity) in physics.iter() {
-            if let Some(velocity) = velocity {
-                position.x += velocity.x;
-                position.y += velocity.y;
-            } else {
-                position.x -= 1.0;
-                position.y -= 1.0;
-            }
-        }
-    }
-
     #[test]
     fn test_query_trait() -> anyhow::Result<()> {
         assert_eq!(
-            <&Position>::reads(),
+            <&Position as Queryable<()>>::reads(),
             Some(FxHashSet::from_iter(vec![Position::component_id()]))
         );
-        assert_eq!(<&Position>::writes(), None);
+        assert_eq!(<&Position as Queryable<()>>::writes(), None);
         assert_eq!(
-            <&mut Position>::writes(),
+            <&mut Position as Queryable<()>>::writes(),
             Some(FxHashSet::from_iter(vec![Position::component_id()]))
         );
         assert_eq!(
-            <&Velocity>::reads(),
+            <&Velocity as Queryable<()>>::reads(),
             Some(FxHashSet::from_iter(vec![Velocity::component_id()]))
         );
-        assert_eq!(<&Velocity>::writes(), None);
+        assert_eq!(<&Velocity as Queryable<()>>::writes(), None);
         assert_eq!(
-            <&mut Velocity>::writes(),
+            <&mut Velocity as Queryable<()>>::writes(),
             Some(FxHashSet::from_iter(vec![Velocity::component_id()]))
         );
 
@@ -121,17 +111,17 @@ mod tests {
             velocity: Velocity { x: 1.0, y: 1.0 },
         })?;
 
-        let position = world.query::<&Position>();
+        let position = Query::<&Position>::new(&world);
         let position = position.get(entity).unwrap();
         assert_eq!(position.x, 0.0);
         assert_eq!(position.y, 0.0);
 
-        let velocity = world.query::<&Velocity>();
+        let velocity = Query::<&Velocity>::new(&world);
         let velocity = velocity.get(entity).unwrap();
         assert_eq!(velocity.x, 1.0);
         assert_eq!(velocity.y, 1.0);
 
-        let physics = world.query::<(&Position, &Velocity)>();
+        let physics = Query::<(&Position, &Velocity)>::new(&world);
         let (position, velocity) = physics.get(entity).unwrap();
         assert_eq!(position.x, 0.0);
         assert_eq!(position.y, 0.0);
@@ -154,12 +144,25 @@ mod tests {
 
         world.update()?;
 
-        let position = world.query::<&Position>();
+        let position = Query::<&Position>::new(&world);
         let position = position.get(entity).unwrap();
         assert_eq!(position.x, 1.0);
         assert_eq!(position.y, 1.0);
 
         Ok(())
+    }
+
+    #[system(OptionPhysics)]
+    fn option_physics(physics: Query<(&mut Position, Option<&Velocity>)>) {
+        for (mut position, velocity) in physics.iter() {
+            if let Some(velocity) = velocity {
+                position.x += velocity.x;
+                position.y += velocity.y;
+            } else {
+                position.x -= 1.0;
+                position.y -= 1.0;
+            }
+        }
     }
 
     #[test]
@@ -176,7 +179,7 @@ mod tests {
         world.update()?;
 
         {
-            let position = world.query::<&Position>();
+            let position = Query::<&Position>::new(&world);
             let position = position.get(entity).unwrap();
             assert_eq!(position.x, 1.0);
             assert_eq!(position.y, 1.0);
@@ -186,11 +189,61 @@ mod tests {
 
         world.update()?;
         {
-            let position = world.query::<&Position>();
+            let position = Query::<&Position>::new(&world);
             let position = position.get(entity2).unwrap();
             assert_eq!(position.x, -1.0);
             assert_eq!(position.y, -1.0);
         }
+
+        Ok(())
+    }
+
+    #[system(WithPhysics)]
+    fn with_physics(physics: Query<&Position, With<Velocity>>) {
+        for position in physics.iter() {
+            assert_eq!(position.x, 1.0);
+            assert_eq!(position.y, 1.0);
+        }
+    }
+
+    #[test]
+    fn test_query_with() -> anyhow::Result<()> {
+        let world = World::new();
+
+        let _entity = world.spawn(PhysicsBundle {
+            position: Position { x: 1.0, y: 1.0 },
+            velocity: Velocity { x: 1.0, y: 1.0 },
+        })?;
+        let _entity2 = world.spawn(Position { x: 0.0, y: 0.0 })?;
+
+        world.add_system(WithPhysics);
+
+        world.update()?;
+
+        Ok(())
+    }
+
+    #[system(WithoutPhysics)]
+    fn without_physics(physics: Query<&Position, Without<Velocity>>) {
+        for position in physics.iter() {
+            assert_eq!(position.x, 1.0);
+            assert_eq!(position.y, 1.0);
+        }
+    }
+
+    #[test]
+    fn test_query_without() -> anyhow::Result<()> {
+        let world = World::new();
+
+        let _entity = world.spawn(Position { x: 1.0, y: 1.0 })?;
+        let _entity2 = world.spawn(PhysicsBundle {
+            position: Position { x: 0.0, y: 0.0 },
+            velocity: Velocity { x: 1.0, y: 1.0 },
+        })?;
+
+        world.add_system(WithoutPhysics);
+
+        world.update()?;
 
         Ok(())
     }
