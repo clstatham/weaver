@@ -161,19 +161,14 @@ impl World {
     }
 
     pub fn startup(&self) -> anyhow::Result<()> {
-        {
-            let mut startup_systems = self.startup_systems.borrow_mut();
-            startup_systems.fix_parallel_writes();
-        }
-        {
-            let mut systems = self.systems.borrow_mut();
-            systems.fix_parallel_writes();
-        }
-
-        self.startup_systems.borrow().run(self)
+        let mut startup_systems = self.startup_systems.borrow_mut();
+        startup_systems.fix_parallel_writes();
+        startup_systems.run(self)
     }
 
     pub fn update(&self) -> anyhow::Result<()> {
-        self.systems.borrow().run(self)
+        let mut systems = self.systems.borrow_mut();
+        systems.fix_parallel_writes();
+        systems.run(self)
     }
 }

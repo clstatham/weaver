@@ -4,13 +4,14 @@ use std::{
     sync::Arc,
 };
 
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{entity::Entity, world::Components, Bundle, Component, World};
 
 #[derive(Clone)]
 pub struct QueryEntry {
     entity: Entity,
+    component_id: u64,
     component: Arc<RefCell<dyn Component>>,
 }
 
@@ -18,82 +19,70 @@ impl Debug for QueryEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("QueryEntry")
             .field("entity", &self.entity)
+            .field("component_id", &self.component_id)
             .finish()
     }
 }
 
-pub trait Queryable<'a, F>
+pub trait Queryable<'a, F = ()>
 where
     F: QueryFilter<'a>,
 {
     type Item: Bundle;
     type ItemRef: 'a;
 
-    /// Returns a set of entities that match the query, based on their components.
-    fn matching_entities(components: &Components) -> FxHashSet<Entity> {
-        let mut matches = FxHashSet::default();
+    /// Collects the components that match the query, based on the given entities.
+    fn collect(components: &Components) -> FxHashMap<Entity, Vec<QueryEntry>> {
+        let mut entries: FxHashMap<Entity, Vec<QueryEntry>> = FxHashMap::default();
 
         let reads = Self::reads().unwrap_or_default();
         let writes = Self::writes().unwrap_or_default();
-        let ors = Self::ors().unwrap_or_default();
         let withs = Self::withs().unwrap_or_default();
         let withouts = Self::withouts().unwrap_or_default();
-        // we don't care about the maybes, since they're not required to match
+        let maybes = Self::maybes().unwrap_or_default();
 
-        'outer: for (&entity, components) in components.iter() {
-            for read in &reads {
-                if !components.contains_key(read) {
-                    continue 'outer;
+        for (&entity, components) in components.iter() {
+            // check if the entity has the required components
+            // it needs to have ALL of the components in `reads`, `writes`, and `withs`
+            // it needs to have NONE of the components in `withouts`
+            // we don't care about the maybes, they're optional anyway
+
+            let component_ids = components.keys().copied().collect::<FxHashSet<_>>();
+
+            // check if the entity has all of the required components
+            if !reads.is_subset(&component_ids)
+                || !writes.is_subset(&component_ids)
+                || !withs.is_subset(&component_ids)
+            {
+                continue;
+            }
+
+            // check if the entity has any of the excluded components
+            if !withouts.is_disjoint(&component_ids) {
+                continue;
+            }
+
+            // gather the matching components
+            let mut matching_components = Vec::new();
+
+            for (&component_id, component) in components {
+                // we care about the maybes here, since they're always included in the query (just wrapped in an Option)
+                if reads.contains(&component_id)
+                    || writes.contains(&component_id)
+                    || maybes.contains(&component_id)
+                {
+                    matching_components.push(QueryEntry {
+                        entity,
+                        component_id,
+                        component: component.clone(),
+                    });
                 }
             }
 
-            for write in &writes {
-                if !components.contains_key(write) {
-                    continue 'outer;
-                }
-            }
-
-            for (a, b) in &ors {
-                if !components.contains_key(a) && !components.contains_key(b) {
-                    continue 'outer;
-                }
-            }
-
-            for with in &withs {
-                if !components.contains_key(with) {
-                    continue 'outer;
-                }
-            }
-
-            for without in &withouts {
-                if components.contains_key(without) {
-                    continue 'outer;
-                }
-            }
-
-            matches.insert(entity);
+            entries.insert(entity, matching_components);
         }
 
-        matches
-    }
-
-    /// Collects the components that match the query, based on the given entities.
-    fn collect(components: &Components) -> Vec<QueryEntry> {
-        let entities = Self::matching_entities(components);
-        entities
-            .into_iter()
-            .flat_map(|entity| {
-                components
-                    .get(&entity)
-                    .unwrap()
-                    .values()
-                    .map(move |component| QueryEntry {
-                        entity,
-                        component: component.clone(),
-                    })
-                    .filter(|entry| F::matches(entry))
-            })
-            .collect()
+        entries
     }
 
     // Gets the item from the given entity, if it exists.
@@ -129,18 +118,10 @@ where
 
     fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
-            if entry.component.try_borrow().is_err() {
-                // component must already be borrowed by another query
-                return None;
-            }
-            if entry.entity == entity && entry.component.borrow().as_any().is::<T>() {
-                if F::matches(entry) {
-                    Some(Ref::map(entry.component.borrow(), |component| {
-                        component.as_any().downcast_ref::<T>().unwrap()
-                    }))
-                } else {
-                    None
-                }
+            if entry.entity == entity && entry.component_id == T::component_id() {
+                Some(Ref::map(entry.component.borrow(), |component| {
+                    component.as_any().downcast_ref::<T>().unwrap()
+                }))
             } else {
                 None
             }
@@ -162,18 +143,10 @@ where
 
     fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
-            if entry.component.try_borrow_mut().is_err() {
-                // component must already be mutably borrowed by another query
-                return None;
-            }
-            if entry.entity == entity && entry.component.borrow_mut().as_any().is::<T>() {
-                if F::matches(entry) {
-                    Some(RefMut::map(entry.component.borrow_mut(), |component| {
-                        component.as_any_mut().downcast_mut::<T>().unwrap()
-                    }))
-                } else {
-                    None
-                }
+            if entry.entity == entity && entry.component_id == T::component_id() {
+                Some(RefMut::map(entry.component.borrow_mut(), |component| {
+                    component.as_any_mut().downcast_mut::<T>().unwrap()
+                }))
             } else {
                 None
             }
@@ -218,9 +191,12 @@ pub trait QueryFilter<'a> {
     fn withouts() -> Option<FxHashSet<u64>> {
         None
     }
+    fn ors() -> Option<FxHashSet<(u64, u64)>> {
+        None
+    }
 }
 
-/// Default pass-through filter that returns all entries.
+/// Default pass-through filter that yields all entries.
 impl<'a> QueryFilter<'a> for () {
     fn matches(_entry: &QueryEntry) -> bool {
         true
@@ -264,8 +240,7 @@ where
     T: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    // component id, entities/components
-    pub(crate) entries: Vec<QueryEntry>,
+    pub(crate) entries: FxHashMap<Entity, Vec<QueryEntry>>,
 
     _phantom: std::marker::PhantomData<&'a (T, F)>,
 }
@@ -285,16 +260,21 @@ where
     }
 
     pub fn get(&'a self, entity: Entity) -> Option<T::ItemRef> {
-        T::get(entity, &self.entries)
+        self.entries
+            .get(&entity)
+            .and_then(|entries| T::get(entity, entries))
     }
 
     pub fn entities(&self) -> impl Iterator<Item = Entity> + '_ {
-        let entities = self.entries.iter().map(|entry| entry.entity);
-        FxHashSet::from_iter(entities).into_iter()
+        self.entries.keys().copied()
     }
 
     pub fn iter(&'a self) -> Box<dyn Iterator<Item = T::ItemRef> + '_> {
-        Box::new(self.entities().filter_map(move |entity| self.get(entity)))
+        Box::new(
+            self.entries
+                .iter()
+                .filter_map(move |(&entity, entries)| T::get(entity, entries)),
+        )
     }
 }
 
@@ -313,6 +293,45 @@ macro_rules! impl_queryfilter_for_tuple {
                     $name::matches(entry) &&
                 )*
                 true
+            }
+
+            fn withs() -> Option<FxHashSet<u64>> {
+                let mut all = FxHashSet::default();
+                $(
+                    if let Some(mut withs) = $name::withs() {
+                        all.extend(withs.drain());
+                    }
+                )*
+                if all.is_empty() {
+                    return None;
+                }
+                Some(all)
+            }
+
+            fn withouts() -> Option<FxHashSet<u64>> {
+                let mut all = FxHashSet::default();
+                $(
+                    if let Some(mut withouts) = $name::withouts() {
+                        all.extend(withouts.drain());
+                    }
+                )*
+                if all.is_empty() {
+                    return None;
+                }
+                Some(all)
+            }
+
+            fn ors() -> Option<FxHashSet<(u64, u64)>> {
+                let mut all = FxHashSet::default();
+                $(
+                    if let Some(mut ors) = $name::ors() {
+                        all.extend(ors.drain());
+                    }
+                )*
+                if all.is_empty() {
+                    return None;
+                }
+                Some(all)
             }
         }
     };

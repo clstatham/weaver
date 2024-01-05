@@ -396,6 +396,38 @@ pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
                 )*
                 Some(writes)
             }
+
+            fn withs() -> Option<crate::ecs::query::FxHashSet<u64>> {
+                let mut withs = crate::ecs::query::FxHashSet::default();
+                #(
+                    withs.extend(&#names::withs().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                )*
+                Some(withs)
+            }
+
+            fn withouts() -> Option<crate::ecs::query::FxHashSet<u64>> {
+                let mut withouts = crate::ecs::query::FxHashSet::default();
+                #(
+                    withouts.extend(&#names::withouts().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                )*
+                Some(withouts)
+            }
+
+            fn ors() -> Option<crate::ecs::query::FxHashSet<(u64, u64)>> {
+                let mut ors = crate::ecs::query::FxHashSet::default();
+                #(
+                    ors.extend(&#names::ors().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                )*
+                Some(ors)
+            }
+
+            fn maybes() -> Option<crate::ecs::query::FxHashSet<u64>> {
+                let mut maybes = crate::ecs::query::FxHashSet::default();
+                #(
+                    maybes.extend(&#names::maybes().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                )*
+                Some(maybes)
+            }
         }
     };
 

@@ -3,7 +3,7 @@ use weaver_proc_macro::impl_bundle_for_tuple;
 use super::{Component, Entity, World};
 
 /// A collection of components that can be built and added to an entity.
-pub trait Bundle {
+pub trait Bundle: Sized {
     fn build(self, world: &World) -> anyhow::Result<Entity>;
 }
 

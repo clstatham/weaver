@@ -1,4 +1,4 @@
-use super::World;
+use super::{EcsError, World};
 use petgraph::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -105,9 +105,55 @@ impl SystemGraph {
         }
     }
 
+    pub fn detect_cycles(&self) -> Option<Vec<SystemId>> {
+        let mut visited = FxHashSet::default();
+        let mut stack = Vec::new();
+        let mut path = Vec::new();
+
+        for node in self.graph.node_indices() {
+            if !visited.contains(&node)
+                && self.detect_cycles_helper(node, &mut visited, &mut stack, &mut path)
+            {
+                return Some(path);
+            }
+        }
+
+        None
+    }
+
+    fn detect_cycles_helper(
+        &self,
+        node: NodeIndex,
+        visited: &mut FxHashSet<NodeIndex>,
+        stack: &mut Vec<NodeIndex>,
+        path: &mut Vec<SystemId>,
+    ) -> bool {
+        visited.insert(node);
+        stack.push(node);
+        path.push(self.graph[node].id);
+
+        for neighbor in self.graph.neighbors(node) {
+            if !visited.contains(&neighbor) {
+                if self.detect_cycles_helper(neighbor, visited, stack, path) {
+                    return true;
+                }
+            } else if stack.contains(&neighbor) {
+                path.push(self.graph[neighbor].id);
+                return true;
+            }
+        }
+
+        stack.pop();
+        false
+    }
+
     pub fn run(&self, world: &World) -> anyhow::Result<()> {
         if self.graph.node_count() == 0 {
             return Ok(());
+        }
+
+        if self.detect_cycles().is_some() {
+            return Err(EcsError::SystemDependencyCycleDetected.into());
         }
 
         let starts: Vec<_> = self.graph.externals(Direction::Incoming).collect();

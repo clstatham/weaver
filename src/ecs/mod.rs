@@ -11,7 +11,7 @@ pub use {
     bundle::Bundle,
     component::Component,
     entity::Entity,
-    query::{Query, Queryable},
+    query::{Query, Queryable, With, Without},
     resource::{Res, ResMut, Resource},
     system::System,
     world::World,
@@ -47,10 +47,7 @@ pub enum EcsError {
 mod tests {
     use rustc_hash::FxHashSet;
 
-    use super::{
-        query::{With, Without},
-        *,
-    };
+    use super::*;
 
     #[derive(Component, Debug)]
     struct Position {
@@ -64,18 +61,15 @@ mod tests {
         y: f32,
     }
 
-    #[derive(Bundle)]
-    struct PhysicsBundle {
-        position: Position,
-        velocity: Velocity,
+    #[derive(Component, Debug)]
+    struct Acceleration {
+        x: f32,
+        y: f32,
     }
 
-    #[system(Physics)]
-    fn physics(physics: Query<(&mut Position, &Velocity)>) {
-        for (mut position, velocity) in physics.iter() {
-            position.x += velocity.x;
-            position.y += velocity.y;
-        }
+    #[derive(Resource, Debug)]
+    struct Time {
+        delta: f32,
     }
 
     #[test]
@@ -106,10 +100,7 @@ mod tests {
     fn test_query_world() -> anyhow::Result<()> {
         let world = World::new();
 
-        let entity = world.spawn(PhysicsBundle {
-            position: Position { x: 0.0, y: 0.0 },
-            velocity: Velocity { x: 1.0, y: 1.0 },
-        })?;
+        let entity = world.spawn((Position { x: 0.0, y: 0.0 }, Velocity { x: 1.0, y: 1.0 }))?;
 
         let position = Query::<&Position>::new(&world);
         let position = position.get(entity).unwrap();
@@ -131,119 +122,357 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_system() -> anyhow::Result<()> {
-        let world = World::new();
+    #[system(Physics)]
+    fn physics(physics: Query<(&mut Position, &mut Velocity, &Acceleration)>, time: Res<Time>) {
+        for (mut position, mut velocity, acceleration) in physics.iter() {
+            position.x += velocity.x * time.delta;
+            position.y += velocity.y * time.delta;
 
-        let entity = world.spawn(PhysicsBundle {
-            position: Position { x: 0.0, y: 0.0 },
-            velocity: Velocity { x: 1.0, y: 1.0 },
-        })?;
-
-        world.add_system(Physics);
-
-        world.update()?;
-
-        let position = Query::<&Position>::new(&world);
-        let position = position.get(entity).unwrap();
-        assert_eq!(position.x, 1.0);
-        assert_eq!(position.y, 1.0);
-
-        Ok(())
-    }
-
-    #[system(OptionPhysics)]
-    fn option_physics(physics: Query<(&mut Position, Option<&Velocity>)>) {
-        for (mut position, velocity) in physics.iter() {
-            if let Some(velocity) = velocity {
-                position.x += velocity.x;
-                position.y += velocity.y;
-            } else {
-                position.x -= 1.0;
-                position.y -= 1.0;
-            }
+            velocity.x += acceleration.x * time.delta;
+            velocity.y += acceleration.y * time.delta;
         }
     }
 
     #[test]
-    fn test_query_option() -> anyhow::Result<()> {
-        let world = World::new();
+    fn test_system() -> anyhow::Result<()> {
+        let mut world = World::new();
+        world.insert_resource(Time { delta: 0.5 })?;
 
-        let entity = world.spawn(PhysicsBundle {
-            position: Position { x: 0.0, y: 0.0 },
-            velocity: Velocity { x: 1.0, y: 1.0 },
-        })?;
+        let entity = world.spawn((
+            Position { x: 0.0, y: 0.0 },
+            Velocity { x: 1.0, y: 1.0 },
+            Acceleration { x: 1.0, y: 1.0 },
+        ))?;
 
-        world.add_system(OptionPhysics);
+        world.add_system(Physics);
 
+        world.startup()?;
         world.update()?;
 
         {
             let position = Query::<&Position>::new(&world);
             let position = position.get(entity).unwrap();
+            assert_eq!(position.x, 0.5);
+            assert_eq!(position.y, 0.5);
+        }
+
+        {
+            let velocity = Query::<&Velocity>::new(&world);
+            let velocity = velocity.get(entity).unwrap();
+            assert_eq!(velocity.x, 1.5);
+            assert_eq!(velocity.y, 1.5);
+        }
+
+        Ok(())
+    }
+
+    #[system(PositionUpdate)]
+    fn position_update(query: Query<(&mut Position, &Velocity)>, time: Res<Time>) {
+        for (mut position, velocity) in query.iter() {
+            position.x += velocity.x * time.delta;
+            position.y += velocity.y * time.delta;
+        }
+    }
+
+    #[system(VelocityUpdate)]
+    fn velocity_update(query: Query<(&mut Velocity, &Acceleration)>, time: Res<Time>) {
+        for (mut velocity, acceleration) in query.iter() {
+            velocity.x += acceleration.x * time.delta;
+            velocity.y += acceleration.y * time.delta;
+        }
+    }
+
+    #[test]
+    fn test_system_order() -> anyhow::Result<()> {
+        let mut world = World::new();
+        world.insert_resource(Time { delta: 0.5 })?;
+
+        let entity = world.spawn((
+            Position { x: 0.0, y: 0.0 },
+            Velocity { x: 1.0, y: 1.0 },
+            Acceleration { x: 1.0, y: 1.0 },
+        ))?;
+
+        world.add_system(VelocityUpdate);
+        world.add_system(PositionUpdate);
+
+        world.startup()?;
+        world.update()?;
+
+        {
+            let position = Query::<&Position>::new(&world);
+            let position = position.get(entity).unwrap();
+            assert_eq!(position.x, 0.75);
+            assert_eq!(position.y, 0.75);
+        }
+
+        {
+            let velocity = Query::<&Velocity>::new(&world);
+            let velocity = velocity.get(entity).unwrap();
+            assert_eq!(velocity.x, 1.5);
+            assert_eq!(velocity.y, 1.5);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_system_dependency() -> anyhow::Result<()> {
+        let mut world = World::new();
+        world.insert_resource(Time { delta: 0.5 })?;
+
+        let entity = world.spawn((
+            Position { x: 0.0, y: 0.0 },
+            Velocity { x: 1.0, y: 1.0 },
+            Acceleration { x: 1.0, y: 1.0 },
+        ))?;
+
+        // do them out of order to make sure the dependency is respected
+        let sys = world.add_system(PositionUpdate);
+        world.add_system_after(VelocityUpdate, sys);
+
+        world.startup()?;
+        world.update()?;
+
+        {
+            let position = Query::<&Position>::new(&world);
+            let position = position.get(entity).unwrap();
+            assert_eq!(position.x, 0.5);
+            assert_eq!(position.y, 0.5);
+        }
+
+        {
+            let velocity = Query::<&Velocity>::new(&world);
+            let velocity = velocity.get(entity).unwrap();
+            assert_eq!(velocity.x, 1.5);
+            assert_eq!(velocity.y, 1.5);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_system_dependency_cycle() -> anyhow::Result<()> {
+        let mut world = World::new();
+        world.insert_resource(Time { delta: 0.5 })?;
+
+        let _entity = world.spawn((
+            Position { x: 0.0, y: 0.0 },
+            Velocity { x: 1.0, y: 1.0 },
+            Acceleration { x: 1.0, y: 1.0 },
+        ))?;
+
+        let sys = world.add_system(PositionUpdate);
+        let sys2 = world.add_system(VelocityUpdate);
+        world.add_system_dependency(sys, sys2);
+        world.add_system_dependency(sys2, sys);
+
+        assert!(world.update().is_err());
+
+        Ok(())
+    }
+
+    #[system(OptionPhysics)]
+    fn option_physics(
+        query: Query<(&mut Position, &mut Velocity, Option<&Acceleration>)>,
+        time: Res<Time>,
+    ) {
+        for (mut position, mut velocity, acceleration) in query.iter() {
+            position.x += velocity.x * time.delta;
+            position.y += velocity.y * time.delta;
+
+            if let Some(acceleration) = acceleration {
+                velocity.x += acceleration.x * time.delta;
+                velocity.y += acceleration.y * time.delta;
+            }
+        }
+    }
+
+    #[test]
+    fn test_option_query() -> anyhow::Result<()> {
+        let mut world = World::new();
+        world.insert_resource(Time { delta: 0.5 })?;
+
+        let no_accel = world.spawn((Position { x: 0.0, y: 0.0 }, Velocity { x: 1.0, y: 1.0 }))?;
+        let with_accel = world.spawn((
+            Position { x: 0.0, y: 0.0 },
+            Velocity { x: 1.0, y: 1.0 },
+            Acceleration { x: 1.0, y: 1.0 },
+        ))?;
+
+        world.add_system(OptionPhysics);
+
+        world.startup()?;
+        world.update()?;
+
+        {
+            let position = Query::<&Position>::new(&world);
+            let position = position.get(no_accel).unwrap();
+            assert_eq!(position.x, 0.5);
+            assert_eq!(position.y, 0.5);
+        }
+
+        {
+            let velocity = Query::<&Velocity>::new(&world);
+            let velocity = velocity.get(no_accel).unwrap();
+            assert_eq!(velocity.x, 1.0);
+            assert_eq!(velocity.y, 1.0);
+        }
+
+        {
+            let position = Query::<&Position>::new(&world);
+            let position = position.get(with_accel).unwrap();
+            assert_eq!(position.x, 0.5);
+            assert_eq!(position.y, 0.5);
+        }
+
+        {
+            let velocity = Query::<&Velocity>::new(&world);
+            let velocity = velocity.get(with_accel).unwrap();
+            assert_eq!(velocity.x, 1.5);
+            assert_eq!(velocity.y, 1.5);
+        }
+
+        Ok(())
+    }
+
+    #[system(WithSimple)]
+    fn with_simple(query: Query<&Position, With<Acceleration>>) {
+        dbg!(&query.entries);
+        for position in query.iter() {
             assert_eq!(position.x, 1.0);
             assert_eq!(position.y, 1.0);
         }
+    }
 
-        let entity2 = world.spawn(Position { x: 0.0, y: 0.0 })?;
+    #[test]
+    fn test_with_simple_query() -> anyhow::Result<()> {
+        let world = World::new();
 
+        let no_accel = world.spawn((Position { x: 0.0, y: 0.0 }, Velocity { x: 1.0, y: 1.0 }))?;
+        let with_accel = world.spawn((
+            Position { x: 1.0, y: 1.0 },
+            Velocity { x: 1.0, y: 1.0 },
+            Acceleration { x: 1.0, y: 1.0 },
+        ))?;
+
+        world.add_system(WithSimple);
+
+        world.startup()?;
         world.update()?;
+
         {
             let position = Query::<&Position>::new(&world);
-            let position = position.get(entity2).unwrap();
-            assert_eq!(position.x, -1.0);
-            assert_eq!(position.y, -1.0);
+            let position = position.get(no_accel).unwrap();
+            assert_eq!(position.x, 0.0);
+            assert_eq!(position.y, 0.0);
+        }
+
+        {
+            let position = Query::<&Position>::new(&world);
+            let position = position.get(with_accel).unwrap();
+            assert_eq!(position.x, 1.0);
+            assert_eq!(position.y, 1.0);
         }
 
         Ok(())
     }
 
     #[system(WithPhysics)]
-    fn with_physics(physics: Query<&Position, With<Velocity>>) {
-        for position in physics.iter() {
-            assert_eq!(position.x, 1.0);
-            assert_eq!(position.y, 1.0);
+    fn with_physics(query: Query<(&mut Position, &Velocity), With<Acceleration>>, time: Res<Time>) {
+        for (mut position, velocity) in query.iter() {
+            position.x += velocity.x * time.delta;
+            position.y += velocity.y * time.delta;
         }
     }
 
     #[test]
-    fn test_query_with() -> anyhow::Result<()> {
-        let world = World::new();
+    fn test_with_query() -> anyhow::Result<()> {
+        let mut world = World::new();
+        world.insert_resource(Time { delta: 0.5 })?;
 
-        let _entity = world.spawn(PhysicsBundle {
-            position: Position { x: 1.0, y: 1.0 },
-            velocity: Velocity { x: 1.0, y: 1.0 },
-        })?;
-        let _entity2 = world.spawn(Position { x: 0.0, y: 0.0 })?;
+        let no_accel = world.spawn((Position { x: 0.0, y: 0.0 }, Velocity { x: 1.0, y: 1.0 }))?;
+        let with_accel = world.spawn((
+            Position { x: 0.0, y: 0.0 },
+            Velocity { x: 1.0, y: 1.0 },
+            Acceleration { x: 1.0, y: 1.0 },
+        ))?;
 
         world.add_system(WithPhysics);
 
+        world.startup()?;
         world.update()?;
+
+        {
+            let position_query = Query::<&Position>::new(&world);
+
+            let position = position_query.get(no_accel).unwrap();
+            assert_eq!(position.x, 0.0);
+            assert_eq!(position.y, 0.0);
+
+            let position = position_query.get(with_accel).unwrap();
+            assert_eq!(position.x, 0.5);
+            assert_eq!(position.y, 0.5);
+        }
 
         Ok(())
     }
 
     #[system(WithoutPhysics)]
-    fn without_physics(physics: Query<&Position, Without<Velocity>>) {
-        for position in physics.iter() {
-            assert_eq!(position.x, 1.0);
-            assert_eq!(position.y, 1.0);
+    fn without_physics(
+        query: Query<(&mut Position, &Velocity), Without<Acceleration>>,
+        time: Res<Time>,
+    ) {
+        for (mut position, velocity) in query.iter() {
+            position.x += velocity.x * time.delta;
+            position.y += velocity.y * time.delta;
         }
     }
 
     #[test]
-    fn test_query_without() -> anyhow::Result<()> {
-        let world = World::new();
+    fn test_without_query() -> anyhow::Result<()> {
+        let mut world = World::new();
+        world.insert_resource(Time { delta: 0.5 })?;
 
-        let _entity = world.spawn(Position { x: 1.0, y: 1.0 })?;
-        let _entity2 = world.spawn(PhysicsBundle {
-            position: Position { x: 0.0, y: 0.0 },
-            velocity: Velocity { x: 1.0, y: 1.0 },
-        })?;
+        let no_accel = world.spawn((Position { x: 0.0, y: 0.0 }, Velocity { x: 1.0, y: 1.0 }))?;
+        let with_accel = world.spawn((
+            Position { x: 0.0, y: 0.0 },
+            Velocity { x: 1.0, y: 1.0 },
+            Acceleration { x: 1.0, y: 1.0 },
+        ))?;
 
         world.add_system(WithoutPhysics);
 
+        world.startup()?;
         world.update()?;
+
+        {
+            let position = Query::<&Position>::new(&world);
+            let position = position.get(no_accel).unwrap();
+            assert_eq!(position.x, 0.5);
+            assert_eq!(position.y, 0.5);
+        }
+
+        {
+            let velocity = Query::<&Velocity>::new(&world);
+            let velocity = velocity.get(no_accel).unwrap();
+            assert_eq!(velocity.x, 1.0);
+            assert_eq!(velocity.y, 1.0);
+        }
+
+        {
+            let position = Query::<&Position>::new(&world);
+            let position = position.get(with_accel).unwrap();
+            assert_eq!(position.x, 0.0);
+            assert_eq!(position.y, 0.0);
+        }
+
+        {
+            let velocity = Query::<&Velocity>::new(&world);
+            let velocity = velocity.get(with_accel).unwrap();
+            assert_eq!(velocity.x, 1.0);
+            assert_eq!(velocity.y, 1.0);
+        }
 
         Ok(())
     }
