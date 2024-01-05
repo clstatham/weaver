@@ -67,21 +67,23 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
 
     let mut commands_binding = None;
 
-    // populate the above Vecs and do some compiletime checks to make sure the queries are valid
-    // 1. no conflicting writes
-    // 2. no conflicting reads
-    // 3. arguments should all be Query<_>, Res<_>, ResMut<_>, Commands
-    // 4. Queries can take &T or &mut T
-    // 5. Queries can also take filters in the form of Query<T, F> where F: QueryFilter
-    // 6. only one Commands argument is allowed
-    // examples:
-    // fn system(query: Query<&A>) {}
-    // fn system(query: Query<&A>, query2: Query<&B>) {}
-    // fn system(query: Query<&A>, res: Res<B>) {}
-    // fn system(query: Query<&A>, res: ResMut<B>) {}
-    // fn system(query: Query<&A>, res: ResMut<B>, res2: ResMut<C>) {}
-    // fn system(query: Query<&A>, res: ResMut<B>, res2: ResMut<C>, query2: Query<&mut B>) {}
-    // etc...
+    // populate the above Vecs with the types and names of the arguments
+
+    // examples of valid queries:
+    //     fn foo(query: Query<&Position, Without<Velocity>>)
+    //     fn foo(query: Query<&Position, ()>)
+    //     fn foo(query: Query<&Position>)
+    //     fn foo(query: Query<&Position, (Without<Velocity>, Without<Acceleration>)>)
+    //     fn foo(query: Query<(&mut Position, &Velocity), Without<Acceleration>>)
+    //     fn foo(query: Query<(&Position, &Velocity)>)
+
+    // examples of valid resources:
+    //     fn foo(res: Res<Position>)
+    //     fn foo(res: ResMut<Position>)
+    //     fn foo(res: Res<Position>, res2: ResMut<Velocity>)
+    //     fn foo(res: Res<Position>, res2: ResMut<Velocity>, res3: Res<Acceleration>)
+
+    // any of the above can have a Commands argument mixed in as well
 
     for arg in args.iter() {
         match arg {
@@ -109,8 +111,6 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                                             args.args.clone().into_iter().collect::<Vec<_>>();
                                         let query = &args[0];
                                         let filter = args.get(1);
-
-                                        // skip the checks for now
 
                                         match query {
                                             syn::GenericArgument::Type(ty) => {
