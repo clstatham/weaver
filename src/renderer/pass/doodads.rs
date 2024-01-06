@@ -2,6 +2,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     core::{color::Color, doodads::Doodad, texture::Texture},
+    game::camera::FollowCamera,
     include_shader,
 };
 
@@ -374,7 +375,7 @@ impl Pass for DoodadRenderPass {
             label: Some("doodad encoder"),
         });
 
-        let camera = world.read_resource::<crate::core::camera::FlyCamera>()?;
+        let camera = world.read_resource::<FollowCamera>()?;
         queue.write_buffer(
             &self.camera_buffer,
             0,

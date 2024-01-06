@@ -1,10 +1,7 @@
 use rapier3d::prelude::*;
 use weaver_proc_macro::{system, Component, Resource};
 
-use crate::{
-    ecs::resource::{Res, ResMut},
-    prelude::Query,
-};
+use crate::prelude::*;
 
 use super::{time::Time, transform::Transform};
 

@@ -1,9 +1,7 @@
 use crate::{
-    core::{
-        camera::{CameraUniform, FlyCamera},
-        texture::Texture,
-    },
+    core::{camera::CameraUniform, texture::Texture},
     ecs::World,
+    game::camera::FollowCamera,
     include_shader,
 };
 
@@ -153,7 +151,7 @@ impl Pass for SkyRenderPass {
         depth_target: &Texture,
         world: &World,
     ) -> anyhow::Result<()> {
-        let camera = world.read_resource::<FlyCamera>()?;
+        let camera = world.read_resource::<FollowCamera>()?;
 
         let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Sky Render Pass Initial Encoder"),

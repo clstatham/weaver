@@ -3,7 +3,10 @@
 use weaver_proc_macro::Resource;
 use wgpu::util::DeviceExt;
 
-use crate::{core::camera::FlyCamera, include_shader, renderer::Renderer};
+use crate::{include_shader, renderer::Renderer};
+
+// HACK: this is a temporary solution until i get the Camera trait implemented
+use crate::game::camera::FollowCamera;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PickResult {
@@ -210,7 +213,7 @@ impl ScreenPicker {
         &self,
         screen_pos: glam::Vec2,
         renderer: &Renderer,
-        camera: &FlyCamera,
+        camera: &FollowCamera,
     ) -> anyhow::Result<Option<PickResult>> {
         let width = renderer.config.width as f32;
         let height = renderer.config.height as f32;

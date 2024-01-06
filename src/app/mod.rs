@@ -6,10 +6,7 @@ use winit::{
 };
 
 use crate::{
-    core::{
-        camera::FlyCamera, doodads::Doodads, input::Input, time::Time, transform::Transform,
-        ui::EguiContext,
-    },
+    core::{doodads::Doodads, input::Input, time::Time, ui::EguiContext},
     ecs::{system::SystemId, Bundle, Entity, Resource, System, World},
     renderer::Renderer,
 };
@@ -40,20 +37,6 @@ impl App {
             .with_resizable(false)
             .build(&event_loop)?;
 
-        let initial_camera_transform = Transform::default()
-            .translate(5.0, 5.0, 5.0)
-            .looking_at(glam::Vec3::ZERO, glam::Vec3::Y);
-        let camera = FlyCamera {
-            speed: 5.0,
-            sensitivity: 0.1,
-            translation: initial_camera_transform.get_translation(),
-            rotation: initial_camera_transform.get_rotation(),
-            fov: 90.0f32.to_radians(),
-            aspect: screen_width as f32 / screen_height as f32,
-            near: 0.1,
-            far: 100.0,
-        };
-
         let renderer = pollster::block_on(Renderer::new(&window));
 
         let ui = EguiContext::new(&renderer.device, &window, 1);
@@ -62,7 +45,6 @@ impl App {
         world.insert_resource(renderer)?;
         world.insert_resource(Time::new())?;
         world.insert_resource(Input::new())?;
-        world.insert_resource(camera)?;
         world.insert_resource(ui)?;
         world.insert_resource(Doodads::default())?;
 

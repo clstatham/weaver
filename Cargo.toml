@@ -39,6 +39,7 @@ futures-channel = "0.3.30"
 bit-set = "0.5.3"
 rapier3d = "0.17.2"
 nalgebra = { version = "0.32.3", features = ["convert-glam024"] }
+clap = { version = "4.4.13", features = ["derive"] }
 
 [profile.release]
 debug = true

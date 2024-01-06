@@ -7,6 +7,11 @@ pub struct Entity {
 }
 
 impl Entity {
+    pub const PLACEHOLDER: Self = Self {
+        id: u32::MAX,
+        generation: u32::MAX,
+    };
+
     /// Creates a new entity with the given id and generation.
     pub fn new(id: u32, generation: u32) -> Self {
         Self { id, generation }

@@ -19,6 +19,7 @@ impl AssetId {
 #[derive(Resource)]
 pub struct AssetServer {
     next_id: u64,
+    path_prefix: PathBuf,
     ids: FxHashMap<PathBuf, AssetId>,
     meshes: FxHashMap<AssetId, Mesh>,
     materials: FxHashMap<AssetId, Material>,
@@ -34,6 +35,7 @@ impl AssetServer {
         let queue = renderer.queue.clone();
         Ok(Self {
             next_id: 0,
+            path_prefix: PathBuf::from("assets"),
             ids: FxHashMap::default(),
             meshes: FxHashMap::default(),
             materials: FxHashMap::default(),
@@ -49,8 +51,22 @@ impl AssetServer {
         id
     }
 
+    pub fn path_prefix(&self) -> &PathBuf {
+        &self.path_prefix
+    }
+
+    pub fn set_path_prefix(&mut self, path_prefix: impl Into<PathBuf>) {
+        self.path_prefix = path_prefix.into();
+    }
+
     pub fn load_mesh(&mut self, path: impl Into<PathBuf>) -> anyhow::Result<Mesh> {
         let path = path.into();
+        let path = if path.is_absolute() {
+            path
+        } else {
+            self.path_prefix.join(path)
+        };
+
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id();
             let mesh = Mesh::load_gltf(path.clone(), self.device.as_ref(), id)?;
@@ -67,6 +83,11 @@ impl AssetServer {
 
     pub fn load_material(&mut self, path: impl Into<PathBuf>) -> anyhow::Result<Material> {
         let path = path.into();
+        let path = if path.is_absolute() {
+            path
+        } else {
+            self.path_prefix.join(path)
+        };
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id();
             let mut materials =
@@ -88,6 +109,11 @@ impl AssetServer {
         is_normal_map: bool,
     ) -> anyhow::Result<Texture> {
         let path = path.into();
+        let path = if path.is_absolute() {
+            path
+        } else {
+            self.path_prefix.join(path)
+        };
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id();
             let texture = Texture::load(

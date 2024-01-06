@@ -3,7 +3,7 @@ use rustc_hash::FxHashMap;
 use crate::{
     app::asset_server::AssetId,
     core::{
-        camera::{CameraUniform, FlyCamera},
+        camera::CameraUniform,
         light::{DirectionalLight, DirectionalLightBuffer, PointLight, PointLightBuffer},
         material::{Material, MaterialUniform},
         mesh::{Mesh, Vertex, MAX_MESHES},
@@ -12,7 +12,9 @@ use crate::{
         transform::Transform,
     },
     ecs::{Query, World},
+    game::camera::FollowCamera,
     include_shader,
+    renderer::Renderer,
 };
 
 struct UniqueMesh {
@@ -303,7 +305,7 @@ impl PbrRenderPass {
         });
 
         // write buffers
-        let camera = world.read_resource::<FlyCamera>()?;
+        let camera = world.read_resource::<FollowCamera>()?;
         queue.write_buffer(
             &self.camera_buffer,
             0,
@@ -345,9 +347,7 @@ impl PbrRenderPass {
                 material.create_bind_group(
                     device,
                     self,
-                    &world
-                        .read_resource::<crate::Renderer>()?
-                        .sampler_repeat_linear,
+                    &world.read_resource::<Renderer>()?.sampler_repeat_linear,
                 );
             }
             let bind_group = material.bind_group().unwrap();
@@ -430,7 +430,7 @@ impl PbrRenderPass {
         Ok(())
     }
 
-    pub fn prepare_components(&self, world: &World, renderer: &crate::Renderer) {
+    pub fn prepare_components(&self, world: &World, renderer: &Renderer) {
         let query = Query::<&mut Material>::new(world);
         for mut material in query.iter() {
             if !material.has_bind_group() {
