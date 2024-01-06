@@ -13,8 +13,8 @@ use crate::{
 };
 
 use self::pass::{
-    doodads::DoodadRenderPass, hdr::HdrRenderPass, pbr::PbrRenderPass, shadow::ShadowRenderPass,
-    sky::SkyRenderPass, Pass,
+    doodads::DoodadRenderPass, hdr::HdrRenderPass, particles::ParticleRenderPass,
+    pbr::PbrRenderPass, shadow::ShadowRenderPass, sky::SkyRenderPass, Pass,
 };
 
 pub mod compute;
@@ -37,6 +37,7 @@ pub struct Renderer {
     pub(crate) hdr_pass: HdrRenderPass,
     pub(crate) pbr_pass: PbrRenderPass,
     pub(crate) sky_pass: SkyRenderPass,
+    pub(crate) particle_pass: ParticleRenderPass,
     pub(crate) passes: Vec<Box<dyn pass::Pass>>,
 
     pub(crate) sampler_clamp_nearest: wgpu::Sampler,
@@ -195,6 +196,9 @@ impl Renderer {
 
         let pbr_pass = PbrRenderPass::new(&device, &sky_pass.bind_group_layout);
 
+        // particle pass
+        let particle_pass = ParticleRenderPass::new(&device, &sampler_clamp_linear);
+
         let passes: Vec<Box<dyn pass::Pass>> = vec![
             // shadow pass
             Box::new(ShadowRenderPass::new(
@@ -220,6 +224,7 @@ impl Renderer {
             hdr_pass,
             pbr_pass,
             sky_pass,
+            particle_pass,
             passes,
             sampler_clamp_nearest,
             sampler_clamp_linear,
@@ -334,6 +339,14 @@ impl Renderer {
         )?;
 
         self.hdr_pass.render(
+            &self.device,
+            &self.queue,
+            &self.color_texture,
+            &self.depth_texture,
+            world,
+        )?;
+
+        self.particle_pass.render(
             &self.device,
             &self.queue,
             &self.color_texture,

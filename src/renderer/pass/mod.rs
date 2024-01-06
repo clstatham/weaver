@@ -4,6 +4,7 @@ use crate::{core::texture::Texture, ecs::World};
 
 pub mod doodads;
 pub mod hdr;
+pub mod particles;
 pub mod pbr;
 pub mod shadow;
 pub mod sky;
@@ -50,6 +51,4 @@ pub trait Pass {
         depth_target: &Texture,
         world: &World,
     ) -> anyhow::Result<()>;
-
-    // fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32);
 }

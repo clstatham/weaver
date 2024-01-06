@@ -111,11 +111,25 @@ impl RapierContext {
             query_filter,
         )
     }
+
+    pub fn add_impulse_joint(
+        &mut self,
+        body1: RigidBodyHandle,
+        body2: RigidBodyHandle,
+        joint: impl Into<GenericJoint>,
+    ) -> ImpulseJointHandle {
+        self.impulse_joint_set
+            .insert(body1, body2, joint.into(), true)
+    }
+
+    pub fn remove_impulse_joint(&mut self, handle: ImpulseJointHandle) {
+        self.impulse_joint_set.remove(handle, true);
+    }
 }
 
 struct InitializedRigidBody {
-    rb: rapier3d::dynamics::RigidBodyHandle,
-    collider: rapier3d::geometry::ColliderHandle,
+    rb: RigidBodyHandle,
+    collider: ColliderHandle,
     scale: glam::Vec3,
 }
 
@@ -206,18 +220,6 @@ impl RigidBody {
         let body = self.physics.lazy_init(ctx);
         let rb = ctx.bodies.get_mut(body.rb).unwrap();
         rb.apply_impulse(impulse.into(), true);
-    }
-
-    pub fn add_rope_joint(
-        &mut self,
-        other: &mut Self,
-        ctx: &mut RapierContext,
-    ) -> ImpulseJointHandle {
-        let body = self.physics.lazy_init(ctx);
-        let other_body = other.physics.lazy_init(ctx);
-        let joint = SphericalJointBuilder::new().build();
-        ctx.impulse_joint_set
-            .insert(body.rb, other_body.rb, joint, true)
     }
 
     pub fn collider_handle(&mut self, ctx: &mut RapierContext) -> ColliderHandle {

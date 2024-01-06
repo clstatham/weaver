@@ -1,6 +1,10 @@
 use clap::Parser;
 
-use crate::{core::ui::builtin::FpsDisplay, prelude::*};
+use crate::{
+    app::asset_server,
+    core::{particles::ParticleEmitter, ui::builtin::FpsDisplay},
+    prelude::*,
+};
 
 use self::{
     camera::{FollowCameraController, FollowCameraUpdate},
@@ -70,6 +74,18 @@ fn setup(commands: Commands, mut asset_server: ResMut<AssetServer>) {
         mesh: asset_server.load_mesh("meshes/monkey_flat.glb")?,
         material: materials::Materials::Wood.load(&mut asset_server, 2.0)?,
     })?;
+
+    commands.spawn(ParticleEmitter {
+        particle_texture: Some(asset_server.load_texture("textures/fire_particle.png", false)?),
+        origin: Vec3::new(0.0, 1.0, 0.0),
+        spawn_rate: 1000.0,
+        max_particles: 1000,
+        particle_lifetime: 1.0,
+        particle_lifetime_randomness: 0.3,
+        particle_velocity: Vec3::new(0.0, 10.0, 0.0),
+        particle_velocity_randomness: Vec3::new(2.0, 0.5, 2.0),
+        ..Default::default()
+    })?;
 }
 
 #[derive(Debug, clap::Parser)]
@@ -86,6 +102,7 @@ pub fn run() -> anyhow::Result<()> {
 
     app.add_startup_system(Setup);
 
+    app.add_system(ParticleUpdate);
     app.add_system(FollowCameraUpdate);
     app.add_system(UiUpdate);
     app.add_system(PlayerUpdate);

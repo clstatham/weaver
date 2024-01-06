@@ -13,6 +13,7 @@ pub mod prelude {
         light::{DirectionalLight, PointLight},
         material::Material,
         mesh::Mesh,
+        particles::{ParticleEmitter, ParticleUpdate},
         time::Time,
         transform::Transform,
         ui::EguiContext,

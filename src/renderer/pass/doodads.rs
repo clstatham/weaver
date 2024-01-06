@@ -187,7 +187,7 @@ impl DoodadRenderPass {
             config.width,
             config.height,
             Some("doodad depth texture"),
-            wgpu::TextureUsages::RENDER_ATTACHMENT,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         );
 
         let model_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
