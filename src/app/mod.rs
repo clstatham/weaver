@@ -1,9 +1,6 @@
 use std::cell::RefCell;
 
-use winit::{
-    event_loop::EventLoop,
-    window::{Window, WindowBuilder},
-};
+use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use crate::{
     core::{doodads::Doodads, input::Input, time::Time, ui::EguiContext},
@@ -16,12 +13,20 @@ use self::{asset_server::AssetServer, commands::Commands};
 pub mod asset_server;
 pub mod commands;
 
+#[derive(Resource)]
+pub struct Window {
+    pub window: winit::window::Window,
+    pub fps_mode: bool,
+}
+
+impl Window {
+    pub fn set_fps_mode(&mut self, fps_mode: bool) {
+        self.fps_mode = fps_mode;
+    }
+}
+
 pub struct App {
     event_loop: EventLoop<()>,
-
-    #[allow(dead_code)]
-    window: Window,
-
     pub(crate) world: RefCell<World>,
 }
 
@@ -37,6 +42,9 @@ impl App {
             .with_resizable(false)
             .build(&event_loop)?;
 
+        window.set_cursor_grab(winit::window::CursorGrabMode::Confined)?;
+        window.set_cursor_visible(false);
+
         let renderer = pollster::block_on(Renderer::new(&window));
 
         let ui = EguiContext::new(&renderer.device, &window, 1);
@@ -44,7 +52,7 @@ impl App {
         let mut world = World::new();
         world.insert_resource(renderer)?;
         world.insert_resource(Time::new())?;
-        world.insert_resource(Input::new())?;
+        world.insert_resource(Input::default())?;
         world.insert_resource(ui)?;
         world.insert_resource(Doodads::default())?;
 
@@ -52,9 +60,13 @@ impl App {
 
         world.insert_resource(asset_server)?;
 
+        world.insert_resource(Window {
+            window,
+            fps_mode: false,
+        })?;
+
         Ok(Self {
             event_loop,
-            window,
             world: RefCell::new(world),
         })
     }
@@ -147,17 +159,26 @@ impl App {
 
         self.event_loop.run(move |event, _, control_flow| {
             *control_flow = winit::event_loop::ControlFlow::Poll;
-            self.window.request_redraw();
             {
                 let world = self.world.borrow();
-
                 world
-                    .write_resource::<Input>()
+                    .read_resource::<Window>()
                     .unwrap()
-                    .input
-                    .update(&event);
+                    .window
+                    .request_redraw();
             }
+
             match event {
+                winit::event::Event::NewEvents(_) => {
+                    let world = self.world.borrow();
+                    let mut input = world.write_resource::<Input>().unwrap();
+                    input.prepare_for_update();
+                }
+                winit::event::Event::DeviceEvent { event, .. } => {
+                    let world = self.world.borrow();
+                    let mut input = world.write_resource::<Input>().unwrap();
+                    input.update(&event);
+                }
                 winit::event::Event::WindowEvent { event, .. } => {
                     {
                         let world = self.world.borrow();
@@ -171,6 +192,32 @@ impl App {
                         winit::event::WindowEvent::Resized(_size) => {
                             // todo
                         }
+                        winit::event::WindowEvent::CursorMoved { .. } => {
+                            // center the cursor
+                            let world = self.world.borrow();
+                            let window = world.read_resource::<Window>().unwrap();
+                            if window.fps_mode {
+                                window
+                                    .window
+                                    .set_cursor_position(winit::dpi::PhysicalPosition::new(
+                                        window.window.inner_size().width / 2,
+                                        window.window.inner_size().height / 2,
+                                    ))
+                                    .unwrap();
+                                window
+                                    .window
+                                    .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                                    .unwrap();
+                                window.window.set_cursor_visible(false);
+                            } else {
+                                window
+                                    .window
+                                    .set_cursor_grab(winit::window::CursorGrabMode::None)
+                                    .unwrap();
+                                window.window.set_cursor_visible(true);
+                            }
+                        }
+
                         _ => {}
                     }
                 }
@@ -181,7 +228,7 @@ impl App {
                     world
                         .write_resource::<EguiContext>()
                         .unwrap()
-                        .begin_frame(&self.window);
+                        .begin_frame(&world.read_resource::<Window>().unwrap().window);
                     world.update().unwrap();
                     world.write_resource::<EguiContext>().unwrap().end_frame();
 
@@ -189,7 +236,11 @@ impl App {
                     let mut ui = world.write_resource::<EguiContext>().unwrap();
                     let output = renderer.prepare();
                     renderer.render(&world, &output).unwrap();
-                    renderer.render_ui(&mut ui, &self.window, &output);
+                    renderer.render_ui(
+                        &mut ui,
+                        &world.read_resource::<Window>().unwrap().window,
+                        &output,
+                    );
                     renderer.present(output);
                 }
                 _ => {}

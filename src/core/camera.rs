@@ -88,7 +88,7 @@ impl FlyCameraController {
 
         self.translation += velocity;
 
-        if input.mouse_button_pressed(winit::event::MouseButton::Right) {
+        if input.mouse_button_pressed(3) {
             yaw += -(mouse_delta.x * self.sensitivity).to_radians();
             pitch += -(mouse_delta.y * self.sensitivity).to_radians();
         }

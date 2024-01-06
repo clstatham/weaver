@@ -73,7 +73,7 @@ pub fn follow_camera_update(
         let player_translation = player_transform.get_translation();
         let player_rotation = player_transform.get_rotation();
 
-        if input.mouse_button_pressed(MouseButton::Right) {
+        if input.mouse_button_pressed(3) {
             let mouse_delta = input.mouse_delta();
             controller.pitch += mouse_delta.y * controller.pitch_sensitivity * time.delta_seconds;
             controller.pitch = controller

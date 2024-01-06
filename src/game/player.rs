@@ -35,7 +35,7 @@ pub fn player_update(
 
         let mouse_delta = input.mouse_delta();
 
-        if input.mouse_button_pressed(MouseButton::Right) {
+        if input.mouse_button_pressed(3) {
             let delta = mouse_delta * player.rotation_speed * time.delta_seconds;
             rotation = Quat::from_rotation_y(-delta.x.to_radians()) * rotation;
         }

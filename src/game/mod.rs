@@ -1,7 +1,7 @@
 use clap::Parser;
 
 use crate::{
-    app::asset_server,
+    app::Window,
     core::{particles::ParticleEmitter, ui::builtin::FpsDisplay},
     prelude::*,
 };
@@ -17,6 +17,15 @@ pub mod maps;
 pub mod materials;
 pub mod npc;
 pub mod player;
+
+#[system(WindowUpdate)]
+fn window_update(mut window: ResMut<Window>, input: Res<Input>) {
+    if input.mouse_button_pressed(3) {
+        window.fps_mode = true;
+    } else {
+        window.fps_mode = false;
+    }
+}
 
 #[system(UiUpdate)]
 fn ui_update(mut ctx: ResMut<EguiContext>, mut fps_display: Query<&mut FpsDisplay>) {
@@ -102,6 +111,7 @@ pub fn run() -> anyhow::Result<()> {
 
     app.add_startup_system(Setup);
 
+    app.add_system(WindowUpdate);
     app.add_system(ParticleUpdate);
     app.add_system(FollowCameraUpdate);
     app.add_system(UiUpdate);
