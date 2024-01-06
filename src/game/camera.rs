@@ -75,7 +75,7 @@ pub fn follow_camera_update(
 
         if input.mouse_button_pressed(MouseButton::Right) {
             let mouse_delta = input.mouse_delta();
-            controller.pitch += mouse_delta.y * controller.pitch_sensitivity * time.delta_time;
+            controller.pitch += mouse_delta.y * controller.pitch_sensitivity * time.delta_seconds;
             controller.pitch = controller
                 .pitch
                 .clamp(controller.min_pitch, controller.max_pitch);
@@ -91,9 +91,10 @@ pub fn follow_camera_update(
         let rotation = player_rotation * controller.rotation;
         let translation = player_translation + rotation * glam::Vec3::NEG_Z * controller.distance;
 
-        controller.translation = controller
-            .translation
-            .lerp(translation, controller.stiffness * time.delta_time);
+        controller.translation = controller.translation.lerp(
+            translation,
+            (controller.stiffness * time.delta_seconds).clamp(0.0, 1.0),
+        );
         controller.target_translation = player_translation;
 
         camera.view_matrix = controller.view_matrix();

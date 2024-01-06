@@ -4,12 +4,14 @@ use crate::{core::ui::builtin::FpsDisplay, prelude::*};
 
 use self::{
     camera::{FollowCameraController, FollowCameraUpdate},
+    npc::NpcUpdate,
     player::PlayerUpdate,
 };
 
 pub mod camera;
 pub mod maps;
 pub mod materials;
+pub mod npc;
 pub mod player;
 
 #[system(UiUpdate)]
@@ -37,7 +39,7 @@ fn setup(commands: Commands, mut asset_server: ResMut<AssetServer>) {
     };
     commands.spawn(ground)?;
 
-    let light = PointLight::new(Vec3::new(0.0, 5.0, 0.0), Color::WHITE, 100.0);
+    let light = PointLight::new(Vec3::new(0.0, 5.0, 0.0), Color::WHITE, 20.0);
     commands.spawn(light)?;
 
     let player = player::Player {
@@ -57,13 +59,24 @@ fn setup(commands: Commands, mut asset_server: ResMut<AssetServer>) {
         ..Default::default()
     };
     commands.spawn((camera_controller, Camera::default()))?;
+
+    let npc = npc::Npc {
+        speed: 5.0,
+        rotation_speed: 2.0,
+    };
+    commands.spawn(npc::NpcBundle {
+        npc,
+        transform: Transform::from_translation(Vec3::new(0.0, 1.0, 5.0)),
+        mesh: asset_server.load_mesh("meshes/monkey_flat.glb")?,
+        material: materials::Materials::Wood.load(&mut asset_server, 2.0)?,
+    })?;
 }
 
 #[derive(Debug, clap::Parser)]
 struct Args {
-    #[clap(short, long, default_value = "1600")]
+    #[arg(short, long, default_value = "1600")]
     pub width: usize,
-    #[clap(short, long, default_value = "900")]
+    #[arg(short, long, default_value = "900")]
     pub height: usize,
 }
 
@@ -76,6 +89,7 @@ pub fn run() -> anyhow::Result<()> {
     app.add_system(FollowCameraUpdate);
     app.add_system(UiUpdate);
     app.add_system(PlayerUpdate);
+    app.add_system(NpcUpdate);
 
     app.run()
 }

@@ -237,5 +237,5 @@ pub fn physics(ctx: ResMut<RapierContext>, time: Res<Time>, bodies: Query<&mut R
         body.physics.lazy_init(&mut ctx);
     }
 
-    ctx.step(time.delta_time);
+    ctx.step(time.delta_seconds);
 }
