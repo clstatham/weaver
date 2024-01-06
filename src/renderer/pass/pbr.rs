@@ -3,7 +3,7 @@ use rustc_hash::FxHashMap;
 use crate::{
     app::asset_server::AssetId,
     core::{
-        camera::CameraUniform,
+        camera::{Camera, CameraUniform},
         light::{DirectionalLight, DirectionalLightBuffer, PointLight, PointLightBuffer},
         material::{Material, MaterialUniform},
         mesh::{Mesh, Vertex, MAX_MESHES},
@@ -12,7 +12,6 @@ use crate::{
         transform::Transform,
     },
     ecs::{Query, World},
-    game::camera::FollowCamera,
     include_shader,
     renderer::Renderer,
 };
@@ -305,11 +304,12 @@ impl PbrRenderPass {
         });
 
         // write buffers
-        let camera = world.read_resource::<FollowCamera>()?;
+        let camera = Query::<&Camera>::new(world);
+        let camera = camera.iter().next().unwrap();
         queue.write_buffer(
             &self.camera_buffer,
             0,
-            bytemuck::cast_slice(&[CameraUniform::from(*camera)]),
+            bytemuck::cast_slice(&[CameraUniform::from(&*camera)]),
         );
         {
             // write point lights buffer

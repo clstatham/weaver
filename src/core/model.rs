@@ -1,10 +1,17 @@
 use weaver_proc_macro::Bundle;
 
-use super::{material::Material, mesh::Mesh, transform::Transform};
+use super::{material::Material, mesh::Mesh, physics::RigidBody, transform::Transform};
 
 #[derive(Bundle)]
-pub struct Model {
+pub struct ModelBundle {
     pub mesh: Mesh,
     pub transform: Transform,
     pub material: Material,
+}
+
+#[derive(Bundle)]
+pub struct RigidBodyModelBundle {
+    pub mesh: Mesh,
+    pub material: Material,
+    pub rigid_body: RigidBody,
 }

@@ -1,8 +1,11 @@
 use clap::Parser;
 
-use crate::{core::ui::builtin::FpsUi, prelude::*};
+use crate::{core::ui::builtin::FpsDisplay, prelude::*};
 
-use self::camera::{FollowCamera, FollowCameraUpdate};
+use self::{
+    camera::{FollowCameraController, FollowCameraUpdate},
+    player::PlayerUpdate,
+};
 
 pub mod camera;
 pub mod maps;
@@ -10,21 +13,17 @@ pub mod materials;
 pub mod player;
 
 #[system(UiUpdate)]
-fn ui_update(mut ctx: ResMut<EguiContext>, mut fps_ui: Query<&mut FpsUi>) {
+fn ui_update(mut ctx: ResMut<EguiContext>, mut fps_display: Query<&mut FpsDisplay>) {
     ctx.draw_if_ready(|ctx| {
-        for mut fps_ui in fps_ui.iter() {
-            fps_ui.run_ui(ctx);
+        for mut fps_display in fps_display.iter() {
+            fps_display.run_ui(ctx);
         }
     });
 }
 
 #[system(Setup)]
-fn setup(
-    commands: Commands,
-    mut asset_server: ResMut<AssetServer>,
-    mut camera: ResMut<FollowCamera>,
-) {
-    commands.spawn(FpsUi::new())?;
+fn setup(commands: Commands, mut asset_server: ResMut<AssetServer>) {
+    commands.spawn(FpsDisplay::new())?;
 
     let ground = maps::GroundBundle {
         transform: Transform::from_scale_rotation_translation(
@@ -51,7 +50,13 @@ fn setup(
         mesh: asset_server.load_mesh("meshes/monkey_flat.glb")?,
         material: materials::Materials::Metal.load(&mut asset_server, 2.0)?,
     })?;
-    camera.target = player;
+
+    let camera_controller = FollowCameraController {
+        stiffness: 50.0,
+        target: player,
+        ..Default::default()
+    };
+    commands.spawn((camera_controller, Camera::default()))?;
 }
 
 #[derive(Debug, clap::Parser)]
@@ -66,18 +71,11 @@ pub fn run() -> anyhow::Result<()> {
     let args = Args::parse();
     let mut app = App::new(args.width, args.height)?;
 
-    let camera = camera::FollowCamera {
-        aspect: args.width as f32 / args.height as f32,
-        stiffness: 50.0,
-        ..Default::default()
-    };
-    app.insert_resource(camera)?;
-
     app.add_startup_system(Setup);
 
     app.add_system(FollowCameraUpdate);
     app.add_system(UiUpdate);
-    app.add_system(player::PlayerUpdate);
+    app.add_system(PlayerUpdate);
 
     app.run()
 }

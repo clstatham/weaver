@@ -1,7 +1,9 @@
 use crate::{
-    core::{camera::CameraUniform, texture::Texture},
-    ecs::World,
-    game::camera::FollowCamera,
+    core::{
+        camera::{Camera, CameraUniform},
+        texture::Texture,
+    },
+    ecs::{Query, World},
     include_shader,
 };
 
@@ -151,7 +153,8 @@ impl Pass for SkyRenderPass {
         depth_target: &Texture,
         world: &World,
     ) -> anyhow::Result<()> {
-        let camera = world.read_resource::<FollowCamera>()?;
+        let camera = Query::<&Camera>::new(world);
+        let camera = camera.iter().next().unwrap();
 
         let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Sky Render Pass Initial Encoder"),
@@ -159,7 +162,7 @@ impl Pass for SkyRenderPass {
         queue.write_buffer(
             &self.camera_buffer,
             0,
-            bytemuck::cast_slice(&[CameraUniform::from(*camera)]),
+            bytemuck::cast_slice(&[CameraUniform::from(&*camera)]),
         );
 
         queue.submit(std::iter::once(encoder.finish()));

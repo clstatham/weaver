@@ -1,4 +1,4 @@
-use weaver_proc_macro::Resource;
+use weaver_proc_macro::Component;
 use winit::event::VirtualKeyCode;
 
 use super::input::Input;
@@ -14,13 +14,13 @@ pub struct CameraUniform {
     pub _padding: u32,
 }
 
-impl From<FlyCamera> for CameraUniform {
-    fn from(camera: FlyCamera) -> Self {
-        let view = camera.view_matrix();
-        let proj = camera.projection_matrix();
+impl From<&Camera> for CameraUniform {
+    fn from(camera: &Camera) -> Self {
+        let view = camera.view_matrix;
+        let proj = camera.projection_matrix;
         let inv_view = view.inverse();
         let inv_proj = proj.inverse();
-        let camera_position = camera.translation;
+        let camera_position = inv_view.col(3).truncate();
 
         Self {
             view,
@@ -33,16 +33,14 @@ impl From<FlyCamera> for CameraUniform {
     }
 }
 
-pub trait Camera {
-    fn view_matrix(&self) -> glam::Mat4;
-    fn projection_matrix(&self) -> glam::Mat4;
-    fn camera_position(&self) -> glam::Vec3 {
-        self.view_matrix().inverse().col(3).truncate()
-    }
+#[derive(Debug, Default, Clone, Copy, Component)]
+pub struct Camera {
+    pub view_matrix: glam::Mat4,
+    pub projection_matrix: glam::Mat4,
 }
 
-#[derive(Debug, Resource, Clone, Copy)]
-pub struct FlyCamera {
+#[derive(Debug, Component, Clone, Copy)]
+pub struct FlyCameraController {
     pub speed: f32,
     pub sensitivity: f32,
     pub translation: glam::Vec3,
@@ -53,8 +51,8 @@ pub struct FlyCamera {
     pub far: f32,
 }
 
-impl FlyCamera {
-    pub fn update(&mut self, input: &Input, delta_time: f32) {
+impl FlyCameraController {
+    pub fn update(&mut self, input: &Input, delta_time: f32, camera: &mut Camera) {
         let mouse_delta = input.mouse_delta();
         let (mut yaw, mut pitch, _roll) = self.rotation.to_euler(glam::EulerRot::YXZ);
 
@@ -103,15 +101,16 @@ impl FlyCamera {
         self.rotation = glam::Quat::from_axis_angle(glam::Vec3::Y, yaw)
             * glam::Quat::from_axis_angle(glam::Vec3::X, pitch);
         self.rotation = self.rotation.normalize();
-    }
-}
 
-impl Camera for FlyCamera {
-    fn view_matrix(&self) -> glam::Mat4 {
+        camera.view_matrix = self.view_matrix();
+        camera.projection_matrix = self.projection_matrix();
+    }
+
+    pub fn view_matrix(&self) -> glam::Mat4 {
         glam::Mat4::from_rotation_translation(self.rotation, self.translation).inverse()
     }
 
-    fn projection_matrix(&self) -> glam::Mat4 {
+    pub fn projection_matrix(&self) -> glam::Mat4 {
         glam::Mat4::perspective_rh(self.fov, self.aspect, self.near, self.far)
     }
 }

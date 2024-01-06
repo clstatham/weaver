@@ -1,8 +1,8 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-    core::{color::Color, doodads::Doodad, texture::Texture},
-    game::camera::FollowCamera,
+    core::{camera::Camera, color::Color, doodads::Doodad, texture::Texture},
+    ecs::Query,
     include_shader,
 };
 
@@ -375,13 +375,14 @@ impl Pass for DoodadRenderPass {
             label: Some("doodad encoder"),
         });
 
-        let camera = world.read_resource::<FollowCamera>()?;
+        let camera = Query::<&Camera>::new(world);
+        let camera = camera.iter().next().unwrap();
         queue.write_buffer(
             &self.camera_buffer,
             0,
             bytemuck::cast_slice(&[DoodadCamera {
-                view: camera.view_matrix(),
-                proj: camera.projection_matrix(),
+                view: camera.view_matrix,
+                proj: camera.projection_matrix,
             }]),
         );
 

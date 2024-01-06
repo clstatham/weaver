@@ -14,7 +14,7 @@ pub mod builtin {
     use super::*;
 
     #[derive(Component)]
-    pub struct FpsUi {
+    pub struct FpsDisplay {
         last_frame: std::time::Instant,
         last_update: std::time::Instant,
         update_interval: std::time::Duration,
@@ -25,7 +25,7 @@ pub mod builtin {
         fps: f32,
     }
 
-    impl FpsUi {
+    impl FpsDisplay {
         #[allow(clippy::new_without_default)]
         pub fn new() -> Self {
             Self {

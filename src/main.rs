@@ -7,7 +7,7 @@ pub mod renderer;
 pub mod prelude {
     pub use crate::app::{asset_server::AssetServer, commands::Commands, App};
     pub use crate::core::{
-        camera::{Camera, FlyCamera},
+        camera::{Camera, FlyCameraController},
         color::Color,
         input::{Input, KeyCode},
         light::{DirectionalLight, PointLight},

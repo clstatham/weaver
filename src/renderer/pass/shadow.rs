@@ -2,7 +2,7 @@ use super::Pass;
 use crate::{
     app::asset_server::AssetId,
     core::{
-        camera::CameraUniform,
+        camera::{Camera, CameraUniform},
         light::{DirectionalLight, DirectionalLightUniform, PointLight, PointLightUniform},
         mesh::{Mesh, Vertex, MAX_MESHES},
         physics::{RapierContext, RigidBody},
@@ -10,7 +10,6 @@ use crate::{
         transform::Transform,
     },
     ecs::{Query, World},
-    game::camera::FollowCamera,
     include_shader,
 };
 use rustc_hash::FxHashMap;
@@ -768,8 +767,9 @@ impl ShadowRenderPass {
             });
         }
 
-        let camera = world.read_resource::<FollowCamera>()?;
-        let camera_uniform = CameraUniform::from(*camera);
+        let camera = Query::<&Camera>::new(world);
+        let camera = camera.iter().next().unwrap();
+        let camera_uniform = CameraUniform::from(&*camera);
 
         queue.write_buffer(
             &self.camera_buffer,
@@ -1002,8 +1002,9 @@ impl ShadowRenderPass {
             label: Some("Shadow Overlay Initial Encoder"),
         });
 
-        let camera = world.read_resource::<FollowCamera>()?;
-        let camera_uniform = CameraUniform::from(*camera);
+        let camera = Query::<&Camera>::new(world);
+        let camera = camera.iter().next().unwrap();
+        let camera_uniform = CameraUniform::from(&*camera);
 
         queue.write_buffer(
             &self.camera_buffer,
@@ -1096,8 +1097,9 @@ impl ShadowRenderPass {
             label: Some("Shadow Cube Overlay Initial Encoder"),
         });
 
-        let camera = world.read_resource::<FollowCamera>()?;
-        let camera_uniform = CameraUniform::from(*camera);
+        let camera = Query::<&Camera>::new(world);
+        let camera = camera.iter().next().unwrap();
+        let camera_uniform = CameraUniform::from(&*camera);
 
         queue.write_buffer(
             &self.camera_buffer,
