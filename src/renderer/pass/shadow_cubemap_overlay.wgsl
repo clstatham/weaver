@@ -42,11 +42,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 let offset = vec3<f32>(f32(i), f32(j), f32(k)) * radius;
                 let sample_depth = textureSample(shadow_cube_map, tex_sampler, to_light + offset).r * FAR_PLANE;
 
-                // we have to do the culling here because WGSL sucks and won't let us return before we do all the sampling calls
-                if input.clip_position.w < 0.0 {
-                    discard;
-                }
-
                 if current_depth - 0.05 > sample_depth {
                     shadow += 1.0;
                 }
@@ -54,6 +49,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         }
     }
     shadow /= 27.0;
+
+    // let attenuation = 1.0 / (1.0 + current_depth * 0.1 + current_depth * current_depth * 0.01);
+    // shadow *= attenuation;
 
     let visibility = 1.0 - shadow;
 

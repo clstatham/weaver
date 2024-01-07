@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use super::Pass;
 use crate::{
     app::asset_server::AssetId,
@@ -90,11 +92,11 @@ pub struct ShadowRenderPass {
     // shadow cube map texture (for point lights)
     shadow_cube_texture: Texture,
     // shadow cube map individual face views
-    shadow_cube_views: Vec<wgpu::TextureView>,
+    shadow_cube_d2array_view: wgpu::TextureView,
     // shadow cube map depth target cubemap
     shadow_cube_depth_target: Texture,
-    // shadow cube map depth target individual face views
-    shadow_cube_depth_target_views: Vec<wgpu::TextureView>,
+    // shadow cube map depth target cubemap views
+    shadow_cube_depth_target_d2array_view: wgpu::TextureView,
     // copy of the color target, sampled in the third stage
     color_texture: Texture,
 
@@ -135,32 +137,28 @@ impl ShadowRenderPass {
             Some(wgpu::TextureFormat::R32Float),
         );
 
-        let mut shadow_cube_views = Vec::new();
-        for i in 0..6 {
-            shadow_cube_views.push(shadow_cube_texture.texture().create_view(
-                &wgpu::TextureViewDescriptor {
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    array_layer_count: None,
-                    base_array_layer: i,
+        let shadow_cube_d2array_view =
+            shadow_cube_texture
+                .texture()
+                .create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2Array),
+                    array_layer_count: Some(6),
+                    base_array_layer: 0,
                     ..Default::default()
-                },
-            ));
-        }
+                });
 
         let shadow_cube_depth_target =
             Texture::new_depth_cubemap(device, SHADOW_DEPTH_TEXTURE_SIZE);
 
-        let mut shadow_cube_depth_target_views = Vec::new();
-        for i in 0..6 {
-            shadow_cube_depth_target_views.push(shadow_cube_depth_target.texture().create_view(
-                &wgpu::TextureViewDescriptor {
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    array_layer_count: None,
-                    base_array_layer: i,
+        let shadow_cube_depth_target_d2array_view =
+            shadow_cube_depth_target
+                .texture()
+                .create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2Array),
+                    array_layer_count: Some(6),
+                    base_array_layer: 0,
                     ..Default::default()
-                },
-            ));
-        }
+                });
 
         let color_texture = Texture::create_color_texture(
             device,
@@ -196,8 +194,8 @@ impl ShadowRenderPass {
 
         let point_light_view_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Point Light View Transform Buffer"),
-            size: std::mem::size_of::<glam::Mat4>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            size: std::mem::size_of::<glam::Mat4>() as u64 * 6,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -322,7 +320,7 @@ impl ShadowRenderPass {
                         binding: 2,
                         visibility: wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
                             min_binding_size: None,
                         },
@@ -394,7 +392,7 @@ impl ShadowRenderPass {
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview: Some(NonZeroU32::new(6).unwrap()),
             });
 
         // third stage: overlay the shadow map on the scene
@@ -734,9 +732,9 @@ impl ShadowRenderPass {
             shadow_cube_overlay_bind_group,
             shadow_depth_texture,
             shadow_cube_texture,
-            shadow_cube_views,
+            shadow_cube_d2array_view,
             shadow_cube_depth_target,
-            shadow_cube_depth_target_views,
+            shadow_cube_depth_target_d2array_view,
             color_texture,
             model_transform_buffer,
             directional_light_buffer,
@@ -961,15 +959,15 @@ impl ShadowRenderPass {
         });
 
         // clear the shadow cubemap texture
-        for i in 0..6 {
+        {
             let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Shadow Cube Map Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.shadow_cube_views[i],
+                    view: &self.shadow_cube_d2array_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 1.0, // f64::MAX?
+                            r: f64::MAX,
                             g: 0.0,
                             b: 0.0,
                             a: 0.0,
@@ -978,7 +976,7 @@ impl ShadowRenderPass {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_cube_depth_target_views[i],
+                    view: &self.shadow_cube_depth_target_d2array_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -1018,6 +1016,8 @@ impl ShadowRenderPass {
 
             queue.submit(std::iter::once(encoder.finish()));
 
+            let mut light_views = Vec::new();
+
             for i in 0..6 {
                 let view_transform = match i {
                     // right
@@ -1035,54 +1035,56 @@ impl ShadowRenderPass {
                     _ => unreachable!(),
                 };
 
-                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Shadow Cube Map Encoder"),
+                light_views.push(view_transform);
+            }
+
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Shadow Cube Map Encoder"),
+            });
+
+            queue.write_buffer(
+                &self.point_light_view_transform_buffer,
+                0,
+                bytemuck::cast_slice(&light_views),
+            );
+
+            // build the shadow cube map
+            {
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Shadow Cube Map Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.shadow_cube_d2array_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.shadow_cube_depth_target_d2array_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
                 });
 
-                queue.write_buffer(
-                    &self.point_light_view_transform_buffer,
+                render_pass.set_pipeline(&self.shadow_cube_map_pipeline);
+                render_pass.set_bind_group(0, &self.shadow_cube_map_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
+                render_pass
+                    .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(
+                    0..mesh.num_indices() as u32,
                     0,
-                    bytemuck::cast_slice(&[view_transform]),
+                    0..transforms.len() as u32,
                 );
-
-                // build the shadow cube map
-                {
-                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Shadow Cube Map Render Pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &self.shadow_cube_views[i],
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: &self.shadow_cube_depth_target_views[i],
-                            depth_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            }),
-                            stencil_ops: None,
-                        }),
-                        occlusion_query_set: None,
-                        timestamp_writes: None,
-                    });
-
-                    render_pass.set_pipeline(&self.shadow_cube_map_pipeline);
-                    render_pass.set_bind_group(0, &self.shadow_cube_map_bind_group, &[]);
-                    render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
-                    render_pass
-                        .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-                    render_pass.draw_indexed(
-                        0..mesh.num_indices() as u32,
-                        0,
-                        0..transforms.len() as u32,
-                    );
-                }
-
-                queue.submit(std::iter::once(encoder.finish()));
             }
+
+            queue.submit(std::iter::once(encoder.finish()));
         }
 
         Ok(())
@@ -1136,12 +1138,6 @@ impl ShadowRenderPass {
                     depth_or_array_layers: 1,
                 },
             );
-
-            queue.submit(std::iter::once(encoder.finish()));
-
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Shadow Cube Overlay Render Pass Encoder"),
-            });
 
             {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

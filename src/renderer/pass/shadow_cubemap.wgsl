@@ -4,7 +4,7 @@ const FAR_PLANE: f32 = 100.0;
 
 @group(0) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
 @group(0) @binding(1) var<uniform> light: PointLight;
-@group(0) @binding(2) var<uniform> light_view: mat4x4<f32>;
+@group(0) @binding(2) var<storage> light_views: array<mat4x4<f32>, 6>;
 
 struct VertexOutput {
     @builtin(position) light_space_pos: vec4<f32>,
@@ -12,10 +12,11 @@ struct VertexOutput {
 }
 
 @vertex
-fn vs_main(input: VertexInput) -> VertexOutput {
+fn vs_main(input: VertexInput, @builtin(view_index) view_index: i32) -> VertexOutput {
     var output: VertexOutput;
 
     let model_transform = model_transforms[input.instance_index];
+    let light_view = light_views[view_index];
 
     let pos = model_transform * vec4<f32>(input.position, 1.0);
 
@@ -27,9 +28,6 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) f32 {
-    if input.light_space_pos.w <= 0.0 {
-        discard;
-    }
     let light_distance = length(input.world_space_pos.xyz - light.position.xyz);
     let depth = light_distance / FAR_PLANE;
     return depth;

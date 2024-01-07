@@ -1,6 +1,5 @@
 use rustc_hash::FxHashSet;
 use weaver_proc_macro::Resource;
-use winit::event::MouseButton;
 
 pub use winit::event::VirtualKeyCode as KeyCode;
 

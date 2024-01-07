@@ -1,11 +1,6 @@
 use clap::Parser;
 
-use crate::{
-    app::Window,
-    core::{particles::ParticleEmitter, ui::builtin::FpsDisplay},
-    prelude::*,
-    renderer::pass::Pass,
-};
+use crate::{app::Window, core::ui::builtin::FpsDisplay, prelude::*, renderer::pass::Pass};
 
 use self::{
     camera::{FollowCameraController, FollowCameraUpdate},
@@ -47,6 +42,15 @@ fn ui_update(
             }
         });
     });
+}
+
+#[system(SpinNpcs)]
+fn spin_npcs(time: Res<Time>, mut query: Query<&mut Transform, With<npc::Npc>>) {
+    for mut transform in query.iter() {
+        let mut rotation = transform.get_rotation();
+        rotation *= Quat::from_rotation_y(time.delta_seconds * rand::random::<f32>());
+        transform.set_rotation(rotation);
+    }
 }
 
 #[system(Setup)]
@@ -134,7 +138,8 @@ pub fn run() -> anyhow::Result<()> {
     app.add_system(FollowCameraUpdate);
     app.add_system(UiUpdate);
     app.add_system(PlayerUpdate);
-    app.add_system(NpcUpdate);
+    // app.add_system(NpcUpdate);
+    app.add_system(SpinNpcs);
 
     app.run()
 }
