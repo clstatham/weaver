@@ -4,6 +4,7 @@ use crate::{
     app::Window,
     core::{particles::ParticleEmitter, ui::builtin::FpsDisplay},
     prelude::*,
+    renderer::pass::Pass,
 };
 
 use self::{
@@ -20,24 +21,42 @@ pub mod player;
 
 #[system(WindowUpdate)]
 fn window_update(mut window: ResMut<Window>, input: Res<Input>) {
-    if input.mouse_button_pressed(3) {
-        window.fps_mode = true;
-    } else {
-        window.fps_mode = false;
-    }
+    window.fps_mode = input.mouse_button_pressed(3);
 }
 
 #[system(UiUpdate)]
-fn ui_update(mut ctx: ResMut<EguiContext>, mut fps_display: Query<&mut FpsDisplay>) {
+fn ui_update(
+    mut ctx: ResMut<EguiContext>,
+    mut fps_display: Query<&mut FpsDisplay>,
+    mut renderer: ResMut<Renderer>,
+) {
     ctx.draw_if_ready(|ctx| {
         for mut fps_display in fps_display.iter() {
             fps_display.run_ui(ctx);
         }
+
+        egui::Window::new("Render Settings").show(ctx, |ui| {
+            let mut shadows_enabled = renderer.shadow_pass.is_enabled();
+            ui.checkbox(&mut shadows_enabled, "Shadows");
+            if shadows_enabled != renderer.shadow_pass.is_enabled() {
+                if shadows_enabled {
+                    renderer.shadow_pass.enable();
+                } else {
+                    renderer.shadow_pass.disable();
+                }
+            }
+        });
     });
 }
 
 #[system(Setup)]
-fn setup(commands: Commands, mut asset_server: ResMut<AssetServer>) {
+fn setup(
+    commands: Commands,
+    mut asset_server: ResMut<AssetServer>,
+    mut renderer: ResMut<Renderer>,
+) {
+    renderer.shadow_pass.disable();
+
     commands.spawn(FpsDisplay::new())?;
 
     let ground = maps::GroundBundle {
@@ -73,28 +92,27 @@ fn setup(commands: Commands, mut asset_server: ResMut<AssetServer>) {
     };
     commands.spawn((camera_controller, Camera::default()))?;
 
+    // bunch of npcs in a circle
     let npc = npc::Npc {
-        speed: 5.0,
-        rotation_speed: 2.0,
+        speed: 0.0,
+        rotation_speed: 0.0,
     };
-    commands.spawn(npc::NpcBundle {
-        npc,
-        transform: Transform::from_translation(Vec3::new(0.0, 1.0, 5.0)),
-        mesh: asset_server.load_mesh("meshes/monkey_flat.glb")?,
-        material: materials::Materials::Wood.load(&mut asset_server, 2.0)?,
-    })?;
+    let npc_mesh = asset_server.load_mesh("meshes/monkey_flat.glb")?;
+    let npc_material = materials::Materials::Wood.load(&mut asset_server, 2.0)?;
+    let npc_count = 200;
+    let npc_radius = 5.0;
+    for i in 0..npc_count {
+        let angle = (i as f32 / npc_count as f32) * std::f32::consts::TAU;
+        let x = angle.cos() * npc_radius;
+        let z = angle.sin() * npc_radius;
 
-    commands.spawn(ParticleEmitter {
-        particle_texture: Some(asset_server.load_texture("textures/fire_particle.png", false)?),
-        origin: Vec3::new(0.0, 1.0, 0.0),
-        spawn_rate: 1000.0,
-        max_particles: 1000,
-        particle_lifetime: 1.0,
-        particle_lifetime_randomness: 0.3,
-        particle_velocity: Vec3::new(0.0, 10.0, 0.0),
-        particle_velocity_randomness: Vec3::new(2.0, 0.5, 2.0),
-        ..Default::default()
-    })?;
+        commands.spawn(npc::NpcBundle {
+            npc,
+            transform: Transform::from_translation(Vec3::new(x, 1.0, z)),
+            mesh: npc_mesh.clone(),
+            material: npc_material.clone(),
+        })?;
+    }
 }
 
 #[derive(Debug, clap::Parser)]

@@ -28,6 +28,8 @@ struct ParticleVertex {
 }
 
 pub struct ParticleRenderPass {
+    enabled: bool,
+
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     // particle storage buffer
@@ -227,6 +229,7 @@ impl ParticleRenderPass {
         });
 
         Self {
+            enabled: true,
             pipeline,
             bind_group,
             particle_buffer,
@@ -238,6 +241,18 @@ impl ParticleRenderPass {
 }
 
 impl Pass for ParticleRenderPass {
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn enable(&mut self) {
+        self.enabled = true;
+    }
+
+    fn disable(&mut self) {
+        self.enabled = false;
+    }
+
     fn render(
         &self,
         device: &wgpu::Device,

@@ -36,9 +36,11 @@ pub struct Renderer {
 
     pub(crate) hdr_pass: HdrRenderPass,
     pub(crate) pbr_pass: PbrRenderPass,
-    pub(crate) sky_pass: SkyRenderPass,
-    pub(crate) particle_pass: ParticleRenderPass,
-    pub(crate) passes: Vec<Box<dyn pass::Pass>>,
+    pub sky_pass: SkyRenderPass,
+    pub particle_pass: ParticleRenderPass,
+    pub shadow_pass: ShadowRenderPass,
+    pub doodad_pass: DoodadRenderPass,
+    pub(crate) extra_passes: Vec<Box<dyn pass::Pass>>,
 
     pub(crate) sampler_clamp_nearest: wgpu::Sampler,
     pub(crate) sampler_clamp_linear: wgpu::Sampler,
@@ -196,21 +198,19 @@ impl Renderer {
 
         let pbr_pass = PbrRenderPass::new(&device, &sky_pass.bind_group_layout);
 
-        // particle pass
         let particle_pass = ParticleRenderPass::new(&device, &sampler_clamp_linear);
 
-        let passes: Vec<Box<dyn pass::Pass>> = vec![
-            // shadow pass
-            Box::new(ShadowRenderPass::new(
-                &device,
-                config.width,
-                config.height,
-                &sampler_clamp_nearest,
-                &sampler_depth,
-            )),
-            // doodad pass
-            Box::new(DoodadRenderPass::new(&device, &config)),
-        ];
+        let shadow_pass = ShadowRenderPass::new(
+            &device,
+            config.width,
+            config.height,
+            &sampler_clamp_nearest,
+            &sampler_depth,
+        );
+
+        let doodad_pass = DoodadRenderPass::new(&device, &config);
+
+        let extra_passes: Vec<Box<dyn pass::Pass>> = vec![];
 
         Self {
             hdr_loader,
@@ -225,7 +225,9 @@ impl Renderer {
             pbr_pass,
             sky_pass,
             particle_pass,
-            passes,
+            shadow_pass,
+            doodad_pass,
+            extra_passes,
             sampler_clamp_nearest,
             sampler_clamp_linear,
             sampler_repeat_nearest,
@@ -235,7 +237,7 @@ impl Renderer {
     }
 
     pub fn push_render_pass<T: Pass + 'static>(&mut self, pass: T) {
-        self.passes.push(Box::new(pass));
+        self.extra_passes.push(Box::new(pass));
     }
 
     pub fn prepare_components(&self, world: &World) {
@@ -320,8 +322,8 @@ impl Renderer {
             world,
         )?;
 
-        for pass in self.passes.iter() {
-            pass.render(
+        for pass in self.extra_passes.iter() {
+            pass.render_if_enabled(
                 &self.device,
                 &self.queue,
                 &self.hdr_pass.texture,
@@ -330,7 +332,7 @@ impl Renderer {
             )?;
         }
 
-        self.sky_pass.render(
+        self.shadow_pass.render_if_enabled(
             &self.device,
             &self.queue,
             &self.hdr_pass.texture,
@@ -338,6 +340,23 @@ impl Renderer {
             world,
         )?;
 
+        self.doodad_pass.render_if_enabled(
+            &self.device,
+            &self.queue,
+            &self.hdr_pass.texture,
+            &self.depth_texture,
+            world,
+        )?;
+
+        self.sky_pass.render_if_enabled(
+            &self.device,
+            &self.queue,
+            &self.hdr_pass.texture,
+            &self.depth_texture,
+            world,
+        )?;
+
+        // we always want to render the HDR pass, otherwise we won't see anything!
         self.hdr_pass.render(
             &self.device,
             &self.queue,
@@ -346,7 +365,7 @@ impl Renderer {
             world,
         )?;
 
-        self.particle_pass.render(
+        self.particle_pass.render_if_enabled(
             &self.device,
             &self.queue,
             &self.color_texture,

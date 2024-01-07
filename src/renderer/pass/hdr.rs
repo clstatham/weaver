@@ -4,6 +4,8 @@ use super::Pass;
 
 #[allow(dead_code)]
 pub struct HdrRenderPass {
+    enabled: bool,
+
     pipeline_layout: wgpu::PipelineLayout,
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
@@ -97,6 +99,7 @@ impl HdrRenderPass {
         });
 
         Self {
+            enabled: true,
             pipeline,
             bind_group,
             texture,
@@ -107,6 +110,18 @@ impl HdrRenderPass {
 }
 
 impl Pass for HdrRenderPass {
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn enable(&mut self) {
+        self.enabled = true;
+    }
+
+    fn disable(&mut self) {
+        self.enabled = false;
+    }
+
     fn render(
         &self,
         device: &wgpu::Device,

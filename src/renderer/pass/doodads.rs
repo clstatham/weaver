@@ -165,6 +165,8 @@ struct DoodadCamera {
 
 #[allow(dead_code)]
 pub struct DoodadRenderPass {
+    enabled: bool,
+
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     bind_group_layout: wgpu::BindGroupLayout,
@@ -344,6 +346,7 @@ impl DoodadRenderPass {
         });
 
         Self {
+            enabled: true,
             pipeline,
             bind_group,
             bind_group_layout,
@@ -360,6 +363,18 @@ impl DoodadRenderPass {
 }
 
 impl Pass for DoodadRenderPass {
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn enable(&mut self) {
+        self.enabled = true;
+    }
+
+    fn disable(&mut self) {
+        self.enabled = false;
+    }
+
     fn render(
         &self,
         device: &wgpu::Device,

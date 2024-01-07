@@ -59,6 +59,8 @@ impl UniqueMesh {
 
 #[allow(dead_code)]
 pub struct ShadowRenderPass {
+    enabled: bool,
+
     // the first stage creates the shadow map
     shadow_map_pipeline_layout: wgpu::PipelineLayout,
     shadow_map_pipeline: wgpu::RenderPipeline,
@@ -709,6 +711,7 @@ impl ShadowRenderPass {
             });
 
         Self {
+            enabled: true,
             shadow_map_pipeline_layout,
             shadow_map_pipeline,
             shadow_map_bind_group_layout,
@@ -739,115 +742,6 @@ impl ShadowRenderPass {
         }
     }
 
-    fn render_shadow_map(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        world: &World,
-    ) -> anyhow::Result<()> {
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Shadow Initial Encoder"),
-        });
-
-        // clear the shadow map texture
-        {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Shadow Render Pass"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: self.shadow_depth_texture.view(),
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-        }
-
-        let camera = Query::<&Camera>::new(world);
-        let camera = camera.iter().next().unwrap();
-        let camera_uniform = CameraUniform::from(&*camera);
-
-        queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::cast_slice(&[camera_uniform]),
-        );
-
-        let light_query = Query::<&DirectionalLight>::new(world);
-        let directional_light = light_query.iter().next();
-        if directional_light.is_none() {
-            return Ok(());
-        }
-        let directional_light = directional_light.unwrap();
-        let directional_light_uniform = DirectionalLightUniform::from(&*directional_light);
-
-        queue.write_buffer(
-            &self.directional_light_buffer,
-            0,
-            bytemuck::cast_slice(&[directional_light_uniform]),
-        );
-
-        queue.submit(std::iter::once(encoder.finish()));
-
-        let unique_meshes = UniqueMesh::gather(world);
-        for unique_mesh in unique_meshes.values() {
-            let UniqueMesh { mesh, transforms } = unique_mesh;
-
-            let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Shadow Buffer Write Encoder"),
-            });
-
-            queue.write_buffer(
-                &self.model_transform_buffer,
-                0,
-                bytemuck::cast_slice(transforms.as_slice()),
-            );
-
-            queue.submit(std::iter::once(encoder.finish()));
-
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Shadow Render Pass Encoder"),
-            });
-
-            // build the shadow map
-            {
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Shadow Render Pass"),
-                    color_attachments: &[],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: self.shadow_depth_texture.view(),
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                    }),
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
-
-                render_pass.set_pipeline(&self.shadow_map_pipeline);
-                render_pass.set_bind_group(0, &self.shadow_map_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
-                render_pass
-                    .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(
-                    0..mesh.num_indices() as u32,
-                    0,
-                    0..transforms.len() as u32,
-                );
-            }
-
-            queue.submit(std::iter::once(encoder.finish()));
-        }
-
-        Ok(())
-    }
-
     fn render_cube_map(
         &self,
         device: &wgpu::Device,
@@ -855,7 +749,7 @@ impl ShadowRenderPass {
         world: &World,
     ) -> anyhow::Result<()> {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Shadow Cube Map Initial Encoder"),
+            label: Some("Shadow Cube Map Encoder"),
         });
 
         // clear the shadow cubemap texture
@@ -903,8 +797,9 @@ impl ShadowRenderPass {
         let unique_meshes = UniqueMesh::gather(world);
         for unique_mesh in unique_meshes.values() {
             let UniqueMesh { mesh, transforms } = unique_mesh;
+
             let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Shadow Cube Map Buffer Write Encoder"),
+                label: Some("Shadow Cube Map Encoder"),
             });
 
             queue.write_buffer(
@@ -914,11 +809,8 @@ impl ShadowRenderPass {
             );
 
             queue.submit(std::iter::once(encoder.finish()));
-            for i in 0..6 {
-                let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Shadow Cube Map Render Pass Encoder"),
-                });
 
+            for i in 0..6 {
                 let view_transform = match i {
                     // right
                     0 => point_light.view_transform_in_direction(glam::Vec3::X, glam::Vec3::Y),
@@ -935,17 +827,15 @@ impl ShadowRenderPass {
                     _ => unreachable!(),
                 };
 
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Shadow Cube Map Encoder"),
+                });
+
                 queue.write_buffer(
                     &self.point_light_view_transform_buffer,
                     0,
                     bytemuck::cast_slice(&[view_transform]),
                 );
-
-                queue.submit(std::iter::once(encoder.finish()));
-
-                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Shadow Cube Map Render Pass Encoder"),
-                });
 
                 // build the shadow cube map
                 {
@@ -985,101 +875,6 @@ impl ShadowRenderPass {
 
                 queue.submit(std::iter::once(encoder.finish()));
             }
-        }
-
-        Ok(())
-    }
-
-    fn overlay_shadow_map(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        color_target: &Texture,
-        depth_target: &Texture,
-        world: &World,
-    ) -> anyhow::Result<()> {
-        let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Shadow Overlay Initial Encoder"),
-        });
-
-        let camera = Query::<&Camera>::new(world);
-        let camera = camera.iter().next().unwrap();
-        let camera_uniform = CameraUniform::from(&*camera);
-
-        queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::cast_slice(&[camera_uniform]),
-        );
-
-        queue.submit(std::iter::once(encoder.finish()));
-
-        // overlay the built shadow map on the screen
-        let unique_meshes = UniqueMesh::gather(world);
-        for unique_mesh in unique_meshes.values() {
-            let UniqueMesh { mesh, transforms } = unique_mesh;
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Shadow Overlay Buffer Write Encoder"),
-            });
-
-            queue.write_buffer(
-                &self.model_transform_buffer,
-                0,
-                bytemuck::cast_slice(transforms.as_slice()),
-            );
-
-            // copy the color target to our own copy
-            encoder.copy_texture_to_texture(
-                color_target.texture().as_image_copy(),
-                self.color_texture.texture().as_image_copy(),
-                wgpu::Extent3d {
-                    width: color_target.texture().width(),
-                    height: color_target.texture().height(),
-                    depth_or_array_layers: 1,
-                },
-            );
-
-            queue.submit(std::iter::once(encoder.finish()));
-
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Shadow Overlay Render Pass Encoder"),
-            });
-
-            {
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Shadow Overlay Render Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: color_target.view(),
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: depth_target.view(),
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                    }),
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
-
-                render_pass.set_pipeline(&self.shadow_overlay_pipeline);
-                render_pass.set_bind_group(0, &self.shadow_overlay_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
-                render_pass
-                    .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(
-                    0..mesh.num_indices() as u32,
-                    0,
-                    0..transforms.len() as u32,
-                );
-            }
-            queue.submit(std::iter::once(encoder.finish()));
         }
 
         Ok(())
@@ -1183,6 +978,18 @@ impl ShadowRenderPass {
 }
 
 impl Pass for ShadowRenderPass {
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn enable(&mut self) {
+        self.enabled = true;
+    }
+
+    fn disable(&mut self) {
+        self.enabled = false;
+    }
+
     fn render(
         &self,
         device: &wgpu::Device,
@@ -1192,8 +999,6 @@ impl Pass for ShadowRenderPass {
         world: &World,
     ) -> anyhow::Result<()> {
         self.render_cube_map(device, queue, world)?;
-        self.render_shadow_map(device, queue, world)?;
-        self.overlay_shadow_map(device, queue, color_target, depth_target, world)?;
         self.overlay_cube_shadow_map(device, queue, color_target, depth_target, world)?;
         Ok(())
     }

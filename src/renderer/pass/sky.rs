@@ -11,6 +11,8 @@ use super::Pass;
 
 #[allow(dead_code)]
 pub struct SkyRenderPass {
+    enabled: bool,
+
     skybox: Texture,
     skybox_view: wgpu::TextureView,
     pub(crate) bind_group: wgpu::BindGroup,
@@ -133,6 +135,7 @@ impl SkyRenderPass {
         });
 
         Self {
+            enabled: true,
             pipeline_layout,
             skybox,
             skybox_view,
@@ -145,6 +148,18 @@ impl SkyRenderPass {
 }
 
 impl Pass for SkyRenderPass {
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn enable(&mut self) {
+        self.enabled = true;
+    }
+
+    fn disable(&mut self) {
+        self.enabled = false;
+    }
+
     fn render(
         &self,
         device: &wgpu::Device,

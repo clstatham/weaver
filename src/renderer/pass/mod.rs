@@ -43,6 +43,9 @@ macro_rules! include_shader {
 }
 
 pub trait Pass {
+    fn is_enabled(&self) -> bool;
+    fn enable(&mut self);
+    fn disable(&mut self);
     fn render(
         &self,
         device: &wgpu::Device,
@@ -51,4 +54,19 @@ pub trait Pass {
         depth_target: &Texture,
         world: &World,
     ) -> anyhow::Result<()>;
+
+    fn render_if_enabled(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        color_target: &Texture,
+        depth_target: &Texture,
+        world: &World,
+    ) -> anyhow::Result<()> {
+        if self.is_enabled() {
+            self.render(device, queue, color_target, depth_target, world)?;
+        }
+
+        Ok(())
+    }
 }
