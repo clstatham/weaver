@@ -42,9 +42,6 @@ impl App {
             .with_resizable(false)
             .build(&event_loop)?;
 
-        window.set_cursor_grab(winit::window::CursorGrabMode::Confined)?;
-        window.set_cursor_visible(false);
-
         let renderer = pollster::block_on(Renderer::new(&window));
 
         let ui = EguiContext::new(&renderer.device, &window, 1);

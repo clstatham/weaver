@@ -124,11 +124,15 @@ impl ShadowRenderPass {
                 | wgpu::TextureUsages::TEXTURE_BINDING,
         );
 
-        let shadow_cube_texture = Texture::new_hdr_cubemap(
+        let shadow_cube_texture = Texture::create_cube_texture(
             device,
             SHADOW_DEPTH_TEXTURE_SIZE,
             SHADOW_DEPTH_TEXTURE_SIZE,
-            Some(wgpu::TextureViewDimension::Cube),
+            Some("Shadow Cube Texture"),
+            wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+            Some(wgpu::TextureFormat::R32Float),
         );
 
         let mut shadow_cube_views = Vec::new();
@@ -371,7 +375,7 @@ impl ShadowRenderPass {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: Texture::HDR_FORMAT,
+                        format: wgpu::TextureFormat::R32Float,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],

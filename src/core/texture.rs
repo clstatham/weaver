@@ -371,15 +371,15 @@ impl Texture {
 
     pub fn create_cube_texture(
         device: &wgpu::Device,
-        width: usize,
-        height: usize,
+        width: u32,
+        height: u32,
         label: Option<&str>,
         usage: wgpu::TextureUsages,
         format: Option<wgpu::TextureFormat>,
     ) -> Self {
         let size = wgpu::Extent3d {
-            width: width as u32,
-            height: height as u32,
+            width,
+            height,
             depth_or_array_layers: 6,
         };
 

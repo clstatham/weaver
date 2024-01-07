@@ -26,11 +26,11 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 }
 
 @fragment
-fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_main(input: VertexOutput) -> @location(0) f32 {
     if input.light_space_pos.w <= 0.0 {
         discard;
     }
     let light_distance = length(input.world_space_pos.xyz - light.position.xyz);
     let depth = light_distance / FAR_PLANE;
-    return vec4<f32>(depth, 0.0, 0.0, 1.0);
+    return depth;
 }
