@@ -2,11 +2,15 @@
 
 const FAR_PLANE: f32 = 100.0;
 
-@group(0) @binding(0) var shadow_cube_map: texture_cube<f32>;
-@group(0) @binding(1) var tex_sampler: sampler;
-@group(0) @binding(2) var<uniform> camera: CameraUniform;
-@group(0) @binding(3) var<uniform> light: PointLight;
-@group(0) @binding(4) var<storage> model_transforms: array<mat4x4<f32>>;
+@group(0) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
+
+@group(1) @binding(0) var<uniform> camera: CameraUniform;
+
+@group(2) @binding(0) var shadow_cube_map: texture_cube<f32>;
+@group(2) @binding(1) var tex_sampler: sampler;
+
+@group(3) @binding(0) var<uniform> light: PointLight;
+
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,

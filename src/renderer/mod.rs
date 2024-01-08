@@ -27,7 +27,7 @@ use crate::{
 
 use self::pass::{
     doodads::DoodadRenderPass, hdr::HdrRenderPass, particles::ParticleRenderPass,
-    pbr::PbrRenderPass, sky::SkyRenderPass, Pass,
+    pbr::PbrRenderPass, shadow::OmniShadowRenderPass, sky::SkyRenderPass, Pass,
 };
 
 pub mod compute;
@@ -468,7 +468,7 @@ pub struct Renderer {
     pub(crate) pbr_pass: PbrRenderPass,
     pub(crate) sky_pass: SkyRenderPass,
     pub particle_pass: ParticleRenderPass,
-    // pub shadow_pass: ShadowRenderPass,
+    pub shadow_pass: OmniShadowRenderPass,
     pub doodad_pass: DoodadRenderPass,
     pub(crate) extra_passes: Vec<Box<dyn pass::Pass>>,
 
@@ -688,6 +688,8 @@ impl Renderer {
 
         // let shadow_pass = ShadowRenderPass::new(&device, &sampler_clamp_nearest, &sampler_depth);
 
+        let shadow_pass = OmniShadowRenderPass::new(&device, &bind_group_layout_cache);
+
         let doodad_pass = DoodadRenderPass::new(&device, &config);
 
         let extra_passes: Vec<Box<dyn Pass>> = vec![];
@@ -706,7 +708,7 @@ impl Renderer {
             hdr_pass,
             pbr_pass,
             particle_pass,
-            // shadow_pass,
+            shadow_pass,
             sky_pass,
             doodad_pass,
             extra_passes,
@@ -1183,14 +1185,13 @@ impl Renderer {
             world,
         )?;
 
-        // self.shadow_pass.render_if_enabled(
-        //     &self.device,
-        //     &self.queue,
-        //     &self.color_texture_view,
-        //     &self.depth_texture_view,
-        //     self,
-        //     world,
-        // )?;
+        self.shadow_pass.render_if_enabled(
+            encoder,
+            &self.color_texture_view,
+            &self.depth_texture_view,
+            self,
+            world,
+        )?;
 
         // self.particle_pass.render_if_enabled(
         //     &self.device,
@@ -1218,6 +1219,7 @@ impl Renderer {
     pub fn prepare(&mut self, world: &World) -> (wgpu::SurfaceTexture, wgpu::CommandEncoder) {
         self.prepare_components(world);
         self.pbr_pass.prepare(world, self);
+        self.shadow_pass.prepare(world, self);
         self.update_all_buffers_and_flush();
 
         let encoder = self

@@ -8,7 +8,10 @@ use crate::{
         ui::builtin::FpsDisplay,
     },
     prelude::*,
-    renderer::{compute::hdr_loader::HdrLoader, pass::sky::SKYBOX_CUBEMAP_SIZE},
+    renderer::{
+        compute::hdr_loader::HdrLoader,
+        pass::{sky::SKYBOX_CUBEMAP_SIZE, Pass},
+    },
 };
 
 use self::{
@@ -28,10 +31,28 @@ fn window_update(mut window: ResMut<Window>, input: Res<Input>) {
 }
 
 #[system(UiUpdate)]
-fn ui_update(mut ctx: ResMut<EguiContext>, mut fps_display: Query<&mut FpsDisplay>) {
+fn ui_update(
+    mut ctx: ResMut<EguiContext>,
+    mut fps_display: Query<&mut FpsDisplay>,
+    mut renderer: ResMut<Renderer>,
+) {
     ctx.draw_if_ready(|ctx| {
         for mut fps_display in fps_display.iter() {
             fps_display.run_ui(ctx);
+        }
+
+        let mut shadow_pass_enabled = renderer.shadow_pass.is_enabled();
+        egui::Window::new("Render Settings")
+            .default_width(200.0)
+            .show(ctx, |ui| {
+                ui.checkbox(&mut shadow_pass_enabled, "Shadows");
+            });
+        if shadow_pass_enabled != renderer.shadow_pass.is_enabled() {
+            if shadow_pass_enabled {
+                renderer.shadow_pass.enable();
+            } else {
+                renderer.shadow_pass.disable();
+            }
         }
     });
 }

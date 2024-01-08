@@ -23,7 +23,7 @@ use crate::{
 
 use super::sky::SKYBOX_CUBEMAP_SIZE;
 
-pub(crate) struct UniqueMesh {
+struct UniqueMesh {
     mesh: Mesh,
     material_bind_group: Arc<wgpu::BindGroup>,
     transforms: Vec<Transform>,
@@ -31,8 +31,8 @@ pub(crate) struct UniqueMesh {
 }
 
 #[derive(Default)]
-pub(crate) struct UniqueMeshes {
-    pub(crate) unique_meshes: FxHashMap<(AssetId, AssetId), UniqueMesh>,
+struct UniqueMeshes {
+    unique_meshes: FxHashMap<(AssetId, AssetId), UniqueMesh>,
 }
 
 impl UniqueMeshes {
@@ -226,9 +226,9 @@ impl CreateBindGroupLayout for PbrBuffers {
 }
 
 pub struct PbrRenderPass {
-    pub(crate) pipeline: wgpu::RenderPipeline,
-    pub(crate) buffers: PbrBuffers,
-    pub(crate) unique_meshes: RefCell<UniqueMeshes>,
+    pipeline: wgpu::RenderPipeline,
+    buffers: PbrBuffers,
+    unique_meshes: RefCell<UniqueMeshes>,
 }
 
 impl PbrRenderPass {
