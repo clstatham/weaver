@@ -5,7 +5,7 @@ use winit::{event_loop::EventLoop, window::WindowBuilder};
 use crate::{
     core::{doodads::Doodads, input::Input, time::Time, ui::EguiContext},
     ecs::{system::SystemId, Bundle, Entity, Resource, System, World},
-    renderer::Renderer,
+    renderer::{compute::hdr_loader::HdrLoader, Renderer},
 };
 
 use self::{asset_server::AssetServer, commands::Commands};
@@ -46,14 +46,17 @@ impl App {
 
         let ui = EguiContext::new(&renderer.device, &window, 1);
 
+        let hdr_loader = HdrLoader::new(&renderer.device);
+
         let mut world = World::new();
         world.insert_resource(renderer)?;
+        world.insert_resource(hdr_loader)?;
         world.insert_resource(Time::new())?;
         world.insert_resource(Input::default())?;
         world.insert_resource(ui)?;
         world.insert_resource(Doodads::default())?;
 
-        let asset_server = AssetServer::new(&world)?;
+        let asset_server = AssetServer::new()?;
 
         world.insert_resource(asset_server)?;
 

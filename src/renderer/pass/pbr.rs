@@ -1,21 +1,30 @@
 use std::{borrow::BorrowMut, cell::RefCell, sync::Arc};
 
 use rustc_hash::FxHashMap;
+use weaver_proc_macro::Component;
 
 use crate::{
     app::asset_server::AssetId,
     core::{
-        camera::Camera,
+        camera::{Camera, CameraUniform},
         light::PointLightArray,
         material::Material,
         mesh::{Mesh, Vertex, MAX_MESHES},
-        texture::{DepthFormat, HdrFormat, NormalMapFormat, TextureFormat, WindowFormat},
+        texture::{
+            DepthFormat, HdrCubeFormat, HdrFormat, NormalMapFormat, Skybox, TextureFormat,
+            WindowFormat,
+        },
         transform::Transform,
     },
     ecs::{Query, World},
     include_shader,
-    renderer::{AllocBuffers, BindGroupLayoutCache, BufferHandle, LazyBufferHandle, Renderer},
+    renderer::{
+        AllocBuffers, BindGroupLayoutCache, BufferHandle, BufferStorage, CreateBindGroupLayout,
+        LazyBufferHandle, Renderer, UpdateStatus,
+    },
 };
+
+use super::sky::SKYBOX_CUBEMAP_SIZE;
 
 pub(crate) struct UniqueMesh {
     mesh: Mesh,
@@ -82,8 +91,146 @@ impl AllocBuffers for UniqueMeshes {
     }
 }
 
+#[derive(Clone, Component)]
+pub struct PbrBuffers {
+    pub(crate) camera: LazyBufferHandle,
+    pub(crate) env_map: LazyBufferHandle,
+    pub(crate) bind_group: RefCell<Option<Arc<wgpu::BindGroup>>>,
+}
+
+impl PbrBuffers {
+    pub fn new() -> Self {
+        Self {
+            camera: LazyBufferHandle::new(
+                crate::renderer::BufferBindingType::Uniform {
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    size: Some(std::mem::size_of::<CameraUniform>()),
+                },
+                Some("PBR Camera"),
+                None,
+            ),
+            env_map: LazyBufferHandle::new(
+                crate::renderer::BufferBindingType::Texture {
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    format: HdrCubeFormat::FORMAT,
+                    width: SKYBOX_CUBEMAP_SIZE,
+                    height: SKYBOX_CUBEMAP_SIZE,
+                    dimension: wgpu::TextureDimension::D2,
+                    view_dimension: wgpu::TextureViewDimension::Cube,
+                    depth_or_array_layers: 6,
+                },
+                Some("PBR Environment Map"),
+                None,
+            ),
+            bind_group: RefCell::new(None),
+        }
+    }
+
+    pub fn get_or_create_bind_group(&self, renderer: &Renderer) -> Arc<wgpu::BindGroup> {
+        let mut bind_group = self.bind_group.borrow_mut();
+        if bind_group.is_none() {
+            let camera = self.camera.get_or_create::<Camera>(renderer);
+            let env_map = self.env_map.get_or_create::<HdrCubeFormat>(renderer);
+            let status = &*env_map.status.borrow();
+            let view = match status {
+                UpdateStatus::Ready { buffer } => match &*buffer.storage {
+                    BufferStorage::Texture { view, .. } => view,
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            };
+            *bind_group = Some(Arc::new(
+                renderer
+                    .device
+                    .create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("PBR Bind Group"),
+                        layout: &renderer
+                            .bind_group_layout_cache
+                            .get_or_create::<PbrBuffers>(&renderer.device),
+                        entries: &[
+                            // camera
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: camera.get_buffer().unwrap().as_entire_binding(),
+                            },
+                            // env map
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::TextureView(view),
+                            },
+                            // env map sampler
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: wgpu::BindingResource::Sampler(
+                                    &renderer.sampler_clamp_nearest,
+                                ),
+                            },
+                        ],
+                    }),
+            ));
+        }
+
+        bind_group.as_ref().unwrap().clone()
+    }
+}
+
+impl Default for PbrBuffers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AllocBuffers for PbrBuffers {
+    fn alloc_buffers(&self, renderer: &Renderer) -> anyhow::Result<Vec<BufferHandle>> {
+        Ok(vec![
+            self.camera.get_or_create::<Camera>(renderer),
+            self.env_map.get_or_create::<HdrCubeFormat>(renderer),
+        ])
+    }
+}
+
+impl CreateBindGroupLayout for PbrBuffers {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("PBR Buffers"),
+            entries: &[
+                // camera
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // env map
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // env map sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
+                },
+            ],
+        })
+    }
+}
+
 pub struct PbrRenderPass {
     pub(crate) pipeline: wgpu::RenderPipeline,
+    pub(crate) buffers: PbrBuffers,
     pub(crate) unique_meshes: RefCell<UniqueMeshes>,
 }
 
@@ -99,8 +246,8 @@ impl PbrRenderPass {
             bind_group_layouts: &[
                 // mesh transform
                 &bind_group_layout_cache.get_or_create::<Transform>(device),
-                // camera
-                &bind_group_layout_cache.get_or_create::<Camera>(device),
+                // camera and env map
+                &bind_group_layout_cache.get_or_create::<PbrBuffers>(device),
                 // material
                 &bind_group_layout_cache.get_or_create::<Material>(device),
                 // point lights
@@ -153,6 +300,7 @@ impl PbrRenderPass {
 
         Self {
             pipeline,
+            buffers: PbrBuffers::new(),
             unique_meshes,
         }
     }
@@ -161,6 +309,7 @@ impl PbrRenderPass {
         let mut unique_meshes = self.unique_meshes.borrow_mut();
         unique_meshes.gather(world, renderer);
         unique_meshes.alloc_buffers(renderer).unwrap();
+        self.buffers.alloc_buffers(renderer).unwrap();
         unique_meshes.update();
     }
 
@@ -171,11 +320,36 @@ impl PbrRenderPass {
         world: &World,
         encoder: &mut wgpu::CommandEncoder,
     ) -> anyhow::Result<()> {
+        let skybox = Query::<&Skybox>::new(world);
+        let skybox = skybox.iter().next().unwrap();
+
+        let skybox_handle = &skybox.texture.alloc_buffers(renderer)?[0];
+        let skybox_texture = skybox_handle.get_texture().unwrap();
+
         let camera = Query::<&Camera>::new(world);
         let camera = camera.iter().next().unwrap();
 
         let camera_handle = &camera.alloc_buffers(renderer)?[0];
-        let camera_bind_group = camera_handle.bind_group().unwrap();
+
+        let my_handles = self.buffers.alloc_buffers(renderer)?;
+        let my_camera_buffer = my_handles[0].get_buffer().unwrap();
+        let my_env_map_texture = my_handles[1].get_texture().unwrap();
+
+        encoder.copy_buffer_to_buffer(
+            &camera_handle.get_buffer().unwrap(),
+            0,
+            &my_camera_buffer,
+            0,
+            std::mem::size_of::<CameraUniform>() as u64,
+        );
+
+        encoder.copy_texture_to_texture(
+            skybox_texture.as_image_copy(),
+            my_env_map_texture.as_image_copy(),
+            skybox_texture.size(),
+        );
+
+        let buffer_bind_group = self.buffers.get_or_create_bind_group(renderer);
 
         let point_lights_handle = &renderer.point_lights.alloc_buffers(renderer)?[0];
         let point_lights_bind_group = point_lights_handle.bind_group().unwrap();
@@ -230,7 +404,7 @@ impl PbrRenderPass {
 
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_bind_group(0, &transform_bind_group, &[]);
-            render_pass.set_bind_group(1, &camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &buffer_bind_group, &[]);
             render_pass.set_bind_group(2, material_bind_group, &[]);
             render_pass.set_bind_group(3, &point_lights_bind_group, &[]);
             render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));

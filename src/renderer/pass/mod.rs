@@ -6,6 +6,7 @@ pub mod doodads;
 pub mod hdr;
 pub mod particles;
 pub mod pbr;
+pub mod sky;
 // pub mod shadow;
 
 pub fn preprocess_shader(shader: &str) -> String {

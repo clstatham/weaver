@@ -7,10 +7,10 @@ use crate::{
     core::{
         material::Material,
         mesh::Mesh,
-        texture::{NormalMapFormat, SdrFormat, Texture, TextureFormat},
+        texture::{HdrD2ArrayFormat, NormalMapFormat, SdrFormat, Texture, TextureFormat},
     },
     ecs::World,
-    renderer::{BufferAllocator, Renderer},
+    renderer::{compute::hdr_loader::HdrLoader, BufferAllocator, Renderer},
 };
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -28,20 +28,16 @@ pub struct AssetServer {
     ids: FxHashMap<PathBuf, AssetId>,
     meshes: FxHashMap<AssetId, Mesh>,
     materials: FxHashMap<AssetId, Material>,
-    buffer_allocator: Rc<BufferAllocator>,
 }
 
 impl AssetServer {
-    pub fn new(world: &World) -> anyhow::Result<Self> {
-        let renderer = world.read_resource::<Renderer>()?;
-        let buffer_allocator = renderer.buffer_allocator.clone();
+    pub fn new() -> anyhow::Result<Self> {
         Ok(Self {
             next_id: 0,
             path_prefix: PathBuf::from("assets"),
             ids: FxHashMap::default(),
             meshes: FxHashMap::default(),
             materials: FxHashMap::default(),
-            buffer_allocator,
         })
     }
 
@@ -117,6 +113,23 @@ impl AssetServer {
             self.path_prefix.join(path)
         };
         let texture = Texture::load(path.clone(), None);
+        Ok(texture)
+    }
+
+    pub fn load_hdr_cubemap(
+        &mut self,
+        path: impl Into<PathBuf>,
+        dst_size: u32,
+        renderer: &Renderer,
+        hdr_loader: &HdrLoader,
+    ) -> anyhow::Result<Texture<HdrD2ArrayFormat>> {
+        let path = path.into();
+        let path = if path.is_absolute() {
+            path
+        } else {
+            self.path_prefix.join(path)
+        };
+        let texture = hdr_loader.load(renderer, dst_size, path)?;
         Ok(texture)
     }
 

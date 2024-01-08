@@ -1,21 +1,20 @@
 use std::path::Path;
 
-use weaver_proc_macro::Component;
-
-use crate::renderer::{
-    AllocBuffers, BufferHandle, CreateBindGroupLayout, LazyBufferHandle, Renderer,
+use crate::{
+    ecs::Component,
+    renderer::{AllocBuffers, BufferHandle, CreateBindGroupLayout, LazyBufferHandle, Renderer},
 };
 
 use super::color::Color;
 
-pub trait TextureFormat: 'static + Send + Sync {
+pub trait TextureFormat: 'static + Send + Sync + Component {
     const FORMAT: wgpu::TextureFormat;
 }
 
 macro_rules! texture_formats {
     ($($name:ident: $format:ident,)*) => {
         $(
-            #[derive(Debug, Clone, Copy)]
+            #[derive(Debug, Clone, Copy, Component)]
             pub struct $name;
             impl TextureFormat for $name {
                 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::$format;
@@ -30,6 +29,9 @@ texture_formats! {
     HdrFormat: Rgba32Float,
     NormalMapFormat: Rgba8Unorm,
     DepthFormat: Depth32Float,
+
+    HdrD2ArrayFormat: Rgba32Float,
+    HdrCubeFormat: Rgba32Float,
 }
 
 impl CreateBindGroupLayout for WindowFormat {
@@ -122,6 +124,42 @@ impl CreateBindGroupLayout for DepthFormat {
     }
 }
 
+impl CreateBindGroupLayout for HdrD2ArrayFormat {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("HDR Cubemap Texture Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+                count: None,
+            }],
+        })
+    }
+}
+
+impl CreateBindGroupLayout for HdrCubeFormat {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("HDR Cubemap Texture Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::Cube,
+                    multisampled: false,
+                },
+                count: None,
+            }],
+        })
+    }
+}
+
 #[derive(Clone, Component)]
 pub struct Texture<F: TextureFormat> {
     pub(crate) handle: LazyBufferHandle,
@@ -129,6 +167,13 @@ pub struct Texture<F: TextureFormat> {
 }
 
 impl<F: TextureFormat> Texture<F> {
+    pub fn from_handle(handle: LazyBufferHandle) -> Self {
+        Self {
+            handle,
+            _format: std::marker::PhantomData,
+        }
+    }
+
     pub fn load(path: impl AsRef<Path>, label: Option<&'static str>) -> Self {
         let path = path.as_ref();
 
@@ -250,4 +295,9 @@ impl<F: TextureFormat + CreateBindGroupLayout> CreateBindGroupLayout for Texture
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         F::create_bind_group_layout(device)
     }
+}
+
+#[derive(Clone, Component)]
+pub struct Skybox {
+    pub texture: Texture<HdrD2ArrayFormat>,
 }

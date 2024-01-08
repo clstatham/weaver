@@ -52,7 +52,9 @@ impl Camera {
             projection_matrix: glam::Mat4::IDENTITY,
             handle: LazyBufferHandle::new(
                 crate::renderer::BufferBindingType::Uniform {
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    usage: wgpu::BufferUsages::UNIFORM
+                        | wgpu::BufferUsages::COPY_DST
+                        | wgpu::BufferUsages::COPY_SRC,
                     size: Some(std::mem::size_of::<CameraUniform>()),
                 },
                 Some("Camera"),

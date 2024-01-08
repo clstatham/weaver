@@ -28,7 +28,7 @@ use crate::{
 
 use self::pass::{
     doodads::DoodadRenderPass, hdr::HdrRenderPass, particles::ParticleRenderPass,
-    pbr::PbrRenderPass, Pass,
+    pbr::PbrRenderPass, sky::SkyRenderPass, Pass,
 };
 
 pub mod compute;
@@ -124,6 +124,19 @@ impl LazyBufferHandle {
         }
     }
 
+    pub fn from_handle(
+        handle: BufferHandle,
+        ty: BufferBindingType,
+        label: Option<&'static str>,
+    ) -> Self {
+        Self {
+            handle: RefCell::new(Some(handle)),
+            ty,
+            label,
+            pending_data: None,
+        }
+    }
+
     pub fn get_or_create<C: Component + CreateBindGroupLayout>(
         &self,
         renderer: &Renderer,
@@ -153,7 +166,7 @@ impl LazyBufferHandle {
                 dimension,
                 view_dimension,
                 depth_or_array_layers,
-            } => renderer.create_texture(
+            } => renderer.create_texture::<C>(
                 width,
                 height,
                 format,
@@ -194,7 +207,7 @@ impl LazyBufferHandle {
                 dimension,
                 view_dimension,
                 depth_or_array_layers,
-            } => renderer.create_texture_init(
+            } => renderer.create_texture_init::<_, C>(
                 width,
                 height,
                 format,
@@ -454,6 +467,7 @@ pub struct Renderer {
 
     pub(crate) hdr_pass: HdrRenderPass,
     pub(crate) pbr_pass: PbrRenderPass,
+    pub(crate) sky_pass: SkyRenderPass,
     pub particle_pass: ParticleRenderPass,
     // pub shadow_pass: ShadowRenderPass,
     pub doodad_pass: DoodadRenderPass,
@@ -668,6 +682,9 @@ impl Renderer {
 
         let pbr_pass = PbrRenderPass::new(&device, &bind_group_layout_cache);
 
+        let sky_pass =
+            SkyRenderPass::new(&device, &bind_group_layout_cache, &sampler_clamp_nearest);
+
         let particle_pass = ParticleRenderPass::new(&device, &sampler_clamp_linear);
 
         // let shadow_pass = ShadowRenderPass::new(&device, &sampler_clamp_nearest, &sampler_depth);
@@ -691,6 +708,7 @@ impl Renderer {
             pbr_pass,
             particle_pass,
             // shadow_pass,
+            sky_pass,
             doodad_pass,
             extra_passes,
             sampler_clamp_nearest,
@@ -769,7 +787,7 @@ impl Renderer {
         })
     }
 
-    pub fn create_texture(
+    pub fn create_texture<F: Component + CreateBindGroupLayout>(
         &self,
         width: u32,
         height: u32,
@@ -802,28 +820,13 @@ impl Renderer {
             aspect: wgpu::TextureAspect::All,
             base_mip_level: 0,
             base_array_layer: 0,
-            array_layer_count: None,
+            array_layer_count: Some(depth_or_array_layers),
             mip_level_count: None,
         });
 
-        let bind_group_layout = match format {
-            DepthFormat::FORMAT => self
-                .bind_group_layout_cache
-                .get_or_create::<Texture<DepthFormat>>(self.device.as_ref()),
-            HdrFormat::FORMAT => self
-                .bind_group_layout_cache
-                .get_or_create::<Texture<HdrFormat>>(self.device.as_ref()),
-            NormalMapFormat::FORMAT => self
-                .bind_group_layout_cache
-                .get_or_create::<Texture<NormalMapFormat>>(self.device.as_ref()),
-            SdrFormat::FORMAT => self
-                .bind_group_layout_cache
-                .get_or_create::<Texture<SdrFormat>>(self.device.as_ref()),
-            WindowFormat::FORMAT => self
-                .bind_group_layout_cache
-                .get_or_create::<Texture<WindowFormat>>(self.device.as_ref()),
-            _ => panic!("Invalid texture format"),
-        };
+        let bind_group_layout = self
+            .bind_group_layout_cache
+            .get_or_create::<F>(&self.device);
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Texture Bind Group"),
@@ -840,7 +843,7 @@ impl Renderer {
         })
     }
 
-    pub fn create_texture_init<T: bytemuck::Pod>(
+    pub fn create_texture_init<T: bytemuck::Pod, F: Component + CreateBindGroupLayout>(
         &self,
         width: u32,
         height: u32,
@@ -882,24 +885,9 @@ impl Renderer {
             mip_level_count: None,
         });
 
-        let bind_group_layout = match format {
-            DepthFormat::FORMAT => self
-                .bind_group_layout_cache
-                .get_or_create::<Texture<DepthFormat>>(self.device.as_ref()),
-            HdrFormat::FORMAT => self
-                .bind_group_layout_cache
-                .get_or_create::<Texture<HdrFormat>>(self.device.as_ref()),
-            NormalMapFormat::FORMAT => self
-                .bind_group_layout_cache
-                .get_or_create::<Texture<NormalMapFormat>>(self.device.as_ref()),
-            SdrFormat::FORMAT => self
-                .bind_group_layout_cache
-                .get_or_create::<Texture<SdrFormat>>(self.device.as_ref()),
-            WindowFormat::FORMAT => self
-                .bind_group_layout_cache
-                .get_or_create::<Texture<WindowFormat>>(self.device.as_ref()),
-            _ => panic!("Invalid texture format"),
-        };
+        let bind_group_layout = self
+            .bind_group_layout_cache
+            .get_or_create::<F>(&self.device);
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Texture Bind Group"),
@@ -1171,15 +1159,23 @@ impl Renderer {
         self.pbr_pass
             .render(self, &hdr_pass_view, world, &mut encoder)?;
 
-        // for pass in self.extra_passes.iter() {
-        //     pass.render_if_enabled(
-        //         &mut encoder,
-        //         &hdr_pass_view,
-        //         &self.depth_texture_view,
-        //         self,
-        //         world,
-        //     )?;
-        // }
+        for pass in self.extra_passes.iter() {
+            pass.render_if_enabled(
+                &mut encoder,
+                &hdr_pass_view,
+                &self.depth_texture_view,
+                self,
+                world,
+            )?;
+        }
+
+        self.sky_pass.render_if_enabled(
+            &mut encoder,
+            &hdr_pass_view,
+            &self.depth_texture_view,
+            self,
+            world,
+        )?;
 
         // self.doodad_pass.render_if_enabled(
         //     &self.device,

@@ -4,9 +4,11 @@ use crate::{
     app::Window,
     core::{
         doodads::{Cube, Doodad, Doodads},
+        texture::Skybox,
         ui::builtin::FpsDisplay,
     },
     prelude::*,
+    renderer::{compute::hdr_loader::HdrLoader, pass::sky::SKYBOX_CUBEMAP_SIZE},
 };
 
 use self::{
@@ -60,22 +62,33 @@ fn setup(
     commands: Commands,
     mut asset_server: ResMut<AssetServer>,
     mut renderer: ResMut<Renderer>,
+    hdr_loader: Res<HdrLoader>,
 ) {
     // renderer.shadow_pass.disable();
 
     commands.spawn(FpsDisplay::new())?;
 
-    // let ground = maps::GroundBundle {
-    //     transform: Transform::from_scale_rotation_translation(
-    //         Vec3::new(30.0, 1.0, 30.0),
-    //         Quat::IDENTITY,
-    //         Vec3::new(0.0, -1.0, 0.0),
-    //     ),
-    //     mesh: asset_server.load_mesh("meshes/cube.glb", &renderer)?,
-    //     material: materials::Materials::WoodTile.load(&mut asset_server, 30.0)?,
-    //     ground: maps::Ground,
-    // };
-    // commands.spawn(ground)?;
+    let skybox = Skybox {
+        texture: asset_server.load_hdr_cubemap(
+            "meadow_2k.hdr",
+            SKYBOX_CUBEMAP_SIZE,
+            &renderer,
+            &hdr_loader,
+        )?,
+    };
+    commands.spawn(skybox)?;
+
+    let ground = maps::GroundBundle {
+        transform: Transform::from_scale_rotation_translation(
+            Vec3::new(30.0, 1.0, 30.0),
+            Quat::IDENTITY,
+            Vec3::new(0.0, -1.0, 0.0),
+        ),
+        mesh: asset_server.load_mesh("meshes/cube.glb", &renderer)?,
+        material: materials::Materials::WoodTile.load(&mut asset_server, 30.0)?,
+        ground: maps::Ground,
+    };
+    commands.spawn(ground)?;
 
     let light_colors = [
         Color::RED,

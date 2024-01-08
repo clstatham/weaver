@@ -3,6 +3,8 @@
 @group(0) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
 
 @group(1) @binding(0) var<uniform> camera: CameraUniform;
+@group(1) @binding(1) var          env_map: texture_cube<f32>;
+@group(1) @binding(2) var          env_sampler: sampler;
 
 @group(2) @binding(0) var<uniform> material: MaterialUniform;
 @group(2) @binding(1) var          diffuse_tex: texture_2d<f32>;
@@ -12,6 +14,7 @@
 @group(2) @binding(5) var          tex_sampler: sampler;
 
 @group(3) @binding(0) var<storage> point_lights: array<PointLight>;
+
 
 fn fresnel_factor(F0: vec3<f32>, product: f32) -> vec3<f32> {
     return mix(F0, vec3(1.0), pow(1.01 - product, 5.0));
@@ -73,13 +76,11 @@ fn calculate_lighting(
     let specular = mix(vec3(0.04), albedo, metallic);
 
     // diffuse IBL
-    // let env_diffuse = textureSample(env_map, env_map_sampler, tnrm * N).rgb;
-    let env_diffuse = vec3(0.0);
+    let env_diffuse = textureSample(env_map, env_sampler, tnrm * N).rgb;
 
     // specular IBL
     let R = reflect(-V, N);
-    // let env_specular = textureSample(env_map, env_map_sampler, tnrm * R).rgb;
-    let env_specular = vec3(0.0);
+    let env_specular = textureSample(env_map, env_sampler, tnrm * R).rgb;
 
     let NdL = max(dot(N, L), 0.0);
     let NdV = max(dot(N, V), 0.001);
@@ -102,13 +103,39 @@ fn calculate_lighting(
     reflected_light += direct_light * spec_ref;
     diffuse_light += direct_light * diff_ref;
 
-    // IBL lighting
-    // todo: update this when we have a proper IBL map
-    let indirect_light = env_diffuse + env_specular;
-    reflected_light += indirect_light * spec_fresnel;
-    diffuse_light += indirect_light * (1.0 - spec_fresnel);
+    // // IBL lighting
+    // // todo: update this when we have a proper IBL map
+    // let indirect_light = env_diffuse + env_specular;
+    // reflected_light += indirect_light * spec_fresnel;
+    // diffuse_light += indirect_light * (1.0 - spec_fresnel);
 
     let result = (diffuse_light * mix(albedo, vec3(0.0), metallic)) + reflected_light;
+
+    return result;
+}
+
+fn calculate_ibl(
+    vertex: VertexOutput,
+    normal: vec3<f32>,
+    view_direction: vec3<f32>,
+) -> vec3<f32> {
+    let N = normalize(normal);
+    let tnrm = transpose(mat3x3<f32>(
+        vertex.world_tangent,
+        vertex.world_bitangent,
+        vertex.world_normal
+    ));
+
+    let V = normalize(view_direction);
+
+    // diffuse IBL
+    let env_diffuse = textureSample(env_map, env_sampler, tnrm * N).rgb;
+
+    // specular IBL
+    let R = reflect(-V, N);
+    let env_specular = textureSample(env_map, env_sampler, tnrm * R).rgb;
+
+    let result = env_diffuse + env_specular;
 
     return result;
 }
@@ -191,6 +218,8 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
         let attenuation = 20.0 / length(light_pos - vertex.world_position);
         illumination += calculate_lighting(vertex, material.base_color.xyz, normal, light_direction, view_direction, light.color.xyz, light.intensity, attenuation);
     }
+
+    illumination += calculate_ibl(vertex, normal, view_direction);
 
     var out_color = tex_color * tex_ao * illumination;
 
