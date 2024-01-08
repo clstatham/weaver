@@ -40,7 +40,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 let offset = vec3<f32>(f32(i), f32(j), f32(k)) * radius;
                 let sample_depth = textureSample(shadow_cube_map, tex_sampler, to_light + offset).r * FAR_PLANE;
 
-                if current_depth - 0.05 > sample_depth {
+                if current_depth - 0.5 > sample_depth {
                     shadow += 1.0;
                 }
             }

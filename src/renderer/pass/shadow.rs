@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 use crate::{
     app::asset_server::AssetId,
     core::{
-        light::PointLightUniform,
+        light::{PointLightUniform, MAX_LIGHTS},
         mesh::{Vertex, MAX_MESHES},
         texture::{
             DepthCubeFormat, DepthFormat, HdrFormat, MonoCubeFormat, MonoFormat, Texture,
@@ -238,7 +238,7 @@ pub struct OmniShadowRenderPass {
 
     overlay_pipeline: wgpu::RenderPipeline,
 
-    light_views: LightViews,
+    light_views: RefCell<FxHashMap<Entity, LightViews>>,
     unique_meshes: RefCell<UniqueMeshes>,
 }
 
@@ -328,8 +328,6 @@ impl OmniShadowRenderPass {
             None,
         );
 
-        let light_views = LightViews::new();
-
         let overlay_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shadow_cubemap_overlay"),
             source: wgpu::ShaderSource::Wgsl(include_shader!("shadow_cubemap_overlay.wgsl").into()),
@@ -395,7 +393,7 @@ impl OmniShadowRenderPass {
 
             overlay_pipeline,
 
-            light_views,
+            light_views: RefCell::new(FxHashMap::default()),
             unique_meshes: RefCell::new(UniqueMeshes::default()),
         }
     }
@@ -412,31 +410,39 @@ impl OmniShadowRenderPass {
         self.unique_meshes.borrow().alloc_buffers(renderer).unwrap();
         self.unique_meshes.borrow_mut().update();
 
-        let query = Query::<&PointLight>::new(world);
-        let point_light = query.iter().next().unwrap();
-        let mut light_views = [glam::Mat4::IDENTITY; 6];
-        for i in 0..6 {
-            let view_transform = match i {
-                // right
-                0 => point_light.view_transform_in_direction(glam::Vec3::X, glam::Vec3::Y),
-                // left
-                1 => point_light.view_transform_in_direction(-glam::Vec3::X, glam::Vec3::Y),
-                // top
-                2 => point_light.view_transform_in_direction(glam::Vec3::Y, -glam::Vec3::Z),
-                // bottom
-                3 => point_light.view_transform_in_direction(-glam::Vec3::Y, glam::Vec3::Z),
-                // front
-                4 => point_light.view_transform_in_direction(glam::Vec3::Z, glam::Vec3::Y),
-                // back
-                5 => point_light.view_transform_in_direction(-glam::Vec3::Z, glam::Vec3::Y),
-                _ => unreachable!(),
-            };
+        let point_lights = Query::<&PointLight>::new(world);
+        for entity in point_lights.entities() {
+            let point_light = point_lights.get(entity).unwrap();
+            let mut views = [glam::Mat4::IDENTITY; 6];
+            for i in 0..6 {
+                let view_transform = match i {
+                    // right
+                    0 => point_light.view_transform_in_direction(glam::Vec3::X, glam::Vec3::Y),
+                    // left
+                    1 => point_light.view_transform_in_direction(-glam::Vec3::X, glam::Vec3::Y),
+                    // top
+                    2 => point_light.view_transform_in_direction(glam::Vec3::Y, -glam::Vec3::Z),
+                    // bottom
+                    3 => point_light.view_transform_in_direction(-glam::Vec3::Y, glam::Vec3::Z),
+                    // front
+                    4 => point_light.view_transform_in_direction(glam::Vec3::Z, glam::Vec3::Y),
+                    // back
+                    5 => point_light.view_transform_in_direction(-glam::Vec3::Z, glam::Vec3::Y),
+                    _ => unreachable!(),
+                };
 
-            light_views[i] = view_transform;
+                views[i] = view_transform;
+            }
+
+            let mut light_views = self.light_views.borrow_mut();
+            let light_views = light_views.entry(entity).or_insert_with(|| {
+                let light_views = LightViews::new();
+                light_views.alloc_buffers(renderer).unwrap();
+                light_views
+            });
+
+            light_views.update(&views);
         }
-
-        self.light_views.alloc_buffers(renderer).unwrap();
-        self.light_views.update(&light_views);
     }
 
     fn render_cube_map(
@@ -444,14 +450,14 @@ impl OmniShadowRenderPass {
         encoder: &mut wgpu::CommandEncoder,
         renderer: &Renderer,
         point_light: &PointLight,
+        point_light_entity: Entity,
     ) -> anyhow::Result<()> {
         let point_light_handle = &point_light.alloc_buffers(renderer).unwrap()[0];
         let point_light_bind_group = point_light_handle.bind_group().unwrap();
 
-        let light_views_handle = self
-            .light_views
-            .handle
-            .get_or_create::<LightViews>(renderer);
+        let light_views = self.light_views.borrow();
+        let light_views = light_views.get(&point_light_entity).unwrap();
+        let light_views_handle = &light_views.alloc_buffers(renderer).unwrap()[0];
         let light_views_bind_group = light_views_handle.bind_group().unwrap();
 
         let shadow_cubemap_handle = self
@@ -497,7 +503,12 @@ impl OmniShadowRenderPass {
                     view: &shadow_cubemap_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 1.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -660,10 +671,20 @@ impl Pass for OmniShadowRenderPass {
         renderer: &Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
-        let light = Query::<&PointLight>::new(world);
-        let light = light.iter().next().unwrap();
-        self.render_cube_map(encoder, renderer, &light)?;
-        self.overlay_shadow_cube_map(encoder, color_target, depth_target, renderer, world, &light)?;
+        let lights = Query::<&PointLight>::new(world);
+        for entity in lights.entities() {
+            let light = lights.get(entity).unwrap();
+            self.render_cube_map(encoder, renderer, &light, entity)?;
+            self.overlay_shadow_cube_map(
+                encoder,
+                color_target,
+                depth_target,
+                renderer,
+                world,
+                &light,
+            )?;
+        }
+
         Ok(())
     }
 }

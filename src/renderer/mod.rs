@@ -272,10 +272,39 @@ pub struct BindableBuffer {
 }
 
 impl BufferHandle {
+    /// Marks the buffer as pending an update.
+    /// This does NOT write to the buffer immediately.
     pub fn update<T: bytemuck::Pod>(&mut self, data: &[T]) {
         *self.status.borrow_mut() = UpdateStatus::Pending {
             pending_data: Arc::from(bytemuck::cast_slice(data)),
         };
+    }
+
+    /// Immediately updates the buffer with new data using an existing encoder.
+    /// This will still not be reflected in the GPU until `flush` is called.
+    pub fn update_from(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        src: &wgpu::Buffer,
+        src_offset: u64,
+        dst_offset: u64,
+    ) {
+        if let UpdateStatus::Ready { ref buffer } = &*self.status.borrow() {
+            match &*buffer.storage {
+                BufferStorage::Buffer { ref buffer } => {
+                    encoder.copy_buffer_to_buffer(src, src_offset, buffer, dst_offset, src.size());
+                }
+                BufferStorage::Texture { .. } => {
+                    log::warn!("Attempted to update texture from buffer");
+                }
+            }
+        } else {
+            log::warn!(
+                "Attempted to update buffer that is not ready: {} is {:?}",
+                self.id,
+                self.status
+            );
+        }
     }
 
     pub fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
