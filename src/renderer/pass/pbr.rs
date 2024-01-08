@@ -9,7 +9,7 @@ use crate::{
         light::PointLightArray,
         material::Material,
         mesh::{Mesh, Vertex, MAX_MESHES},
-        texture::{DepthFormat, NormalMapFormat, TextureFormat, WindowFormat},
+        texture::{DepthFormat, HdrFormat, NormalMapFormat, TextureFormat, WindowFormat},
         transform::Transform,
     },
     ecs::{Query, World},
@@ -122,7 +122,7 @@ impl PbrRenderPass {
                 entry_point: "fs_main",
                 targets: &[
                     Some(wgpu::ColorTargetState {
-                        format: WindowFormat::FORMAT,
+                        format: HdrFormat::FORMAT,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     }),

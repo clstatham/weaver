@@ -1136,7 +1136,7 @@ impl Renderer {
                 label: Some("Clear Screen"),
                 color_attachments: &[
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.color_texture_view,
+                        view: &hdr_pass_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -1174,7 +1174,7 @@ impl Renderer {
             });
 
         self.pbr_pass
-            .render(self, &self.color_texture_view, world, &mut encoder)?;
+            .render(self, &hdr_pass_view, world, &mut encoder)?;
 
         // for pass in self.extra_passes.iter() {
         //     pass.render_if_enabled(
@@ -1196,13 +1196,13 @@ impl Renderer {
         // )?;
 
         // we always want to render the HDR pass, otherwise we won't see anything!
-        // self.hdr_pass.render(
-        //     &mut encoder,
-        //     &self.color_texture_view,
-        //     &self.depth_texture_view,
-        //     self,
-        //     world,
-        // )?;
+        self.hdr_pass.render(
+            &mut encoder,
+            &self.color_texture_view,
+            &self.depth_texture_view,
+            self,
+            world,
+        )?;
 
         // self.shadow_pass.render_if_enabled(
         //     &self.device,
