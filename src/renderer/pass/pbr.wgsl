@@ -1,11 +1,14 @@
 //#import "src/renderer/pass/common.wgsl"
 
+// model information
 @group(0) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
 
+// envorinment information
 @group(1) @binding(0) var<uniform> camera: CameraUniform;
 @group(1) @binding(1) var          env_map: texture_cube<f32>;
 @group(1) @binding(2) var          env_sampler: sampler;
 
+// material information
 @group(2) @binding(0) var<uniform> material: MaterialUniform;
 @group(2) @binding(1) var          diffuse_tex: texture_2d<f32>;
 @group(2) @binding(2) var          normal_tex: texture_2d<f32>;
@@ -13,6 +16,7 @@
 @group(2) @binding(4) var          ao_tex: texture_2d<f32>;
 @group(2) @binding(5) var          tex_sampler: sampler;
 
+// light information
 @group(3) @binding(0) var<storage> point_lights: array<PointLight>;
 
 
@@ -75,13 +79,6 @@ fn calculate_lighting(
 
     let specular = mix(vec3(0.04), albedo, metallic);
 
-    // diffuse IBL
-    let env_diffuse = textureSample(env_map, env_sampler, tnrm * N).rgb;
-
-    // specular IBL
-    let R = reflect(-V, N);
-    let env_specular = textureSample(env_map, env_sampler, tnrm * R).rgb;
-
     let NdL = max(dot(N, L), 0.0);
     let NdV = max(dot(N, V), 0.001);
     let NdH = max(dot(N, H), 0.001);
@@ -102,12 +99,6 @@ fn calculate_lighting(
     let direct_light = light_color * light_intensity * attenuation;
     reflected_light += direct_light * spec_ref;
     diffuse_light += direct_light * diff_ref;
-
-    // // IBL lighting
-    // // todo: update this when we have a proper IBL map
-    // let indirect_light = env_diffuse + env_specular;
-    // reflected_light += indirect_light * spec_fresnel;
-    // diffuse_light += indirect_light * (1.0 - spec_fresnel);
 
     let result = (diffuse_light * mix(albedo, vec3(0.0), metallic)) + reflected_light;
 

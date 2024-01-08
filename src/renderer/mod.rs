@@ -1064,22 +1064,15 @@ impl Renderer {
                 camera.alloc_buffers(self).unwrap();
             }
         }
-
-        self.update_all_buffers_and_flush();
-
-        // prepare the pbr pass after all the components have been allocated
-        self.pbr_pass.prepare(world, self);
-
-        self.update_all_buffers_and_flush();
     }
 
-    pub fn render_ui(&self, ui: &mut EguiContext, window: &Window, output: &wgpu::SurfaceTexture) {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render UI Encoder"),
-            });
-
+    pub fn render_ui(
+        &self,
+        ui: &mut EguiContext,
+        window: &Window,
+        output: &wgpu::SurfaceTexture,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -1087,7 +1080,7 @@ impl Renderer {
         ui.render(
             &self.device,
             &self.queue,
-            &mut encoder,
+            encoder,
             window,
             &view,
             &ScreenDescriptor {
@@ -1095,17 +1088,14 @@ impl Renderer {
                 pixels_per_point: window.scale_factor() as f32,
             },
         );
-
-        self.queue.submit(std::iter::once(encoder.finish()));
     }
 
-    pub fn render(&mut self, world: &World, output: &wgpu::SurfaceTexture) -> anyhow::Result<()> {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Main Render Encoder"),
-            });
-
+    pub fn render(
+        &mut self,
+        world: &World,
+        output: &wgpu::SurfaceTexture,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> anyhow::Result<()> {
         let hdr_pass_view = {
             let hdr_pass_handle = &self.hdr_pass.texture.alloc_buffers(self)?[0];
             let hdr_pass_texture = hdr_pass_handle.get_texture().unwrap();
@@ -1156,12 +1146,11 @@ impl Renderer {
             });
         }
 
-        self.pbr_pass
-            .render(self, &hdr_pass_view, world, &mut encoder)?;
+        self.pbr_pass.render(self, &hdr_pass_view, world, encoder)?;
 
         for pass in self.extra_passes.iter() {
             pass.render_if_enabled(
-                &mut encoder,
+                encoder,
                 &hdr_pass_view,
                 &self.depth_texture_view,
                 self,
@@ -1170,7 +1159,7 @@ impl Renderer {
         }
 
         self.sky_pass.render_if_enabled(
-            &mut encoder,
+            encoder,
             &hdr_pass_view,
             &self.depth_texture_view,
             self,
@@ -1188,7 +1177,7 @@ impl Renderer {
 
         // we always want to render the HDR pass, otherwise we won't see anything!
         self.hdr_pass.render(
-            &mut encoder,
+            encoder,
             &self.color_texture_view,
             &self.depth_texture_view,
             self,
@@ -1224,17 +1213,27 @@ impl Renderer {
             },
         );
 
-        self.flush(encoder);
-
         Ok(())
     }
 
-    pub fn prepare(&mut self, world: &World) -> wgpu::SurfaceTexture {
+    pub fn prepare(&mut self, world: &World) -> (wgpu::SurfaceTexture, wgpu::CommandEncoder) {
         self.prepare_components(world);
-        self.surface.get_current_texture().unwrap()
+        self.pbr_pass.prepare(world, self);
+        self.update_all_buffers_and_flush();
+
+        let encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Main Render Encoder"),
+            });
+
+        let output = self.surface.get_current_texture().unwrap();
+
+        (output, encoder)
     }
 
-    pub fn present(&self, output: wgpu::SurfaceTexture) {
+    pub fn present(&self, output: wgpu::SurfaceTexture, encoder: wgpu::CommandEncoder) {
+        self.flush(encoder);
         output.present();
     }
 }
