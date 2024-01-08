@@ -1021,9 +1021,8 @@ impl Renderer {
         // these are currently:
         // - Material
         // - Texture
-        // - Light
+        // - PointLight
         // - Camera
-        // - ParticleEmitter
 
         {
             let query = Query::<&Texture<WindowFormat>>::new(world);
@@ -1115,20 +1114,24 @@ impl Renderer {
     pub fn render(&mut self, world: &World, output: &wgpu::SurfaceTexture) -> anyhow::Result<()> {
         let mut encoder = self
             .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Main Render Encoder"),
+            });
 
-        let hdr_pass_handle = &self.hdr_pass.texture.alloc_buffers(self)?[0];
-        let hdr_pass_texture = hdr_pass_handle.get_texture().unwrap();
-        let hdr_pass_view = hdr_pass_texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("HDR Pass Texture View"),
-            format: Some(HdrFormat::FORMAT),
-            dimension: Some(wgpu::TextureViewDimension::D2),
-            aspect: wgpu::TextureAspect::All,
-            base_mip_level: 0,
-            base_array_layer: 0,
-            array_layer_count: None,
-            mip_level_count: None,
-        });
+        let hdr_pass_view = {
+            let hdr_pass_handle = &self.hdr_pass.texture.alloc_buffers(self)?[0];
+            let hdr_pass_texture = hdr_pass_handle.get_texture().unwrap();
+            hdr_pass_texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("HDR Pass Texture View"),
+                format: Some(HdrFormat::FORMAT),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                aspect: wgpu::TextureAspect::All,
+                base_mip_level: 0,
+                base_array_layer: 0,
+                array_layer_count: None,
+                mip_level_count: None,
+            })
+        };
 
         // clear the screen
         {
@@ -1164,14 +1167,6 @@ impl Renderer {
                 timestamp_writes: None,
             });
         }
-
-        self.queue.submit(std::iter::once(encoder.finish()));
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Main Render Encoder"),
-            });
 
         self.pbr_pass
             .render(self, &hdr_pass_view, world, &mut encoder)?;
@@ -1233,7 +1228,7 @@ impl Renderer {
             },
         );
 
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.flush(encoder);
 
         Ok(())
     }

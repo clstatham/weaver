@@ -65,17 +65,17 @@ fn setup(
 
     commands.spawn(FpsDisplay::new())?;
 
-    let ground = maps::GroundBundle {
-        transform: Transform::from_scale_rotation_translation(
-            Vec3::new(30.0, 1.0, 30.0),
-            Quat::IDENTITY,
-            Vec3::new(0.0, -1.0, 0.0),
-        ),
-        mesh: asset_server.load_mesh("meshes/cube.glb", &renderer)?,
-        material: materials::Materials::WoodTile.load(&mut asset_server, 30.0)?,
-        ground: maps::Ground,
-    };
-    commands.spawn(ground)?;
+    // let ground = maps::GroundBundle {
+    //     transform: Transform::from_scale_rotation_translation(
+    //         Vec3::new(30.0, 1.0, 30.0),
+    //         Quat::IDENTITY,
+    //         Vec3::new(0.0, -1.0, 0.0),
+    //     ),
+    //     mesh: asset_server.load_mesh("meshes/cube.glb", &renderer)?,
+    //     material: materials::Materials::WoodTile.load(&mut asset_server, 30.0)?,
+    //     ground: maps::Ground,
+    // };
+    // commands.spawn(ground)?;
 
     let light_colors = [
         Color::RED,

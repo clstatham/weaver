@@ -166,11 +166,6 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     var tex_normal = textureSample(normal_tex, tex_sampler, uv).xyz;
     tex_normal = normalize(tex_normal * 2.0 - 1.0);
 
-    // viewport culling
-    if vertex.clip_position.w < 0.0 {
-        discard;
-    }
-
     // create TBN matrix
     let TBN = mat3x3<f32>(
         vertex.world_tangent,
@@ -187,7 +182,9 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     var illumination = vec3(0.0);
 
-    for (var i = 0u; i < arrayLength(&point_lights); i = i + 1u) {
+    let num_lights = arrayLength(&point_lights);
+
+    for (var i = 0u; i < num_lights; i = i + 1u) {
         let light = point_lights[i];
         let light_pos = light.position.xyz;
         let light_direction = normalize(light_pos - vertex.world_position);
