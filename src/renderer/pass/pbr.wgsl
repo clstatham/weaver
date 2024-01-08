@@ -17,7 +17,7 @@
 @group(2) @binding(5) var          tex_sampler: sampler;
 
 // light information
-@group(3) @binding(0) var<storage> point_lights: array<PointLight>;
+@group(3) @binding(0) var<storage> point_lights: PointLights;
 
 
 fn fresnel_factor(F0: vec3<f32>, product: f32) -> vec3<f32> {
@@ -48,6 +48,7 @@ fn cooktorrance_specular(NdL: f32, NdV: f32, NdH: f32, specular: vec3<f32>, roug
     let rim = mix(1.0 - roughness * rim_amount * 0.9, 1.0, NdV);
     return (1.0 / rim) * specular * G * D;
 }
+
 
 // based on https://gist.github.com/galek/53557375251e1a942dfa
 fn calculate_lighting(
@@ -105,30 +106,30 @@ fn calculate_lighting(
     return result;
 }
 
+
 fn calculate_ibl(
     vertex: VertexOutput,
     normal: vec3<f32>,
     view_direction: vec3<f32>,
 ) -> vec3<f32> {
-    let N = normalize(normal);
     let tnrm = transpose(mat3x3<f32>(
         vertex.world_tangent,
         vertex.world_bitangent,
         vertex.world_normal
     ));
 
-    let V = normalize(view_direction);
+    let diffuse_dir = tnrm * normal;
+    let specular_dir = tnrm * reflect(-view_direction, normal);
 
     // diffuse IBL
-    let env_diffuse = textureSample(env_map, env_sampler, tnrm * N).rgb;
+    let env_diffuse = textureSample(env_map, env_sampler, diffuse_dir);
 
     // specular IBL
-    let R = reflect(-V, N);
-    let env_specular = textureSample(env_map, env_sampler, tnrm * R).rgb;
+    let env_specular = textureSample(env_map, env_sampler, specular_dir);
 
     let result = env_diffuse + env_specular;
 
-    return result;
+    return result.rgb;
 }
 
 struct VertexOutput {
@@ -200,10 +201,9 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     var illumination = vec3(0.0);
 
-    let num_lights = arrayLength(&point_lights);
 
-    for (var i = 0u; i < num_lights; i = i + 1u) {
-        let light = point_lights[i];
+    for (var i = 0u; i < point_lights.count; i = i + 1u) {
+        let light = point_lights.lights[i];
         let light_pos = light.position.xyz;
         let light_direction = normalize(light_pos - vertex.world_position);
         let attenuation = 20.0 / length(light_pos - vertex.world_position);

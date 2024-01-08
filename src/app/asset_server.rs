@@ -1,4 +1,4 @@
-use std::{path::PathBuf, rc::Rc};
+use std::path::PathBuf;
 
 use rustc_hash::FxHashMap;
 use weaver_proc_macro::Resource;
@@ -9,8 +9,7 @@ use crate::{
         mesh::Mesh,
         texture::{HdrD2ArrayFormat, NormalMapFormat, SdrFormat, Texture, TextureFormat},
     },
-    ecs::World,
-    renderer::{compute::hdr_loader::HdrLoader, BufferAllocator, Renderer},
+    renderer::{compute::hdr_loader::HdrLoader, Renderer},
 };
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]

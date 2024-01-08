@@ -130,17 +130,16 @@ impl HdrLoader {
             Some("HDR Loader Destination Texture"),
         );
 
-        let (dst, dst_view) = match &*dst_buf.storage {
+        let dst_view = match &*dst_buf.storage {
             BufferStorage::Texture { texture, .. } => {
-                let view = texture.create_view(&wgpu::TextureViewDescriptor {
+                texture.create_view(&wgpu::TextureViewDescriptor {
                     label: Some("HDR Loader Destination Texture View"),
                     format: Some(HdrD2ArrayFormat::FORMAT),
                     dimension: Some(wgpu::TextureViewDimension::D2Array),
                     aspect: wgpu::TextureAspect::All,
                     array_layer_count: Some(6),
                     ..Default::default()
-                });
-                (texture, view)
+                })
             }
             _ => unreachable!(),
         };

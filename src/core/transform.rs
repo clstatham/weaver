@@ -1,9 +1,6 @@
 use weaver_proc_macro::Component;
 
-use crate::renderer::{
-    AllocBuffers, BufferBindingType, BufferHandle, CreateBindGroupLayout, LazyBufferHandle,
-    Renderer,
-};
+use crate::renderer::CreateBindGroupLayout;
 
 #[derive(Clone, Copy, Component, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]

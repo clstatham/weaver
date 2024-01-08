@@ -43,5 +43,6 @@ clap = { version = "4.4.13", features = ["derive"] }
 
 [profile.release]
 debug = true
-opt-level = 3
+opt-level = 2
+# codegen-units = 1
 # lto = "thin"

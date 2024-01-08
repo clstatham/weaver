@@ -20,7 +20,6 @@ use crate::{
             DepthFormat, HdrFormat, NormalMapFormat, SdrFormat, Texture, TextureFormat,
             WindowFormat,
         },
-        transform::Transform,
         ui::EguiContext,
     },
     ecs::{Component, Query, World},
@@ -691,7 +690,7 @@ impl Renderer {
 
         let doodad_pass = DoodadRenderPass::new(&device, &config);
 
-        let extra_passes: Vec<Box<dyn pass::Pass>> = vec![];
+        let extra_passes: Vec<Box<dyn Pass>> = vec![];
 
         Self {
             surface,

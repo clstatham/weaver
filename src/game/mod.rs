@@ -99,7 +99,7 @@ fn setup(
         Color::MAGENTA,
     ];
 
-    let light_count = 1;
+    let light_count = 16;
     let light_radius = 10.0;
     for i in 0..light_count {
         let angle = (i as f32 / light_count as f32) * std::f32::consts::TAU;
@@ -139,7 +139,7 @@ fn setup(
     };
     let npc_mesh = asset_server.load_mesh("meshes/monkey_flat.glb", &renderer)?;
     let npc_material = materials::Materials::Wood.load(&mut asset_server, 2.0)?;
-    let npc_count = 1;
+    let npc_count = 200;
     let npc_radius = 5.0;
     for i in 0..npc_count {
         let angle = (i as f32 / npc_count as f32) * std::f32::consts::TAU;

@@ -97,6 +97,14 @@ impl From<&PointLight> for PointLightUniform {
     }
 }
 
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+pub(crate) struct PointLightArrayUniform {
+    pub(crate) count: u32,
+    _pad: [u32; 3],
+    pub(crate) lights: [PointLightUniform; MAX_LIGHTS],
+}
+
 #[derive(Clone, Component)]
 pub(crate) struct PointLightArray {
     pub(crate) lights: Vec<PointLightUniform>,
@@ -110,7 +118,7 @@ impl PointLightArray {
             handle: LazyBufferHandle::new(
                 crate::renderer::BufferBindingType::Storage {
                     usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                    size: Some(std::mem::size_of::<PointLightUniform>() * MAX_LIGHTS),
+                    size: Some(std::mem::size_of::<PointLightArrayUniform>()),
                     read_only: true,
                 },
                 Some("Point Light Array"),
@@ -128,7 +136,15 @@ impl PointLightArray {
     }
 
     pub fn update(&mut self) {
-        self.handle.update::<PointLightUniform>(&self.lights);
+        let mut uniform = PointLightArrayUniform {
+            count: self.lights.len() as u32,
+            _pad: [0; 3],
+            lights: [PointLightUniform::default(); MAX_LIGHTS],
+        };
+        for (i, light) in self.lights.iter().enumerate() {
+            uniform.lights[i] = *light;
+        }
+        self.handle.update::<PointLightArrayUniform>(&[uniform]);
     }
 }
 

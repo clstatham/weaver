@@ -45,7 +45,6 @@ struct PointLights {
     count: u32,
     _pad: array<u32, 3>,
     lights: array<PointLight>,
-    
 };
 
 struct DirectionalLights {

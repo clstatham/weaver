@@ -2,12 +2,10 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     core::{
-        camera::Camera,
         color::Color,
         doodads::Doodad,
         texture::{DepthFormat, HdrFormat, Texture, TextureFormat},
     },
-    ecs::Query,
     include_shader,
     renderer::AllocBuffers,
 };
