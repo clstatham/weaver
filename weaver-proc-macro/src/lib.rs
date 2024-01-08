@@ -12,9 +12,18 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
 
 fn impl_component_macro(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
+    let generics = &ast.generics;
+
+    let generic_types = generics.type_params().map(|param| {
+        let ident = &param.ident;
+        quote! {
+            #ident
+        }
+    });
+
     let id = COMPONENT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let gen = quote! {
-        unsafe impl crate::ecs::component::Component for #name {
+        unsafe impl #generics crate::ecs::component::Component for #name<#(#generic_types),*> {
             fn component_id() -> u64 {
                 #id
             }
@@ -427,6 +436,145 @@ pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
                     maybes.extend(&#names::maybes().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
                 Some(maybes)
+            }
+        }
+    };
+
+    gen.into()
+}
+
+enum BindingType {
+    Uniform,
+    Storage { read_only: bool },
+}
+
+#[proc_macro_derive(RenderResource)]
+pub fn render_resource_derive(input: TokenStream) -> TokenStream {
+    let ast = syn::parse(input).unwrap();
+    impl_render_resource_macro(&ast)
+}
+
+fn impl_render_resource_macro(ast: &syn::DeriveInput) -> TokenStream {
+    let name = &ast.ident;
+
+    // Automatically create a bind group layout for the resource
+    // anything marked with the attr `#[uniform]` will be included in the bind group layout and will be a uniform buffer
+    // anything marked with the attr `#[texture]` will be included in the bind group layout and will be a texture
+    // anything marked with the attr `#[storage_read]` will be included in the bind group layout and will be a storage buffer that is read only
+    // anything marked with the attr `#[storage_read_write]` will be included in the bind group layout and will be a storage buffer that is read/write
+
+    let mut binding_types = Vec::new();
+
+    let fields = match &ast.data {
+        syn::Data::Struct(data) => match &data.fields {
+            syn::Fields::Named(fields) => &fields.named,
+            _ => panic!("Invalid struct"),
+        },
+        _ => panic!("Invalid struct"),
+    };
+
+    for field in fields.iter() {
+        let name = field.ident.clone().unwrap();
+        let attrs = &field.attrs;
+
+        for attr in attrs.iter() {
+            let attr = &attr.meta;
+            match attr {
+                syn::Meta::Path(path) => {
+                    let path_ident = path.segments.last().unwrap().ident.to_string();
+                    match path_ident.as_str() {
+                        "uniform" => {
+                            binding_types.push((name.clone(), BindingType::Uniform));
+                        }
+                        "texture" => {
+                            todo!();
+                        }
+                        "storage_read" => {
+                            binding_types
+                                .push((name.clone(), BindingType::Storage { read_only: true }));
+                        }
+                        "storage_read_write" => {
+                            binding_types
+                                .push((name.clone(), BindingType::Storage { read_only: false }));
+                        }
+                        _ => panic!("Invalid attribute"),
+                    }
+                }
+                _ => panic!("Invalid attribute"),
+            }
+        }
+    }
+
+    let mut binding_layout_entries = Vec::new();
+
+    for (i, (_binding, binding_type)) in binding_types.iter().enumerate() {
+        let binding_entry = match binding_type {
+            BindingType::Uniform => quote! { wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            } },
+            BindingType::Storage { read_only } => quote! { wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: #read_only },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            } },
+        };
+
+        binding_layout_entries.push(quote! {
+            wgpu::BindGroupLayoutEntry {
+                binding: #i as u32,
+                visibility: wgpu::ShaderStage::all(),
+                ty: #binding_entry,
+            }
+        });
+    }
+
+    // generate the bind group
+    let mut binding_group_entries = Vec::new();
+
+    for (i, (binding, binding_type)) in binding_types.iter().enumerate() {
+        let binding = format_ident!("{}", binding);
+        let binding_entry = match binding_type {
+            BindingType::Uniform => quote! { wgpu::Binding::Buffer {
+                buffer: &self.#binding.as_entire_buffer_binding(),
+                offset: 0,
+                size: None,
+            } },
+            BindingType::Storage { .. } => quote! { wgpu::Binding::Buffer {
+                buffer: &self.#binding.as_entire_buffer_binding(),
+                offset: 0,
+                size: None,
+            } },
+        };
+
+        binding_group_entries.push(quote! {
+            wgpu::BindGroupEntry {
+                binding: #i as u32,
+                resource: #binding_entry,
+            }
+        });
+    }
+
+    let gen = quote! {
+        impl crate::renderer::RenderResource for #name {
+            fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some(stringify!(#name)),
+                    entries: &[
+                        #(#binding_layout_entries),*
+                    ],
+                })
+            }
+
+            fn bind_group(&self, device: &wgpu::Device, layout: &wgpu::BindGroupLayout) -> wgpu::BindGroup {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some(stringify!(#name)),
+                    layout,
+                    entries: &[
+                        #(#binding_group_entries),*
+                    ],
+                })
             }
         }
     };

@@ -1,14 +1,20 @@
 use weaver_proc_macro::Component;
 
+use crate::renderer::{
+    AllocBuffers, BufferHandle, CreateBindGroupLayout, LazyBufferHandle, Renderer,
+};
+
 use super::color::Color;
 
-pub const MAX_LIGHTS: usize = 16;
+pub const MAX_LIGHTS: usize = 64;
 
-#[derive(Debug, Clone, Copy, Component)]
+#[derive(Clone, Component)]
 pub struct PointLight {
     pub position: glam::Vec3,
     pub color: Color,
     pub intensity: f32,
+
+    pub(crate) handle: LazyBufferHandle,
 }
 
 impl PointLight {
@@ -17,6 +23,15 @@ impl PointLight {
             position,
             color,
             intensity,
+
+            handle: LazyBufferHandle::new(
+                crate::renderer::BufferBindingType::Uniform {
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    size: Some(std::mem::size_of::<PointLightUniform>()),
+                },
+                Some("Point Light"),
+                None,
+            ),
         }
     }
 
@@ -30,6 +45,33 @@ impl PointLight {
         let near = 1.0;
         let far = 100.0;
         glam::Mat4::perspective_lh(fov, aspect, near, far)
+    }
+}
+
+impl AllocBuffers for PointLight {
+    fn alloc_buffers(&self, renderer: &Renderer) -> anyhow::Result<Vec<BufferHandle>> {
+        Ok(vec![self.handle.get_or_create_init::<_, Self>(
+            renderer,
+            &[PointLightUniform::from(self)],
+        )])
+    }
+}
+
+impl CreateBindGroupLayout for PointLight {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Point Light Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        })
     }
 }
 
@@ -55,32 +97,68 @@ impl From<&PointLight> for PointLightUniform {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
-#[repr(C)]
-pub struct PointLightBuffer {
-    pub lights: [PointLightUniform; MAX_LIGHTS],
-    pub count: u32,
-    _pad: [u32; 3],
+#[derive(Clone, Component)]
+pub(crate) struct PointLightArray {
+    pub(crate) lights: Vec<PointLightUniform>,
+    pub(crate) handle: LazyBufferHandle,
 }
 
-impl PointLightBuffer {
-    pub fn push(&mut self, light: PointLightUniform) {
-        self.lights[self.count as usize] = light;
-        self.count += 1;
+impl PointLightArray {
+    pub fn new() -> Self {
+        Self {
+            lights: Vec::new(),
+            handle: LazyBufferHandle::new(
+                crate::renderer::BufferBindingType::Storage {
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                    size: Some(std::mem::size_of::<PointLightUniform>() * MAX_LIGHTS),
+                    read_only: true,
+                },
+                Some("Point Light Array"),
+                None,
+            ),
+        }
+    }
+
+    pub fn add_light(&mut self, light: &PointLight) {
+        self.lights.push(PointLightUniform::from(light));
     }
 
     pub fn clear(&mut self) {
-        self.count = 0;
+        self.lights.clear();
+    }
+
+    pub fn update(&mut self) {
+        self.handle.update::<PointLightUniform>(&self.lights);
     }
 }
 
-impl From<&[PointLight]> for PointLightBuffer {
-    fn from(lights: &[PointLight]) -> Self {
-        let mut buffer = Self::default();
-        for light in lights {
-            buffer.push(light.into());
-        }
-        buffer
+impl Default for PointLightArray {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CreateBindGroupLayout for PointLightArray {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Point Light Array Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        })
+    }
+}
+
+impl AllocBuffers for PointLightArray {
+    fn alloc_buffers(&self, renderer: &Renderer) -> anyhow::Result<Vec<BufferHandle>> {
+        Ok(vec![self.handle.get_or_create::<Self>(renderer)])
     }
 }
 
@@ -140,34 +218,5 @@ impl From<&DirectionalLight> for DirectionalLightUniform {
             intensity: light.intensity,
             _pad: [0.0; 3],
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
-#[repr(C)]
-pub struct DirectionalLightBuffer {
-    pub lights: [DirectionalLightUniform; MAX_LIGHTS],
-    pub count: u32,
-    _pad: [u32; 3],
-}
-
-impl DirectionalLightBuffer {
-    pub fn push(&mut self, light: DirectionalLightUniform) {
-        self.lights[self.count as usize] = light;
-        self.count += 1;
-    }
-
-    pub fn clear(&mut self) {
-        self.count = 0;
-    }
-}
-
-impl From<&[DirectionalLight]> for DirectionalLightBuffer {
-    fn from(lights: &[DirectionalLight]) -> Self {
-        let mut buffer = Self::default();
-        for light in lights {
-            buffer.push(light.into());
-        }
-        buffer
     }
 }

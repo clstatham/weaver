@@ -20,7 +20,7 @@ const SHADOW_DEPTH_TEXTURE_SIZE: u32 = 1024;
 
 struct UniqueMesh {
     mesh: Mesh,
-    transforms: Vec<Transform>,
+    transforms: Vec<glam::Mat4>,
 }
 
 impl UniqueMesh {
@@ -36,7 +36,7 @@ impl UniqueMesh {
                 mesh,
                 transforms: Vec::new(),
             });
-            unique_mesh.transforms.push(*transform);
+            unique_mesh.transforms.push(transform.matrix);
         }
 
         // gather all the meshes with rigid bodies
@@ -51,7 +51,7 @@ impl UniqueMesh {
                 });
                 unique_mesh
                     .transforms
-                    .push(rigid_body.get_transform(&mut ctx));
+                    .push(rigid_body.get_transform(&mut ctx).matrix);
             }
         }
 
@@ -97,8 +97,6 @@ pub struct ShadowRenderPass {
     shadow_cube_depth_target: Texture,
     // shadow cube map depth target cubemap views
     shadow_cube_depth_target_d2array_view: wgpu::TextureView,
-    // copy of the color target, sampled in the third stage
-    color_texture: Texture,
 
     // miscellaneous buffers used in bind groups
     model_transform_buffer: wgpu::Buffer,
@@ -111,65 +109,37 @@ pub struct ShadowRenderPass {
 impl ShadowRenderPass {
     pub fn new(
         device: &wgpu::Device,
-        screen_width: u32,
-        screen_height: u32,
         color_sampler: &wgpu::Sampler,
         depth_sampler: &wgpu::Sampler,
     ) -> Self {
-        let shadow_depth_texture = Texture::create_depth_texture(
-            device,
+        let shadow_depth_texture = Texture::new_lazy(
             SHADOW_DEPTH_TEXTURE_SIZE,
             SHADOW_DEPTH_TEXTURE_SIZE,
             Some("Shadow Depth Texture"),
             wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::COPY_SRC
                 | wgpu::TextureUsages::TEXTURE_BINDING,
+            Texture::DEPTH_FORMAT,
+            wgpu::TextureDimension::D2,
+            wgpu::TextureViewDimension::D2,
+            1,
         );
 
-        let shadow_cube_texture = Texture::create_cube_texture(
-            device,
+        let shadow_cube_texture = Texture::new_lazy(
             SHADOW_DEPTH_TEXTURE_SIZE,
             SHADOW_DEPTH_TEXTURE_SIZE,
             Some("Shadow Cube Texture"),
             wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::COPY_SRC
                 | wgpu::TextureUsages::TEXTURE_BINDING,
-            Some(wgpu::TextureFormat::R32Float),
+            wgpu::TextureFormat::R32Float,
+            wgpu::TextureDimension::D2,
+            wgpu::TextureViewDimension::D2,
+            6,
         );
-
-        let shadow_cube_d2array_view =
-            shadow_cube_texture
-                .texture()
-                .create_view(&wgpu::TextureViewDescriptor {
-                    dimension: Some(wgpu::TextureViewDimension::D2Array),
-                    array_layer_count: Some(6),
-                    base_array_layer: 0,
-                    ..Default::default()
-                });
 
         let shadow_cube_depth_target =
             Texture::new_depth_cubemap(device, SHADOW_DEPTH_TEXTURE_SIZE);
-
-        let shadow_cube_depth_target_d2array_view =
-            shadow_cube_depth_target
-                .texture()
-                .create_view(&wgpu::TextureViewDescriptor {
-                    dimension: Some(wgpu::TextureViewDimension::D2Array),
-                    array_layer_count: Some(6),
-                    base_array_layer: 0,
-                    ..Default::default()
-                });
-
-        let color_texture = Texture::create_color_texture(
-            device,
-            screen_width,
-            screen_height,
-            Some("Shadow Color Texture"),
-            wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::RENDER_ATTACHMENT
-                | wgpu::TextureUsages::COPY_DST,
-            Some(Texture::HDR_FORMAT),
-        );
 
         let model_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Model Transform Buffer"),
@@ -419,27 +389,9 @@ impl ShadowRenderPass {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
                         count: None,
                     },
-                    // color texture
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    // color texture sampler
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                        count: None,
-                    },
                     // camera uniform
                     wgpu::BindGroupLayoutEntry {
-                        binding: 4,
+                        binding: 2,
                         visibility: wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
@@ -450,7 +402,7 @@ impl ShadowRenderPass {
                     },
                     // directional light uniform
                     wgpu::BindGroupLayoutEntry {
-                        binding: 5,
+                        binding: 3,
                         visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
@@ -461,7 +413,7 @@ impl ShadowRenderPass {
                     },
                     // model transform
                     wgpu::BindGroupLayoutEntry {
-                        binding: 6,
+                        binding: 4,
                         visibility: wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -487,22 +439,14 @@ impl ShadowRenderPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(color_texture.view()),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(color_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
                     resource: camera_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 5,
+                    binding: 3,
                     resource: directional_light_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 6,
+                    binding: 4,
                     resource: model_transform_buffer.as_entire_binding(),
                 },
             ],
@@ -538,8 +482,8 @@ impl ShadowRenderPass {
                     }),
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: Texture::HDR_FORMAT,
-                        blend: None,
+                        format: Texture::WINDOW_FORMAT,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
@@ -583,20 +527,9 @@ impl ShadowRenderPass {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                         count: None,
                     },
-                    // color texture
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
                     // camera uniform
                     wgpu::BindGroupLayoutEntry {
-                        binding: 3,
+                        binding: 2,
                         visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
@@ -607,7 +540,7 @@ impl ShadowRenderPass {
                     },
                     // point light uniform
                     wgpu::BindGroupLayoutEntry {
-                        binding: 4,
+                        binding: 3,
                         visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
@@ -618,7 +551,7 @@ impl ShadowRenderPass {
                     },
                     // model transform
                     wgpu::BindGroupLayoutEntry {
-                        binding: 5,
+                        binding: 4,
                         visibility: wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -644,18 +577,14 @@ impl ShadowRenderPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(color_texture.view()),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
                     resource: camera_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 4,
+                    binding: 3,
                     resource: point_light_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 5,
+                    binding: 4,
                     resource: model_transform_buffer.as_entire_binding(),
                 },
             ],
@@ -691,8 +620,8 @@ impl ShadowRenderPass {
                     }),
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: Texture::HDR_FORMAT,
-                        blend: None,
+                        format: Texture::WINDOW_FORMAT,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
@@ -735,7 +664,6 @@ impl ShadowRenderPass {
             shadow_cube_d2array_view,
             shadow_cube_depth_target,
             shadow_cube_depth_target_d2array_view,
-            color_texture,
             model_transform_buffer,
             directional_light_buffer,
             point_light_buffer,
@@ -748,7 +676,9 @@ impl ShadowRenderPass {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        world: &World,
+        directional_light: &DirectionalLight,
+        camera: &Camera,
+        unique_meshes: &FxHashMap<AssetId, UniqueMesh>,
     ) -> anyhow::Result<()> {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Shadow Initial Encoder"),
@@ -772,9 +702,7 @@ impl ShadowRenderPass {
             });
         }
 
-        let camera = Query::<&Camera>::new(world);
-        let camera = camera.iter().next().unwrap();
-        let camera_uniform = CameraUniform::from(&*camera);
+        let camera_uniform = CameraUniform::from(camera);
 
         queue.write_buffer(
             &self.camera_buffer,
@@ -782,13 +710,7 @@ impl ShadowRenderPass {
             bytemuck::cast_slice(&[camera_uniform]),
         );
 
-        let light_query = Query::<&DirectionalLight>::new(world);
-        let directional_light = light_query.iter().next();
-        if directional_light.is_none() {
-            return Ok(());
-        }
-        let directional_light = directional_light.unwrap();
-        let directional_light_uniform = DirectionalLightUniform::from(&*directional_light);
+        let directional_light_uniform = DirectionalLightUniform::from(directional_light);
 
         queue.write_buffer(
             &self.directional_light_buffer,
@@ -798,7 +720,6 @@ impl ShadowRenderPass {
 
         queue.submit(std::iter::once(encoder.finish()));
 
-        let unique_meshes = UniqueMesh::gather(world);
         for unique_mesh in unique_meshes.values() {
             let UniqueMesh { mesh, transforms } = unique_mesh;
 
@@ -859,15 +780,14 @@ impl ShadowRenderPass {
         queue: &wgpu::Queue,
         color_target: &Texture,
         depth_target: &Texture,
-        world: &World,
+        camera: &Camera,
+        unique_meshes: &FxHashMap<AssetId, UniqueMesh>,
     ) -> anyhow::Result<()> {
         let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Shadow Overlay Initial Encoder"),
         });
 
-        let camera = Query::<&Camera>::new(world);
-        let camera = camera.iter().next().unwrap();
-        let camera_uniform = CameraUniform::from(&*camera);
+        let camera_uniform = CameraUniform::from(camera);
 
         queue.write_buffer(
             &self.camera_buffer,
@@ -878,10 +798,9 @@ impl ShadowRenderPass {
         queue.submit(std::iter::once(encoder.finish()));
 
         // overlay the built shadow map on the screen
-        let unique_meshes = UniqueMesh::gather(world);
         for unique_mesh in unique_meshes.values() {
             let UniqueMesh { mesh, transforms } = unique_mesh;
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Shadow Overlay Buffer Write Encoder"),
             });
 
@@ -889,17 +808,6 @@ impl ShadowRenderPass {
                 &self.model_transform_buffer,
                 0,
                 bytemuck::cast_slice(transforms.as_slice()),
-            );
-
-            // copy the color target to our own copy
-            encoder.copy_texture_to_texture(
-                color_target.texture().as_image_copy(),
-                self.color_texture.texture().as_image_copy(),
-                wgpu::Extent3d {
-                    width: color_target.texture().width(),
-                    height: color_target.texture().height(),
-                    depth_or_array_layers: 1,
-                },
             );
 
             queue.submit(std::iter::once(encoder.finish()));
@@ -952,7 +860,8 @@ impl ShadowRenderPass {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        world: &World,
+        point_light: &PointLight,
+        unique_meshes: &FxHashMap<AssetId, UniqueMesh>,
     ) -> anyhow::Result<()> {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Shadow Cube Map Encoder"),
@@ -988,9 +897,7 @@ impl ShadowRenderPass {
             });
         }
 
-        let light_query = Query::<&PointLight>::new(world);
-        let point_light = light_query.iter().next().unwrap();
-        let point_light_uniform = PointLightUniform::from(&*point_light);
+        let point_light_uniform = PointLightUniform::from(point_light);
 
         queue.write_buffer(
             &self.point_light_buffer,
@@ -1000,12 +907,11 @@ impl ShadowRenderPass {
 
         queue.submit(std::iter::once(encoder.finish()));
 
-        let unique_meshes = UniqueMesh::gather(world);
         for unique_mesh in unique_meshes.values() {
             let UniqueMesh { mesh, transforms } = unique_mesh;
 
-            let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Shadow Cube Map Encoder"),
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Shadow Cube Map Render Encoder"),
             });
 
             queue.write_buffer(
@@ -1013,8 +919,6 @@ impl ShadowRenderPass {
                 0,
                 bytemuck::cast_slice(transforms.as_slice()),
             );
-
-            queue.submit(std::iter::once(encoder.finish()));
 
             let mut light_views = Vec::new();
 
@@ -1038,16 +942,13 @@ impl ShadowRenderPass {
                 light_views.push(view_transform);
             }
 
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Shadow Cube Map Encoder"),
-            });
-
             queue.write_buffer(
                 &self.point_light_view_transform_buffer,
                 0,
                 bytemuck::cast_slice(&light_views),
             );
 
+            encoder.insert_debug_marker("Shadow Cube Map Render Pass Begin");
             // build the shadow cube map
             {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1084,6 +985,8 @@ impl ShadowRenderPass {
                 );
             }
 
+            encoder.insert_debug_marker("Shadow Cube Map Render Pass End");
+
             queue.submit(std::iter::once(encoder.finish()));
         }
 
@@ -1096,15 +999,14 @@ impl ShadowRenderPass {
         queue: &wgpu::Queue,
         color_target: &Texture,
         depth_target: &Texture,
-        world: &World,
+        camera: &Camera,
+        unique_meshes: &FxHashMap<AssetId, UniqueMesh>,
     ) -> anyhow::Result<()> {
         let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Shadow Cube Overlay Initial Encoder"),
         });
 
-        let camera = Query::<&Camera>::new(world);
-        let camera = camera.iter().next().unwrap();
-        let camera_uniform = CameraUniform::from(&*camera);
+        let camera_uniform = CameraUniform::from(camera);
 
         queue.write_buffer(
             &self.camera_buffer,
@@ -1115,7 +1017,6 @@ impl ShadowRenderPass {
         queue.submit(std::iter::once(encoder.finish()));
 
         // overlay the built shadow cube map on the screen
-        let unique_meshes = UniqueMesh::gather(world);
         for unique_mesh in unique_meshes.values() {
             let UniqueMesh { mesh, transforms } = unique_mesh;
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1128,16 +1029,7 @@ impl ShadowRenderPass {
                 bytemuck::cast_slice(transforms.as_slice()),
             );
 
-            // copy the color target to our own copy
-            encoder.copy_texture_to_texture(
-                color_target.texture().as_image_copy(),
-                self.color_texture.texture().as_image_copy(),
-                wgpu::Extent3d {
-                    width: color_target.texture().width(),
-                    height: color_target.texture().height(),
-                    depth_or_array_layers: 1,
-                },
-            );
+            encoder.insert_debug_marker("Shadow Cube Overlay Render Pass Begin");
 
             {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1174,6 +1066,8 @@ impl ShadowRenderPass {
                 );
             }
 
+            encoder.insert_debug_marker("Shadow Cube Overlay Render Pass End");
+
             queue.submit(std::iter::once(encoder.finish()));
         }
 
@@ -1202,10 +1096,35 @@ impl Pass for ShadowRenderPass {
         depth_target: &Texture,
         world: &World,
     ) -> anyhow::Result<()> {
-        self.render_shadow_map(device, queue, world)?;
-        self.render_cube_map(device, queue, world)?;
-        self.overlay_shadow_map(device, queue, color_target, depth_target, world)?;
-        self.overlay_cube_shadow_map(device, queue, color_target, depth_target, world)?;
+        let camera = Query::<&Camera>::new(world);
+        let camera = camera.iter().next().unwrap();
+
+        let unique_meshes = UniqueMesh::gather(world);
+
+        for light in Query::<&DirectionalLight>::new(world).iter() {
+            self.render_shadow_map(device, queue, &light, &camera, &unique_meshes)?;
+            self.overlay_shadow_map(
+                device,
+                queue,
+                color_target,
+                depth_target,
+                &camera,
+                &unique_meshes,
+            )?;
+        }
+
+        for light in Query::<&PointLight>::new(world).iter() {
+            self.render_cube_map(device, queue, &light, &unique_meshes)?;
+            self.overlay_cube_shadow_map(
+                device,
+                queue,
+                color_target,
+                depth_target,
+                &camera,
+                &unique_meshes,
+            )?;
+        }
+
         Ok(())
     }
 }

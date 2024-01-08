@@ -99,5 +99,7 @@ pub fn follow_camera_update(
 
         camera.view_matrix = controller.view_matrix();
         camera.projection_matrix = controller.projection_matrix();
+
+        camera.update();
     }
 }

@@ -1,4 +1,11 @@
-use crate::{core::texture::Texture, ecs::World};
+use crate::{
+    core::texture::{HdrFormat, Texture, TextureFormat, WindowFormat},
+    ecs::World,
+    renderer::{
+        AllocBuffers, BindGroupLayoutCache, BufferAllocator, CreateBindGroupLayout,
+        NonFilteringSampler,
+    },
+};
 
 use super::Pass;
 
@@ -8,67 +15,50 @@ pub struct HdrRenderPass {
 
     pipeline_layout: wgpu::PipelineLayout,
     pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
-    pub(crate) texture: Texture,
+    pub(crate) texture: Texture<HdrFormat>,
 }
 
 impl HdrRenderPass {
-    pub fn new(device: &wgpu::Device, width: u32, height: u32, sampler: &wgpu::Sampler) -> Self {
-        let format = Texture::HDR_FORMAT;
+    pub fn new(
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        sampler: &wgpu::Sampler,
+        bind_group_layout_cache: &BindGroupLayoutCache,
+    ) -> Self {
+        let format = HdrFormat::FORMAT;
 
-        let texture = Texture::create_color_texture(
-            device,
+        let texture = Texture::new_lazy(
             width,
             height,
             Some("HDR Texture"),
             wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::RENDER_ATTACHMENT
-                | wgpu::TextureUsages::COPY_SRC,
-            Some(format),
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            wgpu::TextureDimension::D2,
+            wgpu::TextureViewDimension::D2,
+            1,
         );
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("HDR Texture Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                    count: None,
-                },
-            ],
-        });
-
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(texture.view()),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(sampler),
-                },
-            ],
+            layout: &bind_group_layout_cache.get_or_create::<NonFilteringSampler>(device),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            }],
             label: Some("HDR Texture Bind Group"),
         });
 
         let shader = device.create_shader_module(wgpu::include_wgsl!("hdr.wgsl"));
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("HDR Render Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[
+                &bind_group_layout_cache.get_or_create::<NonFilteringSampler>(device),
+                &bind_group_layout_cache.get_or_create::<Texture<HdrFormat>>(device),
+            ],
             push_constant_ranges: &[],
         });
 
@@ -84,7 +74,7 @@ impl HdrRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: Texture::WINDOW_FORMAT,
+                    format: WindowFormat::FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -104,7 +94,6 @@ impl HdrRenderPass {
             bind_group,
             texture,
             pipeline_layout,
-            bind_group_layout,
         }
     }
 }
@@ -124,21 +113,20 @@ impl Pass for HdrRenderPass {
 
     fn render(
         &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        color_target: &Texture,
-        _depth_target: &Texture,
+        encoder: &mut wgpu::CommandEncoder,
+        color_target: &wgpu::TextureView,
+        _depth_target: &wgpu::TextureView,
+        renderer: &crate::renderer::Renderer,
         _world: &World,
     ) -> anyhow::Result<()> {
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("HDR Render Pass Encoder"),
-        });
+        let texture_handle = &self.texture.alloc_buffers(renderer)?[0];
+        let texture_bind_group = texture_handle.bind_group().unwrap();
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("HDR Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_target.view(),
+                    view: color_target,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -152,10 +140,9 @@ impl Pass for HdrRenderPass {
 
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_bind_group(0, &self.bind_group, &[]);
+            render_pass.set_bind_group(1, &texture_bind_group, &[]);
             render_pass.draw(0..3, 0..1);
         }
-
-        queue.submit(std::iter::once(encoder.finish()));
 
         Ok(())
     }

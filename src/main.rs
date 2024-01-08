@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments, clippy::from_over_into)]
+
 pub mod app;
 pub mod core;
 pub mod ecs;
@@ -21,7 +23,7 @@ pub mod prelude {
     pub use crate::ecs::*;
     pub use crate::renderer::Renderer;
     pub use glam::*;
-    pub use weaver_proc_macro::system;
+    pub use weaver_proc_macro::{system, RenderResource};
     pub use winit::event::MouseButton;
 }
 

@@ -1,21 +1,17 @@
 //#import "src/renderer/pass/common.wgsl"
 
-// for now, let's assume every instance is using the same material
-
 @group(0) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
-@group(0) @binding(1) var<uniform> camera: CameraUniform;
-@group(0) @binding(2) var<uniform> material: MaterialUniform;
-@group(0) @binding(3) var          tex_sampler: sampler;
-@group(0) @binding(4) var          tex: texture_2d<f32>;
-@group(0) @binding(5) var          normal_tex: texture_2d<f32>;
-@group(0) @binding(6) var          roughness_tex: texture_2d<f32>;
-@group(0) @binding(7) var          ao_tex: texture_2d<f32>;
-@group(0) @binding(8) var<storage> point_lights: PointLights;
-@group(0) @binding(9) var<storage> directional_lights: DirectionalLights;
 
-// group 1 binding 0 is the camera uniform buffer that we already have
-@group(1) @binding(1)  var          env_map: texture_cube<f32>;
-@group(1) @binding(2)  var          env_map_sampler: sampler;
+@group(1) @binding(0) var<uniform> camera: CameraUniform;
+
+@group(2) @binding(0) var<uniform> material: MaterialUniform;
+@group(2) @binding(1) var          diffuse_tex: texture_2d<f32>;
+@group(2) @binding(2) var          normal_tex: texture_2d<f32>;
+@group(2) @binding(3) var          roughness_tex: texture_2d<f32>;
+@group(2) @binding(4) var          ao_tex: texture_2d<f32>;
+@group(2) @binding(5) var          tex_sampler: sampler;
+
+@group(3) @binding(0) var<storage> point_lights: array<PointLight>;
 
 fn fresnel_factor(F0: vec3<f32>, product: f32) -> vec3<f32> {
     return mix(F0, vec3(1.0), pow(1.01 - product, 5.0));
@@ -77,11 +73,13 @@ fn calculate_lighting(
     let specular = mix(vec3(0.04), albedo, metallic);
 
     // diffuse IBL
-    let env_diffuse = textureSample(env_map, env_map_sampler, tnrm * N).rgb;
+    // let env_diffuse = textureSample(env_map, env_map_sampler, tnrm * N).rgb;
+    let env_diffuse = vec3(0.0);
 
     // specular IBL
     let R = reflect(-V, N);
-    let env_specular = textureSample(env_map, env_map_sampler, tnrm * R).rgb;
+    // let env_specular = textureSample(env_map, env_map_sampler, tnrm * R).rgb;
+    let env_specular = vec3(0.0);
 
     let NdL = max(dot(N, L), 0.0);
     let NdV = max(dot(N, V), 0.001);
@@ -123,7 +121,6 @@ struct VertexOutput {
     @location(3) world_tangent: vec3<f32>,
     @location(4) world_bitangent: vec3<f32>,
     @location(5) uv: vec2<f32>,
-    @location(6) instance_index: u32,
 }
 
 struct FragmentOutput {
@@ -153,8 +150,6 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     output.world_tangent = normalize(normal_transform * input.tangent);
     output.world_bitangent = normalize(normal_transform * input.bitangent);
 
-    output.instance_index = input.instance_index;
-
     return output;
 }
 
@@ -166,7 +161,7 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     let uv = vertex.uv * texture_scale;
 
     // sample color texture and normal map
-    let tex_color = textureSample(tex, tex_sampler, uv).xyz;
+    let tex_color = textureSample(diffuse_tex, tex_sampler, uv).xyz;
     let tex_ao = textureSample(ao_tex, tex_sampler, uv).r;
     var tex_normal = textureSample(normal_tex, tex_sampler, uv).xyz;
     tex_normal = normalize(tex_normal * 2.0 - 1.0);
@@ -190,25 +185,19 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     let view_direction = normalize(camera.camera_position - vertex.world_position);
 
-    // calculate lighting for all lights
-    var illumination = vec3<f32>(0.0, 0.0, 0.0);
+    var illumination = vec3(0.0);
 
-    for (var i = 0u; i < point_lights.count; i = i + 1u) {
-        let light = point_lights.lights[i];
+    for (var i = 0u; i < arrayLength(&point_lights); i = i + 1u) {
+        let light = point_lights[i];
         let light_pos = light.position.xyz;
         let light_direction = normalize(light_pos - vertex.world_position);
         let attenuation = 20.0 / length(light_pos - vertex.world_position);
         illumination += calculate_lighting(vertex, material.base_color.xyz, normal, light_direction, view_direction, light.color.xyz, light.intensity, attenuation);
     }
 
-    for (var i = 0u; i < directional_lights.count; i = i + 1u) {
-        let light = directional_lights.lights[i];
-        let light_direction = light.direction.xyz;
-        let attenuation = 1.0;
-        illumination += calculate_lighting(vertex, material.base_color.xyz, normal, light_direction, view_direction, light.color.xyz, light.intensity, attenuation);
-    }
+    var out_color = tex_color * tex_ao * illumination;
 
-    let out_color = tex_color * tex_ao * illumination;
+    out_color = clamp(out_color, vec3(0.0), vec3(1.0));
 
     output.color = vec4<f32>(out_color, 1.0);
 

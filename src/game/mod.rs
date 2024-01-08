@@ -1,10 +1,16 @@
 use clap::Parser;
 
-use crate::{app::Window, core::ui::builtin::FpsDisplay, prelude::*, renderer::pass::Pass};
+use crate::{
+    app::Window,
+    core::{
+        doodads::{Cube, Doodad, Doodads},
+        ui::builtin::FpsDisplay,
+    },
+    prelude::*,
+};
 
 use self::{
     camera::{FollowCameraController, FollowCameraUpdate},
-    npc::NpcUpdate,
     player::PlayerUpdate,
 };
 
@@ -20,27 +26,11 @@ fn window_update(mut window: ResMut<Window>, input: Res<Input>) {
 }
 
 #[system(UiUpdate)]
-fn ui_update(
-    mut ctx: ResMut<EguiContext>,
-    mut fps_display: Query<&mut FpsDisplay>,
-    mut renderer: ResMut<Renderer>,
-) {
+fn ui_update(mut ctx: ResMut<EguiContext>, mut fps_display: Query<&mut FpsDisplay>) {
     ctx.draw_if_ready(|ctx| {
         for mut fps_display in fps_display.iter() {
             fps_display.run_ui(ctx);
         }
-
-        egui::Window::new("Render Settings").show(ctx, |ui| {
-            let mut shadows_enabled = renderer.shadow_pass.is_enabled();
-            ui.checkbox(&mut shadows_enabled, "Shadows");
-            if shadows_enabled != renderer.shadow_pass.is_enabled() {
-                if shadows_enabled {
-                    renderer.shadow_pass.enable();
-                } else {
-                    renderer.shadow_pass.disable();
-                }
-            }
-        });
     });
 }
 
@@ -53,13 +43,25 @@ fn spin_npcs(time: Res<Time>, mut query: Query<&mut Transform, With<npc::Npc>>) 
     }
 }
 
+#[system(DebugLights)]
+fn debug_lights(mut doodads: ResMut<Doodads>, mut point_lights: Query<&mut PointLight>) {
+    for mut light in point_lights.iter() {
+        doodads.push(Doodad::Cube(Cube::new(
+            light.position,
+            Quat::IDENTITY,
+            Vec3::ONE * 0.3,
+            light.color,
+        )));
+    }
+}
+
 #[system(Setup)]
 fn setup(
     commands: Commands,
     mut asset_server: ResMut<AssetServer>,
     mut renderer: ResMut<Renderer>,
 ) {
-    renderer.shadow_pass.disable();
+    // renderer.shadow_pass.disable();
 
     commands.spawn(FpsDisplay::new())?;
 
@@ -69,14 +71,35 @@ fn setup(
             Quat::IDENTITY,
             Vec3::new(0.0, -1.0, 0.0),
         ),
-        mesh: asset_server.load_mesh("meshes/cube.glb")?,
+        mesh: asset_server.load_mesh("meshes/cube.glb", &renderer)?,
         material: materials::Materials::WoodTile.load(&mut asset_server, 30.0)?,
         ground: maps::Ground,
     };
     commands.spawn(ground)?;
 
-    let light = PointLight::new(Vec3::new(0.0, 5.0, 0.0), Color::WHITE, 20.0);
-    commands.spawn(light)?;
+    let light_colors = [
+        Color::RED,
+        Color::GREEN,
+        Color::BLUE,
+        Color::YELLOW,
+        Color::CYAN,
+        Color::MAGENTA,
+    ];
+
+    let light_count = 16;
+    let light_radius = 10.0;
+    for i in 0..light_count {
+        let angle = (i as f32 / light_count as f32) * std::f32::consts::TAU;
+        let x = angle.cos() * light_radius;
+        let z = angle.sin() * light_radius;
+
+        let light = PointLight::new(
+            Vec3::new(x, 5.0, z),
+            light_colors[i % light_colors.len()],
+            10.0,
+        );
+        commands.spawn(light)?;
+    }
 
     let player = player::Player {
         speed: 7.0,
@@ -85,7 +108,7 @@ fn setup(
     let player = commands.spawn(player::PlayerBundle {
         player,
         transform: Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
-        mesh: asset_server.load_mesh("meshes/monkey_flat.glb")?,
+        mesh: asset_server.load_mesh("meshes/monkey_flat.glb", &renderer)?,
         material: materials::Materials::Metal.load(&mut asset_server, 2.0)?,
     })?;
 
@@ -94,14 +117,14 @@ fn setup(
         target: player,
         ..Default::default()
     };
-    commands.spawn((camera_controller, Camera::default()))?;
+    commands.spawn((camera_controller, Camera::new()))?;
 
     // bunch of npcs in a circle
     let npc = npc::Npc {
         speed: 0.0,
         rotation_speed: 0.0,
     };
-    let npc_mesh = asset_server.load_mesh("meshes/monkey_flat.glb")?;
+    let npc_mesh = asset_server.load_mesh("meshes/monkey_flat.glb", &renderer)?;
     let npc_material = materials::Materials::Wood.load(&mut asset_server, 2.0)?;
     let npc_count = 200;
     let npc_radius = 5.0;
@@ -121,9 +144,9 @@ fn setup(
 
 #[derive(Debug, clap::Parser)]
 struct Args {
-    #[arg(short, long, default_value = "1600")]
+    #[arg(long, default_value = "1600")]
     pub width: usize,
-    #[arg(short, long, default_value = "900")]
+    #[arg(long, default_value = "900")]
     pub height: usize,
 }
 
@@ -140,6 +163,7 @@ pub fn run() -> anyhow::Result<()> {
     app.add_system(PlayerUpdate);
     // app.add_system(NpcUpdate);
     app.add_system(SpinNpcs);
+    app.add_system(DebugLights);
 
     app.run()
 }

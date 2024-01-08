@@ -1,231 +1,94 @@
+use std::{borrow::BorrowMut, cell::RefCell, sync::Arc};
+
 use rustc_hash::FxHashMap;
 
 use crate::{
     app::asset_server::AssetId,
     core::{
-        camera::{Camera, CameraUniform},
-        light::{DirectionalLight, DirectionalLightBuffer, PointLight, PointLightBuffer},
-        material::{Material, MaterialUniform},
+        camera::Camera,
+        light::PointLightArray,
+        material::Material,
         mesh::{Mesh, Vertex, MAX_MESHES},
-        physics::{RapierContext, RigidBody},
-        texture::Texture,
+        texture::{DepthFormat, NormalMapFormat, TextureFormat, WindowFormat},
         transform::Transform,
     },
     ecs::{Query, World},
     include_shader,
-    renderer::Renderer,
+    renderer::{AllocBuffers, BindGroupLayoutCache, BufferHandle, LazyBufferHandle, Renderer},
 };
 
-struct UniqueMesh {
+pub(crate) struct UniqueMesh {
     mesh: Mesh,
-    material: Material,
+    material_bind_group: Arc<wgpu::BindGroup>,
     transforms: Vec<Transform>,
+    transform_buffer: LazyBufferHandle,
 }
 
-impl UniqueMesh {
-    fn gather(world: &World) -> FxHashMap<(AssetId, AssetId), Self> {
-        // gather all entities that share a mesh
-        let mut unique_meshes = FxHashMap::default();
-        // check for meshes with Transform
-        let query = Query::<(&Material, &Mesh, &Transform)>::new(world);
-        for entity in query.entities() {
-            let (material, mesh, transform) = query.get(entity).unwrap();
-            let mesh_id = mesh.asset_id();
-            let material_id = material.asset_id();
-            unique_meshes
-                .entry((mesh_id, material_id))
+#[derive(Default)]
+pub(crate) struct UniqueMeshes {
+    pub(crate) unique_meshes: FxHashMap<(AssetId, AssetId), UniqueMesh>,
+}
+
+impl UniqueMeshes {
+    pub fn gather(&mut self, world: &World, renderer: &Renderer) {
+        let query = Query::<(&Mesh, &mut Material, &Transform)>::new(world);
+
+        // clear the transforms
+        for unique_mesh in self.unique_meshes.values_mut() {
+            unique_mesh.transforms.clear();
+        }
+
+        for (mesh, mut material, transform) in query.iter() {
+            let unique_mesh = self
+                .unique_meshes
+                .entry((mesh.asset_id(), material.asset_id()))
                 .or_insert_with(|| UniqueMesh {
                     mesh: mesh.clone(),
-                    material: material.clone(),
-                    transforms: Vec::new(),
-                })
-                .transforms
-                .push(*transform);
-        }
-        // check for meshes with RigidBody
-        if let Ok(mut ctx) = world.write_resource::<RapierContext>() {
-            let query = Query::<(&Material, &Mesh, &mut RigidBody)>::new(world);
+                    material_bind_group: material.create_bind_group(renderer).unwrap(),
+                    transforms: vec![],
+                    transform_buffer: LazyBufferHandle::new(
+                        crate::renderer::BufferBindingType::Storage {
+                            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                            size: Some(std::mem::size_of::<glam::Mat4>() * MAX_MESHES),
+                            read_only: true,
+                        },
+                        Some("Unique Mesh Transforms"),
+                        None,
+                    ),
+                });
 
-            for entity in query.entities() {
-                let (material, mesh, mut rigid_body) = query.get(entity).unwrap();
-                let mesh_id = mesh.asset_id();
-                let material_id = material.asset_id();
-                unique_meshes
-                    .entry((mesh_id, material_id))
-                    .or_insert_with(|| UniqueMesh {
-                        mesh: mesh.clone(),
-                        material: material.clone(),
-                        transforms: Vec::new(),
-                    })
-                    .transforms
-                    .push(rigid_body.get_transform(&mut ctx));
-            }
+            unique_mesh.transforms.push(*transform);
         }
+    }
 
-        unique_meshes
+    pub fn update(&mut self) {
+        for unique_mesh in self.unique_meshes.values_mut() {
+            unique_mesh.transform_buffer.update(&unique_mesh.transforms);
+        }
+    }
+}
+
+impl AllocBuffers for UniqueMeshes {
+    fn alloc_buffers(&self, renderer: &Renderer) -> anyhow::Result<Vec<BufferHandle>> {
+        let mut handles = Vec::new();
+        for unique_mesh in self.unique_meshes.values() {
+            handles.push(
+                unique_mesh
+                    .transform_buffer
+                    .get_or_create::<Transform>(renderer),
+            );
+        }
+        Ok(handles)
     }
 }
 
 pub struct PbrRenderPass {
-    pub(crate) bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) pipeline: wgpu::RenderPipeline,
-
-    pub(crate) model_transform_buffer: wgpu::Buffer,
-    pub(crate) camera_buffer: wgpu::Buffer,
-    pub(crate) material_buffer: wgpu::Buffer,
-    pub(crate) point_light_buffer: wgpu::Buffer,
-    pub(crate) directional_light_buffer: wgpu::Buffer,
+    pub(crate) unique_meshes: RefCell<UniqueMeshes>,
 }
 
 impl PbrRenderPass {
-    pub fn new(device: &wgpu::Device, env_map_bind_group_layout: &wgpu::BindGroupLayout) -> Self {
-        let model_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Model Transform Buffer"),
-            size: (std::mem::size_of::<glam::Mat4>() * MAX_MESHES) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Camera Buffer"),
-            size: std::mem::size_of::<CameraUniform>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let material_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Material Buffer"),
-            size: std::mem::size_of::<MaterialUniform>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let point_light_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Point Lights Buffer"),
-            size: std::mem::size_of::<PointLightBuffer>() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let directional_light_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Directional Lights Buffer"),
-            size: std::mem::size_of::<DirectionalLightBuffer>() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("PBR Bind Group Layout"),
-            entries: &[
-                // model_transform
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // camera
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // material
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // tex_sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                // tex
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // normal_tex
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // roughness_tex
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // ambient occlusion texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 7,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // point lights
-                wgpu::BindGroupLayoutEntry {
-                    binding: 8,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // directional lights
-                wgpu::BindGroupLayoutEntry {
-                    binding: 9,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-
+    pub fn new(device: &wgpu::Device, bind_group_layout_cache: &BindGroupLayoutCache) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("PBR Shader"),
             source: wgpu::ShaderSource::Wgsl(include_shader!("pbr.wgsl").into()),
@@ -233,7 +96,16 @@ impl PbrRenderPass {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("PBR Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout, &env_map_bind_group_layout],
+            bind_group_layouts: &[
+                // mesh transform
+                &bind_group_layout_cache.get_or_create::<Transform>(device),
+                // camera
+                &bind_group_layout_cache.get_or_create::<Camera>(device),
+                // material
+                &bind_group_layout_cache.get_or_create::<Material>(device),
+                // point lights
+                &bind_group_layout_cache.get_or_create::<PointLightArray>(device),
+            ],
             push_constant_ranges: &[],
         });
 
@@ -250,12 +122,12 @@ impl PbrRenderPass {
                 entry_point: "fs_main",
                 targets: &[
                     Some(wgpu::ColorTargetState {
-                        format: Texture::HDR_FORMAT,
+                        format: WindowFormat::FORMAT,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     }),
                     Some(wgpu::ColorTargetState {
-                        format: Texture::HDR_FORMAT,
+                        format: NormalMapFormat::FORMAT,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     }),
@@ -267,7 +139,7 @@ impl PbrRenderPass {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: Texture::DEPTH_FORMAT,
+                format: DepthFormat::FORMAT,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: Default::default(),
@@ -277,169 +149,95 @@ impl PbrRenderPass {
             multiview: None,
         });
 
+        let unique_meshes = RefCell::new(UniqueMeshes::default());
+
         Self {
-            bind_group_layout,
             pipeline,
-            model_transform_buffer,
-            camera_buffer,
-            material_buffer,
-            point_light_buffer,
-            directional_light_buffer,
+            unique_meshes,
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    pub fn prepare(&self, world: &World, renderer: &Renderer) {
+        let mut unique_meshes = self.unique_meshes.borrow_mut();
+        unique_meshes.gather(world, renderer);
+        unique_meshes.alloc_buffers(renderer).unwrap();
+        unique_meshes.update();
+    }
+
     pub fn render(
         &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        color_texture: &Texture,
-        depth_texture: &Texture,
-        normal_texture: &Texture,
-        env_map_bind_group: &wgpu::BindGroup,
+        renderer: &Renderer,
+        hdr_pass_view: &wgpu::TextureView,
         world: &World,
+        encoder: &mut wgpu::CommandEncoder,
     ) -> anyhow::Result<()> {
-        let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("PBR Render Pass Initial Encoder"),
-        });
-
-        // write buffers
         let camera = Query::<&Camera>::new(world);
         let camera = camera.iter().next().unwrap();
-        queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::cast_slice(&[CameraUniform::from(&*camera)]),
-        );
-        {
-            // write point lights buffer
-            let lights = Query::<&PointLight>::new(world);
-            let lights_uniform = lights.iter().map(|l| *l).collect::<Vec<_>>();
-            queue.write_buffer(
-                &self.point_light_buffer,
-                0,
-                bytemuck::cast_slice(&[PointLightBuffer::from(lights_uniform.as_slice())]),
-            );
-        }
-        {
-            // write directional lights buffer
-            let lights = Query::<&DirectionalLight>::new(world);
-            let lights_uniform = lights.iter().map(|l| *l).collect::<Vec<_>>();
-            queue.write_buffer(
-                &self.directional_light_buffer,
-                0,
-                bytemuck::cast_slice(&[DirectionalLightBuffer::from(lights_uniform.as_slice())]),
-            );
-        }
 
-        queue.submit(Some(encoder.finish()));
+        let camera_handle = &camera.alloc_buffers(renderer)?[0];
+        let camera_bind_group = camera_handle.bind_group().unwrap();
 
-        let mut unique_meshes = UniqueMesh::gather(world);
+        let point_lights_handle = &renderer.point_lights.alloc_buffers(renderer)?[0];
+        let point_lights_bind_group = point_lights_handle.bind_group().unwrap();
 
-        for unique_mesh in unique_meshes.values_mut() {
+        for unique_mesh in self.unique_meshes.borrow().unique_meshes.values() {
             let UniqueMesh {
                 mesh,
-                material,
+                material_bind_group,
+                transform_buffer,
                 transforms,
             } = unique_mesh;
 
-            if !material.has_bind_group() {
-                material.create_bind_group(
-                    device,
-                    self,
-                    &world.read_resource::<Renderer>()?.sampler_repeat_linear,
-                );
-            }
-            let bind_group = material.bind_group().unwrap();
+            // make sure the buffers are allocated
+            let transform_handle = transform_buffer.get_or_create::<Transform>(renderer);
+            let transform_bind_group = transform_handle.bind_group().unwrap();
 
-            let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("PBR Render Pass Buffer Write Encoder"),
-            });
+            // don't need the mesh handle since it only has vertex and index buffers
 
-            // write model transform buffer
-            queue.write_buffer(
-                &self.model_transform_buffer,
-                0,
-                bytemuck::cast_slice(transforms.as_slice()),
-            );
-
-            // write material buffer
-            queue.write_buffer(
-                &self.material_buffer,
-                0,
-                bytemuck::cast_slice(&[MaterialUniform::from(&*material)]),
-            );
-
-            queue.submit(Some(encoder.finish()));
-
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("PBR Render Pass Encoder"),
-            });
-
-            {
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("PBR Render Pass"),
-                    color_attachments: &[
-                        // color
-                        Some(wgpu::RenderPassColorAttachment {
-                            view: color_texture.view(),
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        }),
-                        // normal
-                        Some(wgpu::RenderPassColorAttachment {
-                            view: normal_texture.view(),
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        }),
-                    ],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: depth_texture.view(),
-                        depth_ops: Some(wgpu::Operations {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("PBR Render Pass"),
+                color_attachments: &[
+                    // color target
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: hdr_pass_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
+                        },
                     }),
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
+                    // normal target
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &renderer.normal_texture_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                ],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &renderer.depth_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
 
-                render_pass.set_pipeline(&self.pipeline);
-                render_pass.set_bind_group(0, bind_group, &[]);
-                render_pass.set_bind_group(1, env_map_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
-                render_pass
-                    .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(
-                    0..mesh.num_indices() as u32,
-                    0,
-                    0..transforms.len() as u32,
-                );
-            }
-
-            queue.submit(Some(encoder.finish()));
+            render_pass.set_pipeline(&self.pipeline);
+            render_pass.set_bind_group(0, &transform_bind_group, &[]);
+            render_pass.set_bind_group(1, &camera_bind_group, &[]);
+            render_pass.set_bind_group(2, material_bind_group, &[]);
+            render_pass.set_bind_group(3, &point_lights_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
+            render_pass.set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.draw_indexed(0..mesh.num_indices() as u32, 0, 0..transforms.len() as u32);
         }
 
         Ok(())
-    }
-
-    pub fn prepare_components(&self, world: &World, renderer: &Renderer) {
-        let query = Query::<&mut Material>::new(world);
-        for mut material in query.iter() {
-            if !material.has_bind_group() {
-                material.create_bind_group(
-                    &renderer.device,
-                    &renderer.pbr_pass,
-                    &renderer.sampler_repeat_linear,
-                );
-            }
-        }
     }
 }

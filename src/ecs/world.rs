@@ -11,7 +11,13 @@ use super::{
     Bundle, Component, EcsError, Entity, System,
 };
 
-pub type Components = FxHashMap<Entity, FxHashMap<u64, Arc<RefCell<dyn Component>>>>;
+#[derive(Clone)]
+pub struct ComponentPtr {
+    pub component_id: u64,
+    pub component: Arc<RefCell<dyn Component>>,
+}
+
+pub type Components = FxHashMap<Entity, FxHashMap<u64, ComponentPtr>>;
 
 #[derive(Default)]
 pub struct World {
@@ -51,7 +57,13 @@ impl World {
             .borrow_mut()
             .entry(entity)
             .or_default()
-            .insert(T::component_id(), component);
+            .insert(
+                T::component_id(),
+                ComponentPtr {
+                    component_id: T::component_id(),
+                    component,
+                },
+            );
         Ok(())
     }
 

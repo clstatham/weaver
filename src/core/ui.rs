@@ -4,7 +4,7 @@ use egui_winit::State;
 use weaver_proc_macro::{Component, Resource};
 use winit::window::Window;
 
-use super::texture::Texture;
+use super::texture::{TextureFormat, WindowFormat};
 
 pub mod builtin {
     use std::collections::VecDeque;
@@ -103,7 +103,7 @@ impl EguiContext {
     pub fn new(device: &wgpu::Device, window: &Window, msaa_samples: u32) -> Self {
         let ctx = Context::default();
         let state = State::new(ctx.viewport_id(), window, None, None);
-        let renderer = egui_wgpu::Renderer::new(device, Texture::WINDOW_FORMAT, None, msaa_samples);
+        let renderer = egui_wgpu::Renderer::new(device, WindowFormat::FORMAT, None, msaa_samples);
         Self {
             ctx,
             state,

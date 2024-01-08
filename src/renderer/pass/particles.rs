@@ -4,10 +4,11 @@ use crate::{
     core::{
         camera::CameraUniform,
         particles::{ParticleEmitter, TOTAL_MAX_PARTICLES},
-        texture::Texture,
+        texture::{DepthFormat, TextureFormat, WindowFormat},
     },
     include_shader,
     prelude::*,
+    renderer::AllocBuffers,
 };
 
 use super::Pass;
@@ -180,7 +181,7 @@ impl ParticleRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: Texture::WINDOW_FORMAT,
+                    format: WindowFormat::FORMAT,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -191,7 +192,7 @@ impl ParticleRenderPass {
             },
             depth_stencil: Some(
                 wgpu::DepthStencilState {
-                    format: Texture::DEPTH_FORMAT,
+                    format: DepthFormat::FORMAT,
                     depth_write_enabled: true,
                     depth_compare: wgpu::CompareFunction::Less,
                     stencil: Default::default(),
@@ -255,10 +256,10 @@ impl Pass for ParticleRenderPass {
 
     fn render(
         &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        color_target: &Texture,
-        depth_target: &Texture,
+        encoder: &mut wgpu::CommandEncoder,
+        color_target: &wgpu::TextureView,
+        depth_target: &wgpu::TextureView,
+        renderer: &crate::renderer::Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
         let emitters = Query::<&ParticleEmitter>::new(world);
@@ -274,15 +275,8 @@ impl Pass for ParticleRenderPass {
                 continue;
             };
 
-            let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Particle Render Pass Buffer Write Encoder"),
-            });
-
-            queue.write_buffer(
-                &self.camera_buffer,
-                0,
-                bytemuck::cast_slice(&[camera_uniform]),
-            );
+            let particle_texture_handle = &particle_texture.alloc_buffers(renderer)?[0];
+            let particle_texture_bind_group = particle_texture_handle.bind_group().unwrap();
 
             let mut particles = Vec::new();
             for particle in emitter.particles.iter() {
@@ -315,19 +309,11 @@ impl Pass for ParticleRenderPass {
             });
             particles.reverse();
 
-            queue.write_buffer(&self.particle_buffer, 0, bytemuck::cast_slice(&particles));
-
-            queue.submit(Some(encoder.finish()));
-
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Particle Render Pass Encoder"),
-            });
-
             {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Particle Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: color_target.view(),
+                        view: color_target,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -335,7 +321,7 @@ impl Pass for ParticleRenderPass {
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: depth_target.view(),
+                        view: depth_target,
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -348,7 +334,7 @@ impl Pass for ParticleRenderPass {
 
                 render_pass.set_pipeline(&self.pipeline);
                 render_pass.set_bind_group(0, &self.bind_group, &[]);
-                render_pass.set_bind_group(1, particle_texture.bind_group(), &[]);
+                render_pass.set_bind_group(1, &particle_texture_bind_group, &[]);
                 render_pass.set_bind_group(2, &self.sampler_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, self.particle_quad_buffer.slice(..));
                 // redundant?
@@ -356,8 +342,6 @@ impl Pass for ParticleRenderPass {
                     render_pass.draw(0..6, (i as u32)..(i as u32 + 1));
                 }
             }
-
-            queue.submit(Some(encoder.finish()));
         }
 
         Ok(())

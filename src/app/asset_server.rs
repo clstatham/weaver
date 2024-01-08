@@ -1,11 +1,16 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, rc::Rc};
 
 use rustc_hash::FxHashMap;
 use weaver_proc_macro::Resource;
 
 use crate::{
-    core::{material::Material, mesh::Mesh, texture::Texture},
+    core::{
+        material::Material,
+        mesh::Mesh,
+        texture::{NormalMapFormat, SdrFormat, Texture, TextureFormat},
+    },
     ecs::World,
+    renderer::{BufferAllocator, Renderer},
 };
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -23,25 +28,20 @@ pub struct AssetServer {
     ids: FxHashMap<PathBuf, AssetId>,
     meshes: FxHashMap<AssetId, Mesh>,
     materials: FxHashMap<AssetId, Material>,
-    textures: FxHashMap<AssetId, Texture>,
-    device: Arc<wgpu::Device>,
-    queue: Arc<wgpu::Queue>,
+    buffer_allocator: Rc<BufferAllocator>,
 }
 
 impl AssetServer {
     pub fn new(world: &World) -> anyhow::Result<Self> {
-        let renderer = world.read_resource::<crate::renderer::Renderer>()?;
-        let device = renderer.device.clone();
-        let queue = renderer.queue.clone();
+        let renderer = world.read_resource::<Renderer>()?;
+        let buffer_allocator = renderer.buffer_allocator.clone();
         Ok(Self {
             next_id: 0,
             path_prefix: PathBuf::from("assets"),
             ids: FxHashMap::default(),
             meshes: FxHashMap::default(),
             materials: FxHashMap::default(),
-            textures: FxHashMap::default(),
-            device,
-            queue,
+            buffer_allocator,
         })
     }
 
@@ -59,7 +59,11 @@ impl AssetServer {
         self.path_prefix = path_prefix.into();
     }
 
-    pub fn load_mesh(&mut self, path: impl Into<PathBuf>) -> anyhow::Result<Mesh> {
+    pub fn load_mesh(
+        &mut self,
+        path: impl Into<PathBuf>,
+        renderer: &Renderer,
+    ) -> anyhow::Result<Mesh> {
         let path = path.into();
         let path = if path.is_absolute() {
             path
@@ -69,7 +73,7 @@ impl AssetServer {
 
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id();
-            let mesh = Mesh::load_gltf(path.clone(), self.device.as_ref(), id)?;
+            let mesh = Mesh::load_gltf(path.clone(), &renderer.device, id)?;
             self.ids.insert(path.clone(), id);
             self.meshes.insert(id, mesh);
         }
@@ -90,8 +94,7 @@ impl AssetServer {
         };
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id();
-            let mut materials =
-                Material::load_gltf(path.clone(), self.device.as_ref(), self.queue.as_ref(), id)?;
+            let mut materials = Material::load_gltf(path.clone(), id)?;
             self.ids.insert(path.clone(), id);
             self.materials.insert(id, materials.remove(0));
         }
@@ -103,44 +106,27 @@ impl AssetServer {
             .clone())
     }
 
-    pub fn load_texture(
+    pub fn load_texture<F: TextureFormat>(
         &mut self,
         path: impl Into<PathBuf>,
-        is_normal_map: bool,
-    ) -> anyhow::Result<Texture> {
+    ) -> anyhow::Result<Texture<F>> {
         let path = path.into();
         let path = if path.is_absolute() {
             path
         } else {
             self.path_prefix.join(path)
         };
-        if !self.ids.contains_key(&path) {
-            let id = self.alloc_id();
-            let texture = Texture::load(
-                path.clone(),
-                self.device.as_ref(),
-                self.queue.as_ref(),
-                None,
-                is_normal_map,
-            );
-            self.ids.insert(path.clone(), id);
-            self.textures.insert(id, texture);
-        }
-        Ok(self
-            .ids
-            .get(&path)
-            .and_then(|id| self.textures.get(id))
-            .unwrap()
-            .clone())
+        let texture = Texture::load(path.clone(), None);
+        Ok(texture)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn create_material(
         &mut self,
-        diffuse_texture: Option<Texture>,
-        normal_texture: Option<Texture>,
-        roughness_texture: Option<Texture>,
-        ambient_occlusion_texture: Option<Texture>,
+        diffuse_texture: Option<Texture<SdrFormat>>,
+        normal_texture: Option<Texture<NormalMapFormat>>,
+        roughness_texture: Option<Texture<SdrFormat>>,
+        ambient_occlusion_texture: Option<Texture<SdrFormat>>,
         metallic: Option<f32>,
         roughness: Option<f32>,
         texture_scaling: Option<f32>,

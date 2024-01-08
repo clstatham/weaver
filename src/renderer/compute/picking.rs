@@ -156,14 +156,12 @@ impl ScreenPicker {
                     // depth texture
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::TextureView(renderer.depth_texture.view()),
+                        resource: wgpu::BindingResource::TextureView(&renderer.depth_texture_view),
                     },
                     // normal texture
                     wgpu::BindGroupEntry {
                         binding: 3,
-                        resource: wgpu::BindingResource::TextureView(
-                            renderer.normal_texture.view(),
-                        ),
+                        resource: wgpu::BindingResource::TextureView(&renderer.normal_texture_view),
                     },
                     // screen pos buffer
                     wgpu::BindGroupEntry {

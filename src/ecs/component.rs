@@ -19,7 +19,7 @@ impl<T: std::any::Any> Downcast for T {
 ///
 /// # Safety
 /// This trait is only intended to be implemented by the `#[derive(Component)]` macro.
-pub unsafe trait Component: Downcast + Send + Sync {
+pub unsafe trait Component: Downcast {
     fn component_id() -> u64
     where
         Self: Sized;

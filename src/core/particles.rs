@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use rand::Rng;
 
-use super::texture::Texture;
+use super::texture::{SdrFormat, Texture};
 
 pub const TOTAL_MAX_PARTICLES: usize = 10000;
 
@@ -24,7 +24,7 @@ pub struct ParticleEmitter {
     pub particle_velocity: Vec3,
     pub particle_velocity_randomness: Vec3,
 
-    pub particle_texture: Option<Texture>,
+    pub particle_texture: Option<Texture<SdrFormat>>,
 }
 
 impl Default for ParticleEmitter {

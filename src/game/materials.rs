@@ -19,14 +19,14 @@ impl Materials {
         match self {
             // Wood_025
             Materials::Wood => {
-                let base_color = asset_server
-                    .load_texture("materials/Wood_025_SD/Wood_025_basecolor.jpg", false)?;
+                let base_color =
+                    asset_server.load_texture("materials/Wood_025_SD/Wood_025_basecolor.jpg")?;
                 let normal =
-                    asset_server.load_texture("materials/Wood_025_SD/Wood_025_normal.jpg", true)?;
-                let roughness = asset_server
-                    .load_texture("materials/Wood_025_SD/Wood_025_roughness.jpg", false)?;
+                    asset_server.load_texture("materials/Wood_025_SD/Wood_025_normal.jpg")?;
+                let roughness =
+                    asset_server.load_texture("materials/Wood_025_SD/Wood_025_roughness.jpg")?;
                 let ao = asset_server
-                    .load_texture("materials/Wood_025_SD/Wood_025_ambientOcclusion.jpg", false)?;
+                    .load_texture("materials/Wood_025_SD/Wood_025_ambientOcclusion.jpg")?;
                 Ok(asset_server.create_material(
                     Some(base_color),
                     Some(normal),
@@ -39,16 +39,14 @@ impl Materials {
             }
             // Metal_006
             Materials::Metal => {
-                let base_color = asset_server
-                    .load_texture("materials/Metal_006_SD/Metal_006_basecolor.jpg", false)?;
-                let normal = asset_server
-                    .load_texture("materials/Metal_006_SD/Metal_006_normal.jpg", true)?;
-                let roughness = asset_server
-                    .load_texture("materials/Metal_006_SD/Metal_006_roughness.jpg", false)?;
-                let ao = asset_server.load_texture(
-                    "materials/Metal_006_SD/Metal_006_ambientOcclusion.jpg",
-                    false,
-                )?;
+                let base_color =
+                    asset_server.load_texture("materials/Metal_006_SD/Metal_006_basecolor.jpg")?;
+                let normal =
+                    asset_server.load_texture("materials/Metal_006_SD/Metal_006_normal.jpg")?;
+                let roughness =
+                    asset_server.load_texture("materials/Metal_006_SD/Metal_006_roughness.jpg")?;
+                let ao = asset_server
+                    .load_texture("materials/Metal_006_SD/Metal_006_ambientOcclusion.jpg")?;
                 Ok(asset_server.create_material(
                     Some(base_color),
                     Some(normal),
@@ -63,19 +61,15 @@ impl Materials {
             Materials::WoodTile => {
                 let base_color = asset_server.load_texture(
                     "materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_BaseColor.jpg",
-                    false,
                 )?;
                 let normal = asset_server.load_texture(
                     "materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_Normal.jpg",
-                    true,
                 )?;
                 let roughness = asset_server.load_texture(
                     "materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_Roughness.jpg",
-                    false,
                 )?;
                 let ao = asset_server.load_texture(
                     "materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_AmbientOcclusion.jpg",
-                    false,
                 )?;
                 Ok(asset_server.create_material(
                     Some(base_color),
@@ -89,21 +83,14 @@ impl Materials {
             }
             // Brick_Wall_017
             Materials::BrickWall => {
-                let base_color = asset_server.load_texture(
-                    "materials/Brick_Wall_017_SD/Brick_Wall_017_basecolor.jpg",
-                    false,
-                )?;
-                let normal = asset_server.load_texture(
-                    "materials/Brick_Wall_017_SD/Brick_Wall_017_normal.jpg",
-                    true,
-                )?;
-                let roughness = asset_server.load_texture(
-                    "materials/Brick_Wall_017_SD/Brick_Wall_017_roughness.jpg",
-                    false,
-                )?;
+                let base_color = asset_server
+                    .load_texture("materials/Brick_Wall_017_SD/Brick_Wall_017_basecolor.jpg")?;
+                let normal = asset_server
+                    .load_texture("materials/Brick_Wall_017_SD/Brick_Wall_017_normal.jpg")?;
+                let roughness = asset_server
+                    .load_texture("materials/Brick_Wall_017_SD/Brick_Wall_017_roughness.jpg")?;
                 let ao = asset_server.load_texture(
                     "materials/Brick_Wall_017_SD/Brick_Wall_017_ambientOcclusion.jpg",
-                    false,
                 )?;
                 Ok(asset_server.create_material(
                     Some(base_color),
@@ -117,21 +104,14 @@ impl Materials {
             }
             // Wall_Stone_021
             Materials::StoneWall => {
-                let base_color = asset_server.load_texture(
-                    "materials/Wall_Stone_021_SD/Substance_graph_BaseColor.jpg",
-                    false,
-                )?;
-                let normal = asset_server.load_texture(
-                    "materials/Wall_Stone_021_SD/Substance_graph_Normal.jpg",
-                    true,
-                )?;
-                let roughness = asset_server.load_texture(
-                    "materials/Wall_Stone_021_SD/Substance_graph_Roughness.jpg",
-                    false,
-                )?;
+                let base_color = asset_server
+                    .load_texture("materials/Wall_Stone_021_SD/Substance_graph_BaseColor.jpg")?;
+                let normal = asset_server
+                    .load_texture("materials/Wall_Stone_021_SD/Substance_graph_Normal.jpg")?;
+                let roughness = asset_server
+                    .load_texture("materials/Wall_Stone_021_SD/Substance_graph_Roughness.jpg")?;
                 let ao = asset_server.load_texture(
                     "materials/Wall_Stone_021_SD/Substance_graph_AmbientOcclusion.jpg",
-                    false,
                 )?;
                 Ok(asset_server.create_material(
                     Some(base_color),
@@ -145,14 +125,13 @@ impl Materials {
             }
             // Food_0003
             Materials::Banana => {
-                let base_color = asset_server
-                    .load_texture("materials/Food_0003/food_0003_color_1k.jpg", false)?;
+                let base_color =
+                    asset_server.load_texture("materials/Food_0003/food_0003_color_1k.jpg")?;
                 let normal = asset_server
-                    .load_texture("materials/Food_0003/food_0003_normal_opengl_1k.png", true)?;
-                let roughness = asset_server
-                    .load_texture("materials/Food_0003/food_0003_roughness_1k.jpg", false)?;
-                let ao =
-                    asset_server.load_texture("materials/Food_0003/food_0003_ao_1k.jpg", false)?;
+                    .load_texture("materials/Food_0003/food_0003_normal_opengl_1k.png")?;
+                let roughness =
+                    asset_server.load_texture("materials/Food_0003/food_0003_roughness_1k.jpg")?;
+                let ao = asset_server.load_texture("materials/Food_0003/food_0003_ao_1k.jpg")?;
                 Ok(asset_server.create_material(
                     Some(base_color),
                     Some(normal),

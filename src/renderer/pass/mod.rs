@@ -1,13 +1,12 @@
 use std::io::Read;
 
-use crate::{core::texture::Texture, ecs::World};
+use crate::ecs::World;
 
 pub mod doodads;
 pub mod hdr;
 pub mod particles;
 pub mod pbr;
-pub mod shadow;
-pub mod sky;
+// pub mod shadow;
 
 pub fn preprocess_shader(shader: &str) -> String {
     let mut output = String::new();
@@ -48,23 +47,23 @@ pub trait Pass {
     fn disable(&mut self);
     fn render(
         &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        color_target: &Texture,
-        depth_target: &Texture,
+        encoder: &mut wgpu::CommandEncoder,
+        color_target: &wgpu::TextureView,
+        depth_target: &wgpu::TextureView,
+        renderer: &crate::renderer::Renderer,
         world: &World,
     ) -> anyhow::Result<()>;
 
     fn render_if_enabled(
         &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        color_target: &Texture,
-        depth_target: &Texture,
+        encoder: &mut wgpu::CommandEncoder,
+        color_target: &wgpu::TextureView,
+        depth_target: &wgpu::TextureView,
+        renderer: &crate::renderer::Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
         if self.is_enabled() {
-            self.render(device, queue, color_target, depth_target, world)?;
+            self.render(encoder, color_target, depth_target, renderer, world)?;
         }
 
         Ok(())

@@ -42,7 +42,7 @@ impl App {
             .with_resizable(false)
             .build(&event_loop)?;
 
-        let renderer = pollster::block_on(Renderer::new(&window));
+        let renderer = Renderer::new(&window);
 
         let ui = EguiContext::new(&renderer.device, &window, 1);
 
@@ -150,7 +150,7 @@ impl App {
         {
             let world = self.world.borrow();
             world.startup()?;
-            let renderer = world.read_resource::<Renderer>()?;
+            let mut renderer = world.write_resource::<Renderer>()?;
             renderer.prepare_components(&world);
         }
 
@@ -229,9 +229,9 @@ impl App {
                     world.update().unwrap();
                     world.write_resource::<EguiContext>().unwrap().end_frame();
 
-                    let renderer = world.read_resource::<Renderer>().unwrap();
+                    let mut renderer = world.write_resource::<Renderer>().unwrap();
                     let mut ui = world.write_resource::<EguiContext>().unwrap();
-                    let output = renderer.prepare();
+                    let output = renderer.prepare(&world);
                     renderer.render(&world, &output).unwrap();
                     renderer.render_ui(
                         &mut ui,

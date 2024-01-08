@@ -2,11 +2,9 @@
 
 @group(0) @binding(0) var shadow_map: texture_depth_2d;
 @group(0) @binding(1) var shadow_map_sampler: sampler_comparison;
-@group(0) @binding(2) var color_in: texture_2d<f32>;
-@group(0) @binding(3) var color_in_sampler: sampler;
-@group(0) @binding(4) var<uniform> camera: CameraUniform;
-@group(0) @binding(5) var<uniform> light: DirectionalLight;
-@group(0) @binding(6) var<storage> model_transforms: array<mat4x4<f32>>;
+@group(0) @binding(2) var<uniform> camera: CameraUniform;
+@group(0) @binding(3) var<uniform> light: DirectionalLight;
+@group(0) @binding(4) var<storage> model_transforms: array<mat4x4<f32>>;
 
 fn shadow_map_visiblity(pos: vec3<f32>) -> f32 {
     var visibility = 0.0;
@@ -56,17 +54,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    // get the fragment's UV coordinates in screen space
-    var uv = input.clip_position.xy / vec2<f32>(textureDimensions(color_in));
-
-    // get the color from the texture
-    var color = textureSample(color_in, color_in_sampler, uv).rgb;
-
     // get the shadow map visibility
     let visibility = shadow_map_visiblity(input.shadow_pos);
 
-    // apply the shadow
-    color *= visibility;
-
-    return vec4(color, 1.0);
+    return vec4<f32>(0.0, 0.0, 0.0, visibility);
 }

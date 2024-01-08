@@ -4,15 +4,13 @@ const FAR_PLANE: f32 = 100.0;
 
 @group(0) @binding(0) var shadow_cube_map: texture_cube<f32>;
 @group(0) @binding(1) var tex_sampler: sampler;
-@group(0) @binding(2) var color_in: texture_2d<f32>;
-@group(0) @binding(3) var<uniform> camera: CameraUniform;
-@group(0) @binding(4) var<uniform> light: PointLight;
-@group(0) @binding(5) var<storage> model_transforms: array<mat4x4<f32>>;
+@group(0) @binding(2) var<uniform> camera: CameraUniform;
+@group(0) @binding(3) var<uniform> light: PointLight;
+@group(0) @binding(4) var<storage> model_transforms: array<mat4x4<f32>>;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) world_position: vec3<f32>,
-    @location(1) instance_index: u32,
 }
 
 @vertex
@@ -23,15 +21,11 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
     output.clip_position = camera.proj * camera.view * model_transform * vec4(input.position, 1.0);
     output.world_position = (model_transform * vec4(input.position, 1.0)).xyz;
-    output.instance_index = input.instance_index;
     return output;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let uv = input.clip_position.xy / vec2<f32>(textureDimensions(color_in));
-    var color = textureSample(color_in, tex_sampler, uv).rgb;
-
     let to_light = input.world_position - light.position.xyz;
     let current_depth = length(to_light);
     var shadow = 0.0;
@@ -50,12 +44,5 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
     shadow /= 27.0;
 
-    // let attenuation = 1.0 / (1.0 + current_depth * 0.1 + current_depth * current_depth * 0.01);
-    // shadow *= attenuation;
-
-    let visibility = 1.0 - shadow;
-
-    color *= visibility;
-
-    return vec4<f32>(color, 1.0);
+    return vec4<f32>(0.0, 0.0, 0.0, shadow);
 }

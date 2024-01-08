@@ -8,6 +8,10 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug executable 'weaver'",
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUST_LOG": "weaver=debug"
+            },
             "cargo": {
                 "env": {
                     "RUST_BACKTRACE": "1",
@@ -17,7 +21,6 @@
                     "build",
                     "--bin=weaver",
                     "--package=weaver",
-                    // "--release",
                 ],
                 "filter": {
                     "name": "weaver",
@@ -31,6 +34,10 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug unit tests in executable 'weaver'",
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUST_LOG": "weaver=debug"
+            },
             "cargo": {
                 "env": {
                     "RUST_BACKTRACE": "1",

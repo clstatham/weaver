@@ -1,6 +1,10 @@
 use weaver_proc_macro::Component;
 use winit::event::VirtualKeyCode;
 
+use crate::renderer::{
+    AllocBuffers, BufferHandle, CreateBindGroupLayout, LazyBufferHandle, Renderer,
+};
+
 use super::input::Input;
 
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -33,10 +37,67 @@ impl From<&Camera> for CameraUniform {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, Component)]
+#[derive(Clone, Component)]
 pub struct Camera {
     pub view_matrix: glam::Mat4,
     pub projection_matrix: glam::Mat4,
+
+    pub(crate) handle: LazyBufferHandle,
+}
+
+impl Camera {
+    pub fn new() -> Self {
+        Self {
+            view_matrix: glam::Mat4::IDENTITY,
+            projection_matrix: glam::Mat4::IDENTITY,
+            handle: LazyBufferHandle::new(
+                crate::renderer::BufferBindingType::Uniform {
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    size: Some(std::mem::size_of::<CameraUniform>()),
+                },
+                Some("Camera"),
+                None,
+            ),
+        }
+    }
+
+    pub fn update(&mut self) {
+        self.handle
+            .update::<CameraUniform>(&[CameraUniform::from(&*self)]);
+    }
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AllocBuffers for Camera {
+    fn alloc_buffers(&self, renderer: &Renderer) -> anyhow::Result<Vec<BufferHandle>> {
+        Ok(vec![self.handle.get_or_create_init::<_, Self>(
+            renderer,
+            &[CameraUniform::from(self)],
+        )])
+    }
+}
+
+impl CreateBindGroupLayout for Camera {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Camera Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        })
+    }
 }
 
 #[derive(Debug, Component, Clone, Copy)]
@@ -104,6 +165,8 @@ impl FlyCameraController {
 
         camera.view_matrix = self.view_matrix();
         camera.projection_matrix = self.projection_matrix();
+
+        camera.update();
     }
 
     pub fn view_matrix(&self) -> glam::Mat4 {

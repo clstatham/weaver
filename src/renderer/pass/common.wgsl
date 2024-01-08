@@ -1,5 +1,4 @@
 const PI: f32 = 3.1415926535897932384626433832795;
-const MAX_LIGHTS: u32 = 16u;
 
 struct VertexInput {
     @builtin(instance_index) instance_index: u32,
@@ -43,11 +42,14 @@ struct DirectionalLight {
 };
 
 struct PointLights {
-    lights: array<PointLight, MAX_LIGHTS>,
     count: u32,
+    _pad: array<u32, 3>,
+    lights: array<PointLight>,
+    
 };
 
 struct DirectionalLights {
-    lights: array<DirectionalLight, MAX_LIGHTS>,
     count: u32,
+    _pad: array<u32, 3>,
+    lights: array<DirectionalLight>,
 };

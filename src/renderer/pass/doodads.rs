@@ -1,9 +1,15 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-    core::{camera::Camera, color::Color, doodads::Doodad, texture::Texture},
+    core::{
+        camera::Camera,
+        color::Color,
+        doodads::Doodad,
+        texture::{DepthFormat, HdrFormat, Texture, TextureFormat},
+    },
     ecs::Query,
     include_shader,
+    renderer::AllocBuffers,
 };
 
 use super::Pass;
@@ -170,7 +176,7 @@ pub struct DoodadRenderPass {
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     bind_group_layout: wgpu::BindGroupLayout,
-    depth_texture: Texture,
+    depth_texture: Texture<DepthFormat>,
     camera_buffer: wgpu::Buffer,
 
     cube_vertex_buffer: wgpu::Buffer,
@@ -184,12 +190,15 @@ pub struct DoodadRenderPass {
 
 impl DoodadRenderPass {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
-        let depth_texture = Texture::create_depth_texture(
-            device,
+        let depth_texture = Texture::new_lazy(
             config.width,
             config.height,
             Some("doodad depth texture"),
             wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            DepthFormat::FORMAT,
+            wgpu::TextureDimension::D2,
+            wgpu::TextureViewDimension::D2,
+            1,
         );
 
         let model_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -306,7 +315,7 @@ impl DoodadRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: Texture::HDR_FORMAT,
+                    format: HdrFormat::FORMAT,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -316,7 +325,7 @@ impl DoodadRenderPass {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: Texture::DEPTH_FORMAT,
+                format: DepthFormat::FORMAT,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less,
                 stencil: Default::default(),
@@ -377,36 +386,25 @@ impl Pass for DoodadRenderPass {
 
     fn render(
         &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        color_target: &Texture,
-        _depth_target: &Texture,
+        encoder: &mut wgpu::CommandEncoder,
+        color_target: &wgpu::TextureView,
+        _depth_target: &wgpu::TextureView,
+        renderer: &crate::renderer::Renderer,
         world: &crate::ecs::World,
     ) -> anyhow::Result<()> {
         let mut doodads = world.write_resource::<crate::core::doodads::Doodads>()?;
         let doodads = doodads.doodads.drain(..).collect::<Vec<_>>();
 
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("doodad encoder"),
-        });
-
-        let camera = Query::<&Camera>::new(world);
-        let camera = camera.iter().next().unwrap();
-        queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::cast_slice(&[DoodadCamera {
-                view: camera.view_matrix,
-                proj: camera.projection_matrix,
-            }]),
-        );
+        let depth_texture_handle = &self.depth_texture.alloc_buffers(renderer)?[0];
+        let depth_texture = depth_texture_handle.get_texture().unwrap();
+        let depth_texture_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         {
             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("doodad render pass"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: self.depth_texture.view(),
+                    view: &depth_texture_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -418,8 +416,6 @@ impl Pass for DoodadRenderPass {
             });
         }
 
-        queue.submit(std::iter::once(encoder.finish()));
-
         for doodad in doodads {
             match doodad {
                 Doodad::Cube(cube) => {
@@ -429,29 +425,12 @@ impl Pass for DoodadRenderPass {
                         cube.position,
                     );
 
-                    let mut encoder =
-                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("doodad encoder"),
-                        });
-
-                    queue.write_buffer(
-                        &self.model_transform_buffer,
-                        0,
-                        bytemuck::cast_slice(&[transform]),
-                    );
-
-                    queue.write_buffer(
-                        &self.doodad_color_buffer,
-                        0,
-                        bytemuck::cast_slice(&[cube.color]),
-                    );
-
                     {
                         let mut render_pass =
                             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                                 label: Some("doodad render pass"),
                                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                    view: color_target.view(),
+                                    view: color_target,
                                     resolve_target: None,
                                     ops: wgpu::Operations {
                                         load: wgpu::LoadOp::Load,
@@ -460,7 +439,7 @@ impl Pass for DoodadRenderPass {
                                 })],
                                 depth_stencil_attachment: Some(
                                     wgpu::RenderPassDepthStencilAttachment {
-                                        view: self.depth_texture.view(),
+                                        view: &depth_texture_view,
                                         depth_ops: Some(wgpu::Operations {
                                             load: wgpu::LoadOp::Load,
                                             store: wgpu::StoreOp::Store,
@@ -481,8 +460,6 @@ impl Pass for DoodadRenderPass {
                         render_pass.set_vertex_buffer(0, self.cube_vertex_buffer.slice(..));
                         render_pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..1);
                     }
-
-                    queue.submit(std::iter::once(encoder.finish()));
                 }
                 Doodad::Cone(cone) => {
                     let transform = glam::Mat4::from_scale_rotation_translation(
@@ -491,29 +468,12 @@ impl Pass for DoodadRenderPass {
                         cone.position,
                     );
 
-                    let mut encoder =
-                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("doodad encoder"),
-                        });
-
-                    queue.write_buffer(
-                        &self.model_transform_buffer,
-                        0,
-                        bytemuck::cast_slice(&[transform]),
-                    );
-
-                    queue.write_buffer(
-                        &self.doodad_color_buffer,
-                        0,
-                        bytemuck::cast_slice(&[cone.color]),
-                    );
-
                     {
                         let mut render_pass =
                             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                                 label: Some("doodad render pass"),
                                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                    view: color_target.view(),
+                                    view: color_target,
                                     resolve_target: None,
                                     ops: wgpu::Operations {
                                         load: wgpu::LoadOp::Load,
@@ -522,7 +482,7 @@ impl Pass for DoodadRenderPass {
                                 })],
                                 depth_stencil_attachment: Some(
                                     wgpu::RenderPassDepthStencilAttachment {
-                                        view: self.depth_texture.view(),
+                                        view: &depth_texture_view,
                                         depth_ops: Some(wgpu::Operations {
                                             load: wgpu::LoadOp::Load,
                                             store: wgpu::StoreOp::Store,
@@ -543,8 +503,6 @@ impl Pass for DoodadRenderPass {
                         render_pass.set_vertex_buffer(0, self.cone_vertex_buffer.slice(..));
                         render_pass.draw_indexed(0..cone_indices(32).len() as u32, 0, 0..1);
                     }
-
-                    queue.submit(std::iter::once(encoder.finish()));
                 }
             }
         }

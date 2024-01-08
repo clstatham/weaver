@@ -1,25 +1,27 @@
 use std::{
-    cell::{Ref, RefCell, RefMut},
+    cell::{Ref, RefMut},
     fmt::Debug,
-    sync::Arc,
 };
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::{entity::Entity, world::Components, Bundle, Component, World};
+use super::{
+    entity::Entity,
+    world::{ComponentPtr, Components},
+    Bundle, Component, World,
+};
 
 #[derive(Clone)]
 pub struct QueryEntry {
     entity: Entity,
-    component_id: u64,
-    component: Arc<RefCell<dyn Component>>,
+    component: ComponentPtr,
 }
 
 impl Debug for QueryEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("QueryEntry")
             .field("entity", &self.entity)
-            .field("component_id", &self.component_id)
+            .field("component_id", &self.component.component_id)
             .finish()
     }
 }
@@ -73,7 +75,6 @@ where
                 {
                     matching_components.push(QueryEntry {
                         entity,
-                        component_id,
                         component: component.clone(),
                     });
                 }
@@ -118,8 +119,8 @@ where
 
     fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
-            if entry.entity == entity && entry.component_id == T::component_id() {
-                Some(Ref::map(entry.component.borrow(), |component| {
+            if entry.entity == entity && entry.component.component_id == T::component_id() {
+                Some(Ref::map(entry.component.component.borrow(), |component| {
                     component.as_any().downcast_ref::<T>().unwrap()
                 }))
             } else {
@@ -143,10 +144,11 @@ where
 
     fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
-            if entry.entity == entity && entry.component_id == T::component_id() {
-                Some(RefMut::map(entry.component.borrow_mut(), |component| {
-                    component.as_any_mut().downcast_mut::<T>().unwrap()
-                }))
+            if entry.entity == entity && entry.component.component_id == T::component_id() {
+                Some(RefMut::map(
+                    entry.component.component.borrow_mut(),
+                    |component| component.as_any_mut().downcast_mut::<T>().unwrap(),
+                ))
             } else {
                 None
             }
