@@ -5,13 +5,10 @@ use rustc_hash::FxHashMap;
 use crate::{
     app::asset_server::AssetId,
     core::{
-        light::{PointLightUniform, MAX_LIGHTS},
         mesh::{Vertex, MAX_MESHES},
         texture::{
-            DepthCubeFormat, DepthFormat, HdrFormat, MonoCubeFormat, MonoFormat, Texture,
-            TextureFormat, WindowFormat,
+            DepthCubeFormat, DepthFormat, MonoCubeFormat, MonoFormat, TextureFormat, WindowFormat,
         },
-        transform,
     },
     include_shader,
     prelude::*,
@@ -398,53 +395,6 @@ impl OmniShadowRenderPass {
         }
     }
 
-    pub fn prepare(&self, world: &World, renderer: &Renderer) {
-        self.shadow_buffers
-            .borrow()
-            .shadow_cubemap
-            .get_or_create::<MonoCubeFormat>(renderer);
-        self.shadow_depth_cubemap
-            .get_or_create::<DepthCubeFormat>(renderer);
-
-        self.unique_meshes.borrow_mut().gather(world);
-        self.unique_meshes.borrow().alloc_buffers(renderer).unwrap();
-        self.unique_meshes.borrow_mut().update();
-
-        let point_lights = Query::<&PointLight>::new(world);
-        for entity in point_lights.entities() {
-            let point_light = point_lights.get(entity).unwrap();
-            let mut views = [glam::Mat4::IDENTITY; 6];
-            for i in 0..6 {
-                let view_transform = match i {
-                    // right
-                    0 => point_light.view_transform_in_direction(glam::Vec3::X, glam::Vec3::Y),
-                    // left
-                    1 => point_light.view_transform_in_direction(-glam::Vec3::X, glam::Vec3::Y),
-                    // top
-                    2 => point_light.view_transform_in_direction(glam::Vec3::Y, -glam::Vec3::Z),
-                    // bottom
-                    3 => point_light.view_transform_in_direction(-glam::Vec3::Y, glam::Vec3::Z),
-                    // front
-                    4 => point_light.view_transform_in_direction(glam::Vec3::Z, glam::Vec3::Y),
-                    // back
-                    5 => point_light.view_transform_in_direction(-glam::Vec3::Z, glam::Vec3::Y),
-                    _ => unreachable!(),
-                };
-
-                views[i] = view_transform;
-            }
-
-            let mut light_views = self.light_views.borrow_mut();
-            let light_views = light_views.entry(entity).or_insert_with(|| {
-                let light_views = LightViews::new();
-                light_views.alloc_buffers(renderer).unwrap();
-                light_views
-            });
-
-            light_views.update(&views);
-        }
-    }
-
     fn render_cube_map(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -661,6 +611,55 @@ impl Pass for OmniShadowRenderPass {
 
     fn disable(&mut self) {
         self.enabled = false;
+    }
+
+    fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
+        self.shadow_buffers
+            .borrow()
+            .shadow_cubemap
+            .get_or_create::<MonoCubeFormat>(renderer);
+        self.shadow_depth_cubemap
+            .get_or_create::<DepthCubeFormat>(renderer);
+
+        self.unique_meshes.borrow_mut().gather(world);
+        self.unique_meshes.borrow().alloc_buffers(renderer)?;
+        self.unique_meshes.borrow_mut().update();
+
+        let point_lights = Query::<&PointLight>::new(world);
+        for entity in point_lights.entities() {
+            let point_light = point_lights.get(entity).unwrap();
+            let mut views = [glam::Mat4::IDENTITY; 6];
+            for (i, view) in views.iter_mut().enumerate() {
+                let view_transform = match i {
+                    // right
+                    0 => point_light.view_transform_in_direction(glam::Vec3::X, glam::Vec3::Y),
+                    // left
+                    1 => point_light.view_transform_in_direction(-glam::Vec3::X, glam::Vec3::Y),
+                    // top
+                    2 => point_light.view_transform_in_direction(glam::Vec3::Y, -glam::Vec3::Z),
+                    // bottom
+                    3 => point_light.view_transform_in_direction(-glam::Vec3::Y, glam::Vec3::Z),
+                    // front
+                    4 => point_light.view_transform_in_direction(glam::Vec3::Z, glam::Vec3::Y),
+                    // back
+                    5 => point_light.view_transform_in_direction(-glam::Vec3::Z, glam::Vec3::Y),
+                    _ => unreachable!(),
+                };
+
+                *view = view_transform;
+            }
+
+            let mut light_views = self.light_views.borrow_mut();
+            let light_views = light_views.entry(entity).or_insert_with(|| {
+                let light_views = LightViews::new();
+                light_views.alloc_buffers(renderer).unwrap();
+                light_views
+            });
+
+            light_views.update(&views);
+        }
+
+        Ok(())
     }
 
     fn render(

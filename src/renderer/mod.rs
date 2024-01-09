@@ -1247,8 +1247,8 @@ impl Renderer {
     pub fn prepare(&mut self, world: &World) -> (wgpu::SurfaceTexture, wgpu::CommandEncoder) {
         self.prepare_components(world);
         self.pbr_pass.prepare(world, self);
-        self.shadow_pass.prepare(world, self);
-        self.doodad_pass.prepare(world, self);
+        self.shadow_pass.prepare(world, self).unwrap();
+        self.doodad_pass.prepare(world, self).unwrap();
         self.update_all_buffers_and_flush();
 
         let encoder = self

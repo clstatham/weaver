@@ -254,6 +254,10 @@ impl Pass for ParticleRenderPass {
         self.enabled = false;
     }
 
+    fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
+        todo!()
+    }
+
     fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,

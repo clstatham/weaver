@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, cell::RefCell, sync::Arc};
+use std::{cell::RefCell, sync::Arc};
 
 use rustc_hash::FxHashMap;
 use weaver_proc_macro::Component;

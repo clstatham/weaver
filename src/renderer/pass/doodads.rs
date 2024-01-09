@@ -8,8 +8,8 @@ use crate::{
         camera::{Camera, CameraUniform},
         color::{Color, ColorArray},
         doodads::{Doodad, Doodads, MAX_DOODADS},
-        texture::{DepthFormat, HdrFormat, Texture, TextureFormat, WindowFormat},
-        transform::{self, Transform},
+        texture::{DepthFormat, HdrFormat, Texture, TextureFormat},
+        transform::Transform,
     },
     ecs::{Query, World},
     include_shader,
@@ -437,11 +437,25 @@ impl DoodadRenderPass {
             cones: DoodadBuffers::new(cone_vertex_buffer, cone_index_buffer, cone_indices.len()),
         }
     }
+}
 
-    pub fn prepare(&self, world: &World, renderer: &Renderer) {
-        self.depth_texture.alloc_buffers(renderer).unwrap();
-        let mut cubes = self.cubes.alloc_buffers(renderer).unwrap();
-        let mut cones = self.cones.alloc_buffers(renderer).unwrap();
+impl Pass for DoodadRenderPass {
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn enable(&mut self) {
+        self.enabled = true;
+    }
+
+    fn disable(&mut self) {
+        self.enabled = false;
+    }
+
+    fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
+        self.depth_texture.alloc_buffers(renderer)?;
+        let mut cubes = self.cubes.alloc_buffers(renderer)?;
+        let mut cones = self.cones.alloc_buffers(renderer)?;
 
         let mut camera_handle = self.camera_buffer.get_or_create::<Camera>(renderer);
         let camera = Query::<&Camera>::new(world);
@@ -454,7 +468,7 @@ impl DoodadRenderPass {
         let mut cone_transforms = Vec::new();
         let mut cone_colors = Vec::new();
 
-        let mut doodads = world.write_resource::<Doodads>().unwrap();
+        let mut doodads = world.write_resource::<Doodads>()?;
         for doodad in doodads.doodads.drain(..) {
             match doodad {
                 Doodad::Cube(cube) => {
@@ -484,27 +498,15 @@ impl DoodadRenderPass {
 
         *self.cubes.count.borrow_mut() = cube_transforms.len();
         *self.cones.count.borrow_mut() = cone_transforms.len();
-    }
-}
 
-impl Pass for DoodadRenderPass {
-    fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-
-    fn enable(&mut self) {
-        self.enabled = true;
-    }
-
-    fn disable(&mut self) {
-        self.enabled = false;
+        Ok(())
     }
 
     fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         color_target: &wgpu::TextureView,
-        depth_target: &wgpu::TextureView,
+        _depth_target: &wgpu::TextureView,
         renderer: &crate::renderer::Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
@@ -522,7 +524,7 @@ impl Pass for DoodadRenderPass {
 
         // clear depth buffer
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Doodad Render Pass"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {

@@ -1,6 +1,6 @@
 use std::io::Read;
 
-use crate::ecs::World;
+use crate::{ecs::World, renderer::Renderer};
 
 pub mod doodads;
 pub mod hdr;
@@ -46,12 +46,15 @@ pub trait Pass {
     fn is_enabled(&self) -> bool;
     fn enable(&mut self);
     fn disable(&mut self);
+
+    fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()>;
+
     fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         color_target: &wgpu::TextureView,
         depth_target: &wgpu::TextureView,
-        renderer: &crate::renderer::Renderer,
+        renderer: &Renderer,
         world: &World,
     ) -> anyhow::Result<()>;
 
@@ -60,7 +63,7 @@ pub trait Pass {
         encoder: &mut wgpu::CommandEncoder,
         color_target: &wgpu::TextureView,
         depth_target: &wgpu::TextureView,
-        renderer: &crate::renderer::Renderer,
+        renderer: &Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
         if self.is_enabled() {

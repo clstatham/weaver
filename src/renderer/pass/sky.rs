@@ -1,15 +1,11 @@
 use crate::{
     core::{
         camera::Camera,
-        texture::{
-            DepthFormat, HdrCubeFormat, HdrD2ArrayFormat, HdrFormat, Skybox, Texture, TextureFormat,
-        },
+        texture::{DepthFormat, HdrCubeFormat, HdrFormat, Skybox, TextureFormat},
     },
     ecs::{Query, World},
     include_shader,
-    renderer::{
-        AllocBuffers, BindGroupLayoutCache, LazyBufferHandle, NonFilteringSampler, Renderer,
-    },
+    renderer::{AllocBuffers, BindGroupLayoutCache, NonFilteringSampler, Renderer},
 };
 
 use super::Pass;
@@ -103,6 +99,10 @@ impl Pass for SkyRenderPass {
 
     fn disable(&mut self) {
         self.enabled = false;
+    }
+
+    fn prepare(&self, _world: &World, _renderer: &Renderer) -> anyhow::Result<()> {
+        Ok(())
     }
 
     fn render(

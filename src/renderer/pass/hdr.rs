@@ -1,10 +1,7 @@
 use crate::{
     core::texture::{HdrFormat, Texture, TextureFormat, WindowFormat},
     ecs::World,
-    renderer::{
-        AllocBuffers, BindGroupLayoutCache, BufferAllocator, CreateBindGroupLayout,
-        NonFilteringSampler,
-    },
+    renderer::{AllocBuffers, BindGroupLayoutCache, NonFilteringSampler},
 };
 
 use super::Pass;
@@ -109,6 +106,10 @@ impl Pass for HdrRenderPass {
 
     fn disable(&mut self) {
         self.enabled = false;
+    }
+
+    fn prepare(&self, _world: &World, _renderer: &crate::renderer::Renderer) -> anyhow::Result<()> {
+        Ok(())
     }
 
     fn render(
