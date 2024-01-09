@@ -26,13 +26,13 @@ macro_rules! texture_formats {
 texture_formats! {
     WindowFormat: Bgra8UnormSrgb,
     SdrFormat: Rgba8UnormSrgb,
-    HdrFormat: Rgba32Float,
+    HdrFormat: Rgba16Float,
     NormalMapFormat: Rgba8Unorm,
     DepthFormat: Depth32Float,
     HdrD2ArrayFormat: Rgba32Float,
     HdrCubeFormat: Rgba32Float,
-    MonoFormat: R32Float,
-    MonoCubeFormat: R32Float,
+    MonoFormat: R16Float,
+    MonoCubeFormat: R16Float,
     DepthCubeFormat: Depth32Float,
 }
 
@@ -343,7 +343,7 @@ impl<F: TextureFormat> Texture<F> {
 
 impl<F: TextureFormat + CreateBindGroupLayout> AllocBuffers for Texture<F> {
     fn alloc_buffers(&self, renderer: &Renderer) -> anyhow::Result<Vec<BufferHandle>> {
-        Ok(vec![self.handle.get_or_create::<Self>(renderer)])
+        Ok(vec![self.handle.get_or_create::<F>(renderer)])
     }
 }
 

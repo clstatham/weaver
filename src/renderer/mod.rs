@@ -1103,9 +1103,16 @@ impl Renderer {
         output: &wgpu::SurfaceTexture,
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("UI Texture View"),
+            format: Some(WindowFormat::FORMAT),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            base_array_layer: 0,
+            array_layer_count: None,
+            mip_level_count: None,
+        });
 
         ui.render(
             &self.device,
@@ -1249,6 +1256,12 @@ impl Renderer {
         self.pbr_pass.prepare(world, self);
         self.shadow_pass.prepare(world, self).unwrap();
         self.doodad_pass.prepare(world, self).unwrap();
+        self.sky_pass.prepare(world, self).unwrap();
+        self.hdr_pass.prepare(world, self).unwrap();
+        self.particle_pass.prepare(world, self).unwrap();
+        for pass in self.extra_passes.iter() {
+            pass.prepare(world, self).unwrap();
+        }
         self.update_all_buffers_and_flush();
 
         let encoder = self

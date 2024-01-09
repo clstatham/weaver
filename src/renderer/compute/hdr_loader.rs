@@ -36,7 +36,7 @@ impl HdrLoader {
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: HdrFormat::FORMAT,
+                        format: HdrCubeFormat::FORMAT,
                         view_dimension: wgpu::TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -92,14 +92,23 @@ impl HdrLoader {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: HdrFormat::FORMAT,
+            format: HdrCubeFormat::FORMAT,
             usage: wgpu::TextureUsages::COPY_DST
                 | wgpu::TextureUsages::COPY_SRC
                 | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
 
-        let src_view = src.create_view(&wgpu::TextureViewDescriptor::default());
+        let src_view = src.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("HDR Loader Source Texture View"),
+            format: Some(HdrCubeFormat::FORMAT),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: None,
+        });
 
         renderer.queue.write_texture(
             src.as_image_copy(),
@@ -191,7 +200,7 @@ impl HdrLoader {
                     | wgpu::TextureUsages::COPY_DST
                     | wgpu::TextureUsages::COPY_SRC
                     | wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: HdrFormat::FORMAT,
+                format: HdrD2ArrayFormat::FORMAT,
                 dimension: wgpu::TextureDimension::D2,
                 view_dimension: wgpu::TextureViewDimension::D2Array,
                 depth_or_array_layers: 1,

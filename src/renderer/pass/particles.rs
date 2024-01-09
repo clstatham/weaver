@@ -255,7 +255,8 @@ impl Pass for ParticleRenderPass {
     }
 
     fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
-        todo!()
+        // todo
+        Ok(())
     }
 
     fn render(
