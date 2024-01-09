@@ -1,13 +1,21 @@
+use std::{cell::RefCell, sync::Arc};
+
+use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
 
 use crate::{
     core::{
-        color::Color,
-        doodads::Doodad,
-        texture::{DepthFormat, HdrFormat, Texture, TextureFormat},
+        camera::{Camera, CameraUniform},
+        color::{Color, ColorArray},
+        doodads::{Doodad, Doodads, MAX_DOODADS},
+        texture::{DepthFormat, HdrFormat, Texture, TextureFormat, WindowFormat},
+        transform::{self, Transform},
     },
+    ecs::{Query, World},
     include_shader,
-    renderer::AllocBuffers,
+    renderer::{
+        AllocBuffers, BindGroupLayoutCache, CreateBindGroupLayout, LazyBufferHandle, Renderer,
+    },
 };
 
 use super::Pass;
@@ -160,154 +168,228 @@ struct DoodadVertex {
     normal: glam::Vec3,
 }
 
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-#[repr(C)]
-struct DoodadCamera {
-    view: glam::Mat4,
-    proj: glam::Mat4,
+impl DoodadVertex {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<DoodadVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                    shader_location: 0,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<glam::Vec3>() as wgpu::BufferAddress,
+                    format: wgpu::VertexFormat::Float32x3,
+                    shader_location: 1,
+                },
+            ],
+        }
+    }
 }
 
-#[allow(dead_code)]
-pub struct DoodadRenderPass {
-    enabled: bool,
-
-    pipeline: wgpu::RenderPipeline,
-    bind_group: wgpu::BindGroup,
-    bind_group_layout: wgpu::BindGroupLayout,
-    depth_texture: Texture<DepthFormat>,
-    camera_buffer: wgpu::Buffer,
-
-    cube_vertex_buffer: wgpu::Buffer,
-    cube_index_buffer: wgpu::Buffer,
-    cone_vertex_buffer: wgpu::Buffer,
-    cone_index_buffer: wgpu::Buffer,
-
-    model_transform_buffer: wgpu::Buffer,
-    doodad_color_buffer: wgpu::Buffer,
+#[derive(Component)]
+struct DoodadBuffers {
+    bind_group: RefCell<Option<Arc<wgpu::BindGroup>>>,
+    transform_buffer: LazyBufferHandle,
+    color_buffer: LazyBufferHandle,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    index_count: usize,
+    count: RefCell<usize>,
 }
 
-impl DoodadRenderPass {
-    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
-        let depth_texture = Texture::new_lazy(
-            config.width,
-            config.height,
-            Some("doodad depth texture"),
-            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            DepthFormat::FORMAT,
-            wgpu::TextureDimension::D2,
-            wgpu::TextureViewDimension::D2,
-            1,
+impl DoodadBuffers {
+    pub fn new(
+        vertex_buffer: wgpu::Buffer,
+        index_buffer: wgpu::Buffer,
+        index_count: usize,
+    ) -> Self {
+        Self {
+            bind_group: RefCell::new(None),
+            transform_buffer: LazyBufferHandle::new(
+                crate::renderer::BufferBindingType::Storage {
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                    size: Some(std::mem::size_of::<glam::Mat4>() * MAX_DOODADS),
+                    read_only: true,
+                },
+                Some("Doodad Transform Buffer"),
+                None,
+            ),
+            color_buffer: LazyBufferHandle::new(
+                crate::renderer::BufferBindingType::Storage {
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                    size: Some(std::mem::size_of::<Color>() * MAX_DOODADS),
+                    read_only: true,
+                },
+                Some("Doodad Color Buffer"),
+                None,
+            ),
+            vertex_buffer,
+            index_buffer,
+            index_count,
+            count: RefCell::new(0),
+        }
+    }
+
+    pub fn get_or_create_bind_group(&self, renderer: &Renderer) -> Arc<wgpu::BindGroup> {
+        if let Some(bind_group) = self.bind_group.borrow().as_ref() {
+            return bind_group.clone();
+        }
+
+        let transform_handle = self.transform_buffer.get_or_create::<Transform>(renderer);
+        let color_handle = self.color_buffer.get_or_create::<ColorArray>(renderer);
+
+        let transform_buffer = transform_handle.get_buffer().unwrap();
+        let color_buffer = color_handle.get_buffer().unwrap();
+
+        let bind_group_layout = renderer
+            .bind_group_layout_cache
+            .get_or_create::<Self>(&renderer.device);
+
+        let bind_group = Arc::new(
+            renderer
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Doodad Bind Group"),
+                    layout: &bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: transform_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: color_buffer.as_entire_binding(),
+                        },
+                    ],
+                }),
         );
 
-        let model_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("doodad model transform buffer"),
-            size: std::mem::size_of::<glam::Mat4>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        *self.bind_group.borrow_mut() = Some(bind_group.clone());
 
-        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("doodad camera buffer"),
-            size: std::mem::size_of::<DoodadCamera>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        bind_group
+    }
+}
 
-        let doodad_color_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("doodad color buffer"),
-            size: std::mem::size_of::<Color>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+impl AllocBuffers for DoodadBuffers {
+    fn alloc_buffers(
+        &self,
+        renderer: &Renderer,
+    ) -> anyhow::Result<Vec<crate::renderer::BufferHandle>> {
+        Ok(vec![
+            self.transform_buffer.get_or_create::<Transform>(renderer),
+            self.color_buffer.get_or_create::<ColorArray>(renderer),
+        ])
+    }
+}
 
-        let cube_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("doodad cube vertex buffer"),
-            contents: bytemuck::cast_slice(&cube_vertices()),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let cube_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("doodad cube index buffer"),
-            contents: bytemuck::cast_slice(CUBE_INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
-        let cone_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("doodad cone vertex buffer"),
-            contents: bytemuck::cast_slice(&cone_vertices(32)),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let cone_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("doodad cone index buffer"),
-            contents: bytemuck::cast_slice(&cone_indices(32)),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("doodad bind group layout"),
+impl CreateBindGroupLayout for DoodadBuffers {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("DoodadBuffers::create_bind_group_layout"),
             entries: &[
-                // model_transform
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
                 },
-                // camera
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // color
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
                 },
             ],
+        })
+    }
+}
+
+pub struct DoodadRenderPass {
+    enabled: bool,
+    pipeline: wgpu::RenderPipeline,
+    cubes: DoodadBuffers,
+    cones: DoodadBuffers,
+    depth_texture: Texture<DepthFormat>,
+    camera_buffer: LazyBufferHandle,
+}
+
+impl DoodadRenderPass {
+    pub fn new(
+        device: &wgpu::Device,
+        config: &wgpu::SurfaceConfiguration,
+        layout_cache: &BindGroupLayoutCache,
+    ) -> Self {
+        let cube_vertices = cube_vertices();
+        let cube_indices = CUBE_INDICES;
+
+        let cube_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cube Vertex Buffer"),
+            contents: bytemuck::cast_slice(&cube_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("doodad pipeline layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+        let cube_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cube Index Buffer"),
+            contents: bytemuck::cast_slice(cube_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let cone_vertices = cone_vertices(32);
+        let cone_indices = cone_indices(32);
+
+        let cone_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cone Vertex Buffer"),
+            contents: bytemuck::cast_slice(&cone_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let cone_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cone Index Buffer"),
+            contents: bytemuck::cast_slice(&cone_indices),
+            usage: wgpu::BufferUsages::INDEX,
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("doodad shader"),
+            label: Some("Doodad Shader"),
             source: wgpu::ShaderSource::Wgsl(include_shader!("doodads.wgsl").into()),
         });
 
+        let camera_buffer = LazyBufferHandle::new(
+            crate::renderer::BufferBindingType::Uniform {
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                size: Some(std::mem::size_of::<CameraUniform>()),
+            },
+            Some("Doodad Camera Buffer"),
+            None,
+        );
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Doodad Pipeline Layout"),
+            bind_group_layouts: &[
+                &layout_cache.get_or_create::<DoodadBuffers>(device),
+                &layout_cache.get_or_create::<Camera>(device),
+            ],
+            push_constant_ranges: &[],
+        });
+
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("doodad pipeline"),
+            label: Some("Doodad Pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<DoodadVertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![
-                        0 => Float32x3,
-                        1 => Float32x3,
-                    ],
-                }],
+                buffers: &[DoodadVertex::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -325,7 +407,7 @@ impl DoodadRenderPass {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DepthFormat::FORMAT,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
@@ -333,39 +415,75 @@ impl DoodadRenderPass {
             multiview: None,
         });
 
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("doodad bind group"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: model_transform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: camera_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: doodad_color_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        let depth_texture = Texture::new_lazy(
+            config.width,
+            config.height,
+            Some("Doodad Depth Texture"),
+            wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+            DepthFormat::FORMAT,
+            wgpu::TextureDimension::D2,
+            wgpu::TextureViewDimension::D2,
+            1,
+        );
 
         Self {
             enabled: true,
             pipeline,
-            bind_group,
-            bind_group_layout,
             depth_texture,
             camera_buffer,
-            cube_vertex_buffer,
-            cube_index_buffer,
-            cone_vertex_buffer,
-            cone_index_buffer,
-            model_transform_buffer,
-            doodad_color_buffer,
+            cubes: DoodadBuffers::new(cube_vertex_buffer, cube_index_buffer, cube_indices.len()),
+            cones: DoodadBuffers::new(cone_vertex_buffer, cone_index_buffer, cone_indices.len()),
         }
+    }
+
+    pub fn prepare(&self, world: &World, renderer: &Renderer) {
+        self.depth_texture.alloc_buffers(renderer).unwrap();
+        let mut cubes = self.cubes.alloc_buffers(renderer).unwrap();
+        let mut cones = self.cones.alloc_buffers(renderer).unwrap();
+
+        let mut camera_handle = self.camera_buffer.get_or_create::<Camera>(renderer);
+        let camera = Query::<&Camera>::new(world);
+        let camera = camera.iter().next().unwrap();
+        camera_handle.update(&[CameraUniform::from(&*camera)]);
+
+        let mut cube_transforms = Vec::new();
+        let mut cube_colors = Vec::new();
+
+        let mut cone_transforms = Vec::new();
+        let mut cone_colors = Vec::new();
+
+        let mut doodads = world.write_resource::<Doodads>().unwrap();
+        for doodad in doodads.doodads.drain(..) {
+            match doodad {
+                Doodad::Cube(cube) => {
+                    cube_transforms.push(glam::Mat4::from_scale_rotation_translation(
+                        cube.scale,
+                        cube.rotation,
+                        cube.position,
+                    ));
+                    cube_colors.push(cube.color);
+                }
+                Doodad::Cone(cone) => {
+                    cone_transforms.push(glam::Mat4::from_scale_rotation_translation(
+                        cone.scale,
+                        cone.rotation,
+                        cone.position,
+                    ));
+                    cone_colors.push(cone.color);
+                }
+            }
+        }
+
+        cubes[0].update(&cube_transforms);
+        cubes[1].update(&cube_colors);
+
+        cones[0].update(&cone_transforms);
+        cones[1].update(&cone_colors);
+
+        *self.cubes.count.borrow_mut() = cube_transforms.len();
+        *self.cones.count.borrow_mut() = cone_transforms.len();
     }
 }
 
@@ -386,20 +504,26 @@ impl Pass for DoodadRenderPass {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         color_target: &wgpu::TextureView,
-        _depth_target: &wgpu::TextureView,
+        depth_target: &wgpu::TextureView,
         renderer: &crate::renderer::Renderer,
-        world: &crate::ecs::World,
+        world: &World,
     ) -> anyhow::Result<()> {
-        let mut doodads = world.write_resource::<crate::core::doodads::Doodads>()?;
-        let doodads = doodads.doodads.drain(..).collect::<Vec<_>>();
-
-        let depth_texture_handle = &self.depth_texture.alloc_buffers(renderer)?[0];
-        let depth_texture = depth_texture_handle.get_texture().unwrap();
+        let depth_texture = &self.depth_texture.alloc_buffers(renderer)?[0];
+        let depth_texture = depth_texture.get_texture().unwrap();
         let depth_texture_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        let cube_bind_group = self.cubes.get_or_create_bind_group(renderer);
+        let cone_bind_group = self.cones.get_or_create_bind_group(renderer);
+
+        let camera = Query::<&Camera>::new(world);
+        let camera = camera.iter().next().unwrap();
+        let camera_handle = camera.handle.get_or_create::<Camera>(renderer);
+        let camera_bind_group = camera_handle.bind_group().unwrap();
+
+        // clear depth buffer
         {
-            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("doodad render pass"),
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Doodad Render Pass"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &depth_texture_view,
@@ -414,97 +538,79 @@ impl Pass for DoodadRenderPass {
             });
         }
 
-        for doodad in doodads {
-            match doodad {
-                Doodad::Cube(cube) => {
-                    let transform = glam::Mat4::from_scale_rotation_translation(
-                        cube.scale,
-                        cube.rotation,
-                        cube.position,
-                    );
+        // render cubes
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Doodad Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_target,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
 
-                    {
-                        let mut render_pass =
-                            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                                label: Some("doodad render pass"),
-                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                    view: color_target,
-                                    resolve_target: None,
-                                    ops: wgpu::Operations {
-                                        load: wgpu::LoadOp::Load,
-                                        store: wgpu::StoreOp::Store,
-                                    },
-                                })],
-                                depth_stencil_attachment: Some(
-                                    wgpu::RenderPassDepthStencilAttachment {
-                                        view: &depth_texture_view,
-                                        depth_ops: Some(wgpu::Operations {
-                                            load: wgpu::LoadOp::Load,
-                                            store: wgpu::StoreOp::Store,
-                                        }),
-                                        stencil_ops: None,
-                                    },
-                                ),
-                                timestamp_writes: None,
-                                occlusion_query_set: None,
-                            });
-
-                        render_pass.set_pipeline(&self.pipeline);
-                        render_pass.set_bind_group(0, &self.bind_group, &[]);
-                        render_pass.set_index_buffer(
-                            self.cube_index_buffer.slice(..),
-                            wgpu::IndexFormat::Uint32,
-                        );
-                        render_pass.set_vertex_buffer(0, self.cube_vertex_buffer.slice(..));
-                        render_pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..1);
-                    }
-                }
-                Doodad::Cone(cone) => {
-                    let transform = glam::Mat4::from_scale_rotation_translation(
-                        cone.scale,
-                        cone.rotation,
-                        cone.position,
-                    );
-
-                    {
-                        let mut render_pass =
-                            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                                label: Some("doodad render pass"),
-                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                    view: color_target,
-                                    resolve_target: None,
-                                    ops: wgpu::Operations {
-                                        load: wgpu::LoadOp::Load,
-                                        store: wgpu::StoreOp::Store,
-                                    },
-                                })],
-                                depth_stencil_attachment: Some(
-                                    wgpu::RenderPassDepthStencilAttachment {
-                                        view: &depth_texture_view,
-                                        depth_ops: Some(wgpu::Operations {
-                                            load: wgpu::LoadOp::Load,
-                                            store: wgpu::StoreOp::Store,
-                                        }),
-                                        stencil_ops: None,
-                                    },
-                                ),
-                                timestamp_writes: None,
-                                occlusion_query_set: None,
-                            });
-
-                        render_pass.set_pipeline(&self.pipeline);
-                        render_pass.set_bind_group(0, &self.bind_group, &[]);
-                        render_pass.set_index_buffer(
-                            self.cone_index_buffer.slice(..),
-                            wgpu::IndexFormat::Uint32,
-                        );
-                        render_pass.set_vertex_buffer(0, self.cone_vertex_buffer.slice(..));
-                        render_pass.draw_indexed(0..cone_indices(32).len() as u32, 0, 0..1);
-                    }
-                }
-            }
+            render_pass.set_pipeline(&self.pipeline);
+            render_pass.set_bind_group(0, &cube_bind_group, &[]);
+            render_pass.set_bind_group(1, &camera_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.cubes.vertex_buffer.slice(..));
+            render_pass
+                .set_index_buffer(self.cubes.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.draw_indexed(
+                0..self.cubes.index_count as u32,
+                0,
+                0..*self.cubes.count.borrow() as u32,
+            );
         }
 
+        // render cones
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Doodad Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_target,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            render_pass.set_pipeline(&self.pipeline);
+            render_pass.set_bind_group(0, &cone_bind_group, &[]);
+            render_pass.set_bind_group(1, &camera_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.cones.vertex_buffer.slice(..));
+            render_pass
+                .set_index_buffer(self.cones.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.draw_indexed(
+                0..self.cones.index_count as u32,
+                0,
+                0..*self.cones.count.borrow() as u32,
+            );
+        }
         Ok(())
     }
 }

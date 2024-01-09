@@ -67,8 +67,8 @@ fn spin_npcs(time: Res<Time>, mut query: Query<&mut Transform, With<npc::Npc>>) 
 }
 
 #[system(DebugLights)]
-fn debug_lights(mut doodads: ResMut<Doodads>, mut point_lights: Query<&mut PointLight>) {
-    for mut light in point_lights.iter() {
+fn debug_lights(mut doodads: ResMut<Doodads>, mut point_lights: Query<&PointLight>) {
+    for light in point_lights.iter() {
         doodads.push(Doodad::Cube(Cube::new(
             light.position,
             Quat::IDENTITY,
@@ -121,7 +121,7 @@ fn setup(
         Color::MAGENTA,
     ];
 
-    let light_count = 7;
+    let light_count = 1;
     let light_radius = 10.0;
     for i in 0..light_count {
         let angle = (i as f32 / light_count as f32) * std::f32::consts::TAU;

@@ -719,7 +719,7 @@ impl Renderer {
 
         let shadow_pass = OmniShadowRenderPass::new(&device, &bind_group_layout_cache);
 
-        let doodad_pass = DoodadRenderPass::new(&device, &config);
+        let doodad_pass = DoodadRenderPass::new(&device, &config, &bind_group_layout_cache);
 
         let extra_passes: Vec<Box<dyn Pass>> = vec![];
 
@@ -1196,14 +1196,13 @@ impl Renderer {
             world,
         )?;
 
-        // self.doodad_pass.render_if_enabled(
-        //     &self.device,
-        //     &self.queue,
-        //     &hdr_pass_view,
-        //     &self.depth_texture_view,
-        //     self,
-        //     world,
-        // )?;
+        self.doodad_pass.render_if_enabled(
+            encoder,
+            &hdr_pass_view,
+            &self.depth_texture_view,
+            self,
+            world,
+        )?;
 
         // we always want to render the HDR pass, otherwise we won't see anything!
         self.hdr_pass.render(
@@ -1249,6 +1248,7 @@ impl Renderer {
         self.prepare_components(world);
         self.pbr_pass.prepare(world, self);
         self.shadow_pass.prepare(world, self);
+        self.doodad_pass.prepare(world, self);
         self.update_all_buffers_and_flush();
 
         let encoder = self

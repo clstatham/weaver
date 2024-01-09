@@ -2,6 +2,8 @@ use weaver_proc_macro::Resource;
 
 use crate::core::color::Color;
 
+pub const MAX_DOODADS: usize = 100;
+
 #[derive(Default, Resource)]
 pub struct Doodads {
     pub doodads: Vec<Doodad>,
