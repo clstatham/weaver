@@ -35,6 +35,8 @@ texture_formats! {
     MonoFormat: R16Float,
     MonoCubeFormat: R16Float,
     DepthCubeFormat: Depth32Float,
+    MonoCubeArrayFormat: R16Float,
+    DepthCubeArrayFormat: Depth32Float,
 }
 
 impl CreateBindGroupLayout for WindowFormat {
@@ -227,6 +229,42 @@ impl CreateBindGroupLayout for PositionMapFormat {
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Float { filterable: false },
                     view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            }],
+        })
+    }
+}
+
+impl CreateBindGroupLayout for MonoCubeArrayFormat {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Mono Cubemap Array Texture Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::CubeArray,
+                    multisampled: false,
+                },
+                count: None,
+            }],
+        })
+    }
+}
+
+impl CreateBindGroupLayout for DepthCubeArrayFormat {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Depth Cubemap Array Texture Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Depth,
+                    view_dimension: wgpu::TextureViewDimension::CubeArray,
                     multisampled: false,
                 },
                 count: None,

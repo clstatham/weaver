@@ -5,9 +5,11 @@ use rustc_hash::FxHashMap;
 use crate::{
     app::asset_server::AssetId,
     core::{
+        light::{PointLightArray, MAX_LIGHTS},
         mesh::{Vertex, MAX_MESHES},
         texture::{
-            DepthCubeFormat, DepthFormat, MonoCubeFormat, MonoFormat, TextureFormat, WindowFormat,
+            DepthCubeArrayFormat, DepthFormat, MonoCubeArrayFormat, MonoCubeFormat, MonoFormat,
+            TextureFormat, WindowFormat,
         },
     },
     include_shader,
@@ -148,7 +150,7 @@ impl ShadowBuffers {
 
         let shadow_cubemap_handle = self
             .shadow_cubemap
-            .get_or_create::<MonoCubeFormat>(renderer);
+            .get_or_create::<MonoCubeArrayFormat>(renderer);
         let shadow_cubemap = shadow_cubemap_handle.get_texture().unwrap();
 
         let shadow_cubemap_sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
@@ -177,7 +179,7 @@ impl ShadowBuffers {
                                 &shadow_cubemap.create_view(&wgpu::TextureViewDescriptor {
                                     label: Some("Shadow Cubemap View"),
                                     format: Some(MonoCubeFormat::FORMAT),
-                                    dimension: Some(wgpu::TextureViewDimension::Cube),
+                                    dimension: Some(wgpu::TextureViewDimension::CubeArray),
                                     aspect: wgpu::TextureAspect::All,
                                     base_mip_level: 0,
                                     base_array_layer: 0,
@@ -218,7 +220,7 @@ impl CreateBindGroupLayout for ShadowBuffers {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        view_dimension: wgpu::TextureViewDimension::CubeArray,
                         multisampled: false,
                     },
                     count: None,
@@ -244,7 +246,7 @@ pub struct OmniShadowRenderPass {
 
     overlay_pipeline: wgpu::RenderPipeline,
 
-    light_views: RefCell<FxHashMap<Entity, LightViews>>,
+    light_views: RefCell<Vec<LightViews>>,
     unique_meshes: RefCell<UniqueMeshes>,
 }
 
@@ -273,12 +275,12 @@ impl OmniShadowRenderPass {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &cubemap_shader,
-                entry_point: "vs_main",
+                entry_point: "shadow_cubemap_vs",
                 buffers: &[Vertex::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &cubemap_shader,
-                entry_point: "fs_main",
+                entry_point: "shadow_cubemap_fs",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: MonoCubeFormat::FORMAT,
                     blend: None,
@@ -310,8 +312,8 @@ impl OmniShadowRenderPass {
                 width: SHADOW_DEPTH_TEXTURE_SIZE,
                 height: SHADOW_DEPTH_TEXTURE_SIZE,
                 dimension: wgpu::TextureDimension::D2,
-                view_dimension: wgpu::TextureViewDimension::Cube,
-                depth_or_array_layers: 6,
+                view_dimension: wgpu::TextureViewDimension::CubeArray,
+                depth_or_array_layers: 6 * MAX_LIGHTS as u32,
             },
             Some("Shadow Cubemap"),
             None,
@@ -323,12 +325,12 @@ impl OmniShadowRenderPass {
                     | wgpu::TextureUsages::COPY_SRC
                     | wgpu::TextureUsages::COPY_DST
                     | wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: DepthCubeFormat::FORMAT,
+                format: DepthCubeArrayFormat::FORMAT,
                 width: SHADOW_DEPTH_TEXTURE_SIZE,
                 height: SHADOW_DEPTH_TEXTURE_SIZE,
                 dimension: wgpu::TextureDimension::D2,
-                view_dimension: wgpu::TextureViewDimension::Cube,
-                depth_or_array_layers: 6,
+                view_dimension: wgpu::TextureViewDimension::CubeArray,
+                depth_or_array_layers: 6 * MAX_LIGHTS as u32,
             },
             Some("Shadow Depth Cubemap"),
             None,
@@ -350,7 +352,7 @@ impl OmniShadowRenderPass {
                     // shadow cubemap and sampler
                     &layout_cache.get_or_create::<ShadowBuffers>(device),
                     // light
-                    &layout_cache.get_or_create::<PointLight>(device),
+                    &layout_cache.get_or_create::<PointLightArray>(device),
                 ],
                 push_constant_ranges: &[],
             });
@@ -360,12 +362,12 @@ impl OmniShadowRenderPass {
             layout: Some(&overlay_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &overlay_shader,
-                entry_point: "vs_main",
+                entry_point: "shadow_cubemap_overlay_vs",
                 buffers: &[Vertex::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &overlay_shader,
-                entry_point: "fs_main",
+                entry_point: "shadow_cubemap_overlay_fs",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: WindowFormat::FORMAT,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -399,7 +401,7 @@ impl OmniShadowRenderPass {
 
             overlay_pipeline,
 
-            light_views: RefCell::new(FxHashMap::default()),
+            light_views: RefCell::new(Vec::new()),
             unique_meshes: RefCell::new(UniqueMeshes::default()),
         }
     }
@@ -409,13 +411,13 @@ impl OmniShadowRenderPass {
         encoder: &mut wgpu::CommandEncoder,
         renderer: &Renderer,
         point_light: &PointLight,
-        point_light_entity: Entity,
+        point_light_index: usize,
     ) -> anyhow::Result<()> {
         let point_light_handle = &point_light.alloc_buffers(renderer).unwrap()[0];
         let point_light_bind_group = point_light_handle.bind_group().unwrap();
 
         let light_views = self.light_views.borrow();
-        let light_views = light_views.get(&point_light_entity).unwrap();
+        let light_views = light_views.get(point_light_index).unwrap();
         let light_views_handle = &light_views.alloc_buffers(renderer).unwrap()[0];
         let light_views_bind_group = light_views_handle.bind_group().unwrap();
 
@@ -423,10 +425,10 @@ impl OmniShadowRenderPass {
             .shadow_buffers
             .borrow()
             .shadow_cubemap
-            .get_or_create::<MonoCubeFormat>(renderer);
+            .get_or_create::<MonoCubeArrayFormat>(renderer);
         let shadow_depth_cubemap_handle = self
             .shadow_depth_cubemap
-            .get_or_create::<DepthCubeFormat>(renderer);
+            .get_or_create::<DepthCubeArrayFormat>(renderer);
 
         let shadow_cubemap = shadow_cubemap_handle.get_texture().unwrap();
         let shadow_depth_cubemap = shadow_depth_cubemap_handle.get_texture().unwrap();
@@ -437,7 +439,7 @@ impl OmniShadowRenderPass {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             aspect: wgpu::TextureAspect::All,
             base_mip_level: 0,
-            base_array_layer: 0,
+            base_array_layer: point_light_index as u32 * 6,
             array_layer_count: Some(6),
             mip_level_count: None,
         });
@@ -449,7 +451,7 @@ impl OmniShadowRenderPass {
                 dimension: Some(wgpu::TextureViewDimension::D2Array),
                 aspect: wgpu::TextureAspect::All,
                 base_mip_level: 0,
-                base_array_layer: 0,
+                base_array_layer: point_light_index as u32 * 6,
                 array_layer_count: Some(6),
                 mip_level_count: None,
             });
@@ -543,15 +545,14 @@ impl OmniShadowRenderPass {
         depth_target: &wgpu::TextureView,
         renderer: &Renderer,
         world: &World,
-        point_light: &PointLight,
     ) -> anyhow::Result<()> {
         let camera = Query::<&Camera>::new(world);
         let camera = camera.iter().next().unwrap();
         let camera_handle = &camera.alloc_buffers(renderer).unwrap()[0];
         let camera_bind_group = camera_handle.bind_group().unwrap();
 
-        let point_light_handle = &point_light.alloc_buffers(renderer).unwrap()[0];
-        let point_light_bind_group = point_light_handle.bind_group().unwrap();
+        let point_lights_handle = &renderer.point_lights.alloc_buffers(renderer)?[0];
+        let point_lights_bind_group = point_lights_handle.bind_group().unwrap();
 
         let mut shadow_buffers = self.shadow_buffers.borrow_mut();
         let shadow_buffers_bind_group = shadow_buffers.get_or_create_bind_group(renderer);
@@ -593,7 +594,7 @@ impl OmniShadowRenderPass {
                 render_pass.set_bind_group(0, &transform_bind_group, &[]);
                 render_pass.set_bind_group(1, &camera_bind_group, &[]);
                 render_pass.set_bind_group(2, &shadow_buffers_bind_group, &[]);
-                render_pass.set_bind_group(3, &point_light_bind_group, &[]);
+                render_pass.set_bind_group(3, &point_lights_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
@@ -626,16 +627,16 @@ impl Pass for OmniShadowRenderPass {
         self.shadow_buffers
             .borrow()
             .shadow_cubemap
-            .get_or_create::<MonoCubeFormat>(renderer);
+            .get_or_create::<MonoCubeArrayFormat>(renderer);
         self.shadow_depth_cubemap
-            .get_or_create::<DepthCubeFormat>(renderer);
+            .get_or_create::<DepthCubeArrayFormat>(renderer);
 
         self.unique_meshes.borrow_mut().gather(world);
         self.unique_meshes.borrow().alloc_buffers(renderer)?;
         self.unique_meshes.borrow_mut().update();
 
         let point_lights = Query::<&PointLight>::new(world);
-        for entity in point_lights.entities() {
+        for (i, entity) in point_lights.entities().enumerate() {
             let point_light = point_lights.get(entity).unwrap();
             let mut views = [glam::Mat4::IDENTITY; 6];
             for (i, view) in views.iter_mut().enumerate() {
@@ -659,11 +660,15 @@ impl Pass for OmniShadowRenderPass {
             }
 
             let mut light_views = self.light_views.borrow_mut();
-            let light_views = light_views.entry(entity).or_insert_with(|| {
-                let light_views = LightViews::new();
-                light_views.alloc_buffers(renderer).unwrap();
-                light_views
-            });
+            let light_views = match light_views.get(i) {
+                Some(light_views) => light_views,
+                None => {
+                    let lv = LightViews::new();
+                    lv.alloc_buffers(renderer)?;
+                    light_views.push(lv);
+                    light_views.last().unwrap()
+                }
+            };
 
             light_views.update(&views);
         }
@@ -680,18 +685,11 @@ impl Pass for OmniShadowRenderPass {
         world: &World,
     ) -> anyhow::Result<()> {
         let lights = Query::<&PointLight>::new(world);
-        for entity in lights.entities() {
+        for (i, entity) in lights.entities().enumerate() {
             let light = lights.get(entity).unwrap();
-            self.render_cube_map(encoder, renderer, &light, entity)?;
-            self.overlay_shadow_cube_map(
-                encoder,
-                color_target,
-                depth_target,
-                renderer,
-                world,
-                &light,
-            )?;
+            self.render_cube_map(encoder, renderer, &light, i)?;
         }
+        self.overlay_shadow_cube_map(encoder, color_target, depth_target, renderer, world)?;
 
         Ok(())
     }

@@ -6,7 +6,7 @@ use crate::renderer::{
 
 use super::color::Color;
 
-pub const MAX_LIGHTS: usize = 64;
+pub const MAX_LIGHTS: usize = 32;
 
 #[derive(Clone, Component)]
 pub struct PointLight {

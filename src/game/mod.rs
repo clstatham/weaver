@@ -5,6 +5,7 @@ use crate::{
     app::Window,
     core::{
         doodads::{Cube, Doodad, Doodads},
+        light::MAX_LIGHTS,
         texture::Skybox,
         ui::builtin::FpsDisplay,
     },
@@ -69,7 +70,7 @@ fn ui_update(
         egui::Window::new("Lights")
             .default_width(200.0)
             .show(ctx, |ui| {
-                ui.add(egui::Slider::new(&mut n_lights, 1..=64).text("Count"));
+                ui.add(egui::Slider::new(&mut n_lights, 1..=MAX_LIGHTS).text("Count"));
             });
 
         if n_lights != state.lights.len() {
@@ -106,7 +107,7 @@ fn ui_update(
         egui::Window::new("NPCs")
             .default_width(200.0)
             .show(ctx, |ui| {
-                ui.add(egui::Slider::new(&mut n_npcs, 1..=1000).text("Count"));
+                ui.add(egui::Slider::new(&mut n_npcs, 1..=500).text("Count"));
             });
 
         if n_npcs != state.npcs.len() {

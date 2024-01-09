@@ -12,7 +12,7 @@ struct VertexOutput {
 }
 
 @vertex
-fn vs_main(input: VertexInput, @builtin(view_index) view_index: i32) -> VertexOutput {
+fn shadow_cubemap_vs(input: VertexInput, @builtin(view_index) view_index: i32) -> VertexOutput {
     var output: VertexOutput;
 
     let model_transform = model_transforms[input.instance_index];
@@ -20,14 +20,13 @@ fn vs_main(input: VertexInput, @builtin(view_index) view_index: i32) -> VertexOu
 
     let pos = model_transform * vec4<f32>(input.position, 1.0);
 
-    let light_space_pos = light.proj_transform * light_view * pos;
-    output.light_space_pos = light_space_pos;
+    output.light_space_pos = light.proj_transform * light_view * pos;
     output.world_space_pos = pos;
     return output;
 }
 
 @fragment
-fn fs_main(input: VertexOutput) -> @location(0) f32 {
+fn shadow_cubemap_fs(input: VertexOutput) -> @location(0) f32 {
     let light_distance = length(input.world_space_pos.xyz - light.position.xyz);
     let depth = light_distance / FAR_PLANE;
     return depth;
