@@ -34,7 +34,7 @@ impl Default for FollowCameraController {
             target: Entity::PLACEHOLDER,
             rotation: glam::Quat::IDENTITY,
             fov: std::f32::consts::FRAC_PI_2,
-            pitch_sensitivity: 0.5,
+            pitch_sensitivity: 0.05,
             aspect: 16.0 / 9.0,
             near: 0.1,
             far: 100.0,
@@ -75,7 +75,7 @@ pub fn follow_camera_update(
 
         if input.mouse_button_pressed(3) {
             let mouse_delta = input.mouse_delta();
-            controller.pitch += mouse_delta.y * controller.pitch_sensitivity * time.delta_seconds;
+            controller.pitch += mouse_delta.y * controller.pitch_sensitivity;
             controller.pitch = controller
                 .pitch
                 .clamp(controller.min_pitch, controller.max_pitch);

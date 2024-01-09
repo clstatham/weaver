@@ -19,14 +19,21 @@ pub struct SkyRenderPass {
 }
 
 impl SkyRenderPass {
-    pub fn new(
-        device: &wgpu::Device,
-        bind_group_layout_cache: &BindGroupLayoutCache,
-        sampler: &wgpu::Sampler,
-    ) -> Self {
+    pub fn new(device: &wgpu::Device, bind_group_layout_cache: &BindGroupLayoutCache) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Skybox Shader"),
             source: wgpu::ShaderSource::Wgsl(include_shader!("sky.wgsl").into()),
+        });
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Skybox Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
         });
 
         let sampler_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -34,7 +41,7 @@ impl SkyRenderPass {
             layout: &bind_group_layout_cache.get_or_create::<NonFilteringSampler>(device),
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Sampler(sampler),
+                resource: wgpu::BindingResource::Sampler(&sampler),
             }],
         });
 

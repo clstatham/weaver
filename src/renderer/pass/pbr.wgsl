@@ -144,7 +144,6 @@ struct VertexOutput {
 
 struct FragmentOutput {
     @location(0) color: vec4<f32>,
-    @location(1) normal: vec4<f32>,
 }
 
 @vertex
@@ -176,13 +175,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     var output: FragmentOutput;
 
-    let texture_scale = material.texture_scale.x;
-    let uv = vertex.uv * texture_scale;
-
-    // sample color texture and normal map
-    let tex_color = textureSample(diffuse_tex, tex_sampler, uv).xyz;
-    let tex_ao = textureSample(ao_tex, tex_sampler, uv).r;
-    var tex_normal = textureSample(normal_tex, tex_sampler, uv).xyz;
+    var tex_normal = textureSample(normal_tex, tex_sampler, material.texture_scale.x * vertex.uv).xyz;
     tex_normal = normalize(tex_normal * 2.0 - 1.0);
 
     // create TBN matrix
@@ -195,12 +188,9 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     // transform normal from tangent space to world space
     let normal = normalize(TBN * tex_normal);
 
-    output.normal = vec4<f32>(normal, 1.0);
-
     let view_direction = normalize(camera.camera_position - vertex.world_position);
 
     var illumination = vec3(0.0);
-
 
     for (var i = 0u; i < point_lights.count; i = i + 1u) {
         let light = point_lights.lights[i];
@@ -211,6 +201,9 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     }
 
     illumination += calculate_ibl(vertex, normal, view_direction);
+
+    let tex_color = textureSample(diffuse_tex, tex_sampler, material.texture_scale.x * vertex.uv).xyz;
+    let tex_ao = textureSample(ao_tex, tex_sampler, material.texture_scale.x * vertex.uv).r;
 
     var out_color = tex_color * tex_ao * illumination;
 

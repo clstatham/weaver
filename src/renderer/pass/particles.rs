@@ -39,12 +39,14 @@ pub struct ParticleRenderPass {
     particle_quad_buffer: wgpu::Buffer,
     // camera uniform buffer
     camera_buffer: wgpu::Buffer,
+    // sampler
+    sampler: wgpu::Sampler,
     // sampler bind group
     sampler_bind_group: wgpu::BindGroup,
 }
 
 impl ParticleRenderPass {
-    pub fn new(device: &wgpu::Device, sampler: &wgpu::Sampler) -> Self {
+    pub fn new(device: &wgpu::Device) -> Self {
         let particle_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Particle Buffer"),
             size: std::mem::size_of::<ParticleUniform>() as u64 * TOTAL_MAX_PARTICLES as u64,
@@ -220,12 +222,23 @@ impl ParticleRenderPass {
             ],
         });
 
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Particle Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
         let sampler_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Particle Sampler Bind Group"),
             layout: &sampler_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Sampler(sampler),
+                resource: wgpu::BindingResource::Sampler(&sampler),
             }],
         });
 
@@ -236,6 +249,7 @@ impl ParticleRenderPass {
             particle_buffer,
             particle_quad_buffer,
             camera_buffer,
+            sampler,
             sampler_bind_group,
         }
     }

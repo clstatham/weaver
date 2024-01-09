@@ -3,6 +3,7 @@ use std::io::Read;
 use crate::{ecs::World, renderer::Renderer};
 
 pub mod doodads;
+pub mod gbuffer;
 pub mod hdr;
 pub mod particles;
 pub mod pbr;

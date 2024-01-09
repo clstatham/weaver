@@ -23,16 +23,16 @@ use crate::{
 
 use super::sky::SKYBOX_CUBEMAP_SIZE;
 
-struct UniqueMesh {
-    mesh: Mesh,
-    material_bind_group: Arc<wgpu::BindGroup>,
-    transforms: Vec<Transform>,
-    transform_buffer: LazyBufferHandle,
+pub struct UniqueMesh {
+    pub mesh: Mesh,
+    pub material_bind_group: Arc<wgpu::BindGroup>,
+    pub transforms: Vec<Transform>,
+    pub transform_buffer: LazyBufferHandle,
 }
 
 #[derive(Default)]
-struct UniqueMeshes {
-    unique_meshes: FxHashMap<(AssetId, AssetId), UniqueMesh>,
+pub struct UniqueMeshes {
+    pub unique_meshes: FxHashMap<(AssetId, AssetId), UniqueMesh>,
 }
 
 impl UniqueMeshes {
@@ -136,6 +136,18 @@ impl PbrBuffers {
                 },
                 _ => unreachable!(),
             };
+
+            let env_map_sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("PBR Env Map Sampler"),
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                ..Default::default()
+            });
+
             *bind_group = Some(Arc::new(
                 renderer
                     .device
@@ -158,9 +170,7 @@ impl PbrBuffers {
                             // env map sampler
                             wgpu::BindGroupEntry {
                                 binding: 2,
-                                resource: wgpu::BindingResource::Sampler(
-                                    &renderer.sampler_clamp_nearest,
-                                ),
+                                resource: wgpu::BindingResource::Sampler(&env_map_sampler),
                             },
                         ],
                     }),
@@ -265,13 +275,9 @@ impl PbrRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[
+                    // color target
                     Some(wgpu::ColorTargetState {
                         format: HdrFormat::FORMAT,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }),
-                    Some(wgpu::ColorTargetState {
-                        format: NormalMapFormat::FORMAT,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     }),
@@ -371,15 +377,6 @@ impl PbrRenderPass {
                     // color target
                     Some(wgpu::RenderPassColorAttachment {
                         view: hdr_pass_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                    // normal target
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &renderer.normal_texture_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,

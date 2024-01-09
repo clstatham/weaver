@@ -151,6 +151,17 @@ impl ShadowBuffers {
             .get_or_create::<MonoCubeFormat>(renderer);
         let shadow_cubemap = shadow_cubemap_handle.get_texture().unwrap();
 
+        let shadow_cubemap_sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Shadow Cubemap Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
         let bind_group = Arc::new(
             renderer
                 .device
@@ -177,9 +188,7 @@ impl ShadowBuffers {
                         },
                         wgpu::BindGroupEntry {
                             binding: 1,
-                            resource: wgpu::BindingResource::Sampler(
-                                &renderer.sampler_clamp_nearest,
-                            ),
+                            resource: wgpu::BindingResource::Sampler(&shadow_cubemap_sampler),
                         },
                     ],
                 }),

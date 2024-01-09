@@ -138,7 +138,7 @@ fn setup(
 
     let player = player::Player {
         speed: 7.0,
-        rotation_speed: 32.0,
+        rotation_speed: 0.002,
     };
     let player = commands.spawn(player::PlayerBundle {
         player,
@@ -150,6 +150,7 @@ fn setup(
     let camera_controller = FollowCameraController {
         stiffness: 50.0,
         target: player,
+        pitch_sensitivity: 0.002,
         ..Default::default()
     };
     commands.spawn((camera_controller, Camera::new()))?;

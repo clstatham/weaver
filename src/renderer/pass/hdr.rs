@@ -12,6 +12,7 @@ pub struct HdrRenderPass {
 
     pipeline_layout: wgpu::PipelineLayout,
     pipeline: wgpu::RenderPipeline,
+    sampler: wgpu::Sampler,
     bind_group: wgpu::BindGroup,
     pub(crate) texture: Texture<HdrFormat>,
 }
@@ -21,7 +22,6 @@ impl HdrRenderPass {
         device: &wgpu::Device,
         width: u32,
         height: u32,
-        sampler: &wgpu::Sampler,
         bind_group_layout_cache: &BindGroupLayoutCache,
     ) -> Self {
         let format = HdrFormat::FORMAT;
@@ -40,11 +40,22 @@ impl HdrRenderPass {
             1,
         );
 
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("HDR Texture Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout_cache.get_or_create::<NonFilteringSampler>(device),
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Sampler(sampler),
+                resource: wgpu::BindingResource::Sampler(&sampler),
             }],
             label: Some("HDR Texture Bind Group"),
         });
@@ -88,6 +99,7 @@ impl HdrRenderPass {
         Self {
             enabled: true,
             pipeline,
+            sampler,
             bind_group,
             texture,
             pipeline_layout,

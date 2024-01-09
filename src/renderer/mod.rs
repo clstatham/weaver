@@ -17,8 +17,8 @@ use crate::{
         light::{PointLight, PointLightArray},
         material::Material,
         texture::{
-            DepthFormat, HdrFormat, NormalMapFormat, SdrFormat, Texture, TextureFormat,
-            WindowFormat,
+            DepthFormat, HdrFormat, NormalMapFormat, PositionMapFormat, SdrFormat, Texture,
+            TextureFormat, WindowFormat,
         },
         ui::EguiContext,
     },
@@ -26,8 +26,9 @@ use crate::{
 };
 
 use self::pass::{
-    doodads::DoodadRenderPass, hdr::HdrRenderPass, particles::ParticleRenderPass,
-    pbr::PbrRenderPass, shadow::OmniShadowRenderPass, sky::SkyRenderPass, Pass,
+    doodads::DoodadRenderPass, gbuffer::GBufferRenderPass, hdr::HdrRenderPass,
+    particles::ParticleRenderPass, pbr::PbrRenderPass, shadow::OmniShadowRenderPass,
+    sky::SkyRenderPass, Pass,
 };
 
 pub mod compute;
@@ -449,6 +450,10 @@ impl CreateBindGroupLayout for ComparisonSampler {
     }
 }
 
+pub trait HasBindGroup {
+    fn get_or_create_bind_group(&self, renderer: &Renderer) -> Arc<wgpu::BindGroup>;
+}
+
 pub trait AllocBuffers {
     fn alloc_buffers(&self, renderer: &Renderer) -> anyhow::Result<Vec<BufferHandle>>;
 }
@@ -490,22 +495,19 @@ pub struct Renderer {
     pub(crate) color_texture_view: wgpu::TextureView,
     pub(crate) depth_texture: wgpu::Texture,
     pub(crate) depth_texture_view: wgpu::TextureView,
+    pub(crate) position_texture: wgpu::Texture,
+    pub(crate) position_texture_view: wgpu::TextureView,
     pub(crate) normal_texture: wgpu::Texture,
     pub(crate) normal_texture_view: wgpu::TextureView,
 
     pub(crate) hdr_pass: HdrRenderPass,
+    pub(crate) gbuffer_pass: GBufferRenderPass,
     pub(crate) pbr_pass: PbrRenderPass,
     pub(crate) sky_pass: SkyRenderPass,
     pub particle_pass: ParticleRenderPass,
     pub shadow_pass: OmniShadowRenderPass,
     pub doodad_pass: DoodadRenderPass,
     pub(crate) extra_passes: Vec<Box<dyn pass::Pass>>,
-
-    pub(crate) sampler_clamp_nearest: wgpu::Sampler,
-    pub(crate) sampler_clamp_linear: wgpu::Sampler,
-    pub(crate) sampler_repeat_nearest: wgpu::Sampler,
-    pub(crate) sampler_repeat_linear: wgpu::Sampler,
-    pub(crate) sampler_depth: wgpu::Sampler,
 
     pub(crate) buffer_allocator: Rc<BufferAllocator>,
     pub(crate) bind_group_layout_cache: BindGroupLayoutCache,
@@ -606,6 +608,32 @@ impl Renderer {
             mip_level_count: None,
         });
 
+        let position_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Position Texture"),
+            size: wgpu::Extent3d {
+                width: config.width,
+                height: config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: PositionMapFormat::FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+
+        let position_texture_view = position_texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("Position Texture View"),
+            format: Some(PositionMapFormat::FORMAT),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            base_array_layer: 0,
+            array_layer_count: None,
+            mip_level_count: None,
+        });
+
         let normal_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Normal Texture"),
             size: wgpu::Extent3d {
@@ -632,66 +660,6 @@ impl Renderer {
             mip_level_count: None,
         });
 
-        let sampler_clamp_nearest = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Clamp Nearest Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: None,
-            ..Default::default()
-        });
-
-        let sampler_clamp_linear = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Clamp Linear Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
-            compare: None,
-            ..Default::default()
-        });
-
-        let sampler_repeat_nearest = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Repeat Nearest Sampler"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: None,
-            ..Default::default()
-        });
-
-        let sampler_repeat_linear = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Repeat Linear Sampler"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
-            compare: None,
-            ..Default::default()
-        });
-
-        let sampler_depth = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Depth Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: Some(wgpu::CompareFunction::LessEqual),
-            ..Default::default()
-        });
-
         let buffer_allocator = Rc::new(BufferAllocator {
             next_buffer_id: AtomicU64::new(0),
             buffers: RefCell::new(FxHashMap::default()),
@@ -704,16 +672,16 @@ impl Renderer {
             &device,
             config.width,
             config.height,
-            &sampler_clamp_nearest,
             &bind_group_layout_cache,
         );
 
+        let gbuffer_pass = GBufferRenderPass::new(&device, &bind_group_layout_cache);
+
         let pbr_pass = PbrRenderPass::new(&device, &bind_group_layout_cache);
 
-        let sky_pass =
-            SkyRenderPass::new(&device, &bind_group_layout_cache, &sampler_clamp_nearest);
+        let sky_pass = SkyRenderPass::new(&device, &bind_group_layout_cache);
 
-        let particle_pass = ParticleRenderPass::new(&device, &sampler_clamp_linear);
+        let particle_pass = ParticleRenderPass::new(&device);
 
         // let shadow_pass = ShadowRenderPass::new(&device, &sampler_clamp_nearest, &sampler_depth);
 
@@ -732,20 +700,18 @@ impl Renderer {
             color_texture_view,
             depth_texture,
             depth_texture_view,
+            position_texture,
+            position_texture_view,
             normal_texture,
             normal_texture_view,
             hdr_pass,
+            gbuffer_pass,
             pbr_pass,
             particle_pass,
             shadow_pass,
             sky_pass,
             doodad_pass,
             extra_passes,
-            sampler_clamp_nearest,
-            sampler_clamp_linear,
-            sampler_repeat_nearest,
-            sampler_repeat_linear,
-            sampler_depth,
             buffer_allocator,
             bind_group_layout_cache,
             point_lights: PointLightArray::new(),
@@ -1169,6 +1135,14 @@ impl Renderer {
                             store: wgpu::StoreOp::Store,
                         },
                     }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &self.position_texture_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
                 ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture_view,
@@ -1182,6 +1156,14 @@ impl Renderer {
                 timestamp_writes: None,
             });
         }
+
+        // self.gbuffer_pass.render(
+        //     encoder,
+        //     &hdr_pass_view,
+        //     &self.depth_texture_view,
+        //     self,
+        //     world,
+        // )?;
 
         self.pbr_pass.render(self, &hdr_pass_view, world, encoder)?;
 
@@ -1253,6 +1235,7 @@ impl Renderer {
 
     pub fn prepare(&mut self, world: &World) -> (wgpu::SurfaceTexture, wgpu::CommandEncoder) {
         self.prepare_components(world);
+        self.gbuffer_pass.prepare(world, self).unwrap();
         self.pbr_pass.prepare(world, self);
         self.shadow_pass.prepare(world, self).unwrap();
         self.doodad_pass.prepare(world, self).unwrap();

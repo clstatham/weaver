@@ -4,7 +4,7 @@ use image::codecs::hdr::HdrDecoder;
 use weaver_proc_macro::Resource;
 
 use crate::{
-    core::texture::{HdrCubeFormat, HdrD2ArrayFormat, HdrFormat, Texture, TextureFormat},
+    core::texture::{HdrCubeFormat, HdrD2ArrayFormat, Texture, TextureFormat},
     renderer::{BufferStorage, LazyBufferHandle, Renderer},
 };
 
