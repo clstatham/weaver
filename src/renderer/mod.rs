@@ -233,19 +233,41 @@ impl LazyBufferHandle {
     }
 }
 
+impl Drop for LazyBufferHandle {
+    fn drop(&mut self) {
+        if let Some(mut handle) = self.handle.borrow_mut().take() {
+            handle.destroy();
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum UpdateStatus {
     Ready { buffer: Arc<BindableBuffer> },
-    NeedsFlush,
     Pending { pending_data: Arc<[u8]> },
+    Destroyed,
+}
+
+impl UpdateStatus {
+    pub fn is_ready(&self) -> bool {
+        matches!(self, UpdateStatus::Ready { .. })
+    }
+
+    pub fn is_pending(&self) -> bool {
+        matches!(self, UpdateStatus::Pending { .. })
+    }
+
+    pub fn is_destroyed(&self) -> bool {
+        matches!(self, UpdateStatus::Destroyed)
+    }
 }
 
 impl Debug for UpdateStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UpdateStatus::Ready { .. } => write!(f, "Ready"),
-            UpdateStatus::NeedsFlush => write!(f, "NeedsFlush"),
             UpdateStatus::Pending { .. } => write!(f, "Pending"),
+            UpdateStatus::Destroyed => write!(f, "Destroyed"),
         }
     }
 }
@@ -276,32 +298,14 @@ impl BufferHandle {
     /// Marks the buffer as pending an update.
     /// This does NOT write to the buffer immediately.
     pub fn update<T: bytemuck::Pod>(&mut self, data: &[T]) {
-        *self.status.borrow_mut() = UpdateStatus::Pending {
-            pending_data: Arc::from(bytemuck::cast_slice(data)),
-        };
-    }
-
-    /// Immediately updates the buffer with new data using an existing encoder.
-    /// This will still not be reflected in the GPU until `flush` is called.
-    pub fn update_from(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        src: &wgpu::Buffer,
-        src_offset: u64,
-        dst_offset: u64,
-    ) {
-        if let UpdateStatus::Ready { ref buffer } = &*self.status.borrow() {
-            match &*buffer.storage {
-                BufferStorage::Buffer { ref buffer } => {
-                    encoder.copy_buffer_to_buffer(src, src_offset, buffer, dst_offset, src.size());
-                }
-                BufferStorage::Texture { .. } => {
-                    log::warn!("Attempted to update texture from buffer");
-                }
-            }
+        let mut status = self.status.borrow_mut();
+        if !status.is_destroyed() {
+            *status = UpdateStatus::Pending {
+                pending_data: Arc::from(bytemuck::cast_slice(data)),
+            };
         } else {
             log::warn!(
-                "Attempted to update buffer that is not ready: {} is {:?}",
+                "Attempted to update buffer that is already destroyed: {} is {:?}",
                 self.id,
                 self.status
             );
@@ -393,6 +397,21 @@ impl BufferHandle {
             None
         }
     }
+
+    pub fn destroy(&mut self) {
+        let mut status = self.status.borrow_mut();
+        match &mut *status {
+            UpdateStatus::Ready { .. } => {
+                *status = UpdateStatus::Destroyed;
+            }
+            UpdateStatus::Pending { .. } => {
+                *status = UpdateStatus::Destroyed;
+            }
+            UpdateStatus::Destroyed => {
+                log::warn!("Attempted to destroy buffer that is already destroyed");
+            }
+        }
+    }
 }
 
 pub trait CreateBindGroupLayout {
@@ -473,13 +492,31 @@ impl BufferAllocator {
 
         let handle = BufferHandle {
             id,
-            status: Rc::new(RefCell::new(UpdateStatus::NeedsFlush)),
+            status: Rc::new(RefCell::new(UpdateStatus::Ready {
+                buffer: buffer.clone(),
+            })),
         };
 
         self.buffers.borrow_mut().insert(id, buffer);
         self.buffer_handles.borrow_mut().insert(id, handle.clone());
 
         handle
+    }
+
+    pub fn gc_destroyed_buffers(&self) {
+        let mut handles = self.buffer_handles.borrow_mut();
+        let mut buffers = self.buffers.borrow_mut();
+        let mut destroyed = Vec::new();
+        for (id, handle) in handles.iter() {
+            if let UpdateStatus::Destroyed = &*handle.status.borrow() {
+                destroyed.push(*id);
+            }
+        }
+        for id in destroyed {
+            handles.remove(&id);
+            buffers.remove(&id);
+            // buffer is dropped here and destroyed
+        }
     }
 }
 
@@ -936,11 +973,8 @@ impl Renderer {
 
     /// Updates all buffers that are pending and flushes them.
     /// This should be called before rendering.
-    pub fn update_all_buffers_and_flush(&mut self) {
-        let encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        let mut needs_flush = false;
+    pub fn update_all_buffers(&mut self) {
+        log::trace!("Updating all buffers");
         for handle in self
             .buffer_allocator
             .buffer_handles
@@ -948,48 +982,37 @@ impl Renderer {
             .values_mut()
         {
             let status = &mut *handle.status.borrow_mut();
-            match status {
-                UpdateStatus::Ready { .. } => {}
-                UpdateStatus::NeedsFlush => {
-                    needs_flush = true;
-                }
-                UpdateStatus::Pending { pending_data } => {
-                    if self.update_buffer(handle, pending_data) {
-                        *status = UpdateStatus::NeedsFlush;
-                        needs_flush = true;
-                    }
+            if let UpdateStatus::Pending { pending_data } = status {
+                if self.update_buffer(handle, pending_data) {
+                    *status = UpdateStatus::Ready {
+                        buffer: self
+                            .buffer_allocator
+                            .buffers
+                            .borrow()
+                            .get(&handle.id)
+                            .unwrap()
+                            .clone(),
+                    };
                 }
             }
         }
-        if needs_flush {
-            self.flush(encoder);
-        }
+    }
+
+    pub fn force_flush(&self) {
+        log::trace!("Forcing flush of render queue");
+        self.queue.submit(std::iter::once(
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Force Flush Encoder"),
+                })
+                .finish(),
+        ));
     }
 
     /// Flushes the render queue, submitting the given encoder and marking all buffers as ready.
     pub fn flush(&self, encoder: wgpu::CommandEncoder) {
+        log::trace!("Flushing render queue");
         self.queue.submit(std::iter::once(encoder.finish()));
-        for handle in self
-            .buffer_allocator
-            .buffer_handles
-            .borrow_mut()
-            .values_mut()
-        {
-            let status = &mut *handle.status.borrow_mut();
-            if let UpdateStatus::NeedsFlush = status {
-                *status = UpdateStatus::Ready {
-                    buffer: self
-                        .buffer_allocator
-                        .buffers
-                        .borrow_mut()
-                        .get(&handle.id)
-                        .unwrap()
-                        .clone(),
-                };
-            } else if let UpdateStatus::Pending { .. } = status {
-                log::error!("Buffer {} is still pending", handle.id);
-            }
-        }
     }
 
     pub fn push_render_pass<T: Pass + 'static>(&mut self, pass: T) {
@@ -997,43 +1020,19 @@ impl Renderer {
     }
 
     pub fn prepare_components(&mut self, world: &World) {
+        log::trace!("Preparing components");
         // prepare the renderer's built-in components
-        self.hdr_pass.texture.alloc_buffers(self).unwrap();
+        self.hdr_pass
+            .texture
+            .handle
+            .get_or_create::<HdrFormat>(self);
         self.point_lights.alloc_buffers(self).unwrap();
 
         // query the world for the types that need to allocate buffers
         // these are currently:
         // - Material
-        // - Texture
         // - PointLight
         // - Camera
-
-        {
-            let query = Query::<&Texture<WindowFormat>>::new(world);
-            for texture in query.iter() {
-                texture.alloc_buffers(self).unwrap();
-            }
-
-            let query = Query::<&Texture<NormalMapFormat>>::new(world);
-            for texture in query.iter() {
-                texture.alloc_buffers(self).unwrap();
-            }
-
-            let query = Query::<&Texture<HdrFormat>>::new(world);
-            for texture in query.iter() {
-                texture.alloc_buffers(self).unwrap();
-            }
-
-            let query = Query::<&Texture<SdrFormat>>::new(world);
-            for texture in query.iter() {
-                texture.alloc_buffers(self).unwrap();
-            }
-
-            let query = Query::<&Texture<DepthFormat>>::new(world);
-            for texture in query.iter() {
-                texture.alloc_buffers(self).unwrap();
-            }
-        }
 
         {
             let query = Query::<&Material>::new(world);
@@ -1100,7 +1099,11 @@ impl Renderer {
         encoder: &mut wgpu::CommandEncoder,
     ) -> anyhow::Result<()> {
         let hdr_pass_view = {
-            let hdr_pass_handle = &self.hdr_pass.texture.alloc_buffers(self)?[0];
+            let hdr_pass_handle = &self
+                .hdr_pass
+                .texture
+                .handle
+                .get_or_create::<HdrFormat>(self);
             let hdr_pass_texture = hdr_pass_handle.get_texture().unwrap();
             hdr_pass_texture.create_view(&wgpu::TextureViewDescriptor {
                 label: Some("HDR Pass Texture View"),
@@ -1233,19 +1236,8 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn prepare(&mut self, world: &World) -> (wgpu::SurfaceTexture, wgpu::CommandEncoder) {
-        self.prepare_components(world);
-        self.gbuffer_pass.prepare(world, self).unwrap();
-        self.pbr_pass.prepare(world, self);
-        self.shadow_pass.prepare(world, self).unwrap();
-        self.doodad_pass.prepare(world, self).unwrap();
-        self.sky_pass.prepare(world, self).unwrap();
-        self.hdr_pass.prepare(world, self).unwrap();
-        self.particle_pass.prepare(world, self).unwrap();
-        for pass in self.extra_passes.iter() {
-            pass.prepare(world, self).unwrap();
-        }
-        self.update_all_buffers_and_flush();
+    pub fn begin_frame(&mut self) -> (wgpu::SurfaceTexture, wgpu::CommandEncoder) {
+        log::trace!("Begin frame");
 
         let encoder = self
             .device
@@ -1258,8 +1250,23 @@ impl Renderer {
         (output, encoder)
     }
 
-    pub fn present(&self, output: wgpu::SurfaceTexture, encoder: wgpu::CommandEncoder) {
+    pub fn prepare_passes(&mut self, world: &World) {
+        log::trace!("Preparing passes");
+        self.gbuffer_pass.prepare(world, self).unwrap();
+        self.pbr_pass.prepare(world, self);
+        self.shadow_pass.prepare(world, self).unwrap();
+        self.doodad_pass.prepare(world, self).unwrap();
+        self.sky_pass.prepare(world, self).unwrap();
+        self.hdr_pass.prepare(world, self).unwrap();
+        self.particle_pass.prepare(world, self).unwrap();
+        for pass in self.extra_passes.iter() {
+            pass.prepare(world, self).unwrap();
+        }
+    }
+
+    pub fn flush_and_present(&self, output: wgpu::SurfaceTexture, encoder: wgpu::CommandEncoder) {
         self.flush(encoder);
         output.present();
+        self.buffer_allocator.gc_destroyed_buffers();
     }
 }

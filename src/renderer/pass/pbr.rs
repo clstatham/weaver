@@ -326,7 +326,10 @@ impl PbrRenderPass {
         let skybox = Query::<&Skybox>::new(world);
         let skybox = skybox.iter().next().unwrap();
 
-        let skybox_handle = &skybox.texture.alloc_buffers(renderer)?[0];
+        let skybox_handle = &skybox
+            .texture
+            .handle
+            .get_or_create::<HdrCubeFormat>(renderer);
         let skybox_texture = skybox_handle.get_texture().unwrap();
 
         let camera = Query::<&Camera>::new(world);

@@ -26,6 +26,7 @@ pub struct AssetServer {
     path_prefix: PathBuf,
     ids: FxHashMap<PathBuf, AssetId>,
     meshes: FxHashMap<AssetId, Mesh>,
+    textures: FxHashMap<AssetId, Texture>,
     materials: FxHashMap<AssetId, Material>,
 }
 
@@ -36,6 +37,7 @@ impl AssetServer {
             path_prefix: PathBuf::from("assets"),
             ids: FxHashMap::default(),
             meshes: FxHashMap::default(),
+            textures: FxHashMap::default(),
             materials: FxHashMap::default(),
         })
     }
@@ -101,18 +103,48 @@ impl AssetServer {
             .clone())
     }
 
-    pub fn load_texture<F: TextureFormat>(
-        &mut self,
-        path: impl Into<PathBuf>,
-    ) -> anyhow::Result<Texture<F>> {
+    pub fn load_texture(&mut self, path: impl Into<PathBuf>) -> anyhow::Result<Texture> {
         let path = path.into();
         let path = if path.is_absolute() {
             path
         } else {
             self.path_prefix.join(path)
         };
-        let texture = Texture::load(path.clone(), None);
-        Ok(texture)
+
+        if !self.ids.contains_key(&path) {
+            let id = self.alloc_id();
+            let texture = Texture::load(path.clone(), SdrFormat::FORMAT, None);
+            self.ids.insert(path.clone(), id);
+            self.textures.insert(id, texture);
+        }
+        Ok(self
+            .ids
+            .get(&path)
+            .and_then(|id| self.textures.get(id))
+            .unwrap()
+            .clone())
+    }
+
+    pub fn load_normal_map(&mut self, path: impl Into<PathBuf>) -> anyhow::Result<Texture> {
+        let path = path.into();
+        let path = if path.is_absolute() {
+            path
+        } else {
+            self.path_prefix.join(path)
+        };
+
+        if !self.ids.contains_key(&path) {
+            let id = self.alloc_id();
+            let texture = Texture::load(path.clone(), NormalMapFormat::FORMAT, None);
+            self.ids.insert(path.clone(), id);
+            self.textures.insert(id, texture);
+        }
+        Ok(self
+            .ids
+            .get(&path)
+            .and_then(|id| self.textures.get(id))
+            .unwrap()
+            .clone())
     }
 
     pub fn load_hdr_cubemap(
@@ -121,7 +153,7 @@ impl AssetServer {
         dst_size: u32,
         renderer: &Renderer,
         hdr_loader: &HdrLoader,
-    ) -> anyhow::Result<Texture<HdrD2ArrayFormat>> {
+    ) -> anyhow::Result<Texture> {
         let path = path.into();
         let path = if path.is_absolute() {
             path
@@ -135,10 +167,10 @@ impl AssetServer {
     #[allow(clippy::too_many_arguments)]
     pub fn create_material(
         &mut self,
-        diffuse_texture: Option<Texture<SdrFormat>>,
-        normal_texture: Option<Texture<NormalMapFormat>>,
-        roughness_texture: Option<Texture<SdrFormat>>,
-        ambient_occlusion_texture: Option<Texture<SdrFormat>>,
+        diffuse_texture: Option<Texture>,
+        normal_texture: Option<Texture>,
+        roughness_texture: Option<Texture>,
+        ambient_occlusion_texture: Option<Texture>,
         metallic: Option<f32>,
         roughness: Option<f32>,
         texture_scaling: Option<f32>,

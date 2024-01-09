@@ -14,7 +14,7 @@ pub struct HdrRenderPass {
     pipeline: wgpu::RenderPipeline,
     sampler: wgpu::Sampler,
     bind_group: wgpu::BindGroup,
-    pub(crate) texture: Texture<HdrFormat>,
+    pub(crate) texture: Texture,
 }
 
 impl HdrRenderPass {
@@ -65,7 +65,7 @@ impl HdrRenderPass {
             label: Some("HDR Render Pipeline Layout"),
             bind_group_layouts: &[
                 &bind_group_layout_cache.get_or_create::<NonFilteringSampler>(device),
-                &bind_group_layout_cache.get_or_create::<Texture<HdrFormat>>(device),
+                &bind_group_layout_cache.get_or_create::<HdrFormat>(device),
             ],
             push_constant_ranges: &[],
         });
@@ -132,7 +132,7 @@ impl Pass for HdrRenderPass {
         renderer: &crate::renderer::Renderer,
         _world: &World,
     ) -> anyhow::Result<()> {
-        let texture_handle = &self.texture.alloc_buffers(renderer)?[0];
+        let texture_handle = &self.texture.handle.get_or_create::<HdrFormat>(renderer);
         let texture_bind_group = texture_handle.bind_group().unwrap();
 
         {

@@ -153,9 +153,6 @@ impl App {
         {
             let world = self.world.borrow();
             world.startup()?;
-            let mut renderer = world.write_resource::<Renderer>()?;
-            renderer.prepare_components(&world);
-            renderer.update_all_buffers_and_flush();
         }
 
         self.event_loop.run(move |event, _, control_flow| {
@@ -235,7 +232,11 @@ impl App {
 
                     let mut renderer = world.write_resource::<Renderer>().unwrap();
                     let mut ui = world.write_resource::<EguiContext>().unwrap();
-                    let (output, mut encoder) = renderer.prepare(&world);
+
+                    let (output, mut encoder) = renderer.begin_frame();
+                    renderer.prepare_components(&world);
+                    renderer.prepare_passes(&world);
+                    renderer.update_all_buffers();
                     renderer.render(&world, &output, &mut encoder).unwrap();
                     renderer.render_ui(
                         &mut ui,
@@ -243,7 +244,7 @@ impl App {
                         &output,
                         &mut encoder,
                     );
-                    renderer.present(output, encoder);
+                    renderer.flush_and_present(output, encoder);
                 }
                 _ => {}
             }

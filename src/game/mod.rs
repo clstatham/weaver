@@ -1,4 +1,5 @@
 use clap::Parser;
+use rand::Rng;
 
 use crate::{
     app::Window,
@@ -25,6 +26,12 @@ pub mod materials;
 pub mod npc;
 pub mod player;
 
+#[derive(Resource)]
+pub struct State {
+    pub lights: Vec<Entity>,
+    pub npcs: Vec<Entity>,
+}
+
 #[system(WindowUpdate)]
 fn window_update(mut window: ResMut<Window>, input: Res<Input>) {
     window.fps_mode = input.mouse_button_pressed(3);
@@ -32,9 +39,12 @@ fn window_update(mut window: ResMut<Window>, input: Res<Input>) {
 
 #[system(UiUpdate)]
 fn ui_update(
+    commands: Commands,
+    mut asset_server: ResMut<AssetServer>,
     mut ctx: ResMut<EguiContext>,
     mut fps_display: Query<&mut FpsDisplay>,
     mut renderer: ResMut<Renderer>,
+    mut state: ResMut<State>,
 ) {
     ctx.draw_if_ready(|ctx| {
         for mut fps_display in fps_display.iter() {
@@ -52,6 +62,84 @@ fn ui_update(
                 renderer.shadow_pass.enable();
             } else {
                 renderer.shadow_pass.disable();
+            }
+        }
+
+        let mut n_lights = state.lights.len();
+        egui::Window::new("Lights")
+            .default_width(200.0)
+            .show(ctx, |ui| {
+                ui.add(egui::Slider::new(&mut n_lights, 1..=64).text("Count"));
+            });
+
+        if n_lights != state.lights.len() {
+            for light in state.lights.drain(..) {
+                commands.remove_entity(light);
+            }
+            let light_colors = [
+                Color::WHITE,
+                Color::RED,
+                Color::GREEN,
+                Color::BLUE,
+                Color::YELLOW,
+                Color::CYAN,
+                Color::MAGENTA,
+            ];
+            let light_radius = 10.0;
+            let light_count = n_lights;
+            let mut rng = rand::thread_rng();
+            for i in 0..light_count {
+                let angle = (i as f32 / light_count as f32) * std::f32::consts::TAU;
+                let x = angle.cos() * light_radius;
+                let z = angle.sin() * light_radius;
+
+                let light = PointLight::new(
+                    Vec3::new(x, 5.0, z),
+                    light_colors[rng.gen_range(0..light_colors.len())],
+                    10.0,
+                );
+                state.lights.push(commands.spawn(light).unwrap());
+            }
+        }
+
+        let mut n_npcs = state.npcs.len();
+        egui::Window::new("NPCs")
+            .default_width(200.0)
+            .show(ctx, |ui| {
+                ui.add(egui::Slider::new(&mut n_npcs, 1..=1000).text("Count"));
+            });
+
+        if n_npcs != state.npcs.len() {
+            for npc in state.npcs.drain(..) {
+                commands.remove_entity(npc);
+            }
+            let npc_mesh = asset_server
+                .load_mesh("meshes/monkey_flat.glb", &renderer)
+                .unwrap();
+            let npc_material = materials::Materials::Wood
+                .load(&mut asset_server, 2.0)
+                .unwrap();
+            let npc_count = n_npcs;
+            let npc_radius = 5.0;
+            for i in 0..npc_count {
+                let angle = (i as f32 / npc_count as f32) * std::f32::consts::TAU;
+                let x = angle.cos() * npc_radius;
+                let z = angle.sin() * npc_radius;
+
+                let npc = npc::Npc {
+                    speed: 0.0,
+                    rotation_speed: 0.0,
+                };
+                state.npcs.push(
+                    commands
+                        .spawn(npc::NpcBundle {
+                            npc,
+                            transform: Transform::from_translation(Vec3::new(x, 1.0, z)),
+                            mesh: npc_mesh.clone(),
+                            material: npc_material.clone(),
+                        })
+                        .unwrap(),
+                );
             }
         }
     });
@@ -85,7 +173,7 @@ fn setup(
     mut renderer: ResMut<Renderer>,
     hdr_loader: Res<HdrLoader>,
 ) {
-    // renderer.shadow_pass.disable();
+    renderer.shadow_pass.disable();
 
     commands.spawn(FpsDisplay::new())?;
 
@@ -111,31 +199,6 @@ fn setup(
     };
     commands.spawn(ground)?;
 
-    let light_colors = [
-        Color::WHITE,
-        Color::RED,
-        Color::GREEN,
-        Color::BLUE,
-        Color::YELLOW,
-        Color::CYAN,
-        Color::MAGENTA,
-    ];
-
-    let light_count = 1;
-    let light_radius = 10.0;
-    for i in 0..light_count {
-        let angle = (i as f32 / light_count as f32) * std::f32::consts::TAU;
-        let x = angle.cos() * light_radius;
-        let z = angle.sin() * light_radius;
-
-        let light = PointLight::new(
-            Vec3::new(x, 5.0, z),
-            light_colors[i % light_colors.len()],
-            10.0,
-        );
-        commands.spawn(light)?;
-    }
-
     let player = player::Player {
         speed: 7.0,
         rotation_speed: 0.002,
@@ -154,28 +217,6 @@ fn setup(
         ..Default::default()
     };
     commands.spawn((camera_controller, Camera::new()))?;
-
-    // bunch of npcs in a circle
-    let npc = npc::Npc {
-        speed: 0.0,
-        rotation_speed: 0.0,
-    };
-    let npc_mesh = asset_server.load_mesh("meshes/monkey_flat.glb", &renderer)?;
-    let npc_material = materials::Materials::Wood.load(&mut asset_server, 2.0)?;
-    let npc_count = 20;
-    let npc_radius = 5.0;
-    for i in 0..npc_count {
-        let angle = (i as f32 / npc_count as f32) * std::f32::consts::TAU;
-        let x = angle.cos() * npc_radius;
-        let z = angle.sin() * npc_radius;
-
-        commands.spawn(npc::NpcBundle {
-            npc,
-            transform: Transform::from_translation(Vec3::new(x, 1.0, z)),
-            mesh: npc_mesh.clone(),
-            material: npc_material.clone(),
-        })?;
-    }
 }
 
 #[derive(Debug, clap::Parser)]
@@ -189,6 +230,11 @@ struct Args {
 pub fn run() -> anyhow::Result<()> {
     let args = Args::parse();
     let mut app = App::new(args.width, args.height)?;
+
+    app.insert_resource(State {
+        lights: Vec::new(),
+        npcs: Vec::new(),
+    })?;
 
     app.add_startup_system(Setup);
 

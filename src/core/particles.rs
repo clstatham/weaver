@@ -24,7 +24,7 @@ pub struct ParticleEmitter {
     pub particle_velocity: Vec3,
     pub particle_velocity_randomness: Vec3,
 
-    pub particle_texture: Option<Texture<SdrFormat>>,
+    pub particle_texture: Option<Texture>,
 }
 
 impl Default for ParticleEmitter {

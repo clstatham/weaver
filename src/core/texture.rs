@@ -236,32 +236,33 @@ impl CreateBindGroupLayout for PositionMapFormat {
 }
 
 #[derive(Clone, Component)]
-pub struct Texture<F: TextureFormat> {
+pub struct Texture {
     pub(crate) handle: LazyBufferHandle,
-    _format: std::marker::PhantomData<F>,
 }
 
-impl<F: TextureFormat> Texture<F> {
+impl Texture {
     pub fn from_handle(handle: LazyBufferHandle) -> Self {
-        Self {
-            handle,
-            _format: std::marker::PhantomData,
-        }
+        Self { handle }
     }
 
-    pub fn load(path: impl AsRef<Path>, label: Option<&'static str>) -> Self {
+    pub fn load(
+        path: impl AsRef<Path>,
+        format: wgpu::TextureFormat,
+        label: Option<&'static str>,
+    ) -> Self {
         let path = path.as_ref();
 
         let image = image::open(path).unwrap().flipv().to_rgba8();
         let (width, height) = image.dimensions();
 
-        Self::from_data_rgba8(width, height, &image, label)
+        Self::from_data_rgba8(width, height, &image, format, label)
     }
 
     pub fn from_data_rgba8(
         width: u32,
         height: u32,
         data: &[u8],
+        format: wgpu::TextureFormat,
         label: Option<&'static str>,
     ) -> Self {
         let handle = LazyBufferHandle::new(
@@ -272,7 +273,7 @@ impl<F: TextureFormat> Texture<F> {
                     | wgpu::TextureUsages::COPY_DST
                     | wgpu::TextureUsages::COPY_SRC
                     | wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: F::FORMAT,
+                format,
                 dimension: wgpu::TextureDimension::D2,
                 view_dimension: wgpu::TextureViewDimension::D2,
                 depth_or_array_layers: 1,
@@ -280,16 +281,14 @@ impl<F: TextureFormat> Texture<F> {
             label,
             Some(data.into()),
         );
-        Self {
-            handle,
-            _format: std::marker::PhantomData,
-        }
+        Self { handle }
     }
 
     pub fn from_data_r8g8b8(
         width: u32,
         height: u32,
         data: &[u8],
+        format: wgpu::TextureFormat,
         label: Option<&'static str>,
     ) -> Self {
         // convert the data to RGBA
@@ -299,17 +298,23 @@ impl<F: TextureFormat> Texture<F> {
             rgba.push(255);
         }
 
-        Self::from_data_rgba8(width, height, &rgba, label)
+        Self::from_data_rgba8(width, height, &rgba, format, label)
     }
 
-    pub fn solid_color(color: Color, width: u32, height: u32, label: Option<&'static str>) -> Self {
+    pub fn solid_color(
+        color: Color,
+        width: u32,
+        height: u32,
+        format: wgpu::TextureFormat,
+        label: Option<&'static str>,
+    ) -> Self {
         let (r, g, b) = color.rgb_int();
         let mut data = Vec::with_capacity((width * height * 4) as usize);
         for _ in 0..width * height {
             data.extend_from_slice(&[r, g, b, 255]);
         }
 
-        Self::from_data_rgba8(width, height, &data, label)
+        Self::from_data_rgba8(width, height, &data, format, label)
     }
 
     pub fn default_texture() -> Self {
@@ -327,7 +332,13 @@ impl<F: TextureFormat> Texture<F> {
             }
         }
 
-        Self::from_data_rgba8(width, height, &data, Some("Default Texture"))
+        Self::from_data_rgba8(
+            width,
+            height,
+            &data,
+            SdrFormat::FORMAT,
+            Some("Default Texture"),
+        )
     }
 
     pub fn new_lazy(
@@ -353,26 +364,11 @@ impl<F: TextureFormat> Texture<F> {
             label,
             None,
         );
-        Self {
-            handle,
-            _format: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<F: TextureFormat + CreateBindGroupLayout> AllocBuffers for Texture<F> {
-    fn alloc_buffers(&self, renderer: &Renderer) -> anyhow::Result<Vec<BufferHandle>> {
-        Ok(vec![self.handle.get_or_create::<F>(renderer)])
-    }
-}
-
-impl<F: TextureFormat + CreateBindGroupLayout> CreateBindGroupLayout for Texture<F> {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        F::create_bind_group_layout(device)
+        Self { handle }
     }
 }
 
 #[derive(Clone, Component)]
 pub struct Skybox {
-    pub texture: Texture<HdrD2ArrayFormat>,
+    pub texture: Texture,
 }

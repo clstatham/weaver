@@ -65,7 +65,7 @@ impl HdrLoader {
         renderer: &Renderer,
         dst_size: u32,
         path: impl AsRef<Path>,
-    ) -> anyhow::Result<Texture<HdrD2ArrayFormat>> {
+    ) -> anyhow::Result<Texture> {
         let mut file = std::fs::File::open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;

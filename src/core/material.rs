@@ -12,7 +12,7 @@ use crate::{
 
 use super::{
     color::Color,
-    texture::{NormalMapFormat, SdrFormat, Texture},
+    texture::{NormalMapFormat, SdrFormat, Texture, TextureFormat},
 };
 
 /// PBR material based on Bevy
@@ -20,12 +20,12 @@ use super::{
 pub struct Material {
     asset_id: AssetId,
     pub diffuse: Color,
-    pub diffuse_texture: Option<Texture<SdrFormat>>,
+    pub diffuse_texture: Option<Texture>,
     pub metallic: f32,
-    pub normal_texture: Option<Texture<NormalMapFormat>>,
+    pub normal_texture: Option<Texture>,
     pub roughness: f32,
-    pub roughness_texture: Option<Texture<SdrFormat>>,
-    pub ambient_occlusion_texture: Option<Texture<SdrFormat>>,
+    pub roughness_texture: Option<Texture>,
+    pub ambient_occlusion_texture: Option<Texture>,
 
     pub texture_scaling: f32,
 
@@ -37,10 +37,10 @@ pub struct Material {
 impl Material {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        diffuse_texture: Option<Texture<SdrFormat>>,
-        normal_texture: Option<Texture<NormalMapFormat>>,
-        roughness_texture: Option<Texture<SdrFormat>>,
-        ambient_occlusion_texture: Option<Texture<SdrFormat>>,
+        diffuse_texture: Option<Texture>,
+        normal_texture: Option<Texture>,
+        roughness_texture: Option<Texture>,
+        ambient_occlusion_texture: Option<Texture>,
         metallic: Option<f32>,
         roughness: Option<f32>,
         texture_scaling: Option<f32>,
@@ -78,12 +78,12 @@ impl Material {
         self
     }
 
-    pub fn with_diffuse_texture(mut self, diffuse_texture: Texture<SdrFormat>) -> Self {
+    pub fn with_diffuse_texture(mut self, diffuse_texture: Texture) -> Self {
         self.diffuse_texture = Some(diffuse_texture);
         self
     }
 
-    pub fn with_normal_texture(mut self, normal_texture: Texture<NormalMapFormat>) -> Self {
+    pub fn with_normal_texture(mut self, normal_texture: Texture) -> Self {
         self.normal_texture = Some(normal_texture);
         self
     }
@@ -98,7 +98,7 @@ impl Material {
         self
     }
 
-    pub fn with_roughness_texture(mut self, roughness_texture: Texture<SdrFormat>) -> Self {
+    pub fn with_roughness_texture(mut self, roughness_texture: Texture) -> Self {
         self.roughness_texture = Some(roughness_texture);
         self
     }
@@ -128,6 +128,7 @@ impl Material {
                             image.width,
                             image.height,
                             &image.pixels,
+                            SdrFormat::FORMAT,
                             Some("GLTF Mesh Diffuse Texture"),
                         ));
                     }
@@ -136,6 +137,7 @@ impl Material {
                             image.width,
                             image.height,
                             &image.pixels,
+                            SdrFormat::FORMAT,
                             Some("GLTF Mesh Diffuse Texture"),
                         ));
                     }
@@ -155,6 +157,7 @@ impl Material {
                             image.width,
                             image.height,
                             &image.pixels,
+                            NormalMapFormat::FORMAT,
                             Some("GLTF Mesh Normal Texture"),
                         ));
                     }
@@ -163,6 +166,7 @@ impl Material {
                             image.width,
                             image.height,
                             &image.pixels,
+                            NormalMapFormat::FORMAT,
                             Some("GLTF Mesh Normal Texture"),
                         ));
                     }
@@ -184,6 +188,7 @@ impl Material {
                             image.width,
                             image.height,
                             &image.pixels,
+                            SdrFormat::FORMAT,
                             Some("GLTF Mesh Roughness Texture"),
                         ));
                     }
@@ -192,6 +197,7 @@ impl Material {
                             image.width,
                             image.height,
                             &image.pixels,
+                            SdrFormat::FORMAT,
                             Some("GLTF Mesh Roughness Texture"),
                         ));
                     }
@@ -210,6 +216,7 @@ impl Material {
                             image.width,
                             image.height,
                             &image.pixels,
+                            SdrFormat::FORMAT,
                             Some("GLTF Mesh Ambient Occlusion Texture"),
                         ));
                     }
@@ -218,6 +225,7 @@ impl Material {
                             image.width,
                             image.height,
                             &image.pixels,
+                            SdrFormat::FORMAT,
                             Some("GLTF Mesh Ambient Occlusion Texture"),
                         ));
                     }
@@ -371,28 +379,24 @@ impl AllocBuffers for Material {
             .properties_handle
             .get_or_create_init::<_, MaterialUniform>(renderer, &[MaterialUniform::from(self)])];
         let diffuse_texture = self.diffuse_texture.as_ref().unwrap();
-        handles.push(
-            diffuse_texture
-                .handle
-                .get_or_create::<Texture<SdrFormat>>(renderer),
-        );
+        handles.push(diffuse_texture.handle.get_or_create::<SdrFormat>(renderer));
         let normal_texture = self.normal_texture.as_ref().unwrap();
         handles.push(
             normal_texture
                 .handle
-                .get_or_create::<Texture<NormalMapFormat>>(renderer),
+                .get_or_create::<NormalMapFormat>(renderer),
         );
         let roughness_texture = self.roughness_texture.as_ref().unwrap();
         handles.push(
             roughness_texture
                 .handle
-                .get_or_create::<Texture<SdrFormat>>(renderer),
+                .get_or_create::<SdrFormat>(renderer),
         );
         let ambient_occlusion_texture = self.ambient_occlusion_texture.as_ref().unwrap();
         handles.push(
             ambient_occlusion_texture
                 .handle
-                .get_or_create::<Texture<SdrFormat>>(renderer),
+                .get_or_create::<SdrFormat>(renderer),
         );
         Ok(handles)
     }

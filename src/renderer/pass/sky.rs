@@ -122,7 +122,10 @@ impl Pass for SkyRenderPass {
     ) -> anyhow::Result<()> {
         let skybox = Query::<&Skybox>::new(world);
         let skybox = skybox.iter().next().unwrap();
-        let skybox_handle = &skybox.texture.alloc_buffers(renderer)?[0];
+        let skybox_handle = &skybox
+            .texture
+            .handle
+            .get_or_create::<HdrCubeFormat>(renderer);
         let skybox_bind_group = skybox_handle.bind_group().unwrap();
 
         let camera = Query::<&Camera>::new(world);

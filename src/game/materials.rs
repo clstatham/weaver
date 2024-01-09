@@ -22,7 +22,7 @@ impl Materials {
                 let base_color =
                     asset_server.load_texture("materials/Wood_025_SD/Wood_025_basecolor.jpg")?;
                 let normal =
-                    asset_server.load_texture("materials/Wood_025_SD/Wood_025_normal.jpg")?;
+                    asset_server.load_normal_map("materials/Wood_025_SD/Wood_025_normal.jpg")?;
                 let roughness =
                     asset_server.load_texture("materials/Wood_025_SD/Wood_025_roughness.jpg")?;
                 let ao = asset_server
@@ -42,7 +42,7 @@ impl Materials {
                 let base_color =
                     asset_server.load_texture("materials/Metal_006_SD/Metal_006_basecolor.jpg")?;
                 let normal =
-                    asset_server.load_texture("materials/Metal_006_SD/Metal_006_normal.jpg")?;
+                    asset_server.load_normal_map("materials/Metal_006_SD/Metal_006_normal.jpg")?;
                 let roughness =
                     asset_server.load_texture("materials/Metal_006_SD/Metal_006_roughness.jpg")?;
                 let ao = asset_server
@@ -62,7 +62,7 @@ impl Materials {
                 let base_color = asset_server.load_texture(
                     "materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_BaseColor.jpg",
                 )?;
-                let normal = asset_server.load_texture(
+                let normal = asset_server.load_normal_map(
                     "materials/Wood_Herringbone_Tiles_004_SD/Substance_Graph_Normal.jpg",
                 )?;
                 let roughness = asset_server.load_texture(
@@ -86,7 +86,7 @@ impl Materials {
                 let base_color = asset_server
                     .load_texture("materials/Brick_Wall_017_SD/Brick_Wall_017_basecolor.jpg")?;
                 let normal = asset_server
-                    .load_texture("materials/Brick_Wall_017_SD/Brick_Wall_017_normal.jpg")?;
+                    .load_normal_map("materials/Brick_Wall_017_SD/Brick_Wall_017_normal.jpg")?;
                 let roughness = asset_server
                     .load_texture("materials/Brick_Wall_017_SD/Brick_Wall_017_roughness.jpg")?;
                 let ao = asset_server.load_texture(
@@ -107,7 +107,7 @@ impl Materials {
                 let base_color = asset_server
                     .load_texture("materials/Wall_Stone_021_SD/Substance_graph_BaseColor.jpg")?;
                 let normal = asset_server
-                    .load_texture("materials/Wall_Stone_021_SD/Substance_graph_Normal.jpg")?;
+                    .load_normal_map("materials/Wall_Stone_021_SD/Substance_graph_Normal.jpg")?;
                 let roughness = asset_server
                     .load_texture("materials/Wall_Stone_021_SD/Substance_graph_Roughness.jpg")?;
                 let ao = asset_server.load_texture(
@@ -128,7 +128,7 @@ impl Materials {
                 let base_color =
                     asset_server.load_texture("materials/Food_0003/food_0003_color_1k.jpg")?;
                 let normal = asset_server
-                    .load_texture("materials/Food_0003/food_0003_normal_opengl_1k.png")?;
+                    .load_normal_map("materials/Food_0003/food_0003_normal_opengl_1k.png")?;
                 let roughness =
                     asset_server.load_texture("materials/Food_0003/food_0003_roughness_1k.jpg")?;
                 let ao = asset_server.load_texture("materials/Food_0003/food_0003_ao_1k.jpg")?;

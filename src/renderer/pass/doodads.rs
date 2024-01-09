@@ -320,7 +320,7 @@ pub struct DoodadRenderPass {
     pipeline: wgpu::RenderPipeline,
     cubes: DoodadBuffers,
     cones: DoodadBuffers,
-    depth_texture: Texture<DepthFormat>,
+    depth_texture: Texture,
     camera_buffer: LazyBufferHandle,
 }
 
@@ -453,7 +453,9 @@ impl Pass for DoodadRenderPass {
     }
 
     fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
-        self.depth_texture.alloc_buffers(renderer)?;
+        self.depth_texture
+            .handle
+            .get_or_create::<DepthFormat>(renderer);
         let mut cubes = self.cubes.alloc_buffers(renderer)?;
         let mut cones = self.cones.alloc_buffers(renderer)?;
 
@@ -510,7 +512,10 @@ impl Pass for DoodadRenderPass {
         renderer: &crate::renderer::Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
-        let depth_texture = &self.depth_texture.alloc_buffers(renderer)?[0];
+        let depth_texture = &self
+            .depth_texture
+            .handle
+            .get_or_create::<DepthFormat>(renderer);
         let depth_texture = depth_texture.get_texture().unwrap();
         let depth_texture_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
