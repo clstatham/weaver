@@ -63,14 +63,13 @@ fn calculate_lighting(
     vertex: VertexOutput,
     albedo: vec3<f32>,
     roughness: f32,
+    metallic: f32,
     normal: vec3<f32>,
     light_direction: vec3<f32>,
     view_direction: vec3<f32>,
     light_color: vec3<f32>,
     attenuation: f32,
 ) -> vec3<f32> {
-    let metallic = material.properties.x;
-
     let N = normalize(normal);
     let V = normalize(view_direction);
     let L = normalize(light_direction);
@@ -80,7 +79,6 @@ fn calculate_lighting(
     let NdV = max(dot(N, V), 0.001);
     let NdH = max(dot(N, H), 0.001);
     let HdV = max(dot(H, V), 0.001);
-    let LdV = max(dot(L, V), 0.001);
 
     let f0 = mix(vec3(0.04), albedo, metallic);
     let F = fresnel_schlick(f0, HdV, roughness);
@@ -101,15 +99,26 @@ fn calculate_ibl(
     normal: vec3<f32>,
     view_direction: vec3<f32>,
     roughness: f32,
+    metallic: f32,
 ) -> vec3<f32> {
-    let NdV = max(dot(normal, view_direction), 0.001);
-    let kS = fresnel_schlick(vec3(0.04), NdV, roughness);
-    let kD = vec3(1.0) - kS;
-    let irradiance = textureSample(env_map, env_sampler, normal).rgb;
-    let diffuse = irradiance * albedo;
-    let ambient = kD * diffuse;
+    let N = normalize(normal);
+    let V = normalize(view_direction);
+    let NdV = max(dot(N, V), 0.001);
+    let R = reflect(-V, N);
 
-    return ambient;
+    let diffuse_irradiance = textureSample(env_map, env_sampler, N).rgb;
+
+    let diffuse = diffuse_irradiance * albedo;
+
+    // let specular_irradiance = textureSample(env_map, env_sampler, R).rgb;
+    // let prefiltered_color = textureSampleLod(env_map, env_sampler, R, roughness * 8.0).rgb;
+    // let brdf = textureSample(brdf_lut, brdf_sampler, vec2(NdV, roughness)).rgb;
+
+    // let specular = (prefiltered_color * (specular_irradiance * brdf.x + brdf.y)) * metallic;
+
+    // return diffuse + specular;
+
+    return diffuse;
 }
 
 struct VertexOutput {
@@ -159,19 +168,12 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     let albedo = pow(tex_color, vec3(2.2));
 
     var tex_normal = textureSample(normal_tex, tex_sampler, material.texture_scale.x * vertex.uv).xyz;
-    tex_normal = normalize(tex_normal * 2.0 - 1.0);
-
-    // create TBN matrix
-    let TBN = mat3x3<f32>(
-        vertex.world_tangent,
-        vertex.world_bitangent,
-        vertex.world_normal
-    );
-
     // transform normal from tangent space to world space
-    let normal = normalize(TBN * tex_normal);
+    let normal = normalize(vertex.world_tangent * tex_normal.x + vertex.world_binormal * tex_normal.y + vertex.world_normal * tex_normal.z);
 
-    let roughness = textureSample(roughness_tex, tex_sampler, vertex.uv).r * material.properties.y;
+    let metallic_roughness = textureSample(roughness_tex, tex_sampler, material.texture_scale.x * vertex.uv);
+    let roughness = metallic_roughness.g * material.properties.y;
+    let metallic = metallic_roughness.b * material.properties.x;
 
     let view_direction = normalize(camera.camera_position - vertex.world_position);
 
@@ -189,23 +191,19 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
             // light is too far away, ignore it
             continue;
         }
-        illumination += calculate_lighting(vertex, albedo, roughness, normal, light_direction, view_direction, light.color.xyz, attenuation);
+        illumination += calculate_lighting(vertex, albedo, roughness, metallic, normal, light_direction, view_direction, light.color.xyz, attenuation);
     }
 
     let tex_ao = textureSample(ao_tex, tex_sampler, material.texture_scale.x * vertex.uv).r;
 
-    illumination += calculate_ibl(vertex, albedo, normal, view_direction, roughness);
+    // WIP
+    // illumination += calculate_ibl(vertex, albedo, normal, view_direction, roughness, metallic);
 
-    let ambient = vec3(0.0);
-
-    var out_color = (ambient + illumination) * tex_ao;
+    var out_color = illumination * tex_ao;
 
     // gamma correction
-    out_color = out_color / (out_color + vec3(1.0));
     out_color = pow(out_color, vec3(1.0 / 2.2));
-
     out_color = clamp(out_color, vec3(0.0), vec3(1.0));
-
     output.color = vec4<f32>(out_color, 1.0);
 
     return output;

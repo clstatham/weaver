@@ -5,7 +5,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{app::asset_server::AssetId, core::aabb::Aabb};
 
-pub const MAX_MESHES: usize = 1000;
+pub const MAX_MESHES: usize = 2000;
 
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
@@ -153,6 +153,88 @@ impl Mesh {
                 for index in index_reader {
                     indices.push(index);
                 }
+            }
+        }
+
+        calculate_tangents(&mut vertices, &indices);
+
+        let aabb = Aabb::from_points(&vertices.iter().map(|v| v.position).collect::<Vec<_>>());
+
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        log::info!("Loaded mesh: {}", path.as_ref().display());
+        log::info!("  Vertices: {}", vertices.len());
+        log::info!("    Size: {} bytes", vertex_buffer.size());
+        log::info!("  Indices: {}", indices.len());
+        log::info!("    Size: {} bytes", index_buffer.size());
+
+        Ok(Self {
+            inner: Arc::new(MeshInner {
+                asset_id,
+                vertex_buffer,
+                index_buffer,
+                num_indices: indices.len(),
+                aabb,
+            }),
+        })
+    }
+
+    pub(crate) fn load_obj(
+        path: impl AsRef<Path>,
+        device: &wgpu::Device,
+        asset_id: AssetId,
+    ) -> anyhow::Result<Self> {
+        let path = path;
+        let (models, _) = tobj::load_obj(
+            path.as_ref(),
+            &tobj::LoadOptions {
+                triangulate: true,
+                single_index: true,
+                ..Default::default()
+            },
+        )?;
+
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        for model in models {
+            let mesh = model.mesh;
+
+            for i in 0..mesh.positions.len() / 3 {
+                let position = [
+                    mesh.positions[i * 3],
+                    mesh.positions[i * 3 + 1],
+                    mesh.positions[i * 3 + 2],
+                ];
+                let normal = [
+                    mesh.normals[i * 3],
+                    mesh.normals[i * 3 + 1],
+                    mesh.normals[i * 3 + 2],
+                ];
+                let uv = [mesh.texcoords[i * 2], mesh.texcoords[i * 2 + 1]];
+
+                vertices.push(Vertex {
+                    position: glam::Vec3::from(position),
+                    normal: glam::Vec3::from(normal),
+                    uv: glam::Vec2::from(uv),
+                    binormal: glam::Vec3::ZERO,
+                    tangent: glam::Vec3::ZERO,
+                    bitangent: glam::Vec3::ZERO,
+                });
+            }
+
+            for index in mesh.indices {
+                indices.push(index);
             }
         }
 

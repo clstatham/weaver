@@ -236,7 +236,6 @@ impl App {
                     let (output, mut encoder) = renderer.begin_frame();
                     renderer.prepare_components(&world);
                     renderer.prepare_passes(&world);
-                    renderer.update_all_buffers();
                     renderer.render(&world, &output, &mut encoder).unwrap();
                     renderer.render_ui(
                         &mut ui,

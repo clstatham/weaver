@@ -58,7 +58,9 @@ impl Material {
             roughness: roughness.unwrap_or(1.0),
             properties_handle: LazyBufferHandle::new(
                 BufferBindingType::Uniform {
-                    usage: wgpu::BufferUsages::UNIFORM,
+                    usage: wgpu::BufferUsages::UNIFORM
+                        | wgpu::BufferUsages::COPY_DST
+                        | wgpu::BufferUsages::COPY_SRC,
                     size: Some(std::mem::size_of::<MaterialUniform>()),
                 },
                 Some("Material"),
@@ -243,7 +245,17 @@ impl Material {
         Ok(materials)
     }
 
-    pub fn create_bind_group(
+    pub(crate) fn update(&self, renderer: &Renderer) -> anyhow::Result<()> {
+        let mut properties_buffer = self
+            .properties_handle
+            .get_or_create::<MaterialUniform>(renderer);
+        let properties = MaterialUniform::from(self);
+        properties_buffer.update(&[properties]);
+
+        Ok(())
+    }
+
+    pub(crate) fn create_bind_group(
         &mut self,
         renderer: &Renderer,
     ) -> anyhow::Result<Arc<wgpu::BindGroup>> {

@@ -102,10 +102,10 @@ impl Into<wgpu::BindingType> for &BufferBindingType {
 
 #[derive(Debug, Clone)]
 pub struct LazyBufferHandle {
-    handle: RefCell<Option<BufferHandle>>,
+    handle: Rc<RefCell<Option<BufferHandle>>>,
     pub ty: BufferBindingType,
     pub label: Option<&'static str>,
-    pending_data: Option<Arc<[u8]>>,
+    pending_data: Rc<RefCell<Option<Arc<[u8]>>>>,
 }
 
 impl LazyBufferHandle {
@@ -115,10 +115,10 @@ impl LazyBufferHandle {
         pending_data: Option<Arc<[u8]>>,
     ) -> Self {
         Self {
-            handle: RefCell::new(None),
+            handle: Rc::new(RefCell::new(None)),
             ty,
             label,
-            pending_data,
+            pending_data: Rc::new(RefCell::new(pending_data)),
         }
     }
 
@@ -128,10 +128,10 @@ impl LazyBufferHandle {
         label: Option<&'static str>,
     ) -> Self {
         Self {
-            handle: RefCell::new(Some(handle)),
+            handle: Rc::new(RefCell::new(Some(handle))),
             ty,
             label,
-            pending_data: None,
+            pending_data: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -142,8 +142,8 @@ impl LazyBufferHandle {
         if let Some(handle) = self.handle.borrow().as_ref().cloned() {
             return handle;
         }
-        if let Some(data) = self.pending_data.as_ref() {
-            return self.get_or_create_init::<_, C>(renderer, data);
+        if let Some(data) = self.pending_data.borrow_mut().take() {
+            return self.get_or_create_init::<_, C>(renderer, &data);
         }
         let buffer = match self.ty {
             BufferBindingType::Uniform { usage, size } => renderer.create_buffer::<C>(
@@ -965,8 +965,8 @@ impl Renderer {
         }
     }
 
-    /// Updates all buffers that are pending and flushes them.
-    /// This should be called before rendering.
+    /// Updates all buffers that are pending.
+    /// This should be called at least once before rendering.
     pub fn update_all_buffers(&mut self) {
         log::trace!("Updating all buffers");
         for handle in self
@@ -1032,6 +1032,7 @@ impl Renderer {
             let query = Query::<&Material>::new(world);
             for material in query.iter() {
                 material.alloc_buffers(self).unwrap();
+                material.update(self).unwrap();
             }
         }
 
@@ -1053,6 +1054,8 @@ impl Renderer {
                 camera.alloc_buffers(self).unwrap();
             }
         }
+
+        self.update_all_buffers();
     }
 
     pub fn render_ui(
@@ -1154,13 +1157,13 @@ impl Renderer {
             });
         }
 
-        // self.gbuffer_pass.render(
-        //     encoder,
-        //     &hdr_pass_view,
-        //     &self.depth_texture_view,
-        //     self,
-        //     world,
-        // )?;
+        self.gbuffer_pass.render_if_enabled(
+            encoder,
+            &hdr_pass_view,
+            &self.depth_texture_view,
+            self,
+            world,
+        )?;
 
         self.pbr_pass.render(self, &hdr_pass_view, world, encoder)?;
 
@@ -1255,6 +1258,7 @@ impl Renderer {
         for pass in self.extra_passes.iter() {
             pass.prepare(world, self).unwrap();
         }
+        self.update_all_buffers();
     }
 
     pub fn flush_and_present(&self, output: wgpu::SurfaceTexture, encoder: wgpu::CommandEncoder) {

@@ -70,9 +70,15 @@ impl AssetServer {
 
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id();
-            let mesh = Mesh::load_gltf(path.clone(), &renderer.device, id)?;
-            self.ids.insert(path.clone(), id);
-            self.meshes.insert(id, mesh);
+            if path.extension().unwrap() == "obj" {
+                let mesh = Mesh::load_obj(path.clone(), &renderer.device, id)?;
+                self.ids.insert(path.clone(), id);
+                self.meshes.insert(id, mesh);
+            } else {
+                let mesh = Mesh::load_gltf(path.clone(), &renderer.device, id)?;
+                self.ids.insert(path.clone(), id);
+                self.meshes.insert(id, mesh);
+            }
         }
         Ok(self
             .ids

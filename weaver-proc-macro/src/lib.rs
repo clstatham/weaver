@@ -292,40 +292,6 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
     gen.into()
 }
 
-#[proc_macro]
-pub fn impl_bundle_for_tuple(input: TokenStream) -> TokenStream {
-    let mut types = Vec::new();
-    let mut names = Vec::new();
-    for (i, arg) in syn::parse::<syn::TypeTuple>(input)
-        .unwrap()
-        .elems
-        .into_iter()
-        .enumerate()
-    {
-        // let name = syn::Index::from(i);
-        let name = format_ident!("t{}", i);
-        types.push(arg);
-        names.push(name);
-    }
-
-    let gen = quote! {
-        impl<#(#names),*> Bundle for (#(#names),*)
-        where
-            #(#names: Component),*
-        {
-            fn build(self, world: &World) -> anyhow::Result<Entity> {
-                let (#(#names),*) = self;
-                let entity = world.create_entity();
-                #(
-                    world.add_component(entity, #names)?;
-                )*
-                Ok(entity)
-            }
-        }
-    };
-    gen.into()
-}
-
 #[proc_macro_derive(Bundle)]
 pub fn bundle_derive(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
@@ -349,10 +315,9 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> TokenStream {
     });
     let gen = quote! {
         impl crate::ecs::Bundle for #name {
-            fn build(self, world: &crate::ecs::World) -> anyhow::Result<crate::ecs::Entity> {
-                let entity = world.create_entity();
+            fn build_on(self, entity: crate::ecs::entity::Entity, world: &crate::ecs::world::World) -> anyhow::Result<crate::ecs::entity::Entity> {
                 #(
-                    world.add_component(entity, self.#fields)?;
+                    self.#fields.build_on(entity, world)?;
                 )*
                 Ok(entity)
             }

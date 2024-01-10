@@ -1,5 +1,5 @@
 use clap::Parser;
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng};
 
 use crate::{
     app::Window,
@@ -18,6 +18,7 @@ use crate::{
 
 use self::{
     camera::{FollowCameraController, FollowCameraUpdate},
+    materials::{Banana, BrickWall, Metal, StoneWall, Wood, WoodTile},
     player::PlayerUpdate,
 };
 
@@ -27,12 +28,30 @@ pub mod materials;
 pub mod npc;
 pub mod player;
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct State {
     pub lights: Vec<Entity>,
     pub light_intensity: f32,
     pub light_radius: f32,
     pub npcs: Vec<Entity>,
+
+    pub banana_roughness: f32,
+    pub banana_metallic: f32,
+
+    pub tile_roughness: f32,
+    pub tile_metallic: f32,
+
+    pub wood_roughness: f32,
+    pub wood_metallic: f32,
+
+    pub brick_roughness: f32,
+    pub brick_metallic: f32,
+
+    pub stone_roughness: f32,
+    pub stone_metallic: f32,
+
+    pub metal_roughness: f32,
+    pub metal_metallic: f32,
 }
 
 #[system(WindowUpdate)]
@@ -55,12 +74,28 @@ fn ui_update(
             fps_display.run_ui(ctx);
         }
 
+        let mut n_npcs = state.npcs.len();
+
         let mut shadow_pass_enabled = renderer.shadow_pass.is_enabled();
-        egui::Window::new("Render Settings")
+        let mut n_lights = state.lights.len();
+        let mut light_intensity = state.light_intensity;
+        let mut light_radius = state.light_radius;
+
+        egui::Window::new("Settings")
             .default_width(200.0)
             .show(ctx, |ui| {
+                ui.heading("Renderer");
                 ui.checkbox(&mut shadow_pass_enabled, "Shadows");
+
+                ui.heading("Lights");
+                ui.add(egui::Slider::new(&mut n_lights, 0..=MAX_LIGHTS).text("Count"));
+                ui.add(egui::Slider::new(&mut light_intensity, 0.0..=100.0).text("Intensity"));
+                ui.add(egui::Slider::new(&mut light_radius, 0.0..=100.0).text("Radius"));
+
+                ui.heading("NPCs");
+                ui.add(egui::Slider::new(&mut n_npcs, 0..=1000).text("Count"));
             });
+
         if shadow_pass_enabled != renderer.shadow_pass.is_enabled() {
             if shadow_pass_enabled {
                 renderer.shadow_pass.enable();
@@ -68,17 +103,6 @@ fn ui_update(
                 renderer.shadow_pass.disable();
             }
         }
-
-        let mut n_lights = state.lights.len();
-        let mut light_intensity = state.light_intensity;
-        let mut light_radius = state.light_radius;
-        egui::Window::new("Lights")
-            .default_width(200.0)
-            .show(ctx, |ui| {
-                ui.add(egui::Slider::new(&mut n_lights, 0..=MAX_LIGHTS).text("Count"));
-                ui.add(egui::Slider::new(&mut light_intensity, 0.0..=30.0).text("Intensity"));
-                ui.add(egui::Slider::new(&mut light_radius, 0.0..=100.0).text("Radius"));
-            });
 
         if n_lights != state.lights.len() {
             for light in state.lights.drain(..) {
@@ -128,23 +152,21 @@ fn ui_update(
             state.light_radius = light_radius;
         }
 
-        let mut n_npcs = state.npcs.len();
-        egui::Window::new("NPCs")
-            .default_width(200.0)
-            .show(ctx, |ui| {
-                ui.add(egui::Slider::new(&mut n_npcs, 0..=500).text("Count"));
-            });
-
         if n_npcs != state.npcs.len() {
             for npc in state.npcs.drain(..) {
                 commands.remove_entity(npc);
             }
             let npc_mesh = asset_server
-                .load_mesh("meshes/monkey_flat.glb", &renderer)
+                .load_mesh("meshes/monkey_2x.glb", &renderer)
                 .unwrap();
-            let npc_material = materials::Materials::Wood
-                .load(&mut asset_server, 2.0)
-                .unwrap();
+            let npc_materials = [
+                asset_server
+                    .load_material("materials/wood_025.glb")
+                    .unwrap(),
+                asset_server
+                    .load_material("materials/metal_006.glb")
+                    .unwrap(),
+            ];
             let npc_count = n_npcs;
             let mut rng = rand::thread_rng();
             for _ in 0..npc_count {
@@ -159,16 +181,29 @@ fn ui_update(
                     speed: 0.0,
                     rotation_speed: 0.0,
                 };
-                state.npcs.push(
-                    commands
-                        .spawn(npc::NpcBundle {
-                            npc,
-                            transform: Transform::from_translation(Vec3::new(x, y, z)),
-                            mesh: npc_mesh.clone(),
-                            material: npc_material.clone(),
-                        })
-                        .unwrap(),
-                );
+
+                let material_index = rng.gen_range(0..npc_materials.len());
+
+                let npc_material = npc_materials[material_index].clone();
+                let npc = match material_index {
+                    0 => commands.spawn((
+                        npc,
+                        Transform::from_translation(Vec3::new(x, y, z)),
+                        npc_mesh.clone(),
+                        npc_material,
+                        Wood,
+                    )),
+                    1 => commands.spawn((
+                        npc,
+                        Transform::from_translation(Vec3::new(x, y, z)),
+                        npc_mesh.clone(),
+                        npc_material,
+                        Metal,
+                    )),
+                    _ => unreachable!(),
+                };
+
+                state.npcs.push(npc.unwrap());
             }
         }
     });
@@ -203,6 +238,8 @@ fn setup(
     hdr_loader: Res<HdrLoader>,
 ) {
     renderer.shadow_pass.disable();
+    renderer.gbuffer_pass.disable();
+    renderer.sky_pass.disable();
 
     commands.spawn(FpsDisplay::new())?;
 
@@ -216,28 +253,34 @@ fn setup(
     };
     commands.spawn(skybox)?;
 
+    let mut material = asset_server.load_material("materials/wood_herringbone_tiles_004.glb")?;
+    material.texture_scaling = 100.0;
+
     let ground = maps::GroundBundle {
         transform: Transform::from_scale_rotation_translation(
             Vec3::new(100.0, 1.0, 100.0),
             Quat::IDENTITY,
             Vec3::new(0.0, -1.0, 0.0),
         ),
-        mesh: asset_server.load_mesh("meshes/cube.glb", &renderer)?,
-        material: materials::Materials::WoodTile.load(&mut asset_server, 100.0)?,
+        mesh: asset_server.load_mesh("meshes/cube.obj", &renderer)?,
+        material,
         ground: maps::Ground,
     };
-    commands.spawn(ground)?;
+    commands.spawn((ground, WoodTile))?;
 
     let player = player::Player {
         speed: 14.0,
         rotation_speed: 0.002,
     };
-    let player = commands.spawn(player::PlayerBundle {
-        player,
-        transform: Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
-        mesh: asset_server.load_mesh("meshes/monkey_flat.glb", &renderer)?,
-        material: materials::Materials::BrickWall.load(&mut asset_server, 2.0)?,
-    })?;
+    let player = commands.spawn((
+        player::PlayerBundle {
+            player,
+            transform: Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
+            mesh: asset_server.load_mesh("meshes/monkey_2x.glb", &renderer)?,
+            material: asset_server.load_material("materials/wood_025.glb")?,
+        },
+        Banana,
+    ))?;
 
     let camera_controller = FollowCameraController {
         stiffness: 50.0,
@@ -261,10 +304,9 @@ pub fn run() -> anyhow::Result<()> {
     let mut app = App::new(args.width, args.height)?;
 
     app.insert_resource(State {
-        lights: Vec::new(),
         light_intensity: 10.0,
         light_radius: 30.0,
-        npcs: Vec::new(),
+        ..Default::default()
     })?;
 
     app.add_startup_system(Setup);
