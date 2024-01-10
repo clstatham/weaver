@@ -48,7 +48,7 @@ fn shadow_cubemap_overlay_fs(input: VertexOutput) -> @location(0) vec4<f32> {
                     let offset = vec3<f32>(f32(i), f32(j), f32(k)) * radius;
                     let sample_depth = textureSample(shadow_cube_maps, tex_sampler, to_light + offset, li).r * FAR_PLANE;
 
-                    if distance - 0.1 > sample_depth {
+                    if distance - 0.5 > sample_depth {
                         shadow += f32(distance - 0.5 > sample_depth) / (27.0 * f32(lights.count));
                     }
                 }

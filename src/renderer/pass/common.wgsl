@@ -1,7 +1,7 @@
 const PI: f32 = 3.1415926535897932384626433832795;
 
 const MAX_LIGHTS: u32 = 32u;
-const MIN_LIGHT_INTENSITY: f32 = 0.1;
+const MIN_LIGHT_INTENSITY: f32 = 0.01;
 
 struct VertexInput {
     @builtin(instance_index) instance_index: u32,

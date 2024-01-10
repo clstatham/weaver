@@ -19,9 +19,12 @@
 // light information
 @group(3) @binding(0) var<storage> point_lights: PointLights;
 
+fn saturate(x: f32) -> f32 {
+    return clamp(x, 0.0, 1.0);
+}
 
-fn fresnel_factor(F0: vec3<f32>, product: f32) -> vec3<f32> {
-    return mix(F0, vec3(1.0), pow(1.01 - product, 5.0));
+fn fresnel_schlick(f0: vec3<f32>, HdV: f32, roughness: f32) -> vec3<f32> {
+    return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(saturate(1.0 - HdV), 5.0);
 }
 
 fn d_ggx(NdH: f32, roughness: f32) -> f32 {
@@ -31,22 +34,27 @@ fn d_ggx(NdH: f32, roughness: f32) -> f32 {
     return m2 / (PI * d * d);
 }
 
-fn g_schlick(roughness: f32, NdV: f32, NdL: f32) -> f32 {
-    let k = roughness * roughness * 0.5;
-    let V = NdV * (1.0 - k) + k;
-    let L = NdL * (1.0 - k) + k;
-    return 0.25 / (V * L);
+fn g_schlick_ggx(roughness: f32, NdV: f32) -> f32 {
+    let r = roughness + 1.0;
+    let k = (r * r) / 8.0;
+
+    return NdV / (NdV * (1.0 - k) + k);
 }
 
-fn cooktorrance_specular(NdL: f32, NdV: f32, NdH: f32, specular: vec3<f32>, roughness: f32) -> vec3<f32> {
-    let D = d_ggx(NdH, roughness);
-    let G = g_schlick(roughness, NdV, NdL);
+fn g_smith(roughness: f32, NdV: f32, NdL: f32) -> f32 {
+    let ggx1 = g_schlick_ggx(roughness, NdV);
+    let ggx2 = g_schlick_ggx(roughness, NdL);
 
-    // todo: get this from the material
-    let rim_amount = 0.5;
+    return ggx1 * ggx2;
+}
 
-    let rim = mix(1.0 - roughness * rim_amount * 0.9, 1.0, NdV);
-    return (1.0 / rim) * specular * G * D;
+fn cooktorrance_brdf(NdL: f32, NdV: f32, NdH: f32, F: vec3<f32>, roughness: f32) -> vec3<f32> {
+    let NDF = d_ggx(NdH, roughness);
+    let G = g_smith(roughness, NdV, NdL);
+
+    let num = NDF * G * F;
+    let denom = 4.0 * NdV * NdL + 0.0001;
+    return num / denom;
 }
 
 
@@ -54,6 +62,7 @@ fn cooktorrance_specular(NdL: f32, NdV: f32, NdH: f32, specular: vec3<f32>, roug
 fn calculate_lighting(
     vertex: VertexOutput,
     albedo: vec3<f32>,
+    roughness: f32,
     normal: vec3<f32>,
     light_direction: vec3<f32>,
     view_direction: vec3<f32>,
@@ -61,23 +70,11 @@ fn calculate_lighting(
     attenuation: f32,
 ) -> vec3<f32> {
     let metallic = material.properties.x;
-    // roughness mapping
-    let roughness = textureSample(roughness_tex, tex_sampler, vertex.uv).r * material.properties.y;
 
     let N = normalize(normal);
     let V = normalize(view_direction);
     let L = normalize(light_direction);
     let H = normalize(V + L);
-    let NB = normalize(vertex.world_binormal);
-    let NT = normalize(vertex.world_tangent);
-
-    let tnrm = transpose(mat3x3<f32>(
-        vertex.world_tangent,
-        vertex.world_bitangent,
-        vertex.world_normal
-    ));
-
-    let specular = mix(vec3(0.04), albedo, metallic);
 
     let NdL = max(dot(N, L), 0.0);
     let NdV = max(dot(N, V), 0.001);
@@ -85,50 +82,34 @@ fn calculate_lighting(
     let HdV = max(dot(H, V), 0.001);
     let LdV = max(dot(L, V), 0.001);
 
-    // specular reflectance
-    let spec_fresnel = fresnel_factor(specular, HdV);
-    let spec_ref = cooktorrance_specular(NdL, NdV, NdH, spec_fresnel, roughness) * NdL;
+    let f0 = mix(vec3(0.04), albedo, metallic);
+    let F = fresnel_schlick(f0, HdV, roughness);
 
-    // diffuse
-    let diff_ref = (1.0 - spec_fresnel) * (1.0 / PI) * NdL;
+    let specular = cooktorrance_brdf(NdL, NdV, NdH, F, roughness);
 
-    var reflected_light = vec3(0.0);
-    var diffuse_light = vec3(0.0);
+    let kS = F;
+    var kD = vec3(1.0) - kS;
+    kD *= 1.0 - metallic;
 
-    // direct lighting
-    let direct_light = light_color * attenuation;
-    reflected_light += direct_light * spec_ref;
-    diffuse_light += direct_light * diff_ref;
-
-    let result = (diffuse_light * mix(albedo, vec3(0.0), metallic)) + reflected_light;
-
-    return result;
+    return (kD * albedo / PI + specular) * light_color * attenuation * NdL;
 }
 
 
 fn calculate_ibl(
     vertex: VertexOutput,
+    albedo: vec3<f32>,
     normal: vec3<f32>,
     view_direction: vec3<f32>,
+    roughness: f32,
 ) -> vec3<f32> {
-    let tnrm = transpose(mat3x3<f32>(
-        vertex.world_tangent,
-        vertex.world_bitangent,
-        vertex.world_normal
-    ));
+    let NdV = max(dot(normal, view_direction), 0.001);
+    let kS = fresnel_schlick(vec3(0.04), NdV, roughness);
+    let kD = vec3(1.0) - kS;
+    let irradiance = textureSample(env_map, env_sampler, normal).rgb;
+    let diffuse = irradiance * albedo;
+    let ambient = kD * diffuse;
 
-    let diffuse_dir = tnrm * normal;
-    let specular_dir = tnrm * reflect(-view_direction, normal);
-
-    // diffuse IBL
-    let env_diffuse = textureSample(env_map, env_sampler, diffuse_dir);
-
-    // specular IBL
-    let env_specular = textureSample(env_map, env_sampler, specular_dir);
-
-    let result = env_diffuse + env_specular;
-
-    return result.rgb;
+    return ambient;
 }
 
 struct VertexOutput {
@@ -174,6 +155,9 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     var output: FragmentOutput;
 
+    let tex_color = textureSample(diffuse_tex, tex_sampler, material.texture_scale.x * vertex.uv).xyz;
+    let albedo = pow(tex_color, vec3(2.2));
+
     var tex_normal = textureSample(normal_tex, tex_sampler, material.texture_scale.x * vertex.uv).xyz;
     tex_normal = normalize(tex_normal * 2.0 - 1.0);
 
@@ -187,6 +171,8 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     // transform normal from tangent space to world space
     let normal = normalize(TBN * tex_normal);
 
+    let roughness = textureSample(roughness_tex, tex_sampler, vertex.uv).r * material.properties.y;
+
     let view_direction = normalize(camera.camera_position - vertex.world_position);
 
     var illumination = vec3(0.0);
@@ -198,19 +184,25 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
         let distance = length(light_pos - vertex.world_position);
         let attenuation = light.intensity / (1.0 + distance * distance / (light.radius * light.radius));
+
         if attenuation < MIN_LIGHT_INTENSITY {
             // light is too far away, ignore it
             continue;
         }
-        illumination += calculate_lighting(vertex, material.base_color.xyz, normal, light_direction, view_direction, light.color.xyz, attenuation);
+        illumination += calculate_lighting(vertex, albedo, roughness, normal, light_direction, view_direction, light.color.xyz, attenuation);
     }
 
-    // illumination += calculate_ibl(vertex, normal, view_direction);
-
-    let tex_color = textureSample(diffuse_tex, tex_sampler, material.texture_scale.x * vertex.uv).xyz;
     let tex_ao = textureSample(ao_tex, tex_sampler, material.texture_scale.x * vertex.uv).r;
 
-    var out_color = tex_color * tex_ao * illumination;
+    illumination += calculate_ibl(vertex, albedo, normal, view_direction, roughness);
+
+    let ambient = vec3(0.0);
+
+    var out_color = (ambient + illumination) * tex_ao;
+
+    // gamma correction
+    out_color = out_color / (out_color + vec3(1.0));
+    out_color = pow(out_color, vec3(1.0 / 2.2));
 
     out_color = clamp(out_color, vec3(0.0), vec3(1.0));
 
