@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use rand::Rng;
 
-use super::texture::{SdrFormat, Texture};
+use super::texture::Texture;
 
 pub const TOTAL_MAX_PARTICLES: usize = 10000;
 

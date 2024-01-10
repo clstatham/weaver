@@ -8,7 +8,7 @@ use crate::{
         camera::{Camera, CameraUniform},
         color::{Color, ColorArray},
         doodads::{Doodad, Doodads, MAX_DOODADS},
-        texture::{DepthFormat, HdrFormat, Texture, TextureFormat},
+        texture::{DepthFormat, Texture, TextureFormat, WindowFormat},
         transform::Transform,
     },
     ecs::{Query, World},
@@ -395,7 +395,7 @@ impl DoodadRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: HdrFormat::FORMAT,
+                    format: WindowFormat::FORMAT,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -517,7 +517,7 @@ impl Pass for DoodadRenderPass {
             .handle
             .get_or_create::<DepthFormat>(renderer);
         let depth_texture = depth_texture.get_texture().unwrap();
-        let depth_texture_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let depth_texture_view = depth_texture.create_view(&Default::default());
 
         let cube_bind_group = self.cubes.get_or_create_bind_group(renderer);
         let cone_bind_group = self.cones.get_or_create_bind_group(renderer);

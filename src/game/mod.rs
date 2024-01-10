@@ -30,6 +30,8 @@ pub mod player;
 #[derive(Resource)]
 pub struct State {
     pub lights: Vec<Entity>,
+    pub light_intensity: f32,
+    pub light_radius: f32,
     pub npcs: Vec<Entity>,
 }
 
@@ -46,6 +48,7 @@ fn ui_update(
     mut fps_display: Query<&mut FpsDisplay>,
     mut renderer: ResMut<Renderer>,
     mut state: ResMut<State>,
+    mut point_lights: Query<&mut PointLight>,
 ) {
     ctx.draw_if_ready(|ctx| {
         for mut fps_display in fps_display.iter() {
@@ -67,10 +70,14 @@ fn ui_update(
         }
 
         let mut n_lights = state.lights.len();
+        let mut light_intensity = state.light_intensity;
+        let mut light_radius = state.light_radius;
         egui::Window::new("Lights")
             .default_width(200.0)
             .show(ctx, |ui| {
-                ui.add(egui::Slider::new(&mut n_lights, 1..=MAX_LIGHTS).text("Count"));
+                ui.add(egui::Slider::new(&mut n_lights, 0..=MAX_LIGHTS).text("Count"));
+                ui.add(egui::Slider::new(&mut light_intensity, 0.0..=30.0).text("Intensity"));
+                ui.add(egui::Slider::new(&mut light_radius, 0.0..=100.0).text("Radius"));
             });
 
         if n_lights != state.lights.len() {
@@ -86,28 +93,46 @@ fn ui_update(
                 Color::CYAN,
                 Color::MAGENTA,
             ];
-            let light_radius = 10.0;
+
             let light_count = n_lights;
             let mut rng = rand::thread_rng();
-            for i in 0..light_count {
-                let angle = (i as f32 / light_count as f32) * std::f32::consts::TAU;
+            for _i in 0..light_count {
+                // let angle = (i as f32 / light_count as f32) * std::f32::consts::TAU;
+                let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+                let light_radius = rng.gen_range(0.0..30.0);
                 let x = angle.cos() * light_radius;
                 let z = angle.sin() * light_radius;
+                let y = rng.gen_range(0.0..10.0);
 
                 let light = PointLight::new(
-                    Vec3::new(x, 5.0, z),
+                    Vec3::new(x, y, z),
                     light_colors[rng.gen_range(0..light_colors.len())],
-                    10.0,
+                    light_intensity,
+                    light_radius,
                 );
                 state.lights.push(commands.spawn(light).unwrap());
             }
+        }
+
+        if light_intensity != state.light_intensity {
+            for mut light in point_lights.iter() {
+                light.intensity = light_intensity;
+            }
+            state.light_intensity = light_intensity;
+        }
+
+        if light_radius != state.light_radius {
+            for mut light in point_lights.iter() {
+                light.radius = light_radius;
+            }
+            state.light_radius = light_radius;
         }
 
         let mut n_npcs = state.npcs.len();
         egui::Window::new("NPCs")
             .default_width(200.0)
             .show(ctx, |ui| {
-                ui.add(egui::Slider::new(&mut n_npcs, 1..=500).text("Count"));
+                ui.add(egui::Slider::new(&mut n_npcs, 0..=500).text("Count"));
             });
 
         if n_npcs != state.npcs.len() {
@@ -121,11 +146,14 @@ fn ui_update(
                 .load(&mut asset_server, 2.0)
                 .unwrap();
             let npc_count = n_npcs;
-            let npc_radius = 5.0;
-            for i in 0..npc_count {
-                let angle = (i as f32 / npc_count as f32) * std::f32::consts::TAU;
+            let mut rng = rand::thread_rng();
+            for _ in 0..npc_count {
+                // let angle = (i as f32 / npc_count as f32) * std::f32::consts::TAU;
+                let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+                let npc_radius = rng.gen_range(0.0..30.0);
                 let x = angle.cos() * npc_radius;
                 let z = angle.sin() * npc_radius;
+                let y = rng.gen_range(0.0..50.0);
 
                 let npc = npc::Npc {
                     speed: 0.0,
@@ -135,7 +163,7 @@ fn ui_update(
                     commands
                         .spawn(npc::NpcBundle {
                             npc,
-                            transform: Transform::from_translation(Vec3::new(x, 1.0, z)),
+                            transform: Transform::from_translation(Vec3::new(x, y, z)),
                             mesh: npc_mesh.clone(),
                             material: npc_material.clone(),
                         })
@@ -190,25 +218,25 @@ fn setup(
 
     let ground = maps::GroundBundle {
         transform: Transform::from_scale_rotation_translation(
-            Vec3::new(30.0, 1.0, 30.0),
+            Vec3::new(100.0, 1.0, 100.0),
             Quat::IDENTITY,
             Vec3::new(0.0, -1.0, 0.0),
         ),
         mesh: asset_server.load_mesh("meshes/cube.glb", &renderer)?,
-        material: materials::Materials::WoodTile.load(&mut asset_server, 30.0)?,
+        material: materials::Materials::WoodTile.load(&mut asset_server, 100.0)?,
         ground: maps::Ground,
     };
     commands.spawn(ground)?;
 
     let player = player::Player {
-        speed: 7.0,
+        speed: 14.0,
         rotation_speed: 0.002,
     };
     let player = commands.spawn(player::PlayerBundle {
         player,
         transform: Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
         mesh: asset_server.load_mesh("meshes/monkey_flat.glb", &renderer)?,
-        material: materials::Materials::Metal.load(&mut asset_server, 2.0)?,
+        material: materials::Materials::BrickWall.load(&mut asset_server, 2.0)?,
     })?;
 
     let camera_controller = FollowCameraController {
@@ -234,6 +262,8 @@ pub fn run() -> anyhow::Result<()> {
 
     app.insert_resource(State {
         lights: Vec::new(),
+        light_intensity: 10.0,
+        light_radius: 30.0,
         npcs: Vec::new(),
     })?;
 

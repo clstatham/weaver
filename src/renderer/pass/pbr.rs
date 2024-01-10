@@ -10,7 +10,7 @@ use crate::{
         light::PointLightArray,
         material::Material,
         mesh::{Mesh, Vertex, MAX_MESHES},
-        texture::{DepthFormat, HdrCubeFormat, HdrFormat, NormalMapFormat, Skybox, TextureFormat},
+        texture::{DepthFormat, HdrCubeFormat, HdrFormat, Skybox, TextureFormat},
         transform::Transform,
     },
     ecs::{Query, World},

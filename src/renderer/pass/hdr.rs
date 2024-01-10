@@ -1,7 +1,7 @@
 use crate::{
     core::texture::{HdrFormat, Texture, TextureFormat, WindowFormat},
     ecs::World,
-    renderer::{AllocBuffers, BindGroupLayoutCache, NonFilteringSampler},
+    renderer::{BindGroupLayoutCache, NonFilteringSampler},
 };
 
 use super::Pass;

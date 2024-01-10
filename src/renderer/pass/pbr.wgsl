@@ -58,7 +58,6 @@ fn calculate_lighting(
     light_direction: vec3<f32>,
     view_direction: vec3<f32>,
     light_color: vec3<f32>,
-    light_intensity: f32,
     attenuation: f32,
 ) -> vec3<f32> {
     let metallic = material.properties.x;
@@ -97,7 +96,7 @@ fn calculate_lighting(
     var diffuse_light = vec3(0.0);
 
     // direct lighting
-    let direct_light = light_color * light_intensity * attenuation;
+    let direct_light = light_color * attenuation;
     reflected_light += direct_light * spec_ref;
     diffuse_light += direct_light * diff_ref;
 
@@ -196,11 +195,17 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
         let light = point_lights.lights[i];
         let light_pos = light.position.xyz;
         let light_direction = normalize(light_pos - vertex.world_position);
-        let attenuation = 20.0 / length(light_pos - vertex.world_position);
-        illumination += calculate_lighting(vertex, material.base_color.xyz, normal, light_direction, view_direction, light.color.xyz, light.intensity, attenuation);
+
+        let distance = length(light_pos - vertex.world_position);
+        let attenuation = light.intensity / (1.0 + distance * distance / (light.radius * light.radius));
+        if attenuation < MIN_LIGHT_INTENSITY {
+            // light is too far away, ignore it
+            continue;
+        }
+        illumination += calculate_lighting(vertex, material.base_color.xyz, normal, light_direction, view_direction, light.color.xyz, attenuation);
     }
 
-    illumination += calculate_ibl(vertex, normal, view_direction);
+    // illumination += calculate_ibl(vertex, normal, view_direction);
 
     let tex_color = textureSample(diffuse_tex, tex_sampler, material.texture_scale.x * vertex.uv).xyz;
     let tex_ao = textureSample(ao_tex, tex_sampler, material.texture_scale.x * vertex.uv).r;

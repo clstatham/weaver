@@ -1,6 +1,7 @@
 const PI: f32 = 3.1415926535897932384626433832795;
 
 const MAX_LIGHTS: u32 = 32u;
+const MIN_LIGHT_INTENSITY: f32 = 0.1;
 
 struct VertexInput {
     @builtin(instance_index) instance_index: u32,
@@ -31,7 +32,7 @@ struct PointLight {
     color: vec4<f32>,
     proj_transform: mat4x4<f32>,
     intensity: f32,
-    _pad: f32,
+    radius: f32,
 };
 
 struct DirectionalLight {

@@ -7,7 +7,7 @@ use crate::{
     core::{
         material::Material,
         mesh::Mesh,
-        texture::{HdrD2ArrayFormat, NormalMapFormat, SdrFormat, Texture, TextureFormat},
+        texture::{NormalMapFormat, SdrFormat, Texture, TextureFormat},
     },
     renderer::{compute::hdr_loader::HdrLoader, Renderer},
 };

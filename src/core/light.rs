@@ -13,16 +13,18 @@ pub struct PointLight {
     pub position: glam::Vec3,
     pub color: Color,
     pub intensity: f32,
+    pub radius: f32,
 
     pub(crate) handle: LazyBufferHandle,
 }
 
 impl PointLight {
-    pub fn new(position: glam::Vec3, color: Color, intensity: f32) -> Self {
+    pub fn new(position: glam::Vec3, color: Color, intensity: f32, radius: f32) -> Self {
         Self {
             position,
             color,
             intensity,
+            radius,
 
             handle: LazyBufferHandle::new(
                 crate::renderer::BufferBindingType::Uniform {
@@ -82,7 +84,8 @@ pub struct PointLightUniform {
     pub color: [f32; 4],
     pub projection_transform: glam::Mat4,
     pub intensity: f32,
-    _pad: [f32; 3],
+    pub radius: f32,
+    _pad: [f32; 2],
 }
 
 impl From<&PointLight> for PointLightUniform {
@@ -92,7 +95,8 @@ impl From<&PointLight> for PointLightUniform {
             color: [light.color.r, light.color.g, light.color.b, 1.0],
             projection_transform: light.projection_transform(),
             intensity: light.intensity,
-            _pad: [0.0; 3],
+            radius: light.radius,
+            _pad: [0.0; 2],
         }
     }
 }

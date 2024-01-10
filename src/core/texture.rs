@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::{
     ecs::Component,
-    renderer::{AllocBuffers, BufferHandle, CreateBindGroupLayout, LazyBufferHandle, Renderer},
+    renderer::{CreateBindGroupLayout, LazyBufferHandle},
 };
 
 use super::color::Color;

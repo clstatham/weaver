@@ -27,7 +27,11 @@ fn shadow_cubemap_vs(input: VertexInput, @builtin(view_index) view_index: i32) -
 
 @fragment
 fn shadow_cubemap_fs(input: VertexOutput) -> @location(0) f32 {
-    let light_distance = length(input.world_space_pos.xyz - light.position.xyz);
-    let depth = light_distance / FAR_PLANE;
+    let distance = length(input.world_space_pos.xyz - light.position.xyz);
+    let attenuation = light.intensity / (1.0 + distance * distance / (light.radius * light.radius));
+    if attenuation < MIN_LIGHT_INTENSITY {
+        discard;
+    }
+    let depth = distance / FAR_PLANE;
     return depth;
 }

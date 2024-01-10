@@ -17,8 +17,7 @@ use crate::{
         light::{PointLight, PointLightArray},
         material::Material,
         texture::{
-            DepthFormat, HdrFormat, NormalMapFormat, PositionMapFormat, SdrFormat, Texture,
-            TextureFormat, WindowFormat,
+            DepthFormat, HdrFormat, NormalMapFormat, PositionMapFormat, TextureFormat, WindowFormat,
         },
         ui::EguiContext,
     },
@@ -26,9 +25,8 @@ use crate::{
 };
 
 use self::pass::{
-    doodads::DoodadRenderPass, gbuffer::GBufferRenderPass, hdr::HdrRenderPass,
-    particles::ParticleRenderPass, pbr::PbrRenderPass, shadow::OmniShadowRenderPass,
-    sky::SkyRenderPass, Pass,
+    doodads::DoodadRenderPass, gbuffer::GBufferRenderPass, hdr::HdrRenderPass, pbr::PbrRenderPass,
+    shadow::OmniShadowRenderPass, sky::SkyRenderPass, Pass,
 };
 
 pub mod compute;
@@ -541,7 +539,6 @@ pub struct Renderer {
     pub(crate) gbuffer_pass: GBufferRenderPass,
     pub(crate) pbr_pass: PbrRenderPass,
     pub(crate) sky_pass: SkyRenderPass,
-    pub particle_pass: ParticleRenderPass,
     pub shadow_pass: OmniShadowRenderPass,
     pub doodad_pass: DoodadRenderPass,
     pub(crate) extra_passes: Vec<Box<dyn pass::Pass>>,
@@ -718,8 +715,6 @@ impl Renderer {
 
         let sky_pass = SkyRenderPass::new(&device, &bind_group_layout_cache);
 
-        let particle_pass = ParticleRenderPass::new(&device);
-
         // let shadow_pass = ShadowRenderPass::new(&device, &sampler_clamp_nearest, &sampler_depth);
 
         let shadow_pass = OmniShadowRenderPass::new(&device, &bind_group_layout_cache);
@@ -744,7 +739,6 @@ impl Renderer {
             hdr_pass,
             gbuffer_pass,
             pbr_pass,
-            particle_pass,
             shadow_pass,
             sky_pass,
             doodad_pass,
@@ -1188,14 +1182,6 @@ impl Renderer {
             world,
         )?;
 
-        self.doodad_pass.render_if_enabled(
-            encoder,
-            &hdr_pass_view,
-            &self.depth_texture_view,
-            self,
-            world,
-        )?;
-
         // we always want to render the HDR pass, otherwise we won't see anything!
         self.hdr_pass.render(
             encoder,
@@ -1206,6 +1192,14 @@ impl Renderer {
         )?;
 
         self.shadow_pass.render_if_enabled(
+            encoder,
+            &self.color_texture_view,
+            &self.depth_texture_view,
+            self,
+            world,
+        )?;
+
+        self.doodad_pass.render_if_enabled(
             encoder,
             &self.color_texture_view,
             &self.depth_texture_view,
@@ -1258,7 +1252,6 @@ impl Renderer {
         self.doodad_pass.prepare(world, self).unwrap();
         self.sky_pass.prepare(world, self).unwrap();
         self.hdr_pass.prepare(world, self).unwrap();
-        self.particle_pass.prepare(world, self).unwrap();
         for pass in self.extra_passes.iter() {
             pass.prepare(world, self).unwrap();
         }

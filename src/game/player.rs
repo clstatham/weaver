@@ -54,6 +54,12 @@ pub fn player_update(
         if input.key_pressed(KeyCode::D) {
             direction -= rotation * Vec3::X;
         }
+        if input.key_pressed(KeyCode::Space) {
+            direction += rotation * Vec3::Y;
+        }
+        if input.key_pressed(KeyCode::LControl) {
+            direction -= rotation * Vec3::Y;
+        }
 
         translation += direction.normalize_or_zero() * player.speed * time.delta_seconds;
 

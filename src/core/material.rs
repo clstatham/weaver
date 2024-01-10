@@ -129,7 +129,7 @@ impl Material {
                             image.height,
                             &image.pixels,
                             SdrFormat::FORMAT,
-                            Some("GLTF Mesh Diffuse Texture"),
+                            Some("GLTF Material Diffuse Texture"),
                         ));
                     }
                     gltf::image::Format::R8G8B8A8 => {
@@ -138,7 +138,7 @@ impl Material {
                             image.height,
                             &image.pixels,
                             SdrFormat::FORMAT,
-                            Some("GLTF Mesh Diffuse Texture"),
+                            Some("GLTF Material Diffuse Texture"),
                         ));
                     }
                     _ => {
@@ -146,7 +146,7 @@ impl Material {
                     }
                 }
             } else {
-                log::warn!("GLTF Mesh has no diffuse texture");
+                log::warn!("GLTF Material has no diffuse texture");
                 mat.diffuse_texture = Some(Texture::default_texture());
             }
             if let Some(texture) = material.normal_texture() {
@@ -158,7 +158,7 @@ impl Material {
                             image.height,
                             &image.pixels,
                             NormalMapFormat::FORMAT,
-                            Some("GLTF Mesh Normal Texture"),
+                            Some("GLTF Material Normal Texture"),
                         ));
                     }
                     gltf::image::Format::R8G8B8A8 => {
@@ -167,7 +167,7 @@ impl Material {
                             image.height,
                             &image.pixels,
                             NormalMapFormat::FORMAT,
-                            Some("GLTF Mesh Normal Texture"),
+                            Some("GLTF Material Normal Texture"),
                         ));
                     }
                     _ => {
@@ -175,7 +175,7 @@ impl Material {
                     }
                 }
             } else {
-                log::warn!("GLTF Mesh has no normal texture");
+                log::warn!("GLTF Material has no normal texture");
             }
             if let Some(texture) = material
                 .pbr_metallic_roughness()
@@ -189,7 +189,7 @@ impl Material {
                             image.height,
                             &image.pixels,
                             SdrFormat::FORMAT,
-                            Some("GLTF Mesh Roughness Texture"),
+                            Some("GLTF Material Roughness Texture"),
                         ));
                     }
                     gltf::image::Format::R8G8B8A8 => {
@@ -198,7 +198,7 @@ impl Material {
                             image.height,
                             &image.pixels,
                             SdrFormat::FORMAT,
-                            Some("GLTF Mesh Roughness Texture"),
+                            Some("GLTF Material Roughness Texture"),
                         ));
                     }
                     _ => {
@@ -206,7 +206,7 @@ impl Material {
                     }
                 }
             } else {
-                log::warn!("GLTF Mesh has no roughness texture");
+                log::warn!("GLTF Material has no roughness texture");
             }
             if let Some(ao_texture) = material.occlusion_texture() {
                 let image = images.get(ao_texture.texture().source().index()).unwrap();
@@ -217,7 +217,7 @@ impl Material {
                             image.height,
                             &image.pixels,
                             SdrFormat::FORMAT,
-                            Some("GLTF Mesh Ambient Occlusion Texture"),
+                            Some("GLTF Material Ambient Occlusion Texture"),
                         ));
                     }
                     gltf::image::Format::R8G8B8A8 => {
@@ -226,7 +226,7 @@ impl Material {
                             image.height,
                             &image.pixels,
                             SdrFormat::FORMAT,
-                            Some("GLTF Mesh Ambient Occlusion Texture"),
+                            Some("GLTF Material Ambient Occlusion Texture"),
                         ));
                     }
                     _ => {
@@ -234,7 +234,7 @@ impl Material {
                     }
                 }
             } else {
-                log::warn!("GLTF Mesh has no ambient occlusion texture");
+                log::warn!("GLTF Material has no ambient occlusion texture");
             }
 
             materials.push(mat);
@@ -295,29 +295,28 @@ impl Material {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(
-                        &diffuse_texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                        &diffuse_texture.create_view(&Default::default()),
                     ),
                 },
                 // Normal texture
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::TextureView(
-                        &normal_texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                        &normal_texture.create_view(&Default::default()),
                     ),
                 },
                 // Roughness texture
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: wgpu::BindingResource::TextureView(
-                        &roughness_texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                        &roughness_texture.create_view(&Default::default()),
                     ),
                 },
                 // Ambient occlusion texture
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: wgpu::BindingResource::TextureView(
-                        &ambient_occlusion_texture
-                            .create_view(&wgpu::TextureViewDescriptor::default()),
+                        &ambient_occlusion_texture.create_view(&Default::default()),
                     ),
                 },
                 // Sampler
