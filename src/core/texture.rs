@@ -101,7 +101,7 @@ macro_rules! texture_format_impls {
                 }
 
                 fn destroy_resources(&self) -> anyhow::Result<()> {
-                    self.texture.handle.destroy();
+                    self.texture.handle.mark_destroyed();
                     Ok(())
                 }
             }
