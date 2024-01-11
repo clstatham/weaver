@@ -250,8 +250,8 @@ impl GpuComponent for DoodadBuffers {
     }
 
     fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.transform_buffer.destroy();
-        self.color_buffer.destroy();
+        self.transform_buffer.mark_destroyed();
+        self.color_buffer.mark_destroyed();
         Ok(())
     }
 }

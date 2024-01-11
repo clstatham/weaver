@@ -186,9 +186,7 @@ fn ui_update(
             for npc in state.npcs.drain(..) {
                 commands.despawn(npc);
             }
-            let npc_mesh = asset_server
-                .load_mesh("meshes/monkey_2x.glb", &renderer)
-                .unwrap();
+            let npc_mesh = asset_server.load_mesh("meshes/monkey_2x.glb").unwrap();
             let npc_materials = [
                 // asset_server.load_material("materials/wood.glb").unwrap(),
                 asset_server.load_material("materials/metal.glb").unwrap(),
@@ -279,7 +277,7 @@ fn setup(
             Quat::IDENTITY,
             Vec3::new(0.0, -1.0, 0.0),
         ),
-        mesh: asset_server.load_mesh("meshes/cube.obj", &renderer)?,
+        mesh: asset_server.load_mesh("meshes/cube.obj")?,
         material,
         ground: maps::Ground,
     };
@@ -295,7 +293,7 @@ fn setup(
         player::PlayerBundle {
             player,
             transform: Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
-            mesh: asset_server.load_mesh("meshes/monkey_2x.glb", &renderer)?,
+            mesh: asset_server.load_mesh("meshes/monkey_2x.glb")?,
             material,
         },
         Wood,

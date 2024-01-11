@@ -117,7 +117,7 @@ impl GpuComponent for LightViews {
     }
 
     fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.handle.destroy();
+        self.handle.mark_destroyed();
         Ok(())
     }
 }
@@ -194,7 +194,7 @@ impl GpuComponent for ShadowBuffers {
     }
 
     fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.shadow_cubemap.destroy();
+        self.shadow_cubemap.mark_destroyed();
         Ok(())
     }
 }

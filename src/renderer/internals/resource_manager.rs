@@ -9,13 +9,18 @@ use wgpu::util::DeviceExt;
 
 use super::resource::{GpuHandle, GpuHandleStatus, GpuResource};
 
+/// A manager for GPU-allocated resources.
 pub struct GpuResourceManager {
     next_buffer_id: AtomicU64,
 
+    /// The device that the resources are allocated on.
     device: Arc<wgpu::Device>,
+    /// The queue that is used to update resources.
     queue: Arc<wgpu::Queue>,
 
+    /// The resources that have been allocated.
     pub(crate) resources: RefCell<FxHashMap<u64, Arc<GpuResource>>>,
+    /// The handles to the resources.
     pub(crate) handles: RefCell<FxHashMap<u64, GpuHandle>>,
 }
 
@@ -30,14 +35,17 @@ impl GpuResourceManager {
         })
     }
 
+    /// Returns the device that the resources are allocated on.
     pub fn device(&self) -> &wgpu::Device {
         &self.device
     }
 
+    /// Returns the queue that is used to update resources.
     pub fn queue(&self) -> &wgpu::Queue {
         &self.queue
     }
 
+    /// Inserts the given resource into the manager and returns a handle to it.
     pub fn insert_resource(&self, buffer: Arc<GpuResource>) -> GpuHandle {
         let id = self
             .next_buffer_id
@@ -56,7 +64,8 @@ impl GpuResourceManager {
         handle
     }
 
-    pub fn gc_destroyed_buffers(&self) {
+    /// Garbage collects any resources that have been destroyed.
+    pub fn gc_destroyed_resources(&self) {
         let mut handles = self.handles.borrow_mut();
         let mut buffers = self.resources.borrow_mut();
         let mut destroyed = Vec::new();
@@ -72,6 +81,7 @@ impl GpuResourceManager {
         }
     }
 
+    /// Creates a GPU-allocated buffer with the given parameters.
     pub fn create_buffer(
         &self,
         size: usize,
@@ -88,6 +98,7 @@ impl GpuResourceManager {
         Arc::new(GpuResource::Buffer { buffer })
     }
 
+    /// Creates a GPU-allocated buffer with the given parameters and initializes it with the given data.
     pub fn create_buffer_init<T: bytemuck::Pod>(
         &self,
         data: &[T],
@@ -105,6 +116,7 @@ impl GpuResourceManager {
         Arc::new(GpuResource::Buffer { buffer })
     }
 
+    /// Creates a GPU-allocated texture with the given parameters.
     pub fn create_texture(
         &self,
         width: u32,
@@ -133,6 +145,7 @@ impl GpuResourceManager {
         Arc::new(GpuResource::Texture { texture })
     }
 
+    /// Creates a GPU-allocated texture with the given parameters and initializes it with the given data.
     pub fn create_texture_init<T: bytemuck::Pod>(
         &self,
         width: u32,
@@ -166,6 +179,7 @@ impl GpuResourceManager {
         Arc::new(GpuResource::Texture { texture })
     }
 
+    /// Creates a GPU-allocated texture sampler with the given parameters.
     pub fn create_sampler(
         &self,
         address_mode: wgpu::AddressMode,
@@ -189,8 +203,8 @@ impl GpuResourceManager {
     }
 
     /// Updates the resource with the given data.
-    /// Returns true if the resource was updated, false if the resource is missing or not an updateable resource.
-    pub fn update_resource(&self, handle: &GpuHandle, pending_data: &[u8]) -> bool {
+    /// Returns Ok(()) if the resource was updated successfully, Err otherwise.
+    pub fn update_resource(&self, handle: &GpuHandle, pending_data: &[u8]) -> anyhow::Result<()> {
         if let Some(resource) = self.resources.borrow_mut().get_mut(&handle.id) {
             match resource.as_ref() {
                 GpuResource::Buffer { ref buffer } => {
@@ -210,14 +224,17 @@ impl GpuResourceManager {
                 }
                 _ => {
                     log::warn!("Resource {} is not a buffer or texture", handle.id);
-                    return false;
+                    return Err(anyhow::anyhow!(
+                        "Resource {} is not a buffer or texture",
+                        handle.id
+                    ));
                 }
             }
 
-            true
+            Ok(())
         } else {
             log::warn!("Resource {} is missing", handle.id);
-            false
+            Err(anyhow::anyhow!("Resource {} is missing", handle.id))
         }
     }
 
@@ -225,10 +242,12 @@ impl GpuResourceManager {
     /// This should be called at least once before rendering.
     pub fn update_all_resources(&self) {
         log::trace!("Updating all resources");
+        // check for pending resources
         for handle in self.handles.borrow_mut().values_mut() {
             let status = &mut *handle.status.borrow_mut();
             if let GpuHandleStatus::Pending { pending_data } = status {
-                if self.update_resource(handle, pending_data) {
+                // update the resource
+                if self.update_resource(handle, pending_data).is_ok() {
                     *status = GpuHandleStatus::Ready {
                         resource: self.resources.borrow().get(&handle.id).unwrap().clone(),
                     };

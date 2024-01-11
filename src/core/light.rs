@@ -69,7 +69,7 @@ impl GpuComponent for PointLight {
     }
 
     fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.handle.destroy();
+        self.handle.mark_destroyed();
         Ok(())
     }
 }
@@ -220,7 +220,7 @@ impl GpuComponent for PointLightArray {
     }
 
     fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.handle.destroy();
+        self.handle.mark_destroyed();
         Ok(())
     }
 }

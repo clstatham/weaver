@@ -136,7 +136,6 @@ impl EguiContext {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         device: &wgpu::Device,

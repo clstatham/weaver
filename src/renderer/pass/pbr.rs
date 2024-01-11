@@ -145,8 +145,8 @@ impl GpuComponent for PbrBuffers {
     }
 
     fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.camera.destroy();
-        self.env_map.destroy();
+        self.camera.mark_destroyed();
+        self.env_map.mark_destroyed();
         Ok(())
     }
 }

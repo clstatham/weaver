@@ -35,7 +35,7 @@ pub struct AssetServer {
 impl AssetServer {
     pub fn new(world: &World) -> anyhow::Result<Self> {
         let renderer = world.read_resource::<Renderer>()?;
-        let resource_manager = renderer.resource_manager.clone();
+        let resource_manager = renderer.resource_manager().clone();
         Ok(Self {
             next_id: 0,
             path_prefix: PathBuf::from("assets"),
@@ -61,11 +61,7 @@ impl AssetServer {
         self.path_prefix = path_prefix.into();
     }
 
-    pub fn load_mesh(
-        &mut self,
-        path: impl Into<PathBuf>,
-        renderer: &Renderer,
-    ) -> anyhow::Result<Mesh> {
+    pub fn load_mesh(&mut self, path: impl Into<PathBuf>) -> anyhow::Result<Mesh> {
         let path = path.into();
         let path = if path.is_absolute() {
             path
@@ -76,11 +72,11 @@ impl AssetServer {
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id();
             if path.extension().unwrap() == "obj" {
-                let mesh = Mesh::load_obj(path.clone(), &renderer.device, id)?;
+                let mesh = Mesh::load_obj(path.clone(), self.resource_manager.device(), id)?;
                 self.ids.insert(path.clone(), id);
                 self.meshes.insert(id, mesh);
             } else {
-                let mesh = Mesh::load_gltf(path.clone(), &renderer.device, id)?;
+                let mesh = Mesh::load_gltf(path.clone(), self.resource_manager.device(), id)?;
                 self.ids.insert(path.clone(), id);
                 self.meshes.insert(id, mesh);
             }
@@ -174,7 +170,6 @@ impl AssetServer {
         Ok(texture)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn create_material(
         &mut self,
         diffuse_texture: Option<SdrTexture>,

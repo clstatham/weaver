@@ -44,9 +44,9 @@ impl App {
 
         let renderer = Renderer::new(&window);
 
-        let ui = EguiContext::new(&renderer.device, &window, 1);
+        let ui = EguiContext::new(renderer.device(), &window, 1);
 
-        let hdr_loader = HdrLoader::new(&renderer.device);
+        let hdr_loader = HdrLoader::new(renderer.device());
 
         let mut world = World::new();
         world.insert_resource(renderer)?;

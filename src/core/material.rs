@@ -36,7 +36,6 @@ pub struct Material {
 }
 
 impl Material {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         diffuse_texture: Option<SdrTexture>,
         normal_texture: Option<NormalMapTexture>,
@@ -319,7 +318,7 @@ impl GpuComponent for Material {
     }
 
     fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.properties_handle.destroy();
+        self.properties_handle.mark_destroyed();
 
         if let Some(diffuse_texture) = &self.diffuse_texture {
             diffuse_texture.destroy_resources()?;

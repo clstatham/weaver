@@ -12,15 +12,18 @@ use super::{BindGroupLayoutCache, BindableComponent, GpuResourceManager};
 /// This is also used to properly initialize a `LazyGpuHandle`.
 #[derive(Clone)]
 pub enum GpuResourceType {
+    /// A uniform buffer.
     Uniform {
         usage: wgpu::BufferUsages,
         size: usize,
     },
+    /// A storage buffer.
     Storage {
         usage: wgpu::BufferUsages,
         size: usize,
         read_only: bool,
     },
+    /// A texture.
     Texture {
         width: u32,
         height: u32,
@@ -30,6 +33,7 @@ pub enum GpuResourceType {
         view_dimension: wgpu::TextureViewDimension,
         depth_or_array_layers: u32,
     },
+    /// A texture sampler.
     Sampler {
         address_mode: wgpu::AddressMode,
         filter_mode: wgpu::FilterMode,
@@ -178,25 +182,17 @@ impl GpuHandle {
                     _ => unreachable!(),
                 })),
                 GpuResource::Buffer { .. } => {
-                    log::warn!(
-                        "Attempted to get a texture from buffer: {} is {:?}",
-                        self.id,
-                        self.status
-                    );
+                    log::warn!("Attempted to get texture from buffer: {}", self.id,);
                     None
                 }
                 GpuResource::Sampler { .. } => {
-                    log::warn!(
-                        "Attempted to get a texture from sampler: {} is {:?}",
-                        self.id,
-                        self.status
-                    );
+                    log::warn!("Attempted to get texture from sampler: {}", self.id,);
                     None
                 }
             }
         } else {
             log::warn!(
-                "Attempted to get a texture that is not ready: {} is {:?}",
+                "Attempted to get texture that is not ready: {} is {:?}",
                 self.id,
                 self.status
             );
@@ -204,6 +200,7 @@ impl GpuHandle {
         }
     }
 
+    /// Returns the underlying sampler iff the handle is ready and the underlying resource is a sampler.
     pub fn get_sampler(&self) -> Option<Ref<'_, wgpu::Sampler>> {
         let status = self.status.borrow();
         if let GpuHandleStatus::Ready {
@@ -219,25 +216,17 @@ impl GpuHandle {
                     _ => unreachable!(),
                 })),
                 GpuResource::Buffer { .. } => {
-                    log::warn!(
-                        "Attempted to get a sampler from buffer: {} is {:?}",
-                        self.id,
-                        self.status
-                    );
+                    log::warn!("Attempted to get sampler from buffer: {}", self.id,);
                     None
                 }
                 GpuResource::Texture { .. } => {
-                    log::warn!(
-                        "Attempted to get a sampler from texture: {} is {:?}",
-                        self.id,
-                        self.status
-                    );
+                    log::warn!("Attempted to get sampler from texture: {}", self.id,);
                     None
                 }
             }
         } else {
             log::warn!(
-                "Attempted to get a sampler that is not ready: {} is {:?}",
+                "Attempted to get sampler that is not ready: {} is {:?}",
                 self.id,
                 self.status
             );
@@ -245,9 +234,9 @@ impl GpuHandle {
         }
     }
 
-    /// Marks the underlying GPU resource as pending destruction, if it is not already destroyed.
-    /// This will not destroy the GPU resource until the next frame, unless [`GpuResourceManager::gc_destroyed_buffers`] is manually called.
-    pub fn destroy(&mut self) {
+    /// Marks the underlying GPU resource for destruction, if it is not already destroyed.
+    /// This will not destroy the GPU resource until the next frame, unless [`GpuResourceManager::gc_destroyed_resources`] is manually called.
+    pub fn mark_destroyed(&mut self) {
         let mut status = self.status.borrow_mut();
         match &mut *status {
             GpuHandleStatus::Ready { .. } => {
@@ -264,7 +253,6 @@ impl GpuHandle {
 }
 
 /// The status of a lazily initialized resource.
-
 pub enum LazyInitStatus {
     /// The resource is ready to be used.
     Ready { handle: GpuHandle },
@@ -311,6 +299,7 @@ impl LazyGpuHandle {
         }
     }
 
+    /// Creates a new `LazyGpuHandle` that is already initialized with the given handle.
     pub(crate) fn new_ready(handle: GpuHandle) -> Self {
         Self {
             status: Rc::new(RefCell::new(LazyInitStatus::Ready { handle })),
@@ -329,7 +318,7 @@ impl LazyGpuHandle {
                 pending_data,
             } => match pending_data {
                 Some(pending_data) => {
-                    let buffer = match ty {
+                    let resource = match ty {
                         GpuResourceType::Uniform { usage, .. } => {
                             manager.create_buffer_init(&*pending_data, *usage, *label)
                         }
@@ -364,15 +353,17 @@ impl LazyGpuHandle {
                         }
                     };
 
-                    let handle = manager.insert_resource(buffer);
+                    // insert the resource into the resource manager to get our handle
+                    let handle = manager.insert_resource(resource);
 
+                    // mark the lazy handle as ready
                     *status = LazyInitStatus::Ready {
                         handle: handle.clone(),
                     };
                     Ok(handle)
                 }
                 None => {
-                    let buffer = match ty {
+                    let resource = match ty {
                         GpuResourceType::Uniform { usage, size } => {
                             manager.create_buffer(*size, *usage, *label)
                         }
@@ -403,8 +394,10 @@ impl LazyGpuHandle {
                         } => manager.create_sampler(*address_mode, *filter_mode, *compare, *label),
                     };
 
-                    let handle = manager.insert_resource(buffer);
+                    // insert the resource into the resource manager to get our handle
+                    let handle = manager.insert_resource(resource);
 
+                    // mark the lazy handle as ready
                     *status = LazyInitStatus::Ready {
                         handle: handle.clone(),
                     };
@@ -420,13 +413,16 @@ impl LazyGpuHandle {
 
     /// Marks the underlying GPU resource as pending an update, if it is not already destroyed.
     /// This will not update the GPU resource until the next frame, unless the render queue is manually flushed.
+    /// If the resource has not yet been initialized, this will overwrite the pending data.
     pub fn update<T: bytemuck::Pod>(&self, data: &[T]) {
         let mut status = self.status.borrow_mut();
         match &mut *status {
             LazyInitStatus::Ready { handle } => {
+                // update the resource
                 handle.update(data);
             }
             LazyInitStatus::Pending { pending_data, .. } => {
+                // overwrite the pending data
                 *pending_data = Some(Arc::from(bytemuck::cast_slice(data)));
             }
             LazyInitStatus::Destroyed => {
@@ -435,13 +431,13 @@ impl LazyGpuHandle {
         }
     }
 
-    /// Marks the underlying GPU resource as pending destruction, if it is not already destroyed.
-    /// This will not destroy the GPU resource until the next frame, unless [`GpuResourceManager::gc_destroyed_buffers`] is manually called.
-    pub fn destroy(&self) {
+    /// Marks the underlying GPU resource for destruction, if it is not already destroyed.
+    /// This will not destroy the GPU resource until the next frame, unless [`GpuResourceManager::gc_destroyed_resources`] is manually called.
+    pub fn mark_destroyed(&self) {
         let mut status = self.status.borrow_mut();
         match &mut *status {
             LazyInitStatus::Ready { handle } => {
-                handle.destroy();
+                handle.mark_destroyed();
             }
             LazyInitStatus::Pending { .. } => {
                 *status = LazyInitStatus::Destroyed;
@@ -453,22 +449,29 @@ impl LazyGpuHandle {
     }
 }
 
+/// The status of a GPU handle (Ready, Pending, or Destroyed).
 #[derive(Clone)]
 pub enum GpuHandleStatus {
+    /// The handle is ready to be used.
     Ready { resource: Arc<GpuResource> },
+    /// The handle is pending an update.
     Pending { pending_data: Arc<[u8]> },
+    /// The handle has been destroyed.
     Destroyed,
 }
 
 impl GpuHandleStatus {
+    /// Returns true if the handle is ready to be used.
     pub fn is_ready(&self) -> bool {
         matches!(self, GpuHandleStatus::Ready { .. })
     }
 
+    /// Returns true if the handle is pending an update.
     pub fn is_pending(&self) -> bool {
         matches!(self, GpuHandleStatus::Pending { .. })
     }
 
+    /// Returns true if the handle has been destroyed.
     pub fn is_destroyed(&self) -> bool {
         matches!(self, GpuHandleStatus::Destroyed)
     }
@@ -484,10 +487,14 @@ impl Debug for GpuHandleStatus {
     }
 }
 
+/// A lazily initialized bind group.
 #[derive(Clone, Debug)]
 pub struct LazyBindGroup<T: BindableComponent> {
+    /// The bind group layout for the component.
     pub layout: Rc<RefCell<Option<Arc<wgpu::BindGroupLayout>>>>,
+    /// The bind group for the component.
     pub bind_group: Rc<RefCell<Option<Arc<wgpu::BindGroup>>>>,
+
     _phantom: std::marker::PhantomData<T>,
 }
 
@@ -508,18 +515,22 @@ impl<T> LazyBindGroup<T>
 where
     T: BindableComponent,
 {
+    /// Returns true if the bind group has been initialized.
     pub fn is_initialized(&self) -> bool {
         self.layout.borrow().is_some() && self.bind_group.borrow().is_some()
     }
 
+    /// Returns the bind group for the component, if it has been created.
     pub fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
         self.bind_group.borrow().as_ref().cloned()
     }
 
+    /// Returns the bind group layout for the component, if it has been created.
     pub fn bind_group_layout(&self) -> Option<Arc<wgpu::BindGroupLayout>> {
         self.layout.borrow().as_ref().cloned()
     }
 
+    /// Lazily initializes the bind group layout for the component, or returns the existing layout if it has already been initialized.
     pub fn lazy_init_layout(
         &self,
         manager: &GpuResourceManager,
@@ -527,11 +538,13 @@ where
     ) -> anyhow::Result<Arc<wgpu::BindGroupLayout>> {
         let mut layout = self.layout.borrow_mut();
         if layout.is_none() {
+            // create the layout
             *layout = Some(cache.get_or_create::<T>(manager.device()));
         }
         Ok(layout.as_ref().unwrap().clone())
     }
 
+    /// Lazily initializes the bind group for the component, or returns the existing bind group if it has already been initialized.
     pub fn lazy_init_bind_group(
         &self,
         manager: &GpuResourceManager,
@@ -541,9 +554,11 @@ where
         let mut layout = self.layout.borrow_mut();
         let mut bind_group = self.bind_group.borrow_mut();
         if layout.is_none() {
+            // create the layout
             *layout = Some(cache.get_or_create::<T>(manager.device()));
         }
         if bind_group.is_none() {
+            // create the bind group
             *bind_group = Some(component.create_bind_group(manager, cache)?);
         }
         Ok(bind_group.as_ref().unwrap().clone())

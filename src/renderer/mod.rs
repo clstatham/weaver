@@ -34,31 +34,31 @@ pub mod pass;
 #[derive(Resource)]
 #[allow(dead_code)]
 pub struct Renderer {
-    pub(crate) surface: wgpu::Surface,
-    pub(crate) device: Arc<wgpu::Device>,
-    pub(crate) queue: Arc<wgpu::Queue>,
-    pub(crate) config: wgpu::SurfaceConfiguration,
+    surface: wgpu::Surface,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
+    config: wgpu::SurfaceConfiguration,
 
-    pub(crate) color_texture: wgpu::Texture,
-    pub(crate) color_texture_view: wgpu::TextureView,
-    pub(crate) depth_texture: wgpu::Texture,
-    pub(crate) depth_texture_view: wgpu::TextureView,
-    pub(crate) position_texture: wgpu::Texture,
-    pub(crate) position_texture_view: wgpu::TextureView,
-    pub(crate) normal_texture: wgpu::Texture,
-    pub(crate) normal_texture_view: wgpu::TextureView,
+    color_texture: wgpu::Texture,
+    color_texture_view: wgpu::TextureView,
+    depth_texture: wgpu::Texture,
+    depth_texture_view: wgpu::TextureView,
+    position_texture: wgpu::Texture,
+    position_texture_view: wgpu::TextureView,
+    normal_texture: wgpu::Texture,
+    normal_texture_view: wgpu::TextureView,
 
-    pub(crate) hdr_pass: HdrRenderPass,
-    pub(crate) pbr_pass: PbrRenderPass,
-    pub(crate) sky_pass: SkyRenderPass,
+    pub hdr_pass: HdrRenderPass,
+    pub pbr_pass: PbrRenderPass,
+    pub sky_pass: SkyRenderPass,
     pub shadow_pass: OmniShadowRenderPass,
     pub doodad_pass: DoodadRenderPass,
-    pub(crate) extra_passes: Vec<Box<dyn pass::Pass>>,
+    pub extra_passes: Vec<Box<dyn pass::Pass>>,
 
-    pub(crate) resource_manager: Rc<GpuResourceManager>,
-    pub(crate) bind_group_layout_cache: BindGroupLayoutCache,
+    resource_manager: Rc<GpuResourceManager>,
+    bind_group_layout_cache: BindGroupLayoutCache,
 
-    pub(crate) point_lights: PointLightArray,
+    point_lights: PointLightArray,
 }
 
 impl Renderer {
@@ -224,13 +224,13 @@ impl Renderer {
 
         let sky_pass = SkyRenderPass::new(&device, &bind_group_layout_cache);
 
-        // let shadow_pass = ShadowRenderPass::new(&device, &sampler_clamp_nearest, &sampler_depth);
-
         let shadow_pass = OmniShadowRenderPass::new(&device, &bind_group_layout_cache);
 
         let doodad_pass = DoodadRenderPass::new(&device, &config, &bind_group_layout_cache);
 
         let extra_passes: Vec<Box<dyn Pass>> = vec![];
+
+        let point_lights = PointLightArray::new();
 
         Self {
             surface,
@@ -253,8 +253,20 @@ impl Renderer {
             extra_passes,
             resource_manager,
             bind_group_layout_cache,
-            point_lights: PointLightArray::new(),
+            point_lights,
         }
+    }
+
+    pub fn device(&self) -> &Arc<wgpu::Device> {
+        &self.device
+    }
+
+    pub fn queue(&self) -> &Arc<wgpu::Queue> {
+        &self.queue
+    }
+
+    pub fn resource_manager(&self) -> &Rc<GpuResourceManager> {
+        &self.resource_manager
     }
 
     /// Forces the render queue to flush, submitting an empty encoder.
@@ -517,6 +529,6 @@ impl Renderer {
     pub fn flush_and_present(&self, output: wgpu::SurfaceTexture, encoder: wgpu::CommandEncoder) {
         self.flush(encoder);
         output.present();
-        self.resource_manager.gc_destroyed_buffers();
+        self.resource_manager.gc_destroyed_resources();
     }
 }

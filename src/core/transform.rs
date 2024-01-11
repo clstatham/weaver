@@ -190,7 +190,7 @@ impl GpuComponent for TransformArray {
     }
 
     fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.handle.destroy();
+        self.handle.mark_destroyed();
         Ok(())
     }
 }
