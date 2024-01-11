@@ -4,7 +4,7 @@ use egui_winit::State;
 use weaver_proc_macro::{Component, Resource};
 use winit::window::Window;
 
-use super::texture::{TextureFormat, WindowFormat};
+use super::texture::{TextureFormat, WindowTexture};
 
 pub mod builtin {
     use std::collections::VecDeque;
@@ -81,12 +81,14 @@ pub mod builtin {
             )
             .color(egui::Color32::from_rgb(0, 255, 0));
 
-            egui::Window::new("FPS").show(ctx, |ui| {
-                ui.vertical_centered_justified(|ui| {
-                    ui.heading(format!("FPS: {:.2}", self.fps));
+            egui::Window::new("FPS")
+                .default_height(300.0)
+                .show(ctx, |ui| {
+                    ui.vertical_centered_justified(|ui| {
+                        ui.heading(format!("FPS: {:.2}", self.fps));
+                    });
+                    egui_plot::Plot::new("FPS").show(ui, |plot| plot.line(line))
                 });
-                egui_plot::Plot::new("FPS").show(ui, |plot| plot.line(line))
-            });
         }
     }
 }
@@ -103,7 +105,7 @@ impl EguiContext {
     pub fn new(device: &wgpu::Device, window: &Window, msaa_samples: u32) -> Self {
         let ctx = Context::default();
         let state = State::new(ctx.viewport_id(), window, None, None);
-        let renderer = egui_wgpu::Renderer::new(device, WindowFormat::FORMAT, None, msaa_samples);
+        let renderer = egui_wgpu::Renderer::new(device, WindowTexture::FORMAT, None, msaa_samples);
         Self {
             ctx,
             state,

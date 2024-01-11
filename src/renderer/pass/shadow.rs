@@ -6,16 +6,20 @@ use crate::{
     app::asset_server::AssetId,
     core::{
         light::{PointLightArray, MAX_LIGHTS},
-        mesh::{Vertex, MAX_MESHES},
+        mesh::Vertex,
         texture::{
-            DepthCubeArrayFormat, DepthFormat, MonoCubeArrayFormat, MonoCubeFormat, MonoFormat,
-            TextureFormat, WindowFormat,
+            DepthCubeArrayTexture, DepthTexture, MonoCubeArrayTexture, MonoCubeTexture,
+            MonoTexture, TextureFormat, WindowTexture,
         },
+        transform::TransformArray,
     },
     include_shader,
     prelude::*,
     renderer::{
-        AllocBuffers, BindGroupLayoutCache, BufferHandle, CreateBindGroupLayout, LazyBufferHandle,
+        internals::{
+            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
+            GpuResourceType, LazyBindGroup, LazyGpuHandle,
+        },
         Renderer,
     },
 };
@@ -26,11 +30,10 @@ const SHADOW_DEPTH_TEXTURE_SIZE: u32 = 1024;
 
 struct UniqueMesh {
     mesh: Mesh,
-    transforms: Vec<Transform>,
-    transform_buffer: LazyBufferHandle,
+    transforms: TransformArray,
 }
 
-#[derive(Default)]
+#[derive(Default, Component)]
 struct UniqueMeshes {
     unique_meshes: FxHashMap<AssetId, UniqueMesh>,
 }
@@ -50,81 +53,82 @@ impl UniqueMeshes {
                 .entry(mesh.asset_id())
                 .or_insert_with(|| UniqueMesh {
                     mesh: mesh.clone(),
-                    transforms: vec![],
-                    transform_buffer: LazyBufferHandle::new(
-                        crate::renderer::BufferBindingType::Storage {
-                            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                            size: Some(std::mem::size_of::<glam::Mat4>() * MAX_MESHES),
-                            read_only: true,
-                        },
-                        Some("Unique Mesh Transforms"),
-                        None,
-                    ),
+                    transforms: TransformArray::new(),
                 });
 
-            unique_mesh.transforms.push(*transform);
-        }
-    }
-
-    pub fn update(&mut self) {
-        for unique_mesh in self.unique_meshes.values_mut() {
-            unique_mesh.transform_buffer.update(&unique_mesh.transforms);
+            unique_mesh.transforms.push(&transform);
         }
     }
 }
 
-impl AllocBuffers for UniqueMeshes {
-    fn alloc_buffers(&self, renderer: &Renderer) -> anyhow::Result<Vec<BufferHandle>> {
-        let mut handles = Vec::new();
+impl GpuComponent for UniqueMeshes {
+    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
         for unique_mesh in self.unique_meshes.values() {
-            handles.push(
-                unique_mesh
-                    .transform_buffer
-                    .get_or_create::<Transform>(renderer),
-            );
+            unique_mesh.transforms.lazy_init(manager)?;
         }
-        Ok(handles)
+        Ok(vec![])
+    }
+
+    fn update_resources(&self, world: &World) -> anyhow::Result<()> {
+        for unique_mesh in self.unique_meshes.values() {
+            unique_mesh.transforms.update_resources(world)?;
+        }
+        Ok(())
+    }
+
+    fn destroy_resources(&self) -> anyhow::Result<()> {
+        for unique_mesh in self.unique_meshes.values() {
+            unique_mesh.transforms.destroy_resources()?;
+        }
+        Ok(())
     }
 }
 
 #[derive(Component, Clone)]
 struct LightViews {
-    handle: LazyBufferHandle,
+    handle: LazyGpuHandle,
+    bind_group: LazyBindGroup<Self>,
 }
 
 impl LightViews {
     pub fn new() -> Self {
         Self {
-            handle: LazyBufferHandle::new(
-                crate::renderer::BufferBindingType::Storage {
+            handle: LazyGpuHandle::new(
+                GpuResourceType::Storage {
                     usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                    size: Some(std::mem::size_of::<glam::Mat4>() * 6),
+                    size: std::mem::size_of::<glam::Mat4>() * 6,
                     read_only: true,
                 },
                 Some("Light Views"),
                 None,
             ),
+            bind_group: LazyBindGroup::default(),
         }
     }
+}
 
-    pub fn update(&self, light_views: &[glam::Mat4; 6]) {
-        self.handle.update(light_views);
+impl GpuComponent for LightViews {
+    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
+        Ok(vec![self.handle.lazy_init(manager)?])
+    }
+
+    fn update_resources(&self, _world: &World) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn destroy_resources(&self) -> anyhow::Result<()> {
+        self.handle.destroy();
+        Ok(())
     }
 }
 
-impl AllocBuffers for LightViews {
-    fn alloc_buffers(&self, renderer: &Renderer) -> anyhow::Result<Vec<BufferHandle>> {
-        Ok(vec![self.handle.get_or_create::<Self>(renderer)])
-    }
-}
-
-impl CreateBindGroupLayout for LightViews {
+impl BindableComponent for LightViews {
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Light Views"),
+            label: Some("Light Views Bind Group Layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
@@ -134,26 +138,111 @@ impl CreateBindGroupLayout for LightViews {
             }],
         })
     }
+
+    fn create_bind_group(
+        &self,
+        manager: &GpuResourceManager,
+        cache: &BindGroupLayoutCache,
+    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+        let handle = self.handle.lazy_init(manager)?;
+        let bind_group_layout = cache.get_or_create::<Self>(manager.device());
+        let bind_group = manager
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Light Views Bind Group"),
+                layout: &bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: handle.get_buffer().unwrap().as_entire_binding(),
+                }],
+            });
+
+        Ok(Arc::new(bind_group))
+    }
+
+    fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
+        self.bind_group.bind_group().clone()
+    }
+
+    fn lazy_init_bind_group(
+        &self,
+        manager: &GpuResourceManager,
+        cache: &BindGroupLayoutCache,
+    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+        if let Some(bind_group) = self.bind_group.bind_group() {
+            return Ok(bind_group);
+        }
+
+        let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
+        Ok(bind_group)
+    }
 }
 
 #[derive(Component, Clone)]
 struct ShadowBuffers {
-    shadow_cubemap: LazyBufferHandle,
-    bind_group: Option<Arc<wgpu::BindGroup>>,
+    shadow_cubemap: LazyGpuHandle,
+    bind_group: LazyBindGroup<Self>,
 }
 
-impl ShadowBuffers {
-    pub fn get_or_create_bind_group(&mut self, renderer: &Renderer) -> Arc<wgpu::BindGroup> {
-        if let Some(bind_group) = &self.bind_group {
-            return bind_group.clone();
-        }
+impl GpuComponent for ShadowBuffers {
+    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
+        Ok(vec![self.shadow_cubemap.lazy_init(manager)?])
+    }
 
-        let shadow_cubemap_handle = self
-            .shadow_cubemap
-            .get_or_create::<MonoCubeArrayFormat>(renderer);
-        let shadow_cubemap = shadow_cubemap_handle.get_texture().unwrap();
+    fn update_resources(&self, _world: &World) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-        let shadow_cubemap_sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
+    fn destroy_resources(&self) -> anyhow::Result<()> {
+        self.shadow_cubemap.destroy();
+        Ok(())
+    }
+}
+
+impl BindableComponent for ShadowBuffers {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Shadow Buffers Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: MonoCubeArrayTexture::SAMPLE_TYPE,
+                        view_dimension: wgpu::TextureViewDimension::CubeArray,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
+                },
+            ],
+        })
+    }
+
+    fn create_bind_group(
+        &self,
+        manager: &GpuResourceManager,
+        cache: &BindGroupLayoutCache,
+    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+        let shadow_cubemap = self.shadow_cubemap.lazy_init(manager)?;
+        let shadow_cubemap = shadow_cubemap.get_texture().unwrap();
+        let shadow_cubemap_view = shadow_cubemap.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("Shadow Cubemap View"),
+            format: Some(MonoTexture::FORMAT),
+            dimension: Some(wgpu::TextureViewDimension::CubeArray),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            base_array_layer: 0,
+            array_layer_count: Some(6 * MAX_LIGHTS as u32),
+            mip_level_count: None,
+        });
+
+        let sampler = manager.device().create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Shadow Cubemap Sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -164,76 +253,42 @@ impl ShadowBuffers {
             ..Default::default()
         });
 
-        let bind_group = Arc::new(
-            renderer
-                .device
-                .create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("Shadow Overlay Buffers"),
-                    layout: &renderer
-                        .bind_group_layout_cache
-                        .get_or_create::<Self>(&renderer.device),
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(
-                                &shadow_cubemap.create_view(&wgpu::TextureViewDescriptor {
-                                    label: Some("Shadow Cubemap View"),
-                                    format: Some(MonoCubeFormat::FORMAT),
-                                    dimension: Some(wgpu::TextureViewDimension::CubeArray),
-                                    aspect: wgpu::TextureAspect::All,
-                                    base_mip_level: 0,
-                                    base_array_layer: 0,
-                                    array_layer_count: None,
-                                    mip_level_count: None,
-                                }),
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&shadow_cubemap_sampler),
-                        },
-                    ],
-                }),
-        );
-
-        self.bind_group = Some(bind_group.clone());
-
-        bind_group
-    }
-}
-
-impl AllocBuffers for ShadowBuffers {
-    fn alloc_buffers(&self, renderer: &Renderer) -> anyhow::Result<Vec<BufferHandle>> {
-        Ok(vec![self
-            .shadow_cubemap
-            .get_or_create::<MonoCubeFormat>(renderer)])
-    }
-}
-
-impl CreateBindGroupLayout for ShadowBuffers {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Shadow Overlay Buffers"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::CubeArray,
-                        multisampled: false,
+        let bind_group_layout = cache.get_or_create::<Self>(manager.device());
+        let bind_group = manager
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Shadow Buffers Bind Group"),
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&shadow_cubemap_view),
                     },
-                    count: None,
-                },
-                // sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                    count: None,
-                },
-            ],
-        })
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+            });
+
+        Ok(Arc::new(bind_group))
+    }
+
+    fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
+        self.bind_group.bind_group().clone()
+    }
+
+    fn lazy_init_bind_group(
+        &self,
+        manager: &GpuResourceManager,
+        cache: &BindGroupLayoutCache,
+    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+        if let Some(bind_group) = self.bind_group.bind_group() {
+            return Ok(bind_group);
+        }
+
+        let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
+        Ok(bind_group)
     }
 }
 
@@ -242,7 +297,7 @@ pub struct OmniShadowRenderPass {
 
     cubemap_pipeline: wgpu::RenderPipeline,
     shadow_buffers: RefCell<ShadowBuffers>,
-    shadow_depth_cubemap: LazyBufferHandle,
+    shadow_depth_cubemap: LazyGpuHandle,
 
     overlay_pipeline: wgpu::RenderPipeline,
 
@@ -261,7 +316,7 @@ impl OmniShadowRenderPass {
             label: Some("shadow_cubemap"),
             bind_group_layouts: &[
                 // model transforms
-                &layout_cache.get_or_create::<Transform>(device),
+                &layout_cache.get_or_create::<TransformArray>(device),
                 // point light
                 &layout_cache.get_or_create::<PointLight>(device),
                 // light views
@@ -282,7 +337,7 @@ impl OmniShadowRenderPass {
                 module: &cubemap_shader,
                 entry_point: "shadow_cubemap_fs",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: MonoCubeFormat::FORMAT,
+                    format: MonoCubeTexture::FORMAT,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -292,7 +347,7 @@ impl OmniShadowRenderPass {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: DepthFormat::FORMAT,
+                format: DepthTexture::FORMAT,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: Default::default(),
@@ -302,13 +357,13 @@ impl OmniShadowRenderPass {
             multiview: Some(NonZeroU32::new(6).unwrap()),
         });
 
-        let shadow_cubemap = LazyBufferHandle::new(
-            crate::renderer::BufferBindingType::Texture {
+        let shadow_cubemap = LazyGpuHandle::new(
+            GpuResourceType::Texture {
                 usage: wgpu::TextureUsages::TEXTURE_BINDING
                     | wgpu::TextureUsages::COPY_SRC
                     | wgpu::TextureUsages::COPY_DST
                     | wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: MonoCubeFormat::FORMAT,
+                format: MonoCubeTexture::FORMAT,
                 width: SHADOW_DEPTH_TEXTURE_SIZE,
                 height: SHADOW_DEPTH_TEXTURE_SIZE,
                 dimension: wgpu::TextureDimension::D2,
@@ -319,13 +374,13 @@ impl OmniShadowRenderPass {
             None,
         );
 
-        let shadow_depth_cubemap = LazyBufferHandle::new(
-            crate::renderer::BufferBindingType::Texture {
+        let shadow_depth_cubemap = LazyGpuHandle::new(
+            GpuResourceType::Texture {
                 usage: wgpu::TextureUsages::TEXTURE_BINDING
                     | wgpu::TextureUsages::COPY_SRC
                     | wgpu::TextureUsages::COPY_DST
                     | wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: DepthCubeArrayFormat::FORMAT,
+                format: DepthCubeArrayTexture::FORMAT,
                 width: SHADOW_DEPTH_TEXTURE_SIZE,
                 height: SHADOW_DEPTH_TEXTURE_SIZE,
                 dimension: wgpu::TextureDimension::D2,
@@ -346,7 +401,7 @@ impl OmniShadowRenderPass {
                 label: Some("shadow_cubemap_overlay"),
                 bind_group_layouts: &[
                     // model transforms
-                    &layout_cache.get_or_create::<Transform>(device),
+                    &layout_cache.get_or_create::<TransformArray>(device),
                     // camera
                     &layout_cache.get_or_create::<Camera>(device),
                     // shadow cubemap and sampler
@@ -369,7 +424,7 @@ impl OmniShadowRenderPass {
                 module: &overlay_shader,
                 entry_point: "shadow_cubemap_overlay_fs",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: WindowFormat::FORMAT,
+                    format: WindowTexture::FORMAT,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -379,7 +434,7 @@ impl OmniShadowRenderPass {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: DepthFormat::FORMAT,
+                format: DepthTexture::FORMAT,
                 depth_write_enabled: false,
                 depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: Default::default(),
@@ -395,7 +450,7 @@ impl OmniShadowRenderPass {
             cubemap_pipeline,
             shadow_buffers: RefCell::new(ShadowBuffers {
                 shadow_cubemap,
-                bind_group: None,
+                bind_group: LazyBindGroup::default(),
             }),
             shadow_depth_cubemap,
 
@@ -413,29 +468,27 @@ impl OmniShadowRenderPass {
         point_light: &PointLight,
         point_light_index: usize,
     ) -> anyhow::Result<()> {
-        let point_light_handle = &point_light.alloc_buffers(renderer).unwrap()[0];
-        let point_light_bind_group = point_light_handle.bind_group().unwrap();
+        let manager = &renderer.resource_manager;
+        let cache = &renderer.bind_group_layout_cache;
+        let point_light_bind_group = point_light.lazy_init_bind_group(manager, cache)?;
 
         let light_views = self.light_views.borrow();
         let light_views = light_views.get(point_light_index).unwrap();
-        let light_views_handle = &light_views.alloc_buffers(renderer).unwrap()[0];
-        let light_views_bind_group = light_views_handle.bind_group().unwrap();
+        let light_views_bind_group = light_views.lazy_init_bind_group(manager, cache)?;
 
         let shadow_cubemap_handle = self
             .shadow_buffers
             .borrow()
             .shadow_cubemap
-            .get_or_create::<MonoCubeArrayFormat>(renderer);
-        let shadow_depth_cubemap_handle = self
-            .shadow_depth_cubemap
-            .get_or_create::<DepthCubeArrayFormat>(renderer);
+            .lazy_init(manager)?;
+        let shadow_depth_cubemap_handle = self.shadow_depth_cubemap.lazy_init(manager)?;
 
         let shadow_cubemap = shadow_cubemap_handle.get_texture().unwrap();
         let shadow_depth_cubemap = shadow_depth_cubemap_handle.get_texture().unwrap();
 
         let shadow_cubemap_view = shadow_cubemap.create_view(&wgpu::TextureViewDescriptor {
             label: Some("Shadow Cubemap View"),
-            format: Some(MonoFormat::FORMAT),
+            format: Some(MonoTexture::FORMAT),
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             aspect: wgpu::TextureAspect::All,
             base_mip_level: 0,
@@ -447,7 +500,7 @@ impl OmniShadowRenderPass {
         let shadow_depth_cubemap_view =
             shadow_depth_cubemap.create_view(&wgpu::TextureViewDescriptor {
                 label: Some("Shadow Depth Cubemap View"),
-                format: Some(DepthFormat::FORMAT),
+                format: Some(DepthTexture::FORMAT),
                 dimension: Some(wgpu::TextureViewDimension::D2Array),
                 aspect: wgpu::TextureAspect::All,
                 base_mip_level: 0,
@@ -488,14 +541,9 @@ impl OmniShadowRenderPass {
 
         // render our meshes
         for mesh in self.unique_meshes.borrow().unique_meshes.values() {
-            let UniqueMesh {
-                mesh,
-                transforms,
-                transform_buffer,
-            } = mesh;
+            let UniqueMesh { mesh, transforms } = mesh;
 
-            let transform_buffer = transform_buffer.get_or_create::<Transform>(renderer);
-            let transform_bind_group = transform_buffer.bind_group().unwrap();
+            let transform_bind_group = transforms.lazy_init_bind_group(manager, cache)?;
 
             {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -548,24 +596,29 @@ impl OmniShadowRenderPass {
     ) -> anyhow::Result<()> {
         let camera = Query::<&Camera>::new(world);
         let camera = camera.iter().next().unwrap();
-        let camera_handle = &camera.alloc_buffers(renderer).unwrap()[0];
-        let camera_bind_group = camera_handle.bind_group().unwrap();
+        let camera_bind_group = camera.lazy_init_bind_group(
+            &renderer.resource_manager,
+            &renderer.bind_group_layout_cache,
+        )?;
 
-        let point_lights_handle = &renderer.point_lights.alloc_buffers(renderer)?[0];
-        let point_lights_bind_group = point_lights_handle.bind_group().unwrap();
+        let point_lights_bind_group = renderer.point_lights.lazy_init_bind_group(
+            &renderer.resource_manager,
+            &renderer.bind_group_layout_cache,
+        )?;
 
-        let mut shadow_buffers = self.shadow_buffers.borrow_mut();
-        let shadow_buffers_bind_group = shadow_buffers.get_or_create_bind_group(renderer);
+        let shadow_buffers = self.shadow_buffers.borrow();
+        let shadow_buffers_bind_group = shadow_buffers.lazy_init_bind_group(
+            &renderer.resource_manager,
+            &renderer.bind_group_layout_cache,
+        )?;
 
         for mesh in self.unique_meshes.borrow().unique_meshes.values() {
-            let UniqueMesh {
-                mesh,
-                transforms,
-                transform_buffer,
-            } = mesh;
+            let UniqueMesh { mesh, transforms } = mesh;
 
-            let transform_buffer = transform_buffer.get_or_create::<Transform>(renderer);
-            let transform_bind_group = transform_buffer.bind_group().unwrap();
+            let transform_bind_group = transforms.lazy_init_bind_group(
+                &renderer.resource_manager,
+                &renderer.bind_group_layout_cache,
+            )?;
 
             {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -627,13 +680,15 @@ impl Pass for OmniShadowRenderPass {
         self.shadow_buffers
             .borrow()
             .shadow_cubemap
-            .get_or_create::<MonoCubeArrayFormat>(renderer);
+            .lazy_init(&renderer.resource_manager)?;
         self.shadow_depth_cubemap
-            .get_or_create::<DepthCubeArrayFormat>(renderer);
+            .lazy_init(&renderer.resource_manager)?;
 
         self.unique_meshes.borrow_mut().gather(world);
-        self.unique_meshes.borrow().alloc_buffers(renderer)?;
-        self.unique_meshes.borrow_mut().update();
+        self.unique_meshes
+            .borrow()
+            .lazy_init(&renderer.resource_manager)?;
+        self.unique_meshes.borrow_mut().update_resources(world)?;
 
         let point_lights = Query::<&PointLight>::new(world);
         for (i, entity) in point_lights.entities().enumerate() {
@@ -664,13 +719,12 @@ impl Pass for OmniShadowRenderPass {
                 Some(light_views) => light_views,
                 None => {
                     let lv = LightViews::new();
-                    lv.alloc_buffers(renderer)?;
+                    lv.lazy_init(&renderer.resource_manager)?;
                     light_views.push(lv);
                     light_views.last().unwrap()
                 }
             };
-
-            light_views.update(&views);
+            light_views.handle.update(&views);
         }
 
         Ok(())

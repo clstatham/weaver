@@ -4,8 +4,8 @@ use image::codecs::hdr::HdrDecoder;
 use weaver_proc_macro::Resource;
 
 use crate::{
-    core::texture::{HdrCubeFormat, HdrD2ArrayFormat, Texture, TextureFormat},
-    renderer::{BufferStorage, LazyBufferHandle, Renderer},
+    core::texture::{HdrCubeTexture, HdrD2ArrayTexture, Texture, TextureFormat},
+    renderer::internals::{GpuResource, GpuResourceManager, LazyGpuHandle},
 };
 
 #[derive(Resource)]
@@ -36,7 +36,7 @@ impl HdrLoader {
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: HdrCubeFormat::FORMAT,
+                        format: HdrCubeTexture::FORMAT,
                         view_dimension: wgpu::TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -62,10 +62,10 @@ impl HdrLoader {
 
     pub fn load(
         &self,
-        renderer: &Renderer,
+        resource_manager: &GpuResourceManager,
         dst_size: u32,
         path: impl AsRef<Path>,
-    ) -> anyhow::Result<Texture> {
+    ) -> anyhow::Result<HdrCubeTexture> {
         let mut file = std::fs::File::open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
@@ -82,26 +82,28 @@ impl HdrLoader {
             &mut pixels,
         )?;
 
-        let src = renderer.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("HDR Loader Source Texture"),
-            size: wgpu::Extent3d {
-                width: meta.width,
-                height: meta.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: HdrCubeFormat::FORMAT,
-            usage: wgpu::TextureUsages::COPY_DST
-                | wgpu::TextureUsages::COPY_SRC
-                | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
+        let src = resource_manager
+            .device()
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("HDR Loader Source Texture"),
+                size: wgpu::Extent3d {
+                    width: meta.width,
+                    height: meta.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: HdrCubeTexture::FORMAT,
+                usage: wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::COPY_SRC
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
 
         let src_view = src.create_view(&wgpu::TextureViewDescriptor {
             label: Some("HDR Loader Source Texture View"),
-            format: Some(HdrCubeFormat::FORMAT),
+            format: Some(HdrCubeTexture::FORMAT),
             dimension: Some(wgpu::TextureViewDimension::D2),
             aspect: wgpu::TextureAspect::All,
             base_mip_level: 0,
@@ -110,7 +112,7 @@ impl HdrLoader {
             array_layer_count: None,
         });
 
-        renderer.queue.write_texture(
+        resource_manager.queue().write_texture(
             src.as_image_copy(),
             bytemuck::cast_slice(&pixels),
             wgpu::ImageDataLayout {
@@ -125,12 +127,11 @@ impl HdrLoader {
             },
         );
 
-        let dst_buf = renderer.create_texture::<HdrCubeFormat>(
+        let dst_buf = resource_manager.create_texture(
             dst_size,
             dst_size,
-            HdrD2ArrayFormat::FORMAT,
+            HdrD2ArrayTexture::FORMAT,
             wgpu::TextureDimension::D2,
-            wgpu::TextureViewDimension::Cube,
             6,
             wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::COPY_DST
@@ -139,11 +140,11 @@ impl HdrLoader {
             Some("HDR Loader Destination Texture"),
         );
 
-        let dst_view = match &*dst_buf.storage {
-            BufferStorage::Texture { texture, .. } => {
+        let dst_view = match &*dst_buf {
+            GpuResource::Texture { texture, .. } => {
                 texture.create_view(&wgpu::TextureViewDescriptor {
                     label: Some("HDR Loader Destination Texture View"),
-                    format: Some(HdrD2ArrayFormat::FORMAT),
+                    format: Some(HdrD2ArrayTexture::FORMAT),
                     dimension: Some(wgpu::TextureViewDimension::D2Array),
                     aspect: wgpu::TextureAspect::All,
                     array_layer_count: Some(6),
@@ -153,8 +154,8 @@ impl HdrLoader {
             _ => unreachable!(),
         };
 
-        let bind_group = renderer
-            .device
+        let bind_group = resource_manager
+            .device()
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("HDR Loader Bind Group"),
                 layout: &self.layout,
@@ -170,11 +171,12 @@ impl HdrLoader {
                 ],
             });
 
-        let mut encoder = renderer
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("HDR Loader Encoder"),
-            });
+        let mut encoder =
+            resource_manager
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("HDR Loader Encoder"),
+                });
 
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -187,27 +189,14 @@ impl HdrLoader {
             cpass.dispatch_workgroups(num_workgroups, num_workgroups, 6);
         }
 
-        renderer.queue.submit(std::iter::once(encoder.finish()));
+        resource_manager
+            .queue()
+            .submit(std::iter::once(encoder.finish()));
 
-        let handle = renderer.buffer_allocator.insert_buffer(dst_buf);
+        let handle = resource_manager.insert_resource(dst_buf);
 
-        let handle = LazyBufferHandle::from_handle(
-            handle,
-            crate::renderer::BufferBindingType::Texture {
-                width: dst_size,
-                height: dst_size,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING
-                    | wgpu::TextureUsages::COPY_DST
-                    | wgpu::TextureUsages::COPY_SRC
-                    | wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: HdrD2ArrayFormat::FORMAT,
-                dimension: wgpu::TextureDimension::D2,
-                view_dimension: wgpu::TextureViewDimension::D2Array,
-                depth_or_array_layers: 1,
-            },
-            Some("HDR Loader Destination Texture"),
-        );
+        let handle = LazyGpuHandle::new_ready(handle);
 
-        Ok(Texture::from_handle(handle))
+        Ok(HdrCubeTexture::from_texture(Texture::from_handle(handle)))
     }
 }

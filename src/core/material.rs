@@ -4,15 +4,16 @@ use weaver_proc_macro::Component;
 
 use crate::{
     app::asset_server::AssetId,
-    renderer::{
-        AllocBuffers, BufferBindingType, BufferHandle, CreateBindGroupLayout, LazyBufferHandle,
-        Renderer,
+    ecs::World,
+    renderer::internals::{
+        BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
+        GpuResourceType, LazyBindGroup, LazyGpuHandle,
     },
 };
 
 use super::{
     color::Color,
-    texture::{NormalMapFormat, SdrFormat, Texture, TextureFormat},
+    texture::{NormalMapTexture, SdrTexture, Texture, TextureFormat},
 };
 
 /// PBR material based on Bevy
@@ -20,27 +21,27 @@ use super::{
 pub struct Material {
     asset_id: AssetId,
     pub diffuse: Color,
-    pub diffuse_texture: Option<Texture>,
+    pub diffuse_texture: Option<SdrTexture>,
     pub metallic: f32,
-    pub normal_texture: Option<Texture>,
+    pub normal_texture: Option<NormalMapTexture>,
     pub roughness: f32,
-    pub roughness_texture: Option<Texture>,
-    pub ambient_occlusion_texture: Option<Texture>,
+    pub roughness_texture: Option<SdrTexture>,
+    pub ambient_occlusion_texture: Option<SdrTexture>,
 
     pub texture_scaling: f32,
 
-    pub(crate) properties_handle: LazyBufferHandle,
-    pub(crate) bind_group: Option<Arc<wgpu::BindGroup>>,
-    pub(crate) sampler: Option<Arc<wgpu::Sampler>>,
+    pub(crate) properties_handle: LazyGpuHandle,
+    pub(crate) bind_group: LazyBindGroup<Self>,
+    pub(crate) sampler: LazyGpuHandle,
 }
 
 impl Material {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        diffuse_texture: Option<Texture>,
-        normal_texture: Option<Texture>,
-        roughness_texture: Option<Texture>,
-        ambient_occlusion_texture: Option<Texture>,
+        diffuse_texture: Option<SdrTexture>,
+        normal_texture: Option<NormalMapTexture>,
+        roughness_texture: Option<SdrTexture>,
+        ambient_occlusion_texture: Option<SdrTexture>,
         metallic: Option<f32>,
         roughness: Option<f32>,
         texture_scaling: Option<f32>,
@@ -56,18 +57,26 @@ impl Material {
             diffuse: Color::WHITE,
             metallic: metallic.unwrap_or(1.0),
             roughness: roughness.unwrap_or(1.0),
-            properties_handle: LazyBufferHandle::new(
-                BufferBindingType::Uniform {
+            properties_handle: LazyGpuHandle::new(
+                GpuResourceType::Uniform {
                     usage: wgpu::BufferUsages::UNIFORM
                         | wgpu::BufferUsages::COPY_DST
                         | wgpu::BufferUsages::COPY_SRC,
-                    size: Some(std::mem::size_of::<MaterialUniform>()),
+                    size: std::mem::size_of::<MaterialUniform>(),
                 },
                 Some("Material"),
                 None,
             ),
-            bind_group: None,
-            sampler: None,
+            bind_group: LazyBindGroup::default(),
+            sampler: LazyGpuHandle::new(
+                GpuResourceType::Sampler {
+                    address_mode: wgpu::AddressMode::Repeat,
+                    filter_mode: wgpu::FilterMode::Linear,
+                    compare: None,
+                },
+                Some("Material Sampler"),
+                None,
+            ),
         }
     }
 
@@ -81,12 +90,12 @@ impl Material {
     }
 
     pub fn with_diffuse_texture(mut self, diffuse_texture: Texture) -> Self {
-        self.diffuse_texture = Some(diffuse_texture);
+        self.diffuse_texture = Some(SdrTexture::from_texture(diffuse_texture));
         self
     }
 
     pub fn with_normal_texture(mut self, normal_texture: Texture) -> Self {
-        self.normal_texture = Some(normal_texture);
+        self.normal_texture = Some(NormalMapTexture::from_texture(normal_texture));
         self
     }
 
@@ -101,7 +110,7 @@ impl Material {
     }
 
     pub fn with_roughness_texture(mut self, roughness_texture: Texture) -> Self {
-        self.roughness_texture = Some(roughness_texture);
+        self.roughness_texture = Some(SdrTexture::from_texture(roughness_texture));
         self
     }
 
@@ -126,22 +135,24 @@ impl Material {
                 let image = images.get(texture.texture().source().index()).unwrap();
                 match image.format {
                     gltf::image::Format::R8G8B8 => {
-                        mat.diffuse_texture = Some(Texture::from_data_r8g8b8(
-                            image.width,
-                            image.height,
-                            &image.pixels,
-                            SdrFormat::FORMAT,
-                            Some("GLTF Material Diffuse Texture"),
-                        ));
+                        mat.diffuse_texture =
+                            Some(SdrTexture::from_texture(Texture::from_data_r8g8b8(
+                                image.width,
+                                image.height,
+                                &image.pixels,
+                                SdrTexture::FORMAT,
+                                Some("GLTF Material Diffuse Texture"),
+                            )));
                     }
                     gltf::image::Format::R8G8B8A8 => {
-                        mat.diffuse_texture = Some(Texture::from_data_rgba8(
-                            image.width,
-                            image.height,
-                            &image.pixels,
-                            SdrFormat::FORMAT,
-                            Some("GLTF Material Diffuse Texture"),
-                        ));
+                        mat.diffuse_texture =
+                            Some(SdrTexture::from_texture(Texture::from_data_rgba8(
+                                image.width,
+                                image.height,
+                                &image.pixels,
+                                SdrTexture::FORMAT,
+                                Some("GLTF Material Diffuse Texture"),
+                            )));
                     }
                     _ => {
                         todo!("Unsupported GLTF Texture Format");
@@ -149,28 +160,29 @@ impl Material {
                 }
             } else {
                 log::warn!("GLTF Material has no diffuse texture");
-                mat.diffuse_texture = Some(Texture::default_texture());
             }
             if let Some(texture) = material.normal_texture() {
                 let image = images.get(texture.texture().source().index()).unwrap();
                 match image.format {
                     gltf::image::Format::R8G8B8 => {
-                        mat.normal_texture = Some(Texture::from_data_r8g8b8(
-                            image.width,
-                            image.height,
-                            &image.pixels,
-                            NormalMapFormat::FORMAT,
-                            Some("GLTF Material Normal Texture"),
-                        ));
+                        mat.normal_texture =
+                            Some(NormalMapTexture::from_texture(Texture::from_data_r8g8b8(
+                                image.width,
+                                image.height,
+                                &image.pixels,
+                                NormalMapTexture::FORMAT,
+                                Some("GLTF Material Normal Texture"),
+                            )));
                     }
                     gltf::image::Format::R8G8B8A8 => {
-                        mat.normal_texture = Some(Texture::from_data_rgba8(
-                            image.width,
-                            image.height,
-                            &image.pixels,
-                            NormalMapFormat::FORMAT,
-                            Some("GLTF Material Normal Texture"),
-                        ));
+                        mat.normal_texture =
+                            Some(NormalMapTexture::from_texture(Texture::from_data_rgba8(
+                                image.width,
+                                image.height,
+                                &image.pixels,
+                                NormalMapTexture::FORMAT,
+                                Some("GLTF Material Normal Texture"),
+                            )));
                     }
                     _ => {
                         todo!("Unsupported GLTF Texture Format");
@@ -186,22 +198,24 @@ impl Material {
                 let image = images.get(texture.texture().source().index()).unwrap();
                 match image.format {
                     gltf::image::Format::R8G8B8 => {
-                        mat.roughness_texture = Some(Texture::from_data_r8g8b8(
-                            image.width,
-                            image.height,
-                            &image.pixels,
-                            SdrFormat::FORMAT,
-                            Some("GLTF Material Roughness Texture"),
-                        ));
+                        mat.roughness_texture =
+                            Some(SdrTexture::from_texture(Texture::from_data_r8g8b8(
+                                image.width,
+                                image.height,
+                                &image.pixels,
+                                SdrTexture::FORMAT,
+                                Some("GLTF Material Roughness Texture"),
+                            )));
                     }
                     gltf::image::Format::R8G8B8A8 => {
-                        mat.roughness_texture = Some(Texture::from_data_rgba8(
-                            image.width,
-                            image.height,
-                            &image.pixels,
-                            SdrFormat::FORMAT,
-                            Some("GLTF Material Roughness Texture"),
-                        ));
+                        mat.roughness_texture =
+                            Some(SdrTexture::from_texture(Texture::from_data_rgba8(
+                                image.width,
+                                image.height,
+                                &image.pixels,
+                                SdrTexture::FORMAT,
+                                Some("GLTF Material Roughness Texture"),
+                            )));
                     }
                     _ => {
                         todo!("Unsupported GLTF Texture Format");
@@ -214,22 +228,24 @@ impl Material {
                 let image = images.get(ao_texture.texture().source().index()).unwrap();
                 match image.format {
                     gltf::image::Format::R8G8B8 => {
-                        mat.ambient_occlusion_texture = Some(Texture::from_data_r8g8b8(
-                            image.width,
-                            image.height,
-                            &image.pixels,
-                            SdrFormat::FORMAT,
-                            Some("GLTF Material Ambient Occlusion Texture"),
-                        ));
+                        mat.ambient_occlusion_texture =
+                            Some(SdrTexture::from_texture(Texture::from_data_r8g8b8(
+                                image.width,
+                                image.height,
+                                &image.pixels,
+                                SdrTexture::FORMAT,
+                                Some("GLTF Material Ambient Occlusion Texture"),
+                            )));
                     }
                     gltf::image::Format::R8G8B8A8 => {
-                        mat.ambient_occlusion_texture = Some(Texture::from_data_rgba8(
-                            image.width,
-                            image.height,
-                            &image.pixels,
-                            SdrFormat::FORMAT,
-                            Some("GLTF Material Ambient Occlusion Texture"),
-                        ));
+                        mat.ambient_occlusion_texture =
+                            Some(SdrTexture::from_texture(Texture::from_data_rgba8(
+                                image.width,
+                                image.height,
+                                &image.pixels,
+                                SdrTexture::FORMAT,
+                                Some("GLTF Material Ambient Occlusion Texture"),
+                            )));
                     }
                     _ => {
                         todo!("Unsupported GLTF Texture Format");
@@ -244,108 +260,6 @@ impl Material {
 
         Ok(materials)
     }
-
-    pub(crate) fn update(&self, renderer: &Renderer) -> anyhow::Result<()> {
-        let mut properties_buffer = self
-            .properties_handle
-            .get_or_create::<MaterialUniform>(renderer);
-        let properties = MaterialUniform::from(self);
-        properties_buffer.update(&[properties]);
-
-        Ok(())
-    }
-
-    pub(crate) fn create_bind_group(
-        &mut self,
-        renderer: &Renderer,
-    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        if let Some(bind_group) = &self.bind_group {
-            return Ok(bind_group.clone());
-        }
-
-        let device = &renderer.device;
-
-        let handles = self.alloc_buffers(renderer)?;
-        let properties_handle = &handles[0];
-        let diffuse_texture_handle = &handles[1];
-        let normal_texture_handle = &handles[2];
-        let roughness_texture_handle = &handles[3];
-        let ambient_occlusion_texture_handle = &handles[4];
-
-        let properties_buffer = properties_handle.get_buffer().unwrap();
-        let diffuse_texture = diffuse_texture_handle.get_texture().unwrap();
-        let normal_texture = normal_texture_handle.get_texture().unwrap();
-        let roughness_texture = roughness_texture_handle.get_texture().unwrap();
-        let ambient_occlusion_texture = ambient_occlusion_texture_handle.get_texture().unwrap();
-
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Material Sampler"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-        let sampler = Arc::new(sampler);
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Material Bind Group"),
-            layout: &renderer
-                .bind_group_layout_cache
-                .get_or_create::<Material>(device),
-            entries: &[
-                // Material properties
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(
-                        properties_buffer.as_entire_buffer_binding(),
-                    ),
-                },
-                // Diffuse texture
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(
-                        &diffuse_texture.create_view(&Default::default()),
-                    ),
-                },
-                // Normal texture
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(
-                        &normal_texture.create_view(&Default::default()),
-                    ),
-                },
-                // Roughness texture
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(
-                        &roughness_texture.create_view(&Default::default()),
-                    ),
-                },
-                // Ambient occlusion texture
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::TextureView(
-                        &ambient_occlusion_texture.create_view(&Default::default()),
-                    ),
-                },
-                // Sampler
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::Sampler(sampler.as_ref()),
-                },
-            ],
-        });
-
-        let bind_group = Arc::new(bind_group);
-
-        self.bind_group = Some(bind_group.clone());
-        self.sampler = Some(sampler);
-
-        Ok(bind_group)
-    }
 }
 
 #[derive(Debug, Clone, Copy, Component, bytemuck::Pod, bytemuck::Zeroable)]
@@ -354,24 +268,6 @@ pub struct MaterialUniform {
     pub base_color: [f32; 4],
     pub properties: [f32; 4], // metallic, roughness, 0, 0
     pub texture_scaling: [f32; 4],
-}
-
-impl CreateBindGroupLayout for MaterialUniform {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Material Uniform Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        })
-    }
 }
 
 impl From<&Material> for MaterialUniform {
@@ -384,103 +280,307 @@ impl From<&Material> for MaterialUniform {
     }
 }
 
-impl AllocBuffers for Material {
-    fn alloc_buffers(&self, renderer: &Renderer) -> anyhow::Result<Vec<BufferHandle>> {
-        let mut handles = vec![self
-            .properties_handle
-            .get_or_create_init::<_, MaterialUniform>(renderer, &[MaterialUniform::from(self)])];
-        let diffuse_texture = self.diffuse_texture.as_ref().unwrap();
-        handles.push(diffuse_texture.handle.get_or_create::<SdrFormat>(renderer));
-        let normal_texture = self.normal_texture.as_ref().unwrap();
-        handles.push(
-            normal_texture
-                .handle
-                .get_or_create::<NormalMapFormat>(renderer),
-        );
-        let roughness_texture = self.roughness_texture.as_ref().unwrap();
-        handles.push(
-            roughness_texture
-                .handle
-                .get_or_create::<SdrFormat>(renderer),
-        );
-        let ambient_occlusion_texture = self.ambient_occlusion_texture.as_ref().unwrap();
-        handles.push(
-            ambient_occlusion_texture
-                .handle
-                .get_or_create::<SdrFormat>(renderer),
-        );
-        Ok(handles)
+impl GpuComponent for Material {
+    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
+        if let Some(diffuse_texture) = &self.diffuse_texture {
+            diffuse_texture.lazy_init(manager)?;
+        }
+        if let Some(normal_texture) = &self.normal_texture {
+            normal_texture.lazy_init(manager)?;
+        }
+        if let Some(roughness_texture) = &self.roughness_texture {
+            roughness_texture.lazy_init(manager)?;
+        }
+        if let Some(ambient_occlusion_texture) = &self.ambient_occlusion_texture {
+            ambient_occlusion_texture.lazy_init(manager)?;
+        }
+
+        Ok(vec![self.properties_handle.lazy_init(manager)?])
+    }
+
+    fn update_resources(&self, world: &World) -> anyhow::Result<()> {
+        self.properties_handle
+            .update(&[MaterialUniform::from(self)]);
+
+        if let Some(diffuse_texture) = &self.diffuse_texture {
+            diffuse_texture.update_resources(world)?;
+        }
+        if let Some(normal_texture) = &self.normal_texture {
+            normal_texture.update_resources(world)?;
+        }
+        if let Some(roughness_texture) = &self.roughness_texture {
+            roughness_texture.update_resources(world)?;
+        }
+        if let Some(ambient_occlusion_texture) = &self.ambient_occlusion_texture {
+            ambient_occlusion_texture.update_resources(world)?;
+        }
+
+        Ok(())
+    }
+
+    fn destroy_resources(&self) -> anyhow::Result<()> {
+        self.properties_handle.destroy();
+
+        if let Some(diffuse_texture) = &self.diffuse_texture {
+            diffuse_texture.destroy_resources()?;
+        }
+        if let Some(normal_texture) = &self.normal_texture {
+            normal_texture.destroy_resources()?;
+        }
+        if let Some(roughness_texture) = &self.roughness_texture {
+            roughness_texture.destroy_resources()?;
+        }
+        if let Some(ambient_occlusion_texture) = &self.ambient_occlusion_texture {
+            ambient_occlusion_texture.destroy_resources()?;
+        }
+
+        Ok(())
     }
 }
 
-impl CreateBindGroupLayout for Material {
+impl BindableComponent for Material {
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        let properties_binding = wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
+
+        let diffuse_texture_binding = wgpu::BindGroupLayoutEntry {
+            binding: 1,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+
+        let diffuse_texture_sampler_binding = wgpu::BindGroupLayoutEntry {
+            binding: 2,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+            count: None,
+        };
+
+        let normal_texture_binding = wgpu::BindGroupLayoutEntry {
+            binding: 3,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+
+        let normal_texture_sampler_binding = wgpu::BindGroupLayoutEntry {
+            binding: 4,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+            count: None,
+        };
+
+        let roughness_texture_binding = wgpu::BindGroupLayoutEntry {
+            binding: 5,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+
+        let roughness_texture_sampler_binding = wgpu::BindGroupLayoutEntry {
+            binding: 6,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+            count: None,
+        };
+
+        let ambient_occlusion_texture_binding = wgpu::BindGroupLayoutEntry {
+            binding: 7,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+
+        let ambient_occlusion_texture_sampler_binding = wgpu::BindGroupLayoutEntry {
+            binding: 8,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+            count: None,
+        };
+
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Material Bind Group Layout"),
             entries: &[
-                // Material properties
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // Diffuse texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // Normal texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // Roughness texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // Ambient occlusion texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // Sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
+                properties_binding,
+                diffuse_texture_binding,
+                diffuse_texture_sampler_binding,
+                normal_texture_binding,
+                normal_texture_sampler_binding,
+                roughness_texture_binding,
+                roughness_texture_sampler_binding,
+                ambient_occlusion_texture_binding,
+                ambient_occlusion_texture_sampler_binding,
             ],
         })
+    }
+
+    fn create_bind_group(
+        &self,
+        manager: &GpuResourceManager,
+        cache: &BindGroupLayoutCache,
+    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+        let properties_handle = self.properties_handle.lazy_init(manager)?;
+
+        let sampler_handle = self.sampler.lazy_init(manager)?;
+        let sampler = sampler_handle.get_sampler().unwrap();
+
+        let diffuse_texture = if let Some(diffuse_texture) = self.diffuse_texture.clone() {
+            diffuse_texture
+        } else {
+            SdrTexture::from_texture(Texture::default_texture())
+        };
+        let diffuse_texture = diffuse_texture.lazy_init(manager)?;
+        let diffuse_texture = diffuse_texture.first().unwrap();
+        let diffuse_texture = diffuse_texture.get_texture().unwrap();
+        let diffuse_texture_view = diffuse_texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("Material Diffuse Texture View"),
+            format: Some(SdrTexture::FORMAT),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            ..Default::default()
+        });
+
+        let normal_texture = if let Some(normal_texture) = self.normal_texture.clone() {
+            normal_texture
+        } else {
+            NormalMapTexture::from_texture(Texture::default_texture())
+        };
+        let normal_texture = normal_texture.lazy_init(manager)?;
+        let normal_texture = normal_texture.first().unwrap();
+        let normal_texture = normal_texture.get_texture().unwrap();
+        let normal_texture_view = normal_texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("Material Normal Texture View"),
+            format: Some(NormalMapTexture::FORMAT),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            ..Default::default()
+        });
+
+        let roughness_texture = if let Some(roughness_texture) = self.roughness_texture.clone() {
+            roughness_texture
+        } else {
+            SdrTexture::from_texture(Texture::default_texture())
+        };
+        let roughness_texture = roughness_texture.lazy_init(manager)?;
+        let roughness_texture = roughness_texture.first().unwrap();
+        let roughness_texture = roughness_texture.get_texture().unwrap();
+        let roughness_texture_view = roughness_texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("Material Roughness Texture View"),
+            format: Some(SdrTexture::FORMAT),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            ..Default::default()
+        });
+
+        let ambient_occlusion_texture =
+            if let Some(ambient_occlusion_texture) = self.ambient_occlusion_texture.clone() {
+                ambient_occlusion_texture
+            } else {
+                SdrTexture::from_texture(Texture::default_texture())
+            };
+        let ambient_occlusion_texture = ambient_occlusion_texture.lazy_init(manager)?;
+        let ambient_occlusion_texture = ambient_occlusion_texture.first().unwrap();
+        let ambient_occlusion_texture = ambient_occlusion_texture.get_texture().unwrap();
+        let ambient_occlusion_texture_view =
+            ambient_occlusion_texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("Material Ambient Occlusion Texture View"),
+                format: Some(SdrTexture::FORMAT),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                ..Default::default()
+            });
+
+        let layout = cache.get_or_create::<Self>(manager.device());
+        let bind_group = manager
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Material Bind Group"),
+                layout: &layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer(
+                            properties_handle
+                                .get_buffer()
+                                .unwrap()
+                                .as_entire_buffer_binding(),
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&diffuse_texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(&normal_texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(&roughness_texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 7,
+                        resource: wgpu::BindingResource::TextureView(
+                            &ambient_occlusion_texture_view,
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+            });
+
+        Ok(Arc::new(bind_group))
+    }
+
+    fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
+        self.bind_group.bind_group().clone()
+    }
+
+    fn lazy_init_bind_group(
+        &self,
+        manager: &GpuResourceManager,
+        cache: &crate::renderer::internals::BindGroupLayoutCache,
+    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+        if let Some(bind_group) = self.bind_group.bind_group() {
+            return Ok(bind_group);
+        }
+
+        let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
+        Ok(bind_group)
     }
 }

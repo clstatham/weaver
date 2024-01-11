@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, rc::Rc};
 
 use rustc_hash::FxHashMap;
 use weaver_proc_macro::Resource;
@@ -7,9 +7,10 @@ use crate::{
     core::{
         material::Material,
         mesh::Mesh,
-        texture::{NormalMapFormat, SdrFormat, Texture, TextureFormat},
+        texture::{HdrCubeTexture, NormalMapTexture, SdrTexture, Texture, TextureFormat},
     },
-    renderer::{compute::hdr_loader::HdrLoader, Renderer},
+    ecs::World,
+    renderer::{compute::hdr_loader::HdrLoader, internals::GpuResourceManager, Renderer},
 };
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -25,17 +26,21 @@ pub struct AssetServer {
     next_id: u64,
     path_prefix: PathBuf,
     ids: FxHashMap<PathBuf, AssetId>,
+    resource_manager: Rc<GpuResourceManager>,
     meshes: FxHashMap<AssetId, Mesh>,
     textures: FxHashMap<AssetId, Texture>,
     materials: FxHashMap<AssetId, Material>,
 }
 
 impl AssetServer {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new(world: &World) -> anyhow::Result<Self> {
+        let renderer = world.read_resource::<Renderer>()?;
+        let resource_manager = renderer.resource_manager.clone();
         Ok(Self {
             next_id: 0,
             path_prefix: PathBuf::from("assets"),
             ids: FxHashMap::default(),
+            resource_manager,
             meshes: FxHashMap::default(),
             textures: FxHashMap::default(),
             materials: FxHashMap::default(),
@@ -119,7 +124,7 @@ impl AssetServer {
 
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id();
-            let texture = Texture::load(path.clone(), SdrFormat::FORMAT, None);
+            let texture = Texture::load(path.clone(), SdrTexture::FORMAT, None);
             self.ids.insert(path.clone(), id);
             self.textures.insert(id, texture);
         }
@@ -141,7 +146,7 @@ impl AssetServer {
 
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id();
-            let texture = Texture::load(path.clone(), NormalMapFormat::FORMAT, None);
+            let texture = Texture::load(path.clone(), NormalMapTexture::FORMAT, None);
             self.ids.insert(path.clone(), id);
             self.textures.insert(id, texture);
         }
@@ -157,26 +162,25 @@ impl AssetServer {
         &mut self,
         path: impl Into<PathBuf>,
         dst_size: u32,
-        renderer: &Renderer,
         hdr_loader: &HdrLoader,
-    ) -> anyhow::Result<Texture> {
+    ) -> anyhow::Result<HdrCubeTexture> {
         let path = path.into();
         let path = if path.is_absolute() {
             path
         } else {
             self.path_prefix.join(path)
         };
-        let texture = hdr_loader.load(renderer, dst_size, path)?;
+        let texture = hdr_loader.load(&self.resource_manager, dst_size, path)?;
         Ok(texture)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn create_material(
         &mut self,
-        diffuse_texture: Option<Texture>,
-        normal_texture: Option<Texture>,
-        roughness_texture: Option<Texture>,
-        ambient_occlusion_texture: Option<Texture>,
+        diffuse_texture: Option<SdrTexture>,
+        normal_texture: Option<NormalMapTexture>,
+        roughness_texture: Option<SdrTexture>,
+        ambient_occlusion_texture: Option<SdrTexture>,
         metallic: Option<f32>,
         roughness: Option<f32>,
         texture_scaling: Option<f32>,

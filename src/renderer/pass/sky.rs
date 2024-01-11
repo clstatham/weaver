@@ -1,11 +1,11 @@
 use crate::{
     core::{
         camera::Camera,
-        texture::{DepthFormat, HdrCubeFormat, HdrFormat, Skybox, TextureFormat},
+        texture::{DepthTexture, HdrCubeTexture, HdrTexture, Skybox, TextureFormat},
     },
     ecs::{Query, World},
     include_shader,
-    renderer::{AllocBuffers, BindGroupLayoutCache, NonFilteringSampler, Renderer},
+    renderer::{internals::BindableComponent, BindGroupLayoutCache, Renderer},
 };
 
 use super::Pass;
@@ -36,9 +36,20 @@ impl SkyRenderPass {
             ..Default::default()
         });
 
+        let sampler_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Skybox Sampler Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
+                }],
+            });
+
         let sampler_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Skybox Sampler Bind Group"),
-            layout: &bind_group_layout_cache.get_or_create::<NonFilteringSampler>(device),
+            layout: &sampler_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::Sampler(&sampler),
@@ -48,8 +59,8 @@ impl SkyRenderPass {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Skybox Pipeline Layout"),
             bind_group_layouts: &[
-                &bind_group_layout_cache.get_or_create::<HdrCubeFormat>(device),
-                &bind_group_layout_cache.get_or_create::<NonFilteringSampler>(device),
+                &bind_group_layout_cache.get_or_create::<HdrCubeTexture>(device),
+                &sampler_bind_group_layout,
                 &bind_group_layout_cache.get_or_create::<Camera>(device),
             ],
             push_constant_ranges: &[],
@@ -67,7 +78,7 @@ impl SkyRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: HdrFormat::FORMAT,
+                    format: HdrTexture::FORMAT,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -77,7 +88,7 @@ impl SkyRenderPass {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: DepthFormat::FORMAT,
+                format: DepthTexture::FORMAT,
                 depth_write_enabled: false,
                 depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: Default::default(),
@@ -120,18 +131,16 @@ impl Pass for SkyRenderPass {
         renderer: &Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
+        let manager = &renderer.resource_manager;
+        let cache = &renderer.bind_group_layout_cache;
+
         let skybox = Query::<&Skybox>::new(world);
         let skybox = skybox.iter().next().unwrap();
-        let skybox_handle = &skybox
-            .texture
-            .handle
-            .get_or_create::<HdrCubeFormat>(renderer);
-        let skybox_bind_group = skybox_handle.bind_group().unwrap();
+        let skybox_bind_group = skybox.lazy_init_bind_group(manager, cache)?;
 
         let camera = Query::<&Camera>::new(world);
         let camera = camera.iter().next().unwrap();
-        let camera_handle = &camera.alloc_buffers(renderer)?[0];
-        let camera_bind_group = camera_handle.bind_group().unwrap();
+        let camera_bind_group = camera.lazy_init_bind_group(manager, cache)?;
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

@@ -2,7 +2,7 @@
 
 const FAR_PLANE: f32 = 100.0;
 
-@group(0) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
+@group(0) @binding(0) var<storage> model_transforms: array<ModelTransform>;
 @group(1) @binding(0) var<uniform> light: PointLight;
 @group(2) @binding(0) var<storage> light_views: array<mat4x4<f32>, 6>;
 
@@ -15,7 +15,7 @@ struct VertexOutput {
 fn shadow_cubemap_vs(input: VertexInput, @builtin(view_index) view_index: i32) -> VertexOutput {
     var output: VertexOutput;
 
-    let model_transform = model_transforms[input.instance_index];
+    let model_transform = model_transforms[input.instance_index].model;
     let light_view = light_views[view_index];
 
     let pos = model_transform * vec4<f32>(input.position, 1.0);

@@ -1,285 +1,200 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::{
     ecs::Component,
-    renderer::{CreateBindGroupLayout, LazyBufferHandle},
+    renderer::internals::{
+        BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
+        GpuResourceType, LazyBindGroup, LazyGpuHandle,
+    },
 };
 
 use super::color::Color;
 
-pub trait TextureFormat: 'static + Send + Sync + Component {
+pub trait TextureFormat: Component {
     const FORMAT: wgpu::TextureFormat;
+    const SAMPLE_TYPE: wgpu::TextureSampleType;
+
+    fn texture(&self) -> &Texture;
 }
 
 macro_rules! texture_formats {
-    ($($name:ident: $format:ident,)*) => {
+    ($($name:ident: $format:ident, $sample_type:expr;)*) => {
         $(
-            #[derive(Debug, Clone, Copy, Component)]
-            pub struct $name;
+            #[derive(Clone, Component)]
+            pub struct $name {
+                texture: Texture,
+                bind_group: LazyBindGroup<Self>,
+            }
             impl TextureFormat for $name {
                 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::$format;
+                const SAMPLE_TYPE: wgpu::TextureSampleType = $sample_type;
+
+                fn texture(&self) -> &Texture {
+                    &self.texture
+                }
             }
         )*
     }
 }
 
 texture_formats! {
-    WindowFormat: Bgra8UnormSrgb,
-    SdrFormat: Rgba8UnormSrgb,
-    HdrFormat: Rgba16Float,
-    PositionMapFormat: Rgba32Float,
-    NormalMapFormat: Rgba8Unorm,
-    DepthFormat: Depth32Float,
-    HdrD2ArrayFormat: Rgba32Float,
-    HdrCubeFormat: Rgba32Float,
-    MonoFormat: R16Float,
-    MonoCubeFormat: R16Float,
-    DepthCubeFormat: Depth32Float,
-    MonoCubeArrayFormat: R16Float,
-    DepthCubeArrayFormat: Depth32Float,
+    WindowTexture: Bgra8UnormSrgb, wgpu::TextureSampleType::Float { filterable: true };
+    SdrTexture: Rgba8UnormSrgb, wgpu::TextureSampleType::Float { filterable: true };
+    HdrTexture: Rgba16Float, wgpu::TextureSampleType::Float { filterable: false };
+    PositionMapTexture: Rgba32Float, wgpu::TextureSampleType::Float { filterable: false };
+    NormalMapTexture: Rgba8Unorm, wgpu::TextureSampleType::Float { filterable: true };
+    DepthTexture: Depth32Float, wgpu::TextureSampleType::Depth;
+    HdrD2ArrayTexture: Rgba32Float, wgpu::TextureSampleType::Float { filterable: false };
+    HdrCubeTexture: Rgba32Float, wgpu::TextureSampleType::Float { filterable: false };
+    MonoTexture: R16Float, wgpu::TextureSampleType::Float { filterable: false };
+    MonoCubeTexture: R16Float, wgpu::TextureSampleType::Float { filterable: false };
+    DepthCubeTexture: Depth32Float, wgpu::TextureSampleType::Depth;
+    MonoCubeArrayTexture: R16Float, wgpu::TextureSampleType::Float { filterable: false };
+    DepthCubeArrayTexture: Depth32Float, wgpu::TextureSampleType::Depth;
 }
 
-impl CreateBindGroupLayout for WindowFormat {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Window Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        })
-    }
+macro_rules! texture_format_impls {
+    ($dim:ident, $view_dim:ident, $layers:literal; $($name:ident),*) => {
+        $(
+            impl $name {
+                pub fn new(
+                    width: u32,
+                    height: u32,
+                    label: Option<&'static str>,
+                ) -> Self {
+                    Self {
+                        texture: Texture::new_lazy(
+                            width,
+                            height,
+                            label,
+                            wgpu::TextureUsages::TEXTURE_BINDING
+                                | wgpu::TextureUsages::COPY_DST
+                                | wgpu::TextureUsages::COPY_SRC
+                                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+                            Self::FORMAT,
+                            wgpu::TextureDimension::$dim,
+                            wgpu::TextureViewDimension::$view_dim,
+                            1,
+                        ),
+                        bind_group: LazyBindGroup::default(),
+                    }
+                }
+
+
+                pub fn from_texture(texture: Texture) -> Self {
+                    Self {
+                        texture,
+                        bind_group: LazyBindGroup::default(),
+                    }
+                }
+            }
+
+
+            impl GpuComponent for $name {
+                fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
+                    Ok(vec![self.texture.handle.lazy_init(manager)?])
+                }
+
+                fn update_resources(&self, _world: &crate::ecs::World) -> anyhow::Result<()> {
+                    Ok(())
+                }
+
+                fn destroy_resources(&self) -> anyhow::Result<()> {
+                    self.texture.handle.destroy();
+                    Ok(())
+                }
+            }
+
+            impl BindableComponent for $name {
+                fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+                    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: Some(concat!(stringify!($name), " bind group layout")),
+                        entries: &[wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: Self::SAMPLE_TYPE,
+                                view_dimension: wgpu::TextureViewDimension::$view_dim,
+                                multisampled: false,
+                            },
+                            count: None,
+                        }],
+                    })
+                }
+
+
+                fn create_bind_group(
+                    &self,
+                    manager: &GpuResourceManager,
+                    cache: &BindGroupLayoutCache,
+                ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+                    let layout = cache.get_or_create::<Self>(
+                        manager.device(),
+                    );
+                    let texture = self.texture.handle.lazy_init(manager)?;
+                    let view = texture.get_texture().unwrap().create_view(&wgpu::TextureViewDescriptor {
+                        label: Some(concat!(stringify!($name), " view")),
+                        format: Some(Self::FORMAT),
+                        dimension: Some(wgpu::TextureViewDimension::$view_dim),
+                        array_layer_count: Some($layers),
+                        ..Default::default()
+                    });
+                    let bind_group = manager.device().create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some(concat!(stringify!($name), " bind group")),
+                        layout: &layout,
+                        entries: &[wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&view),
+                        }],
+                    });
+                    Ok(Arc::new(bind_group))
+                }
+
+                fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
+                    self.bind_group.bind_group().clone()
+                }
+
+                fn lazy_init_bind_group(
+                    &self,
+                    manager: &GpuResourceManager,
+                    cache: &crate::renderer::internals::BindGroupLayoutCache,
+                ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+                    if let Some(bind_group) = self.bind_group.bind_group() {
+                        return Ok(bind_group);
+                    }
+
+                    let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
+                    Ok(bind_group)
+                }
+            }
+        )*
+    };
 }
 
-impl CreateBindGroupLayout for SdrFormat {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("SDR Texture Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        })
-    }
-}
+texture_format_impls!(
+    D2, D2, 1;
+    WindowTexture,
+    SdrTexture,
+    HdrTexture,
+    PositionMapTexture,
+    NormalMapTexture,
+    DepthTexture
+);
 
-impl CreateBindGroupLayout for HdrFormat {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("HDR Texture Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        })
-    }
-}
+texture_format_impls!(D2, Cube, 6; HdrCubeTexture, MonoCubeTexture, DepthCubeTexture);
 
-impl CreateBindGroupLayout for NormalMapFormat {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Normal Map Texture Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        })
-    }
-}
+texture_format_impls!(D2, D2Array, 6; HdrD2ArrayTexture, MonoTexture);
 
-impl CreateBindGroupLayout for DepthFormat {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Depth Texture Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Depth,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        })
-    }
-}
-
-impl CreateBindGroupLayout for HdrD2ArrayFormat {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("HDR Cubemap Texture Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    view_dimension: wgpu::TextureViewDimension::D2Array,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        })
-    }
-}
-
-impl CreateBindGroupLayout for HdrCubeFormat {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("HDR Cubemap Texture Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    view_dimension: wgpu::TextureViewDimension::Cube,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        })
-    }
-}
-
-impl CreateBindGroupLayout for MonoFormat {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Mono Texture Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        })
-    }
-}
-
-impl CreateBindGroupLayout for MonoCubeFormat {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Mono Cubemap Texture Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    view_dimension: wgpu::TextureViewDimension::Cube,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        })
-    }
-}
-
-impl CreateBindGroupLayout for DepthCubeFormat {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Depth Cubemap Texture Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Depth,
-                    view_dimension: wgpu::TextureViewDimension::Cube,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        })
-    }
-}
-
-impl CreateBindGroupLayout for PositionMapFormat {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Position Map Texture Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        })
-    }
-}
-
-impl CreateBindGroupLayout for MonoCubeArrayFormat {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Mono Cubemap Array Texture Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    view_dimension: wgpu::TextureViewDimension::CubeArray,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        })
-    }
-}
-
-impl CreateBindGroupLayout for DepthCubeArrayFormat {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Depth Cubemap Array Texture Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Depth,
-                    view_dimension: wgpu::TextureViewDimension::CubeArray,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        })
-    }
-}
+texture_format_impls!(D2, CubeArray, 6; MonoCubeArrayTexture, DepthCubeArrayTexture);
 
 #[derive(Clone, Component)]
 pub struct Texture {
-    pub(crate) handle: LazyBufferHandle,
+    pub(crate) handle: LazyGpuHandle,
 }
 
 impl Texture {
-    pub fn from_handle(handle: LazyBufferHandle) -> Self {
+    pub fn from_handle(handle: LazyGpuHandle) -> Self {
         Self { handle }
     }
 
@@ -303,8 +218,8 @@ impl Texture {
         format: wgpu::TextureFormat,
         label: Option<&'static str>,
     ) -> Self {
-        let handle = LazyBufferHandle::new(
-            crate::renderer::BufferBindingType::Texture {
+        let handle = LazyGpuHandle::new(
+            GpuResourceType::Texture {
                 width,
                 height,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING
@@ -374,7 +289,7 @@ impl Texture {
             width,
             height,
             &data,
-            SdrFormat::FORMAT,
+            SdrTexture::FORMAT,
             Some("Default Texture"),
         )
     }
@@ -389,8 +304,8 @@ impl Texture {
         view_dimension: wgpu::TextureViewDimension,
         depth_or_array_layers: u32,
     ) -> Self {
-        let handle = LazyBufferHandle::new(
-            crate::renderer::BufferBindingType::Texture {
+        let handle = LazyGpuHandle::new(
+            GpuResourceType::Texture {
                 width,
                 height,
                 usage,
@@ -408,5 +323,31 @@ impl Texture {
 
 #[derive(Clone, Component)]
 pub struct Skybox {
-    pub texture: Texture,
+    pub texture: HdrCubeTexture,
+}
+
+impl BindableComponent for Skybox {
+    fn create_bind_group(
+        &self,
+        manager: &GpuResourceManager,
+        cache: &BindGroupLayoutCache,
+    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+        self.texture.create_bind_group(manager, cache)
+    }
+
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        HdrCubeTexture::create_bind_group_layout(device)
+    }
+
+    fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
+        self.texture.bind_group()
+    }
+
+    fn lazy_init_bind_group(
+        &self,
+        manager: &GpuResourceManager,
+        cache: &crate::renderer::internals::BindGroupLayoutCache,
+    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+        self.texture.lazy_init_bind_group(manager, cache)
+    }
 }

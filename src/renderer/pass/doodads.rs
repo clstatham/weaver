@@ -6,15 +6,18 @@ use wgpu::util::DeviceExt;
 use crate::{
     core::{
         camera::{Camera, CameraUniform},
-        color::{Color, ColorArray},
+        color::Color,
         doodads::{Doodad, Doodads, MAX_DOODADS},
-        texture::{DepthFormat, Texture, TextureFormat, WindowFormat},
-        transform::Transform,
+        texture::{DepthTexture, Texture, TextureFormat, WindowTexture},
     },
     ecs::{Query, World},
     include_shader,
     renderer::{
-        AllocBuffers, BindGroupLayoutCache, CreateBindGroupLayout, LazyBufferHandle, Renderer,
+        internals::{
+            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
+            GpuResourceType, LazyBindGroup, LazyGpuHandle,
+        },
+        Renderer,
     },
 };
 
@@ -191,9 +194,9 @@ impl DoodadVertex {
 
 #[derive(Component)]
 struct DoodadBuffers {
-    bind_group: RefCell<Option<Arc<wgpu::BindGroup>>>,
-    transform_buffer: LazyBufferHandle,
-    color_buffer: LazyBufferHandle,
+    bind_group: LazyBindGroup<Self>,
+    transform_buffer: LazyGpuHandle,
+    color_buffer: LazyGpuHandle,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     index_count: usize,
@@ -207,20 +210,20 @@ impl DoodadBuffers {
         index_count: usize,
     ) -> Self {
         Self {
-            bind_group: RefCell::new(None),
-            transform_buffer: LazyBufferHandle::new(
-                crate::renderer::BufferBindingType::Storage {
+            bind_group: LazyBindGroup::default(),
+            transform_buffer: LazyGpuHandle::new(
+                GpuResourceType::Storage {
                     usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                    size: Some(std::mem::size_of::<glam::Mat4>() * MAX_DOODADS),
+                    size: std::mem::size_of::<glam::Mat4>() * MAX_DOODADS,
                     read_only: true,
                 },
                 Some("Doodad Transform Buffer"),
                 None,
             ),
-            color_buffer: LazyBufferHandle::new(
-                crate::renderer::BufferBindingType::Storage {
+            color_buffer: LazyGpuHandle::new(
+                GpuResourceType::Storage {
                     usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                    size: Some(std::mem::size_of::<Color>() * MAX_DOODADS),
+                    size: std::mem::size_of::<Color>() * MAX_DOODADS,
                     read_only: true,
                 },
                 Some("Doodad Color Buffer"),
@@ -232,67 +235,35 @@ impl DoodadBuffers {
             count: RefCell::new(0),
         }
     }
-
-    pub fn get_or_create_bind_group(&self, renderer: &Renderer) -> Arc<wgpu::BindGroup> {
-        if let Some(bind_group) = self.bind_group.borrow().as_ref() {
-            return bind_group.clone();
-        }
-
-        let transform_handle = self.transform_buffer.get_or_create::<Transform>(renderer);
-        let color_handle = self.color_buffer.get_or_create::<ColorArray>(renderer);
-
-        let transform_buffer = transform_handle.get_buffer().unwrap();
-        let color_buffer = color_handle.get_buffer().unwrap();
-
-        let bind_group_layout = renderer
-            .bind_group_layout_cache
-            .get_or_create::<Self>(&renderer.device);
-
-        let bind_group = Arc::new(
-            renderer
-                .device
-                .create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("Doodad Bind Group"),
-                    layout: &bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: transform_buffer.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: color_buffer.as_entire_binding(),
-                        },
-                    ],
-                }),
-        );
-
-        *self.bind_group.borrow_mut() = Some(bind_group.clone());
-
-        bind_group
-    }
 }
 
-impl AllocBuffers for DoodadBuffers {
-    fn alloc_buffers(
-        &self,
-        renderer: &Renderer,
-    ) -> anyhow::Result<Vec<crate::renderer::BufferHandle>> {
+impl GpuComponent for DoodadBuffers {
+    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
         Ok(vec![
-            self.transform_buffer.get_or_create::<Transform>(renderer),
-            self.color_buffer.get_or_create::<ColorArray>(renderer),
+            self.transform_buffer.lazy_init(manager)?,
+            self.color_buffer.lazy_init(manager)?,
         ])
     }
+
+    fn update_resources(&self, _world: &World) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn destroy_resources(&self) -> anyhow::Result<()> {
+        self.transform_buffer.destroy();
+        self.color_buffer.destroy();
+        Ok(())
+    }
 }
 
-impl CreateBindGroupLayout for DoodadBuffers {
+impl BindableComponent for DoodadBuffers {
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("DoodadBuffers::create_bind_group_layout"),
+            label: Some("Doodad Bind Group Layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
@@ -302,7 +273,7 @@ impl CreateBindGroupLayout for DoodadBuffers {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
@@ -313,6 +284,50 @@ impl CreateBindGroupLayout for DoodadBuffers {
             ],
         })
     }
+
+    fn create_bind_group(
+        &self,
+        manager: &GpuResourceManager,
+        cache: &BindGroupLayoutCache,
+    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+        let layout = cache.get_or_create::<Self>(manager.device());
+        let transform_buffer = self.transform_buffer.lazy_init(manager)?;
+        let color_buffer = self.color_buffer.lazy_init(manager)?;
+        let bind_group = manager
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Doodad Bind Group"),
+                layout: &layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: transform_buffer.get_buffer().unwrap().as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: color_buffer.get_buffer().unwrap().as_entire_binding(),
+                    },
+                ],
+            });
+        Ok(Arc::new(bind_group))
+    }
+
+    fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
+        self.bind_group.bind_group().clone()
+    }
+
+    fn lazy_init_bind_group(
+        &self,
+        manager: &GpuResourceManager,
+        cache: &BindGroupLayoutCache,
+    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+        if let Some(bind_group) = self.bind_group.bind_group() {
+            return Ok(bind_group);
+        }
+
+        let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
+        Ok(bind_group)
+    }
 }
 
 pub struct DoodadRenderPass {
@@ -320,8 +335,8 @@ pub struct DoodadRenderPass {
     pipeline: wgpu::RenderPipeline,
     cubes: DoodadBuffers,
     cones: DoodadBuffers,
-    depth_texture: Texture,
-    camera_buffer: LazyBufferHandle,
+    depth_texture: DepthTexture,
+    camera_buffer: LazyGpuHandle,
 }
 
 impl DoodadRenderPass {
@@ -365,10 +380,10 @@ impl DoodadRenderPass {
             source: wgpu::ShaderSource::Wgsl(include_shader!("doodads.wgsl").into()),
         });
 
-        let camera_buffer = LazyBufferHandle::new(
-            crate::renderer::BufferBindingType::Uniform {
+        let camera_buffer = LazyGpuHandle::new(
+            GpuResourceType::Uniform {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                size: Some(std::mem::size_of::<CameraUniform>()),
+                size: std::mem::size_of::<CameraUniform>(),
             },
             Some("Doodad Camera Buffer"),
             None,
@@ -395,7 +410,7 @@ impl DoodadRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: WindowFormat::FORMAT,
+                    format: WindowTexture::FORMAT,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -405,7 +420,7 @@ impl DoodadRenderPass {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: DepthFormat::FORMAT,
+                format: DepthTexture::FORMAT,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: Default::default(),
@@ -415,18 +430,18 @@ impl DoodadRenderPass {
             multiview: None,
         });
 
-        let depth_texture = Texture::new_lazy(
+        let depth_texture = DepthTexture::from_texture(Texture::new_lazy(
             config.width,
             config.height,
             Some("Doodad Depth Texture"),
             wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::COPY_SRC
                 | wgpu::TextureUsages::TEXTURE_BINDING,
-            DepthFormat::FORMAT,
+            DepthTexture::FORMAT,
             wgpu::TextureDimension::D2,
             wgpu::TextureViewDimension::D2,
             1,
-        );
+        ));
 
         Self {
             enabled: true,
@@ -453,13 +468,12 @@ impl Pass for DoodadRenderPass {
     }
 
     fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
-        self.depth_texture
-            .handle
-            .get_or_create::<DepthFormat>(renderer);
-        let mut cubes = self.cubes.alloc_buffers(renderer)?;
-        let mut cones = self.cones.alloc_buffers(renderer)?;
+        let manager = &renderer.resource_manager;
+        self.depth_texture.lazy_init(manager)?;
+        let mut cubes = self.cubes.lazy_init(manager)?;
+        let mut cones = self.cones.lazy_init(manager)?;
 
-        let mut camera_handle = self.camera_buffer.get_or_create::<Camera>(renderer);
+        let mut camera_handle = self.camera_buffer.lazy_init(manager)?;
         let camera = Query::<&Camera>::new(world);
         let camera = camera.iter().next().unwrap();
         camera_handle.update(&[CameraUniform::from(&*camera)]);
@@ -512,20 +526,22 @@ impl Pass for DoodadRenderPass {
         renderer: &crate::renderer::Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
-        let depth_texture = &self
-            .depth_texture
-            .handle
-            .get_or_create::<DepthFormat>(renderer);
+        let manager = &renderer.resource_manager;
+        let depth_texture = &self.depth_texture.lazy_init(manager)?[0];
         let depth_texture = depth_texture.get_texture().unwrap();
         let depth_texture_view = depth_texture.create_view(&Default::default());
 
-        let cube_bind_group = self.cubes.get_or_create_bind_group(renderer);
-        let cone_bind_group = self.cones.get_or_create_bind_group(renderer);
+        let cube_bind_group = self
+            .cubes
+            .lazy_init_bind_group(manager, &renderer.bind_group_layout_cache)?;
+        let cone_bind_group = self
+            .cones
+            .lazy_init_bind_group(manager, &renderer.bind_group_layout_cache)?;
 
         let camera = Query::<&Camera>::new(world);
         let camera = camera.iter().next().unwrap();
-        let camera_handle = camera.handle.get_or_create::<Camera>(renderer);
-        let camera_bind_group = camera_handle.bind_group().unwrap();
+        let camera_bind_group =
+            camera.lazy_init_bind_group(manager, &renderer.bind_group_layout_cache)?;
 
         // clear depth buffer
         {

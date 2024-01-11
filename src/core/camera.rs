@@ -1,8 +1,14 @@
+use std::sync::Arc;
+
 use weaver_proc_macro::Component;
 use winit::event::VirtualKeyCode;
 
-use crate::renderer::{
-    AllocBuffers, BufferHandle, CreateBindGroupLayout, LazyBufferHandle, Renderer,
+use crate::{
+    ecs::World,
+    renderer::internals::{
+        BindableComponent, GpuComponent, GpuHandle, GpuResourceManager, GpuResourceType,
+        LazyBindGroup, LazyGpuHandle,
+    },
 };
 
 use super::input::Input;
@@ -37,12 +43,13 @@ impl From<&Camera> for CameraUniform {
     }
 }
 
-#[derive(Clone, Component)]
+#[derive(Component)]
 pub struct Camera {
     pub view_matrix: glam::Mat4,
     pub projection_matrix: glam::Mat4,
 
-    pub(crate) handle: LazyBufferHandle,
+    pub(crate) handle: LazyGpuHandle,
+    pub(crate) bind_group: LazyBindGroup<Self>,
 }
 
 impl Camera {
@@ -50,16 +57,17 @@ impl Camera {
         Self {
             view_matrix: glam::Mat4::IDENTITY,
             projection_matrix: glam::Mat4::IDENTITY,
-            handle: LazyBufferHandle::new(
-                crate::renderer::BufferBindingType::Uniform {
+            handle: LazyGpuHandle::new(
+                GpuResourceType::Uniform {
                     usage: wgpu::BufferUsages::UNIFORM
                         | wgpu::BufferUsages::COPY_DST
                         | wgpu::BufferUsages::COPY_SRC,
-                    size: Some(std::mem::size_of::<CameraUniform>()),
+                    size: std::mem::size_of::<CameraUniform>(),
                 },
                 Some("Camera"),
                 None,
             ),
+            bind_group: LazyBindGroup::default(),
         }
     }
 
@@ -75,16 +83,23 @@ impl Default for Camera {
     }
 }
 
-impl AllocBuffers for Camera {
-    fn alloc_buffers(&self, renderer: &Renderer) -> anyhow::Result<Vec<BufferHandle>> {
-        Ok(vec![self.handle.get_or_create_init::<_, Self>(
-            renderer,
-            &[CameraUniform::from(self)],
-        )])
+impl GpuComponent for Camera {
+    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
+        Ok(vec![self.handle.lazy_init(manager)?])
+    }
+
+    fn update_resources(&self, _world: &World) -> anyhow::Result<()> {
+        self.handle.update(&[CameraUniform::from(self)]);
+        Ok(())
+    }
+
+    fn destroy_resources(&self) -> anyhow::Result<()> {
+        self.handle.destroy();
+        Ok(())
     }
 }
 
-impl CreateBindGroupLayout for Camera {
+impl BindableComponent for Camera {
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Camera Bind Group Layout"),
@@ -99,6 +114,43 @@ impl CreateBindGroupLayout for Camera {
                 count: None,
             }],
         })
+    }
+
+    fn create_bind_group(
+        &self,
+        manager: &GpuResourceManager,
+        cache: &crate::renderer::internals::BindGroupLayoutCache,
+    ) -> anyhow::Result<std::sync::Arc<wgpu::BindGroup>> {
+        let layout = cache.get_or_create::<Self>(manager.device());
+        let buffer = self.handle.lazy_init(manager)?;
+        let bind_group = manager
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Camera Bind Group"),
+                layout: &layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.get_buffer().unwrap().as_entire_binding(),
+                }],
+            });
+        Ok(Arc::new(bind_group))
+    }
+
+    fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
+        self.bind_group.bind_group().clone()
+    }
+
+    fn lazy_init_bind_group(
+        &self,
+        manager: &GpuResourceManager,
+        cache: &crate::renderer::internals::BindGroupLayoutCache,
+    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+        if let Some(bind_group) = self.bind_group.bind_group() {
+            return Ok(bind_group);
+        }
+
+        let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
+        Ok(bind_group)
     }
 }
 

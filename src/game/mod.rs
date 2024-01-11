@@ -1,5 +1,5 @@
 use clap::Parser;
-use rand::{seq::SliceRandom, Rng};
+use rand::Rng;
 
 use crate::{
     app::Window,
@@ -18,7 +18,7 @@ use crate::{
 
 use self::{
     camera::{FollowCameraController, FollowCameraUpdate},
-    materials::{Banana, BrickWall, Metal, StoneWall, Wood, WoodTile},
+    materials::{Metal, Wood, WoodTile},
     player::PlayerUpdate,
 };
 
@@ -34,24 +34,6 @@ pub struct State {
     pub light_intensity: f32,
     pub light_radius: f32,
     pub npcs: Vec<Entity>,
-
-    pub banana_roughness: f32,
-    pub banana_metallic: f32,
-
-    pub tile_roughness: f32,
-    pub tile_metallic: f32,
-
-    pub wood_roughness: f32,
-    pub wood_metallic: f32,
-
-    pub brick_roughness: f32,
-    pub brick_metallic: f32,
-
-    pub stone_roughness: f32,
-    pub stone_metallic: f32,
-
-    pub metal_roughness: f32,
-    pub metal_metallic: f32,
 }
 
 #[system(WindowUpdate)]
@@ -68,6 +50,11 @@ fn ui_update(
     mut renderer: ResMut<Renderer>,
     mut state: ResMut<State>,
     mut point_lights: Query<&mut PointLight>,
+    mut wood_tiles: Query<&mut Material, With<WoodTile>>,
+    mut metals: Query<&mut Material, With<Metal>>,
+    mut woods: Query<&mut Material, With<Wood>>,
+    player_transform: Query<&Transform, With<player::Player>>,
+    mut floor: Query<&mut Transform, With<maps::Ground>>,
 ) {
     ctx.draw_if_ready(|ctx| {
         for mut fps_display in fps_display.iter() {
@@ -76,10 +63,29 @@ fn ui_update(
 
         let mut n_npcs = state.npcs.len();
 
+        let (mut wood_roughness, mut wood_metallic) = woods
+            .iter()
+            .next()
+            .map(|x| (x.roughness, x.metallic))
+            .unwrap_or((0.0, 0.0));
+
+        let (mut tile_roughness, mut tile_metallic) = wood_tiles
+            .iter()
+            .next()
+            .map(|x| (x.roughness, x.metallic))
+            .unwrap_or((0.0, 0.0));
+
+        let (mut metal_roughness, mut metal_metallic) = metals
+            .iter()
+            .next()
+            .map(|x| (x.roughness, x.metallic))
+            .unwrap_or((0.0, 0.0));
+
         let mut shadow_pass_enabled = renderer.shadow_pass.is_enabled();
         let mut n_lights = state.lights.len();
         let mut light_intensity = state.light_intensity;
         let mut light_radius = state.light_radius;
+        let mut floor_scale = floor.iter().next().unwrap().get_scale();
 
         egui::Window::new("Settings")
             .default_width(200.0)
@@ -88,13 +94,40 @@ fn ui_update(
                 ui.checkbox(&mut shadow_pass_enabled, "Shadows");
 
                 ui.heading("Lights");
-                ui.add(egui::Slider::new(&mut n_lights, 0..=MAX_LIGHTS).text("Count"));
+                ui.add(egui::Slider::new(&mut n_lights, 0..=1).text("Count"));
                 ui.add(egui::Slider::new(&mut light_intensity, 0.0..=100.0).text("Intensity"));
                 ui.add(egui::Slider::new(&mut light_radius, 0.0..=100.0).text("Radius"));
 
+                ui.heading("Materials");
+
+                ui.label("Wood");
+                ui.add(egui::Slider::new(&mut wood_roughness, 0.0..=1.0).text("Roughness"));
+                ui.add(egui::Slider::new(&mut wood_metallic, 0.0..=1.0).text("Metallic"));
+
+                ui.label("Tile");
+                ui.add(egui::Slider::new(&mut tile_roughness, 0.0..=1.0).text("Roughness"));
+                ui.add(egui::Slider::new(&mut tile_metallic, 0.0..=1.0).text("Metallic"));
+
+                ui.label("Metal");
+                ui.add(egui::Slider::new(&mut metal_roughness, 0.0..=1.0).text("Roughness"));
+                ui.add(egui::Slider::new(&mut metal_metallic, 0.0..=1.0).text("Metallic"));
+
                 ui.heading("NPCs");
                 ui.add(egui::Slider::new(&mut n_npcs, 0..=1000).text("Count"));
+
+                ui.heading("Floor");
+                ui.add(egui::Slider::new(&mut floor_scale.x, 1.0..=100.0).text("Scale XZ"));
             });
+
+        floor_scale.z = floor_scale.x;
+
+        for mut transform in floor.iter() {
+            transform.set_scale(floor_scale);
+        }
+
+        for mut material in wood_tiles.iter() {
+            material.texture_scaling = floor_scale.x;
+        }
 
         if shadow_pass_enabled != renderer.shadow_pass.is_enabled() {
             if shadow_pass_enabled {
@@ -104,9 +137,24 @@ fn ui_update(
             }
         }
 
+        for mut material in woods.iter() {
+            material.roughness = wood_roughness;
+            material.metallic = wood_metallic;
+        }
+
+        for mut material in wood_tiles.iter() {
+            material.roughness = tile_roughness;
+            material.metallic = tile_metallic;
+        }
+
+        for mut material in metals.iter() {
+            material.roughness = metal_roughness;
+            material.metallic = metal_metallic;
+        }
+
         if n_lights != state.lights.len() {
             for light in state.lights.drain(..) {
-                commands.remove_entity(light);
+                commands.despawn(light);
             }
             let light_colors = [
                 Color::WHITE,
@@ -122,20 +170,27 @@ fn ui_update(
             let mut rng = rand::thread_rng();
             for _i in 0..light_count {
                 // let angle = (i as f32 / light_count as f32) * std::f32::consts::TAU;
-                let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-                let light_radius = rng.gen_range(0.0..30.0);
-                let x = angle.cos() * light_radius;
-                let z = angle.sin() * light_radius;
-                let y = rng.gen_range(0.0..10.0);
+                // let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+                // let light_radius = rng.gen_range(0.0..30.0);
+                // let x = angle.cos() * light_radius;
+                // let z = angle.sin() * light_radius;
+                // let y = rng.gen_range(0.0..10.0);
 
                 let light = PointLight::new(
-                    Vec3::new(x, y, z),
-                    light_colors[rng.gen_range(0..light_colors.len())],
+                    player_transform.iter().next().unwrap().get_translation()
+                        + Vec3::new(0.0, 2.0, 0.0),
+                    // light_colors[rng.gen_range(0..light_colors.len())],
+                    Color::WHITE,
                     light_intensity,
                     light_radius,
                 );
                 state.lights.push(commands.spawn(light).unwrap());
             }
+        }
+
+        for mut light in point_lights.iter() {
+            light.position = player_transform.iter().next().unwrap().get_translation()
+                + Vec3::new(0.0, 2.0, 0.0);
         }
 
         if light_intensity != state.light_intensity {
@@ -154,7 +209,7 @@ fn ui_update(
 
         if n_npcs != state.npcs.len() {
             for npc in state.npcs.drain(..) {
-                commands.remove_entity(npc);
+                commands.despawn(npc);
             }
             let npc_mesh = asset_server
                 .load_mesh("meshes/monkey_2x.glb", &renderer)
@@ -238,7 +293,6 @@ fn setup(
     hdr_loader: Res<HdrLoader>,
 ) {
     renderer.shadow_pass.disable();
-    renderer.gbuffer_pass.disable();
     renderer.sky_pass.disable();
 
     commands.spawn(FpsDisplay::new())?;
@@ -247,14 +301,15 @@ fn setup(
         texture: asset_server.load_hdr_cubemap(
             "meadow_2k.hdr",
             SKYBOX_CUBEMAP_SIZE,
-            &renderer,
             &hdr_loader,
         )?,
     };
     commands.spawn(skybox)?;
 
-    let mut material = asset_server.load_material("materials/wood_herringbone_tiles_004.glb")?;
+    let mut material = asset_server.load_material("materials/wood_tiles.glb")?;
     material.texture_scaling = 100.0;
+    material.metallic = 0.0;
+    material.roughness = 0.5;
 
     let ground = maps::GroundBundle {
         transform: Transform::from_scale_rotation_translation(
@@ -268,6 +323,8 @@ fn setup(
     };
     commands.spawn((ground, WoodTile))?;
 
+    let material = asset_server.load_material("materials/wood.glb")?;
+
     let player = player::Player {
         speed: 14.0,
         rotation_speed: 0.002,
@@ -277,9 +334,9 @@ fn setup(
             player,
             transform: Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
             mesh: asset_server.load_mesh("meshes/monkey_2x.glb", &renderer)?,
-            material: asset_server.load_material("materials/wood_025.glb")?,
+            material,
         },
-        Banana,
+        Wood,
     ))?;
 
     let camera_controller = FollowCameraController {

@@ -17,7 +17,7 @@ impl<'a> Commands<'a> {
         bundle.build(self.world)
     }
 
-    pub fn remove_entity(&self, entity: Entity) {
+    pub fn despawn(&self, entity: Entity) {
         self.world.remove_entity(entity);
     }
 

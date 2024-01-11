@@ -1,64 +1,47 @@
 use std::{path::Path, sync::Arc};
 
+use rustc_hash::FxHashMap;
 use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
 
 use crate::{app::asset_server::AssetId, core::aabb::Aabb};
 
-pub const MAX_MESHES: usize = 2000;
+pub const MAX_MESHES: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Vertex {
     pub position: glam::Vec3,
     pub normal: glam::Vec3,
-    pub binormal: glam::Vec3,
     pub tangent: glam::Vec3,
-    pub bitangent: glam::Vec3,
     pub uv: glam::Vec2,
 }
 
 impl Vertex {
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+    pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
-                // position
                 wgpu::VertexAttribute {
                     offset: 0,
-                    shader_location: 0,
                     format: wgpu::VertexFormat::Float32x3,
+                    shader_location: 0,
                 },
-                // normal
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<glam::Vec3>() as u64,
-                    shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
+                    shader_location: 1,
                 },
-                // binormal
                 wgpu::VertexAttribute {
                     offset: (std::mem::size_of::<glam::Vec3>() * 2) as u64,
-                    shader_location: 2,
                     format: wgpu::VertexFormat::Float32x3,
+                    shader_location: 2,
                 },
-                // tangent
                 wgpu::VertexAttribute {
                     offset: (std::mem::size_of::<glam::Vec3>() * 3) as u64,
-                    shader_location: 3,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                // bitangent
-                wgpu::VertexAttribute {
-                    offset: (std::mem::size_of::<glam::Vec3>() * 4) as u64,
-                    shader_location: 4,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                // uv
-                wgpu::VertexAttribute {
-                    offset: (std::mem::size_of::<glam::Vec3>() * 5) as u64,
-                    shader_location: 5,
                     format: wgpu::VertexFormat::Float32x2,
+                    shader_location: 3,
                 },
             ],
         }
@@ -66,6 +49,11 @@ impl Vertex {
 }
 
 fn calculate_tangents(vertices: &mut [Vertex], indices: &[u32]) {
+    for vertex in vertices.iter_mut() {
+        vertex.tangent = glam::Vec3::ZERO;
+    }
+
+    let mut num_triangles = vec![0; vertices.len()];
     for c in indices.chunks(3) {
         let i0 = c[0] as usize;
         let i1 = c[1] as usize;
@@ -87,21 +75,53 @@ fn calculate_tangents(vertices: &mut [Vertex], indices: &[u32]) {
 
         let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
         let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
-        let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
 
         vertices[i0].tangent += tangent;
         vertices[i1].tangent += tangent;
         vertices[i2].tangent += tangent;
 
-        vertices[i0].bitangent += bitangent;
-        vertices[i1].bitangent += bitangent;
-        vertices[i2].bitangent += bitangent;
+        num_triangles[i0] += 1;
+        num_triangles[i1] += 1;
+        num_triangles[i2] += 1;
     }
 
-    for vertex in vertices.iter_mut() {
-        vertex.tangent = vertex.tangent.normalize();
-        vertex.bitangent = vertex.bitangent.normalize();
-        vertex.binormal = vertex.normal.cross(vertex.tangent).normalize();
+    for (vertex, num_triangles) in vertices.iter_mut().zip(num_triangles) {
+        vertex.tangent /= num_triangles as f32;
+
+        // gram-schmidt orthogonalize
+        let tangent = vertex.tangent - vertex.normal * vertex.normal.dot(vertex.tangent);
+        vertex.tangent = tangent.normalize();
+
+        // check for orthogonality
+        let ndt = vertex.normal.dot(vertex.tangent);
+        assert!(
+            ndt < 0.001,
+            "normal and tangent are not orthogonal: N . T = {:?}",
+            ndt
+        );
+
+        // sanity check with the binormal
+        let binormal = vertex.normal.cross(vertex.tangent);
+        let ndb = vertex.normal.dot(binormal);
+        assert!(
+            ndb < 0.001,
+            "normal and binormal are not orthogonal: N . B = {:?}",
+            ndb
+        );
+        let bdt = binormal.dot(vertex.tangent);
+        assert!(
+            bdt < 0.001,
+            "binormal and tangent are not orthogonal: B . T = {:?}",
+            bdt
+        );
+
+        // calculate handedness
+        let tangent = if vertex.normal.cross(vertex.tangent).dot(vertex.tangent) < 0.0 {
+            -vertex.tangent
+        } else {
+            vertex.tangent
+        };
+        vertex.tangent = tangent;
     }
 }
 
@@ -141,11 +161,9 @@ impl Mesh {
                 for (position, normal, uv) in itertools::multizip((positions, normals, uvs)) {
                     vertices.push(Vertex {
                         position: glam::Vec3::from(position),
-                        normal: glam::Vec3::from(normal),
+                        normal: glam::Vec3::from(normal).normalize(),
                         uv: glam::Vec2::from(uv),
-                        binormal: glam::Vec3::ZERO,
                         tangent: glam::Vec3::ZERO,
-                        bitangent: glam::Vec3::ZERO,
                     });
                 }
 
@@ -225,11 +243,9 @@ impl Mesh {
 
                 vertices.push(Vertex {
                     position: glam::Vec3::from(position),
-                    normal: glam::Vec3::from(normal),
+                    normal: glam::Vec3::from(normal).normalize(),
                     uv: glam::Vec2::from(uv),
-                    binormal: glam::Vec3::ZERO,
                     tangent: glam::Vec3::ZERO,
-                    bitangent: glam::Vec3::ZERO,
                 });
             }
 

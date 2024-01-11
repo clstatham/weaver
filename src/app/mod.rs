@@ -56,7 +56,7 @@ impl App {
         world.insert_resource(ui)?;
         world.insert_resource(Doodads::default())?;
 
-        let asset_server = AssetServer::new()?;
+        let asset_server = AssetServer::new(&world)?;
 
         world.insert_resource(asset_server)?;
 

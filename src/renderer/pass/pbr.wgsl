@@ -1,7 +1,7 @@
 //#import "src/renderer/pass/common.wgsl"
 
 // model information
-@group(0) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
+@group(0) @binding(0) var<storage> transforms: array<ModelTransform>;
 
 // envorinment information
 @group(1) @binding(0) var<uniform> camera: CameraUniform;
@@ -11,10 +11,13 @@
 // material information
 @group(2) @binding(0) var<uniform> material: MaterialUniform;
 @group(2) @binding(1) var          diffuse_tex: texture_2d<f32>;
-@group(2) @binding(2) var          normal_tex: texture_2d<f32>;
-@group(2) @binding(3) var          roughness_tex: texture_2d<f32>;
-@group(2) @binding(4) var          ao_tex: texture_2d<f32>;
-@group(2) @binding(5) var          tex_sampler: sampler;
+@group(2) @binding(2) var          diffuse_sampler: sampler;
+@group(2) @binding(3) var          normal_tex: texture_2d<f32>;
+@group(2) @binding(4) var          normal_sampler: sampler;
+@group(2) @binding(5) var          roughness_tex: texture_2d<f32>;
+@group(2) @binding(6) var          roughness_sampler: sampler;
+@group(2) @binding(7) var          ao_tex: texture_2d<f32>;
+@group(2) @binding(8) var          ao_sampler: sampler;
 
 // light information
 @group(3) @binding(0) var<storage> point_lights: PointLights;
@@ -24,13 +27,14 @@ fn saturate(x: f32) -> f32 {
 }
 
 fn fresnel_schlick(f0: vec3<f32>, HdV: f32, roughness: f32) -> vec3<f32> {
-    return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(saturate(1.0 - HdV), 5.0);
+    return f0 + (1.0 - f0) * pow(saturate(1.0 - HdV), 5.0);
 }
 
 fn d_ggx(NdH: f32, roughness: f32) -> f32 {
     let m = roughness * roughness;
     let m2 = m * m;
-    let d = (NdH * m2 - NdH) * NdH + 1.0;
+    let NdH2 = NdH * NdH;
+    let d = (NdH2 * (m2 - 1.0) + 1.0);
     return m2 / (PI * d * d);
 }
 
@@ -57,28 +61,22 @@ fn cooktorrance_brdf(NdL: f32, NdV: f32, NdH: f32, F: vec3<f32>, roughness: f32)
     return num / denom;
 }
 
-
-// based on https://gist.github.com/galek/53557375251e1a942dfa
 fn calculate_lighting(
-    vertex: VertexOutput,
     albedo: vec3<f32>,
     roughness: f32,
     metallic: f32,
-    normal: vec3<f32>,
-    light_direction: vec3<f32>,
-    view_direction: vec3<f32>,
+    N: vec3<f32>,
+    L: vec3<f32>,
+    V: vec3<f32>,
     light_color: vec3<f32>,
     attenuation: f32,
 ) -> vec3<f32> {
-    let N = normalize(normal);
-    let V = normalize(view_direction);
-    let L = normalize(light_direction);
     let H = normalize(V + L);
 
     let NdL = max(dot(N, L), 0.0);
-    let NdV = max(dot(N, V), 0.001);
-    let NdH = max(dot(N, H), 0.001);
-    let HdV = max(dot(H, V), 0.001);
+    let NdV = max(dot(N, V), 0.0);
+    let NdH = max(dot(N, H), 0.0);
+    let HdV = max(dot(H, V), 0.0);
 
     let f0 = mix(vec3(0.04), albedo, metallic);
     let F = fresnel_schlick(f0, HdV, roughness);
@@ -92,18 +90,14 @@ fn calculate_lighting(
     return (kD * albedo / PI + specular) * light_color * attenuation * NdL;
 }
 
-
 fn calculate_ibl(
-    vertex: VertexOutput,
     albedo: vec3<f32>,
-    normal: vec3<f32>,
-    view_direction: vec3<f32>,
+    N: vec3<f32>,
+    V: vec3<f32>,
     roughness: f32,
     metallic: f32,
 ) -> vec3<f32> {
-    let N = normalize(normal);
-    let V = normalize(view_direction);
-    let NdV = max(dot(N, V), 0.001);
+    let NdV = max(dot(N, V), 0.0);
     let R = reflect(-V, N);
 
     let diffuse_irradiance = textureSample(env_map, env_sampler, N).rgb;
@@ -127,7 +121,6 @@ struct VertexOutput {
     @location(1) world_normal: vec3<f32>,
     @location(2) world_binormal: vec3<f32>,
     @location(3) world_tangent: vec3<f32>,
-    @location(4) world_bitangent: vec3<f32>,
     @location(5) uv: vec2<f32>,
 }
 
@@ -139,23 +132,27 @@ struct FragmentOutput {
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
 
-    let model_transform = model_transforms[input.instance_index];
-
-    output.world_position = (model_transform * vec4<f32>(input.position, 1.0)).xyz;
-    output.clip_position = camera.proj * camera.view * vec4<f32>(output.world_position, 1.0);
-    output.uv = input.uv;
-
-    // get just the rotation part of the model transform
+    let model_transform = transforms[input.instance_index].model;
+    let normal_matrix_4x4 = transforms[input.instance_index].normal;
     let normal_transform = mat3x3<f32>(
-        model_transform[0].xyz,
-        model_transform[1].xyz,
-        model_transform[2].xyz
+        normal_matrix_4x4[0].xyz,
+        normal_matrix_4x4[1].xyz,
+        normal_matrix_4x4[2].xyz
     );
 
-    output.world_normal = normalize(normal_transform * input.normal);
-    output.world_binormal = normalize(normal_transform * input.binormal);
-    output.world_tangent = normalize(normal_transform * input.tangent);
-    output.world_bitangent = normalize(normal_transform * input.bitangent);
+    let world_position = (model_transform * vec4<f32>(input.position, 1.0));
+
+    output.world_position = world_position.xyz;
+    output.clip_position = camera.proj * camera.view * world_position;
+    output.uv = input.uv;
+
+    var N = normalize(normal_transform * input.normal);
+    var T = normalize(normal_transform * input.tangent);
+    var B = normalize(cross(N, T));
+
+    output.world_tangent = T;
+    output.world_binormal = B;
+    output.world_normal = N;
 
     return output;
 }
@@ -164,25 +161,29 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     var output: FragmentOutput;
 
-    let tex_color = textureSample(diffuse_tex, tex_sampler, material.texture_scale.x * vertex.uv).xyz;
+    let uv = material.texture_scale.xy * vertex.uv;
+
+    let tex_color = textureSample(diffuse_tex, diffuse_sampler, uv).rgb;
     let albedo = pow(tex_color, vec3(2.2));
 
-    var tex_normal = textureSample(normal_tex, tex_sampler, material.texture_scale.x * vertex.uv).xyz;
-    // transform normal from tangent space to world space
-    let normal = normalize(vertex.world_tangent * tex_normal.x + vertex.world_binormal * tex_normal.y + vertex.world_normal * tex_normal.z);
+    var tex_normal = textureSample(normal_tex, normal_sampler, uv).rgb * 2.0 - 1.0;
+    let N = normalize(
+        vertex.world_tangent * tex_normal.r + vertex.world_binormal * tex_normal.g + vertex.world_normal * tex_normal.b
+    );
+    // let N = normalize(vertex.world_normal);
 
-    let metallic_roughness = textureSample(roughness_tex, tex_sampler, material.texture_scale.x * vertex.uv);
+    let V = normalize(camera.camera_position - vertex.world_position);
+
+    let metallic_roughness = textureSample(roughness_tex, roughness_sampler, uv);
     let roughness = metallic_roughness.g * material.properties.y;
     let metallic = metallic_roughness.b * material.properties.x;
-
-    let view_direction = normalize(camera.camera_position - vertex.world_position);
 
     var illumination = vec3(0.0);
 
     for (var i = 0u; i < point_lights.count; i = i + 1u) {
         let light = point_lights.lights[i];
         let light_pos = light.position.xyz;
-        let light_direction = normalize(light_pos - vertex.world_position);
+        let L = normalize(light_pos - vertex.world_position);
 
         let distance = length(light_pos - vertex.world_position);
         let attenuation = light.intensity / (1.0 + distance * distance / (light.radius * light.radius));
@@ -191,15 +192,18 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
             // light is too far away, ignore it
             continue;
         }
-        illumination += calculate_lighting(vertex, albedo, roughness, metallic, normal, light_direction, view_direction, light.color.xyz, attenuation);
+        illumination += calculate_lighting(albedo, roughness, metallic, N, L, V, light.color.rgb, attenuation);
     }
 
-    let tex_ao = textureSample(ao_tex, tex_sampler, material.texture_scale.x * vertex.uv).r;
+    let tex_ao = textureSample(ao_tex, ao_sampler, uv).r;
 
     // WIP
-    // illumination += calculate_ibl(vertex, albedo, normal, view_direction, roughness, metallic);
+    // illumination += calculate_ibl(albedo, normal, view_direction, roughness, metallic);
 
     var out_color = illumination * tex_ao;
+
+    // tone mapping
+    out_color = out_color / (out_color + vec3(1.0));
 
     // gamma correction
     out_color = pow(out_color, vec3(1.0 / 2.2));

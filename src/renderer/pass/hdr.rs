@@ -1,7 +1,7 @@
 use crate::{
-    core::texture::{HdrFormat, Texture, TextureFormat, WindowFormat},
+    core::texture::{HdrTexture, TextureFormat, WindowTexture},
     ecs::World,
-    renderer::{BindGroupLayoutCache, NonFilteringSampler},
+    renderer::{internals::BindableComponent, BindGroupLayoutCache},
 };
 
 use super::Pass;
@@ -14,7 +14,7 @@ pub struct HdrRenderPass {
     pipeline: wgpu::RenderPipeline,
     sampler: wgpu::Sampler,
     bind_group: wgpu::BindGroup,
-    pub(crate) texture: Texture,
+    pub(crate) texture: HdrTexture,
 }
 
 impl HdrRenderPass {
@@ -24,21 +24,7 @@ impl HdrRenderPass {
         height: u32,
         bind_group_layout_cache: &BindGroupLayoutCache,
     ) -> Self {
-        let format = HdrFormat::FORMAT;
-
-        let texture = Texture::new_lazy(
-            width,
-            height,
-            Some("HDR Texture"),
-            wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::COPY_DST
-                | wgpu::TextureUsages::COPY_SRC
-                | wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
-            wgpu::TextureDimension::D2,
-            wgpu::TextureViewDimension::D2,
-            1,
-        );
+        let texture = HdrTexture::new(width, height, Some("HDR Texture"));
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("HDR Texture Sampler"),
@@ -51,8 +37,19 @@ impl HdrRenderPass {
             ..Default::default()
         });
 
+        let sampler_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("HDR Texture Sampler Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
+                }],
+            });
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &bind_group_layout_cache.get_or_create::<NonFilteringSampler>(device),
+            layout: &sampler_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::Sampler(&sampler),
@@ -64,8 +61,8 @@ impl HdrRenderPass {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("HDR Render Pipeline Layout"),
             bind_group_layouts: &[
-                &bind_group_layout_cache.get_or_create::<NonFilteringSampler>(device),
-                &bind_group_layout_cache.get_or_create::<HdrFormat>(device),
+                &sampler_bind_group_layout,
+                &bind_group_layout_cache.get_or_create::<HdrTexture>(device),
             ],
             push_constant_ranges: &[],
         });
@@ -82,7 +79,7 @@ impl HdrRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: WindowFormat::FORMAT,
+                    format: WindowTexture::FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -132,8 +129,10 @@ impl Pass for HdrRenderPass {
         renderer: &crate::renderer::Renderer,
         _world: &World,
     ) -> anyhow::Result<()> {
-        let texture_handle = &self.texture.handle.get_or_create::<HdrFormat>(renderer);
-        let texture_bind_group = texture_handle.bind_group().unwrap();
+        let texture_bind_group = self.texture.lazy_init_bind_group(
+            &renderer.resource_manager,
+            &renderer.bind_group_layout_cache,
+        )?;
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
