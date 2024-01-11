@@ -133,11 +133,10 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
 
     let model_transform = transforms[input.instance_index].model;
-    let normal_matrix_4x4 = transforms[input.instance_index].normal;
     let normal_transform = mat3x3<f32>(
-        normal_matrix_4x4[0].xyz,
-        normal_matrix_4x4[1].xyz,
-        normal_matrix_4x4[2].xyz
+        model_transform[0].xyz,
+        model_transform[1].xyz,
+        model_transform[2].xyz
     );
 
     let world_position = (model_transform * vec4<f32>(input.position, 1.0));

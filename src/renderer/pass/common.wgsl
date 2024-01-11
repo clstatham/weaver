@@ -13,7 +13,6 @@ struct VertexInput {
 
 struct ModelTransform {
     model: mat4x4<f32>,
-    normal: mat4x4<f32>, // inverse transpose of model
 };
 
 

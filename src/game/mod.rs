@@ -53,8 +53,6 @@ fn ui_update(
     mut wood_tiles: Query<&mut Material, With<WoodTile>>,
     mut metals: Query<&mut Material, With<Metal>>,
     mut woods: Query<&mut Material, With<Wood>>,
-    player_transform: Query<&Transform, With<player::Player>>,
-    mut floor: Query<&mut Transform, With<maps::Ground>>,
 ) {
     ctx.draw_if_ready(|ctx| {
         for mut fps_display in fps_display.iter() {
@@ -85,7 +83,6 @@ fn ui_update(
         let mut n_lights = state.lights.len();
         let mut light_intensity = state.light_intensity;
         let mut light_radius = state.light_radius;
-        let mut floor_scale = floor.iter().next().unwrap().get_scale();
 
         egui::Window::new("Settings")
             .default_width(200.0)
@@ -94,7 +91,7 @@ fn ui_update(
                 ui.checkbox(&mut shadow_pass_enabled, "Shadows");
 
                 ui.heading("Lights");
-                ui.add(egui::Slider::new(&mut n_lights, 0..=1).text("Count"));
+                ui.add(egui::Slider::new(&mut n_lights, 0..=MAX_LIGHTS).text("Count"));
                 ui.add(egui::Slider::new(&mut light_intensity, 0.0..=100.0).text("Intensity"));
                 ui.add(egui::Slider::new(&mut light_radius, 0.0..=100.0).text("Radius"));
 
@@ -114,20 +111,7 @@ fn ui_update(
 
                 ui.heading("NPCs");
                 ui.add(egui::Slider::new(&mut n_npcs, 0..=1000).text("Count"));
-
-                ui.heading("Floor");
-                ui.add(egui::Slider::new(&mut floor_scale.x, 1.0..=100.0).text("Scale XZ"));
             });
-
-        floor_scale.z = floor_scale.x;
-
-        for mut transform in floor.iter() {
-            transform.set_scale(floor_scale);
-        }
-
-        for mut material in wood_tiles.iter() {
-            material.texture_scaling = floor_scale.x;
-        }
 
         if shadow_pass_enabled != renderer.shadow_pass.is_enabled() {
             if shadow_pass_enabled {
@@ -166,31 +150,22 @@ fn ui_update(
                 Color::MAGENTA,
             ];
 
-            let light_count = n_lights;
             let mut rng = rand::thread_rng();
-            for _i in 0..light_count {
-                // let angle = (i as f32 / light_count as f32) * std::f32::consts::TAU;
-                // let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-                // let light_radius = rng.gen_range(0.0..30.0);
-                // let x = angle.cos() * light_radius;
-                // let z = angle.sin() * light_radius;
-                // let y = rng.gen_range(0.0..10.0);
+            for _i in 0..n_lights {
+                let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+                let light_radius = rng.gen_range(0.0..30.0);
+                let x = angle.cos() * light_radius;
+                let z = angle.sin() * light_radius;
+                let y = rng.gen_range(0.0..10.0);
 
                 let light = PointLight::new(
-                    player_transform.iter().next().unwrap().get_translation()
-                        + Vec3::new(0.0, 2.0, 0.0),
-                    // light_colors[rng.gen_range(0..light_colors.len())],
-                    Color::WHITE,
+                    Vec3::new(x, y, z),
+                    light_colors[rng.gen_range(0..light_colors.len())],
                     light_intensity,
                     light_radius,
                 );
                 state.lights.push(commands.spawn(light).unwrap());
             }
-        }
-
-        for mut light in point_lights.iter() {
-            light.position = player_transform.iter().next().unwrap().get_translation()
-                + Vec3::new(0.0, 2.0, 0.0);
         }
 
         if light_intensity != state.light_intensity {
@@ -215,17 +190,11 @@ fn ui_update(
                 .load_mesh("meshes/monkey_2x.glb", &renderer)
                 .unwrap();
             let npc_materials = [
-                asset_server
-                    .load_material("materials/wood_025.glb")
-                    .unwrap(),
-                asset_server
-                    .load_material("materials/metal_006.glb")
-                    .unwrap(),
+                // asset_server.load_material("materials/wood.glb").unwrap(),
+                asset_server.load_material("materials/metal.glb").unwrap(),
             ];
-            let npc_count = n_npcs;
             let mut rng = rand::thread_rng();
-            for _ in 0..npc_count {
-                // let angle = (i as f32 / npc_count as f32) * std::f32::consts::TAU;
+            for _ in 0..n_npcs {
                 let angle = rng.gen_range(0.0..std::f32::consts::TAU);
                 let npc_radius = rng.gen_range(0.0..30.0);
                 let x = angle.cos() * npc_radius;
@@ -242,13 +211,6 @@ fn ui_update(
                 let npc_material = npc_materials[material_index].clone();
                 let npc = match material_index {
                     0 => commands.spawn((
-                        npc,
-                        Transform::from_translation(Vec3::new(x, y, z)),
-                        npc_mesh.clone(),
-                        npc_material,
-                        Wood,
-                    )),
-                    1 => commands.spawn((
                         npc,
                         Transform::from_translation(Vec3::new(x, y, z)),
                         npc_mesh.clone(),

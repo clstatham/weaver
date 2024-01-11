@@ -124,7 +124,6 @@ pub struct TransformArray {
 #[repr(C)]
 pub struct TransformArrayUniform {
     model_matrices: [glam::Mat4; MAX_MESHES], // todo: MAX_TRANSFORMS?
-    normal_matrices: [glam::Mat4; MAX_MESHES],
 }
 
 impl TransformArray {
@@ -163,17 +162,10 @@ impl TransformArray {
 
     pub fn uniform(&self) -> TransformArrayUniform {
         let mut model_matrices = [glam::Mat4::IDENTITY; MAX_MESHES];
-        let mut normal_matrices = [glam::Mat4::IDENTITY; MAX_MESHES];
         for (i, matrix) in self.matrices.iter().enumerate() {
             model_matrices[i] = *matrix;
-
-            let normal_matrix = matrix.inverse().transpose();
-            normal_matrices[i] = normal_matrix;
         }
-        TransformArrayUniform {
-            model_matrices,
-            normal_matrices,
-        }
+        TransformArrayUniform { model_matrices }
     }
 }
 

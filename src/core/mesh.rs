@@ -1,6 +1,5 @@
 use std::{path::Path, sync::Arc};
 
-use rustc_hash::FxHashMap;
 use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
 
