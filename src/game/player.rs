@@ -4,6 +4,7 @@ use crate::prelude::*;
 pub struct Player {
     pub speed: f32,
     pub rotation_speed: f32,
+    pub velocity: Vec3,
 }
 
 impl Default for Player {
@@ -11,6 +12,7 @@ impl Default for Player {
         Self {
             speed: 10.0,
             rotation_speed: 1.0,
+            velocity: Vec3::ZERO,
         }
     }
 }
@@ -23,20 +25,16 @@ pub struct PlayerBundle {
     pub material: Material,
 }
 
-#[system(PlayerUpdate)]
-pub fn player_update(
-    mut player: Query<(&Player, &mut Transform)>,
-    input: Res<Input>,
-    time: Res<Time>,
-) {
-    for (player, mut transform) in player.iter() {
+#[system(PlayerInput)]
+pub fn player_update(mut player: Query<(&mut Player, &mut Transform)>, input: Res<Input>) {
+    for (mut player, mut transform) in player.iter() {
         let mut translation = transform.get_translation();
         let mut rotation = transform.get_rotation();
 
         let mouse_delta = input.mouse_delta();
 
         if input.mouse_button_pressed(3) {
-            let delta = mouse_delta * player.rotation_speed;
+            let delta = mouse_delta * player.rotation_speed * 0.005;
             rotation = Quat::from_rotation_y(-delta.x) * rotation;
         }
 
@@ -61,9 +59,20 @@ pub fn player_update(
             direction -= rotation * Vec3::Y;
         }
 
-        translation += direction.normalize_or_zero() * player.speed * time.delta_seconds;
+        player.velocity = direction.normalize_or_zero() * player.speed;
 
         transform.set_translation(translation);
         transform.set_rotation(rotation);
+    }
+}
+
+#[system(PlayerMovement)]
+pub fn player_movement(mut player: Query<(&mut Player, &mut Transform)>, time: Res<Time>) {
+    for (mut player, mut transform) in player.iter() {
+        let mut translation = transform.get_translation();
+
+        translation += player.velocity * time.delta_seconds;
+
+        transform.set_translation(translation);
     }
 }

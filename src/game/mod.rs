@@ -9,6 +9,7 @@ use crate::{
         texture::Skybox,
         ui::builtin::FpsDisplay,
     },
+    ecs::system::SystemStage,
     prelude::*,
     renderer::{
         compute::hdr_loader::HdrLoader,
@@ -17,9 +18,9 @@ use crate::{
 };
 
 use self::{
-    camera::{FollowCameraController, FollowCameraUpdate},
+    camera::{FollowCameraController, FollowCameraMovement, FollowCameraUpdate},
     materials::{Metal, Wood, WoodTile},
-    player::PlayerUpdate,
+    player::{PlayerInput, PlayerMovement},
 };
 
 pub mod camera;
@@ -287,7 +288,8 @@ fn setup(
 
     let player = player::Player {
         speed: 14.0,
-        rotation_speed: 0.002,
+        rotation_speed: 0.2,
+        velocity: Vec3::ZERO,
     };
     let player = commands.spawn((
         player::PlayerBundle {
@@ -302,7 +304,7 @@ fn setup(
     let camera_controller = FollowCameraController {
         stiffness: 50.0,
         target: player,
-        pitch_sensitivity: 0.002,
+        pitch_sensitivity: 0.2,
         ..Default::default()
     };
     commands.spawn((camera_controller, Camera::new()))?;
@@ -318,7 +320,7 @@ struct Args {
 
 pub fn run() -> anyhow::Result<()> {
     let args = Args::parse();
-    let mut app = App::new(args.width, args.height)?;
+    let app = App::new(args.width, args.height)?;
 
     app.insert_resource(State {
         light_intensity: 10.0,
@@ -326,13 +328,15 @@ pub fn run() -> anyhow::Result<()> {
         ..Default::default()
     })?;
 
-    app.add_startup_system(Setup);
+    app.add_system_to_stage(Setup, SystemStage::Startup);
 
     app.add_system(WindowUpdate);
     app.add_system(ParticleUpdate);
     app.add_system(FollowCameraUpdate);
+    app.add_system(FollowCameraMovement);
     app.add_system(UiUpdate);
-    app.add_system(PlayerUpdate);
+    app.add_system(PlayerInput);
+    app.add_system(PlayerMovement);
     // app.add_system(NpcUpdate);
     app.add_system(SpinNpcs);
     app.add_system(DebugLights);

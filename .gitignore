@@ -3,3 +3,4 @@
 /weaver-proc-macro/target
 /weaver-ecs/target
 /imgui.ini
+/*.dot

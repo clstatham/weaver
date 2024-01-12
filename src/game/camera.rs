@@ -19,6 +19,7 @@ pub struct FollowCameraController {
     pub far: f32,
 
     pub translation: glam::Vec3,
+    pub desired_translation: glam::Vec3,
     pub target_translation: glam::Vec3,
 
     pub pitch: f32,
@@ -41,6 +42,7 @@ impl Default for FollowCameraController {
             min_pitch: -std::f32::consts::FRAC_PI_2 + 0.001,
             max_pitch: std::f32::consts::FRAC_PI_2 - 0.001,
             translation: glam::Vec3::new(0.0, 5.0, -5.0),
+            desired_translation: glam::Vec3::new(0.0, 5.0, -5.0),
             target_translation: glam::Vec3::ZERO,
             pitch: 0.0,
             stiffness: 2.0,
@@ -64,7 +66,6 @@ impl FollowCameraController {
 #[system(FollowCameraUpdate)]
 pub fn follow_camera_update(
     camera: Query<(&mut FollowCameraController, &mut Camera)>,
-    time: Res<Time>,
     input: Res<Input>,
     player_transform: Query<&Transform, With<Player>>,
 ) {
@@ -75,13 +76,13 @@ pub fn follow_camera_update(
 
         if input.mouse_button_pressed(3) {
             let mouse_delta = input.mouse_delta();
-            controller.pitch += mouse_delta.y * controller.pitch_sensitivity;
+            controller.pitch += mouse_delta.y * controller.pitch_sensitivity * 0.005;
             controller.pitch = controller
                 .pitch
                 .clamp(controller.min_pitch, controller.max_pitch);
         }
 
-        controller.distance -= input.mouse_wheel_delta() * 0.5;
+        controller.distance += input.mouse_wheel_delta();
         controller.distance = controller
             .distance
             .clamp(controller.min_distance, controller.max_distance);
@@ -91,11 +92,30 @@ pub fn follow_camera_update(
         let rotation = player_rotation * controller.rotation;
         let translation = player_translation + rotation * glam::Vec3::NEG_Z * controller.distance;
 
+        controller.desired_translation = translation;
+        // controller.translation = controller.translation.lerp(
+        //     translation,
+        //     (controller.stiffness * time.delta_seconds).clamp(0.0, 1.0),
+        // );
+        controller.target_translation = player_translation;
+
+        camera.view_matrix = controller.view_matrix();
+        camera.projection_matrix = controller.projection_matrix();
+
+        camera.update();
+    }
+}
+
+#[system(FollowCameraMovement)]
+pub fn follow_camera_movement(
+    mut camera: Query<(&mut FollowCameraController, &mut Camera)>,
+    time: Res<Time>,
+) {
+    for (mut controller, mut camera) in camera.iter() {
         controller.translation = controller.translation.lerp(
-            translation,
+            controller.desired_translation,
             (controller.stiffness * time.delta_seconds).clamp(0.0, 1.0),
         );
-        controller.target_translation = player_translation;
 
         camera.view_matrix = controller.view_matrix();
         camera.projection_matrix = controller.projection_matrix();

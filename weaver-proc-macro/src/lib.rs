@@ -287,6 +287,22 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                 )*
                 components
             }
+
+            fn resources_read(&self) -> Vec<u64> {
+                let mut resources = Vec::new();
+                #(
+                    resources.push(<#res_types as crate::ecs::resource::Resource>::resource_id());
+                )*
+                resources
+            }
+
+            fn resources_written(&self) -> Vec<u64> {
+                let mut resources = Vec::new();
+                #(
+                    resources.push(<#resmut_types as crate::ecs::resource::Resource>::resource_id());
+                )*
+                resources
+            }
         }
     };
     gen.into()

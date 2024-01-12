@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 
 use super::{EcsError, World};
 use parking_lot::RwLock;
@@ -29,17 +29,43 @@ impl From<SystemId> for NodeIndex {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
+pub enum SystemStage {
+    Startup,
+
+    PreUpdate,
+
+    #[default]
+    Update,
+
+    PostUpdate,
+
+    Shutdown,
+}
+
 pub trait System: Send + Sync {
     fn run(&self, world: &World) -> anyhow::Result<()>;
     fn components_read(&self) -> Vec<u64>;
     fn components_written(&self) -> Vec<u64>;
+    fn resources_read(&self) -> Vec<u64>;
+    fn resources_written(&self) -> Vec<u64>;
 }
-
-pub trait StartupSystem: System {}
 
 pub struct SystemNode {
     pub id: SystemId,
     pub system: Arc<dyn System>,
+    pub components_written: Vec<u64>,
+    pub components_read: Vec<u64>,
+}
+
+impl Debug for SystemNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "System\nr: {:?}\nw: {:?}",
+            self.components_read, self.components_written
+        )
+    }
 }
 
 #[derive(Default)]
@@ -54,8 +80,10 @@ impl SystemGraph {
 
     pub fn add_system(&mut self, system: Arc<dyn System>) -> SystemId {
         let index = self.graph.add_node(SystemNode {
-            system,
             id: SystemId::PLACEHOLDER,
+            components_read: system.components_read(),
+            components_written: system.components_written(),
+            system,
         });
         self.graph[index].id = SystemId(index.index() as u32);
         self.graph[index].id
@@ -63,8 +91,10 @@ impl SystemGraph {
 
     pub fn add_system_after(&mut self, system: Arc<dyn System>, after: SystemId) -> SystemId {
         let index = self.graph.add_node(SystemNode {
-            system,
             id: SystemId::PLACEHOLDER,
+            components_read: system.components_read(),
+            components_written: system.components_written(),
+            system,
         });
         self.graph[index].id = SystemId(index.index() as u32);
         self.graph.add_edge(after.into(), index, ());
@@ -73,8 +103,10 @@ impl SystemGraph {
 
     pub fn add_system_before(&mut self, system: Arc<dyn System>, before: SystemId) -> SystemId {
         let index = self.graph.add_node(SystemNode {
-            system,
             id: SystemId::PLACEHOLDER,
+            components_read: system.components_read(),
+            components_written: system.components_written(),
+            system,
         });
         self.graph[index].id = SystemId(index.index() as u32);
         self.graph.add_edge(index, before.into(), ());
@@ -83,6 +115,70 @@ impl SystemGraph {
 
     pub fn add_dependency(&mut self, dependency: SystemId, dependent: SystemId) {
         self.graph.add_edge(dependency.into(), dependent.into(), ());
+    }
+
+    pub fn autodetect_dependencies(&mut self) -> anyhow::Result<()> {
+        let mut components_read = FxHashMap::default();
+        let mut components_written = FxHashMap::default();
+
+        for node in self.graph.node_indices() {
+            let system = &self.graph[node].system;
+            for component in system.components_read() {
+                components_read
+                    .entry(component)
+                    .or_insert_with(Vec::new)
+                    .push(node);
+            }
+            for component in system.components_written() {
+                components_written
+                    .entry(component)
+                    .or_insert_with(Vec::new)
+                    .push(node);
+            }
+        }
+
+        // components use RwLocks, so they can be read by multiple systems at once, but only written to by one system at a time
+
+        // if there are any two systems that write to the same component, add a dependency from the first system to the second
+        for (_, writers) in components_written.iter() {
+            if writers.len() > 1 {
+                for i in 0..writers.len() - 1 {
+                    // don't create dependency cycles
+                    if writers[i] == writers[i + 1] {
+                        continue;
+                    }
+                    // don't add duplicate dependencies
+                    if self.graph.contains_edge(writers[i], writers[i + 1]) {
+                        continue;
+                    }
+                    self.add_dependency(writers[i].into(), writers[i + 1].into());
+                }
+            }
+        }
+
+        // add a dependency from each system that writes to a component to each system that reads from that component
+        for (&component, writers) in components_written.iter() {
+            for &writer in writers {
+                if let Some(readers) = components_read.get(&component) {
+                    for &reader in readers {
+                        // don't create dependency cycles
+                        if writer == reader {
+                            continue;
+                        }
+                        // don't add duplicate dependencies
+                        if self.graph.contains_edge(writer, reader) {
+                            continue;
+                        }
+                        self.add_dependency(writer.into(), reader.into());
+                    }
+                }
+            }
+        }
+
+        // let dot = petgraph::dot::Dot::with_config(&self.graph, &[]);
+        // std::fs::write("system_graph.dot", format!("{:?}", dot))?;
+
+        Ok(())
     }
 
     pub fn detect_cycles(&self) -> Option<Vec<SystemId>> {
@@ -161,7 +257,7 @@ impl SystemGraph {
 
         let mut systems_running = FxHashMap::default();
 
-        let mut systems_run = FxHashSet::default();
+        let mut systems_finished = FxHashSet::default();
 
         // add all systems with no dependencies to the queue
         let mut queue = VecDeque::new();
@@ -180,11 +276,13 @@ impl SystemGraph {
                 let world = world.clone();
                 let system = self.graph[node].system.clone();
 
-                let handle = std::thread::spawn(move || {
+                let (tx, rx) = crossbeam_channel::bounded(1);
+                rayon::spawn(move || {
                     system.run(&world.read()).unwrap();
+                    let _ = tx.send(()); // notify that the system has finished running
                 });
 
-                systems_running.insert(node, handle);
+                systems_running.insert(node, rx);
             }
 
             // wait for all systems to finish running
@@ -194,18 +292,18 @@ impl SystemGraph {
                 }
 
                 for (&node, rx) in systems_running.iter_mut() {
-                    if rx.is_finished() {
+                    if let Ok(()) = rx.try_recv() {
                         // system finished running
-                        systems_run.insert(node);
+                        systems_finished.insert(node);
                     }
                 }
 
                 // remove systems that have finished running
-                for node in systems_run.iter() {
+                for node in systems_finished.iter() {
                     systems_running.remove(node);
                 }
 
-                std::thread::yield_now();
+                rayon::yield_now();
             }
 
             return Ok(());
@@ -215,43 +313,45 @@ impl SystemGraph {
 
         loop {
             // check if all systems have finished running
-            if systems_run.len() == self.graph.node_count() {
+            if systems_finished.len() == self.graph.node_count() {
                 break;
             }
             // check if there are any systems that can be run
             if let Some(node) = queue.pop_front() {
-                if !systems_running.contains_key(&node) && !systems_run.contains(&node) {
+                if !systems_running.contains_key(&node) && !systems_finished.contains(&node) {
                     let system = &self.graph[node].system.clone();
 
                     let system = system.clone();
                     let world = world.clone();
-                    let handle = std::thread::spawn(move || {
+                    let (tx, rx) = crossbeam_channel::bounded(1);
+                    rayon::spawn(move || {
                         system.run(&world.read()).unwrap();
+                        let _ = tx.send(()); // notify that the system has finished running
                     });
 
-                    systems_running.insert(node, handle);
+                    systems_running.insert(node, rx);
                 }
             }
 
             // check if any systems have finished running
             for (&node, rx) in systems_running.iter_mut() {
-                if rx.is_finished() {
+                if let Ok(()) = rx.try_recv() {
                     // system finished running
-                    systems_run.insert(node);
+                    systems_finished.insert(node);
                 }
             }
 
             // remove systems that have finished running
-            for node in systems_run.iter() {
+            for node in systems_finished.iter() {
                 systems_running.remove(node);
             }
 
             // enqueue systems whose dependencies have been met
             for node in self.graph.node_indices() {
-                if !systems_run.contains(&node) && !queue.contains(&node) {
+                if !systems_finished.contains(&node) && !queue.contains(&node) {
                     let mut dependencies_met = true;
                     for neighbor in self.graph.neighbors_directed(node, Direction::Incoming) {
-                        if !systems_run.contains(&neighbor) {
+                        if !systems_finished.contains(&neighbor) {
                             dependencies_met = false;
                             break;
                         }
@@ -262,7 +362,7 @@ impl SystemGraph {
                 }
             }
 
-            std::thread::yield_now();
+            rayon::yield_now();
         }
 
         Ok(())

@@ -98,6 +98,7 @@ pub struct EguiContext {
     state: State,
     renderer: egui_wgpu::Renderer,
     full_output: Option<egui::FullOutput>,
+    locked: bool,
 }
 
 impl EguiContext {
@@ -110,7 +111,16 @@ impl EguiContext {
             state,
             renderer,
             full_output: None,
+            locked: false,
         }
+    }
+
+    pub fn lock(&mut self) {
+        self.locked = true;
+    }
+
+    pub fn unlock(&mut self) {
+        self.locked = false;
     }
 
     pub fn handle_input(&mut self, window: &Window, event: &winit::event::WindowEvent) {
@@ -131,7 +141,7 @@ impl EguiContext {
     }
 
     pub fn draw_if_ready<F: FnOnce(&Context)>(&self, f: F) {
-        if self.full_output.is_none() {
+        if self.full_output.is_none() && !self.locked {
             f(self.state.egui_ctx());
         }
     }

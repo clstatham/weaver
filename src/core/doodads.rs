@@ -7,17 +7,29 @@ pub const MAX_DOODADS: usize = 100;
 #[derive(Default, Resource)]
 pub struct Doodads {
     pub doodads: Vec<Doodad>,
+    pub locked: bool,
 }
 
 impl Doodads {
     pub fn new() -> Self {
         Self {
             doodads: Vec::new(),
+            locked: false,
         }
     }
 
+    pub fn lock(&mut self) {
+        self.locked = true;
+    }
+
+    pub fn unlock(&mut self) {
+        self.locked = false;
+    }
+
     pub fn push(&mut self, doodad: Doodad) {
-        self.doodads.push(doodad);
+        if !self.locked && self.doodads.len() < MAX_DOODADS {
+            self.doodads.push(doodad);
+        }
     }
 }
 

@@ -69,24 +69,24 @@ impl Input {
                 }
             },
             winit::event::DeviceEvent::MouseMotion { delta } => {
-                self.mouse_delta = glam::Vec2::new(delta.0 as f32, delta.1 as f32);
+                self.mouse_delta += glam::Vec2::new(delta.0 as f32, delta.1 as f32);
             }
             winit::event::DeviceEvent::Button { button, state } => match state {
                 winit::event::ElementState::Pressed => {
-                    if !self.mouse_buttons_held.contains(&button) {
+                    if !self.mouse_buttons_held.contains(button) {
                         self.mouse_buttons_pressed.insert(*button);
                     }
                     self.mouse_buttons_held.insert(*button);
                 }
                 winit::event::ElementState::Released => {
-                    self.mouse_buttons_held.remove(&button);
+                    self.mouse_buttons_held.remove(button);
                 }
             },
             winit::event::DeviceEvent::MouseWheel { delta } => match delta {
                 winit::event::MouseScrollDelta::LineDelta(_, y) => {
-                    self.mouse_wheel_delta = *y;
+                    self.mouse_wheel_delta += *y;
                 }
-                winit::event::MouseScrollDelta::PixelDelta(_) => {}
+                winit::event::MouseScrollDelta::PixelDelta(_xy) => {}
             },
             _ => {}
         }

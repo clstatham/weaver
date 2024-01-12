@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 
 use super::{
     resource::{Res, ResMut, Resource},
-    system::{SystemGraph, SystemId},
+    system::{SystemGraph, SystemId, SystemStage},
     Bundle, Component, EcsError, Entity, System,
 };
 
@@ -21,8 +21,7 @@ pub type Components = FxHashMap<Entity, FxHashMap<u64, ComponentPtr>>;
 pub struct World {
     next_entity_id: AtomicU32,
     pub(crate) components: Arc<RwLock<Components>>,
-    pub(crate) startup_systems: RwLock<SystemGraph>,
-    pub(crate) systems: RwLock<SystemGraph>,
+    pub(crate) systems: FxHashMap<SystemStage, RwLock<SystemGraph>>,
     pub(crate) resources: FxHashMap<u64, Arc<RwLock<dyn Resource>>>,
 }
 
@@ -107,69 +106,29 @@ impl World {
         self.resources.contains_key(&T::resource_id())
     }
 
-    pub fn has_startup_system(&self, system: SystemId) -> bool {
-        self.startup_systems.read().has_system(system)
+    pub fn add_system<T: System + 'static>(&mut self, system: T) -> SystemId {
+        self.add_system_to_stage(system, SystemStage::default())
     }
 
-    pub fn add_startup_system<S: System + 'static>(&self, system: S) -> SystemId {
-        self.startup_systems.write().add_system(Arc::new(system))
-    }
-
-    pub fn add_startup_system_after<S: System + 'static>(
-        &self,
-        system: S,
-        after: SystemId,
+    pub fn add_system_to_stage<T: System + 'static>(
+        &mut self,
+        system: T,
+        stage: SystemStage,
     ) -> SystemId {
-        self.startup_systems
-            .write()
-            .add_system_after(Arc::new(system), after)
-    }
+        let system = Arc::new(system);
 
-    pub fn add_startup_system_before<S: System + 'static>(
-        &self,
-        system: S,
-        before: SystemId,
-    ) -> SystemId {
-        self.startup_systems
-            .write()
-            .add_system_before(Arc::new(system), before)
-    }
-
-    pub fn add_startup_system_dependency(&self, dependency: SystemId, dependent: SystemId) {
-        self.startup_systems
-            .write()
-            .add_dependency(dependency, dependent);
-    }
-
-    pub fn has_system(&self, system: SystemId) -> bool {
-        self.systems.read().has_system(system)
-    }
-
-    pub fn add_system<S: System + 'static>(&self, system: S) -> SystemId {
-        self.systems.write().add_system(Arc::new(system))
-    }
-
-    pub fn add_system_after<S: System + 'static>(&self, system: S, after: SystemId) -> SystemId {
         self.systems
+            .entry(stage)
+            .or_default()
             .write()
-            .add_system_after(Arc::new(system), after)
+            .add_system(system)
     }
 
-    pub fn add_system_before<S: System + 'static>(&self, system: S, before: SystemId) -> SystemId {
-        self.systems
-            .write()
-            .add_system_before(Arc::new(system), before)
-    }
-
-    pub fn add_system_dependency(&self, dependency: SystemId, dependent: SystemId) {
-        self.systems.write().add_dependency(dependency, dependent);
-    }
-
-    pub fn startup(world: &Arc<RwLock<Self>>) -> anyhow::Result<()> {
-        world.read().startup_systems.read().run(&world.read())
-    }
-
-    pub fn update(world: &Arc<RwLock<Self>>) -> anyhow::Result<()> {
-        world.read().systems.read().run_parallel(world)
+    pub fn run_stage(world: &Arc<RwLock<Self>>, stage: SystemStage) -> anyhow::Result<()> {
+        if let Some(systems) = world.read().systems.get(&stage) {
+            systems.write().autodetect_dependencies()?;
+            systems.read().run(&world.read())?;
+        }
+        Ok(())
     }
 }

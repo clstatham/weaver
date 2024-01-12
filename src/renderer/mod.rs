@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use egui_wgpu::renderer::ScreenDescriptor;
+use parking_lot::RwLock;
 use weaver_proc_macro::Resource;
 use winit::window::Window;
 
@@ -59,10 +60,14 @@ pub struct Renderer {
     bind_group_layout_cache: BindGroupLayoutCache,
 
     point_lights: PointLightArray,
+
+    world: Arc<RwLock<World>>,
+
+    output: Option<wgpu::SurfaceTexture>,
 }
 
 impl Renderer {
-    pub fn new(window: &Window) -> Self {
+    pub fn new(window: &Window, world: Arc<RwLock<World>>) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -254,6 +259,8 @@ impl Renderer {
             resource_manager,
             bind_group_layout_cache,
             point_lights,
+            world,
+            output: None,
         }
     }
 
@@ -291,9 +298,10 @@ impl Renderer {
         self.extra_passes.push(Box::new(pass));
     }
 
-    pub fn prepare_components(&mut self, world: &World) {
+    pub fn prepare_components(&mut self) {
         log::trace!("Preparing components");
 
+        let world = &self.world.read();
         let resource_manager = &self.resource_manager;
         // prepare the renderer's built-in components
         self.hdr_pass.texture.lazy_init(resource_manager).unwrap();
@@ -337,169 +345,171 @@ impl Renderer {
     }
 
     pub fn render_ui(
-        &self,
+        &mut self,
         ui: &mut EguiContext,
         window: &Window,
-        output: &wgpu::SurfaceTexture,
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("UI Texture View"),
-            format: Some(WindowTexture::FORMAT),
-            dimension: Some(wgpu::TextureViewDimension::D2),
-            aspect: wgpu::TextureAspect::All,
-            base_mip_level: 0,
-            base_array_layer: 0,
-            array_layer_count: None,
-            mip_level_count: None,
-        });
-
-        ui.render(
-            &self.device,
-            &self.queue,
-            encoder,
-            window,
-            &view,
-            &ScreenDescriptor {
-                size_in_pixels: [self.config.width, self.config.height],
-                pixels_per_point: window.scale_factor() as f32,
-            },
-        );
-    }
-
-    pub fn render(
-        &mut self,
-        world: &World,
-        output: &wgpu::SurfaceTexture,
-        encoder: &mut wgpu::CommandEncoder,
-    ) -> anyhow::Result<()> {
-        let hdr_pass_view = {
-            let hdr_pass_handle = &self.hdr_pass.texture.lazy_init(&self.resource_manager)?;
-            let hdr_pass_texture = hdr_pass_handle[0].get_texture().unwrap();
-            hdr_pass_texture.create_view(&wgpu::TextureViewDescriptor {
-                label: Some("HDR Pass Texture View"),
-                format: Some(HdrTexture::FORMAT),
+        if let Some(output) = self.output.as_ref() {
+            let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("UI Texture View"),
+                format: Some(WindowTexture::FORMAT),
                 dimension: Some(wgpu::TextureViewDimension::D2),
                 aspect: wgpu::TextureAspect::All,
                 base_mip_level: 0,
                 base_array_layer: 0,
                 array_layer_count: None,
                 mip_level_count: None,
-            })
-        };
-
-        // clear the screen
-        {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Clear Screen"),
-                color_attachments: &[
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &hdr_pass_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &self.normal_texture_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &self.position_texture_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                ],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                occlusion_query_set: None,
-                timestamp_writes: None,
             });
+
+            ui.render(
+                &self.device,
+                &self.queue,
+                encoder,
+                window,
+                &view,
+                &ScreenDescriptor {
+                    size_in_pixels: [self.config.width, self.config.height],
+                    pixels_per_point: window.scale_factor() as f32,
+                },
+            );
         }
+    }
 
-        self.pbr_pass.render(self, &hdr_pass_view, world, encoder)?;
+    pub fn render(&mut self, encoder: &mut wgpu::CommandEncoder) -> anyhow::Result<()> {
+        if let Some(output) = self.output.as_ref() {
+            let world = &self.world.read();
+            let hdr_pass_view = {
+                let hdr_pass_handle = &self.hdr_pass.texture.lazy_init(&self.resource_manager)?;
+                let hdr_pass_texture = hdr_pass_handle[0].get_texture().unwrap();
+                hdr_pass_texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("HDR Pass Texture View"),
+                    format: Some(HdrTexture::FORMAT),
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    aspect: wgpu::TextureAspect::All,
+                    base_mip_level: 0,
+                    base_array_layer: 0,
+                    array_layer_count: None,
+                    mip_level_count: None,
+                })
+            };
 
-        for pass in self.extra_passes.iter() {
-            pass.render_if_enabled(
+            // clear the screen
+            {
+                let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Clear Screen"),
+                    color_attachments: &[
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &hdr_pass_view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &self.normal_texture_view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &self.position_texture_view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                    ],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.depth_texture_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+            }
+
+            self.pbr_pass.render(self, &hdr_pass_view, world, encoder)?;
+
+            for pass in self.extra_passes.iter() {
+                pass.render_if_enabled(
+                    encoder,
+                    &hdr_pass_view,
+                    &self.depth_texture_view,
+                    self,
+                    world,
+                )?;
+            }
+
+            self.sky_pass.render_if_enabled(
                 encoder,
                 &hdr_pass_view,
                 &self.depth_texture_view,
                 self,
                 world,
             )?;
+
+            // we always want to render the HDR pass, otherwise we won't see anything!
+            self.hdr_pass.render(
+                encoder,
+                &self.color_texture_view,
+                &self.depth_texture_view,
+                self,
+                world,
+            )?;
+
+            self.shadow_pass.render_if_enabled(
+                encoder,
+                &self.color_texture_view,
+                &self.depth_texture_view,
+                self,
+                world,
+            )?;
+
+            self.doodad_pass.render_if_enabled(
+                encoder,
+                &self.color_texture_view,
+                &self.depth_texture_view,
+                self,
+                world,
+            )?;
+
+            // self.particle_pass.render_if_enabled(
+            //     &self.device,
+            //     &self.queue,
+            //     &self.color_texture_view,
+            //     &self.depth_texture_view,
+            //     self,
+            //     world,
+            // )?;
+
+            // copy color texture to the output
+            encoder.copy_texture_to_texture(
+                self.color_texture.as_image_copy(),
+                output.texture.as_image_copy(),
+                wgpu::Extent3d {
+                    width: self.config.width,
+                    height: self.config.height,
+                    depth_or_array_layers: 1,
+                },
+            );
         }
-
-        self.sky_pass.render_if_enabled(
-            encoder,
-            &hdr_pass_view,
-            &self.depth_texture_view,
-            self,
-            world,
-        )?;
-
-        // we always want to render the HDR pass, otherwise we won't see anything!
-        self.hdr_pass.render(
-            encoder,
-            &self.color_texture_view,
-            &self.depth_texture_view,
-            self,
-            world,
-        )?;
-
-        self.shadow_pass.render_if_enabled(
-            encoder,
-            &self.color_texture_view,
-            &self.depth_texture_view,
-            self,
-            world,
-        )?;
-
-        self.doodad_pass.render_if_enabled(
-            encoder,
-            &self.color_texture_view,
-            &self.depth_texture_view,
-            self,
-            world,
-        )?;
-
-        // self.particle_pass.render_if_enabled(
-        //     &self.device,
-        //     &self.queue,
-        //     &self.color_texture_view,
-        //     &self.depth_texture_view,
-        //     self,
-        //     world,
-        // )?;
-
-        // copy color texture to the output
-        encoder.copy_texture_to_texture(
-            self.color_texture.as_image_copy(),
-            output.texture.as_image_copy(),
-            wgpu::Extent3d {
-                width: self.config.width,
-                height: self.config.height,
-                depth_or_array_layers: 1,
-            },
-        );
 
         Ok(())
     }
 
-    pub fn begin_frame(&mut self) -> (wgpu::SurfaceTexture, wgpu::CommandEncoder) {
+    pub fn begin_frame(&mut self) -> Option<wgpu::CommandEncoder> {
+        if self.output.is_some() {
+            return None;
+        }
         log::trace!("Begin frame");
 
         let encoder = self
@@ -510,11 +520,14 @@ impl Renderer {
 
         let output = self.surface.get_current_texture().unwrap();
 
-        (output, encoder)
+        self.output = Some(output);
+
+        Some(encoder)
     }
 
-    pub fn prepare_passes(&mut self, world: &World) {
+    pub fn prepare_passes(&mut self) {
         log::trace!("Preparing passes");
+        let world = &self.world.read();
         self.pbr_pass.prepare(world, self);
         self.shadow_pass.prepare(world, self).unwrap();
         self.doodad_pass.prepare(world, self).unwrap();
@@ -526,9 +539,14 @@ impl Renderer {
         self.resource_manager.update_all_resources();
     }
 
-    pub fn flush_and_present(&self, output: wgpu::SurfaceTexture, encoder: wgpu::CommandEncoder) {
+    pub fn end_frame(&self, encoder: wgpu::CommandEncoder) {
         self.flush(encoder);
-        output.present();
         self.resource_manager.gc_destroyed_resources();
+    }
+
+    pub fn present(&mut self) {
+        if let Some(output) = self.output.take() {
+            output.present();
+        }
     }
 }
