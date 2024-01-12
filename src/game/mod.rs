@@ -41,7 +41,7 @@ pub struct State {
 
 #[system(WindowUpdate)]
 fn window_update(mut window: ResMut<Window>, input: Res<Input>) {
-    window.fps_mode = input.mouse_button_pressed(3);
+    window.fps_mode = input.mouse_button_pressed(MouseButton::Right);
 }
 
 #[system(UiUpdate)]

@@ -33,7 +33,7 @@ pub fn player_update(mut player: Query<(&mut Player, &mut Transform)>, input: Re
 
         let mouse_delta = input.mouse_delta();
 
-        if input.mouse_button_pressed(3) {
+        if input.mouse_button_pressed(MouseButton::Right) {
             let delta = mouse_delta * player.rotation_speed * 0.005;
             rotation = Quat::from_rotation_y(-delta.x) * rotation;
         }

@@ -73,10 +73,6 @@ impl App {
 
         world
             .write()
-            .add_system_to_stage(InputReset, SystemStage::PostUpdate);
-
-        world
-            .write()
             .add_system_to_stage(Render, SystemStage::PostUpdate);
 
         Ok(Self { event_loop, world })
@@ -107,10 +103,29 @@ impl App {
 
         // ECS update task
         let (killswitch, killswitch_rx) = crossbeam_channel::bounded(1);
+        let (window_event_tx, window_event_rx) = crossbeam_channel::unbounded();
+        let (device_event_tx, device_event_rx) = crossbeam_channel::unbounded();
         let update_world = self.world.clone();
         rayon::spawn(move || {
             loop {
                 World::run_stage(&update_world, SystemStage::PreUpdate).unwrap();
+
+                {
+                    let world = update_world.read();
+                    let mut input = world.write_resource::<Input>().unwrap();
+                    input.prepare_for_update();
+
+                    while let Ok(event) = window_event_rx.try_recv() {
+                        input.update_window(&event);
+
+                        let window = world.read_resource::<Window>().unwrap();
+                        let mut ui = world.write_resource::<EguiContext>().unwrap();
+                        ui.handle_input(&window.window, &event);
+                    }
+                    while let Ok(event) = device_event_rx.try_recv() {
+                        input.update_device(&event);
+                    }
+                }
 
                 {
                     let world = update_world.read();
@@ -161,18 +176,10 @@ impl App {
                     // input.prepare_for_update();
                 }
                 winit::event::Event::DeviceEvent { event, .. } => {
-                    let world = self.world.read();
-                    let mut input = world.write_resource::<Input>().unwrap();
-
-                    input.update(&event);
+                    device_event_tx.send(event.clone()).unwrap();
                 }
                 winit::event::Event::WindowEvent { event, .. } => {
-                    {
-                        let world = self.world.read();
-                        let window = world.read_resource::<Window>().unwrap();
-                        let mut ui = world.write_resource::<EguiContext>().unwrap();
-                        ui.handle_input(&window.window, &event);
-                    }
+                    window_event_tx.send(event.clone()).unwrap();
                     match event {
                         winit::event::WindowEvent::CloseRequested => {
                             target.exit();
@@ -221,11 +228,6 @@ impl App {
 
         Ok(())
     }
-}
-
-#[system(InputReset)]
-fn input_reset(input: ResMut<Input>) {
-    input.prepare_for_update();
 }
 
 #[system(Render)]

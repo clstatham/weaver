@@ -74,7 +74,7 @@ pub fn follow_camera_update(
         let player_translation = player_transform.get_translation();
         let player_rotation = player_transform.get_rotation();
 
-        if input.mouse_button_pressed(3) {
+        if input.mouse_button_pressed(MouseButton::Right) {
             let mouse_delta = input.mouse_delta();
             controller.pitch += mouse_delta.y * controller.pitch_sensitivity * 0.005;
             controller.pitch = controller
@@ -82,7 +82,7 @@ pub fn follow_camera_update(
                 .clamp(controller.min_pitch, controller.max_pitch);
         }
 
-        controller.distance += input.mouse_wheel_delta() * 0.005;
+        controller.distance -= input.mouse_wheel_delta();
         controller.distance = controller
             .distance
             .clamp(controller.min_distance, controller.max_distance);

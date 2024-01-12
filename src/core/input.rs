@@ -1,15 +1,16 @@
 use rustc_hash::FxHashSet;
 use weaver_proc_macro::Resource;
 
-pub use winit::keyboard::KeyCode;
+pub use winit::{event::MouseButton, keyboard::KeyCode};
+
 use winit::keyboard::PhysicalKey;
 
 #[derive(Resource)]
 pub struct Input {
     keys_pressed: FxHashSet<KeyCode>,
     keys_held: FxHashSet<KeyCode>,
-    mouse_buttons_pressed: FxHashSet<u32>,
-    mouse_buttons_held: FxHashSet<u32>,
+    mouse_buttons_pressed: FxHashSet<MouseButton>,
+    mouse_buttons_held: FxHashSet<MouseButton>,
     mouse_position: Option<glam::Vec2>,
     mouse_delta: glam::Vec2,
     mouse_wheel_delta: f32,
@@ -44,11 +45,11 @@ impl Input {
         self.keys_held.contains(&key)
     }
 
-    pub fn mouse_button_just_pressed(&self, button: u32) -> bool {
+    pub fn mouse_button_just_pressed(&self, button: MouseButton) -> bool {
         self.mouse_buttons_pressed.contains(&button)
     }
 
-    pub fn mouse_button_pressed(&self, button: u32) -> bool {
+    pub fn mouse_button_pressed(&self, button: MouseButton) -> bool {
         self.mouse_buttons_held.contains(&button)
     }
 
@@ -79,27 +80,9 @@ impl Input {
         self.update_delta.as_secs_f32()
     }
 
-    pub fn update(&mut self, event: &winit::event::DeviceEvent) {
+    pub fn update_window(&mut self, event: &winit::event::WindowEvent) {
         match event {
-            winit::event::DeviceEvent::Key(input) => match input.state {
-                winit::event::ElementState::Pressed => {
-                    if let PhysicalKey::Code(code) = input.physical_key {
-                        if !self.keys_held.contains(&code) {
-                            self.keys_pressed.insert(code);
-                        }
-                        self.keys_held.insert(code);
-                    }
-                }
-                winit::event::ElementState::Released => {
-                    if let PhysicalKey::Code(code) = input.physical_key {
-                        self.keys_held.remove(&code);
-                    }
-                }
-            },
-            winit::event::DeviceEvent::MouseMotion { delta } => {
-                self.mouse_delta += glam::Vec2::new(delta.0 as f32, delta.1 as f32);
-            }
-            winit::event::DeviceEvent::Button { button, state } => match state {
+            winit::event::WindowEvent::MouseInput { state, button, .. } => match state {
                 winit::event::ElementState::Pressed => {
                     if !self.mouse_buttons_held.contains(button) {
                         self.mouse_buttons_pressed.insert(*button);
@@ -110,13 +93,42 @@ impl Input {
                     self.mouse_buttons_held.remove(button);
                 }
             },
-            winit::event::DeviceEvent::MouseWheel { delta } => match delta {
+            winit::event::WindowEvent::KeyboardInput {
+                event,
+                is_synthetic,
+                ..
+            } => {
+                if *is_synthetic {
+                    return;
+                }
+
+                if let PhysicalKey::Code(code) = event.physical_key {
+                    match event.state {
+                        winit::event::ElementState::Pressed => {
+                            if !self.keys_held.contains(&code) {
+                                self.keys_pressed.insert(code);
+                            }
+                            self.keys_held.insert(code);
+                        }
+                        winit::event::ElementState::Released => {
+                            self.keys_held.remove(&code);
+                        }
+                    }
+                }
+            }
+            winit::event::WindowEvent::MouseWheel { delta, .. } => match delta {
                 winit::event::MouseScrollDelta::LineDelta(_, y) => {
                     self.mouse_wheel_delta += *y;
                 }
                 winit::event::MouseScrollDelta::PixelDelta(_xy) => {}
             },
             _ => {}
+        }
+    }
+
+    pub fn update_device(&mut self, event: &winit::event::DeviceEvent) {
+        if let winit::event::DeviceEvent::MouseMotion { delta } = event {
+            self.mouse_delta += glam::Vec2::new(delta.0 as f32, delta.1 as f32);
         }
     }
 }

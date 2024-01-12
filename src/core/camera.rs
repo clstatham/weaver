@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use weaver_proc_macro::Component;
-use winit::keyboard::KeyCode;
+use winit::event::MouseButton;
+pub use winit::keyboard::KeyCode;
 
 use crate::{
     ecs::World,
@@ -203,7 +204,7 @@ impl FlyCameraController {
 
         self.translation += velocity;
 
-        if input.mouse_button_pressed(3) {
+        if input.mouse_button_pressed(MouseButton::Right) {
             yaw += -(mouse_delta.x * self.sensitivity).to_radians();
             pitch += -(mouse_delta.y * self.sensitivity).to_radians();
         }
