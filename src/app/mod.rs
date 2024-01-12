@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use winit::{event_loop::EventLoop, window::WindowBuilder};
+use winit::{event::WindowEvent, event_loop::EventLoop, window::WindowBuilder};
 
 use crate::{
     core::{doodads::Doodads, input::Input, time::Time, ui::EguiContext},
@@ -32,7 +32,7 @@ pub struct App {
 
 impl App {
     pub fn new(screen_width: usize, screen_height: usize) -> anyhow::Result<Self> {
-        let event_loop = EventLoop::new();
+        let event_loop = EventLoop::new()?;
         let window = WindowBuilder::new()
             .with_title("Weaver")
             .with_inner_size(winit::dpi::LogicalSize::new(
@@ -155,8 +155,8 @@ impl App {
             world.startup()?;
         }
 
-        self.event_loop.run(move |event, _, control_flow| {
-            *control_flow = winit::event_loop::ControlFlow::Poll;
+        self.event_loop.run(move |event, target| {
+            target.set_control_flow(winit::event_loop::ControlFlow::Poll);
             {
                 let world = self.world.borrow();
                 world
@@ -180,12 +180,13 @@ impl App {
                 winit::event::Event::WindowEvent { event, .. } => {
                     {
                         let world = self.world.borrow();
+                        let window = world.read_resource::<Window>().unwrap();
                         let mut ui = world.write_resource::<EguiContext>().unwrap();
-                        ui.handle_input(&event);
+                        ui.handle_input(&window.window, &event);
                     }
                     match event {
                         winit::event::WindowEvent::CloseRequested => {
-                            *control_flow = winit::event_loop::ControlFlow::Exit;
+                            target.exit();
                         }
                         winit::event::WindowEvent::Resized(_size) => {
                             // todo
@@ -216,37 +217,39 @@ impl App {
                             }
                         }
 
+                        WindowEvent::RedrawRequested => {
+                            let world = self.world.borrow();
+
+                            world.write_resource::<Time>().unwrap().update();
+                            world
+                                .write_resource::<EguiContext>()
+                                .unwrap()
+                                .begin_frame(&world.read_resource::<Window>().unwrap().window);
+                            world.update().unwrap();
+                            world.write_resource::<EguiContext>().unwrap().end_frame();
+
+                            let mut renderer = world.write_resource::<Renderer>().unwrap();
+                            let mut ui = world.write_resource::<EguiContext>().unwrap();
+
+                            let (output, mut encoder) = renderer.begin_frame();
+                            renderer.prepare_components(&world);
+                            renderer.prepare_passes(&world);
+                            renderer.render(&world, &output, &mut encoder).unwrap();
+                            renderer.render_ui(
+                                &mut ui,
+                                &world.read_resource::<Window>().unwrap().window,
+                                &output,
+                                &mut encoder,
+                            );
+                            renderer.flush_and_present(output, encoder);
+                        }
                         _ => {}
                     }
                 }
-                winit::event::Event::RedrawRequested(_) => {
-                    let world = self.world.borrow();
-
-                    world.write_resource::<Time>().unwrap().update();
-                    world
-                        .write_resource::<EguiContext>()
-                        .unwrap()
-                        .begin_frame(&world.read_resource::<Window>().unwrap().window);
-                    world.update().unwrap();
-                    world.write_resource::<EguiContext>().unwrap().end_frame();
-
-                    let mut renderer = world.write_resource::<Renderer>().unwrap();
-                    let mut ui = world.write_resource::<EguiContext>().unwrap();
-
-                    let (output, mut encoder) = renderer.begin_frame();
-                    renderer.prepare_components(&world);
-                    renderer.prepare_passes(&world);
-                    renderer.render(&world, &output, &mut encoder).unwrap();
-                    renderer.render_ui(
-                        &mut ui,
-                        &world.read_resource::<Window>().unwrap().window,
-                        &output,
-                        &mut encoder,
-                    );
-                    renderer.flush_and_present(output, encoder);
-                }
                 _ => {}
             }
-        });
+        })?;
+
+        Ok(())
     }
 }

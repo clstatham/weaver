@@ -42,22 +42,22 @@ pub fn player_update(
 
         let mut direction = Vec3::ZERO;
 
-        if input.key_pressed(KeyCode::W) {
+        if input.key_pressed(KeyCode::KeyW) {
             direction += rotation * Vec3::Z;
         }
-        if input.key_pressed(KeyCode::S) {
+        if input.key_pressed(KeyCode::KeyS) {
             direction -= rotation * Vec3::Z;
         }
-        if input.key_pressed(KeyCode::A) {
+        if input.key_pressed(KeyCode::KeyA) {
             direction += rotation * Vec3::X;
         }
-        if input.key_pressed(KeyCode::D) {
+        if input.key_pressed(KeyCode::KeyD) {
             direction -= rotation * Vec3::X;
         }
         if input.key_pressed(KeyCode::Space) {
             direction += rotation * Vec3::Y;
         }
-        if input.key_pressed(KeyCode::LControl) {
+        if input.key_pressed(KeyCode::ControlLeft) {
             direction -= rotation * Vec3::Y;
         }
 

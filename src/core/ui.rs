@@ -95,7 +95,6 @@ pub mod builtin {
 
 #[derive(Resource)]
 pub struct EguiContext {
-    ctx: Context,
     state: State,
     renderer: egui_wgpu::Renderer,
     full_output: Option<egui::FullOutput>,
@@ -104,35 +103,36 @@ pub struct EguiContext {
 impl EguiContext {
     pub fn new(device: &wgpu::Device, window: &Window, msaa_samples: u32) -> Self {
         let ctx = Context::default();
-        let state = State::new(ctx.viewport_id(), window, None, None);
+        let viewport_id = ctx.viewport_id();
+        let state = State::new(ctx, viewport_id, window, None, None);
         let renderer = egui_wgpu::Renderer::new(device, WindowTexture::FORMAT, None, msaa_samples);
         Self {
-            ctx,
             state,
             renderer,
             full_output: None,
         }
     }
 
-    pub fn handle_input(&mut self, event: &winit::event::WindowEvent) {
-        let _ = self.state.on_window_event(&self.ctx, event);
+    pub fn handle_input(&mut self, window: &Window, event: &winit::event::WindowEvent) {
+        let _ = self.state.on_window_event(window, event);
     }
 
     pub fn begin_frame(&mut self, window: &Window) {
         if self.full_output.is_none() {
-            self.ctx.begin_frame(self.state.take_egui_input(window));
+            let raw_input = self.state.take_egui_input(window);
+            self.state.egui_ctx().begin_frame(raw_input);
         }
     }
 
     pub fn end_frame(&mut self) {
         if self.full_output.is_none() {
-            self.full_output = Some(self.ctx.end_frame());
+            self.full_output = Some(self.state.egui_ctx().end_frame());
         }
     }
 
     pub fn draw_if_ready<F: FnOnce(&Context)>(&self, f: F) {
         if self.full_output.is_none() {
-            f(&self.ctx);
+            f(self.state.egui_ctx());
         }
     }
 
@@ -152,9 +152,12 @@ impl EguiContext {
         let pixels_per_point = screen_descriptor.pixels_per_point;
 
         self.state
-            .handle_platform_output(window, &self.ctx, full_output.platform_output);
+            .handle_platform_output(window, full_output.platform_output);
 
-        let tris = self.ctx.tessellate(full_output.shapes, pixels_per_point);
+        let tris = self
+            .state
+            .egui_ctx()
+            .tessellate(full_output.shapes, pixels_per_point);
         for (id, image_delta) in &full_output.textures_delta.set {
             self.renderer
                 .update_texture(device, queue, *id, image_delta);

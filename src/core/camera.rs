@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use weaver_proc_macro::Component;
-use winit::event::VirtualKeyCode;
+use winit::keyboard::KeyCode;
 
 use crate::{
     ecs::World,
@@ -176,28 +176,28 @@ impl FlyCameraController {
 
         let mut velocity = glam::Vec3::ZERO;
 
-        if input.key_pressed(VirtualKeyCode::W) {
+        if input.key_pressed(KeyCode::KeyW) {
             velocity += forward;
         }
-        if input.key_pressed(VirtualKeyCode::S) {
+        if input.key_pressed(KeyCode::KeyS) {
             velocity -= forward;
         }
-        if input.key_pressed(VirtualKeyCode::D) {
+        if input.key_pressed(KeyCode::KeyD) {
             velocity += right;
         }
-        if input.key_pressed(VirtualKeyCode::A) {
+        if input.key_pressed(KeyCode::KeyA) {
             velocity -= right;
         }
-        if input.key_pressed(VirtualKeyCode::Space) {
+        if input.key_pressed(KeyCode::Space) {
             velocity += glam::Vec3::Y;
         }
-        if input.key_pressed(VirtualKeyCode::LControl) {
+        if input.key_pressed(KeyCode::ControlLeft) {
             velocity -= glam::Vec3::Y;
         }
 
         velocity = velocity.normalize_or_zero() * self.speed * delta_time;
 
-        if input.key_pressed(VirtualKeyCode::LShift) {
+        if input.key_pressed(KeyCode::ShiftLeft) {
             velocity *= 2.0;
         }
 

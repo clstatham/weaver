@@ -1,7 +1,8 @@
 use rustc_hash::FxHashSet;
 use weaver_proc_macro::Resource;
 
-pub use winit::event::VirtualKeyCode as KeyCode;
+pub use winit::keyboard::KeyCode;
+use winit::keyboard::PhysicalKey;
 
 #[derive(Resource, Default)]
 pub struct Input {
@@ -51,16 +52,20 @@ impl Input {
     }
 
     pub fn update(&mut self, event: &winit::event::DeviceEvent) {
-        match *event {
+        match event {
             winit::event::DeviceEvent::Key(input) => match input.state {
                 winit::event::ElementState::Pressed => {
-                    if !self.keys_held.contains(&input.virtual_keycode.unwrap()) {
-                        self.keys_pressed.insert(input.virtual_keycode.unwrap());
+                    if let PhysicalKey::Code(code) = input.physical_key {
+                        if !self.keys_held.contains(&code) {
+                            self.keys_pressed.insert(code);
+                        }
+                        self.keys_held.insert(code);
                     }
-                    self.keys_held.insert(input.virtual_keycode.unwrap());
                 }
                 winit::event::ElementState::Released => {
-                    self.keys_held.remove(&input.virtual_keycode.unwrap());
+                    if let PhysicalKey::Code(code) = input.physical_key {
+                        self.keys_held.remove(&code);
+                    }
                 }
             },
             winit::event::DeviceEvent::MouseMotion { delta } => {
@@ -69,9 +74,9 @@ impl Input {
             winit::event::DeviceEvent::Button { button, state } => match state {
                 winit::event::ElementState::Pressed => {
                     if !self.mouse_buttons_held.contains(&button) {
-                        self.mouse_buttons_pressed.insert(button);
+                        self.mouse_buttons_pressed.insert(*button);
                     }
-                    self.mouse_buttons_held.insert(button);
+                    self.mouse_buttons_held.insert(*button);
                 }
                 winit::event::ElementState::Released => {
                     self.mouse_buttons_held.remove(&button);
@@ -79,7 +84,7 @@ impl Input {
             },
             winit::event::DeviceEvent::MouseWheel { delta } => match delta {
                 winit::event::MouseScrollDelta::LineDelta(_, y) => {
-                    self.mouse_wheel_delta = y;
+                    self.mouse_wheel_delta = *y;
                 }
                 winit::event::MouseScrollDelta::PixelDelta(_) => {}
             },
