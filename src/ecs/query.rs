@@ -1,9 +1,11 @@
 use std::fmt::Debug;
 
+use bit_set::BitSet;
 use parking_lot::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLockReadGuard, RwLockWriteGuard,
 };
-use rustc_hash::{FxHashMap, FxHashSet};
+use rayon::prelude::*;
+use rustc_hash::FxHashMap;
 
 use super::{
     entity::Entity,
@@ -31,11 +33,11 @@ where
     F: QueryFilter<'a>,
 {
     type Item: Bundle;
-    type ItemRef: 'a;
+    type ItemRef: 'a + Send;
 
     /// Collects the components that match the query, based on the given entities.
     fn collect(components: &Components) -> FxHashMap<Entity, Vec<QueryEntry>> {
-        let mut entries: FxHashMap<Entity, Vec<QueryEntry>> = FxHashMap::default();
+        // let mut entries: FxHashMap<Entity, Vec<QueryEntry>> = FxHashMap::default();
 
         let reads = Self::reads().unwrap_or_default();
         let writes = Self::writes().unwrap_or_default();
@@ -43,45 +45,48 @@ where
         let withouts = Self::withouts().unwrap_or_default();
         let maybes = Self::maybes().unwrap_or_default();
 
-        for (&entity, components) in components.iter() {
-            // check if the entity has the right combination of components
-            // it needs to have ALL of the components in `reads`, `writes`, and `withs`
-            // it needs to have NONE of the components in `withouts`
-            // we don't care about the maybes, they're optional anyway
+        let entries = components
+            .par_iter()
+            .filter_map(|(&entity, components)| {
+                // check if the entity has the right combination of components
+                // it needs to have ALL of the components in `reads`, `writes`, and `withs`
+                // it needs to have NONE of the components in `withouts`
+                // we don't care about the maybes, they're optional anyway
 
-            let component_ids = components.keys().copied().collect::<FxHashSet<_>>();
+                let component_ids = components.keys().copied().collect::<BitSet<_>>();
 
-            // check if the entity has all of the required components
-            if !reads.is_subset(&component_ids)
-                || !writes.is_subset(&component_ids)
-                || !withs.is_subset(&component_ids)
-            {
-                continue;
-            }
-
-            // check if the entity has any of the excluded components
-            if !withouts.is_disjoint(&component_ids) {
-                continue;
-            }
-
-            // gather the matching components
-            let mut matching_components = Vec::new();
-
-            for (&component_id, component) in components {
-                // we care about the maybes here, since they're always included in the query (just wrapped in an Option)
-                if reads.contains(&component_id)
-                    || writes.contains(&component_id)
-                    || maybes.contains(&component_id)
+                // check if the entity has all of the required components
+                if !reads.is_subset(&component_ids)
+                    || !writes.is_subset(&component_ids)
+                    || !withs.is_subset(&component_ids)
                 {
-                    matching_components.push(QueryEntry {
-                        entity,
-                        component: component.clone(),
-                    });
+                    return None;
                 }
-            }
 
-            entries.insert(entity, matching_components);
-        }
+                // check if the entity has any of the excluded components
+                if !withouts.is_disjoint(&component_ids) {
+                    return None;
+                }
+
+                // gather the matching components
+                let mut matching_components = Vec::new();
+
+                for (&component_id, component) in components {
+                    // we care about the maybes here, since they're always included in the query (just wrapped in an Option)
+                    if reads.contains(component_id)
+                        || writes.contains(component_id)
+                        || maybes.contains(component_id)
+                    {
+                        matching_components.push(QueryEntry {
+                            entity,
+                            component: component.clone(),
+                        });
+                    }
+                }
+
+                Some((entity, matching_components))
+            })
+            .collect();
 
         entries
     }
@@ -89,22 +94,22 @@ where
     // Gets the item from the given entity, if it exists.
     fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef>;
 
-    fn reads() -> Option<FxHashSet<u64>> {
+    fn reads() -> Option<BitSet> {
         None
     }
-    fn writes() -> Option<FxHashSet<u64>> {
+    fn writes() -> Option<BitSet> {
         None
     }
-    fn withs() -> Option<FxHashSet<u64>> {
+    fn withs() -> Option<BitSet> {
         F::withs()
     }
-    fn withouts() -> Option<FxHashSet<u64>> {
+    fn withouts() -> Option<BitSet> {
         F::withouts()
     }
-    fn ors() -> Option<FxHashSet<(u64, u64)>> {
+    fn ors() -> Option<BitSet<(u64, u64)>> {
         None
     }
-    fn maybes() -> Option<FxHashSet<u64>> {
+    fn maybes() -> Option<BitSet> {
         None
     }
 }
@@ -130,8 +135,8 @@ where
         })
     }
 
-    fn reads() -> Option<FxHashSet<u64>> {
-        Some(FxHashSet::from_iter(vec![T::component_id()]))
+    fn reads() -> Option<BitSet> {
+        Some(BitSet::from_iter(vec![T::component_id()]))
     }
 }
 
@@ -156,8 +161,8 @@ where
         })
     }
 
-    fn writes() -> Option<FxHashSet<u64>> {
-        Some(FxHashSet::from_iter(vec![T::component_id()]))
+    fn writes() -> Option<BitSet> {
+        Some(BitSet::from_iter(vec![T::component_id()]))
     }
 }
 
@@ -180,17 +185,17 @@ where
         }
     }
 
-    fn maybes() -> Option<FxHashSet<u64>> {
-        Some(FxHashSet::from_iter(vec![T::Item::component_id()]))
+    fn maybes() -> Option<BitSet> {
+        Some(BitSet::from_iter(vec![T::Item::component_id()]))
     }
 }
 
 /// Very similar to a Queryable, but instead of yielding a reference to the component, it is just used for filtering.
 pub trait QueryFilter<'a> {
-    fn withs() -> Option<FxHashSet<u64>> {
+    fn withs() -> Option<BitSet> {
         None
     }
-    fn withouts() -> Option<FxHashSet<u64>> {
+    fn withouts() -> Option<BitSet> {
         None
     }
 }
@@ -206,8 +211,8 @@ impl<'a, T> QueryFilter<'a> for With<'a, T>
 where
     T: Component,
 {
-    fn withs() -> Option<FxHashSet<u64>> {
-        Some(FxHashSet::from_iter(vec![T::component_id()]))
+    fn withs() -> Option<BitSet> {
+        Some(BitSet::from_iter(vec![T::component_id()]))
     }
 }
 
@@ -219,8 +224,8 @@ impl<'a, T> QueryFilter<'a> for Without<'a, T>
 where
     T: Component,
 {
-    fn withouts() -> Option<FxHashSet<u64>> {
-        Some(FxHashSet::from_iter(vec![T::component_id()]))
+    fn withouts() -> Option<BitSet> {
+        Some(BitSet::from_iter(vec![T::component_id()]))
     }
 }
 
@@ -258,12 +263,16 @@ where
         self.entries.keys().copied()
     }
 
-    pub fn iter(&'a self) -> Box<dyn Iterator<Item = T::ItemRef> + '_> {
-        Box::new(
-            self.entries
-                .iter()
-                .filter_map(move |(&entity, entries)| T::get(entity, entries)),
-        )
+    pub fn iter(&'a self) -> impl Iterator<Item = T::ItemRef> + '_ {
+        self.entries
+            .iter()
+            .filter_map(move |(&entity, entries)| T::get(entity, entries))
+    }
+
+    pub fn par_iter(&'a self) -> impl ParallelIterator<Item = T::ItemRef> + '_ {
+        self.entries
+            .par_iter()
+            .filter_map(move |(&entity, entries)| T::get(entity, entries))
     }
 }
 
@@ -277,11 +286,11 @@ macro_rules! impl_queryfilter_for_tuple {
         where
             $($name: QueryFilter<'a>,)*
         {
-            fn withs() -> Option<FxHashSet<u64>> {
-                let mut all = FxHashSet::default();
+            fn withs() -> Option<BitSet> {
+                let mut all = BitSet::default();
                 $(
-                    if let Some(mut withs) = $name::withs() {
-                        all.extend(withs.drain());
+                    if let Some(withs) = $name::withs() {
+                        all.union_with(&withs);
                     }
                 )*
                 if all.is_empty() {
@@ -290,11 +299,11 @@ macro_rules! impl_queryfilter_for_tuple {
                 Some(all)
             }
 
-            fn withouts() -> Option<FxHashSet<u64>> {
-                let mut all = FxHashSet::default();
+            fn withouts() -> Option<BitSet> {
+                let mut all = BitSet::default();
                 $(
-                    if let Some(mut withouts) = $name::withouts() {
-                        all.extend(withouts.drain());
+                    if let Some(withouts) = $name::withouts() {
+                        all.union_with(&withouts);
                     }
                 )*
                 if all.is_empty() {

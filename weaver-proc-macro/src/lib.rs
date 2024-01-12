@@ -1,7 +1,7 @@
 use proc_macro::*;
 use quote::{format_ident, quote};
 
-static COMPONENT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static COMPONENT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static RESOURCE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 #[proc_macro_derive(Component)]
@@ -24,7 +24,7 @@ fn impl_component_macro(ast: &syn::DeriveInput) -> TokenStream {
     let id = COMPONENT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let gen = quote! {
         unsafe impl #generics crate::ecs::component::Component for #name<#(#generic_types),*> {
-            fn component_id() -> u64 {
+            fn component_id() -> crate::ecs::component::ComponentId {
                 #id
             }
         }
@@ -270,7 +270,7 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                 Ok(())
             }
 
-            fn components_read(&self) -> Vec<u64> {
+            fn components_read(&self) -> Vec<crate::ecs::component::ComponentId> {
                 use crate::ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
@@ -279,7 +279,7 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                 components
             }
 
-            fn components_written(&self) -> Vec<u64> {
+            fn components_written(&self) -> Vec<crate::ecs::component::ComponentId> {
                 use crate::ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
@@ -371,50 +371,42 @@ pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
                 Some((#(#names),*))
             }
 
-            fn reads() -> Option<crate::ecs::query::FxHashSet<u64>> {
-                let mut reads = crate::ecs::query::FxHashSet::default();
+            fn reads() -> Option<bit_set::BitSet> {
+                let mut reads = bit_set::BitSet::default();
                 #(
-                    reads.extend(&#names::reads().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    reads.extend(#names::reads().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
                 Some(reads)
             }
 
-            fn writes() -> Option<crate::ecs::query::FxHashSet<u64>> {
-                let mut writes = crate::ecs::query::FxHashSet::default();
+            fn writes() -> Option<bit_set::BitSet> {
+                let mut writes = bit_set::BitSet::default();
                 #(
-                    writes.extend(&#names::writes().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    writes.extend(#names::writes().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
                 Some(writes)
             }
 
-            fn withs() -> Option<crate::ecs::query::FxHashSet<u64>> {
-                let mut withs = crate::ecs::query::FxHashSet::default();
+            fn withs() -> Option<bit_set::BitSet> {
+                let mut withs = bit_set::BitSet::default();
                 #(
-                    withs.extend(&#names::withs().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    withs.extend(#names::withs().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
                 Some(withs)
             }
 
-            fn withouts() -> Option<crate::ecs::query::FxHashSet<u64>> {
-                let mut withouts = crate::ecs::query::FxHashSet::default();
+            fn withouts() -> Option<bit_set::BitSet> {
+                let mut withouts = bit_set::BitSet::default();
                 #(
-                    withouts.extend(&#names::withouts().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    withouts.extend(#names::withouts().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
                 Some(withouts)
             }
 
-            fn ors() -> Option<crate::ecs::query::FxHashSet<(u64, u64)>> {
-                let mut ors = crate::ecs::query::FxHashSet::default();
+            fn maybes() -> Option<bit_set::BitSet> {
+                let mut maybes = bit_set::BitSet::default();
                 #(
-                    ors.extend(&#names::ors().unwrap_or_default().into_iter().collect::<Vec<_>>());
-                )*
-                Some(ors)
-            }
-
-            fn maybes() -> Option<crate::ecs::query::FxHashSet<u64>> {
-                let mut maybes = crate::ecs::query::FxHashSet::default();
-                #(
-                    maybes.extend(&#names::maybes().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    maybes.extend(#names::maybes().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
                 Some(maybes)
             }

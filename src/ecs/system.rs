@@ -1,5 +1,7 @@
 use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 
+use crate::ecs::component::ComponentId;
+
 use super::{EcsError, World};
 use parking_lot::RwLock;
 use petgraph::prelude::*;
@@ -45,8 +47,8 @@ pub enum SystemStage {
 
 pub trait System: Send + Sync {
     fn run(&self, world: &World) -> anyhow::Result<()>;
-    fn components_read(&self) -> Vec<u64>;
-    fn components_written(&self) -> Vec<u64>;
+    fn components_read(&self) -> Vec<ComponentId>;
+    fn components_written(&self) -> Vec<ComponentId>;
     fn resources_read(&self) -> Vec<u64>;
     fn resources_written(&self) -> Vec<u64>;
 }
@@ -54,8 +56,6 @@ pub trait System: Send + Sync {
 pub struct SystemNode {
     pub id: SystemId,
     pub system: Arc<dyn System>,
-    pub components_written: Vec<u64>,
-    pub components_read: Vec<u64>,
 }
 
 impl Debug for SystemNode {
@@ -63,7 +63,8 @@ impl Debug for SystemNode {
         write!(
             f,
             "System\nr: {:?}\nw: {:?}",
-            self.components_read, self.components_written
+            self.system.components_read(),
+            self.system.components_written()
         )
     }
 }
@@ -81,8 +82,6 @@ impl SystemGraph {
     pub fn add_system(&mut self, system: Arc<dyn System>) -> SystemId {
         let index = self.graph.add_node(SystemNode {
             id: SystemId::PLACEHOLDER,
-            components_read: system.components_read(),
-            components_written: system.components_written(),
             system,
         });
         self.graph[index].id = SystemId(index.index() as u32);
@@ -92,8 +91,6 @@ impl SystemGraph {
     pub fn add_system_after(&mut self, system: Arc<dyn System>, after: SystemId) -> SystemId {
         let index = self.graph.add_node(SystemNode {
             id: SystemId::PLACEHOLDER,
-            components_read: system.components_read(),
-            components_written: system.components_written(),
             system,
         });
         self.graph[index].id = SystemId(index.index() as u32);
@@ -104,8 +101,6 @@ impl SystemGraph {
     pub fn add_system_before(&mut self, system: Arc<dyn System>, before: SystemId) -> SystemId {
         let index = self.graph.add_node(SystemNode {
             id: SystemId::PLACEHOLDER,
-            components_read: system.components_read(),
-            components_written: system.components_written(),
             system,
         });
         self.graph[index].id = SystemId(index.index() as u32);

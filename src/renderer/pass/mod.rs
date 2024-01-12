@@ -49,6 +49,14 @@ pub trait Pass: Send + Sync + 'static {
 
     fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()>;
 
+    fn prepare_if_enabled(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
+        if self.is_enabled() {
+            self.prepare(world, renderer)?;
+        }
+
+        Ok(())
+    }
+
     fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,

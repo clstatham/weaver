@@ -4,6 +4,7 @@ use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 
 use super::{
+    component::ComponentId,
     resource::{Res, ResMut, Resource},
     system::{SystemGraph, SystemId, SystemStage},
     Bundle, Component, EcsError, Entity, System,
@@ -11,11 +12,11 @@ use super::{
 
 #[derive(Clone)]
 pub struct ComponentPtr {
-    pub component_id: u64,
+    pub component_id: ComponentId,
     pub component: Arc<RwLock<dyn Component>>,
 }
 
-pub type Components = FxHashMap<Entity, FxHashMap<u64, ComponentPtr>>;
+pub type Components = FxHashMap<Entity, FxHashMap<ComponentId, ComponentPtr>>;
 
 #[derive(Default)]
 pub struct World {
@@ -127,7 +128,7 @@ impl World {
     pub fn run_stage(world: &Arc<RwLock<Self>>, stage: SystemStage) -> anyhow::Result<()> {
         if let Some(systems) = world.read().systems.get(&stage) {
             systems.write().autodetect_dependencies()?;
-            systems.read().run(&world.read())?;
+            systems.read().run_parallel(world)?;
         }
         Ok(())
     }

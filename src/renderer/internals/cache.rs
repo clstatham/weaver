@@ -3,13 +3,15 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 
+use crate::ecs::component::ComponentId;
+
 use super::BindableComponent;
 
 /// A cache for bind group layouts. This is used to avoid creating duplicate bind group layouts.
 #[derive(Default)]
 pub struct BindGroupLayoutCache {
     /// Bind group layouts for each component id.
-    pub(crate) layouts: RwLock<FxHashMap<u64, Arc<wgpu::BindGroupLayout>>>,
+    pub(crate) layouts: RwLock<FxHashMap<ComponentId, Arc<wgpu::BindGroupLayout>>>,
 }
 
 impl BindGroupLayoutCache {

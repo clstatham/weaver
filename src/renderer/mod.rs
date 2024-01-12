@@ -529,12 +529,12 @@ impl Renderer {
         log::trace!("Preparing passes");
         let world = &self.world.read();
         self.pbr_pass.prepare(world, self);
-        self.shadow_pass.prepare(world, self).unwrap();
-        self.doodad_pass.prepare(world, self).unwrap();
-        self.sky_pass.prepare(world, self).unwrap();
-        self.hdr_pass.prepare(world, self).unwrap();
+        self.shadow_pass.prepare_if_enabled(world, self).unwrap();
+        self.doodad_pass.prepare_if_enabled(world, self).unwrap();
+        self.sky_pass.prepare_if_enabled(world, self).unwrap();
+        self.hdr_pass.prepare_if_enabled(world, self).unwrap();
         for pass in self.extra_passes.iter() {
-            pass.prepare(world, self).unwrap();
+            pass.prepare_if_enabled(world, self).unwrap();
         }
         self.resource_manager.update_all_resources();
     }

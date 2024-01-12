@@ -15,18 +15,20 @@ impl<T: std::any::Any> Downcast for T {
     }
 }
 
+pub type ComponentId = usize;
+
 /// A component is a data structure that can be attached to an entity.
 ///
 /// # Safety
 /// This trait is only intended to be implemented by the `#[derive(Component)]` macro.
 pub unsafe trait Component: Downcast + Send + Sync + 'static {
-    fn component_id() -> u64
+    fn component_id() -> ComponentId
     where
         Self: Sized;
 }
 
 unsafe impl<T: Component> Component for Option<T> {
-    fn component_id() -> u64
+    fn component_id() -> ComponentId
     where
         Self: Sized,
     {
@@ -35,7 +37,7 @@ unsafe impl<T: Component> Component for Option<T> {
 }
 
 unsafe impl<T: Component> Component for Vec<T> {
-    fn component_id() -> u64
+    fn component_id() -> ComponentId
     where
         Self: Sized,
     {
@@ -44,7 +46,7 @@ unsafe impl<T: Component> Component for Vec<T> {
 }
 
 unsafe impl<T: Component> Component for Arc<T> {
-    fn component_id() -> u64
+    fn component_id() -> ComponentId
     where
         Self: Sized,
     {

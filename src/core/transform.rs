@@ -120,22 +120,17 @@ pub struct TransformArray {
     bind_group: LazyBindGroup<Self>,
 }
 
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-#[repr(C)]
-pub struct TransformArrayUniform {
-    model_matrices: [glam::Mat4; MAX_MESHES], // todo: MAX_TRANSFORMS?
-}
-
 impl TransformArray {
     pub fn new() -> Self {
         Self {
             matrices: Vec::new(),
             handle: LazyGpuHandle::new(
-                crate::renderer::internals::GpuResourceType::Uniform {
+                crate::renderer::internals::GpuResourceType::Storage {
                     usage: wgpu::BufferUsages::STORAGE
                         | wgpu::BufferUsages::COPY_DST
                         | wgpu::BufferUsages::COPY_SRC,
-                    size: std::mem::size_of::<TransformArrayUniform>(),
+                    size: std::mem::size_of::<glam::Mat4>() * MAX_MESHES,
+                    read_only: true,
                 },
                 Some("TransformArray"),
                 None,
@@ -159,14 +154,6 @@ impl TransformArray {
     pub fn is_empty(&self) -> bool {
         self.matrices.is_empty()
     }
-
-    pub fn uniform(&self) -> TransformArrayUniform {
-        let mut model_matrices = [glam::Mat4::IDENTITY; MAX_MESHES];
-        for (i, matrix) in self.matrices.iter().enumerate() {
-            model_matrices[i] = *matrix;
-        }
-        TransformArrayUniform { model_matrices }
-    }
 }
 
 impl Default for TransformArray {
@@ -184,8 +171,7 @@ impl GpuComponent for TransformArray {
     }
 
     fn update_resources(&self, _world: &World) -> anyhow::Result<()> {
-        let uniform = self.uniform();
-        self.handle.update(&[uniform]);
+        self.handle.update(&self.matrices);
         Ok(())
     }
 
