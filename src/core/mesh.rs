@@ -5,7 +5,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{app::asset_server::AssetId, core::aabb::Aabb};
 
-pub const MAX_MESHES: usize = 1024;
+pub const MAX_MESHES: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]

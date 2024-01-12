@@ -6,6 +6,7 @@ use crate::{
     core::{
         doodads::{Cube, Doodad, Doodads},
         light::MAX_LIGHTS,
+        mesh::MAX_MESHES,
         texture::Skybox,
         ui::builtin::FpsDisplay,
     },
@@ -111,7 +112,7 @@ fn ui_update(
                 ui.add(egui::Slider::new(&mut metal_metallic, 0.0..=1.0).text("Metallic"));
 
                 ui.heading("NPCs");
-                ui.add(egui::Slider::new(&mut n_npcs, 0..=1000).text("Count"));
+                ui.add(egui::Slider::new(&mut n_npcs, 0..=MAX_MESHES - 2).text("Count"));
             });
 
         if shadow_pass_enabled != renderer.shadow_pass.is_enabled() {
@@ -288,7 +289,7 @@ fn setup(
 
     let player = player::Player {
         speed: 14.0,
-        rotation_speed: 1.0,
+        rotation_speed: 0.5,
         velocity: Vec3::ZERO,
     };
     let player = commands.spawn((
@@ -304,7 +305,7 @@ fn setup(
     let camera_controller = FollowCameraController {
         stiffness: 50.0,
         target: player,
-        pitch_sensitivity: 1.0,
+        pitch_sensitivity: 0.5,
         ..Default::default()
     };
     commands.spawn((camera_controller, Camera::new()))?;
@@ -337,7 +338,6 @@ pub fn run() -> anyhow::Result<()> {
     app.add_system(UiUpdate);
     app.add_system(PlayerInput);
     app.add_system(PlayerMovement);
-    // app.add_system(NpcUpdate);
     app.add_system(SpinNpcs);
     app.add_system(DebugLights);
 

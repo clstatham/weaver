@@ -108,7 +108,7 @@ impl App {
         // ECS update task
         let (killswitch, killswitch_rx) = crossbeam_channel::bounded(1);
         let update_world = self.world.clone();
-        std::thread::spawn(move || {
+        rayon::spawn(move || {
             loop {
                 World::run_stage(&update_world, SystemStage::PreUpdate).unwrap();
 

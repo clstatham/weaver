@@ -26,11 +26,7 @@ pub struct PlayerBundle {
 }
 
 #[system(PlayerInput)]
-pub fn player_update(
-    mut player: Query<(&mut Player, &mut Transform)>,
-    input: Res<Input>,
-    time: Res<Time>,
-) {
+pub fn player_update(mut player: Query<(&mut Player, &mut Transform)>, input: Res<Input>) {
     for (mut player, mut transform) in player.iter() {
         let mut translation = transform.get_translation();
         let mut rotation = transform.get_rotation();
@@ -38,7 +34,7 @@ pub fn player_update(
         let mouse_delta = input.mouse_delta();
 
         if input.mouse_button_pressed(3) {
-            let delta = mouse_delta * player.rotation_speed * time.delta_seconds;
+            let delta = mouse_delta * player.rotation_speed * 0.005;
             rotation = Quat::from_rotation_y(-delta.x) * rotation;
         }
 

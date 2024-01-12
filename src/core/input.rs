@@ -4,7 +4,7 @@ use weaver_proc_macro::Resource;
 pub use winit::keyboard::KeyCode;
 use winit::keyboard::PhysicalKey;
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct Input {
     keys_pressed: FxHashSet<KeyCode>,
     keys_held: FxHashSet<KeyCode>,
@@ -13,6 +13,26 @@ pub struct Input {
     mouse_position: Option<glam::Vec2>,
     mouse_delta: glam::Vec2,
     mouse_wheel_delta: f32,
+
+    last_update: std::time::Instant,
+    update_delta: std::time::Duration,
+}
+
+impl Default for Input {
+    fn default() -> Self {
+        Self {
+            keys_pressed: FxHashSet::default(),
+            keys_held: FxHashSet::default(),
+            mouse_buttons_pressed: FxHashSet::default(),
+            mouse_buttons_held: FxHashSet::default(),
+            mouse_position: None,
+            mouse_delta: glam::Vec2::ZERO,
+            mouse_wheel_delta: 0.0,
+
+            last_update: std::time::Instant::now(),
+            update_delta: std::time::Duration::ZERO,
+        }
+    }
 }
 
 impl Input {
@@ -49,6 +69,14 @@ impl Input {
         self.mouse_buttons_pressed.clear();
         self.mouse_delta = glam::Vec2::ZERO;
         self.mouse_wheel_delta = 0.0;
+
+        let now = std::time::Instant::now();
+        self.update_delta = now - self.last_update;
+        self.last_update = now;
+    }
+
+    pub fn secs_since_last_update(&self) -> f32 {
+        self.update_delta.as_secs_f32()
     }
 
     pub fn update(&mut self, event: &winit::event::DeviceEvent) {
