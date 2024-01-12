@@ -210,16 +210,25 @@ impl App {
                         }
 
                         WindowEvent::RedrawRequested => {
-                            let world = self.world.read();
-                            world.write_resource::<Time>().unwrap().update();
-                            world
-                                .write_resource::<EguiContext>()
-                                .unwrap()
-                                .begin_frame(&world.read_resource::<Window>().unwrap().window);
-                            drop(world);
+                            {
+                                let world = self.world.read();
+
+                                world.write_resource::<Time>().unwrap().update();
+
+                                let window = &world.read_resource::<Window>().unwrap().window;
+                                let mut ctx = world.write_resource::<EguiContext>().unwrap();
+                                ctx.begin_frame(window);
+                            }
+
                             World::update(&self.world).unwrap();
+
+                            {
+                                let world = self.world.read();
+                                let mut ctx = world.write_resource::<EguiContext>().unwrap();
+                                ctx.end_frame();
+                            }
+
                             let world = self.world.read();
-                            world.write_resource::<EguiContext>().unwrap().end_frame();
 
                             let mut renderer = world.write_resource::<Renderer>().unwrap();
                             let mut ui = world.write_resource::<EguiContext>().unwrap();

@@ -150,7 +150,7 @@ impl SystemGraph {
         Ok(())
     }
 
-    pub async fn run_async(&self, world: &Arc<RwLock<World>>) -> anyhow::Result<()> {
+    pub fn run_parallel(&self, world: &Arc<RwLock<World>>) -> anyhow::Result<()> {
         if self.graph.node_count() == 0 {
             return Ok(());
         }
@@ -180,7 +180,7 @@ impl SystemGraph {
                 let world = world.clone();
                 let system = self.graph[node].system.clone();
 
-                let handle = tokio::spawn(async move {
+                let handle = std::thread::spawn(move || {
                     system.run(&world.read()).unwrap();
                 });
 
@@ -204,6 +204,8 @@ impl SystemGraph {
                 for node in systems_run.iter() {
                     systems_running.remove(node);
                 }
+
+                std::thread::yield_now();
             }
 
             return Ok(());
@@ -223,7 +225,7 @@ impl SystemGraph {
 
                     let system = system.clone();
                     let world = world.clone();
-                    let handle = tokio::spawn(async move {
+                    let handle = std::thread::spawn(move || {
                         system.run(&world.read()).unwrap();
                     });
 
@@ -260,7 +262,7 @@ impl SystemGraph {
                 }
             }
 
-            tokio::task::yield_now().await;
+            std::thread::yield_now();
         }
 
         Ok(())

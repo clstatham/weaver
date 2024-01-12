@@ -166,10 +166,10 @@ impl World {
     }
 
     pub fn startup(world: &Arc<RwLock<Self>>) -> anyhow::Result<()> {
-        pollster::block_on(world.read().startup_systems.read().run_async(world))
+        world.read().startup_systems.read().run(&world.read())
     }
 
     pub fn update(world: &Arc<RwLock<Self>>) -> anyhow::Result<()> {
-        pollster::block_on(world.read().systems.read().run_async(world))
+        world.read().systems.read().run_parallel(world)
     }
 }
