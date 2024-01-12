@@ -288,7 +288,7 @@ fn setup(
 
     let player = player::Player {
         speed: 14.0,
-        rotation_speed: 0.2,
+        rotation_speed: 1.0,
         velocity: Vec3::ZERO,
     };
     let player = commands.spawn((
@@ -304,7 +304,7 @@ fn setup(
     let camera_controller = FollowCameraController {
         stiffness: 50.0,
         target: player,
-        pitch_sensitivity: 0.2,
+        pitch_sensitivity: 1.0,
         ..Default::default()
     };
     commands.spawn((camera_controller, Camera::new()))?;

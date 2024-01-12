@@ -73,7 +73,7 @@ impl App {
 
         world
             .write()
-            .add_system_to_stage(InputReset, SystemStage::PreUpdate);
+            .add_system_to_stage(InputReset, SystemStage::PostUpdate);
 
         world
             .write()

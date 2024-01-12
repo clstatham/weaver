@@ -67,6 +67,7 @@ impl FollowCameraController {
 pub fn follow_camera_update(
     camera: Query<(&mut FollowCameraController, &mut Camera)>,
     input: Res<Input>,
+    time: Res<Time>,
     player_transform: Query<&Transform, With<Player>>,
 ) {
     for (mut controller, mut camera) in camera.iter() {
@@ -76,13 +77,13 @@ pub fn follow_camera_update(
 
         if input.mouse_button_pressed(3) {
             let mouse_delta = input.mouse_delta();
-            controller.pitch += mouse_delta.y * controller.pitch_sensitivity * 0.005;
+            controller.pitch += mouse_delta.y * controller.pitch_sensitivity * time.delta_seconds;
             controller.pitch = controller
                 .pitch
                 .clamp(controller.min_pitch, controller.max_pitch);
         }
 
-        controller.distance += input.mouse_wheel_delta();
+        controller.distance += input.mouse_wheel_delta() * time.delta_seconds;
         controller.distance = controller
             .distance
             .clamp(controller.min_distance, controller.max_distance);
