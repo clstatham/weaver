@@ -18,7 +18,9 @@ pub trait GpuComponent: Component {
 /// A component that holds a GPU bind group.
 pub trait BindableComponent: Component {
     /// Creates a bind group layout for the component.
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
+    where
+        Self: Sized;
 
     /// Creates a bind group for the component.
     fn create_bind_group(

@@ -1,5 +1,6 @@
-use std::{cell::RefCell, sync::Arc};
+use std::sync::Arc;
 
+use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 
 use super::BindableComponent;
@@ -8,7 +9,7 @@ use super::BindableComponent;
 #[derive(Default)]
 pub struct BindGroupLayoutCache {
     /// Bind group layouts for each component id.
-    pub(crate) layouts: RefCell<FxHashMap<u64, Arc<wgpu::BindGroupLayout>>>,
+    pub(crate) layouts: RwLock<FxHashMap<u64, Arc<wgpu::BindGroupLayout>>>,
 }
 
 impl BindGroupLayoutCache {
@@ -19,14 +20,14 @@ impl BindGroupLayoutCache {
     ) -> Arc<wgpu::BindGroupLayout> {
         // check if the layout already exists
         let id = T::component_id();
-        if let Some(layout) = self.layouts.borrow().get(&id) {
+        if let Some(layout) = self.layouts.read().get(&id) {
             // return the existing layout
             return layout.clone();
         }
 
         // create the layout
         let layout = T::create_bind_group_layout(device);
-        self.layouts.borrow_mut().insert(id, Arc::new(layout));
-        self.layouts.borrow().get(&id).unwrap().clone()
+        self.layouts.write().insert(id, Arc::new(layout));
+        self.layouts.read().get(&id).unwrap().clone()
     }
 }

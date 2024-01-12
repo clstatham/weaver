@@ -1,8 +1,8 @@
-use std::{
-    cell::{Ref, RefMut},
-    fmt::Debug,
-};
+use std::fmt::Debug;
 
+use parking_lot::{
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLockReadGuard, RwLockWriteGuard,
+};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{
@@ -115,14 +115,15 @@ where
     F: QueryFilter<'a>,
 {
     type Item = T;
-    type ItemRef = Ref<'a, T>;
+    type ItemRef = MappedRwLockReadGuard<'a, T>;
 
     fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
             if entry.entity == entity && entry.component.component_id == T::component_id() {
-                Some(Ref::map(entry.component.component.borrow(), |component| {
-                    component.as_any().downcast_ref::<T>().unwrap()
-                }))
+                Some(RwLockReadGuard::map(
+                    entry.component.component.read(),
+                    |component| component.as_any().downcast_ref::<T>().unwrap(),
+                ))
             } else {
                 None
             }
@@ -140,13 +141,13 @@ where
     F: QueryFilter<'a>,
 {
     type Item = T;
-    type ItemRef = RefMut<'a, T>;
+    type ItemRef = MappedRwLockWriteGuard<'a, T>;
 
     fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
             if entry.entity == entity && entry.component.component_id == T::component_id() {
-                Some(RefMut::map(
-                    entry.component.component.borrow_mut(),
+                Some(RwLockWriteGuard::map(
+                    entry.component.component.write(),
                     |component| component.as_any_mut().downcast_mut::<T>().unwrap(),
                 ))
             } else {
@@ -239,7 +240,7 @@ where
     F: QueryFilter<'a>,
 {
     pub(crate) fn new(world: &World) -> Self {
-        let entries = T::collect(&world.components.borrow());
+        let entries = T::collect(&world.components.read());
 
         Self {
             entries,

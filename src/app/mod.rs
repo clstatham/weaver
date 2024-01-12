@@ -1,5 +1,6 @@
-use std::cell::RefCell;
+use std::sync::Arc;
 
+use parking_lot::RwLock;
 use winit::{event::WindowEvent, event_loop::EventLoop, window::WindowBuilder};
 
 use crate::{
@@ -27,7 +28,7 @@ impl Window {
 
 pub struct App {
     event_loop: EventLoop<()>,
-    pub(crate) world: RefCell<World>,
+    pub(crate) world: Arc<RwLock<World>>,
 }
 
 impl App {
@@ -67,24 +68,20 @@ impl App {
 
         Ok(Self {
             event_loop,
-            world: RefCell::new(world),
+            world: Arc::new(RwLock::new(world)),
         })
     }
 
     pub fn insert_resource<T: Resource>(&self, resource: T) -> anyhow::Result<()> {
-        self.world.borrow_mut().insert_resource(resource)
-    }
-
-    pub fn world(&self) -> std::cell::Ref<'_, World> {
-        self.world.borrow()
+        self.world.write().insert_resource(resource)
     }
 
     pub fn spawn<T: Bundle>(&self, bundle: T) -> anyhow::Result<Entity> {
-        bundle.build(&self.world.borrow_mut())
+        bundle.build(&self.world.read())
     }
 
-    pub fn add_system<T: System + 'static>(&mut self, system: T) -> SystemId {
-        self.world.borrow_mut().add_system(system)
+    pub fn add_system<T: System + 'static>(&self, system: T) -> SystemId {
+        self.world.read().add_system(system)
     }
 
     pub fn add_system_before<T: System + 'static>(
@@ -92,7 +89,7 @@ impl App {
         system: T,
         before: SystemId,
     ) -> SystemId {
-        self.world.borrow_mut().add_system_before(system, before)
+        self.world.read().add_system_before(system, before)
     }
 
     pub fn add_system_after<T: System + 'static>(
@@ -100,17 +97,17 @@ impl App {
         system: T,
         after: SystemId,
     ) -> SystemId {
-        self.world.borrow_mut().add_system_after(system, after)
+        self.world.read().add_system_after(system, after)
     }
 
     pub fn add_system_dependency(&mut self, dependency: SystemId, dependent: SystemId) {
         self.world
-            .borrow_mut()
+            .read()
             .add_system_dependency(dependency, dependent);
     }
 
     pub fn add_startup_system<T: System + 'static>(&mut self, system: T) -> SystemId {
-        self.world.borrow_mut().add_startup_system(system)
+        self.world.read().add_startup_system(system)
     }
 
     pub fn add_startup_system_before<T: System + 'static>(
@@ -118,9 +115,7 @@ impl App {
         system: T,
         before: SystemId,
     ) -> SystemId {
-        self.world
-            .borrow_mut()
-            .add_startup_system_before(system, before)
+        self.world.read().add_startup_system_before(system, before)
     }
 
     pub fn add_startup_system_after<T: System + 'static>(
@@ -128,14 +123,12 @@ impl App {
         system: T,
         after: SystemId,
     ) -> SystemId {
-        self.world
-            .borrow_mut()
-            .add_startup_system_after(system, after)
+        self.world.read().add_startup_system_after(system, after)
     }
 
     pub fn add_startup_system_dependency(&mut self, dependency: SystemId, dependent: SystemId) {
         self.world
-            .borrow_mut()
+            .read()
             .add_startup_system_dependency(dependency, dependent);
     }
 
@@ -143,7 +136,7 @@ impl App {
     where
         F: FnOnce(&mut Commands, &mut AssetServer) -> anyhow::Result<()>,
     {
-        let world = self.world.borrow_mut();
+        let world = self.world.read();
         let mut commands = Commands::new(&world);
         let mut asset_server = world.write_resource::<AssetServer>()?;
         f(&mut commands, &mut asset_server)
@@ -151,14 +144,13 @@ impl App {
 
     pub fn run(self) -> anyhow::Result<()> {
         {
-            let world = self.world.borrow();
-            world.startup()?;
+            World::startup(&self.world)?;
         }
 
         self.event_loop.run(move |event, target| {
             target.set_control_flow(winit::event_loop::ControlFlow::Poll);
             {
-                let world = self.world.borrow();
+                let world = self.world.read();
                 world
                     .read_resource::<Window>()
                     .unwrap()
@@ -168,18 +160,18 @@ impl App {
 
             match event {
                 winit::event::Event::NewEvents(_) => {
-                    let world = self.world.borrow();
+                    let world = self.world.read();
                     let mut input = world.write_resource::<Input>().unwrap();
                     input.prepare_for_update();
                 }
                 winit::event::Event::DeviceEvent { event, .. } => {
-                    let world = self.world.borrow();
+                    let world = self.world.read();
                     let mut input = world.write_resource::<Input>().unwrap();
                     input.update(&event);
                 }
                 winit::event::Event::WindowEvent { event, .. } => {
                     {
-                        let world = self.world.borrow();
+                        let world = self.world.read();
                         let window = world.read_resource::<Window>().unwrap();
                         let mut ui = world.write_resource::<EguiContext>().unwrap();
                         ui.handle_input(&window.window, &event);
@@ -193,7 +185,7 @@ impl App {
                         }
                         winit::event::WindowEvent::CursorMoved { .. } => {
                             // center the cursor
-                            let world = self.world.borrow();
+                            let world = self.world.read();
                             let window = world.read_resource::<Window>().unwrap();
                             if window.fps_mode {
                                 window
@@ -218,14 +210,15 @@ impl App {
                         }
 
                         WindowEvent::RedrawRequested => {
-                            let world = self.world.borrow();
-
+                            let world = self.world.read();
                             world.write_resource::<Time>().unwrap().update();
                             world
                                 .write_resource::<EguiContext>()
                                 .unwrap()
                                 .begin_frame(&world.read_resource::<Window>().unwrap().window);
-                            world.update().unwrap();
+                            drop(world);
+                            World::update(&self.world).unwrap();
+                            let world = self.world.read();
                             world.write_resource::<EguiContext>().unwrap().end_frame();
 
                             let mut renderer = world.write_resource::<Renderer>().unwrap();

@@ -27,7 +27,8 @@ pub mod prelude {
     pub use winit::event::MouseButton;
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     env_logger::init();
     game::run()
 }

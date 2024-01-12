@@ -1,4 +1,4 @@
-use std::{path::PathBuf, rc::Rc};
+use std::{path::PathBuf, sync::Arc};
 
 use rustc_hash::FxHashMap;
 use weaver_proc_macro::Resource;
@@ -26,7 +26,7 @@ pub struct AssetServer {
     next_id: u64,
     path_prefix: PathBuf,
     ids: FxHashMap<PathBuf, AssetId>,
-    resource_manager: Rc<GpuResourceManager>,
+    resource_manager: Arc<GpuResourceManager>,
     meshes: FxHashMap<AssetId, Mesh>,
     textures: FxHashMap<AssetId, Texture>,
     materials: FxHashMap<AssetId, Material>,

@@ -1,8 +1,8 @@
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 
 use super::component::Downcast;
 
-pub trait Resource: Downcast + 'static {
+pub trait Resource: Downcast + Send + Sync + 'static {
     fn resource_id() -> u64
     where
         Self: Sized;

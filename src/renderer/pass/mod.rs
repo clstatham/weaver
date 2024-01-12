@@ -42,7 +42,7 @@ macro_rules! include_shader {
     };
 }
 
-pub trait Pass {
+pub trait Pass: Send + Sync + 'static {
     fn is_enabled(&self) -> bool;
     fn enable(&mut self);
     fn disable(&mut self);

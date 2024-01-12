@@ -1,5 +1,6 @@
-use std::{cell::RefCell, sync::Arc};
+use std::sync::Arc;
 
+use parking_lot::RwLock;
 use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
 
@@ -200,7 +201,7 @@ struct DoodadBuffers {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     index_count: usize,
-    count: RefCell<usize>,
+    count: RwLock<usize>,
 }
 
 impl DoodadBuffers {
@@ -232,7 +233,7 @@ impl DoodadBuffers {
             vertex_buffer,
             index_buffer,
             index_count,
-            count: RefCell::new(0),
+            count: RwLock::new(0),
         }
     }
 }
@@ -512,8 +513,8 @@ impl Pass for DoodadRenderPass {
         cones[0].update(&cone_transforms);
         cones[1].update(&cone_colors);
 
-        *self.cubes.count.borrow_mut() = cube_transforms.len();
-        *self.cones.count.borrow_mut() = cone_transforms.len();
+        *self.cubes.count.write() = cube_transforms.len();
+        *self.cones.count.write() = cone_transforms.len();
 
         Ok(())
     }
@@ -594,7 +595,7 @@ impl Pass for DoodadRenderPass {
             render_pass.draw_indexed(
                 0..self.cubes.index_count as u32,
                 0,
-                0..*self.cubes.count.borrow() as u32,
+                0..*self.cubes.count.read() as u32,
             );
         }
 
@@ -631,7 +632,7 @@ impl Pass for DoodadRenderPass {
             render_pass.draw_indexed(
                 0..self.cones.index_count as u32,
                 0,
-                0..*self.cones.count.borrow() as u32,
+                0..*self.cones.count.read() as u32,
             );
         }
         Ok(())

@@ -1,5 +1,6 @@
-use std::{cell::RefCell, num::NonZeroU32, sync::Arc};
+use std::{num::NonZeroU32, sync::Arc};
 
+use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -296,13 +297,13 @@ pub struct OmniShadowRenderPass {
     enabled: bool,
 
     cubemap_pipeline: wgpu::RenderPipeline,
-    shadow_buffers: RefCell<ShadowBuffers>,
+    shadow_buffers: RwLock<ShadowBuffers>,
     shadow_depth_cubemap: LazyGpuHandle,
 
     overlay_pipeline: wgpu::RenderPipeline,
 
-    light_views: RefCell<Vec<LightViews>>,
-    unique_meshes: RefCell<UniqueMeshes>,
+    light_views: RwLock<Vec<LightViews>>,
+    unique_meshes: RwLock<UniqueMeshes>,
 }
 
 impl OmniShadowRenderPass {
@@ -448,7 +449,7 @@ impl OmniShadowRenderPass {
             enabled: true,
 
             cubemap_pipeline,
-            shadow_buffers: RefCell::new(ShadowBuffers {
+            shadow_buffers: RwLock::new(ShadowBuffers {
                 shadow_cubemap,
                 bind_group: LazyBindGroup::default(),
             }),
@@ -456,8 +457,8 @@ impl OmniShadowRenderPass {
 
             overlay_pipeline,
 
-            light_views: RefCell::new(Vec::new()),
-            unique_meshes: RefCell::new(UniqueMeshes::default()),
+            light_views: RwLock::new(Vec::new()),
+            unique_meshes: RwLock::new(UniqueMeshes::default()),
         }
     }
 
@@ -472,13 +473,13 @@ impl OmniShadowRenderPass {
         let cache = &renderer.bind_group_layout_cache;
         let point_light_bind_group = point_light.lazy_init_bind_group(manager, cache)?;
 
-        let light_views = self.light_views.borrow();
+        let light_views = self.light_views.read();
         let light_views = light_views.get(point_light_index).unwrap();
         let light_views_bind_group = light_views.lazy_init_bind_group(manager, cache)?;
 
         let shadow_cubemap_handle = self
             .shadow_buffers
-            .borrow()
+            .read()
             .shadow_cubemap
             .lazy_init(manager)?;
         let shadow_depth_cubemap_handle = self.shadow_depth_cubemap.lazy_init(manager)?;
@@ -540,7 +541,7 @@ impl OmniShadowRenderPass {
         }
 
         // render our meshes
-        for mesh in self.unique_meshes.borrow().unique_meshes.values() {
+        for mesh in self.unique_meshes.read().unique_meshes.values() {
             let UniqueMesh { mesh, transforms } = mesh;
 
             let transform_bind_group = transforms.lazy_init_bind_group(manager, cache)?;
@@ -606,13 +607,13 @@ impl OmniShadowRenderPass {
             &renderer.bind_group_layout_cache,
         )?;
 
-        let shadow_buffers = self.shadow_buffers.borrow();
+        let shadow_buffers = self.shadow_buffers.read();
         let shadow_buffers_bind_group = shadow_buffers.lazy_init_bind_group(
             &renderer.resource_manager,
             &renderer.bind_group_layout_cache,
         )?;
 
-        for mesh in self.unique_meshes.borrow().unique_meshes.values() {
+        for mesh in self.unique_meshes.read().unique_meshes.values() {
             let UniqueMesh { mesh, transforms } = mesh;
 
             let transform_bind_group = transforms.lazy_init_bind_group(
@@ -678,17 +679,17 @@ impl Pass for OmniShadowRenderPass {
 
     fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
         self.shadow_buffers
-            .borrow()
+            .read()
             .shadow_cubemap
             .lazy_init(&renderer.resource_manager)?;
         self.shadow_depth_cubemap
             .lazy_init(&renderer.resource_manager)?;
 
-        self.unique_meshes.borrow_mut().gather(world);
+        self.unique_meshes.write().gather(world);
         self.unique_meshes
-            .borrow()
+            .read()
             .lazy_init(&renderer.resource_manager)?;
-        self.unique_meshes.borrow_mut().update_resources(world)?;
+        self.unique_meshes.write().update_resources(world)?;
 
         let point_lights = Query::<&PointLight>::new(world);
         for (i, entity) in point_lights.entities().enumerate() {
@@ -714,7 +715,7 @@ impl Pass for OmniShadowRenderPass {
                 *view = view_transform;
             }
 
-            let mut light_views = self.light_views.borrow_mut();
+            let mut light_views = self.light_views.write();
             let light_views = match light_views.get(i) {
                 Some(light_views) => light_views,
                 None => {

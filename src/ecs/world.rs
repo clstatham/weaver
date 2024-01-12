@@ -1,8 +1,6 @@
-use std::{
-    cell::RefCell,
-    sync::{atomic::AtomicU32, Arc, RwLock},
-};
+use std::sync::{atomic::AtomicU32, Arc};
 
+use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 
 use super::{
@@ -14,7 +12,7 @@ use super::{
 #[derive(Clone)]
 pub struct ComponentPtr {
     pub component_id: u64,
-    pub component: Arc<RefCell<dyn Component>>,
+    pub component: Arc<RwLock<dyn Component>>,
 }
 
 pub type Components = FxHashMap<Entity, FxHashMap<u64, ComponentPtr>>;
@@ -22,9 +20,9 @@ pub type Components = FxHashMap<Entity, FxHashMap<u64, ComponentPtr>>;
 #[derive(Default)]
 pub struct World {
     next_entity_id: AtomicU32,
-    pub(crate) components: Arc<RefCell<Components>>,
-    pub(crate) startup_systems: RefCell<SystemGraph>,
-    pub(crate) systems: RefCell<SystemGraph>,
+    pub(crate) components: Arc<RwLock<Components>>,
+    pub(crate) startup_systems: RwLock<SystemGraph>,
+    pub(crate) systems: RwLock<SystemGraph>,
     pub(crate) resources: FxHashMap<u64, Arc<RwLock<dyn Resource>>>,
 }
 
@@ -38,9 +36,7 @@ impl World {
             .next_entity_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let entity = Entity::new(id, 0);
-        self.components
-            .borrow_mut()
-            .insert(entity, FxHashMap::default());
+        self.components.write().insert(entity, FxHashMap::default());
         entity
     }
 
@@ -52,29 +48,25 @@ impl World {
         if self.has_component::<T>(entity) {
             return Err(EcsError::ComponentAlreadyExists.into());
         }
-        let component = Arc::new(RefCell::new(component));
-        self.components
-            .borrow_mut()
-            .entry(entity)
-            .or_default()
-            .insert(
-                T::component_id(),
-                ComponentPtr {
-                    component_id: T::component_id(),
-                    component,
-                },
-            );
+        let component = Arc::new(RwLock::new(component));
+        self.components.write().entry(entity).or_default().insert(
+            T::component_id(),
+            ComponentPtr {
+                component_id: T::component_id(),
+                component,
+            },
+        );
         Ok(())
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) {
-        if let Some(components) = self.components.borrow_mut().get_mut(&entity) {
+        if let Some(components) = self.components.write().get_mut(&entity) {
             components.remove(&T::component_id());
         }
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
-        if let Some(components) = self.components.borrow().get(&entity) {
+        if let Some(components) = self.components.read().get(&entity) {
             components.contains_key(&T::component_id())
         } else {
             false
@@ -82,7 +74,7 @@ impl World {
     }
 
     pub fn remove_entity(&self, entity: Entity) {
-        self.components.borrow_mut().remove(&entity);
+        self.components.write().remove(&entity);
     }
 
     pub fn insert_resource<T: Resource>(&mut self, resource: T) -> anyhow::Result<()> {
@@ -99,7 +91,7 @@ impl World {
             .resources
             .get(&T::resource_id())
             .ok_or(EcsError::ResourceDoesNotExist)?;
-        Ok(Res::new(resource.try_read().unwrap()))
+        Ok(Res::new(resource.read()))
     }
 
     pub fn write_resource<T: Resource>(&self) -> anyhow::Result<ResMut<T>> {
@@ -107,7 +99,8 @@ impl World {
             .resources
             .get(&T::resource_id())
             .ok_or(EcsError::ResourceDoesNotExist)?;
-        Ok(ResMut::new(resource.try_write().unwrap()))
+
+        Ok(ResMut::new(resource.write()))
     }
 
     pub fn has_resource<T: Resource>(&self) -> bool {
@@ -115,13 +108,11 @@ impl World {
     }
 
     pub fn has_startup_system(&self, system: SystemId) -> bool {
-        self.startup_systems.borrow().has_system(system)
+        self.startup_systems.read().has_system(system)
     }
 
     pub fn add_startup_system<S: System + 'static>(&self, system: S) -> SystemId {
-        self.startup_systems
-            .borrow_mut()
-            .add_system(Box::new(system))
+        self.startup_systems.write().add_system(Arc::new(system))
     }
 
     pub fn add_startup_system_after<S: System + 'static>(
@@ -130,8 +121,8 @@ impl World {
         after: SystemId,
     ) -> SystemId {
         self.startup_systems
-            .borrow_mut()
-            .add_system_after(Box::new(system), after)
+            .write()
+            .add_system_after(Arc::new(system), after)
     }
 
     pub fn add_startup_system_before<S: System + 'static>(
@@ -140,51 +131,45 @@ impl World {
         before: SystemId,
     ) -> SystemId {
         self.startup_systems
-            .borrow_mut()
-            .add_system_before(Box::new(system), before)
+            .write()
+            .add_system_before(Arc::new(system), before)
     }
 
     pub fn add_startup_system_dependency(&self, dependency: SystemId, dependent: SystemId) {
         self.startup_systems
-            .borrow_mut()
+            .write()
             .add_dependency(dependency, dependent);
     }
 
     pub fn has_system(&self, system: SystemId) -> bool {
-        self.systems.borrow().has_system(system)
+        self.systems.read().has_system(system)
     }
 
     pub fn add_system<S: System + 'static>(&self, system: S) -> SystemId {
-        self.systems.borrow_mut().add_system(Box::new(system))
+        self.systems.write().add_system(Arc::new(system))
     }
 
     pub fn add_system_after<S: System + 'static>(&self, system: S, after: SystemId) -> SystemId {
         self.systems
-            .borrow_mut()
-            .add_system_after(Box::new(system), after)
+            .write()
+            .add_system_after(Arc::new(system), after)
     }
 
     pub fn add_system_before<S: System + 'static>(&self, system: S, before: SystemId) -> SystemId {
         self.systems
-            .borrow_mut()
-            .add_system_before(Box::new(system), before)
+            .write()
+            .add_system_before(Arc::new(system), before)
     }
 
     pub fn add_system_dependency(&self, dependency: SystemId, dependent: SystemId) {
-        self.systems
-            .borrow_mut()
-            .add_dependency(dependency, dependent);
+        self.systems.write().add_dependency(dependency, dependent);
     }
 
-    pub fn startup(&self) -> anyhow::Result<()> {
-        let mut startup_systems = self.startup_systems.borrow_mut();
-        startup_systems.fix_parallel_writes();
-        startup_systems.run(self)
+    pub fn startup(world: &Arc<RwLock<Self>>) -> anyhow::Result<()> {
+        pollster::block_on(world.read().startup_systems.read().run_async(world))
     }
 
-    pub fn update(&self) -> anyhow::Result<()> {
-        let mut systems = self.systems.borrow_mut();
-        systems.fix_parallel_writes();
-        systems.run(self)
+    pub fn update(world: &Arc<RwLock<Self>>) -> anyhow::Result<()> {
+        pollster::block_on(world.read().systems.read().run_async(world))
     }
 }

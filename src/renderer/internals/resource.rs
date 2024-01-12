@@ -1,9 +1,6 @@
-use std::{
-    cell::{Ref, RefCell},
-    fmt::Debug,
-    rc::Rc,
-    sync::Arc,
-};
+use std::{fmt::Debug, sync::Arc};
+
+use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 
 use super::{BindGroupLayoutCache, BindableComponent, GpuResourceManager};
 
@@ -93,24 +90,91 @@ impl Into<wgpu::BindingType> for &GpuResourceType {
 
 /// A GPU-allocated resource.
 pub enum GpuResource {
-    Buffer { buffer: wgpu::Buffer },
-    Texture { texture: wgpu::Texture },
-    Sampler { sampler: wgpu::Sampler },
+    Buffer {
+        buffer: wgpu::Buffer,
+    },
+    Texture {
+        texture: wgpu::Texture,
+        default_view: wgpu::TextureView,
+    },
+    Sampler {
+        sampler: wgpu::Sampler,
+    },
+}
+
+impl GpuResource {
+    /// Returns the resource as a [`wgpu::BindingResource`] for use in a bind group.
+    pub fn as_binding_resource(&self) -> wgpu::BindingResource {
+        match self {
+            GpuResource::Buffer { buffer } => {
+                wgpu::BindingResource::Buffer(buffer.as_entire_buffer_binding())
+            }
+            GpuResource::Texture { default_view, .. } => {
+                wgpu::BindingResource::TextureView(default_view)
+            }
+            GpuResource::Sampler { sampler } => wgpu::BindingResource::Sampler(sampler),
+        }
+    }
+
+    /// Returns the resource as a [`wgpu::BindGroupEntry`] for use in a bind group.
+    pub fn as_binding(&self, binding: u32) -> wgpu::BindGroupEntry {
+        wgpu::BindGroupEntry {
+            binding,
+            resource: self.as_binding_resource(),
+        }
+    }
+}
+
+/// The status of a GPU handle (Ready, Pending, or Destroyed).
+#[derive(Clone)]
+pub enum GpuHandleStatus {
+    /// The handle is ready to be used.
+    Ready { resource: Arc<GpuResource> },
+    /// The handle is pending an update.
+    Pending { pending_data: Arc<[u8]> },
+    /// The handle has been destroyed.
+    Destroyed,
+}
+
+impl GpuHandleStatus {
+    /// Returns true if the handle is ready to be used.
+    pub fn is_ready(&self) -> bool {
+        matches!(self, GpuHandleStatus::Ready { .. })
+    }
+
+    /// Returns true if the handle is pending an update.
+    pub fn is_pending(&self) -> bool {
+        matches!(self, GpuHandleStatus::Pending { .. })
+    }
+
+    /// Returns true if the handle has been destroyed.
+    pub fn is_destroyed(&self) -> bool {
+        matches!(self, GpuHandleStatus::Destroyed)
+    }
+}
+
+impl Debug for GpuHandleStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GpuHandleStatus::Ready { .. } => write!(f, "Ready"),
+            GpuHandleStatus::Pending { .. } => write!(f, "Pending"),
+            GpuHandleStatus::Destroyed => write!(f, "Destroyed"),
+        }
+    }
 }
 
 /// A handle to a GPU-allocated resource.
 #[derive(Clone)]
 pub struct GpuHandle {
-    pub id: u64,
-    pub status: Rc<RefCell<GpuHandleStatus>>,
+    pub(super) id: u64,
+    pub(super) status: Arc<RwLock<GpuHandleStatus>>,
 }
 
 impl GpuHandle {
     /// Marks the handle as pending an update.
     /// This will not update the GPU resource until the next frame, unless the render queue is manually flushed.
-    /// See [`GpuResourceManager`] for more information.
     pub fn update<T: bytemuck::Pod>(&mut self, data: &[T]) {
-        let mut status = self.status.borrow_mut();
+        let mut status = self.status.write();
         if !status.is_destroyed() {
             *status = GpuHandleStatus::Pending {
                 pending_data: Arc::from(bytemuck::cast_slice(data)),
@@ -125,20 +189,22 @@ impl GpuHandle {
     }
 
     /// Returns the underlying buffer iff the handle is ready and the underlying resource is a buffer.
-    pub fn get_buffer(&self) -> Option<Ref<'_, wgpu::Buffer>> {
-        let status = self.status.borrow();
+    pub fn get_buffer(&self) -> Option<MappedRwLockReadGuard<'_, wgpu::Buffer>> {
+        let status = self.status.read();
         if let GpuHandleStatus::Ready {
             resource: ref buffer,
         } = &*status
         {
             match buffer.as_ref() {
-                GpuResource::Buffer { .. } => Some(Ref::map(status, |status| match status {
-                    GpuHandleStatus::Ready { resource: buffer } => match buffer.as_ref() {
-                        GpuResource::Buffer { buffer } => buffer,
+                GpuResource::Buffer { .. } => {
+                    Some(RwLockReadGuard::map(status, |status| match status {
+                        GpuHandleStatus::Ready { resource: buffer } => match buffer.as_ref() {
+                            GpuResource::Buffer { buffer } => buffer,
+                            _ => unreachable!(),
+                        },
                         _ => unreachable!(),
-                    },
-                    _ => unreachable!(),
-                })),
+                    }))
+                }
                 GpuResource::Texture { .. } => {
                     log::warn!(
                         "Attempted to get buffer from texture: {} is {:?}",
@@ -167,20 +233,22 @@ impl GpuHandle {
     }
 
     /// Returns the underlying texture iff the handle is ready and the underlying resource is a texture.
-    pub fn get_texture(&self) -> Option<Ref<'_, wgpu::Texture>> {
-        let status = self.status.borrow();
+    pub fn get_texture(&self) -> Option<MappedRwLockReadGuard<'_, wgpu::Texture>> {
+        let status = self.status.read();
         if let GpuHandleStatus::Ready {
             resource: ref buffer,
         } = &*status
         {
             match buffer.as_ref() {
-                GpuResource::Texture { .. } => Some(Ref::map(status, |status| match status {
-                    GpuHandleStatus::Ready { resource: buffer } => match buffer.as_ref() {
-                        GpuResource::Texture { texture, .. } => texture,
+                GpuResource::Texture { .. } => {
+                    Some(RwLockReadGuard::map(status, |status| match status {
+                        GpuHandleStatus::Ready { resource: buffer } => match buffer.as_ref() {
+                            GpuResource::Texture { texture, .. } => texture,
+                            _ => unreachable!(),
+                        },
                         _ => unreachable!(),
-                    },
-                    _ => unreachable!(),
-                })),
+                    }))
+                }
                 GpuResource::Buffer { .. } => {
                     log::warn!("Attempted to get texture from buffer: {}", self.id,);
                     None
@@ -201,20 +269,22 @@ impl GpuHandle {
     }
 
     /// Returns the underlying sampler iff the handle is ready and the underlying resource is a sampler.
-    pub fn get_sampler(&self) -> Option<Ref<'_, wgpu::Sampler>> {
-        let status = self.status.borrow();
+    pub fn get_sampler(&self) -> Option<MappedRwLockReadGuard<'_, wgpu::Sampler>> {
+        let status = self.status.read();
         if let GpuHandleStatus::Ready {
             resource: ref buffer,
         } = &*status
         {
             match buffer.as_ref() {
-                GpuResource::Sampler { .. } => Some(Ref::map(status, |status| match status {
-                    GpuHandleStatus::Ready { resource: buffer } => match buffer.as_ref() {
-                        GpuResource::Sampler { sampler } => sampler,
+                GpuResource::Sampler { .. } => {
+                    Some(RwLockReadGuard::map(status, |status| match status {
+                        GpuHandleStatus::Ready { resource: buffer } => match buffer.as_ref() {
+                            GpuResource::Sampler { sampler } => sampler,
+                            _ => unreachable!(),
+                        },
                         _ => unreachable!(),
-                    },
-                    _ => unreachable!(),
-                })),
+                    }))
+                }
                 GpuResource::Buffer { .. } => {
                     log::warn!("Attempted to get sampler from buffer: {}", self.id,);
                     None
@@ -237,7 +307,7 @@ impl GpuHandle {
     /// Marks the underlying GPU resource for destruction, if it is not already destroyed.
     /// This will not destroy the GPU resource until the next frame, unless [`GpuResourceManager::gc_destroyed_resources`] is manually called.
     pub fn mark_destroyed(&mut self) {
-        let mut status = self.status.borrow_mut();
+        let mut status = self.status.write();
         match &mut *status {
             GpuHandleStatus::Ready { .. } => {
                 *status = GpuHandleStatus::Destroyed;
@@ -250,14 +320,29 @@ impl GpuHandle {
             }
         }
     }
+
+    /// Returns true if the handle is ready to be used.
+    pub fn is_ready(&self) -> bool {
+        self.status.read().is_ready()
+    }
+
+    /// Returns true if the handle is pending an update.
+    pub fn is_pending(&self) -> bool {
+        self.status.read().is_pending()
+    }
+
+    /// Returns true if the handle has been destroyed.
+    pub fn is_destroyed(&self) -> bool {
+        self.status.read().is_destroyed()
+    }
 }
 
 /// The status of a lazily initialized resource.
 pub enum LazyInitStatus {
     /// The resource is ready to be used.
-    Ready { handle: GpuHandle },
+    Initialized { handle: GpuHandle },
     /// The resource is pending initialization.
-    Pending {
+    Uninitialized {
         ty: GpuResourceType,
         label: Option<&'static str>,
         pending_data: Option<Arc<[u8]>>,
@@ -266,11 +351,28 @@ pub enum LazyInitStatus {
     Destroyed,
 }
 
+impl LazyInitStatus {
+    /// Returns true if the resource is initialized and ready to be used.
+    pub fn is_initialized(&self) -> bool {
+        matches!(self, LazyInitStatus::Initialized { .. })
+    }
+
+    /// Returns true if the resource is pending initialization.
+    pub fn is_uninitialized(&self) -> bool {
+        matches!(self, LazyInitStatus::Uninitialized { .. })
+    }
+
+    /// Returns true if the resource has been destroyed.
+    pub fn is_destroyed(&self) -> bool {
+        matches!(self, LazyInitStatus::Destroyed)
+    }
+}
+
 impl Debug for LazyInitStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LazyInitStatus::Ready { .. } => write!(f, "Ready"),
-            LazyInitStatus::Pending { ty, .. } => write!(f, "Pending ({:#?})", ty),
+            LazyInitStatus::Initialized { .. } => write!(f, "Initialized"),
+            LazyInitStatus::Uninitialized { ty, .. } => write!(f, "Uninitialized ({:#?})", ty),
             LazyInitStatus::Destroyed => write!(f, "Destroyed"),
         }
     }
@@ -280,7 +382,7 @@ impl Debug for LazyInitStatus {
 /// This is useful for resources that are not used by the GPU until the first frame.
 #[derive(Clone, Debug)]
 pub struct LazyGpuHandle {
-    status: Rc<RefCell<LazyInitStatus>>,
+    status: Arc<RwLock<LazyInitStatus>>,
 }
 
 impl LazyGpuHandle {
@@ -291,7 +393,7 @@ impl LazyGpuHandle {
         pending_data: Option<Arc<[u8]>>,
     ) -> Self {
         Self {
-            status: Rc::new(RefCell::new(LazyInitStatus::Pending {
+            status: Arc::new(RwLock::new(LazyInitStatus::Uninitialized {
                 ty,
                 label,
                 pending_data,
@@ -302,17 +404,17 @@ impl LazyGpuHandle {
     /// Creates a new `LazyGpuHandle` that is already initialized with the given handle.
     pub(crate) fn new_ready(handle: GpuHandle) -> Self {
         Self {
-            status: Rc::new(RefCell::new(LazyInitStatus::Ready { handle })),
+            status: Arc::new(RwLock::new(LazyInitStatus::Initialized { handle })),
         }
     }
 
     /// Initializes the underlying GPU resource if it is not already initialized and returns a handle to it.
     /// If the resource is already initialized, this will return a handle to the existing resource without allocating anything new on the GPU.
     pub fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<GpuHandle> {
-        let mut status = self.status.borrow_mut();
+        let mut status = self.status.write();
         match &mut *status {
-            LazyInitStatus::Ready { handle } => Ok(handle.clone()),
-            LazyInitStatus::Pending {
+            LazyInitStatus::Initialized { handle } => Ok(handle.clone()),
+            LazyInitStatus::Uninitialized {
                 ty,
                 label,
                 pending_data,
@@ -357,7 +459,7 @@ impl LazyGpuHandle {
                     let handle = manager.insert_resource(resource);
 
                     // mark the lazy handle as ready
-                    *status = LazyInitStatus::Ready {
+                    *status = LazyInitStatus::Initialized {
                         handle: handle.clone(),
                     };
                     Ok(handle)
@@ -398,7 +500,7 @@ impl LazyGpuHandle {
                     let handle = manager.insert_resource(resource);
 
                     // mark the lazy handle as ready
-                    *status = LazyInitStatus::Ready {
+                    *status = LazyInitStatus::Initialized {
                         handle: handle.clone(),
                     };
                     Ok(handle)
@@ -415,13 +517,13 @@ impl LazyGpuHandle {
     /// This will not update the GPU resource until the next frame, unless the render queue is manually flushed.
     /// If the resource has not yet been initialized, this will overwrite the pending data.
     pub fn update<T: bytemuck::Pod>(&self, data: &[T]) {
-        let mut status = self.status.borrow_mut();
+        let mut status = self.status.write();
         match &mut *status {
-            LazyInitStatus::Ready { handle } => {
+            LazyInitStatus::Initialized { handle } => {
                 // update the resource
                 handle.update(data);
             }
-            LazyInitStatus::Pending { pending_data, .. } => {
+            LazyInitStatus::Uninitialized { pending_data, .. } => {
                 // overwrite the pending data
                 *pending_data = Some(Arc::from(bytemuck::cast_slice(data)));
             }
@@ -434,12 +536,12 @@ impl LazyGpuHandle {
     /// Marks the underlying GPU resource for destruction, if it is not already destroyed.
     /// This will not destroy the GPU resource until the next frame, unless [`GpuResourceManager::gc_destroyed_resources`] is manually called.
     pub fn mark_destroyed(&self) {
-        let mut status = self.status.borrow_mut();
+        let mut status = self.status.write();
         match &mut *status {
-            LazyInitStatus::Ready { handle } => {
+            LazyInitStatus::Initialized { handle } => {
                 handle.mark_destroyed();
             }
-            LazyInitStatus::Pending { .. } => {
+            LazyInitStatus::Uninitialized { .. } => {
                 *status = LazyInitStatus::Destroyed;
             }
             LazyInitStatus::Destroyed => {
@@ -447,43 +549,20 @@ impl LazyGpuHandle {
             }
         }
     }
-}
 
-/// The status of a GPU handle (Ready, Pending, or Destroyed).
-#[derive(Clone)]
-pub enum GpuHandleStatus {
-    /// The handle is ready to be used.
-    Ready { resource: Arc<GpuResource> },
-    /// The handle is pending an update.
-    Pending { pending_data: Arc<[u8]> },
-    /// The handle has been destroyed.
-    Destroyed,
-}
-
-impl GpuHandleStatus {
-    /// Returns true if the handle is ready to be used.
-    pub fn is_ready(&self) -> bool {
-        matches!(self, GpuHandleStatus::Ready { .. })
+    /// Returns true if the handle is initialized and ready to be used.
+    pub fn is_initialized(&self) -> bool {
+        matches!(&*self.status.read(), LazyInitStatus::Initialized { .. })
     }
 
-    /// Returns true if the handle is pending an update.
-    pub fn is_pending(&self) -> bool {
-        matches!(self, GpuHandleStatus::Pending { .. })
+    /// Returns true if the handle is pending initialization.
+    pub fn is_uninitialized(&self) -> bool {
+        matches!(&*self.status.read(), LazyInitStatus::Uninitialized { .. })
     }
 
     /// Returns true if the handle has been destroyed.
     pub fn is_destroyed(&self) -> bool {
-        matches!(self, GpuHandleStatus::Destroyed)
-    }
-}
-
-impl Debug for GpuHandleStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GpuHandleStatus::Ready { .. } => write!(f, "Ready"),
-            GpuHandleStatus::Pending { .. } => write!(f, "Pending"),
-            GpuHandleStatus::Destroyed => write!(f, "Destroyed"),
-        }
+        matches!(&*self.status.read(), LazyInitStatus::Destroyed)
     }
 }
 
@@ -491,9 +570,9 @@ impl Debug for GpuHandleStatus {
 #[derive(Clone, Debug)]
 pub struct LazyBindGroup<T: BindableComponent> {
     /// The bind group layout for the component.
-    pub layout: Rc<RefCell<Option<Arc<wgpu::BindGroupLayout>>>>,
+    pub layout: Arc<RwLock<Option<Arc<wgpu::BindGroupLayout>>>>,
     /// The bind group for the component.
-    pub bind_group: Rc<RefCell<Option<Arc<wgpu::BindGroup>>>>,
+    pub bind_group: Arc<RwLock<Option<Arc<wgpu::BindGroup>>>>,
 
     _phantom: std::marker::PhantomData<T>,
 }
@@ -504,8 +583,8 @@ where
 {
     fn default() -> Self {
         Self {
-            layout: Rc::new(RefCell::new(None)),
-            bind_group: Rc::new(RefCell::new(None)),
+            layout: Arc::new(RwLock::new(None)),
+            bind_group: Arc::new(RwLock::new(None)),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -517,17 +596,17 @@ where
 {
     /// Returns true if the bind group has been initialized.
     pub fn is_initialized(&self) -> bool {
-        self.layout.borrow().is_some() && self.bind_group.borrow().is_some()
+        self.layout.read().is_some() && self.bind_group.read().is_some()
     }
 
     /// Returns the bind group for the component, if it has been created.
     pub fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
-        self.bind_group.borrow().as_ref().cloned()
+        self.bind_group.read().as_ref().cloned()
     }
 
     /// Returns the bind group layout for the component, if it has been created.
     pub fn bind_group_layout(&self) -> Option<Arc<wgpu::BindGroupLayout>> {
-        self.layout.borrow().as_ref().cloned()
+        self.layout.read().as_ref().cloned()
     }
 
     /// Lazily initializes the bind group layout for the component, or returns the existing layout if it has already been initialized.
@@ -536,7 +615,7 @@ where
         manager: &GpuResourceManager,
         cache: &BindGroupLayoutCache,
     ) -> anyhow::Result<Arc<wgpu::BindGroupLayout>> {
-        let mut layout = self.layout.borrow_mut();
+        let mut layout = self.layout.write();
         if layout.is_none() {
             // create the layout
             *layout = Some(cache.get_or_create::<T>(manager.device()));
@@ -551,8 +630,8 @@ where
         cache: &BindGroupLayoutCache,
         component: &T,
     ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        let mut layout = self.layout.borrow_mut();
-        let mut bind_group = self.bind_group.borrow_mut();
+        let mut layout = self.layout.write();
+        let mut bind_group = self.bind_group.write();
         if layout.is_none() {
             // create the layout
             *layout = Some(cache.get_or_create::<T>(manager.device()));

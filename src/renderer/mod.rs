@@ -1,4 +1,4 @@
-use std::{rc::Rc, sync::Arc};
+use std::sync::Arc;
 
 use egui_wgpu::renderer::ScreenDescriptor;
 use weaver_proc_macro::Resource;
@@ -55,7 +55,7 @@ pub struct Renderer {
     pub doodad_pass: DoodadRenderPass,
     pub extra_passes: Vec<Box<dyn pass::Pass>>,
 
-    resource_manager: Rc<GpuResourceManager>,
+    resource_manager: Arc<GpuResourceManager>,
     bind_group_layout_cache: BindGroupLayoutCache,
 
     point_lights: PointLightArray,
@@ -265,7 +265,7 @@ impl Renderer {
         &self.queue
     }
 
-    pub fn resource_manager(&self) -> &Rc<GpuResourceManager> {
+    pub fn resource_manager(&self) -> &Arc<GpuResourceManager> {
         &self.resource_manager
     }
 

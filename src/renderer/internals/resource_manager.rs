@@ -1,9 +1,6 @@
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{atomic::AtomicU64, Arc},
-};
+use std::sync::{atomic::AtomicU64, Arc};
 
+use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use wgpu::util::DeviceExt;
 
@@ -19,19 +16,19 @@ pub struct GpuResourceManager {
     queue: Arc<wgpu::Queue>,
 
     /// The resources that have been allocated.
-    pub(crate) resources: RefCell<FxHashMap<u64, Arc<GpuResource>>>,
+    pub(crate) resources: RwLock<FxHashMap<u64, Arc<GpuResource>>>,
     /// The handles to the resources.
-    pub(crate) handles: RefCell<FxHashMap<u64, GpuHandle>>,
+    pub(crate) handles: RwLock<FxHashMap<u64, GpuHandle>>,
 }
 
 impl GpuResourceManager {
-    pub fn new(device: Arc<wgpu::Device>, queue: Arc<wgpu::Queue>) -> Rc<Self> {
-        Rc::new(Self {
+    pub fn new(device: Arc<wgpu::Device>, queue: Arc<wgpu::Queue>) -> Arc<Self> {
+        Arc::new(Self {
             next_buffer_id: AtomicU64::new(0),
             device,
             queue,
-            resources: RefCell::new(FxHashMap::default()),
-            handles: RefCell::new(FxHashMap::default()),
+            resources: RwLock::new(FxHashMap::default()),
+            handles: RwLock::new(FxHashMap::default()),
         })
     }
 
@@ -53,24 +50,24 @@ impl GpuResourceManager {
 
         let handle = GpuHandle {
             id,
-            status: Rc::new(RefCell::new(GpuHandleStatus::Ready {
+            status: Arc::new(RwLock::new(GpuHandleStatus::Ready {
                 resource: buffer.clone(),
             })),
         };
 
-        self.resources.borrow_mut().insert(id, buffer);
-        self.handles.borrow_mut().insert(id, handle.clone());
+        self.resources.write().insert(id, buffer);
+        self.handles.write().insert(id, handle.clone());
 
         handle
     }
 
     /// Garbage collects any resources that have been destroyed.
     pub fn gc_destroyed_resources(&self) {
-        let mut handles = self.handles.borrow_mut();
-        let mut buffers = self.resources.borrow_mut();
+        let mut handles = self.handles.write();
+        let mut buffers = self.resources.write();
         let mut destroyed = Vec::new();
         for (id, handle) in handles.iter() {
-            if let GpuHandleStatus::Destroyed = &*handle.status.borrow() {
+            if let GpuHandleStatus::Destroyed = &*handle.status.read() {
                 destroyed.push(*id);
             }
         }
@@ -142,7 +139,12 @@ impl GpuResourceManager {
             view_formats: &[],
         });
 
-        Arc::new(GpuResource::Texture { texture })
+        let default_view = texture.create_view(&Default::default());
+
+        Arc::new(GpuResource::Texture {
+            texture,
+            default_view,
+        })
     }
 
     /// Creates a GPU-allocated texture with the given parameters and initializes it with the given data.
@@ -176,7 +178,12 @@ impl GpuResourceManager {
             bytemuck::cast_slice(data),
         );
 
-        Arc::new(GpuResource::Texture { texture })
+        let default_view = texture.create_view(&Default::default());
+
+        Arc::new(GpuResource::Texture {
+            texture,
+            default_view,
+        })
     }
 
     /// Creates a GPU-allocated texture sampler with the given parameters.
@@ -205,7 +212,7 @@ impl GpuResourceManager {
     /// Updates the resource with the given data.
     /// Returns Ok(()) if the resource was updated successfully, Err otherwise.
     pub fn update_resource(&self, handle: &GpuHandle, pending_data: &[u8]) -> anyhow::Result<()> {
-        if let Some(resource) = self.resources.borrow_mut().get_mut(&handle.id) {
+        if let Some(resource) = self.resources.write().get_mut(&handle.id) {
             match resource.as_ref() {
                 GpuResource::Buffer { ref buffer } => {
                     self.queue.write_buffer(buffer, 0, pending_data);
@@ -243,13 +250,13 @@ impl GpuResourceManager {
     pub fn update_all_resources(&self) {
         log::trace!("Updating all resources");
         // check for pending resources
-        for handle in self.handles.borrow_mut().values_mut() {
-            let status = &mut *handle.status.borrow_mut();
+        for handle in self.handles.write().values_mut() {
+            let status = &mut *handle.status.write();
             if let GpuHandleStatus::Pending { pending_data } = status {
                 // update the resource
                 if self.update_resource(handle, pending_data).is_ok() {
                     *status = GpuHandleStatus::Ready {
-                        resource: self.resources.borrow().get(&handle.id).unwrap().clone(),
+                        resource: self.resources.read().get(&handle.id).unwrap().clone(),
                     };
                 }
             }

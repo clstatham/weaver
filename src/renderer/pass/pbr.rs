@@ -1,5 +1,6 @@
-use std::{cell::RefCell, sync::Arc};
+use std::sync::Arc;
 
+use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use weaver_proc_macro::Component;
 
@@ -262,7 +263,7 @@ impl BindableComponent for PbrBuffers {
 pub struct PbrRenderPass {
     pipeline: wgpu::RenderPipeline,
     buffers: PbrBuffers,
-    unique_meshes: RefCell<UniqueMeshes>,
+    unique_meshes: RwLock<UniqueMeshes>,
 }
 
 impl PbrRenderPass {
@@ -323,7 +324,7 @@ impl PbrRenderPass {
             multiview: None,
         });
 
-        let unique_meshes = RefCell::new(UniqueMeshes::default());
+        let unique_meshes = RwLock::new(UniqueMeshes::default());
 
         Self {
             pipeline,
@@ -333,7 +334,7 @@ impl PbrRenderPass {
     }
 
     pub fn prepare(&self, world: &World, renderer: &Renderer) {
-        let mut unique_meshes = self.unique_meshes.borrow_mut();
+        let mut unique_meshes = self.unique_meshes.write();
         unique_meshes.gather(world, renderer);
         unique_meshes.lazy_init(&renderer.resource_manager).unwrap();
         unique_meshes.update_resources(world).unwrap();
@@ -386,7 +387,7 @@ impl PbrRenderPass {
             &renderer.bind_group_layout_cache,
         )?;
 
-        for unique_mesh in self.unique_meshes.borrow().unique_meshes.values() {
+        for unique_mesh in self.unique_meshes.read().unique_meshes.values() {
             let UniqueMesh {
                 mesh,
                 material_bind_group,
