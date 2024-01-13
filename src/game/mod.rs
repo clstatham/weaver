@@ -307,21 +307,105 @@ fn setup(
         pitch_sensitivity: 0.5,
         ..Default::default()
     };
-    commands.spawn((camera_controller, Camera::new()))?;
+    commands.spawn((camera_controller, Camera::default()))?;
+}
+
+#[system(Setup_2)]
+fn setup_2(
+    commands: Commands,
+    mut asset_server: ResMut<AssetServer>,
+    mut renderer: ResMut<Renderer>,
+    hdr_loader: Res<HdrLoader>,
+) {
+    renderer.shadow_pass.disable();
+    renderer.sky_pass.disable();
+
+    let skybox = Skybox {
+        texture: asset_server.load_hdr_cubemap(
+            "meadow_2k.hdr",
+            SKYBOX_CUBEMAP_SIZE,
+            &hdr_loader,
+        )?,
+    };
+    commands.spawn(skybox)?;
+
+    let material = asset_server.load_material("materials/wood.glb").unwrap();
+    let mesh = asset_server.load_mesh("meshes/monkey_2x.glb").unwrap();
+
+    let range = 30.0;
+    let count = 30000;
+
+    for _ in 0..count {
+        let x = rand::thread_rng().gen_range(-range..=range);
+        let z = rand::thread_rng().gen_range(-range..=range);
+        let y = rand::thread_rng().gen_range(-range..=range);
+
+        commands
+            .spawn((
+                Transform::from_translation(Vec3::new(x, y, z)),
+                mesh.clone(),
+                material.clone(),
+                Wood,
+            ))
+            .unwrap();
+    }
+
+    let view_matrix = Mat4::look_at_rh(
+        Vec3::new(range, range, range),
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+    );
+
+    let proj_matrix = Mat4::perspective_rh(90.0_f32.to_radians(), 1600.0 / 900.0, 0.1, 100.0);
+
+    commands
+        .spawn(Camera::new(view_matrix, proj_matrix))
+        .unwrap();
+
+    commands.spawn(PointLight::new(
+        Vec3::new(0.0, 0.0, 0.0),
+        Color::WHITE,
+        10.0,
+        30.0,
+    ))?;
+}
+
+#[system(FpsDisplayUpdate)]
+fn fps_display(mut fps_display: ResMut<FpsDisplay>, mut ctx: ResMut<EguiContext>) {
+    ctx.draw_if_ready(|ctx| {
+        fps_display.run_ui(ctx);
+    });
 }
 
 #[derive(Debug, clap::Parser)]
 struct Args {
+    /// Window width
     #[arg(long, default_value = "1600")]
     pub width: usize,
+    /// Window height
     #[arg(long, default_value = "900")]
     pub height: usize,
+    /// World file (requires `serde` feature)
     #[arg(long)]
     pub world: Option<PathBuf>,
 }
 
 pub fn run() -> anyhow::Result<()> {
     let args = Args::parse();
+
+    #[cfg(feature = "serde")]
+    {
+        if args.world.is_some() {
+            log::warn!("Loading worlds is incomplete, expect errors");
+        }
+    }
+    #[cfg(not(feature = "serde"))]
+    {
+        if args.world.is_some() {
+            panic!("`serde` cargo feature is required to load worlds\nRun `cargo run --features serde`");
+        }
+    }
+
     let app = App::new(
         args.width,
         args.height,
@@ -331,23 +415,25 @@ pub fn run() -> anyhow::Result<()> {
 
     app.insert_resource(FpsDisplay::new())?;
 
-    app.insert_resource(State {
-        light_intensity: 10.0,
-        light_radius: 30.0,
-        ..Default::default()
-    })?;
+    // app.insert_resource(State {
+    //     light_intensity: 10.0,
+    //     light_radius: 30.0,
+    //     ..Default::default()
+    // })?;
 
-    app.add_system_to_stage(Setup, SystemStage::Startup);
+    app.add_system_to_stage(Setup_2, SystemStage::Startup);
+    // app.add_system_to_stage(Setup, SystemStage::Startup);
 
-    app.add_system(WindowUpdate);
-    app.add_system(ParticleUpdate);
-    app.add_system(FollowCameraUpdate);
-    app.add_system(FollowCameraMovement);
-    app.add_system(UiUpdate);
-    app.add_system(PlayerInput);
-    app.add_system(PlayerMovement);
-    app.add_system(SpinNpcs);
-    app.add_system(DebugLights);
+    // app.add_system(WindowUpdate);
+    // app.add_system(ParticleUpdate);
+    // app.add_system(FollowCameraUpdate);
+    // app.add_system(FollowCameraMovement);
+    app.add_system(FpsDisplayUpdate);
+    // app.add_system(UiUpdate);
+    // app.add_system(PlayerInput);
+    // app.add_system(PlayerMovement);
+    // app.add_system(SpinNpcs);
+    // app.add_system(DebugLights);
 
     app.run()
 }

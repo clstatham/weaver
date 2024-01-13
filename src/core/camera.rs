@@ -57,10 +57,10 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub fn new() -> Self {
+    pub fn new(view_matrix: glam::Mat4, projection_matrix: glam::Mat4) -> Self {
         Self {
-            view_matrix: glam::Mat4::IDENTITY,
-            projection_matrix: glam::Mat4::IDENTITY,
+            view_matrix,
+            projection_matrix,
             handle: Self::default_handle(),
             bind_group: LazyBindGroup::default(),
         }
@@ -87,7 +87,7 @@ impl Camera {
 
 impl Default for Camera {
     fn default() -> Self {
-        Self::new()
+        Self::new(glam::Mat4::IDENTITY, glam::Mat4::IDENTITY)
     }
 }
 
