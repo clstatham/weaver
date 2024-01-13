@@ -1,30 +1,79 @@
-use proc_macro::*;
 use quote::{format_ident, quote};
 
-static COMPONENT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-static RESOURCE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static NEXT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+// fn get_serializable_fields(struc: &DataStruct) -> Vec<TokenStream> {
+//     let fields = match &struc.fields {
+//         syn::Fields::Named(fields) => fields,
+//         _ => panic!("Invalid struct"),
+//     };
+
+//     let field_names = fields
+//         .named
+//         .iter()
+//         .filter_map(|field| {
+//             let name = &field.ident;
+//             let attrs = &field.attrs;
+//             if attrs.iter().any(|attr| {
+//                 let attr = &attr.path();
+//                 let attr_ident = &attr.segments.last().unwrap().ident;
+//                 let attr_ident_str = attr_ident.to_string();
+
+//                 attr_ident_str == "not_serialized"
+//             }) {
+//                 return None;
+//             }
+//             Some(quote! {
+//                 #name
+//             })
+//         })
+//         .collect::<Vec<_>>();
+
+//     field_names
+// }
+
+#[proc_macro_derive(StaticId)]
+pub fn static_id_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let ast = syn::parse(input).unwrap();
+    impl_static_id_macro(&ast)
+}
+
+fn impl_static_id_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
+    let name = &ast.ident;
+
+    let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let gen = quote! {
+        unsafe impl crate::ecs::StaticId for #name {
+            fn static_id() -> usize
+            where
+                Self: Sized,
+            {
+                #id
+            }
+        }
+    };
+    gen.into()
+}
 
 #[proc_macro_derive(Component)]
-pub fn component_derive(input: TokenStream) -> TokenStream {
+pub fn component_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = syn::parse(input).unwrap();
     impl_component_macro(&ast)
 }
 
-fn impl_component_macro(ast: &syn::DeriveInput) -> TokenStream {
+fn impl_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     let name = &ast.ident;
-    let generics = &ast.generics;
 
-    let generic_types = generics.type_params().map(|param| {
-        let ident = &param.ident;
-        quote! {
-            #ident
-        }
-    });
-
-    let id = COMPONENT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let gen = quote! {
-        unsafe impl #generics crate::ecs::component::Component for #name<#(#generic_types),*> {
-            fn component_id() -> crate::ecs::component::ComponentId {
+        #[cfg_attr(feature = "serde", typetag::serde)]
+        impl crate::ecs::component::Component for #name {}
+
+        unsafe impl crate::ecs::StaticId for #name {
+            fn static_id() -> usize
+            where
+                Self: Sized,
+            {
                 #id
             }
         }
@@ -33,17 +82,23 @@ fn impl_component_macro(ast: &syn::DeriveInput) -> TokenStream {
 }
 
 #[proc_macro_derive(Resource)]
-pub fn resource_derive(input: TokenStream) -> TokenStream {
+pub fn resource_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = syn::parse(input).unwrap();
     impl_resource_macro(&ast)
 }
 
-fn impl_resource_macro(ast: &syn::DeriveInput) -> TokenStream {
+fn impl_resource_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     let name = &ast.ident;
-    let id = RESOURCE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let gen = quote! {
-        impl crate::ecs::resource::Resource for #name {
-            fn resource_id() -> u64 {
+        impl crate::ecs::resource::Resource for #name {}
+
+        unsafe impl crate::ecs::StaticId for #name {
+            fn static_id() -> usize
+            where
+                Self: Sized,
+            {
                 #id
             }
         }
@@ -52,12 +107,15 @@ fn impl_resource_macro(ast: &syn::DeriveInput) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn system(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn system(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
     let ast = syn::parse(item).unwrap();
     impl_system_macro(attr, &ast)
 }
 
-fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
+fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_macro::TokenStream {
     let vis = &ast.vis;
     // get the name from the first attr
     let system_struct_name = syn::parse::<syn::Ident>(attr).unwrap();
@@ -270,7 +328,7 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                 Ok(())
             }
 
-            fn components_read(&self) -> Vec<crate::ecs::component::ComponentId> {
+            fn components_read(&self) -> Vec<usize> {
                 use crate::ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
@@ -279,7 +337,7 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                 components
             }
 
-            fn components_written(&self) -> Vec<crate::ecs::component::ComponentId> {
+            fn components_written(&self) -> Vec<usize> {
                 use crate::ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
@@ -288,18 +346,20 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
                 components
             }
 
-            fn resources_read(&self) -> Vec<u64> {
+            fn resources_read(&self) -> Vec<usize> {
+                use crate::ecs::StaticId;
                 let mut resources = Vec::new();
                 #(
-                    resources.push(<#res_types as crate::ecs::resource::Resource>::resource_id());
+                    resources.push(<#res_types as crate::ecs::StaticId>::static_id());
                 )*
                 resources
             }
 
-            fn resources_written(&self) -> Vec<u64> {
+            fn resources_written(&self) -> Vec<usize> {
+                use crate::ecs::StaticId;
                 let mut resources = Vec::new();
                 #(
-                    resources.push(<#resmut_types as crate::ecs::resource::Resource>::resource_id());
+                    resources.push(<#resmut_types as crate::ecs::StaticId>::static_id());
                 )*
                 resources
             }
@@ -309,12 +369,12 @@ fn impl_system_macro(attr: TokenStream, ast: &syn::ItemFn) -> TokenStream {
 }
 
 #[proc_macro_derive(Bundle)]
-pub fn bundle_derive(input: TokenStream) -> TokenStream {
+pub fn bundle_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = syn::parse(input).unwrap();
     impl_bundle_macro(&ast)
 }
 
-fn impl_bundle_macro(ast: &syn::DeriveInput) -> TokenStream {
+fn impl_bundle_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     let name = &ast.ident;
     let fields = match &ast.data {
         syn::Data::Struct(data) => match &data.fields {
@@ -343,7 +403,7 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> TokenStream {
 }
 
 #[proc_macro]
-pub fn impl_queryable_for_n_tuple(input: TokenStream) -> TokenStream {
+pub fn impl_queryable_for_n_tuple(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let mut names = Vec::new();
     let n = syn::parse::<syn::LitInt>(input)
         .unwrap()
@@ -422,12 +482,12 @@ enum BindingType {
 }
 
 #[proc_macro_derive(RenderResource)]
-pub fn render_resource_derive(input: TokenStream) -> TokenStream {
+pub fn render_resource_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = syn::parse(input).unwrap();
     impl_render_resource_macro(&ast)
 }
 
-fn impl_render_resource_macro(ast: &syn::DeriveInput) -> TokenStream {
+fn impl_render_resource_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     let name = &ast.ident;
 
     // Automatically create a bind group layout for the resource

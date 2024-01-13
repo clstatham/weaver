@@ -3,6 +3,7 @@ use crate::prelude::*;
 use super::player::Player;
 
 #[derive(Debug, Clone, Copy, Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FollowCameraController {
     pub target: Entity,
     pub rotation: glam::Quat,

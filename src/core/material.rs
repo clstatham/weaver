@@ -18,20 +18,34 @@ use super::{
 
 /// PBR material based on Bevy
 #[derive(Clone, Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Material {
     asset_id: AssetId,
     pub diffuse: Color,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub diffuse_texture: Option<SdrTexture>,
     pub metallic: f32,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub normal_texture: Option<NormalMapTexture>,
     pub roughness: f32,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub roughness_texture: Option<SdrTexture>,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub ambient_occlusion_texture: Option<SdrTexture>,
 
     pub texture_scaling: f32,
 
+    #[cfg_attr(
+        feature = "serde",
+        serde(skip, default = "Material::new_properties_handle")
+    )]
     pub(crate) properties_handle: LazyGpuHandle,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(skip, default = "Material::new_sampler_handle")
+    )]
     pub(crate) sampler: LazyGpuHandle,
 }
 
@@ -56,27 +70,37 @@ impl Material {
             diffuse: Color::WHITE,
             metallic: metallic.unwrap_or(1.0),
             roughness: roughness.unwrap_or(1.0),
-            properties_handle: LazyGpuHandle::new(
-                GpuResourceType::Uniform {
-                    usage: wgpu::BufferUsages::UNIFORM
-                        | wgpu::BufferUsages::COPY_DST
-                        | wgpu::BufferUsages::COPY_SRC,
-                    size: std::mem::size_of::<MaterialUniform>(),
-                },
-                Some("Material"),
-                None,
-            ),
+            properties_handle: Self::new_properties_handle(),
             bind_group: LazyBindGroup::default(),
-            sampler: LazyGpuHandle::new(
-                GpuResourceType::Sampler {
-                    address_mode: wgpu::AddressMode::Repeat,
-                    filter_mode: wgpu::FilterMode::Linear,
-                    compare: None,
-                },
-                Some("Material Sampler"),
-                None,
-            ),
+            sampler: Self::new_sampler_handle(),
         }
+    }
+
+    #[doc(hidden)]
+    fn new_properties_handle() -> LazyGpuHandle {
+        LazyGpuHandle::new(
+            GpuResourceType::Uniform {
+                usage: wgpu::BufferUsages::UNIFORM
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                size: std::mem::size_of::<MaterialUniform>(),
+            },
+            Some("Material"),
+            None,
+        )
+    }
+
+    #[doc(hidden)]
+    fn new_sampler_handle() -> LazyGpuHandle {
+        LazyGpuHandle::new(
+            GpuResourceType::Sampler {
+                address_mode: wgpu::AddressMode::Repeat,
+                filter_mode: wgpu::FilterMode::Linear,
+                compare: None,
+            },
+            Some("Material Sampler"),
+            None,
+        )
     }
 
     pub fn asset_id(&self) -> AssetId {
@@ -261,7 +285,23 @@ impl Material {
     }
 }
 
+impl Default for Material {
+    fn default() -> Self {
+        Self::new(
+            None,
+            None,
+            None,
+            None,
+            Some(1.0),
+            Some(1.0),
+            Some(1.0),
+            AssetId::PLACEHOLDER,
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, Component, bytemuck::Pod, bytemuck::Zeroable)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 pub struct MaterialUniform {
     pub base_color: [f32; 4],

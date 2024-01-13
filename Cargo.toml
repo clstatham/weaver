@@ -8,6 +8,10 @@ edition = "2021"
 [workspace]
 members = ["weaver-proc-macro"]
 
+[features]
+serde = ["dep:serde", "dep:serde_json", "dep:typetag", "dep:postcard"]
+default = []
+
 [dependencies]
 anyhow = "1.0.75"
 env_logger = "0.10.0"
@@ -36,7 +40,7 @@ petgraph = "0.6.4"
 egui_plot = "0.25"
 futures-channel = "0.3.30"
 bit-set = "0.5.3"
-rapier3d = "0.17.2"
+rapier3d = { version = "0.17.2", features = ["serde", "serde-serialize"] }
 nalgebra = { version = "0.32.3", features = ["convert-glam024"] }
 clap = { version = "4.4.13", features = ["derive"] }
 image = { version = "0.24.7", default-features = false, features = [
@@ -46,9 +50,17 @@ image = { version = "0.24.7", default-features = false, features = [
     "tga",
     "hdr",
 ] }
-parking_lot = { version = "0.12.1", features = ["send_guard", "hardware-lock-elision", "arc_lock"] }
+parking_lot = { version = "0.12.1", features = [
+    "send_guard",
+    "hardware-lock-elision",
+    "arc_lock",
+] }
 crossbeam-channel = "0.5.11"
 rayon = "1.8.0"
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+typetag = { version = "0.2", optional = true }
+postcard = { version = "1.0.8", features = ["alloc"], optional = true }
 
 [profile.release]
 debug = true

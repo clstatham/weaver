@@ -306,7 +306,7 @@ impl Renderer {
         // prepare the renderer's built-in components
         self.hdr_pass.texture.lazy_init(resource_manager).unwrap();
 
-        // query the world for the types that need to allocate buffers
+        // query the world for the components that need to allocate resources
         // these are currently:
         // - Material
         // - PointLight
@@ -528,14 +528,17 @@ impl Renderer {
     pub fn prepare_passes(&mut self) {
         log::trace!("Preparing passes");
         let world = &self.world.read();
+
         self.pbr_pass.prepare(world, self);
         self.shadow_pass.prepare_if_enabled(world, self).unwrap();
         self.doodad_pass.prepare_if_enabled(world, self).unwrap();
         self.sky_pass.prepare_if_enabled(world, self).unwrap();
-        self.hdr_pass.prepare_if_enabled(world, self).unwrap();
+        self.hdr_pass.prepare(world, self).unwrap();
+
         for pass in self.extra_passes.iter() {
             pass.prepare_if_enabled(world, self).unwrap();
         }
+
         self.resource_manager.update_all_resources();
     }
 

@@ -124,7 +124,7 @@ where
 
     fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
-            if entry.entity == entity && entry.component.component_id == T::component_id() {
+            if entry.entity == entity && entry.component.component_id == T::static_id() {
                 Some(RwLockReadGuard::map(
                     entry.component.component.read(),
                     |component| component.as_any().downcast_ref::<T>().unwrap(),
@@ -136,7 +136,7 @@ where
     }
 
     fn reads() -> Option<BitSet> {
-        Some(BitSet::from_iter(vec![T::component_id()]))
+        Some(BitSet::from_iter(vec![T::static_id()]))
     }
 }
 
@@ -150,7 +150,7 @@ where
 
     fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
-            if entry.entity == entity && entry.component.component_id == T::component_id() {
+            if entry.entity == entity && entry.component.component_id == T::static_id() {
                 Some(RwLockWriteGuard::map(
                     entry.component.component.write(),
                     |component| component.as_any_mut().downcast_mut::<T>().unwrap(),
@@ -162,31 +162,7 @@ where
     }
 
     fn writes() -> Option<BitSet> {
-        Some(BitSet::from_iter(vec![T::component_id()]))
-    }
-}
-
-/// A query that always matches, returning an Option<T> where T is the queried component.
-/// If the component exists, it will be Some(T), otherwise it will be None.
-impl<'a, T, F> Queryable<'a, F> for Option<T>
-where
-    T: Queryable<'a, F>,
-    <T as Queryable<'a, F>>::Item: Component,
-    F: QueryFilter<'a>,
-{
-    type Item = Option<T::Item>;
-    type ItemRef = Option<T::ItemRef>;
-
-    fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
-        if let Some(item) = T::get(entity, entries) {
-            Some(Some(item))
-        } else {
-            Some(None)
-        }
-    }
-
-    fn maybes() -> Option<BitSet> {
-        Some(BitSet::from_iter(vec![T::Item::component_id()]))
+        Some(BitSet::from_iter(vec![T::static_id()]))
     }
 }
 
@@ -212,7 +188,7 @@ where
     T: Component,
 {
     fn withs() -> Option<BitSet> {
-        Some(BitSet::from_iter(vec![T::component_id()]))
+        Some(BitSet::from_iter(vec![T::static_id()]))
     }
 }
 
@@ -225,7 +201,7 @@ where
     T: Component,
 {
     fn withouts() -> Option<BitSet> {
-        Some(BitSet::from_iter(vec![T::component_id()]))
+        Some(BitSet::from_iter(vec![T::static_id()]))
     }
 }
 

@@ -5,6 +5,8 @@ use super::texture::Texture;
 
 pub const TOTAL_MAX_PARTICLES: usize = 10000;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Particle {
     pub position: Vec3,
     pub velocity: Vec3,
@@ -12,7 +14,8 @@ pub struct Particle {
     pub color: Vec4,
 }
 
-#[derive(Component)]
+#[derive(Component, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ParticleEmitter {
     pub particles: Vec<Particle>,
     pub origin: Vec3,

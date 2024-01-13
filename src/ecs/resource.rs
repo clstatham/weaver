@@ -1,12 +1,8 @@
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 
-use super::component::Downcast;
+use super::{component::Downcast, StaticId};
 
-pub trait Resource: Downcast + Send + Sync + 'static {
-    fn resource_id() -> u64
-    where
-        Self: Sized;
-}
+pub trait Resource: Downcast + Send + Sync + StaticId + 'static {}
 
 pub struct Res<'a, T: Resource> {
     resource: RwLockReadGuard<'a, dyn Resource>,

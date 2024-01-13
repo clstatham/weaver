@@ -45,11 +45,14 @@ impl From<&Camera> for CameraUniform {
 }
 
 #[derive(Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Camera {
     pub view_matrix: glam::Mat4,
     pub projection_matrix: glam::Mat4,
 
+    #[cfg_attr(feature = "serde", serde(skip, default = "Camera::default_handle"))]
     pub(crate) handle: LazyGpuHandle,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
 
@@ -58,18 +61,22 @@ impl Camera {
         Self {
             view_matrix: glam::Mat4::IDENTITY,
             projection_matrix: glam::Mat4::IDENTITY,
-            handle: LazyGpuHandle::new(
-                GpuResourceType::Uniform {
-                    usage: wgpu::BufferUsages::UNIFORM
-                        | wgpu::BufferUsages::COPY_DST
-                        | wgpu::BufferUsages::COPY_SRC,
-                    size: std::mem::size_of::<CameraUniform>(),
-                },
-                Some("Camera"),
-                None,
-            ),
+            handle: Self::default_handle(),
             bind_group: LazyBindGroup::default(),
         }
+    }
+
+    fn default_handle() -> LazyGpuHandle {
+        LazyGpuHandle::new(
+            GpuResourceType::Uniform {
+                usage: wgpu::BufferUsages::UNIFORM
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                size: std::mem::size_of::<CameraUniform>(),
+            },
+            Some("Camera"),
+            None,
+        )
     }
 
     pub fn update(&mut self) {
@@ -156,6 +163,7 @@ impl BindableComponent for Camera {
 }
 
 #[derive(Debug, Component, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlyCameraController {
     pub speed: f32,
     pub sensitivity: f32,

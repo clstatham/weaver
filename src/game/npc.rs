@@ -1,6 +1,7 @@
 use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy, Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Npc {
     pub speed: f32,
     pub rotation_speed: f32,

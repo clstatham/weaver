@@ -15,13 +15,16 @@ use super::color::Color;
 pub const MAX_LIGHTS: usize = 32;
 
 #[derive(Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PointLight {
     pub position: glam::Vec3,
     pub color: Color,
     pub intensity: f32,
     pub radius: f32,
 
+    #[cfg_attr(feature = "serde", serde(skip, default = "PointLight::default_handle"))]
     pub(crate) handle: LazyGpuHandle,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
 
@@ -33,16 +36,20 @@ impl PointLight {
             intensity,
             radius,
 
-            handle: LazyGpuHandle::new(
-                GpuResourceType::Uniform {
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                    size: std::mem::size_of::<PointLightUniform>(),
-                },
-                Some("Point Light"),
-                None,
-            ),
+            handle: Self::default_handle(),
             bind_group: LazyBindGroup::default(),
         }
+    }
+
+    fn default_handle() -> LazyGpuHandle {
+        LazyGpuHandle::new(
+            GpuResourceType::Uniform {
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                size: std::mem::size_of::<PointLightUniform>(),
+            },
+            Some("Point Light"),
+            None,
+        )
     }
 
     pub fn view_transform_in_direction(&self, direction: glam::Vec3, up: glam::Vec3) -> glam::Mat4 {
@@ -130,7 +137,8 @@ impl BindableComponent for PointLight {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable, Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 pub struct PointLightUniform {
     pub position: [f32; 4],
@@ -138,6 +146,7 @@ pub struct PointLightUniform {
     pub projection_transform: glam::Mat4,
     pub intensity: f32,
     pub radius: f32,
+    #[cfg_attr(feature = "serde", serde(skip))]
     _pad: [f32; 2],
 }
 
@@ -163,9 +172,15 @@ pub(crate) struct PointLightArrayUniform {
 }
 
 #[derive(Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct PointLightArray {
     pub(crate) lights: Vec<PointLightUniform>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(skip, default = "PointLightArray::default_handle")
+    )]
     pub(crate) handle: LazyGpuHandle,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
 
@@ -173,17 +188,22 @@ impl PointLightArray {
     pub fn new() -> Self {
         Self {
             lights: Vec::new(),
-            handle: LazyGpuHandle::new(
-                GpuResourceType::Storage {
-                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                    size: std::mem::size_of::<PointLightArrayUniform>(),
-                    read_only: true,
-                },
-                Some("Point Light Array"),
-                None,
-            ),
+            handle: Self::default_handle(),
             bind_group: LazyBindGroup::default(),
         }
+    }
+
+    #[doc(hidden)]
+    fn default_handle() -> LazyGpuHandle {
+        LazyGpuHandle::new(
+            GpuResourceType::Storage {
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                size: std::mem::size_of::<PointLightArrayUniform>(),
+                read_only: true,
+            },
+            Some("Point Light Array"),
+            None,
+        )
     }
 
     pub fn add_light(&mut self, light: &PointLight) {
@@ -282,6 +302,7 @@ impl BindableComponent for PointLightArray {
 }
 
 #[derive(Debug, Clone, Copy, Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DirectionalLight {
     pub direction: glam::Vec3,
     pub color: Color,

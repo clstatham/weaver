@@ -19,7 +19,7 @@ impl Bundle for () {
 
 impl<T: Component> Bundle for T {
     fn build_on(self, entity: Entity, world: &World) -> anyhow::Result<Entity> {
-        world.add_component(entity, self)?;
+        world.add_component::<Self>(entity, Box::new(self))?;
         Ok(entity)
     }
 }

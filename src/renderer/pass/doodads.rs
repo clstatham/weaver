@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use weaver_proc_macro::Component;
+use weaver_proc_macro::StaticId;
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -193,7 +193,7 @@ impl DoodadVertex {
     }
 }
 
-#[derive(Component)]
+#[derive(StaticId)]
 struct DoodadBuffers {
     bind_group: LazyBindGroup<Self>,
     transform_buffer: LazyGpuHandle,

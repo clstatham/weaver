@@ -49,7 +49,7 @@ fn ui_update(
     commands: Commands,
     mut asset_server: ResMut<AssetServer>,
     mut ctx: ResMut<EguiContext>,
-    mut fps_display: Query<&mut FpsDisplay>,
+    mut fps_display: ResMut<FpsDisplay>,
     mut renderer: ResMut<Renderer>,
     mut state: ResMut<State>,
     mut point_lights: Query<&mut PointLight>,
@@ -58,9 +58,7 @@ fn ui_update(
     mut woods: Query<&mut Material, With<Wood>>,
 ) {
     ctx.draw_if_ready(|ctx| {
-        for mut fps_display in fps_display.iter() {
-            fps_display.run_ui(ctx);
-        }
+        fps_display.run_ui(ctx);
 
         let mut n_npcs = state.npcs.len();
 
@@ -258,8 +256,6 @@ fn setup(
     renderer.shadow_pass.disable();
     renderer.sky_pass.disable();
 
-    commands.spawn(FpsDisplay::new())?;
-
     let skybox = Skybox {
         texture: asset_server.load_hdr_cubemap(
             "meadow_2k.hdr",
@@ -318,11 +314,21 @@ struct Args {
     pub width: usize,
     #[arg(long, default_value = "900")]
     pub height: usize,
+    // #[cfg(feature = "serde")]
+    // #[arg(long)]
+    // pub world: Option<PathBuf>,
 }
 
 pub fn run() -> anyhow::Result<()> {
     let args = Args::parse();
-    let app = App::new(args.width, args.height)?;
+    let app = App::new(
+        args.width,
+        args.height,
+        // #[cfg(feature = "serde")]
+        // args.world,
+    )?;
+
+    app.insert_resource(FpsDisplay::new())?;
 
     app.insert_resource(State {
         light_intensity: 10.0,

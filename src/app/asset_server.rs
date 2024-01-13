@@ -14,6 +14,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct AssetId(pub u64);
 
@@ -21,14 +22,25 @@ impl AssetId {
     pub const PLACEHOLDER: Self = Self(u64::MAX);
 }
 
+impl Default for AssetId {
+    fn default() -> Self {
+        Self::PLACEHOLDER
+    }
+}
+
 #[derive(Resource)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssetServer {
     next_id: u64,
     path_prefix: PathBuf,
     ids: FxHashMap<PathBuf, AssetId>,
+    #[cfg_attr(feature = "serde", serde(skip))]
     resource_manager: Arc<GpuResourceManager>,
+    #[cfg_attr(feature = "serde", serde(skip))]
     meshes: FxHashMap<AssetId, Mesh>,
+    #[cfg_attr(feature = "serde", serde(skip))]
     textures: FxHashMap<AssetId, Texture>,
+    #[cfg_attr(feature = "serde", serde(skip))]
     materials: FxHashMap<AssetId, Material>,
 }
 
@@ -47,7 +59,7 @@ impl AssetServer {
         })
     }
 
-    fn alloc_id(&mut self) -> AssetId {
+    pub(crate) fn alloc_id(&mut self) -> AssetId {
         let id = AssetId(self.next_id);
         self.next_id += 1;
         id

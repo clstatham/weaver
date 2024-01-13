@@ -124,16 +124,22 @@ fn calculate_tangents(vertices: &mut [Vertex], indices: &[u32]) {
     }
 }
 
+#[derive(Component, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct MeshInner {
     pub asset_id: AssetId,
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub vertex_buffer: Option<wgpu::Buffer>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub index_buffer: Option<wgpu::Buffer>,
     pub num_indices: usize,
     pub aabb: Aabb,
 }
 
 #[derive(Clone, Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Mesh {
+    #[cfg_attr(feature = "serde", serde(skip))]
     inner: Arc<MeshInner>,
 }
 
@@ -198,8 +204,8 @@ impl Mesh {
         Ok(Self {
             inner: Arc::new(MeshInner {
                 asset_id,
-                vertex_buffer,
-                index_buffer,
+                vertex_buffer: Some(vertex_buffer),
+                index_buffer: Some(index_buffer),
                 num_indices: indices.len(),
                 aabb,
             }),
@@ -278,8 +284,8 @@ impl Mesh {
         Ok(Self {
             inner: Arc::new(MeshInner {
                 asset_id,
-                vertex_buffer,
-                index_buffer,
+                vertex_buffer: Some(vertex_buffer),
+                index_buffer: Some(index_buffer),
                 num_indices: indices.len(),
                 aabb,
             }),
@@ -291,11 +297,11 @@ impl Mesh {
     }
 
     pub fn vertex_buffer(&self) -> &wgpu::Buffer {
-        &self.inner.vertex_buffer
+        self.inner.vertex_buffer.as_ref().unwrap()
     }
 
     pub fn index_buffer(&self) -> &wgpu::Buffer {
-        &self.inner.index_buffer
+        self.inner.index_buffer.as_ref().unwrap()
     }
 
     pub fn num_indices(&self) -> usize {

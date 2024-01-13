@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
-use weaver_proc_macro::Component;
+use weaver_proc_macro::StaticId;
 
 use crate::{
     app::asset_server::AssetId,
@@ -33,7 +33,7 @@ pub struct UniqueMesh {
     pub transforms: TransformArray,
 }
 
-#[derive(Default, Component)]
+#[derive(Default, StaticId)]
 pub struct UniqueMeshes {
     pub unique_meshes: FxHashMap<(AssetId, AssetId), UniqueMesh>,
 }
@@ -91,7 +91,7 @@ impl GpuComponent for UniqueMeshes {
     }
 }
 
-#[derive(Clone, Component)]
+#[derive(Clone, StaticId)]
 pub struct PbrBuffers {
     pub(crate) camera: LazyGpuHandle,
     pub(crate) env_map: LazyGpuHandle,

@@ -2,6 +2,7 @@ use std::{num::NonZeroU32, sync::Arc};
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
+use weaver_proc_macro::StaticId;
 
 use crate::{
     app::asset_server::AssetId,
@@ -34,7 +35,7 @@ struct UniqueMesh {
     transforms: TransformArray,
 }
 
-#[derive(Default, Component)]
+#[derive(Default, StaticId)]
 struct UniqueMeshes {
     unique_meshes: FxHashMap<AssetId, UniqueMesh>,
 }
@@ -85,7 +86,7 @@ impl GpuComponent for UniqueMeshes {
     }
 }
 
-#[derive(Component, Clone)]
+#[derive(Clone, StaticId)]
 struct LightViews {
     handle: LazyGpuHandle,
     bind_group: LazyBindGroup<Self>,
@@ -179,7 +180,7 @@ impl BindableComponent for LightViews {
     }
 }
 
-#[derive(Component, Clone)]
+#[derive(StaticId, Clone)]
 struct ShadowBuffers {
     shadow_cubemap: LazyGpuHandle,
     bind_group: LazyBindGroup<Self>,

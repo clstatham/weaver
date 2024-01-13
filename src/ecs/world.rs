@@ -1,10 +1,12 @@
 use std::sync::{atomic::AtomicU32, Arc};
 
+#[cfg(feature = "serde")]
+use std::io::{Read, Write};
+
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 
 use super::{
-    component::ComponentId,
     resource::{Res, ResMut, Resource},
     system::{SystemGraph, SystemId, SystemStage},
     Bundle, Component, EcsError, Entity, System,
@@ -12,18 +14,53 @@ use super::{
 
 #[derive(Clone)]
 pub struct ComponentPtr {
-    pub component_id: ComponentId,
-    pub component: Arc<RwLock<dyn Component>>,
+    pub component_id: usize,
+    pub component: Arc<RwLock<Box<dyn Component>>>,
 }
 
-pub type Components = FxHashMap<Entity, FxHashMap<ComponentId, ComponentPtr>>;
+#[cfg(feature = "serde")]
+impl serde::Serialize for ComponentPtr {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("ComponentPtr", 2)?;
+        state.serialize_field("component_id", &self.component_id)?;
+        state.serialize_field("component", &*self.component.read())?;
+        state.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for ComponentPtr {
+    fn deserialize<D>(deserializer: D) -> Result<ComponentPtr, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct ComponentPtrHelper {
+            component_id: usize,
+            component: Box<dyn Component>,
+        }
+
+        let helper = ComponentPtrHelper::deserialize(deserializer)?;
+
+        Ok(ComponentPtr {
+            component_id: helper.component_id,
+            component: Arc::new(RwLock::new(helper.component)),
+        })
+    }
+}
+
+pub type Components = FxHashMap<Entity, FxHashMap<usize, ComponentPtr>>;
 
 #[derive(Default)]
 pub struct World {
     next_entity_id: AtomicU32,
     pub(crate) components: Arc<RwLock<Components>>,
     pub(crate) systems: FxHashMap<SystemStage, RwLock<SystemGraph>>,
-    pub(crate) resources: FxHashMap<u64, Arc<RwLock<dyn Resource>>>,
+    pub(crate) resources: FxHashMap<usize, Arc<RwLock<dyn Resource>>>,
 }
 
 impl World {
@@ -44,15 +81,19 @@ impl World {
         bundle.build(self)
     }
 
-    pub fn add_component<T: Component>(&self, entity: Entity, component: T) -> anyhow::Result<()> {
+    pub fn add_component<T: Component>(
+        &self,
+        entity: Entity,
+        component: Box<dyn Component>,
+    ) -> anyhow::Result<()> {
         if self.has_component::<T>(entity) {
             return Err(EcsError::ComponentAlreadyExists.into());
         }
         let component = Arc::new(RwLock::new(component));
         self.components.write().entry(entity).or_default().insert(
-            T::component_id(),
+            T::static_id(),
             ComponentPtr {
-                component_id: T::component_id(),
+                component_id: T::static_id(),
                 component,
             },
         );
@@ -61,13 +102,13 @@ impl World {
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) {
         if let Some(components) = self.components.write().get_mut(&entity) {
-            components.remove(&T::component_id());
+            components.remove(&T::static_id());
         }
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
         if let Some(components) = self.components.read().get(&entity) {
-            components.contains_key(&T::component_id())
+            components.contains_key(&T::static_id())
         } else {
             false
         }
@@ -82,14 +123,14 @@ impl World {
             return Err(EcsError::ResourceAlreadyExists.into());
         }
         let resource = Arc::new(RwLock::new(resource));
-        self.resources.insert(T::resource_id(), resource);
+        self.resources.insert(T::static_id(), resource);
         Ok(())
     }
 
     pub fn read_resource<T: Resource>(&self) -> anyhow::Result<Res<T>> {
         let resource = self
             .resources
-            .get(&T::resource_id())
+            .get(&T::static_id())
             .ok_or(EcsError::ResourceDoesNotExist)?;
         Ok(Res::new(resource.read()))
     }
@@ -97,14 +138,14 @@ impl World {
     pub fn write_resource<T: Resource>(&self) -> anyhow::Result<ResMut<T>> {
         let resource = self
             .resources
-            .get(&T::resource_id())
+            .get(&T::static_id())
             .ok_or(EcsError::ResourceDoesNotExist)?;
 
         Ok(ResMut::new(resource.write()))
     }
 
     pub fn has_resource<T: Resource>(&self) -> bool {
-        self.resources.contains_key(&T::resource_id())
+        self.resources.contains_key(&T::static_id())
     }
 
     pub fn add_system<T: System + 'static>(&mut self, system: T) -> SystemId {
@@ -131,5 +172,68 @@ impl World {
             systems.read().run_parallel(world)?;
         }
         Ok(())
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn to_file(&self, path: impl AsRef<std::path::Path>) -> Result<(), std::io::Error> {
+        let file = std::fs::File::create(path)?;
+        let mut writer = std::io::BufWriter::new(file);
+        let bytes = postcard::to_allocvec(self).unwrap();
+        writer.write_all(&bytes)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self, std::io::Error> {
+        let file = std::fs::File::open(path)?;
+        let mut bytes = Vec::new();
+        let mut reader = std::io::BufReader::new(file);
+        reader.read_to_end(&mut bytes)?;
+        let world = postcard::from_bytes(&bytes).unwrap();
+        Ok(world)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for World {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("World", 2)?;
+
+        state.serialize_field(
+            "next_entity_id",
+            &self
+                .next_entity_id
+                .load(std::sync::atomic::Ordering::Relaxed),
+        )?;
+
+        state.serialize_field("components", &*self.components.read())?;
+
+        state.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for World {
+    fn deserialize<D>(deserializer: D) -> Result<World, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct WorldHelper {
+            next_entity_id: u32,
+            components: Components,
+        }
+
+        let helper = WorldHelper::deserialize(deserializer)?;
+
+        let mut world = World::new();
+        world.next_entity_id = AtomicU32::new(helper.next_entity_id);
+        *world.components.write() = helper.components;
+
+        Ok(world)
     }
 }

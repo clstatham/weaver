@@ -36,8 +36,20 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(screen_width: usize, screen_height: usize) -> anyhow::Result<Self> {
-        let world = Arc::new(RwLock::new(World::new()));
+    pub fn new(
+        screen_width: usize,
+        screen_height: usize,
+        #[cfg(feature = "serde")] world_path: Option<PathBuf>,
+    ) -> anyhow::Result<Self> {
+        #[cfg(feature = "serde")]
+        let world = if let Some(world_path) = world_path {
+            World::from_file(world_path)?
+        } else {
+            World::new()
+        };
+        #[cfg(not(feature = "serde"))]
+        let world = World::new();
+        let world = Arc::new(RwLock::new(world));
 
         let event_loop = EventLoop::new()?;
         let window = WindowBuilder::new()
@@ -170,11 +182,6 @@ impl App {
                 winit::event::Event::LoopExiting => {
                     killswitch.send(()).unwrap();
                 }
-                winit::event::Event::NewEvents(_cause) => {
-                    // let world = self.world.read();
-                    // let mut input = world.write_resource::<Input>().unwrap();
-                    // input.prepare_for_update();
-                }
                 winit::event::Event::DeviceEvent { event, .. } => {
                     device_event_tx.send(event.clone()).unwrap();
                 }
@@ -183,6 +190,8 @@ impl App {
                     match event {
                         winit::event::WindowEvent::CloseRequested => {
                             target.exit();
+                            #[cfg(feature = "serde")]
+                            self.world.read().to_file("world.bin").unwrap();
                         }
                         winit::event::WindowEvent::Resized(_size) => {
                             // todo

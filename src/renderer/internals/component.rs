@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use crate::ecs::{Component, World};
+use crate::ecs::{StaticId, World};
 
 use super::{BindGroupLayoutCache, GpuHandle, GpuResourceManager};
 
 /// A component that holds handles to GPU resources.
-pub trait GpuComponent: Component {
+pub trait GpuComponent: StaticId {
     /// Lazily initialize the component's GPU resources, or return the existing handles if they have already been initialized.
     fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>>;
 
@@ -16,7 +16,7 @@ pub trait GpuComponent: Component {
 }
 
 /// A component that holds a GPU bind group.
-pub trait BindableComponent: Component {
+pub trait BindableComponent: StaticId {
     /// Creates a bind group layout for the component.
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
     where

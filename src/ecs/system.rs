@@ -1,7 +1,5 @@
 use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 
-use crate::ecs::component::ComponentId;
-
 use super::{EcsError, World};
 use parking_lot::RwLock;
 use petgraph::prelude::*;
@@ -47,10 +45,10 @@ pub enum SystemStage {
 
 pub trait System: Send + Sync {
     fn run(&self, world: &World) -> anyhow::Result<()>;
-    fn components_read(&self) -> Vec<ComponentId>;
-    fn components_written(&self) -> Vec<ComponentId>;
-    fn resources_read(&self) -> Vec<u64>;
-    fn resources_written(&self) -> Vec<u64>;
+    fn components_read(&self) -> Vec<usize>;
+    fn components_written(&self) -> Vec<usize>;
+    fn resources_read(&self) -> Vec<usize>;
+    fn resources_written(&self) -> Vec<usize>;
 }
 
 pub struct SystemNode {

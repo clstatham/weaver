@@ -14,7 +14,6 @@ pub struct Input {
     mouse_position: Option<glam::Vec2>,
     mouse_delta: glam::Vec2,
     mouse_wheel_delta: f32,
-
     last_update: std::time::Instant,
     update_delta: std::time::Duration,
 }

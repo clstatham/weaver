@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::{
-    ecs::Component,
+    ecs::{Component, StaticId},
     renderer::internals::{
         BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
         GpuResourceType, LazyBindGroup, LazyGpuHandle,
@@ -11,7 +11,7 @@ use crate::{
 
 use super::color::Color;
 
-pub trait TextureFormat: Component {
+pub trait TextureFormat: StaticId {
     const FORMAT: wgpu::TextureFormat;
     const SAMPLE_TYPE: wgpu::TextureSampleType;
 
@@ -21,7 +21,7 @@ pub trait TextureFormat: Component {
 macro_rules! texture_formats {
     ($($name:ident: $format:ident, $sample_type:expr;)*) => {
         $(
-            #[derive(Clone, Component)]
+            #[derive(Clone, StaticId)]
             pub struct $name {
                 texture: Texture,
                 bind_group: LazyBindGroup<Self>,
@@ -189,13 +189,33 @@ texture_format_impls!(D2, D2Array, 6; HdrD2ArrayTexture, MonoTexture);
 texture_format_impls!(D2, CubeArray, 6; MonoCubeArrayTexture, DepthCubeArrayTexture);
 
 #[derive(Clone, Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Texture {
+    #[cfg_attr(feature = "serde", serde(skip, default = "Texture::default_handle"))]
     pub(crate) handle: LazyGpuHandle,
 }
 
 impl Texture {
-    pub fn from_handle(handle: LazyGpuHandle) -> Self {
+    pub(crate) fn from_handle(handle: LazyGpuHandle) -> Self {
         Self { handle }
+    }
+
+    #[doc(hidden)]
+    #[cfg(feature = "serde")]
+    fn default_handle() -> LazyGpuHandle {
+        LazyGpuHandle::new(
+            GpuResourceType::Texture {
+                width: 0,
+                height: 0,
+                usage: wgpu::TextureUsages::empty(),
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                dimension: wgpu::TextureDimension::D2,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                depth_or_array_layers: 1,
+            },
+            None,
+            None,
+        )
     }
 
     pub fn load(
@@ -322,8 +342,17 @@ impl Texture {
 }
 
 #[derive(Clone, Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Skybox {
+    #[cfg_attr(feature = "serde", serde(skip, default = "Skybox::default_texture"))]
     pub texture: HdrCubeTexture,
+}
+
+impl Skybox {
+    #[cfg(feature = "serde")]
+    fn default_texture() -> HdrCubeTexture {
+        HdrCubeTexture::new(1, 1, None)
+    }
 }
 
 impl BindableComponent for Skybox {

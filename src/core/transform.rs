@@ -13,6 +13,7 @@ use crate::{
 use super::mesh::MAX_MESHES;
 
 #[derive(Clone, Copy, Component, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 pub struct Transform {
     pub matrix: glam::Mat4,
@@ -114,9 +115,15 @@ impl Default for Transform {
 }
 
 #[derive(Clone, Component, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TransformArray {
     matrices: Vec<glam::Mat4>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(skip, default = "TransformArray::default_handle")
+    )]
     handle: LazyGpuHandle,
+    #[cfg_attr(feature = "serde", serde(skip))]
     bind_group: LazyBindGroup<Self>,
 }
 
@@ -124,19 +131,23 @@ impl TransformArray {
     pub fn new() -> Self {
         Self {
             matrices: Vec::new(),
-            handle: LazyGpuHandle::new(
-                crate::renderer::internals::GpuResourceType::Storage {
-                    usage: wgpu::BufferUsages::STORAGE
-                        | wgpu::BufferUsages::COPY_DST
-                        | wgpu::BufferUsages::COPY_SRC,
-                    size: std::mem::size_of::<glam::Mat4>() * MAX_MESHES,
-                    read_only: true,
-                },
-                Some("TransformArray"),
-                None,
-            ),
+            handle: Self::default_handle(),
             bind_group: LazyBindGroup::default(),
         }
+    }
+
+    fn default_handle() -> LazyGpuHandle {
+        LazyGpuHandle::new(
+            crate::renderer::internals::GpuResourceType::Storage {
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                size: std::mem::size_of::<glam::Mat4>() * MAX_MESHES,
+                read_only: true,
+            },
+            Some("TransformArray"),
+            None,
+        )
     }
 
     pub fn push(&mut self, transform: &Transform) {

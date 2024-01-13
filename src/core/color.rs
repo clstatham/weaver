@@ -1,11 +1,13 @@
 use weaver_proc_macro::Component;
 
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
     pub b: f32,
+    #[cfg_attr(feature = "serde", serde(skip))]
     _padding: u32,
 }
 
@@ -268,6 +270,7 @@ impl std::ops::DivAssign<f32> for Color {
 }
 
 #[derive(Debug, Clone, Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ColorArray {
     pub colors: Vec<Color>,
 }
