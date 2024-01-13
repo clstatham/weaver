@@ -35,7 +35,7 @@ pub struct AssetServer {
     path_prefix: PathBuf,
     ids: FxHashMap<PathBuf, AssetId>,
     #[cfg_attr(feature = "serde", serde(skip))]
-    resource_manager: Arc<GpuResourceManager>,
+    resource_manager: Option<Arc<GpuResourceManager>>,
     #[cfg_attr(feature = "serde", serde(skip))]
     meshes: FxHashMap<AssetId, Mesh>,
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -52,7 +52,7 @@ impl AssetServer {
             next_id: 0,
             path_prefix: PathBuf::from("assets"),
             ids: FxHashMap::default(),
-            resource_manager,
+            resource_manager: Some(resource_manager),
             meshes: FxHashMap::default(),
             textures: FxHashMap::default(),
             materials: FxHashMap::default(),
@@ -84,11 +84,19 @@ impl AssetServer {
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id();
             if path.extension().unwrap() == "obj" {
-                let mesh = Mesh::load_obj(path.clone(), self.resource_manager.device(), id)?;
+                let mesh = Mesh::load_obj(
+                    path.clone(),
+                    self.resource_manager.as_ref().unwrap().device(),
+                    id,
+                )?;
                 self.ids.insert(path.clone(), id);
                 self.meshes.insert(id, mesh);
             } else {
-                let mesh = Mesh::load_gltf(path.clone(), self.resource_manager.device(), id)?;
+                let mesh = Mesh::load_gltf(
+                    path.clone(),
+                    self.resource_manager.as_ref().unwrap().device(),
+                    id,
+                )?;
                 self.ids.insert(path.clone(), id);
                 self.meshes.insert(id, mesh);
             }
@@ -178,7 +186,7 @@ impl AssetServer {
         } else {
             self.path_prefix.join(path)
         };
-        let texture = hdr_loader.load(&self.resource_manager, dst_size, path)?;
+        let texture = hdr_loader.load(self.resource_manager.as_ref().unwrap(), dst_size, path)?;
         Ok(texture)
     }
 

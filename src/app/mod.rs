@@ -39,7 +39,7 @@ impl App {
     pub fn new(
         screen_width: usize,
         screen_height: usize,
-        #[cfg(feature = "serde")] world_path: Option<PathBuf>,
+        #[cfg(feature = "serde")] world_path: Option<std::path::PathBuf>,
     ) -> anyhow::Result<Self> {
         #[cfg(feature = "serde")]
         let world = if let Some(world_path) = world_path {

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::Parser;
 use rand::Rng;
 use rayon::iter::ParallelIterator;
@@ -314,9 +316,8 @@ struct Args {
     pub width: usize,
     #[arg(long, default_value = "900")]
     pub height: usize,
-    // #[cfg(feature = "serde")]
-    // #[arg(long)]
-    // pub world: Option<PathBuf>,
+    #[arg(long)]
+    pub world: Option<PathBuf>,
 }
 
 pub fn run() -> anyhow::Result<()> {
@@ -324,8 +325,8 @@ pub fn run() -> anyhow::Result<()> {
     let app = App::new(
         args.width,
         args.height,
-        // #[cfg(feature = "serde")]
-        // args.world,
+        #[cfg(feature = "serde")]
+        args.world,
     )?;
 
     app.insert_resource(FpsDisplay::new())?;
