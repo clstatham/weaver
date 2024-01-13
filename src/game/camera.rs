@@ -71,7 +71,7 @@ pub fn follow_camera_update(
     player_transform: Query<&Transform, With<Player>>,
 ) {
     for (mut controller, mut camera) in camera.iter() {
-        let player_transform = player_transform.get(controller.target).unwrap();
+        let player_transform = player_transform.get(controller.target.id()).unwrap();
         let player_translation = player_transform.get_translation();
         let player_rotation = player_transform.get_rotation();
 

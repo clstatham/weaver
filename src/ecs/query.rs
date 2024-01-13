@@ -5,17 +5,17 @@ use parking_lot::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLockReadGuard, RwLockWriteGuard,
 };
 use rayon::prelude::*;
-use rustc_hash::FxHashMap;
 
 use super::{
-    entity::Entity,
-    world::{ComponentPtr, Components},
+    entity::EntityId,
+    storage::{Components, SparseSet},
+    world::ComponentPtr,
     Bundle, Component, World,
 };
 
 #[derive(Clone)]
 pub struct QueryEntry {
-    entity: Entity,
+    entity: EntityId,
     component: ComponentPtr,
 }
 
@@ -36,7 +36,7 @@ where
     type ItemRef: 'a + Send;
 
     /// Collects the components that match the query, based on the given entities.
-    fn collect(components: &Components) -> FxHashMap<Entity, Vec<QueryEntry>> {
+    fn collect(components: &Components) -> SparseSet<Vec<QueryEntry>, EntityId> {
         // let mut entries: FxHashMap<Entity, Vec<QueryEntry>> = FxHashMap::default();
 
         let reads = Self::reads().unwrap_or_default();
@@ -53,7 +53,7 @@ where
                 // it needs to have NONE of the components in `withouts`
                 // we don't care about the maybes, they're optional anyway
 
-                let component_ids = components.keys().copied().collect::<BitSet<_>>();
+                let component_ids = components.indices().collect::<BitSet<_>>();
 
                 // check if the entity has all of the required components
                 if !reads.is_subset(&component_ids)
@@ -69,20 +69,24 @@ where
                 }
 
                 // gather the matching components
-                let mut matching_components = Vec::new();
 
-                for (&component_id, component) in components {
-                    // we care about the maybes here, since they're always included in the query (just wrapped in an Option)
-                    if reads.contains(component_id)
-                        || writes.contains(component_id)
-                        || maybes.contains(component_id)
-                    {
-                        matching_components.push(QueryEntry {
-                            entity,
-                            component: component.clone(),
-                        });
-                    }
-                }
+                let matching_components = components
+                    .iter()
+                    .filter_map(|(&component_id, component)| {
+                        // we care about the maybes here, since they're always included in the query (just wrapped in an Option)
+                        if reads.contains(component_id)
+                            || writes.contains(component_id)
+                            || maybes.contains(component_id)
+                        {
+                            Some(QueryEntry {
+                                entity,
+                                component: component.clone(),
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
 
                 Some((entity, matching_components))
             })
@@ -92,7 +96,7 @@ where
     }
 
     // Gets the item from the given entity, if it exists.
-    fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef>;
+    fn get(entity: EntityId, entries: &'a [QueryEntry]) -> Option<Self::ItemRef>;
 
     fn reads() -> Option<BitSet> {
         None
@@ -122,7 +126,7 @@ where
     type Item = T;
     type ItemRef = MappedRwLockReadGuard<'a, T>;
 
-    fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
+    fn get(entity: EntityId, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
             if entry.entity == entity && entry.component.component_id == T::static_id() {
                 Some(RwLockReadGuard::map(
@@ -148,7 +152,7 @@ where
     type Item = T;
     type ItemRef = MappedRwLockWriteGuard<'a, T>;
 
-    fn get(entity: Entity, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
+    fn get(entity: EntityId, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
             if entry.entity == entity && entry.component.component_id == T::static_id() {
                 Some(RwLockWriteGuard::map(
@@ -210,7 +214,7 @@ where
     T: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    pub(crate) entries: FxHashMap<Entity, Vec<QueryEntry>>,
+    pub(crate) entries: SparseSet<Vec<QueryEntry>, EntityId>,
 
     _phantom: std::marker::PhantomData<&'a (T, F)>,
 }
@@ -229,14 +233,14 @@ where
         }
     }
 
-    pub fn get(&'a self, entity: Entity) -> Option<T::ItemRef> {
+    pub fn get(&'a self, entity: EntityId) -> Option<T::ItemRef> {
         self.entries
-            .get(&entity)
+            .get(entity)
             .and_then(|entries| T::get(entity, entries))
     }
 
-    pub fn entities(&self) -> impl Iterator<Item = Entity> + '_ {
-        self.entries.keys().copied()
+    pub fn entities(&self) -> impl Iterator<Item = EntityId> + '_ {
+        self.entries.indices()
     }
 
     pub fn iter(&'a self) -> impl Iterator<Item = T::ItemRef> + '_ {

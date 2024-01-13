@@ -415,25 +415,25 @@ pub fn run() -> anyhow::Result<()> {
 
     app.insert_resource(FpsDisplay::new())?;
 
-    // app.insert_resource(State {
-    //     light_intensity: 10.0,
-    //     light_radius: 30.0,
-    //     ..Default::default()
-    // })?;
+    app.insert_resource(State {
+        light_intensity: 10.0,
+        light_radius: 30.0,
+        ..Default::default()
+    })?;
 
-    app.add_system_to_stage(Setup_2, SystemStage::Startup);
-    // app.add_system_to_stage(Setup, SystemStage::Startup);
+    // app.add_system_to_stage(Setup_2, SystemStage::Startup);
+    app.add_system_to_stage(Setup, SystemStage::Startup);
 
-    // app.add_system(WindowUpdate);
-    // app.add_system(ParticleUpdate);
-    // app.add_system(FollowCameraUpdate);
-    // app.add_system(FollowCameraMovement);
-    app.add_system(FpsDisplayUpdate);
-    // app.add_system(UiUpdate);
-    // app.add_system(PlayerInput);
-    // app.add_system(PlayerMovement);
-    // app.add_system(SpinNpcs);
-    // app.add_system(DebugLights);
+    app.add_system(WindowUpdate);
+    app.add_system(ParticleUpdate);
+    app.add_system(FollowCameraUpdate);
+    app.add_system(FollowCameraMovement);
+    // app.add_system(FpsDisplayUpdate);
+    app.add_system(UiUpdate);
+    app.add_system(PlayerInput);
+    app.add_system(PlayerMovement);
+    app.add_system(SpinNpcs);
+    app.add_system(DebugLights);
 
     app.run()
 }

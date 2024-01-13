@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 
-use super::{EcsError, World};
+use super::World;
 use parking_lot::RwLock;
 use petgraph::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -222,7 +222,7 @@ impl SystemGraph {
         }
 
         if self.detect_cycles().is_some() {
-            return Err(EcsError::SystemDependencyCycleDetected.into());
+            return Err(anyhow::anyhow!("System dependency cycle detected"));
         }
 
         let starts: Vec<_> = self.graph.externals(Direction::Incoming).collect();
@@ -245,7 +245,7 @@ impl SystemGraph {
         }
 
         if self.detect_cycles().is_some() {
-            return Err(EcsError::SystemDependencyCycleDetected.into());
+            return Err(anyhow::anyhow!("System dependency cycle detected"));
         }
 
         let mut systems_running = FxHashMap::default();
@@ -259,7 +259,9 @@ impl SystemGraph {
         }
 
         if queue.is_empty() {
-            return Err(EcsError::SystemDependencyCycleDetected.into());
+            return Err(anyhow::anyhow!(
+                "System dependency cycle detected (no systems without dependencies)"
+            ));
         }
 
         if queue.len() == self.graph.node_count() {

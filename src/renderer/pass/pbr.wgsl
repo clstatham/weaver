@@ -133,11 +133,6 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
 
     let model_transform = transforms[input.instance_index].model;
-    let normal_transform = mat3x3<f32>(
-        model_transform[0].xyz,
-        model_transform[1].xyz,
-        model_transform[2].xyz
-    );
 
     let world_position = (model_transform * vec4<f32>(input.position, 1.0));
 
@@ -145,8 +140,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     output.clip_position = camera.proj * camera.view * world_position;
     output.uv = input.uv;
 
-    var N = normalize(normal_transform * input.normal);
-    var T = normalize(normal_transform * input.tangent);
+    var N = normalize((model_transform * vec4<f32>(input.normal, 0.0)).xyz);
+    var T = normalize((model_transform * vec4<f32>(input.tangent, 0.0)).xyz);
     var B = normalize(cross(N, T));
 
     output.world_tangent = T;

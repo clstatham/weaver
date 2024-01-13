@@ -8,8 +8,9 @@ use rustc_hash::FxHashMap;
 
 use super::{
     resource::{Res, ResMut, Resource},
+    storage::{Components, EntityComponents},
     system::{SystemGraph, SystemId, SystemStage},
-    Bundle, Component, EcsError, Entity, System,
+    Bundle, Component, Entity, System,
 };
 
 #[derive(Clone)]
@@ -53,9 +54,6 @@ impl<'de> serde::Deserialize<'de> for ComponentPtr {
     }
 }
 
-pub type Components = FxHashMap<Entity, FxHashMap<usize, ComponentPtr>>;
-
-#[derive(Default)]
 pub struct World {
     next_entity_id: AtomicU32,
     pub(crate) components: Arc<RwLock<Components>>,
@@ -65,7 +63,12 @@ pub struct World {
 
 impl World {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            next_entity_id: AtomicU32::new(0),
+            components: Arc::new(RwLock::new(Components::new())),
+            systems: FxHashMap::default(),
+            resources: FxHashMap::default(),
+        }
     }
 
     pub fn create_entity(&self) -> Entity {
@@ -73,7 +76,7 @@ impl World {
             .next_entity_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let entity = Entity::new(id, 0);
-        self.components.write().insert(entity, FxHashMap::default());
+        self.components.write().insert(id, EntityComponents::new());
         entity
     }
 
@@ -87,40 +90,45 @@ impl World {
         component: Box<dyn Component>,
     ) -> anyhow::Result<()> {
         if self.has_component::<T>(entity) {
-            return Err(EcsError::ComponentAlreadyExists.into());
+            return Err(anyhow::anyhow!("Component already exists"));
         }
         let component = Arc::new(RwLock::new(component));
-        self.components.write().entry(entity).or_default().insert(
-            T::static_id(),
-            ComponentPtr {
-                component_id: T::static_id(),
-                component,
-            },
-        );
+        let mut components = self.components.write();
+        if let Some(entity_components) = components.get_mut(entity.id()) {
+            entity_components.insert(
+                T::static_id(),
+                ComponentPtr {
+                    component_id: T::static_id(),
+                    component,
+                },
+            );
+        } else {
+            return Err(anyhow::anyhow!("Entity does not exist"));
+        }
         Ok(())
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) {
-        if let Some(components) = self.components.write().get_mut(&entity) {
-            components.remove(&T::static_id());
+        if let Some(components) = self.components.write().get_mut(entity.id()) {
+            components.remove(T::static_id());
         }
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
-        if let Some(components) = self.components.read().get(&entity) {
-            components.contains_key(&T::static_id())
+        if let Some(components) = self.components.read().get(entity.id()) {
+            components.contains(T::static_id())
         } else {
             false
         }
     }
 
     pub fn remove_entity(&self, entity: Entity) {
-        self.components.write().remove(&entity);
+        self.components.write().remove(entity.id());
     }
 
     pub fn insert_resource<T: Resource>(&mut self, resource: T) -> anyhow::Result<()> {
         if self.has_resource::<T>() {
-            return Err(EcsError::ResourceAlreadyExists.into());
+            return Err(anyhow::anyhow!("Resource already exists"));
         }
         let resource = Arc::new(RwLock::new(resource));
         self.resources.insert(T::static_id(), resource);
@@ -131,7 +139,7 @@ impl World {
         let resource = self
             .resources
             .get(&T::static_id())
-            .ok_or(EcsError::ResourceDoesNotExist)?;
+            .ok_or(anyhow::anyhow!("Resource does not exist"))?;
         Ok(Res::new(resource.read()))
     }
 
@@ -139,7 +147,7 @@ impl World {
         let resource = self
             .resources
             .get(&T::static_id())
-            .ok_or(EcsError::ResourceDoesNotExist)?;
+            .ok_or(anyhow::anyhow!("Resource does not exist"))?;
 
         Ok(ResMut::new(resource.write()))
     }
@@ -191,6 +199,12 @@ impl World {
         reader.read_to_end(&mut bytes)?;
         let world = postcard::from_bytes(&bytes).unwrap();
         Ok(world)
+    }
+}
+
+impl Default for World {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
