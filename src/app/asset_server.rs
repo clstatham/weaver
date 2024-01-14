@@ -7,7 +7,7 @@ use crate::{
     core::{
         material::Material,
         mesh::Mesh,
-        texture::{HdrCubeTexture, NormalMapTexture, SdrTexture, Skybox, Texture, TextureFormat},
+        texture::{NormalMapTexture, SdrTexture, Skybox, Texture, TextureFormat},
     },
     ecs::{Query, World},
     renderer::{
@@ -292,7 +292,7 @@ impl AssetServer {
             &texture,
             SKYBOX_IRRADIANCE_MAP_SIZE,
         )?;
-        Ok(Skybox::new(texture, irradiance, None))
+        Ok(Skybox::new(texture, irradiance))
     }
 
     pub fn load_all_assets(&mut self, world: &World) -> anyhow::Result<()> {

@@ -2,15 +2,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::{
-    app::asset_server::AssetServer,
     ecs::{Component, StaticId},
-    renderer::{
-        compute::hdr_loader::HdrLoader,
-        internals::{
-            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
-            GpuResourceType, LazyBindGroup, LazyGpuHandle,
-        },
-        pass::sky::SKYBOX_CUBEMAP_SIZE,
+    renderer::internals::{
+        BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
+        GpuResourceType, LazyBindGroup, LazyGpuHandle,
     },
 };
 
@@ -358,11 +353,7 @@ pub struct Skybox {
 }
 
 impl Skybox {
-    pub(crate) fn new(
-        texture: HdrCubeTexture,
-        irradiance: HdrCubeTexture,
-        label: Option<&'static str>,
-    ) -> Self {
+    pub(crate) fn new(texture: HdrCubeTexture, irradiance: HdrCubeTexture) -> Self {
         Self {
             texture,
             irradiance,

@@ -1,7 +1,7 @@
 use crate::{
     core::{
         camera::Camera,
-        texture::{DepthTexture, HdrCubeTexture, HdrTexture, Skybox, TextureFormat},
+        texture::{DepthTexture, HdrTexture, Skybox, TextureFormat},
     },
     ecs::{Query, World},
     include_shader,

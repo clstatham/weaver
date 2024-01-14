@@ -10,15 +10,11 @@ use crate::{
         doodads::{Cube, Doodad, Doodads},
         light::MAX_LIGHTS,
         mesh::MAX_MESHES,
-        texture::Skybox,
         ui::builtin::FpsDisplay,
     },
     ecs::system::SystemStage,
     prelude::*,
-    renderer::{
-        compute::hdr_loader::HdrLoader,
-        pass::{sky::SKYBOX_CUBEMAP_SIZE, Pass},
-    },
+    renderer::{compute::hdr_loader::HdrLoader, pass::Pass},
 };
 
 use self::{

@@ -10,6 +10,7 @@ use crate::{
 };
 
 #[derive(Resource)]
+#[allow(dead_code)]
 pub struct HdrLoader {
     pub(crate) load_pipeline: wgpu::ComputePipeline,
     load_layout: wgpu::BindGroupLayout,
