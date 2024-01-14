@@ -6,6 +6,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     core::texture::{HdrCubeTexture, HdrD2ArrayTexture, Texture, TextureFormat},
+    include_shader,
     renderer::internals::{GpuComponent, GpuResource, GpuResourceManager, LazyGpuHandle},
 };
 
@@ -24,7 +25,7 @@ pub struct HdrLoader {
 
 impl HdrLoader {
     pub fn new(device: &wgpu::Device) -> Self {
-        let load_shader = device.create_shader_module(wgpu::include_wgsl!("hdr_loader.wgsl"));
+        let load_shader = device.create_shader_module(include_shader!("hdr_loader.wgsl"));
 
         let load_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("HDR Loader Bind Group Layout"),
@@ -118,21 +119,6 @@ impl HdrLoader {
                 ],
             });
 
-        // let view_transform = match i {
-        //     // right
-        //     0 => point_light.view_transform_in_direction(glam::Vec3::X, glam::Vec3::Y),
-        //     // left
-        //     1 => point_light.view_transform_in_direction(-glam::Vec3::X, glam::Vec3::Y),
-        //     // top
-        //     2 => point_light.view_transform_in_direction(glam::Vec3::Y, -glam::Vec3::Z),
-        //     // bottom
-        //     3 => point_light.view_transform_in_direction(-glam::Vec3::Y, glam::Vec3::Z),
-        //     // front
-        //     4 => point_light.view_transform_in_direction(glam::Vec3::Z, glam::Vec3::Y),
-        //     // back
-        //     5 => point_light.view_transform_in_direction(-glam::Vec3::Z, glam::Vec3::Y),
-        //     _ => unreachable!(),
-        // };
         let views = (0..6)
             .map(|i| match i {
                 // right
@@ -186,10 +172,7 @@ impl HdrLoader {
                 ],
             });
 
-        let irradiance_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("HDR Loader Shader Module"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("hdr_irradiance.wgsl").into()),
-        });
+        let irradiance_shader = device.create_shader_module(include_shader!("hdr_irradiance.wgsl"));
 
         let irradiance_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

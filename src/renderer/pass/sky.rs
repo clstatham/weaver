@@ -21,10 +21,7 @@ pub struct SkyRenderPass {
 
 impl SkyRenderPass {
     pub fn new(device: &wgpu::Device, bind_group_layout_cache: &BindGroupLayoutCache) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Skybox Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_shader!("sky.wgsl").into()),
-        });
+        let shader = device.create_shader_module(include_shader!("sky.wgsl"));
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Skybox Sampler"),

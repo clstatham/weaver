@@ -1,4 +1,5 @@
-//#import "src/renderer/pass/common.wgsl"
+#define_import_path weaver::particles
+#import weaver::common::CameraUniform
 
 struct Particle {
     position: vec4<f32>,

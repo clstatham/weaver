@@ -59,7 +59,6 @@ impl Transform {
 
     #[inline]
     pub fn rotate(&mut self, angle: f32, axis: glam::Vec3) {
-        // self.matrix *= glam::Mat4::from_axis_angle(axis, angle);
         self.matrix = glam::Mat4::from_axis_angle(axis, angle) * self.matrix;
     }
 

@@ -1,3 +1,5 @@
+#define_import_path weaver::picking
+
 struct PickResult {
     position: vec4<f32>,
     normal: vec4<f32>,

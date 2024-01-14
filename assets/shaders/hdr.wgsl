@@ -1,3 +1,5 @@
+#define_import_path weaver::hdr
+
 fn aces_tone_map(hdr: vec3<f32>) -> vec3<f32> {
     let m1 = mat3x3(
         0.59719, 0.07600, 0.02840,

@@ -1,4 +1,5 @@
-const PI: f32 = 3.1415926535897932384626433832795;
+#define_import_path weaver::hdr_irradiance
+#import weaver::common::PI
 
 @group(0) @binding(0) var src: texture_cube<f32>;
 @group(0) @binding(1) var cube_sampler: sampler;

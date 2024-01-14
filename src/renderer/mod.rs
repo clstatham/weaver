@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{borrow::Cow, io::Read, sync::Arc};
 
 use egui_wgpu::renderer::ScreenDescriptor;
+use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
 use parking_lot::RwLock;
 use weaver_proc_macro::Resource;
 use winit::window::Window;
@@ -32,6 +33,94 @@ pub mod compute;
 pub mod internals;
 pub mod pass;
 
+fn try_every_shader_file(
+    composer: &mut Composer,
+    for_shader: &str,
+    shader_dir: &str,
+    max_iters: usize,
+) -> anyhow::Result<()> {
+    let mut try_again = true;
+    let mut iters = 0;
+    while try_again {
+        try_again = false;
+        let shader_dir = std::fs::read_dir(shader_dir)?;
+        for entry in shader_dir {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_file() {
+                if path.extension().unwrap() != "wgsl" {
+                    continue;
+                }
+                if path.to_str().unwrap() == for_shader {
+                    continue;
+                }
+
+                let mut file = std::fs::File::open(&path)?;
+                let mut shader = String::new();
+
+                file.read_to_string(&mut shader)?;
+
+                if let Err(e) = composer.add_composable_module(ComposableModuleDescriptor {
+                    file_path: path.to_str().unwrap(),
+                    source: shader.as_str(),
+                    ..Default::default()
+                }) {
+                    log::warn!("Failed to add shader module {}: {}", path.display(), e);
+                    try_again = true;
+                }
+            } else if path.is_dir() {
+                try_every_shader_file(composer, for_shader, path.to_str().unwrap(), max_iters)?;
+            }
+        }
+
+        iters += 1;
+
+        if iters > max_iters {
+            return Err(anyhow::anyhow!("Max iterations reached"));
+        }
+    }
+
+    Ok(())
+}
+
+pub fn preprocess_shader(
+    file_path: &'static str,
+    base_include_path: &'static str,
+) -> wgpu::ShaderModuleDescriptor<'static> {
+    let mut composer = Composer::non_validating();
+
+    let shader = std::fs::read_to_string(file_path).unwrap();
+
+    try_every_shader_file(&mut composer, file_path, base_include_path, 100).unwrap();
+
+    let module = composer
+        .make_naga_module(NagaModuleDescriptor {
+            file_path,
+            source: shader.as_str(),
+            ..Default::default()
+        })
+        .unwrap_or_else(|e| {
+            log::error!("Failed to compile shader {}: {}", file_path, e.inner);
+            panic!("{}", e.inner);
+        });
+
+    wgpu::ShaderModuleDescriptor {
+        label: Some(file_path),
+        source: wgpu::ShaderSource::Naga(Cow::Owned(module)),
+    }
+}
+
+#[macro_export]
+macro_rules! include_shader {
+    ($file_path:literal) => {
+        $crate::renderer::preprocess_shader(
+            concat!("assets/shaders/", $file_path),
+            "assets/shaders",
+        )
+    };
+}
+
 #[derive(Resource)]
 #[allow(dead_code)]
 pub struct Renderer {
@@ -60,9 +149,7 @@ pub struct Renderer {
     bind_group_layout_cache: BindGroupLayoutCache,
 
     point_lights: PointLightArray,
-
     world: Arc<RwLock<World>>,
-
     output: Option<wgpu::SurfaceTexture>,
 }
 

@@ -182,10 +182,7 @@ impl ScreenPicker {
 
         let shader = renderer
             .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("screen picker shader"),
-                source: wgpu::ShaderSource::Wgsl(include_shader!("picking.wgsl").into()),
-            });
+            .create_shader_module(include_shader!("shaders/picking.wgsl"));
 
         let pipeline = renderer
             .device

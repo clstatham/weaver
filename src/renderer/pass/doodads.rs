@@ -376,10 +376,7 @@ impl DoodadRenderPass {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Doodad Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_shader!("doodads.wgsl").into()),
-        });
+        let shader = device.create_shader_module(include_shader!("doodads.wgsl"));
 
         let camera_buffer = LazyGpuHandle::new(
             GpuResourceType::Uniform {

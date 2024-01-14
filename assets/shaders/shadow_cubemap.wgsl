@@ -1,6 +1,5 @@
-//#import "src/renderer/pass/common.wgsl"
-
-const FAR_PLANE: f32 = 100.0;
+#define_import_path weaver::shadow_cubemap
+#import weaver::common::{ModelTransform, PointLight, VertexInput, MIN_LIGHT_INTENSITY, FAR_PLANE};
 
 @group(0) @binding(0) var<storage> model_transforms: array<ModelTransform>;
 @group(1) @binding(0) var<uniform> light: PointLight;

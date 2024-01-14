@@ -28,7 +28,7 @@ egui-wgpu = "0.25"
 egui-winit = { version = "0.25", default-features = false, features = [
     "links",
 ] }
-wgpu = "0.18"
+wgpu = { version = "0.18", features = ["naga"] }
 rand = "0.8.5"
 futures = "0.3.29"
 itertools = "0.12.0"
@@ -62,6 +62,8 @@ serde_json = { version = "1.0", optional = true }
 typetag = { version = "0.2", optional = true }
 postcard = { version = "1.0.8", features = ["alloc"], optional = true }
 path-slash = "0.2.1"
+naga = { version = "0.14.2", features = ["wgsl-in", "wgsl-out"] }
+naga_oil = "0.11.0"
 
 [profile.release]
 debug = true

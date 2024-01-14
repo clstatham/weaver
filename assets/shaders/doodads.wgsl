@@ -1,4 +1,5 @@
-//#import "src/renderer/pass/common.wgsl"
+#define_import_path weaver::doodads
+#import weaver::common::{CameraUniform};
 
 struct DoodadVertexInput {
     @builtin(instance_index) instance_index: u32,

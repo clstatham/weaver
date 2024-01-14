@@ -1,6 +1,7 @@
 use crate::{
     core::texture::{HdrTexture, TextureFormat, WindowTexture},
     ecs::World,
+    include_shader,
     renderer::{internals::BindableComponent, BindGroupLayoutCache},
 };
 
@@ -57,7 +58,7 @@ impl HdrRenderPass {
             label: Some("HDR Texture Bind Group"),
         });
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("hdr.wgsl"));
+        let shader = device.create_shader_module(include_shader!("hdr.wgsl"));
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("HDR Render Pipeline Layout"),
             bind_group_layouts: &[

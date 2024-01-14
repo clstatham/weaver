@@ -1,4 +1,5 @@
-//#import "src/renderer/pass/common.wgsl"
+#define_import_path weaver::pbr
+#import weaver::common::{ModelTransform, CameraUniform, PointLights, MaterialUniform, VertexInput, MIN_LIGHT_INTENSITY, PI};
 
 // model information
 @group(0) @binding(0) var<storage> transforms: array<ModelTransform>;

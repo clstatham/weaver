@@ -308,10 +308,7 @@ pub struct OmniShadowRenderPass {
 
 impl OmniShadowRenderPass {
     pub fn new(device: &wgpu::Device, layout_cache: &BindGroupLayoutCache) -> Self {
-        let cubemap_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("shadow_cubemap"),
-            source: wgpu::ShaderSource::Wgsl(include_shader!("shadow_cubemap.wgsl").into()),
-        });
+        let cubemap_shader = device.create_shader_module(include_shader!("shadow_cubemap.wgsl"));
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("shadow_cubemap"),
@@ -392,10 +389,8 @@ impl OmniShadowRenderPass {
             None,
         );
 
-        let overlay_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("shadow_cubemap_overlay"),
-            source: wgpu::ShaderSource::Wgsl(include_shader!("shadow_cubemap_overlay.wgsl").into()),
-        });
+        let overlay_shader =
+            device.create_shader_module(include_shader!("shadow_cubemap_overlay.wgsl"));
 
         let overlay_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
