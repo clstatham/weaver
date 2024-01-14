@@ -139,7 +139,6 @@ struct MeshInner {
 #[derive(Clone, Component)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Mesh {
-    #[cfg_attr(feature = "serde", serde(skip))]
     inner: Arc<MeshInner>,
 }
 
@@ -292,8 +291,8 @@ impl Mesh {
         })
     }
 
-    pub fn asset_id(&self) -> AssetId {
-        self.inner.asset_id
+    pub fn asset_id(&self) -> &AssetId {
+        &self.inner.asset_id
     }
 
     pub fn vertex_buffer(&self) -> &wgpu::Buffer {

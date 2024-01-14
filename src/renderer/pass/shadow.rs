@@ -5,7 +5,6 @@ use rustc_hash::FxHashMap;
 use weaver_proc_macro::StaticId;
 
 use crate::{
-    app::asset_server::AssetId,
     core::{
         light::{PointLightArray, MAX_LIGHTS},
         mesh::Vertex,
@@ -37,7 +36,7 @@ struct UniqueMesh {
 
 #[derive(Default, StaticId)]
 struct UniqueMeshes {
-    unique_meshes: FxHashMap<AssetId, UniqueMesh>,
+    unique_meshes: FxHashMap<u64, UniqueMesh>,
 }
 
 impl UniqueMeshes {
@@ -52,7 +51,7 @@ impl UniqueMeshes {
         for (mesh, transform) in query.iter() {
             let unique_mesh = self
                 .unique_meshes
-                .entry(mesh.asset_id())
+                .entry(mesh.asset_id().id())
                 .or_insert_with(|| UniqueMesh {
                     mesh: mesh.clone(),
                     transforms: TransformArray::new(),

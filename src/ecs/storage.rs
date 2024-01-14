@@ -1,5 +1,9 @@
 use rayon::prelude::*;
-use std::{fmt::Debug, hash::Hash};
+use std::{
+    fmt::Debug,
+    hash::Hash,
+    ops::{Deref, DerefMut},
+};
 
 use super::{entity::EntityId, world::ComponentPtr};
 
@@ -96,6 +100,7 @@ impl<I: Index, V> SparseArray<I, V> {
 }
 
 #[derive(Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SparseSet<T, I: Index> {
     pub(crate) dense: Vec<T>,
     pub(crate) indices: Vec<I>,
@@ -223,6 +228,30 @@ where
     }
 }
 
+impl<T, I> FromIterator<(I, T)> for SparseSet<T, I>
+where
+    I: Index,
+{
+    fn from_iter<I2>(iter: I2) -> Self
+    where
+        I2: IntoIterator<Item = (I, T)>,
+    {
+        let iter = iter.into_iter();
+        let (indices, dense): (Vec<_>, Vec<_>) = iter.unzip();
+
+        let mut sparse = SparseArray::new();
+        for (dense_index, index) in indices.iter().enumerate() {
+            sparse.insert(*index, dense_index);
+        }
+
+        Self {
+            dense,
+            indices,
+            sparse,
+        }
+    }
+}
+
 impl<T, I> FromParallelIterator<(I, T)> for SparseSet<T, I>
 where
     I: Index + Send + Sync,
@@ -247,5 +276,94 @@ where
         }
     }
 }
-pub type EntityComponents = SparseSet<ComponentPtr, usize>;
-pub type Components = SparseSet<EntityComponents, EntityId>;
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct EntityComponents {
+    pub(crate) components: SparseSet<ComponentPtr, usize>,
+}
+
+impl Deref for EntityComponents {
+    type Target = SparseSet<ComponentPtr, usize>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.components
+    }
+}
+
+impl DerefMut for EntityComponents {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.components
+    }
+}
+
+impl Default for EntityComponents {
+    fn default() -> Self {
+        Self {
+            components: SparseSet::new(),
+        }
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Components {
+    pub(crate) entity_components: SparseSet<EntityComponents, EntityId>,
+}
+
+impl Deref for Components {
+    type Target = SparseSet<EntityComponents, EntityId>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entity_components
+    }
+}
+
+impl DerefMut for Components {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.entity_components
+    }
+}
+
+impl Default for Components {
+    fn default() -> Self {
+        Self {
+            entity_components: SparseSet::new(),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+pub(crate) mod _serde {
+    use super::*;
+    use rustc_hash::FxHashMap;
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
+
+    impl<I, V> Serialize for SparseArray<I, V>
+    where
+        I: Index + Serialize,
+        V: Serialize,
+    {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            let mut s = serializer.serialize_map(Some(self.values.len()))?;
+            for (i, v) in self.iter().enumerate() {
+                s.serialize_entry(&i, v)?;
+            }
+
+            s.end()
+        }
+    }
+
+    impl<'de, I, V> Deserialize<'de> for SparseArray<I, V>
+    where
+        I: Index + Deserialize<'de>,
+        V: Deserialize<'de>,
+    {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            let mut values = SparseArray::new();
+            let mut map: FxHashMap<I, V> = FxHashMap::deserialize(deserializer)?;
+            for (i, v) in map.drain() {
+                values.insert(i, v);
+            }
+            Ok(values)
+        }
+    }
+}

@@ -103,8 +103,8 @@ impl Material {
         )
     }
 
-    pub fn asset_id(&self) -> AssetId {
-        self.asset_id
+    pub fn asset_id(&self) -> &AssetId {
+        &self.asset_id
     }
 
     pub fn with_diffuse(mut self, diffuse: Color) -> Self {
@@ -152,7 +152,7 @@ impl Material {
                 Some(metallic),
                 Some(roughness),
                 None,
-                id,
+                id.clone(),
             );
             if let Some(texture) = material.pbr_metallic_roughness().base_color_texture() {
                 let image = images.get(texture.texture().source().index()).unwrap();
@@ -282,21 +282,6 @@ impl Material {
         }
 
         Ok(materials)
-    }
-}
-
-impl Default for Material {
-    fn default() -> Self {
-        Self::new(
-            None,
-            None,
-            None,
-            None,
-            Some(1.0),
-            Some(1.0),
-            Some(1.0),
-            AssetId::PLACEHOLDER,
-        )
     }
 }
 

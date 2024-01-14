@@ -1,4 +1,7 @@
-use std::sync::{atomic::AtomicU32, Arc};
+use std::{
+    fmt::Debug,
+    sync::{atomic::AtomicU32, Arc},
+};
 
 #[cfg(feature = "serde")]
 use std::io::{Read, Write};
@@ -16,7 +19,17 @@ use super::{
 #[derive(Clone)]
 pub struct ComponentPtr {
     pub component_id: usize,
+    pub component_name: String,
     pub component: Arc<RwLock<Box<dyn Component>>>,
+}
+
+impl Debug for ComponentPtr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ComponentPtr")
+            .field("component_id", &self.component_id)
+            .field("component_name", &self.component_name)
+            .finish()
+    }
 }
 
 #[cfg(feature = "serde")]
@@ -28,6 +41,7 @@ impl serde::Serialize for ComponentPtr {
         use serde::ser::SerializeStruct;
         let mut state = serializer.serialize_struct("ComponentPtr", 2)?;
         state.serialize_field("component_id", &self.component_id)?;
+        state.serialize_field("component_name", &self.component_name)?;
         state.serialize_field("component", &*self.component.read())?;
         state.end()
     }
@@ -42,6 +56,7 @@ impl<'de> serde::Deserialize<'de> for ComponentPtr {
         #[derive(serde::Deserialize)]
         struct ComponentPtrHelper {
             component_id: usize,
+            component_name: String,
             component: Box<dyn Component>,
         }
 
@@ -49,6 +64,7 @@ impl<'de> serde::Deserialize<'de> for ComponentPtr {
 
         Ok(ComponentPtr {
             component_id: helper.component_id,
+            component_name: helper.component_name,
             component: Arc::new(RwLock::new(helper.component)),
         })
     }
@@ -65,7 +81,7 @@ impl World {
     pub fn new() -> Self {
         Self {
             next_entity_id: AtomicU32::new(0),
-            components: Arc::new(RwLock::new(Components::new())),
+            components: Arc::new(RwLock::new(Components::default())),
             systems: FxHashMap::default(),
             resources: FxHashMap::default(),
         }
@@ -76,7 +92,9 @@ impl World {
             .next_entity_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let entity = Entity::new(id, 0);
-        self.components.write().insert(id, EntityComponents::new());
+        self.components
+            .write()
+            .insert(id, EntityComponents::default());
         entity
     }
 
@@ -99,6 +117,7 @@ impl World {
                 T::static_id(),
                 ComponentPtr {
                     component_id: T::static_id(),
+                    component_name: std::any::type_name::<T>().to_owned(),
                     component,
                 },
             );
@@ -198,6 +217,25 @@ impl World {
         let mut reader = std::io::BufReader::new(file);
         reader.read_to_end(&mut bytes)?;
         let world = postcard::from_bytes(&bytes).unwrap();
+        Ok(world)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn to_json_file(&self, path: impl AsRef<std::path::Path>) -> Result<(), std::io::Error> {
+        let file = std::fs::File::create(path)?;
+        let mut writer = std::io::BufWriter::new(file);
+        let bytes = serde_json::to_vec_pretty(self).unwrap();
+        writer.write_all(&bytes)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn from_json_file(path: impl AsRef<std::path::Path>) -> Result<Self, std::io::Error> {
+        let file = std::fs::File::open(path)?;
+        let mut bytes = Vec::new();
+        let mut reader = std::io::BufReader::new(file);
+        reader.read_to_end(&mut bytes)?;
+        let world = serde_json::from_slice(&bytes).unwrap();
         Ok(world)
     }
 }

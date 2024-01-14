@@ -42,8 +42,8 @@ impl App {
         #[cfg(feature = "serde")] world_path: Option<std::path::PathBuf>,
     ) -> anyhow::Result<Self> {
         #[cfg(feature = "serde")]
-        let world = if let Some(world_path) = world_path {
-            World::from_file(world_path)?
+        let world = if let Some(ref world_path) = world_path {
+            World::from_json_file(world_path)?
         } else {
             World::new()
         };
@@ -86,6 +86,16 @@ impl App {
         world
             .write()
             .add_system_to_stage(Render, SystemStage::PostUpdate);
+
+        #[cfg(feature = "serde")]
+        {
+            if world_path.is_some() {
+                // we need to load the assets
+                let world = world.read();
+                let mut asset_server = world.write_resource::<AssetServer>().unwrap();
+                asset_server.load_all_assets(&world).unwrap();
+            }
+        }
 
         Ok(Self { event_loop, world })
     }
@@ -191,7 +201,7 @@ impl App {
                         winit::event::WindowEvent::CloseRequested => {
                             target.exit();
                             #[cfg(feature = "serde")]
-                            self.world.read().to_file("world.bin").unwrap();
+                            self.world.read().to_json_file("world.json").unwrap();
                         }
                         winit::event::WindowEvent::Resized(_size) => {
                             // todo

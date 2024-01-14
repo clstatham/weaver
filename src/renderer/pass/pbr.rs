@@ -5,7 +5,6 @@ use rustc_hash::FxHashMap;
 use weaver_proc_macro::StaticId;
 
 use crate::{
-    app::asset_server::AssetId,
     core::{
         camera::{Camera, CameraUniform},
         light::PointLightArray,
@@ -35,7 +34,7 @@ pub struct UniqueMesh {
 
 #[derive(Default, StaticId)]
 pub struct UniqueMeshes {
-    pub unique_meshes: FxHashMap<(AssetId, AssetId), UniqueMesh>,
+    pub unique_meshes: FxHashMap<(u64, u64), UniqueMesh>,
 }
 
 impl UniqueMeshes {
@@ -50,7 +49,7 @@ impl UniqueMeshes {
         for (mesh, material, transform) in query.iter() {
             let unique_mesh = self
                 .unique_meshes
-                .entry((mesh.asset_id(), material.asset_id()))
+                .entry((mesh.asset_id().id(), material.asset_id().id()))
                 .or_insert_with(|| UniqueMesh {
                     mesh: mesh.clone(),
                     material_bind_group: material

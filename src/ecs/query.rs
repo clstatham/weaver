@@ -23,6 +23,7 @@ impl Debug for QueryEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("QueryEntry")
             .field("entity", &self.entity)
+            .field("component_name", &self.component.component_name)
             .field("component_id", &self.component.component_id)
             .finish()
     }
@@ -69,7 +70,6 @@ where
                 }
 
                 // gather the matching components
-
                 let matching_components = components
                     .iter()
                     .filter_map(|(&component_id, component)| {

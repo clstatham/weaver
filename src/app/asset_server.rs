@@ -9,22 +9,66 @@ use crate::{
         mesh::Mesh,
         texture::{HdrCubeTexture, NormalMapTexture, SdrTexture, Texture, TextureFormat},
     },
-    ecs::World,
+    ecs::{Query, World},
     renderer::{compute::hdr_loader::HdrLoader, internals::GpuResourceManager, Renderer},
 };
 
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(transparent)]
-pub struct AssetId(pub u64);
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
+
+pub struct AssetId {
+    id: u64,
+    load_path: PathBuf,
+}
 
 impl AssetId {
-    pub const PLACEHOLDER: Self = Self(u64::MAX);
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub fn load_path(&self) -> &PathBuf {
+        &self.load_path
+    }
 }
 
 impl Default for AssetId {
     fn default() -> Self {
-        Self::PLACEHOLDER
+        Self {
+            id: u64::MAX,
+            load_path: PathBuf::new(),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for AssetId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use path_slash::PathBufExt;
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("AssetId", 2)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("load_path", &self.load_path.to_slash().unwrap())?;
+        state.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for AssetId {
+    fn deserialize<D>(deserializer: D) -> Result<AssetId, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct AssetIdHelper {
+            id: u64,
+            load_path: String,
+        }
+
+        let helper = AssetIdHelper::deserialize(deserializer)?;
+
+        Ok(AssetId {
+            id: helper.id,
+            load_path: PathBuf::from(helper.load_path),
+        })
     }
 }
 
@@ -59,8 +103,11 @@ impl AssetServer {
         })
     }
 
-    pub(crate) fn alloc_id(&mut self) -> AssetId {
-        let id = AssetId(self.next_id);
+    pub(crate) fn alloc_id(&mut self, path: PathBuf) -> AssetId {
+        let id = AssetId {
+            id: self.next_id,
+            load_path: path,
+        };
         self.next_id += 1;
         id
     }
@@ -73,6 +120,48 @@ impl AssetServer {
         self.path_prefix = path_prefix.into();
     }
 
+    fn load_obj_mesh_with_id(
+        &mut self,
+        path: impl Into<PathBuf>,
+        id: AssetId,
+    ) -> anyhow::Result<Mesh> {
+        let path = path.into();
+        let mesh = Mesh::load_obj(
+            path.clone(),
+            self.resource_manager.as_ref().unwrap().device(),
+            id.clone(),
+        )?;
+        self.ids.insert(path.clone(), id.clone());
+        self.meshes.insert(id.clone(), mesh);
+        Ok(self
+            .ids
+            .get(&path)
+            .and_then(|id| self.meshes.get(id))
+            .unwrap()
+            .clone())
+    }
+
+    fn load_gltf_mesh_with_id(
+        &mut self,
+        path: impl Into<PathBuf>,
+        id: AssetId,
+    ) -> anyhow::Result<Mesh> {
+        let path = path.into();
+        let mesh = Mesh::load_gltf(
+            path.clone(),
+            self.resource_manager.as_ref().unwrap().device(),
+            id.clone(),
+        )?;
+        self.ids.insert(path.clone(), id.clone());
+        self.meshes.insert(id.clone(), mesh);
+        Ok(self
+            .ids
+            .get(&path)
+            .and_then(|id| self.meshes.get(id))
+            .unwrap()
+            .clone())
+    }
+
     pub fn load_mesh(&mut self, path: impl Into<PathBuf>) -> anyhow::Result<Mesh> {
         let path = path.into();
         let path = if path.is_absolute() {
@@ -82,29 +171,34 @@ impl AssetServer {
         };
 
         if !self.ids.contains_key(&path) {
-            let id = self.alloc_id();
+            let id = self.alloc_id(path.clone());
             if path.extension().unwrap() == "obj" {
-                let mesh = Mesh::load_obj(
-                    path.clone(),
-                    self.resource_manager.as_ref().unwrap().device(),
-                    id,
-                )?;
-                self.ids.insert(path.clone(), id);
-                self.meshes.insert(id, mesh);
+                return self.load_obj_mesh_with_id(path.clone(), id.clone());
             } else {
-                let mesh = Mesh::load_gltf(
-                    path.clone(),
-                    self.resource_manager.as_ref().unwrap().device(),
-                    id,
-                )?;
-                self.ids.insert(path.clone(), id);
-                self.meshes.insert(id, mesh);
+                return self.load_gltf_mesh_with_id(path.clone(), id.clone());
             }
         }
         Ok(self
             .ids
             .get(&path)
             .and_then(|id| self.meshes.get(id))
+            .unwrap()
+            .clone())
+    }
+
+    fn load_material_with_id(
+        &mut self,
+        path: impl Into<PathBuf>,
+        id: AssetId,
+    ) -> anyhow::Result<Material> {
+        let path = path.into();
+        let mut materials = Material::load_gltf(path.clone(), id.clone())?;
+        self.ids.insert(path.clone(), id.clone());
+        self.materials.insert(id, materials.remove(0));
+        Ok(self
+            .ids
+            .get(&path)
+            .and_then(|id| self.materials.get(id))
             .unwrap()
             .clone())
     }
@@ -117,10 +211,8 @@ impl AssetServer {
             self.path_prefix.join(path)
         };
         if !self.ids.contains_key(&path) {
-            let id = self.alloc_id();
-            let mut materials = Material::load_gltf(path.clone(), id)?;
-            self.ids.insert(path.clone(), id);
-            self.materials.insert(id, materials.remove(0));
+            let id = self.alloc_id(path.clone());
+            return self.load_material_with_id(path.clone(), id.clone());
         }
         Ok(self
             .ids
@@ -139,10 +231,10 @@ impl AssetServer {
         };
 
         if !self.ids.contains_key(&path) {
-            let id = self.alloc_id();
+            let id = self.alloc_id(path.clone());
             let texture = Texture::load(path.clone(), SdrTexture::FORMAT, None);
-            self.ids.insert(path.clone(), id);
-            self.textures.insert(id, texture);
+            self.ids.insert(path.clone(), id.clone());
+            self.textures.insert(id.clone(), texture);
         }
         Ok(self
             .ids
@@ -161,9 +253,9 @@ impl AssetServer {
         };
 
         if !self.ids.contains_key(&path) {
-            let id = self.alloc_id();
+            let id = self.alloc_id(path.clone());
             let texture = Texture::load(path.clone(), NormalMapTexture::FORMAT, None);
-            self.ids.insert(path.clone(), id);
+            self.ids.insert(path.clone(), id.clone());
             self.textures.insert(id, texture);
         }
         Ok(self
@@ -190,28 +282,42 @@ impl AssetServer {
         Ok(texture)
     }
 
-    pub fn create_material(
-        &mut self,
-        diffuse_texture: Option<SdrTexture>,
-        normal_texture: Option<NormalMapTexture>,
-        roughness_texture: Option<SdrTexture>,
-        ambient_occlusion_texture: Option<SdrTexture>,
-        metallic: Option<f32>,
-        roughness: Option<f32>,
-        texture_scaling: Option<f32>,
-    ) -> Material {
-        let id = self.alloc_id();
-        let material = Material::new(
-            diffuse_texture,
-            normal_texture,
-            roughness_texture,
-            ambient_occlusion_texture,
-            metallic,
-            roughness,
-            texture_scaling,
-            id,
-        );
-        self.materials.insert(id, material.clone());
-        material
+    pub fn load_all_assets(&mut self, world: &World) -> anyhow::Result<()> {
+        // locate all the assets in the world
+        {
+            let query = Query::<&mut Mesh>::new(world);
+            for mut mesh in query.iter() {
+                let id = mesh.asset_id().clone();
+                let path = id.load_path().clone();
+                let loaded = if let Some(extension) = path.extension() {
+                    if extension == "obj" {
+                        self.load_obj_mesh_with_id(path, id)?
+                    } else {
+                        self.load_gltf_mesh_with_id(path, id)?
+                    }
+                } else {
+                    self.load_gltf_mesh_with_id(path.clone(), id.clone())
+                        .unwrap_or_else(|_| {
+                            self.load_obj_mesh_with_id(path.clone(), id)
+                                .unwrap_or_else(|_| {
+                                    panic!("Failed to load mesh at path: {:?}", path);
+                                })
+                        })
+                };
+                *mesh = loaded;
+            }
+        }
+
+        {
+            let query = Query::<&mut Material>::new(world);
+            for mut material in query.iter() {
+                let id = material.asset_id().clone();
+                let path = id.load_path().clone();
+                let loaded = self.load_material_with_id(path, id)?;
+                *material = loaded;
+            }
+        }
+
+        Ok(())
     }
 }
