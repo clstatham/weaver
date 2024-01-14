@@ -256,15 +256,9 @@ fn setup(
     hdr_loader: Res<HdrLoader>,
 ) {
     renderer.shadow_pass.disable();
-    renderer.sky_pass.disable();
+    // renderer.sky_pass.disable();
 
-    let skybox = Skybox {
-        texture: asset_server.load_hdr_cubemap(
-            "meadow_2k.hdr",
-            SKYBOX_CUBEMAP_SIZE,
-            &hdr_loader,
-        )?,
-    };
+    let skybox = asset_server.load_skybox("meadow_2k.hdr", &hdr_loader)?;
     commands.spawn(skybox)?;
 
     let mut material = asset_server.load_material("materials/wood_tiles.glb")?;
@@ -318,15 +312,9 @@ fn setup_2(
     hdr_loader: Res<HdrLoader>,
 ) {
     renderer.shadow_pass.disable();
-    renderer.sky_pass.disable();
+    // renderer.sky_pass.disable();
 
-    let skybox = Skybox {
-        texture: asset_server.load_hdr_cubemap(
-            "meadow_2k.hdr",
-            SKYBOX_CUBEMAP_SIZE,
-            &hdr_loader,
-        )?,
-    };
+    let skybox = asset_server.load_skybox("meadow_2k.hdr", &hdr_loader)?;
     commands.spawn(skybox)?;
 
     let material = asset_server.load_material("materials/wood.glb").unwrap();

@@ -1,5 +1,3 @@
-const PI: f32 = 3.1415926535897932384626433832795;
-
 struct Face {
     forward: vec3<f32>,
     up: vec3<f32>,
@@ -16,7 +14,7 @@ var dst: texture_storage_2d_array<rgba32float, write>;
 
 @compute
 @workgroup_size(16, 16, 1)
-fn main(
+fn load(
     @builtin(global_invocation_id) gid: vec3<u32>,
 ) {
     if gid.x >= u32(textureDimensions(dst).x) {

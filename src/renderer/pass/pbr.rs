@@ -24,7 +24,7 @@ use crate::{
     },
 };
 
-use super::sky::SKYBOX_CUBEMAP_SIZE;
+use super::sky::{SKYBOX_CUBEMAP_SIZE, SKYBOX_IRRADIANCE_MAP_SIZE};
 
 pub struct UniqueMesh {
     pub mesh: Mesh,
@@ -94,6 +94,7 @@ impl GpuComponent for UniqueMeshes {
 pub struct PbrBuffers {
     pub(crate) camera: LazyGpuHandle,
     pub(crate) env_map: LazyGpuHandle,
+    pub(crate) irradiance_map: LazyGpuHandle,
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
 
@@ -121,6 +122,19 @@ impl PbrBuffers {
                 Some("PBR Environment Map"),
                 None,
             ),
+            irradiance_map: LazyGpuHandle::new(
+                GpuResourceType::Texture {
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    format: HdrCubeTexture::FORMAT,
+                    width: SKYBOX_IRRADIANCE_MAP_SIZE,
+                    height: SKYBOX_IRRADIANCE_MAP_SIZE,
+                    dimension: wgpu::TextureDimension::D2,
+                    view_dimension: wgpu::TextureViewDimension::Cube,
+                    depth_or_array_layers: 6,
+                },
+                Some("PBR Irradiance Map"),
+                None,
+            ),
             bind_group: LazyBindGroup::default(),
         }
     }
@@ -137,6 +151,7 @@ impl GpuComponent for PbrBuffers {
         Ok(vec![
             self.camera.lazy_init(manager)?,
             self.env_map.lazy_init(manager)?,
+            self.irradiance_map.lazy_init(manager)?,
         ])
     }
 
@@ -178,9 +193,20 @@ impl BindableComponent for PbrBuffers {
                     },
                     count: None,
                 },
-                // env map sampler
+                // irradiance map
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // env map sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                     count: None,
@@ -197,10 +223,19 @@ impl BindableComponent for PbrBuffers {
         let layout = cache.get_or_create::<Self>(manager.device());
         let camera = self.camera.lazy_init(manager)?;
         let env_map = self.env_map.lazy_init(manager)?;
+        let irradiance_map = self.irradiance_map.lazy_init(manager)?;
 
         let env_map = env_map.get_texture().unwrap();
         let env_map_view = env_map.create_view(&wgpu::TextureViewDescriptor {
             label: Some("PBR Environment Map View"),
+            format: Some(HdrCubeTexture::FORMAT),
+            dimension: Some(wgpu::TextureViewDimension::Cube),
+            ..Default::default()
+        });
+
+        let irradiance_map = irradiance_map.get_texture().unwrap();
+        let irradiance_map_view = irradiance_map.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("PBR Irradiance Map View"),
             format: Some(HdrCubeTexture::FORMAT),
             dimension: Some(wgpu::TextureViewDimension::Cube),
             ..Default::default()
@@ -232,6 +267,10 @@ impl BindableComponent for PbrBuffers {
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&irradiance_map_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
                         resource: wgpu::BindingResource::Sampler(&env_map_sampler),
                     },
                 ],
@@ -351,7 +390,9 @@ impl PbrRenderPass {
         let skybox = skybox.iter().next().unwrap();
 
         let skybox_handle = &skybox.texture.lazy_init(&renderer.resource_manager)?;
+        let irradiance_handle = &skybox.irradiance.lazy_init(&renderer.resource_manager)?;
         let skybox_texture = skybox_handle[0].get_texture().unwrap();
+        let irradiance_texture = irradiance_handle[0].get_texture().unwrap();
 
         let camera = Query::<&Camera>::new(world);
         let camera = camera.iter().next().unwrap();
@@ -361,6 +402,7 @@ impl PbrRenderPass {
         let my_handles = self.buffers.lazy_init(&renderer.resource_manager)?;
         let my_camera_buffer = my_handles[0].get_buffer().unwrap();
         let my_env_map_texture = my_handles[1].get_texture().unwrap();
+        let my_irradiance_map_texture = my_handles[2].get_texture().unwrap();
 
         encoder.copy_buffer_to_buffer(
             &camera_handle.get_buffer().unwrap(),
@@ -374,6 +416,12 @@ impl PbrRenderPass {
             skybox_texture.as_image_copy(),
             my_env_map_texture.as_image_copy(),
             skybox_texture.size(),
+        );
+
+        encoder.copy_texture_to_texture(
+            irradiance_texture.as_image_copy(),
+            my_irradiance_map_texture.as_image_copy(),
+            irradiance_texture.size(),
         );
 
         let buffer_bind_group = self.buffers.lazy_init_bind_group(

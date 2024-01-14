@@ -2,10 +2,15 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::{
+    app::asset_server::AssetServer,
     ecs::{Component, StaticId},
-    renderer::internals::{
-        BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
-        GpuResourceType, LazyBindGroup, LazyGpuHandle,
+    renderer::{
+        compute::hdr_loader::HdrLoader,
+        internals::{
+            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
+            GpuResourceType, LazyBindGroup, LazyGpuHandle,
+        },
+        pass::sky::SKYBOX_CUBEMAP_SIZE,
     },
 };
 
@@ -346,9 +351,25 @@ impl Texture {
 pub struct Skybox {
     #[cfg_attr(feature = "serde", serde(skip, default = "Skybox::default_texture"))]
     pub texture: HdrCubeTexture,
+    #[cfg_attr(feature = "serde", serde(skip, default = "Skybox::default_texture"))]
+    pub irradiance: HdrCubeTexture,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    bind_group: LazyBindGroup<Self>,
 }
 
 impl Skybox {
+    pub(crate) fn new(
+        texture: HdrCubeTexture,
+        irradiance: HdrCubeTexture,
+        label: Option<&'static str>,
+    ) -> Self {
+        Self {
+            texture,
+            irradiance,
+            bind_group: LazyBindGroup::default(),
+        }
+    }
+
     #[cfg(feature = "serde")]
     fn default_texture() -> HdrCubeTexture {
         HdrCubeTexture::new(1, 1, None)
@@ -361,15 +382,82 @@ impl BindableComponent for Skybox {
         manager: &GpuResourceManager,
         cache: &BindGroupLayoutCache,
     ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        self.texture.create_bind_group(manager, cache)
+        let layout = cache.get_or_create::<Self>(manager.device());
+        let texture = &self.texture.lazy_init(manager)?[0];
+        let irradiance = &self.irradiance.lazy_init(manager)?[0];
+        let texture_view =
+            texture
+                .get_texture()
+                .unwrap()
+                .create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("Skybox texture view"),
+                    format: Some(HdrCubeTexture::FORMAT),
+                    dimension: Some(wgpu::TextureViewDimension::Cube),
+                    array_layer_count: Some(6),
+                    ..Default::default()
+                });
+        let irradiance_view =
+            irradiance
+                .get_texture()
+                .unwrap()
+                .create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("Skybox irradiance view"),
+                    format: Some(HdrCubeTexture::FORMAT),
+                    dimension: Some(wgpu::TextureViewDimension::Cube),
+                    array_layer_count: Some(6),
+                    ..Default::default()
+                });
+        let bind_group = manager
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Skybox bind group"),
+                layout: &layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&irradiance_view),
+                    },
+                ],
+            });
+        Ok(Arc::new(bind_group))
     }
 
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        HdrCubeTexture::create_bind_group_layout(device)
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Skybox bind group layout"),
+            entries: &[
+                // texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: HdrCubeTexture::SAMPLE_TYPE,
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // irradiance
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: HdrCubeTexture::SAMPLE_TYPE,
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        })
     }
 
     fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
-        self.texture.bind_group()
+        self.bind_group.bind_group().clone()
     }
 
     fn lazy_init_bind_group(
@@ -377,6 +465,11 @@ impl BindableComponent for Skybox {
         manager: &GpuResourceManager,
         cache: &crate::renderer::internals::BindGroupLayoutCache,
     ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        self.texture.lazy_init_bind_group(manager, cache)
+        if let Some(bind_group) = self.bind_group.bind_group() {
+            return Ok(bind_group);
+        }
+
+        let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
+        Ok(bind_group)
     }
 }

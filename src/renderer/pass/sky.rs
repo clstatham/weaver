@@ -11,6 +11,7 @@ use crate::{
 use super::Pass;
 
 pub const SKYBOX_CUBEMAP_SIZE: u32 = 2048;
+pub const SKYBOX_IRRADIANCE_MAP_SIZE: u32 = SKYBOX_CUBEMAP_SIZE / 16;
 
 pub struct SkyRenderPass {
     enabled: bool,
@@ -59,7 +60,7 @@ impl SkyRenderPass {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Skybox Pipeline Layout"),
             bind_group_layouts: &[
-                &bind_group_layout_cache.get_or_create::<HdrCubeTexture>(device),
+                &bind_group_layout_cache.get_or_create::<Skybox>(device),
                 &sampler_bind_group_layout,
                 &bind_group_layout_cache.get_or_create::<Camera>(device),
             ],

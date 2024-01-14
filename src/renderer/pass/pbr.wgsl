@@ -6,7 +6,8 @@
 // envorinment information
 @group(1) @binding(0) var<uniform> camera: CameraUniform;
 @group(1) @binding(1) var          env_map: texture_cube<f32>;
-@group(1) @binding(2) var          env_sampler: sampler;
+@group(1) @binding(2) var          irradiance_map: texture_cube<f32>;
+@group(1) @binding(3) var          env_sampler: sampler;
 
 // material information
 @group(2) @binding(0) var<uniform> material: MaterialUniform;
@@ -100,17 +101,9 @@ fn calculate_ibl(
     let NdV = max(dot(N, V), 0.0);
     let R = reflect(-V, N);
 
-    let diffuse_irradiance = textureSample(env_map, env_sampler, N).rgb;
+    let diffuse_irradiance = textureSample(irradiance_map, env_sampler, N).rgb;
 
     let diffuse = diffuse_irradiance * albedo;
-
-    // let specular_irradiance = textureSample(env_map, env_sampler, R).rgb;
-    // let prefiltered_color = textureSampleLod(env_map, env_sampler, R, roughness * 8.0).rgb;
-    // let brdf = textureSample(brdf_lut, brdf_sampler, vec2(NdV, roughness)).rgb;
-
-    // let specular = (prefiltered_color * (specular_irradiance * brdf.x + brdf.y)) * metallic;
-
-    // return diffuse + specular;
 
     return diffuse;
 }
@@ -164,7 +157,6 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     let N = normalize(
         vertex.world_tangent * tex_normal.r + vertex.world_binormal * tex_normal.g + vertex.world_normal * tex_normal.b
     );
-    // let N = normalize(vertex.world_normal);
 
     let V = normalize(camera.camera_position - vertex.world_position);
 
@@ -192,7 +184,7 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     let tex_ao = textureSample(ao_tex, ao_sampler, uv).r;
 
     // WIP
-    // illumination += calculate_ibl(albedo, normal, view_direction, roughness, metallic);
+    illumination += calculate_ibl(albedo, N, V, roughness, metallic) * metallic;
 
     var out_color = illumination * tex_ao;
 
@@ -201,7 +193,7 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     // gamma correction
     out_color = pow(out_color, vec3(1.0 / 2.2));
-    out_color = clamp(out_color, vec3(0.0), vec3(1.0));
+
     output.color = vec4<f32>(out_color, 1.0);
 
     return output;

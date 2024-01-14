@@ -7,10 +7,15 @@ use crate::{
     core::{
         material::Material,
         mesh::Mesh,
-        texture::{HdrCubeTexture, NormalMapTexture, SdrTexture, Texture, TextureFormat},
+        texture::{HdrCubeTexture, NormalMapTexture, SdrTexture, Skybox, Texture, TextureFormat},
     },
     ecs::{Query, World},
-    renderer::{compute::hdr_loader::HdrLoader, internals::GpuResourceManager, Renderer},
+    renderer::{
+        compute::hdr_loader::HdrLoader,
+        internals::GpuResourceManager,
+        pass::sky::{SKYBOX_CUBEMAP_SIZE, SKYBOX_IRRADIANCE_MAP_SIZE},
+        Renderer,
+    },
 };
 
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -266,20 +271,28 @@ impl AssetServer {
             .clone())
     }
 
-    pub fn load_hdr_cubemap(
+    pub fn load_skybox(
         &mut self,
         path: impl Into<PathBuf>,
-        dst_size: u32,
         hdr_loader: &HdrLoader,
-    ) -> anyhow::Result<HdrCubeTexture> {
+    ) -> anyhow::Result<Skybox> {
         let path = path.into();
         let path = if path.is_absolute() {
             path
         } else {
             self.path_prefix.join(path)
         };
-        let texture = hdr_loader.load(self.resource_manager.as_ref().unwrap(), dst_size, path)?;
-        Ok(texture)
+        let texture = hdr_loader.load(
+            self.resource_manager.as_ref().unwrap(),
+            SKYBOX_CUBEMAP_SIZE,
+            path,
+        )?;
+        let irradiance = hdr_loader.generate_irradiance_map(
+            self.resource_manager.as_ref().unwrap(),
+            &texture,
+            SKYBOX_IRRADIANCE_MAP_SIZE,
+        )?;
+        Ok(Skybox::new(texture, irradiance, None))
     }
 
     pub fn load_all_assets(&mut self, world: &World) -> anyhow::Result<()> {
