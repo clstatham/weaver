@@ -61,12 +61,14 @@ fn try_every_shader_file(
 
                 file.read_to_string(&mut shader)?;
 
-                if let Err(e) = composer.add_composable_module(ComposableModuleDescriptor {
-                    file_path: path.to_str().unwrap(),
-                    source: shader.as_str(),
-                    ..Default::default()
-                }) {
-                    log::warn!("Failed to add shader module {}: {}", path.display(), e);
+                if composer
+                    .add_composable_module(ComposableModuleDescriptor {
+                        file_path: path.to_str().unwrap(),
+                        source: shader.as_str(),
+                        ..Default::default()
+                    })
+                    .is_err()
+                {
                     try_again = true;
                 }
             } else if path.is_dir() {
