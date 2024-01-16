@@ -38,6 +38,15 @@ macro_rules! texture_formats {
                     &self.texture
                 }
             }
+
+            impl Default for $name {
+                fn default() -> Self {
+                    Self {
+                        texture: Texture::default_texture(),
+                        bind_group: LazyBindGroup::default(),
+                    }
+                }
+            }
         )*
     }
 }

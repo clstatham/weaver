@@ -76,6 +76,21 @@ fn impl_resource_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     gen.into()
 }
 
+enum GpuComponentMemberType {
+    Handle,
+    HandleVec,
+    HandleMap,
+    Component,
+    ComponentVec,
+    ComponentMap,
+    ComponentOption,
+}
+
+struct GpuComponentMember {
+    name: syn::Ident,
+    ty: GpuComponentMemberType,
+}
+
 #[proc_macro_derive(
     GpuComponent,
     attributes(gpu)
@@ -89,13 +104,7 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     let name = &ast.ident;
 
     let mut gpu_update = None;
-    let mut gpu_handles = Vec::new();
-    let mut gpu_handle_vecs = Vec::new();
-    let mut gpu_handle_maps = Vec::new();
-    let mut gpu_components = Vec::new();
-    let mut gpu_component_vecs = Vec::new();
-    let mut gpu_component_maps = Vec::new();
-    let mut gpu_component_options = Vec::new();
+    let mut members = Vec::new();
 
     let fields = match &ast.data {
         syn::Data::Struct(data) => match &data.fields {
@@ -106,7 +115,6 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     };
 
     for attr in &ast.attrs {
-
         if let syn::Meta::List(list) = &attr.meta {
             let meta_ident = list.path.segments.last().unwrap().ident.to_string();
             if let "gpu" = meta_ident.as_str() {
@@ -144,7 +152,10 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
         };
         match ident.to_string().as_str() {
             "LazyGpuHandle" => {
-                gpu_handles.push(name.clone());
+                members.push(GpuComponentMember {
+                    name: name.clone(),
+                    ty: GpuComponentMemberType::Handle,
+                });
                 is_handle = true;
             }
             "Vec" => match ty {
@@ -154,7 +165,10 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
                         path.segments.last().unwrap().ident.to_string();
                     match path_ident.as_str() {
                         "LazyGpuHandle" => {
-                            gpu_handle_vecs.push(name.clone());
+                            members.push(GpuComponentMember {
+                                name: name.clone(),
+                                ty: GpuComponentMemberType::HandleVec,
+                            });
                             is_handle = true;
                         }
                         _ => {
@@ -173,7 +187,10 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
                         path.segments.last().unwrap().ident.to_string();
                     match path_ident.as_str() {
                         "LazyGpuHandle" => {
-                            gpu_handle_maps.push(name.clone());
+                            members.push(GpuComponentMember {
+                                name: name.clone(),
+                                ty: GpuComponentMemberType::HandleMap,
+                            });
                             is_handle = true;
                         }
                         _ => {
@@ -206,10 +223,30 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
                                         _ => panic!("Invalid attribute"),
                                     };
                                     match ident.to_string().as_str() {
-                                        "Vec" => gpu_component_vecs.push(name.clone()),
-                                        "HashMap" | "FxHashMap" => gpu_component_maps.push(name.clone()),
-                                        "Option" => gpu_component_options.push(name.clone()),
-                                        _ => gpu_components.push(name.clone()),
+                                        "Vec" => {
+                                            members.push(GpuComponentMember {
+                                                name: name.clone(),
+                                                ty: GpuComponentMemberType::ComponentVec,
+                                            });
+                                        }
+                                        "HashMap" | "FxHashMap" => {
+                                            members.push(GpuComponentMember {
+                                                name: name.clone(),
+                                                ty: GpuComponentMemberType::ComponentMap,
+                                            });
+                                        }
+                                        "Option" => {
+                                            members.push(GpuComponentMember {
+                                                name: name.clone(),
+                                                ty: GpuComponentMemberType::ComponentOption,
+                                            });
+                                        }
+                                        _ => {
+                                            members.push(GpuComponentMember {
+                                                name: name.clone(),
+                                                ty: GpuComponentMemberType::Component,
+                                            });
+                                        }
                                     }
                                 }
                                 if !input.is_empty() {
@@ -229,115 +266,105 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     let mut update_resources = Vec::new();
     let mut destroy_resources = Vec::new();
 
-    for handle in gpu_handles.iter() {
-        lazy_init.push(quote! {
-            out.push(self.#handle.lazy_init(manager)?);
-        });
-        destroy_resources.push(quote! {
-            self.#handle.mark_destroyed();
-        });
-    }
-
-    for vec in gpu_handle_vecs.iter() {
-        lazy_init.push(quote! {
-            for item in &self.#vec {
-                out.push(item.lazy_init(manager)?);
+    for member in members {
+        let name = &member.name;
+        let ty = &member.ty;
+        match ty {
+            GpuComponentMemberType::Handle => {
+                lazy_init.push(quote! {
+                    out.push(self.#name.lazy_init(manager)?);
+                });
+                destroy_resources.push(quote! {
+                    self.#name.mark_destroyed();
+                });
             }
-        });
-        update_resources.push(quote! {
-            for item in &self.#vec {
-                item.update_resources(world)?;
+            GpuComponentMemberType::HandleVec => {
+                lazy_init.push(quote! {
+                    for handle in self.#name.iter() {
+                        out.push(handle.lazy_init(manager)?);
+                    }
+                });
+                destroy_resources.push(quote! {
+                    for handle in self.#name.iter() {
+                        handle.mark_destroyed();
+                    }
+                });
             }
-        });
-        destroy_resources.push(quote! {
-            for item in &self.#vec {
-                item.mark_destroyed();
+            GpuComponentMemberType::HandleMap => {
+                lazy_init.push(quote! {
+                    for handle in self.#name.values() {
+                        out.push(handle.lazy_init(manager)?);
+                    }
+                });
+                destroy_resources.push(quote! {
+                    for handle in self.#name.values() {
+                        handle.mark_destroyed();
+                    }
+                });
             }
-        });
-    }
-
-    for map in gpu_handle_maps.iter() {
-        lazy_init.push(quote! {
-            for item in self.#map.values() {
-                out.push(item.lazy_init(manager)?);
+            GpuComponentMemberType::Component => {
+                lazy_init.push(quote! {
+                    out.extend(self.#name.lazy_init(manager)?);
+                });
+                update_resources.push(quote! {
+                    self.#name.update_resources(world)?;
+                });
+                destroy_resources.push(quote! {
+                    self.#name.destroy_resources()?;
+                });
             }
-        });
-        update_resources.push(quote! {
-            for item in self.#map.values() {
-                item.update_resources(world)?;
+            GpuComponentMemberType::ComponentVec => {
+                lazy_init.push(quote! {
+                    for component in self.#name.iter() {
+                        out.extend(component.lazy_init(manager)?);
+                    }
+                });
+                update_resources.push(quote! {
+                    for component in self.#name.iter() {
+                        component.update_resources(world)?;
+                    }
+                });
+                destroy_resources.push(quote! {
+                    for component in self.#name.iter() {
+                        component.destroy_resources()?;
+                    }
+                });
             }
-        });
-        destroy_resources.push(quote! {
-            for item in self.#map.values() {
-                item.mark_destroyed();
+            GpuComponentMemberType::ComponentMap => {
+                lazy_init.push(quote! {
+                    for component in self.#name.values() {
+                        out.extend(component.lazy_init(manager)?);
+                    }
+                });
+                update_resources.push(quote! {
+                    for component in self.#name.values() {
+                        component.update_resources(world)?;
+                    }
+                });
+                destroy_resources.push(quote! {
+                    for component in self.#name.values() {
+                        component.destroy_resources()?;
+                    }
+                });
             }
-        });
-    }
-
-    for component in gpu_components.iter() {
-        lazy_init.push(quote! {
-            out.extend_from_slice(&self.#component.lazy_init(manager)?);
-        });
-        update_resources.push(quote! {
-            self.#component.update_resources(world)?;
-        });
-        destroy_resources.push(quote! {
-            self.#component.destroy_resources()?;
-        });
-    }
-
-    for vec in gpu_component_vecs.iter() {
-        lazy_init.push(quote! {
-            for item in &self.#vec {
-                out.extend_from_slice(&item.lazy_init(manager)?);
+            GpuComponentMemberType::ComponentOption => {
+                lazy_init.push(quote! {
+                    if let Some(component) = &self.#name {
+                        out.extend(component.lazy_init(manager)?);
+                    }
+                });
+                update_resources.push(quote! {
+                    if let Some(component) = &self.#name {
+                        component.update_resources(world)?;
+                    }
+                });
+                destroy_resources.push(quote! {
+                    if let Some(component) = &self.#name {
+                        component.destroy_resources()?;
+                    }
+                });
             }
-        });
-        update_resources.push(quote! {
-            for item in &self.#vec {
-                item.update_resources(world)?;
-            }
-        });
-        destroy_resources.push(quote! {
-            for item in &self.#vec {
-                item.destroy_resources()?;
-            }
-        });
-    }
-
-    for map in gpu_component_maps.iter() {
-        lazy_init.push(quote! {
-            for item in self.#map.values() {
-                out.extend_from_slice(&item.lazy_init(manager)?);
-            }
-        });
-        update_resources.push(quote! {
-            for item in self.#map.values() {
-                item.update_resources(world)?;
-            }
-        });
-        destroy_resources.push(quote! {
-            for item in self.#map.values() {
-                item.destroy_resources()?;
-            }
-        });
-    }
-
-    for option in gpu_component_options.iter() {
-        lazy_init.push(quote! {
-            if let Some(item) = &self.#option {
-                out.extend_from_slice(&item.lazy_init(manager)?);
-            }
-        });
-        update_resources.push(quote! {
-            if let Some(item) = &self.#option {
-                item.update_resources(world)?;
-            }
-        });
-        destroy_resources.push(quote! {
-            if let Some(item) = &self.#option {
-                item.destroy_resources()?;
-            }
-        });
+        }
     }
 
     let gen = quote! {
@@ -386,6 +413,12 @@ enum BindingType {
     },
 }
 
+struct Binding {
+    name: syn::Ident,
+    binding_type: BindingType,
+    default: Option<syn::Path>,
+}
+
 #[proc_macro_derive(BindableComponent, attributes(uniform, texture, sampler, storage))]
 pub fn bindable_component_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = syn::parse(input).unwrap();
@@ -408,41 +441,57 @@ fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStr
     for field in fields.iter() {
         let name = field.ident.clone().unwrap();
         let attrs = &field.attrs;
+        let ty = &field.ty;
+        let ty_ident = match ty {
+            syn::Type::Path(path) => &path.path.segments.last().unwrap().ident,
+            _ => panic!("Invalid attribute"),
+        };
+        let is_optional = ty_ident.to_string().as_str() == "Option";
+        
 
         for attr in attrs.iter() {
             let attr = &attr.meta;
+            let mut default = None;
             match attr {
                 syn::Meta::Path(path) => {
                     let path_ident = path.segments.last().unwrap().ident.to_string();
-
+                    
                     match path_ident.as_str() {
                         // #[uniform]
                         "uniform" => {
-                            bindings.push((name.clone(), BindingType::Uniform));
+                            bindings.push(Binding {
+                                name: name.clone(),
+                                binding_type: BindingType::Uniform,
+                                default: None,
+                            });
                         }
                         // #[storage]
                         "storage" => {
-                            bindings.push((name.clone(), BindingType::Storage { read_only: true }));
+                            bindings.push(Binding {
+                                name: name.clone(),
+                                binding_type: BindingType::Storage {
+                                    read_only: true,
+                                },
+                                default: None,
+                            });
                         }
                         // #[sampler]
                         "sampler" => {
-                            bindings.push((
-                                name.clone(),
-                                BindingType::Sampler {
-                                    filtering: true,
+                            bindings.push(Binding {
+                                name: name.clone(),
+                                binding_type: BindingType::Sampler {
+                                    filtering: false,
                                     comparison: false,
                                 },
-                            ));
-                        }
-                        // #[texture]
-                        "texture" => {
-                            todo!("texture");
+                                default: None,
+                            });
                         }
                         _ => {}
                     }
                 }
                 syn::Meta::List(list) => {
                     let path_ident = list.path.segments.last().unwrap().ident.to_string();
+                    
                     match path_ident.as_str() {
                         // #[texture(...)]
                         "texture" => {
@@ -497,6 +546,16 @@ fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStr
                                                 wgpu::TextureFormat::#ident
                                             });
                                         }
+                                        "default"  => {
+                                            if is_optional {
+                                                input.parse::<syn::Token![=]>().unwrap();
+                                                if default.is_none() {
+                                                    default = Some(input.parse::<syn::Path>().unwrap());
+                                                }
+                                            } else {
+                                                panic!("Expected a `default` attribute on Option fields");
+                                            }
+                                        }
                                         _ => panic!("Invalid attribute"),
                                     }
                                     if !input.is_empty() {
@@ -508,15 +567,20 @@ fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStr
                             })
                             .unwrap();
 
-                            bindings.push((
-                                name.clone(),
-                                BindingType::Texture {
+                            if is_optional && default.is_none() {
+                                panic!("Expected a `default` attribute on Option fields");
+                            }
+
+                            bindings.push(Binding {
+                                name: name.clone(),
+                                binding_type: BindingType::Texture {
                                     format: format.expect("Missing format attribute"),
                                     sample_type: sample_type.expect("Missing sample_type attribute"),
                                     view_dimension: view_dimension.expect("Missing view_dimension attribute"),
                                     layers: layers.unwrap_or(quote! { None }),
                                 },
-                            ));
+                                default,
+                            });
                         }
 
                         // #[sampler(...)]
@@ -541,6 +605,14 @@ fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStr
                                                 input.parse::<syn::LitBool>().unwrap();
                                             comparison = Some(ident.value);
                                         }
+                                        "default"  => {
+                                            if is_optional {
+                                                input.parse::<syn::Token![=]>().unwrap();
+                                                default = Some(input.parse::<syn::Path>().unwrap());
+                                            } else {
+                                                panic!("Expected a `default` attribute on Option fields");
+                                            }
+                                        }
                                         _ => panic!("Invalid attribute"),
                                     }
                                     if !input.is_empty() {
@@ -551,13 +623,15 @@ fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStr
                                 Ok(())
                             })
                             .unwrap();
-                            bindings.push((
-                                name.clone(),
-                                BindingType::Sampler {
-                                    filtering: filtering.unwrap_or(false),
+                            
+                            bindings.push(Binding {
+                                name: name.clone(),
+                                binding_type: BindingType::Sampler {
+                                    filtering: filtering.unwrap_or(true),
                                     comparison: comparison.unwrap_or(false),
                                 },
-                            ));
+                                default,
+                            });
                         }
 
                         // #[storage(...)]
@@ -574,6 +648,14 @@ fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStr
                                                 input.parse::<syn::LitBool>().unwrap();
                                             read_write = Some(ident.value);
                                         }
+                                        "default"  => {
+                                            if is_optional {
+                                                input.parse::<syn::Token![=]>().unwrap();
+                                                default = Some(input.parse::<syn::Path>().unwrap());
+                                            } else {
+                                                panic!("Expected a `default` attribute on Option fields");
+                                            }
+                                        }
                                         _ => panic!("Invalid attribute"),
                                     }
                                     if !input.is_empty() {
@@ -584,12 +666,14 @@ fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStr
                                 Ok(())
                             })
                             .unwrap();
-                            bindings.push((
-                                name.clone(),
-                                BindingType::Storage {
-                                    read_only: !read_write.unwrap_or(true),
+                            
+                            bindings.push(Binding {
+                                name: name.clone(),
+                                binding_type: BindingType::Storage {
+                                    read_only: !read_write.unwrap_or(false),
                                 },
-                            ));
+                                default,
+                            });
                         }
                         _ => {}
                     }
@@ -603,9 +687,10 @@ fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStr
     let mut binding_entries = Vec::new();
     let mut binding_creations = Vec::new();
 
-    for (i, (name, binding_type)) in bindings.iter().enumerate() {
-        let binding = i as u32;
-        let visibility = match binding_type {
+    for (i, binding) in bindings.iter().enumerate() {
+        let binding_index = i as u32;
+        let name = &binding.name;
+        let visibility = match &binding.binding_type {
             BindingType::Uniform => {
                 quote! { wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT }
             }
@@ -619,7 +704,7 @@ fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStr
                 quote! { wgpu::ShaderStages::FRAGMENT }
             }
         };
-        let ty = match binding_type {
+        let ty = match &binding.binding_type {
             BindingType::Uniform => {
                 quote! { wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None } }
             }
@@ -649,14 +734,14 @@ fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStr
         };
         binding_layout_entries.push(quote! {
             wgpu::BindGroupLayoutEntry {
-                binding: #binding,
+                binding: #binding_index,
                 visibility: #visibility,
                 ty: #ty,
                 count: None,
             }
         });
 
-        let binding_entry = match binding_type {
+        let binding_entry = match &binding.binding_type {
             BindingType::Uniform => {
                 quote! { wgpu::BindingResource::Buffer(#name.as_entire_buffer_binding()) }
             }
@@ -671,22 +756,30 @@ fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStr
             }
         };
 
-        let binding_creation = match binding_type {
+        let mut binding_creation;
+
+        if let Some(default) = &binding.default {
+            binding_creation = quote! { let #name = if let Some(#name) = self.#name.clone() { #name } else { #default() }; };
+        } else {
+            binding_creation = quote! { let #name = &self.#name; };
+        }
+
+        binding_creation.extend(match &binding.binding_type {
             BindingType::Uniform => {
                 quote! {
-                   let #name = self.#name.lazy_init(manager)?;
-                   let #name = #name.get_buffer().unwrap();
+                    let #name = #name.lazy_init(manager)?;
+                    let #name = #name.get_buffer().unwrap();
                 }
             }
             BindingType::Storage { .. } => {
                 quote! {
-                   let #name = self.#name.lazy_init(manager)?;
-                   let #name = #name.get_buffer().unwrap();
+                    let #name = #name.lazy_init(manager)?;
+                    let #name = #name.get_buffer().unwrap();
                 }
             }
             BindingType::Texture { format, view_dimension, layers, .. } => {
                 quote! {
-                    let #name = self.#name.lazy_init(manager)?;
+                    let #name = &#name.lazy_init(manager)?[0];
                     let #name = #name.get_texture().unwrap();
                     let #name = #name.create_view(&wgpu::TextureViewDescriptor {
                         label: Some(concat!(stringify!(#name), " Texture View")),
@@ -702,15 +795,15 @@ fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStr
             }
             BindingType::Sampler { .. } => {
                 quote! {
-                    let #name = self.#name.lazy_init(manager)?;
+                    let #name = #name.lazy_init(manager)?;
                     let #name = #name.get_sampler().unwrap();
                 }
             }
-        };
+        });
 
         binding_entries.push(quote! {
             wgpu::BindGroupEntry {
-                binding: #binding,
+                binding: #binding_index,
                 resource: #binding_entry,
             }
         });

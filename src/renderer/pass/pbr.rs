@@ -10,7 +10,7 @@ use crate::{
         light::PointLightArray,
         material::Material,
         mesh::{Mesh, Vertex},
-        texture::{DepthTexture, HdrCubeTexture, HdrTexture, Skybox, TextureFormat},
+        texture::{DepthTexture, HdrCubeTexture, HdrTexture, Skybox, Texture, TextureFormat},
         transform::{Transform, TransformArray},
     },
     ecs::{Query, World},
@@ -88,10 +88,12 @@ pub struct PbrBuffers {
     pub(crate) camera: LazyGpuHandle,
 
     #[texture(format = Rgba32Float, sample_type = float, view_dimension = Cube)]
-    pub(crate) env_map: LazyGpuHandle,
+    #[gpu(component)]
+    pub(crate) env_map: Texture,
 
     #[texture(format = Rgba32Float, sample_type = float, view_dimension = Cube)]
-    pub(crate) irradiance_map: LazyGpuHandle,
+    #[gpu(component)]
+    pub(crate) irradiance_map: Texture,
 
     #[sampler(filtering = false)]
     pub(crate) env_map_sampler: LazyGpuHandle,
@@ -110,7 +112,7 @@ impl PbrBuffers {
                 Some("PBR Camera"),
                 None,
             ),
-            env_map: LazyGpuHandle::new(
+            env_map: Texture::from_handle(LazyGpuHandle::new(
                 GpuResourceType::Texture {
                     usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                     format: HdrCubeTexture::FORMAT,
@@ -122,8 +124,8 @@ impl PbrBuffers {
                 },
                 Some("PBR Environment Map"),
                 None,
-            ),
-            irradiance_map: LazyGpuHandle::new(
+            )),
+            irradiance_map: Texture::from_handle(LazyGpuHandle::new(
                 GpuResourceType::Texture {
                     usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                     format: HdrCubeTexture::FORMAT,
@@ -135,7 +137,7 @@ impl PbrBuffers {
                 },
                 Some("PBR Irradiance Map"),
                 None,
-            ),
+            )),
             env_map_sampler: LazyGpuHandle::new(
                 GpuResourceType::Sampler {
                     address_mode: wgpu::AddressMode::ClampToEdge,
