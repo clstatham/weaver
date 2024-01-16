@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use weaver_proc_macro::Component;
+use weaver_proc_macro::{Component, GpuComponent};
 
 use crate::{
     app::asset_server::AssetId,
@@ -17,20 +17,25 @@ use super::{
 };
 
 /// PBR material based on Bevy
-#[derive(Clone, Component)]
+#[derive(Clone, Component, GpuComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[gpu_update_handles = "update"]
 pub struct Material {
     asset_id: AssetId,
     pub diffuse: Color,
     #[cfg_attr(feature = "serde", serde(skip))]
+    #[gpu_component]
     pub diffuse_texture: Option<SdrTexture>,
     pub metallic: f32,
     #[cfg_attr(feature = "serde", serde(skip))]
+    #[gpu_component]
     pub normal_texture: Option<NormalMapTexture>,
     pub roughness: f32,
     #[cfg_attr(feature = "serde", serde(skip))]
+    #[gpu_component]
     pub roughness_texture: Option<SdrTexture>,
     #[cfg_attr(feature = "serde", serde(skip))]
+    #[gpu_component]
     pub ambient_occlusion_texture: Option<SdrTexture>,
 
     pub texture_scaling: f32,
@@ -39,6 +44,7 @@ pub struct Material {
         feature = "serde",
         serde(skip, default = "Material::new_properties_handle")
     )]
+    #[gpu_handle]
     pub(crate) properties_handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
@@ -283,6 +289,13 @@ impl Material {
 
         Ok(materials)
     }
+
+    fn update(&self, _world: &World) -> anyhow::Result<()> {
+        self.properties_handle
+            .update(&[MaterialUniform::from(self)]);
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Component, bytemuck::Pod, bytemuck::Zeroable)]
@@ -301,64 +314,6 @@ impl From<&Material> for MaterialUniform {
             properties: [material.metallic, material.roughness, 0.0, 0.0],
             texture_scaling: [material.texture_scaling; 4],
         }
-    }
-}
-
-impl GpuComponent for Material {
-    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
-        if let Some(diffuse_texture) = &self.diffuse_texture {
-            diffuse_texture.lazy_init(manager)?;
-        }
-        if let Some(normal_texture) = &self.normal_texture {
-            normal_texture.lazy_init(manager)?;
-        }
-        if let Some(roughness_texture) = &self.roughness_texture {
-            roughness_texture.lazy_init(manager)?;
-        }
-        if let Some(ambient_occlusion_texture) = &self.ambient_occlusion_texture {
-            ambient_occlusion_texture.lazy_init(manager)?;
-        }
-
-        Ok(vec![self.properties_handle.lazy_init(manager)?])
-    }
-
-    fn update_resources(&self, world: &World) -> anyhow::Result<()> {
-        self.properties_handle
-            .update(&[MaterialUniform::from(self)]);
-
-        if let Some(diffuse_texture) = &self.diffuse_texture {
-            diffuse_texture.update_resources(world)?;
-        }
-        if let Some(normal_texture) = &self.normal_texture {
-            normal_texture.update_resources(world)?;
-        }
-        if let Some(roughness_texture) = &self.roughness_texture {
-            roughness_texture.update_resources(world)?;
-        }
-        if let Some(ambient_occlusion_texture) = &self.ambient_occlusion_texture {
-            ambient_occlusion_texture.update_resources(world)?;
-        }
-
-        Ok(())
-    }
-
-    fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.properties_handle.mark_destroyed();
-
-        if let Some(diffuse_texture) = &self.diffuse_texture {
-            diffuse_texture.destroy_resources()?;
-        }
-        if let Some(normal_texture) = &self.normal_texture {
-            normal_texture.destroy_resources()?;
-        }
-        if let Some(roughness_texture) = &self.roughness_texture {
-            roughness_texture.destroy_resources()?;
-        }
-        if let Some(ambient_occlusion_texture) = &self.ambient_occlusion_texture {
-            ambient_occlusion_texture.destroy_resources()?;
-        }
-
-        Ok(())
     }
 }
 

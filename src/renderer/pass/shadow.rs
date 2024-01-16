@@ -2,7 +2,7 @@ use std::{num::NonZeroU32, sync::Arc};
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
-use weaver_proc_macro::StaticId;
+use weaver_proc_macro::{GpuComponent, StaticId};
 
 use crate::{
     core::{
@@ -29,13 +29,24 @@ use super::Pass;
 
 const SHADOW_DEPTH_TEXTURE_SIZE: u32 = 1024;
 
+#[derive(StaticId, GpuComponent)]
+#[gpu_update_handles = "update"]
 struct UniqueMesh {
     mesh: Mesh,
+    #[gpu_component]
     transforms: TransformArray,
 }
 
-#[derive(Default, StaticId)]
+impl UniqueMesh {
+    fn update(&self, _world: &World) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Default, StaticId, GpuComponent)]
+#[gpu_update_handles = "update"]
 struct UniqueMeshes {
+    #[gpu_component]
     unique_meshes: FxHashMap<u64, UniqueMesh>,
 }
 
@@ -60,33 +71,16 @@ impl UniqueMeshes {
             unique_mesh.transforms.push(&transform);
         }
     }
-}
 
-impl GpuComponent for UniqueMeshes {
-    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
-        for unique_mesh in self.unique_meshes.values() {
-            unique_mesh.transforms.lazy_init(manager)?;
-        }
-        Ok(vec![])
-    }
-
-    fn update_resources(&self, world: &World) -> anyhow::Result<()> {
-        for unique_mesh in self.unique_meshes.values() {
-            unique_mesh.transforms.update_resources(world)?;
-        }
-        Ok(())
-    }
-
-    fn destroy_resources(&self) -> anyhow::Result<()> {
-        for unique_mesh in self.unique_meshes.values() {
-            unique_mesh.transforms.destroy_resources()?;
-        }
+    fn update(&self, _world: &World) -> anyhow::Result<()> {
         Ok(())
     }
 }
 
-#[derive(Clone, StaticId)]
+#[derive(Clone, StaticId, GpuComponent)]
+#[gpu_update_handles = "update"]
 struct LightViews {
+    #[gpu_handle]
     handle: LazyGpuHandle,
     bind_group: LazyBindGroup<Self>,
 }
@@ -106,19 +100,8 @@ impl LightViews {
             bind_group: LazyBindGroup::default(),
         }
     }
-}
 
-impl GpuComponent for LightViews {
-    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
-        Ok(vec![self.handle.lazy_init(manager)?])
-    }
-
-    fn update_resources(&self, _world: &World) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.handle.mark_destroyed();
+    fn update(&self, _world: &World) -> anyhow::Result<()> {
         Ok(())
     }
 }
@@ -179,23 +162,16 @@ impl BindableComponent for LightViews {
     }
 }
 
-#[derive(StaticId, Clone)]
+#[derive(StaticId, Clone, GpuComponent)]
+#[gpu_update_handles = "update"]
 struct ShadowBuffers {
+    #[gpu_handle]
     shadow_cubemap: LazyGpuHandle,
     bind_group: LazyBindGroup<Self>,
 }
 
-impl GpuComponent for ShadowBuffers {
-    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
-        Ok(vec![self.shadow_cubemap.lazy_init(manager)?])
-    }
-
-    fn update_resources(&self, _world: &World) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.shadow_cubemap.mark_destroyed();
+impl ShadowBuffers {
+    fn update(&self, _world: &World) -> anyhow::Result<()> {
         Ok(())
     }
 }

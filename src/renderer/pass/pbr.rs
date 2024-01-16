@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
-use weaver_proc_macro::StaticId;
+use weaver_proc_macro::{GpuComponent, StaticId};
 
 use crate::{
     core::{
@@ -26,14 +26,25 @@ use crate::{
 
 use super::sky::{SKYBOX_CUBEMAP_SIZE, SKYBOX_IRRADIANCE_MAP_SIZE};
 
+#[derive(StaticId, GpuComponent)]
+#[gpu_update_handles = "update"]
 pub struct UniqueMesh {
     pub mesh: Mesh,
     pub material_bind_group: Arc<wgpu::BindGroup>,
+    #[gpu_component]
     pub transforms: TransformArray,
 }
 
-#[derive(Default, StaticId)]
+impl UniqueMesh {
+    fn update(&self, _world: &World) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Default, StaticId, GpuComponent)]
+#[gpu_update_handles = "update"]
 pub struct UniqueMeshes {
+    #[gpu_component]
     pub unique_meshes: FxHashMap<(u64, u64), UniqueMesh>,
 }
 
@@ -64,36 +75,20 @@ impl UniqueMeshes {
             unique_mesh.transforms.push(&transform);
         }
     }
-}
 
-impl GpuComponent for UniqueMeshes {
-    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
-        let mut handles = Vec::new();
-        for unique_mesh in self.unique_meshes.values() {
-            handles.extend(unique_mesh.transforms.lazy_init(manager)?);
-        }
-        Ok(handles)
-    }
-
-    fn update_resources(&self, world: &World) -> anyhow::Result<()> {
-        for unique_mesh in self.unique_meshes.values() {
-            unique_mesh.transforms.update_resources(world)?;
-        }
-        Ok(())
-    }
-
-    fn destroy_resources(&self) -> anyhow::Result<()> {
-        for unique_mesh in self.unique_meshes.values() {
-            unique_mesh.transforms.destroy_resources()?;
-        }
+    fn update(&self, _world: &World) -> anyhow::Result<()> {
         Ok(())
     }
 }
 
-#[derive(Clone, StaticId)]
+#[derive(Clone, StaticId, GpuComponent)]
+#[gpu_update_handles = "update"]
 pub struct PbrBuffers {
+    #[gpu_handle]
     pub(crate) camera: LazyGpuHandle,
+    #[gpu_handle]
     pub(crate) env_map: LazyGpuHandle,
+    #[gpu_handle]
     pub(crate) irradiance_map: LazyGpuHandle,
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
@@ -138,31 +133,15 @@ impl PbrBuffers {
             bind_group: LazyBindGroup::default(),
         }
     }
+
+    fn update(&self, _world: &World) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 impl Default for PbrBuffers {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl GpuComponent for PbrBuffers {
-    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
-        Ok(vec![
-            self.camera.lazy_init(manager)?,
-            self.env_map.lazy_init(manager)?,
-            self.irradiance_map.lazy_init(manager)?,
-        ])
-    }
-
-    fn update_resources(&self, _world: &World) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.camera.mark_destroyed();
-        self.env_map.mark_destroyed();
-        Ok(())
     }
 }
 

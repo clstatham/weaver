@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use weaver_proc_macro::Component;
+use weaver_proc_macro::{Component, GpuComponent};
 
 use crate::{
     ecs::World,
@@ -14,8 +14,9 @@ use super::color::Color;
 
 pub const MAX_LIGHTS: usize = 32;
 
-#[derive(Component)]
+#[derive(Component, GpuComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[gpu_update_handles = "update"]
 pub struct PointLight {
     pub position: glam::Vec3,
     pub color: Color,
@@ -23,6 +24,7 @@ pub struct PointLight {
     pub radius: f32,
 
     #[cfg_attr(feature = "serde", serde(skip, default = "PointLight::default_handle"))]
+    #[gpu_handle]
     pub(crate) handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
@@ -63,20 +65,9 @@ impl PointLight {
         let far = 100.0;
         glam::Mat4::perspective_lh(fov, aspect, near, far)
     }
-}
 
-impl GpuComponent for PointLight {
-    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
-        Ok(vec![self.handle.lazy_init(manager)?])
-    }
-
-    fn update_resources(&self, _world: &World) -> anyhow::Result<()> {
+    fn update(&self, _world: &World) -> anyhow::Result<()> {
         self.handle.update(&[PointLightUniform::from(self)]);
-        Ok(())
-    }
-
-    fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.handle.mark_destroyed();
         Ok(())
     }
 }
@@ -171,14 +162,16 @@ pub(crate) struct PointLightArrayUniform {
     pub(crate) lights: [PointLightUniform; MAX_LIGHTS],
 }
 
-#[derive(Component)]
+#[derive(Component, GpuComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[gpu_update_handles = "update"]
 pub(crate) struct PointLightArray {
     pub(crate) lights: Vec<PointLightUniform>,
     #[cfg_attr(
         feature = "serde",
         serde(skip, default = "PointLightArray::default_handle")
     )]
+    #[gpu_handle]
     pub(crate) handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
@@ -213,35 +206,26 @@ impl PointLightArray {
     pub fn clear(&mut self) {
         self.lights.clear();
     }
+
+    fn update(&self, _world: &World) -> anyhow::Result<()> {
+        self.handle.update(&[PointLightArrayUniform {
+            count: self.lights.len() as u32,
+            _pad: [0; 3],
+            lights: {
+                let mut lights = [PointLightUniform::default(); MAX_LIGHTS];
+                for (i, light) in self.lights.iter().enumerate() {
+                    lights[i] = *light;
+                }
+                lights
+            },
+        }]);
+        Ok(())
+    }
 }
 
 impl Default for PointLightArray {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl GpuComponent for PointLightArray {
-    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
-        Ok(vec![self.handle.lazy_init(manager)?])
-    }
-
-    fn update_resources(&self, _world: &World) -> anyhow::Result<()> {
-        let mut uniform = PointLightArrayUniform {
-            count: self.lights.len() as u32,
-            _pad: [0; 3],
-            lights: [PointLightUniform::default(); MAX_LIGHTS],
-        };
-        for (i, light) in self.lights.iter().enumerate() {
-            uniform.lights[i] = *light;
-        }
-        self.handle.update(&[uniform]);
-        Ok(())
-    }
-
-    fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.handle.mark_destroyed();
-        Ok(())
     }
 }
 

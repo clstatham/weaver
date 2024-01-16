@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use weaver_proc_macro::StaticId;
+use weaver_proc_macro::{GpuComponent, StaticId};
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -193,10 +193,13 @@ impl DoodadVertex {
     }
 }
 
-#[derive(StaticId)]
+#[derive(StaticId, GpuComponent)]
+#[gpu_update_handles = "update"]
 struct DoodadBuffers {
     bind_group: LazyBindGroup<Self>,
+    #[gpu_handle]
     transform_buffer: LazyGpuHandle,
+    #[gpu_handle]
     color_buffer: LazyGpuHandle,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -236,23 +239,8 @@ impl DoodadBuffers {
             count: RwLock::new(0),
         }
     }
-}
 
-impl GpuComponent for DoodadBuffers {
-    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
-        Ok(vec![
-            self.transform_buffer.lazy_init(manager)?,
-            self.color_buffer.lazy_init(manager)?,
-        ])
-    }
-
-    fn update_resources(&self, _world: &World) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.transform_buffer.mark_destroyed();
-        self.color_buffer.mark_destroyed();
+    fn update(&self, _world: &World) -> anyhow::Result<()> {
         Ok(())
     }
 }

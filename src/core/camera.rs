@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
-use weaver_proc_macro::Component;
+use weaver_proc_macro::{Component, GpuComponent};
 use winit::event::MouseButton;
 pub use winit::keyboard::KeyCode;
 
 use crate::{
     ecs::World,
     renderer::internals::{
-        BindableComponent, GpuComponent, GpuHandle, GpuResourceManager, GpuResourceType,
-        LazyBindGroup, LazyGpuHandle,
+        BindableComponent, GpuResourceManager, GpuResourceType, LazyBindGroup, LazyGpuHandle,
     },
 };
 
@@ -44,13 +43,15 @@ impl From<&Camera> for CameraUniform {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, GpuComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[gpu_update_handles = "update"]
 pub struct Camera {
     pub view_matrix: glam::Mat4,
     pub projection_matrix: glam::Mat4,
 
     #[cfg_attr(feature = "serde", serde(skip, default = "Camera::default_handle"))]
+    #[gpu_handle]
     pub(crate) handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
@@ -79,31 +80,15 @@ impl Camera {
         )
     }
 
-    pub fn update(&mut self) {
-        self.handle
-            .update::<CameraUniform>(&[CameraUniform::from(&*self)]);
+    pub fn update(&self, _world: &World) -> anyhow::Result<()> {
+        self.handle.update(&[CameraUniform::from(self)]);
+        Ok(())
     }
 }
 
 impl Default for Camera {
     fn default() -> Self {
         Self::new(glam::Mat4::IDENTITY, glam::Mat4::IDENTITY)
-    }
-}
-
-impl GpuComponent for Camera {
-    fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
-        Ok(vec![self.handle.lazy_init(manager)?])
-    }
-
-    fn update_resources(&self, _world: &World) -> anyhow::Result<()> {
-        self.handle.update(&[CameraUniform::from(self)]);
-        Ok(())
-    }
-
-    fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.handle.mark_destroyed();
-        Ok(())
     }
 }
 
@@ -228,8 +213,6 @@ impl FlyCameraController {
 
         camera.view_matrix = self.view_matrix();
         camera.projection_matrix = self.projection_matrix();
-
-        camera.update();
     }
 
     pub fn view_matrix(&self) -> glam::Mat4 {

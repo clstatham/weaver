@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use weaver_proc_macro::Component;
+use weaver_proc_macro::{Component, GpuComponent};
 
 use crate::{
     ecs::World,
@@ -113,14 +113,16 @@ impl Default for Transform {
     }
 }
 
-#[derive(Clone, Component, Debug)]
+#[derive(Clone, Component, Debug, GpuComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[gpu_update_handles = "update"]
 pub struct TransformArray {
     matrices: Vec<glam::Mat4>,
     #[cfg_attr(
         feature = "serde",
         serde(skip, default = "TransformArray::default_handle")
     )]
+    #[gpu_handle]
     handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]
     bind_group: LazyBindGroup<Self>,
@@ -164,30 +166,16 @@ impl TransformArray {
     pub fn is_empty(&self) -> bool {
         self.matrices.is_empty()
     }
+
+    pub fn update(&self, _world: &World) -> anyhow::Result<()> {
+        self.handle.update(&self.matrices);
+        Ok(())
+    }
 }
 
 impl Default for TransformArray {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl GpuComponent for TransformArray {
-    fn lazy_init(
-        &self,
-        manager: &crate::renderer::internals::GpuResourceManager,
-    ) -> anyhow::Result<Vec<crate::renderer::internals::GpuHandle>> {
-        Ok(vec![self.handle.lazy_init(manager)?])
-    }
-
-    fn update_resources(&self, _world: &World) -> anyhow::Result<()> {
-        self.handle.update(&self.matrices);
-        Ok(())
-    }
-
-    fn destroy_resources(&self) -> anyhow::Result<()> {
-        self.handle.mark_destroyed();
-        Ok(())
     }
 }
 

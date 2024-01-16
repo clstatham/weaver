@@ -1,11 +1,13 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use weaver_proc_macro::GpuComponent;
+
 use crate::{
     ecs::{Component, StaticId},
     renderer::internals::{
-        BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
-        GpuResourceType, LazyBindGroup, LazyGpuHandle,
+        BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager, GpuResourceType,
+        LazyBindGroup, LazyGpuHandle,
     },
 };
 
@@ -21,8 +23,10 @@ pub trait TextureFormat: StaticId {
 macro_rules! texture_formats {
     ($($name:ident: $format:ident, $sample_type:expr;)*) => {
         $(
-            #[derive(Clone, StaticId)]
+            #[derive(Clone, StaticId, weaver_proc_macro::GpuComponent)]
+            #[gpu_update_handles = "update"]
             pub struct $name {
+                #[gpu_component]
                 texture: Texture,
                 bind_group: LazyBindGroup<Self>,
             }
@@ -88,21 +92,9 @@ macro_rules! texture_format_impls {
                         bind_group: LazyBindGroup::default(),
                     }
                 }
-            }
 
-
-            impl GpuComponent for $name {
-                fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<Vec<GpuHandle>> {
-                    Ok(vec![self.texture.handle.lazy_init(manager)?])
-                }
-
-                fn update_resources(&self, _world: &crate::ecs::World) -> anyhow::Result<()> {
-                    Ok(())
-                }
-
-                fn destroy_resources(&self) -> anyhow::Result<()> {
-                    self.texture.handle.mark_destroyed();
-                    Ok(())
+                fn update(&self, world: &crate::ecs::World) -> anyhow::Result<()> {
+                    self.texture.update_resources(world)
                 }
             }
 
@@ -188,16 +180,22 @@ texture_format_impls!(D2, D2Array, 6; HdrD2ArrayTexture, MonoTexture);
 
 texture_format_impls!(D2, CubeArray, 6; MonoCubeArrayTexture, DepthCubeArrayTexture);
 
-#[derive(Clone, Component)]
+#[derive(Clone, Component, GpuComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[gpu_update_handles = "update"]
 pub struct Texture {
     #[cfg_attr(feature = "serde", serde(skip, default = "Texture::default_handle"))]
+    #[gpu_handle]
     pub(crate) handle: LazyGpuHandle,
 }
 
 impl Texture {
     pub(crate) fn from_handle(handle: LazyGpuHandle) -> Self {
         Self { handle }
+    }
+
+    fn update(&self, _world: &crate::ecs::World) -> anyhow::Result<()> {
+        Ok(())
     }
 
     #[doc(hidden)]

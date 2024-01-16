@@ -2,36 +2,6 @@ use quote::{format_ident, quote};
 
 static NEXT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-// fn get_serializable_fields(struc: &DataStruct) -> Vec<TokenStream> {
-//     let fields = match &struc.fields {
-//         syn::Fields::Named(fields) => fields,
-//         _ => panic!("Invalid struct"),
-//     };
-
-//     let field_names = fields
-//         .named
-//         .iter()
-//         .filter_map(|field| {
-//             let name = &field.ident;
-//             let attrs = &field.attrs;
-//             if attrs.iter().any(|attr| {
-//                 let attr = &attr.path();
-//                 let attr_ident = &attr.segments.last().unwrap().ident;
-//                 let attr_ident_str = attr_ident.to_string();
-
-//                 attr_ident_str == "not_serialized"
-//             }) {
-//                 return None;
-//             }
-//             Some(quote! {
-//                 #name
-//             })
-//         })
-//         .collect::<Vec<_>>();
-
-//     field_names
-// }
-
 #[proc_macro_derive(StaticId)]
 pub fn static_id_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = syn::parse(input).unwrap();
@@ -100,6 +70,268 @@ fn impl_resource_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
                 Self: Sized,
             {
                 #id
+            }
+        }
+    };
+    gen.into()
+}
+
+#[proc_macro_derive(
+    GpuComponent,
+    attributes(gpu_update_handles, gpu_handle, gpu_component)
+)]
+pub fn gpu_component_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let ast = syn::parse(input).unwrap();
+    impl_gpu_component_macro(&ast)
+}
+
+fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
+    let name = &ast.ident;
+
+    let mut gpu_update = None;
+    let mut gpu_handles = Vec::new();
+    let mut gpu_handle_vecs = Vec::new();
+    let mut gpu_handle_maps = Vec::new();
+    let mut gpu_components = Vec::new();
+    let mut gpu_component_vecs = Vec::new();
+    let mut gpu_component_maps = Vec::new();
+    let mut gpu_component_options = Vec::new();
+
+    let fields = match &ast.data {
+        syn::Data::Struct(data) => match &data.fields {
+            syn::Fields::Named(fields) => &fields.named,
+            _ => panic!("Invalid struct"),
+        },
+        _ => panic!("Invalid struct"),
+    };
+
+    for attr in &ast.attrs {
+        if let syn::Meta::NameValue(meta) = &attr.meta {
+            let meta_ident = meta.path.segments.last().unwrap().ident.to_string();
+            if let "gpu_update_handles" = meta_ident.as_str() {
+                let gpu_handle = match &meta.value {
+                    syn::Expr::Lit(lit) => match &lit.lit {
+                        syn::Lit::Str(s) => s.value(),
+                        _ => panic!("Invalid attribute: expected string literal"),
+                    },
+                    _ => panic!("Invalid attribute: expected string literal"),
+                };
+                let func = format_ident!("{}", gpu_handle);
+                gpu_update = Some(func);
+            }
+        }
+    }
+
+    for field in fields.iter() {
+        let name = field.ident.clone().unwrap();
+        let attrs = &field.attrs;
+
+        for attr in attrs.iter() {
+            let meta = &attr.meta;
+            match meta {
+                syn::Meta::Path(path) => {
+                    let path_ident = path.segments.last().unwrap().ident.to_string();
+                    match path_ident.as_str() {
+                        "gpu_handle" => {
+                            let ty = &field.ty;
+                            let ident = match ty {
+                                syn::Type::Path(path) => &path.path.segments.last().unwrap().ident,
+                                _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
+                            };
+                            match ident.to_string().as_str() {
+                                "LazyGpuHandle" => {
+                                    gpu_handles.push(name.clone());
+                                }
+                                "Vec" => match ty {
+                                    syn::Type::Path(path) => {
+                                        let path = &path.path;
+                                        let path_ident =
+                                            path.segments.last().unwrap().ident.to_string();
+                                        match path_ident.as_str() {
+                                            "LazyGpuHandle" => {
+                                                gpu_handle_vecs.push(name.clone());
+                                            }
+                                            _ => panic!("Invalid attribute: Expected `Vec<LazyGpuHandle>`"),
+                                        }
+                                    }
+                                    _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
+                                },
+                                "HashMap" | "FxHashMap" => match ty {
+                                    syn::Type::Path(path) => {
+                                        let path = &path.path;
+                                        let path_ident =
+                                            path.segments.last().unwrap().ident.to_string();
+                                        match path_ident.as_str() {
+                                            "LazyGpuHandle" => {
+                                                gpu_handle_maps.push(name.clone());
+                                            }
+                                            _ => panic!("Invalid attribute: Expected `HashMap<_, LazyGpuHandle>`"),
+                                        }
+                                    }
+                                    _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
+                                },
+                                _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
+                            }
+                        }
+                        "gpu_component" => {
+                            let ty = &field.ty;
+                            let ident = match ty {
+                                syn::Type::Path(path) => &path.path.segments.last().unwrap().ident,
+                                _ => panic!("Invalid attribute"),
+                            };
+                            match ident.to_string().as_str() {
+                                "Vec" => gpu_component_vecs.push(name.clone()),
+                                "HashMap" | "FxHashMap" => gpu_component_maps.push(name.clone()),
+                                "Option" => gpu_component_options.push(name.clone()),
+                                _ => gpu_components.push(name.clone()),
+                            }
+                        }
+                        _ => panic!("Invalid attribute"),
+                    }
+                }
+                _ => panic!("Invalid attribute"),
+            }
+        }
+    }
+
+    let mut lazy_init = Vec::new();
+    let mut update_resources = Vec::new();
+    let mut destroy_resources = Vec::new();
+
+    for handle in gpu_handles.iter() {
+        lazy_init.push(quote! {
+            out.push(self.#handle.lazy_init(manager)?);
+        });
+        destroy_resources.push(quote! {
+            self.#handle.mark_destroyed();
+        });
+    }
+
+    for vec in gpu_handle_vecs.iter() {
+        lazy_init.push(quote! {
+            for item in &self.#vec {
+                out.push(item.lazy_init(manager)?);
+            }
+        });
+        update_resources.push(quote! {
+            for item in &self.#vec {
+                item.update_resources(world)?;
+            }
+        });
+        destroy_resources.push(quote! {
+            for item in &self.#vec {
+                item.mark_destroyed();
+            }
+        });
+    }
+
+    for map in gpu_handle_maps.iter() {
+        lazy_init.push(quote! {
+            for item in self.#map.values() {
+                out.push(item.lazy_init(manager)?);
+            }
+        });
+        update_resources.push(quote! {
+            for item in self.#map.values() {
+                item.update_resources(world)?;
+            }
+        });
+        destroy_resources.push(quote! {
+            for item in self.#map.values() {
+                item.mark_destroyed();
+            }
+        });
+    }
+
+    for component in gpu_components.iter() {
+        lazy_init.push(quote! {
+            out.extend_from_slice(&self.#component.lazy_init(manager)?);
+        });
+        update_resources.push(quote! {
+            self.#component.update_resources(world)?;
+        });
+        destroy_resources.push(quote! {
+            self.#component.destroy_resources()?;
+        });
+    }
+
+    for vec in gpu_component_vecs.iter() {
+        lazy_init.push(quote! {
+            for item in &self.#vec {
+                out.extend_from_slice(&item.lazy_init(manager)?);
+            }
+        });
+        update_resources.push(quote! {
+            for item in &self.#vec {
+                item.update_resources(world)?;
+            }
+        });
+        destroy_resources.push(quote! {
+            for item in &self.#vec {
+                item.destroy_resources()?;
+            }
+        });
+    }
+
+    for map in gpu_component_maps.iter() {
+        lazy_init.push(quote! {
+            for item in self.#map.values() {
+                out.extend_from_slice(&item.lazy_init(manager)?);
+            }
+        });
+        update_resources.push(quote! {
+            for item in self.#map.values() {
+                item.update_resources(world)?;
+            }
+        });
+        destroy_resources.push(quote! {
+            for item in self.#map.values() {
+                item.destroy_resources()?;
+            }
+        });
+    }
+
+    for option in gpu_component_options.iter() {
+        lazy_init.push(quote! {
+            if let Some(item) = &self.#option {
+                out.extend_from_slice(&item.lazy_init(manager)?);
+            }
+        });
+        update_resources.push(quote! {
+            if let Some(item) = &self.#option {
+                item.update_resources(world)?;
+            }
+        });
+        destroy_resources.push(quote! {
+            if let Some(item) = &self.#option {
+                item.destroy_resources()?;
+            }
+        });
+    }
+
+    let gen = quote! {
+        impl crate::renderer::internals::GpuComponent for #name {
+            fn lazy_init(&self, manager: &crate::renderer::internals::GpuResourceManager) -> anyhow::Result<Vec<crate::renderer::internals::GpuHandle>> {
+                let mut out = vec![];
+                #(
+                    #lazy_init
+                )*
+                Ok(out)
+            }
+
+            fn update_resources(&self, world: &crate::ecs::World) -> anyhow::Result<()> {
+                self.#gpu_update(world)?;
+                #(
+                    #update_resources
+                )*
+                Ok(())
+            }
+
+            fn destroy_resources(&self) -> anyhow::Result<()> {
+                #(
+                    #destroy_resources
+                )*
+                Ok(())
             }
         }
     };
