@@ -4,9 +4,7 @@ use weaver_proc_macro::{BindableComponent, Component, GpuComponent};
 
 use crate::{
     ecs::World,
-    renderer::internals::{
-        BindGroupLayoutCache, BindableComponent, GpuResourceManager, LazyBindGroup, LazyGpuHandle,
-    },
+    renderer::internals::{LazyBindGroup, LazyGpuHandle},
 };
 
 use super::mesh::MAX_MESHES;
@@ -114,14 +112,13 @@ impl Default for Transform {
 
 #[derive(Clone, Component, Debug, GpuComponent, BindableComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 pub struct TransformArray {
     matrices: Vec<glam::Mat4>,
     #[cfg_attr(
         feature = "serde",
         serde(skip, default = "TransformArray::default_handle")
     )]
-    #[gpu_handle]
     #[storage]
     handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]

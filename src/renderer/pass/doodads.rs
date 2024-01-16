@@ -15,8 +15,8 @@ use crate::{
     include_shader,
     renderer::{
         internals::{
-            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager,
-            GpuResourceType, LazyBindGroup, LazyGpuHandle,
+            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceType, LazyBindGroup,
+            LazyGpuHandle,
         },
         Renderer,
     },
@@ -194,13 +194,11 @@ impl DoodadVertex {
 }
 
 #[derive(StaticId, GpuComponent, BindableComponent)]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 struct DoodadBuffers {
     bind_group: LazyBindGroup<Self>,
-    #[gpu_handle]
     #[storage]
     transform_buffer: LazyGpuHandle,
-    #[gpu_handle]
     #[storage]
     color_buffer: LazyGpuHandle,
     vertex_buffer: wgpu::Buffer,

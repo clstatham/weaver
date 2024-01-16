@@ -6,9 +6,7 @@ pub use winit::keyboard::KeyCode;
 
 use crate::{
     ecs::World,
-    renderer::internals::{
-        BindableComponent, GpuResourceManager, GpuResourceType, LazyBindGroup, LazyGpuHandle,
-    },
+    renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle},
 };
 
 use super::input::Input;
@@ -45,13 +43,12 @@ impl From<&Camera> for CameraUniform {
 
 #[derive(Component, GpuComponent, BindableComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 pub struct Camera {
     pub view_matrix: glam::Mat4,
     pub projection_matrix: glam::Mat4,
 
     #[cfg_attr(feature = "serde", serde(skip, default = "Camera::default_handle"))]
-    #[gpu_handle]
     #[uniform]
     pub(crate) handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]

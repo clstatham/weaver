@@ -78,7 +78,7 @@ fn impl_resource_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
 
 #[proc_macro_derive(
     GpuComponent,
-    attributes(gpu_update_handles, gpu_handle, gpu_component)
+    attributes(gpu)
 )]
 pub fn gpu_component_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = syn::parse(input).unwrap();
@@ -106,18 +106,28 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     };
 
     for attr in &ast.attrs {
-        if let syn::Meta::NameValue(meta) = &attr.meta {
-            let meta_ident = meta.path.segments.last().unwrap().ident.to_string();
-            if let "gpu_update_handles" = meta_ident.as_str() {
-                let gpu_handle = match &meta.value {
-                    syn::Expr::Lit(lit) => match &lit.lit {
-                        syn::Lit::Str(s) => s.value(),
-                        _ => panic!("Invalid attribute: expected string literal"),
-                    },
-                    _ => panic!("Invalid attribute: expected string literal"),
-                };
-                let func = format_ident!("{}", gpu_handle);
-                gpu_update = Some(func);
+
+        if let syn::Meta::List(list) = &attr.meta {
+            let meta_ident = list.path.segments.last().unwrap().ident.to_string();
+            if let "gpu" = meta_ident.as_str() {
+                list.parse_args_with(|input: &syn::parse::ParseBuffer<'_>| {
+                    while !input.is_empty() {
+                        let ident = input.parse::<syn::Ident>().unwrap();
+                        match ident.to_string().as_str() {
+                            "update" => {
+                                input.parse::<syn::Token![=]>().unwrap();
+                                let ident = input.parse::<syn::LitStr>().unwrap();
+                                gpu_update = Some(format_ident!("{}", ident.value()));
+                            }
+                            _ => panic!("Invalid attribute"),
+                        }
+                        if !input.is_empty() {
+                            input.parse::<syn::Token![,]>().unwrap();
+                        }
+                    }
+
+                    Ok(())
+                }).unwrap();
             }
         }
     }
@@ -126,66 +136,90 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
         let name = field.ident.clone().unwrap();
         let attrs = &field.attrs;
 
+        let is_handle;
+        let ty = &field.ty;
+        let ident = match ty {
+            syn::Type::Path(path) => &path.path.segments.last().unwrap().ident,
+            _ => continue,
+        };
+        match ident.to_string().as_str() {
+            "LazyGpuHandle" => {
+                gpu_handles.push(name.clone());
+                is_handle = true;
+            }
+            "Vec" => match ty {
+                syn::Type::Path(path) => {
+                    let path = &path.path;
+                    let path_ident =
+                        path.segments.last().unwrap().ident.to_string();
+                    match path_ident.as_str() {
+                        "LazyGpuHandle" => {
+                            gpu_handle_vecs.push(name.clone());
+                            is_handle = true;
+                        }
+                        _ => {
+                            is_handle = false;
+                        }
+                    }
+                }
+                _ => {
+                    is_handle = false;
+                }
+            },
+            "HashMap" | "FxHashMap" => match ty {
+                syn::Type::Path(path) => {
+                    let path = &path.path;
+                    let path_ident =
+                        path.segments.last().unwrap().ident.to_string();
+                    match path_ident.as_str() {
+                        "LazyGpuHandle" => {
+                            gpu_handle_maps.push(name.clone());
+                            is_handle = true;
+                        }
+                        _ => {
+                            is_handle = false;
+                        }
+                    }
+                }
+                _ => {
+                    is_handle = false;
+                }
+            },
+            _ => {
+                is_handle = false;
+            }
+        }
+
         for attr in attrs.iter() {
             let meta = &attr.meta;
-            if let syn::Meta::Path(path) = meta {
-                let path_ident = path.segments.last().unwrap().ident.to_string();
-                match path_ident.as_str() {
-                    "gpu_handle" => {
-                        let ty = &field.ty;
-                        let ident = match ty {
-                            syn::Type::Path(path) => &path.path.segments.last().unwrap().ident,
-                            _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
-                        };
-                        match ident.to_string().as_str() {
-                            "LazyGpuHandle" => {
-                                gpu_handles.push(name.clone());
+            if let syn::Meta::List(list) = meta {
+                let path_ident = list.path.segments.last().unwrap().ident.to_string();
+                if let "gpu" = path_ident.as_str() {
+                    if !is_handle {
+                        list.parse_args_with(|input: &syn::parse::ParseBuffer<'_>| {
+                            while !input.is_empty() {
+                                let ident = input.parse::<syn::Ident>().unwrap();
+                                if let "component" = ident.to_string().as_str() {
+                                    let ty = &field.ty;
+                                    let ident = match ty {
+                                        syn::Type::Path(path) => &path.path.segments.last().unwrap().ident,
+                                        _ => panic!("Invalid attribute"),
+                                    };
+                                    match ident.to_string().as_str() {
+                                        "Vec" => gpu_component_vecs.push(name.clone()),
+                                        "HashMap" | "FxHashMap" => gpu_component_maps.push(name.clone()),
+                                        "Option" => gpu_component_options.push(name.clone()),
+                                        _ => gpu_components.push(name.clone()),
+                                    }
+                                }
+                                if !input.is_empty() {
+                                    input.parse::<syn::Token![,]>().unwrap();
+                                }
                             }
-                            "Vec" => match ty {
-                                syn::Type::Path(path) => {
-                                    let path = &path.path;
-                                    let path_ident =
-                                        path.segments.last().unwrap().ident.to_string();
-                                    match path_ident.as_str() {
-                                        "LazyGpuHandle" => {
-                                            gpu_handle_vecs.push(name.clone());
-                                        }
-                                        _ => panic!("Invalid attribute: Expected `Vec<LazyGpuHandle>`"),
-                                    }
-                                }
-                                _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
-                            },
-                            "HashMap" | "FxHashMap" => match ty {
-                                syn::Type::Path(path) => {
-                                    let path = &path.path;
-                                    let path_ident =
-                                        path.segments.last().unwrap().ident.to_string();
-                                    match path_ident.as_str() {
-                                        "LazyGpuHandle" => {
-                                            gpu_handle_maps.push(name.clone());
-                                        }
-                                        _ => panic!("Invalid attribute: Expected `HashMap<_, LazyGpuHandle>`"),
-                                    }
-                                }
-                                _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
-                            },
-                            _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
-                        }
+
+                            Ok(())
+                        }).unwrap();
                     }
-                    "gpu_component" => {
-                        let ty = &field.ty;
-                        let ident = match ty {
-                            syn::Type::Path(path) => &path.path.segments.last().unwrap().ident,
-                            _ => panic!("Invalid attribute"),
-                        };
-                        match ident.to_string().as_str() {
-                            "Vec" => gpu_component_vecs.push(name.clone()),
-                            "HashMap" | "FxHashMap" => gpu_component_maps.push(name.clone()),
-                            "Option" => gpu_component_options.push(name.clone()),
-                            _ => gpu_components.push(name.clone()),
-                        }
-                    }
-                    _ => {}
                 }
             }
         }

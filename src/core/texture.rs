@@ -24,9 +24,9 @@ macro_rules! texture_formats {
     ($($name:ident: $format:ident, $sample_type:expr;)*) => {
         $(
             #[derive(Clone, StaticId, weaver_proc_macro::GpuComponent)]
-            #[gpu_update_handles = "update"]
+            #[gpu(update = "update")]
             pub struct $name {
-                #[gpu_component]
+                #[gpu(component)]
                 texture: Texture,
                 bind_group: LazyBindGroup<Self>,
             }
@@ -182,10 +182,9 @@ texture_format_impls!(D2, CubeArray, 6; MonoCubeArrayTexture, DepthCubeArrayText
 
 #[derive(Clone, Component, GpuComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 pub struct Texture {
     #[cfg_attr(feature = "serde", serde(skip, default = "Texture::default_handle"))]
-    #[gpu_handle]
     pub(crate) handle: LazyGpuHandle,
 }
 

@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use weaver_proc_macro::{BindableComponent, Component, GpuComponent};
+use weaver_proc_macro::{Component, GpuComponent};
 
 use crate::{
     app::asset_server::AssetId,
@@ -19,7 +19,7 @@ use super::{
 /// PBR material based on Bevy
 #[derive(Clone, Component, GpuComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 pub struct Material {
     asset_id: AssetId,
 
@@ -27,23 +27,22 @@ pub struct Material {
         feature = "serde",
         serde(skip, default = "Material::new_properties_handle")
     )]
-    #[gpu_handle]
     pub(crate) properties_handle: LazyGpuHandle,
 
     pub diffuse: Color,
     #[cfg_attr(feature = "serde", serde(skip))]
-    #[gpu_component]
+    #[gpu(component)]
     pub diffuse_texture: Option<SdrTexture>,
     pub metallic: f32,
     #[cfg_attr(feature = "serde", serde(skip))]
-    #[gpu_component]
+    #[gpu(component)]
     pub normal_texture: Option<NormalMapTexture>,
     pub roughness: f32,
     #[cfg_attr(feature = "serde", serde(skip))]
-    #[gpu_component]
+    #[gpu(component)]
     pub roughness_texture: Option<SdrTexture>,
     #[cfg_attr(feature = "serde", serde(skip))]
-    #[gpu_component]
+    #[gpu(component)]
     pub ambient_occlusion_texture: Option<SdrTexture>,
 
     pub texture_scaling: f32,

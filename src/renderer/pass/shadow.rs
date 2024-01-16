@@ -30,10 +30,10 @@ use super::Pass;
 const SHADOW_DEPTH_TEXTURE_SIZE: u32 = 1024;
 
 #[derive(StaticId, GpuComponent)]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 struct UniqueMesh {
     mesh: Mesh,
-    #[gpu_component]
+    #[gpu(component)]
     transforms: TransformArray,
 }
 
@@ -44,9 +44,9 @@ impl UniqueMesh {
 }
 
 #[derive(Default, StaticId, GpuComponent)]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 struct UniqueMeshes {
-    #[gpu_component]
+    #[gpu(component)]
     unique_meshes: FxHashMap<u64, UniqueMesh>,
 }
 
@@ -78,9 +78,8 @@ impl UniqueMeshes {
 }
 
 #[derive(Clone, StaticId, GpuComponent, BindableComponent)]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 struct LightViews {
-    #[gpu_handle]
     #[storage]
     handle: LazyGpuHandle,
     bind_group: LazyBindGroup<Self>,
@@ -108,9 +107,9 @@ impl LightViews {
 }
 
 #[derive(StaticId, Clone, GpuComponent)]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 struct ShadowBuffers {
-    #[gpu_handle]
+    #[gpu(handle)]
     shadow_cubemap: LazyGpuHandle,
     bind_group: LazyBindGroup<Self>,
 }

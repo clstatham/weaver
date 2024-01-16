@@ -17,8 +17,8 @@ use crate::{
     include_shader,
     renderer::{
         internals::{
-            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager,
-            GpuResourceType, LazyBindGroup, LazyGpuHandle,
+            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceType, LazyBindGroup,
+            LazyGpuHandle,
         },
         Renderer,
     },
@@ -27,11 +27,11 @@ use crate::{
 use super::sky::{SKYBOX_CUBEMAP_SIZE, SKYBOX_IRRADIANCE_MAP_SIZE};
 
 #[derive(StaticId, GpuComponent)]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 pub struct UniqueMesh {
     pub mesh: Mesh,
     pub material_bind_group: Arc<wgpu::BindGroup>,
-    #[gpu_component]
+    #[gpu(component)]
     pub transforms: TransformArray,
 }
 
@@ -42,9 +42,9 @@ impl UniqueMesh {
 }
 
 #[derive(Default, StaticId, GpuComponent)]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 pub struct UniqueMeshes {
-    #[gpu_component]
+    #[gpu(component)]
     pub unique_meshes: FxHashMap<(u64, u64), UniqueMesh>,
 }
 
@@ -82,20 +82,20 @@ impl UniqueMeshes {
 }
 
 #[derive(Clone, StaticId, GpuComponent, BindableComponent)]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 pub struct PbrBuffers {
-    #[gpu_handle]
     #[uniform]
     pub(crate) camera: LazyGpuHandle,
-    #[gpu_handle]
+
     #[texture(format = Rgba32Float, sample_type = float, view_dimension = Cube)]
     pub(crate) env_map: LazyGpuHandle,
-    #[gpu_handle]
+
     #[texture(format = Rgba32Float, sample_type = float, view_dimension = Cube)]
     pub(crate) irradiance_map: LazyGpuHandle,
-    #[gpu_handle]
+
     #[sampler(filtering = false)]
     pub(crate) env_map_sampler: LazyGpuHandle,
+
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
 

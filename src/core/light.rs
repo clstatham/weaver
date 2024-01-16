@@ -4,10 +4,7 @@ use weaver_proc_macro::{BindableComponent, Component, GpuComponent};
 
 use crate::{
     ecs::World,
-    renderer::internals::{
-        BindGroupLayoutCache, BindableComponent, GpuResourceManager, GpuResourceType,
-        LazyBindGroup, LazyGpuHandle,
-    },
+    renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle},
 };
 
 use super::color::Color;
@@ -16,7 +13,7 @@ pub const MAX_LIGHTS: usize = 32;
 
 #[derive(Component, GpuComponent, BindableComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 pub struct PointLight {
     pub position: glam::Vec3,
     pub color: Color,
@@ -24,7 +21,7 @@ pub struct PointLight {
     pub radius: f32,
 
     #[cfg_attr(feature = "serde", serde(skip, default = "PointLight::default_handle"))]
-    #[gpu_handle]
+    #[gpu(handle)]
     #[uniform]
     pub(crate) handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -109,14 +106,14 @@ pub(crate) struct PointLightArrayUniform {
 
 #[derive(Component, GpuComponent, BindableComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[gpu_update_handles = "update"]
+#[gpu(update = "update")]
 pub(crate) struct PointLightArray {
     pub(crate) lights: Vec<PointLightUniform>,
     #[cfg_attr(
         feature = "serde",
         serde(skip, default = "PointLightArray::default_handle")
     )]
-    #[gpu_handle]
+    #[gpu(handle)]
     #[storage]
     pub(crate) handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]
