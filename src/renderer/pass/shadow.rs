@@ -109,7 +109,6 @@ impl LightViews {
 #[derive(StaticId, Clone, GpuComponent)]
 #[gpu(update = "update")]
 struct ShadowBuffers {
-    #[gpu(handle)]
     shadow_cubemap: LazyGpuHandle,
     bind_group: LazyBindGroup<Self>,
 }
