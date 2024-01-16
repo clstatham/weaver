@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use weaver_proc_macro::{GpuComponent, StaticId};
+use weaver_proc_macro::{BindableComponent, GpuComponent, StaticId};
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
     include_shader,
     renderer::{
         internals::{
-            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
+            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager,
             GpuResourceType, LazyBindGroup, LazyGpuHandle,
         },
         Renderer,
@@ -193,13 +193,15 @@ impl DoodadVertex {
     }
 }
 
-#[derive(StaticId, GpuComponent)]
+#[derive(StaticId, GpuComponent, BindableComponent)]
 #[gpu_update_handles = "update"]
 struct DoodadBuffers {
     bind_group: LazyBindGroup<Self>,
     #[gpu_handle]
+    #[storage]
     transform_buffer: LazyGpuHandle,
     #[gpu_handle]
+    #[storage]
     color_buffer: LazyGpuHandle,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -242,80 +244,6 @@ impl DoodadBuffers {
 
     fn update(&self, _world: &World) -> anyhow::Result<()> {
         Ok(())
-    }
-}
-
-impl BindableComponent for DoodadBuffers {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Doodad Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        })
-    }
-
-    fn create_bind_group(
-        &self,
-        manager: &GpuResourceManager,
-        cache: &BindGroupLayoutCache,
-    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        let layout = cache.get_or_create::<Self>(manager.device());
-        let transform_buffer = self.transform_buffer.lazy_init(manager)?;
-        let color_buffer = self.color_buffer.lazy_init(manager)?;
-        let bind_group = manager
-            .device()
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Doodad Bind Group"),
-                layout: &layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: transform_buffer.get_buffer().unwrap().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: color_buffer.get_buffer().unwrap().as_entire_binding(),
-                    },
-                ],
-            });
-        Ok(Arc::new(bind_group))
-    }
-
-    fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
-        self.bind_group.bind_group().clone()
-    }
-
-    fn lazy_init_bind_group(
-        &self,
-        manager: &GpuResourceManager,
-        cache: &BindGroupLayoutCache,
-    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        if let Some(bind_group) = self.bind_group.bind_group() {
-            return Ok(bind_group);
-        }
-
-        let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
-        Ok(bind_group)
     }
 }
 

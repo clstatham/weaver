@@ -18,7 +18,7 @@ use crate::{
     prelude::*,
     renderer::{
         internals::{
-            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
+            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager,
             GpuResourceType, LazyBindGroup, LazyGpuHandle,
         },
         Renderer,
@@ -77,10 +77,11 @@ impl UniqueMeshes {
     }
 }
 
-#[derive(Clone, StaticId, GpuComponent)]
+#[derive(Clone, StaticId, GpuComponent, BindableComponent)]
 #[gpu_update_handles = "update"]
 struct LightViews {
     #[gpu_handle]
+    #[storage]
     handle: LazyGpuHandle,
     bind_group: LazyBindGroup<Self>,
 }
@@ -103,62 +104,6 @@ impl LightViews {
 
     fn update(&self, _world: &World) -> anyhow::Result<()> {
         Ok(())
-    }
-}
-
-impl BindableComponent for LightViews {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Light Views Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        })
-    }
-
-    fn create_bind_group(
-        &self,
-        manager: &GpuResourceManager,
-        cache: &BindGroupLayoutCache,
-    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        let handle = self.handle.lazy_init(manager)?;
-        let bind_group_layout = cache.get_or_create::<Self>(manager.device());
-        let bind_group = manager
-            .device()
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Light Views Bind Group"),
-                layout: &bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: handle.get_buffer().unwrap().as_entire_binding(),
-                }],
-            });
-
-        Ok(Arc::new(bind_group))
-    }
-
-    fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
-        self.bind_group.bind_group().clone()
-    }
-
-    fn lazy_init_bind_group(
-        &self,
-        manager: &GpuResourceManager,
-        cache: &BindGroupLayoutCache,
-    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        if let Some(bind_group) = self.bind_group.bind_group() {
-            return Ok(bind_group);
-        }
-
-        let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
-        Ok(bind_group)
     }
 }
 

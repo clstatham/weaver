@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use weaver_proc_macro::{Component, GpuComponent};
+use weaver_proc_macro::{BindableComponent, Component, GpuComponent};
 
 use crate::{
     ecs::World,
     renderer::internals::{
-        BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
-        GpuResourceType, LazyBindGroup, LazyGpuHandle,
+        BindGroupLayoutCache, BindableComponent, GpuResourceManager, GpuResourceType,
+        LazyBindGroup, LazyGpuHandle,
     },
 };
 
@@ -14,7 +14,7 @@ use super::color::Color;
 
 pub const MAX_LIGHTS: usize = 32;
 
-#[derive(Component, GpuComponent)]
+#[derive(Component, GpuComponent, BindableComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[gpu_update_handles = "update"]
 pub struct PointLight {
@@ -25,6 +25,7 @@ pub struct PointLight {
 
     #[cfg_attr(feature = "serde", serde(skip, default = "PointLight::default_handle"))]
     #[gpu_handle]
+    #[uniform]
     pub(crate) handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
@@ -72,62 +73,6 @@ impl PointLight {
     }
 }
 
-impl BindableComponent for PointLight {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Point Light Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        })
-    }
-
-    fn create_bind_group(
-        &self,
-        manager: &GpuResourceManager,
-        cache: &BindGroupLayoutCache,
-    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        let layout = cache.get_or_create::<Self>(manager.device());
-        let buffer = self.handle.lazy_init(manager)?;
-
-        let bind_group = manager
-            .device()
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Point Light Bind Group"),
-                layout: &layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.get_buffer().unwrap().as_entire_binding(),
-                }],
-            });
-        Ok(Arc::new(bind_group))
-    }
-
-    fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
-        self.bind_group.bind_group().clone()
-    }
-
-    fn lazy_init_bind_group(
-        &self,
-        manager: &GpuResourceManager,
-        cache: &crate::renderer::internals::BindGroupLayoutCache,
-    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        if let Some(bind_group) = self.bind_group.bind_group() {
-            return Ok(bind_group);
-        }
-
-        let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
-        Ok(bind_group)
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable, Component)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
@@ -162,7 +107,7 @@ pub(crate) struct PointLightArrayUniform {
     pub(crate) lights: [PointLightUniform; MAX_LIGHTS],
 }
 
-#[derive(Component, GpuComponent)]
+#[derive(Component, GpuComponent, BindableComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[gpu_update_handles = "update"]
 pub(crate) struct PointLightArray {
@@ -172,6 +117,7 @@ pub(crate) struct PointLightArray {
         serde(skip, default = "PointLightArray::default_handle")
     )]
     #[gpu_handle]
+    #[storage]
     pub(crate) handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
@@ -226,62 +172,6 @@ impl PointLightArray {
 impl Default for PointLightArray {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl BindableComponent for PointLightArray {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Point Light Array Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        })
-    }
-
-    fn create_bind_group(
-        &self,
-        manager: &GpuResourceManager,
-        cache: &BindGroupLayoutCache,
-    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        let layout = cache.get_or_create::<Self>(manager.device());
-        let buffer = self.handle.lazy_init(manager)?;
-
-        let bind_group = manager
-            .device()
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Point Light Array Bind Group"),
-                layout: &layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.get_buffer().unwrap().as_entire_binding(),
-                }],
-            });
-        Ok(Arc::new(bind_group))
-    }
-
-    fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
-        self.bind_group.bind_group().clone()
-    }
-
-    fn lazy_init_bind_group(
-        &self,
-        manager: &GpuResourceManager,
-        cache: &crate::renderer::internals::BindGroupLayoutCache,
-    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        if let Some(bind_group) = self.bind_group.bind_group() {
-            return Ok(bind_group);
-        }
-
-        let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
-        Ok(bind_group)
     }
 }
 

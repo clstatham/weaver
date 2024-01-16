@@ -128,68 +128,65 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
 
         for attr in attrs.iter() {
             let meta = &attr.meta;
-            match meta {
-                syn::Meta::Path(path) => {
-                    let path_ident = path.segments.last().unwrap().ident.to_string();
-                    match path_ident.as_str() {
-                        "gpu_handle" => {
-                            let ty = &field.ty;
-                            let ident = match ty {
-                                syn::Type::Path(path) => &path.path.segments.last().unwrap().ident,
-                                _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
-                            };
-                            match ident.to_string().as_str() {
-                                "LazyGpuHandle" => {
-                                    gpu_handles.push(name.clone());
+            if let syn::Meta::Path(path) = meta {
+                let path_ident = path.segments.last().unwrap().ident.to_string();
+                match path_ident.as_str() {
+                    "gpu_handle" => {
+                        let ty = &field.ty;
+                        let ident = match ty {
+                            syn::Type::Path(path) => &path.path.segments.last().unwrap().ident,
+                            _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
+                        };
+                        match ident.to_string().as_str() {
+                            "LazyGpuHandle" => {
+                                gpu_handles.push(name.clone());
+                            }
+                            "Vec" => match ty {
+                                syn::Type::Path(path) => {
+                                    let path = &path.path;
+                                    let path_ident =
+                                        path.segments.last().unwrap().ident.to_string();
+                                    match path_ident.as_str() {
+                                        "LazyGpuHandle" => {
+                                            gpu_handle_vecs.push(name.clone());
+                                        }
+                                        _ => panic!("Invalid attribute: Expected `Vec<LazyGpuHandle>`"),
+                                    }
                                 }
-                                "Vec" => match ty {
-                                    syn::Type::Path(path) => {
-                                        let path = &path.path;
-                                        let path_ident =
-                                            path.segments.last().unwrap().ident.to_string();
-                                        match path_ident.as_str() {
-                                            "LazyGpuHandle" => {
-                                                gpu_handle_vecs.push(name.clone());
-                                            }
-                                            _ => panic!("Invalid attribute: Expected `Vec<LazyGpuHandle>`"),
-                                        }
-                                    }
-                                    _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
-                                },
-                                "HashMap" | "FxHashMap" => match ty {
-                                    syn::Type::Path(path) => {
-                                        let path = &path.path;
-                                        let path_ident =
-                                            path.segments.last().unwrap().ident.to_string();
-                                        match path_ident.as_str() {
-                                            "LazyGpuHandle" => {
-                                                gpu_handle_maps.push(name.clone());
-                                            }
-                                            _ => panic!("Invalid attribute: Expected `HashMap<_, LazyGpuHandle>`"),
-                                        }
-                                    }
-                                    _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
-                                },
                                 _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
-                            }
+                            },
+                            "HashMap" | "FxHashMap" => match ty {
+                                syn::Type::Path(path) => {
+                                    let path = &path.path;
+                                    let path_ident =
+                                        path.segments.last().unwrap().ident.to_string();
+                                    match path_ident.as_str() {
+                                        "LazyGpuHandle" => {
+                                            gpu_handle_maps.push(name.clone());
+                                        }
+                                        _ => panic!("Invalid attribute: Expected `HashMap<_, LazyGpuHandle>`"),
+                                    }
+                                }
+                                _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
+                            },
+                            _ => panic!("Invalid attribute: Expected `LazyGpuHandle`, `Vec<LazyGpuHandle>`, or `HashMap<_, LazyGpuHandle>`"),
                         }
-                        "gpu_component" => {
-                            let ty = &field.ty;
-                            let ident = match ty {
-                                syn::Type::Path(path) => &path.path.segments.last().unwrap().ident,
-                                _ => panic!("Invalid attribute"),
-                            };
-                            match ident.to_string().as_str() {
-                                "Vec" => gpu_component_vecs.push(name.clone()),
-                                "HashMap" | "FxHashMap" => gpu_component_maps.push(name.clone()),
-                                "Option" => gpu_component_options.push(name.clone()),
-                                _ => gpu_components.push(name.clone()),
-                            }
-                        }
-                        _ => panic!("Invalid attribute"),
                     }
+                    "gpu_component" => {
+                        let ty = &field.ty;
+                        let ident = match ty {
+                            syn::Type::Path(path) => &path.path.segments.last().unwrap().ident,
+                            _ => panic!("Invalid attribute"),
+                        };
+                        match ident.to_string().as_str() {
+                            "Vec" => gpu_component_vecs.push(name.clone()),
+                            "HashMap" | "FxHashMap" => gpu_component_maps.push(name.clone()),
+                            "Option" => gpu_component_options.push(name.clone()),
+                            _ => gpu_components.push(name.clone()),
+                        }
+                    }
+                    _ => {}
                 }
-                _ => panic!("Invalid attribute"),
             }
         }
     }
@@ -335,6 +332,405 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
             }
         }
     };
+    gen.into()
+}
+
+enum BindingType {
+    Uniform,
+    Storage {
+        read_only: bool,
+    },
+    Texture {
+        format: proc_macro2::TokenStream,
+        sample_type: proc_macro2::TokenStream,
+        view_dimension: proc_macro2::TokenStream,
+        layers: proc_macro2::TokenStream,
+    },
+    Sampler {
+        filtering: bool,
+        comparison: bool,
+    },
+}
+
+#[proc_macro_derive(BindableComponent, attributes(uniform, texture, sampler, storage))]
+pub fn bindable_component_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let ast = syn::parse(input).unwrap();
+    impl_bindable_component_macro(&ast)
+}
+
+fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
+    let name = &ast.ident;
+
+    let mut bindings = Vec::new();
+
+    let fields = match &ast.data {
+        syn::Data::Struct(data) => match &data.fields {
+            syn::Fields::Named(fields) => &fields.named,
+            _ => panic!("Invalid struct"),
+        },
+        _ => panic!("Invalid struct"),
+    };
+
+    for field in fields.iter() {
+        let name = field.ident.clone().unwrap();
+        let attrs = &field.attrs;
+
+        for attr in attrs.iter() {
+            let attr = &attr.meta;
+            match attr {
+                syn::Meta::Path(path) => {
+                    let path_ident = path.segments.last().unwrap().ident.to_string();
+
+                    match path_ident.as_str() {
+                        // #[uniform]
+                        "uniform" => {
+                            bindings.push((name.clone(), BindingType::Uniform));
+                        }
+                        // #[storage]
+                        "storage" => {
+                            bindings.push((name.clone(), BindingType::Storage { read_only: true }));
+                        }
+                        // #[sampler]
+                        "sampler" => {
+                            bindings.push((
+                                name.clone(),
+                                BindingType::Sampler {
+                                    filtering: true,
+                                    comparison: false,
+                                },
+                            ));
+                        }
+                        // #[texture]
+                        "texture" => {
+                            todo!("texture");
+                        }
+                        _ => {}
+                    }
+                }
+                syn::Meta::List(list) => {
+                    let path_ident = list.path.segments.last().unwrap().ident.to_string();
+                    match path_ident.as_str() {
+                        // #[texture(...)]
+                        "texture" => {
+                            let mut sample_type = None;
+                            let mut view_dimension = None;
+                            let mut layers = None;
+                            let mut format = None;
+                            list.parse_args_with(|input: syn::parse::ParseStream| {
+                                while !input.is_empty() {
+                                    let ident = input.parse::<syn::Ident>().unwrap();
+                                    match ident.to_string().as_str() {
+                                        // #[texture(sample_type = ...)]
+                                        "sample_type" => {
+                                            input.parse::<syn::Token![=]>().unwrap();
+                                            let ident =
+                                                input.parse::<syn::Ident>().unwrap().to_string();
+                                            match ident.as_str() {
+                                                "filterable_float" => {
+                                                    sample_type = Some(quote! { wgpu::TextureSampleType::Float { filterable: true } })
+                                                }
+                                                "float" => {
+                                                    sample_type = Some(quote! { wgpu::TextureSampleType::Float { filterable: false } })
+                                                }
+                                                "depth" => {
+                                                    sample_type = Some(quote! { wgpu::TextureSampleType::Depth })
+                                                }
+                                                _ => panic!("Invalid attribute"),
+                                            }
+                                        }
+                                        // #[texture(view_dimension = ...)]
+                                        "view_dimension" => {
+                                            input.parse::<syn::Token![=]>().unwrap();
+                                            let ident =
+                                                input.parse::<syn::Variant>().unwrap();
+                                            view_dimension = Some(quote! { wgpu::TextureViewDimension::#ident })
+                                            
+                                        }
+                                        // #[texture(layers = ...)]
+                                        "layers" => {
+                                            input.parse::<syn::Token![=]>().unwrap();
+                                            let lit =
+                                                input.parse::<syn::LitInt>().unwrap();
+                                            let lit = lit.base10_parse::<u32>().unwrap();
+                                            layers = Some(quote! { Some(#lit) })
+                                        }
+                                        // #[texture(format = ...)]
+                                        "format" => {
+                                            input.parse::<syn::Token![=]>().unwrap();
+                                            let ident =
+                                                input.parse::<syn::Variant>().unwrap();
+                                            format = Some(quote! { 
+                                                wgpu::TextureFormat::#ident
+                                            });
+                                        }
+                                        _ => panic!("Invalid attribute"),
+                                    }
+                                    if !input.is_empty() {
+                                        input.parse::<syn::Token![,]>().unwrap();
+                                    }
+                                }
+
+                                Ok(())
+                            })
+                            .unwrap();
+
+                            bindings.push((
+                                name.clone(),
+                                BindingType::Texture {
+                                    format: format.expect("Missing format attribute"),
+                                    sample_type: sample_type.expect("Missing sample_type attribute"),
+                                    view_dimension: view_dimension.expect("Missing view_dimension attribute"),
+                                    layers: layers.unwrap_or(quote! { None }),
+                                },
+                            ));
+                        }
+
+                        // #[sampler(...)]
+                        "sampler" => {
+                            let mut filtering = None;
+                            let mut comparison = None;
+                            list.parse_args_with(|input: syn::parse::ParseStream| {
+                                while !input.is_empty() {
+                                    let ident = input.parse::<syn::Ident>().unwrap();
+                                    match ident.to_string().as_str() {
+                                        // #[sampler(filtering = ...)]
+                                        "filtering" => {
+                                            input.parse::<syn::Token![=]>().unwrap();
+                                            let ident =
+                                                input.parse::<syn::LitBool>().unwrap();
+                                            filtering = Some(ident.value);
+                                        }
+                                        // #[sampler(comparison = ...)]
+                                        "comparison" => {
+                                            input.parse::<syn::Token![=]>().unwrap();
+                                            let ident =
+                                                input.parse::<syn::LitBool>().unwrap();
+                                            comparison = Some(ident.value);
+                                        }
+                                        _ => panic!("Invalid attribute"),
+                                    }
+                                    if !input.is_empty() {
+                                        input.parse::<syn::Token![,]>().unwrap();
+                                    }
+                                }
+
+                                Ok(())
+                            })
+                            .unwrap();
+                            bindings.push((
+                                name.clone(),
+                                BindingType::Sampler {
+                                    filtering: filtering.unwrap_or(false),
+                                    comparison: comparison.unwrap_or(false),
+                                },
+                            ));
+                        }
+
+                        // #[storage(...)]
+                        "storage" => {
+                            let mut read_write = None;
+                            list.parse_args_with(|input: syn::parse::ParseStream| {
+                                while !input.is_empty() {
+                                    let ident = input.parse::<syn::Ident>().unwrap();
+                                    match ident.to_string().as_str() {
+                                        // #[storage(read_write = ...)]
+                                        "read_write" => {
+                                            input.parse::<syn::Token![=]>().unwrap();
+                                            let ident =
+                                                input.parse::<syn::LitBool>().unwrap();
+                                            read_write = Some(ident.value);
+                                        }
+                                        _ => panic!("Invalid attribute"),
+                                    }
+                                    if !input.is_empty() {
+                                        input.parse::<syn::Token![,]>().unwrap();
+                                    }
+                                }
+
+                                Ok(())
+                            })
+                            .unwrap();
+                            bindings.push((
+                                name.clone(),
+                                BindingType::Storage {
+                                    read_only: !read_write.unwrap_or(true),
+                                },
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut binding_layout_entries = Vec::new();
+    let mut binding_entries = Vec::new();
+    let mut binding_creations = Vec::new();
+
+    for (i, (name, binding_type)) in bindings.iter().enumerate() {
+        let binding = i as u32;
+        let visibility = match binding_type {
+            BindingType::Uniform => {
+                quote! { wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT }
+            }
+            BindingType::Storage { .. } => {
+                quote! { wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT }
+            }
+            BindingType::Texture { .. } => {
+                quote! { wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE }
+            }
+            BindingType::Sampler { .. } => {
+                quote! { wgpu::ShaderStages::FRAGMENT }
+            }
+        };
+        let ty = match binding_type {
+            BindingType::Uniform => {
+                quote! { wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None } }
+            }
+            BindingType::Storage { read_only } => {
+                quote! { wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: #read_only }, has_dynamic_offset: false, min_binding_size: None } }
+            }
+            BindingType::Texture { sample_type, view_dimension, .. } => {
+                quote! { wgpu::BindingType::Texture { 
+                    sample_type: #sample_type, 
+                    view_dimension: #view_dimension, 
+                    multisampled: false, 
+                 } }
+            }
+            BindingType::Sampler {
+                filtering,
+                comparison,
+                ..
+            } => {
+                if *comparison {
+                    quote! { wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison) }
+                } else if *filtering {
+                    quote! { wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering) }
+                } else {
+                    quote! { wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering) }
+                }
+            }
+        };
+        binding_layout_entries.push(quote! {
+            wgpu::BindGroupLayoutEntry {
+                binding: #binding,
+                visibility: #visibility,
+                ty: #ty,
+                count: None,
+            }
+        });
+
+        let binding_entry = match binding_type {
+            BindingType::Uniform => {
+                quote! { wgpu::BindingResource::Buffer(#name.as_entire_buffer_binding()) }
+            }
+            BindingType::Storage { .. } => {
+                quote! { wgpu::BindingResource::Buffer(#name.as_entire_buffer_binding()) }
+            }
+            BindingType::Texture { .. } => {
+                quote! { wgpu::BindingResource::TextureView(&#name) }
+            }
+            BindingType::Sampler { .. } => {
+                quote! { wgpu::BindingResource::Sampler(&#name) }
+            }
+        };
+
+        let binding_creation = match binding_type {
+            BindingType::Uniform => {
+                quote! {
+                   let #name = self.#name.lazy_init(manager)?;
+                   let #name = #name.get_buffer().unwrap();
+                }
+            }
+            BindingType::Storage { .. } => {
+                quote! {
+                   let #name = self.#name.lazy_init(manager)?;
+                   let #name = #name.get_buffer().unwrap();
+                }
+            }
+            BindingType::Texture { format, view_dimension, layers, .. } => {
+                quote! {
+                    let #name = self.#name.lazy_init(manager)?;
+                    let #name = #name.get_texture().unwrap();
+                    let #name = #name.create_view(&wgpu::TextureViewDescriptor {
+                        label: Some(concat!(stringify!(#name), " Texture View")),
+                        format: Some(#format),
+                        dimension: Some(#view_dimension),
+                        aspect: wgpu::TextureAspect::All,
+                        base_mip_level: 0,
+                        mip_level_count: None,
+                        base_array_layer: 0,
+                        array_layer_count: #layers,
+                    });
+                }
+            }
+            BindingType::Sampler { .. } => {
+                quote! {
+                    let #name = self.#name.lazy_init(manager)?;
+                    let #name = #name.get_sampler().unwrap();
+                }
+            }
+        };
+
+        binding_entries.push(quote! {
+            wgpu::BindGroupEntry {
+                binding: #binding,
+                resource: #binding_entry,
+            }
+        });
+        binding_creations.push(binding_creation);
+    }
+
+    let gen = quote! {
+        impl crate::renderer::internals::BindableComponent for #name {
+            fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some(concat!(stringify!(#name), " Bind Group Layout")),
+                    entries: &[#(#binding_layout_entries),*],
+                })
+            }
+
+            fn create_bind_group(
+                &self,
+                manager: &crate::renderer::internals::GpuResourceManager,
+                cache: &crate::renderer::internals::BindGroupLayoutCache,
+            ) -> anyhow::Result<std::sync::Arc<wgpu::BindGroup>> {
+                let layout = cache.get_or_create::<Self>(manager.device());
+                #(
+                    #binding_creations
+                )*
+                let bind_group = manager
+                    .device()
+                    .create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some(concat!(stringify!(#name), " Bind Group")),
+                        layout: &layout,
+                        entries: &[#(#binding_entries),*],
+                    });
+
+                Ok(std::sync::Arc::new(bind_group))
+            }
+
+            fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
+                self.bind_group.bind_group().clone()
+            }
+
+            fn lazy_init_bind_group(
+                &self,
+                manager: &crate::renderer::internals::GpuResourceManager,
+                cache: &crate::renderer::internals::BindGroupLayoutCache,
+            ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
+                if let Some(bind_group) = self.bind_group.bind_group() {
+                    return Ok(bind_group);
+                }
+
+                let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
+                Ok(bind_group)
+            }
+        }
+    };
+
     gen.into()
 }
 
@@ -701,145 +1097,6 @@ pub fn impl_queryable_for_n_tuple(input: proc_macro::TokenStream) -> proc_macro:
                     maybes.extend(#names::maybes().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
                 Some(maybes)
-            }
-        }
-    };
-
-    gen.into()
-}
-
-enum BindingType {
-    Uniform,
-    Storage { read_only: bool },
-}
-
-#[proc_macro_derive(RenderResource)]
-pub fn render_resource_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let ast = syn::parse(input).unwrap();
-    impl_render_resource_macro(&ast)
-}
-
-fn impl_render_resource_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
-    let name = &ast.ident;
-
-    // Automatically create a bind group layout for the resource
-    // anything marked with the attr `#[uniform]` will be included in the bind group layout and will be a uniform buffer
-    // anything marked with the attr `#[texture]` will be included in the bind group layout and will be a texture
-    // anything marked with the attr `#[storage_read]` will be included in the bind group layout and will be a storage buffer that is read only
-    // anything marked with the attr `#[storage_read_write]` will be included in the bind group layout and will be a storage buffer that is read/write
-
-    let mut binding_types = Vec::new();
-
-    let fields = match &ast.data {
-        syn::Data::Struct(data) => match &data.fields {
-            syn::Fields::Named(fields) => &fields.named,
-            _ => panic!("Invalid struct"),
-        },
-        _ => panic!("Invalid struct"),
-    };
-
-    for field in fields.iter() {
-        let name = field.ident.clone().unwrap();
-        let attrs = &field.attrs;
-
-        for attr in attrs.iter() {
-            let attr = &attr.meta;
-            match attr {
-                syn::Meta::Path(path) => {
-                    let path_ident = path.segments.last().unwrap().ident.to_string();
-                    match path_ident.as_str() {
-                        "uniform" => {
-                            binding_types.push((name.clone(), BindingType::Uniform));
-                        }
-                        "texture" => {
-                            todo!();
-                        }
-                        "storage_read" => {
-                            binding_types
-                                .push((name.clone(), BindingType::Storage { read_only: true }));
-                        }
-                        "storage_read_write" => {
-                            binding_types
-                                .push((name.clone(), BindingType::Storage { read_only: false }));
-                        }
-                        _ => panic!("Invalid attribute"),
-                    }
-                }
-                _ => panic!("Invalid attribute"),
-            }
-        }
-    }
-
-    let mut binding_layout_entries = Vec::new();
-
-    for (i, (_binding, binding_type)) in binding_types.iter().enumerate() {
-        let binding_entry = match binding_type {
-            BindingType::Uniform => quote! { wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            } },
-            BindingType::Storage { read_only } => quote! { wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: #read_only },
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            } },
-        };
-
-        binding_layout_entries.push(quote! {
-            wgpu::BindGroupLayoutEntry {
-                binding: #i as u32,
-                visibility: wgpu::ShaderStage::all(),
-                ty: #binding_entry,
-            }
-        });
-    }
-
-    // generate the bind group
-    let mut binding_group_entries = Vec::new();
-
-    for (i, (binding, binding_type)) in binding_types.iter().enumerate() {
-        let binding = format_ident!("{}", binding);
-        let binding_entry = match binding_type {
-            BindingType::Uniform => quote! { wgpu::Binding::Buffer {
-                buffer: &self.#binding.as_entire_buffer_binding(),
-                offset: 0,
-                size: None,
-            } },
-            BindingType::Storage { .. } => quote! { wgpu::Binding::Buffer {
-                buffer: &self.#binding.as_entire_buffer_binding(),
-                offset: 0,
-                size: None,
-            } },
-        };
-
-        binding_group_entries.push(quote! {
-            wgpu::BindGroupEntry {
-                binding: #i as u32,
-                resource: #binding_entry,
-            }
-        });
-    }
-
-    let gen = quote! {
-        impl crate::renderer::RenderResource for #name {
-            fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some(stringify!(#name)),
-                    entries: &[
-                        #(#binding_layout_entries),*
-                    ],
-                })
-            }
-
-            fn bind_group(&self, device: &wgpu::Device, layout: &wgpu::BindGroupLayout) -> wgpu::BindGroup {
-                device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some(stringify!(#name)),
-                    layout,
-                    entries: &[
-                        #(#binding_group_entries),*
-                    ],
-                })
             }
         }
     };

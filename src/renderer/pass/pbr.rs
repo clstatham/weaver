@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
-use weaver_proc_macro::{GpuComponent, StaticId};
+use weaver_proc_macro::{BindableComponent, GpuComponent, StaticId};
 
 use crate::{
     core::{
@@ -17,7 +17,7 @@ use crate::{
     include_shader,
     renderer::{
         internals::{
-            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
+            BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager,
             GpuResourceType, LazyBindGroup, LazyGpuHandle,
         },
         Renderer,
@@ -81,15 +81,21 @@ impl UniqueMeshes {
     }
 }
 
-#[derive(Clone, StaticId, GpuComponent)]
+#[derive(Clone, StaticId, GpuComponent, BindableComponent)]
 #[gpu_update_handles = "update"]
 pub struct PbrBuffers {
     #[gpu_handle]
+    #[uniform]
     pub(crate) camera: LazyGpuHandle,
     #[gpu_handle]
+    #[texture(format = Rgba32Float, sample_type = float, view_dimension = Cube)]
     pub(crate) env_map: LazyGpuHandle,
     #[gpu_handle]
+    #[texture(format = Rgba32Float, sample_type = float, view_dimension = Cube)]
     pub(crate) irradiance_map: LazyGpuHandle,
+    #[gpu_handle]
+    #[sampler(filtering = false)]
+    pub(crate) env_map_sampler: LazyGpuHandle,
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
 
@@ -130,6 +136,15 @@ impl PbrBuffers {
                 Some("PBR Irradiance Map"),
                 None,
             ),
+            env_map_sampler: LazyGpuHandle::new(
+                GpuResourceType::Sampler {
+                    address_mode: wgpu::AddressMode::ClampToEdge,
+                    filter_mode: wgpu::FilterMode::Nearest,
+                    compare: None,
+                },
+                Some("PBR Environment Map Sampler"),
+                None,
+            ),
             bind_group: LazyBindGroup::default(),
         }
     }
@@ -142,138 +157,6 @@ impl PbrBuffers {
 impl Default for PbrBuffers {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl BindableComponent for PbrBuffers {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("PBR Bind Group Layout"),
-            entries: &[
-                // camera
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // env map
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::Cube,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // irradiance map
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::Cube,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // env map sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                    count: None,
-                },
-            ],
-        })
-    }
-
-    fn create_bind_group(
-        &self,
-        manager: &GpuResourceManager,
-        cache: &BindGroupLayoutCache,
-    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        let layout = cache.get_or_create::<Self>(manager.device());
-        let camera = self.camera.lazy_init(manager)?;
-        let env_map = self.env_map.lazy_init(manager)?;
-        let irradiance_map = self.irradiance_map.lazy_init(manager)?;
-
-        let env_map = env_map.get_texture().unwrap();
-        let env_map_view = env_map.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("PBR Environment Map View"),
-            format: Some(HdrCubeTexture::FORMAT),
-            dimension: Some(wgpu::TextureViewDimension::Cube),
-            ..Default::default()
-        });
-
-        let irradiance_map = irradiance_map.get_texture().unwrap();
-        let irradiance_map_view = irradiance_map.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("PBR Irradiance Map View"),
-            format: Some(HdrCubeTexture::FORMAT),
-            dimension: Some(wgpu::TextureViewDimension::Cube),
-            ..Default::default()
-        });
-
-        let env_map_sampler = manager.device().create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("PBR Environment Map Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
-        let bind_group = manager
-            .device()
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: camera.get_buffer().unwrap().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&env_map_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&irradiance_map_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::Sampler(&env_map_sampler),
-                    },
-                ],
-                label: Some("PBR Bind Group"),
-            });
-
-        Ok(Arc::new(bind_group))
-    }
-
-    fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
-        self.bind_group.bind_group().clone()
-    }
-
-    fn lazy_init_bind_group(
-        &self,
-        manager: &GpuResourceManager,
-        cache: &BindGroupLayoutCache,
-    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        if let Some(bind_group) = self.bind_group.bind_group() {
-            return Ok(bind_group);
-        }
-
-        let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
-        Ok(bind_group)
     }
 }
 

@@ -23,7 +23,7 @@ pub mod prelude {
     pub use crate::ecs::*;
     pub use crate::renderer::Renderer;
     pub use glam::*;
-    pub use weaver_proc_macro::{system, RenderResource};
+    pub use weaver_proc_macro::{system, BindableComponent, GpuComponent};
     pub use winit::event::MouseButton;
 }
 

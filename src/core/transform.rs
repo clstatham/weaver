@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use weaver_proc_macro::{Component, GpuComponent};
+use weaver_proc_macro::{BindableComponent, Component, GpuComponent};
 
 use crate::{
     ecs::World,
     renderer::internals::{
-        BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager, LazyBindGroup,
-        LazyGpuHandle,
+        BindGroupLayoutCache, BindableComponent, GpuResourceManager, LazyBindGroup, LazyGpuHandle,
     },
 };
 
@@ -113,7 +112,7 @@ impl Default for Transform {
     }
 }
 
-#[derive(Clone, Component, Debug, GpuComponent)]
+#[derive(Clone, Component, Debug, GpuComponent, BindableComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[gpu_update_handles = "update"]
 pub struct TransformArray {
@@ -123,6 +122,7 @@ pub struct TransformArray {
         serde(skip, default = "TransformArray::default_handle")
     )]
     #[gpu_handle]
+    #[storage]
     handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]
     bind_group: LazyBindGroup<Self>,
@@ -176,61 +176,5 @@ impl TransformArray {
 impl Default for TransformArray {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl BindableComponent for TransformArray {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("TransformArray Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        })
-    }
-
-    fn create_bind_group(
-        &self,
-        manager: &crate::renderer::internals::GpuResourceManager,
-        cache: &BindGroupLayoutCache,
-    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        let handle = self.handle.lazy_init(manager)?;
-        let buffer = handle.get_buffer().unwrap();
-        let layout = cache.get_or_create::<Self>(manager.device());
-        let bind_group = manager
-            .device()
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("TransformArray Bind Group"),
-                layout: &layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(buffer.as_entire_buffer_binding()),
-                }],
-            });
-        Ok(Arc::new(bind_group))
-    }
-
-    fn bind_group(&self) -> Option<Arc<wgpu::BindGroup>> {
-        self.bind_group.bind_group()
-    }
-
-    fn lazy_init_bind_group(
-        &self,
-        manager: &GpuResourceManager,
-        cache: &BindGroupLayoutCache,
-    ) -> anyhow::Result<Arc<wgpu::BindGroup>> {
-        if let Some(bind_group) = self.bind_group.bind_group() {
-            return Ok(bind_group);
-        }
-
-        let bind_group = self.bind_group.lazy_init_bind_group(manager, cache, self)?;
-        Ok(bind_group)
     }
 }

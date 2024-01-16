@@ -1,13 +1,13 @@
 use std::{path::Path, sync::Arc};
 
-use weaver_proc_macro::{Component, GpuComponent};
+use weaver_proc_macro::{BindableComponent, Component, GpuComponent};
 
 use crate::{
     app::asset_server::AssetId,
     ecs::World,
     renderer::internals::{
-        BindGroupLayoutCache, BindableComponent, GpuComponent, GpuHandle, GpuResourceManager,
-        GpuResourceType, LazyBindGroup, LazyGpuHandle,
+        BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager, GpuResourceType,
+        LazyBindGroup, LazyGpuHandle,
     },
 };
 
@@ -22,6 +22,14 @@ use super::{
 #[gpu_update_handles = "update"]
 pub struct Material {
     asset_id: AssetId,
+
+    #[cfg_attr(
+        feature = "serde",
+        serde(skip, default = "Material::new_properties_handle")
+    )]
+    #[gpu_handle]
+    pub(crate) properties_handle: LazyGpuHandle,
+
     pub diffuse: Color,
     #[cfg_attr(feature = "serde", serde(skip))]
     #[gpu_component]
@@ -40,12 +48,6 @@ pub struct Material {
 
     pub texture_scaling: f32,
 
-    #[cfg_attr(
-        feature = "serde",
-        serde(skip, default = "Material::new_properties_handle")
-    )]
-    #[gpu_handle]
-    pub(crate) properties_handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
     #[cfg_attr(
