@@ -2801,6 +2801,7 @@ dependencies = [
  "egui-winit",
  "egui_plot",
  "env_logger",
+ "fixedbitset",
  "futures",
  "futures-channel",
  "glam",

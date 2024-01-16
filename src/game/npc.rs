@@ -15,11 +15,3 @@ impl Default for Npc {
         }
     }
 }
-
-#[derive(Bundle)]
-pub struct NpcBundle {
-    pub npc: Npc,
-    pub transform: Transform,
-    pub mesh: Mesh,
-    pub material: Material,
-}

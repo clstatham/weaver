@@ -39,7 +39,6 @@ static_assertions = "1.1.0"
 petgraph = "0.6.4"
 egui_plot = "0.25"
 futures-channel = "0.3.30"
-bit-set = "0.5.3"
 rapier3d = { version = "0.17.2", features = ["serde", "serde-serialize"] }
 nalgebra = { version = "0.32.3", features = ["convert-glam024"] }
 clap = { version = "4.4.13", features = ["derive"] }
@@ -64,6 +63,8 @@ postcard = { version = "1.0.8", features = ["alloc"], optional = true }
 path-slash = "0.2.1"
 naga = { version = "0.14.2", features = ["wgsl-in", "wgsl-out"] }
 naga_oil = "0.11.0"
+fixedbitset = "0.4.2"
+bit-set = "0.5.3"
 
 [profile.release]
 debug = true

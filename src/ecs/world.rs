@@ -94,6 +94,7 @@ impl World {
         let entity = Entity::new(id, 0);
         self.components
             .write()
+            .entity_components
             .insert(id, EntityComponents::default());
         entity
     }
@@ -112,37 +113,33 @@ impl World {
         }
         let component = Arc::new(RwLock::new(component));
         let mut components = self.components.write();
-        if let Some(entity_components) = components.get_mut(entity.id()) {
-            entity_components.insert(
-                T::static_id(),
-                ComponentPtr {
-                    component_id: T::static_id(),
-                    component_name: std::any::type_name::<T>().to_owned(),
-                    component,
-                },
-            );
-        } else {
-            return Err(anyhow::anyhow!("Entity does not exist"));
-        }
+        components.add_component(
+            entity.id(),
+            ComponentPtr {
+                component_id: T::static_id(),
+                component_name: std::any::type_name::<T>().to_string(),
+                component,
+            },
+        );
         Ok(())
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) {
-        if let Some(components) = self.components.write().get_mut(entity.id()) {
-            components.remove(T::static_id());
-        }
+        self.components
+            .write()
+            .remove_component(entity.id(), T::static_id());
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
-        if let Some(components) = self.components.read().get(entity.id()) {
-            components.contains(T::static_id())
+        if let Some(components) = self.components.read().entity_components.get(&entity.id()) {
+            components.contains_key(&T::static_id())
         } else {
             false
         }
     }
 
-    pub fn remove_entity(&self, entity: Entity) {
-        self.components.write().remove(entity.id());
+    pub fn despawn(&self, entity: Entity) {
+        self.components.write().despawn(entity.id());
     }
 
     pub fn insert_resource<T: Resource>(&mut self, resource: T) -> anyhow::Result<()> {

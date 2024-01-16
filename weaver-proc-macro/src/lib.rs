@@ -1186,44 +1186,36 @@ pub fn impl_queryable_for_n_tuple(input: proc_macro::TokenStream) -> proc_macro:
                 Some((#(#names),*))
             }
 
-            fn reads() -> Option<bit_set::BitSet> {
-                let mut reads = bit_set::BitSet::default();
+            fn reads() -> Option<FxHashSet<usize>> {
+                let mut reads = FxHashSet::default();
                 #(
-                    reads.extend(#names::reads().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    reads.extend(#names::reads().unwrap_or_default().into_iter());
                 )*
                 Some(reads)
             }
 
-            fn writes() -> Option<bit_set::BitSet> {
-                let mut writes = bit_set::BitSet::default();
+            fn writes() -> Option<FxHashSet<usize>> {
+                let mut writes = FxHashSet::default();
                 #(
-                    writes.extend(#names::writes().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    writes.extend(#names::writes().unwrap_or_default().into_iter());
                 )*
                 Some(writes)
             }
 
-            fn withs() -> Option<bit_set::BitSet> {
-                let mut withs = bit_set::BitSet::default();
+            fn withs() -> Option<FxHashSet<usize>> {
+                let mut withs = FxHashSet::default();
                 #(
-                    withs.extend(#names::withs().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    withs.extend(#names::withs().unwrap_or_default().into_iter());
                 )*
                 Some(withs)
             }
 
-            fn withouts() -> Option<bit_set::BitSet> {
-                let mut withouts = bit_set::BitSet::default();
+            fn withouts() -> Option<FxHashSet<usize>> {
+                let mut withouts = FxHashSet::default();
                 #(
-                    withouts.extend(#names::withouts().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    withouts.extend(#names::withouts().unwrap_or_default().into_iter());
                 )*
                 Some(withouts)
-            }
-
-            fn maybes() -> Option<bit_set::BitSet> {
-                let mut maybes = bit_set::BitSet::default();
-                #(
-                    maybes.extend(#names::maybes().unwrap_or_default().into_iter().collect::<Vec<_>>());
-                )*
-                Some(maybes)
             }
         }
     };

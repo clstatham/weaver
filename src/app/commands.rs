@@ -18,7 +18,7 @@ impl<'a> Commands<'a> {
     }
 
     pub fn despawn(&self, entity: Entity) {
-        self.world.remove_entity(entity);
+        self.world.despawn(entity);
     }
 
     pub fn read_resource<T: Resource>(&self) -> anyhow::Result<Res<T>> {

@@ -1,17 +1,36 @@
 use std::fmt::Debug;
 
-use bit_set::BitSet;
 use parking_lot::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLockReadGuard, RwLockWriteGuard,
 };
 use rayon::prelude::*;
+use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::{
-    entity::EntityId,
-    storage::{Components, SparseSet},
-    world::ComponentPtr,
-    Bundle, Component, World,
-};
+use super::{entity::EntityId, storage::Components, world::ComponentPtr, Bundle, Component, World};
+
+struct QueryAccess {
+    reads: FxHashSet<usize>,
+    writes: FxHashSet<usize>,
+    withs: FxHashSet<usize>,
+    withouts: FxHashSet<usize>,
+}
+
+impl QueryAccess {
+    fn matches_archetype(&self, archetype: &FxHashSet<usize>) -> bool {
+        let mut includes = FxHashSet::<usize>::default();
+
+        includes.extend(&self.reads);
+        includes.extend(&self.writes);
+        includes.extend(&self.withs);
+
+        let mut filtered = archetype.clone();
+
+        filtered.retain(|component_id| includes.contains(component_id));
+        filtered.retain(|component_id| !self.withouts.contains(component_id));
+
+        filtered == includes
+    }
+}
 
 #[derive(Clone)]
 pub struct QueryEntry {
@@ -37,60 +56,71 @@ where
     type ItemRef: 'a + Send;
 
     /// Collects the components that match the query, based on the given entities.
-    fn collect(components: &Components) -> SparseSet<Vec<QueryEntry>, EntityId> {
+    fn collect(components: &Components) -> FxHashMap<EntityId, Vec<QueryEntry>> {
         // let mut entries: FxHashMap<Entity, Vec<QueryEntry>> = FxHashMap::default();
 
         let reads = Self::reads().unwrap_or_default();
         let writes = Self::writes().unwrap_or_default();
         let withs = Self::withs().unwrap_or_default();
         let withouts = Self::withouts().unwrap_or_default();
-        let maybes = Self::maybes().unwrap_or_default();
 
-        let entries = components
-            .par_iter()
-            .filter_map(|(&entity, components)| {
-                // check if the entity has the right combination of components
-                // it needs to have ALL of the components in `reads`, `writes`, and `withs`
-                // it needs to have NONE of the components in `withouts`
-                // we don't care about the maybes, they're optional anyway
+        let access = QueryAccess {
+            reads,
+            writes,
+            withs,
+            withouts,
+        };
 
-                let component_ids = components.indices().collect::<BitSet<_>>();
+        let required: FxHashSet<usize> = access.reads.union(&access.writes).copied().collect();
 
-                // check if the entity has all of the required components
-                if !reads.is_subset(&component_ids)
-                    || !writes.is_subset(&component_ids)
-                    || !withs.is_subset(&component_ids)
-                {
-                    return None;
-                }
+        let mut entries = FxHashMap::default();
 
-                // check if the entity has any of the excluded components
-                if !withouts.is_disjoint(&component_ids) {
-                    return None;
-                }
-
-                // gather the matching components
-                let matching_components = components
-                    .iter()
-                    .filter_map(|(&component_id, component)| {
-                        // we care about the maybes here, since they're always included in the query (just wrapped in an Option)
-                        if reads.contains(component_id)
-                            || writes.contains(component_id)
-                            || maybes.contains(component_id)
-                        {
-                            Some(QueryEntry {
-                                entity,
-                                component: component.clone(),
-                            })
+        let matching_archetypes =
+            components
+                .archetypes
+                .iter()
+                .filter_map(|(archetype, entities)| {
+                    if !entities.is_empty() {
+                        let matches = access.matches_archetype(archetype);
+                        if matches {
+                            Some(entities)
                         } else {
                             None
                         }
-                    })
-                    .collect::<Vec<_>>();
+                    } else {
+                        None
+                    }
+                });
 
-                Some((entity, matching_components))
-            })
-            .collect();
+        for entities in matching_archetypes {
+            let these_entries = entities
+                .par_iter()
+                .filter_map(|entity| {
+                    let mut entry = Vec::with_capacity(required.len());
+                    for component_id in required.iter() {
+                        let component = components
+                            .entity_components
+                            .get(entity)
+                            .and_then(|components| components.get(component_id));
+                        if let Some(component) = component {
+                            entry.push(QueryEntry {
+                                entity: *entity,
+                                component: component.clone(),
+                            });
+                        } else {
+                            break;
+                        }
+                    }
+                    if entry.len() == required.len() {
+                        Some((*entity, entry))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<FxHashMap<_, _>>();
+
+            entries.extend(these_entries);
+        }
 
         entries
     }
@@ -98,22 +128,19 @@ where
     // Gets the item from the given entity, if it exists.
     fn get(entity: EntityId, entries: &'a [QueryEntry]) -> Option<Self::ItemRef>;
 
-    fn reads() -> Option<BitSet> {
+    fn reads() -> Option<FxHashSet<usize>> {
         None
     }
-    fn writes() -> Option<BitSet> {
+    fn writes() -> Option<FxHashSet<usize>> {
         None
     }
-    fn withs() -> Option<BitSet> {
+    fn withs() -> Option<FxHashSet<usize>> {
         F::withs()
     }
-    fn withouts() -> Option<BitSet> {
+    fn withouts() -> Option<FxHashSet<usize>> {
         F::withouts()
     }
-    fn ors() -> Option<BitSet<(u64, u64)>> {
-        None
-    }
-    fn maybes() -> Option<BitSet> {
+    fn maybes() -> Option<FxHashSet<usize>> {
         None
     }
 }
@@ -139,8 +166,8 @@ where
         })
     }
 
-    fn reads() -> Option<BitSet> {
-        Some(BitSet::from_iter(vec![T::static_id()]))
+    fn reads() -> Option<FxHashSet<usize>> {
+        Some(FxHashSet::from_iter(vec![T::static_id()]))
     }
 }
 
@@ -165,17 +192,17 @@ where
         })
     }
 
-    fn writes() -> Option<BitSet> {
-        Some(BitSet::from_iter(vec![T::static_id()]))
+    fn writes() -> Option<FxHashSet<usize>> {
+        Some(FxHashSet::from_iter(vec![T::static_id()]))
     }
 }
 
 /// Very similar to a Queryable, but instead of yielding a reference to the component, it is just used for filtering.
 pub trait QueryFilter<'a> {
-    fn withs() -> Option<BitSet> {
+    fn withs() -> Option<FxHashSet<usize>> {
         None
     }
-    fn withouts() -> Option<BitSet> {
+    fn withouts() -> Option<FxHashSet<usize>> {
         None
     }
 }
@@ -191,8 +218,8 @@ impl<'a, T> QueryFilter<'a> for With<'a, T>
 where
     T: Component,
 {
-    fn withs() -> Option<BitSet> {
-        Some(BitSet::from_iter(vec![T::static_id()]))
+    fn withs() -> Option<FxHashSet<usize>> {
+        Some(FxHashSet::from_iter(vec![T::static_id()]))
     }
 }
 
@@ -204,8 +231,8 @@ impl<'a, T> QueryFilter<'a> for Without<'a, T>
 where
     T: Component,
 {
-    fn withouts() -> Option<BitSet> {
-        Some(BitSet::from_iter(vec![T::static_id()]))
+    fn withouts() -> Option<FxHashSet<usize>> {
+        Some(FxHashSet::from_iter(vec![T::static_id()]))
     }
 }
 
@@ -214,7 +241,7 @@ where
     T: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    pub(crate) entries: SparseSet<Vec<QueryEntry>, EntityId>,
+    pub(crate) entries: FxHashMap<EntityId, Vec<QueryEntry>>,
 
     _phantom: std::marker::PhantomData<&'a (T, F)>,
 }
@@ -235,12 +262,12 @@ where
 
     pub fn get(&'a self, entity: EntityId) -> Option<T::ItemRef> {
         self.entries
-            .get(entity)
+            .get(&entity)
             .and_then(|entries| T::get(entity, entries))
     }
 
     pub fn entities(&self) -> impl Iterator<Item = EntityId> + '_ {
-        self.entries.indices()
+        self.entries.keys().copied()
     }
 
     pub fn iter(&'a self) -> impl Iterator<Item = T::ItemRef> + '_ {
@@ -266,11 +293,11 @@ macro_rules! impl_queryfilter_for_tuple {
         where
             $($name: QueryFilter<'a>,)*
         {
-            fn withs() -> Option<BitSet> {
-                let mut all = BitSet::default();
+            fn withs() -> Option<FxHashSet<usize>> {
+                let mut all = FxHashSet::default();
                 $(
                     if let Some(withs) = $name::withs() {
-                        all.union_with(&withs);
+                        all.extend(&withs);
                     }
                 )*
                 if all.is_empty() {
@@ -279,11 +306,11 @@ macro_rules! impl_queryfilter_for_tuple {
                 Some(all)
             }
 
-            fn withouts() -> Option<BitSet> {
-                let mut all = BitSet::default();
+            fn withouts() -> Option<FxHashSet<usize>> {
+                let mut all = FxHashSet::default();
                 $(
                     if let Some(withouts) = $name::withouts() {
-                        all.union_with(&withouts);
+                        all.extend(&withouts);
                     }
                 )*
                 if all.is_empty() {
