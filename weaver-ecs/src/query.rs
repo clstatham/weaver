@@ -1,40 +1,93 @@
-use std::sync::Arc;
-
 use parking_lot::{
-    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
-};
-use rustc_hash::FxHashMap;
-
-use crate::storage::{ComponentMap, EntityComponentsMap, EntitySet};
-
-use super::{
-    entity::EntityId,
-    storage::{ComponentSet, Components, QueryMap},
-    world::ComponentPtr,
-    Bundle, Component, World,
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLockReadGuard, RwLockWriteGuard,
 };
 
-struct QueryAccess {
-    reads: ComponentSet,
-    writes: ComponentSet,
-    withs: ComponentSet,
-    withouts: ComponentSet,
+use crate::{
+    archetype::Archetype,
+    storage::{Components, EntitySet},
+};
+
+use super::{entity::EntityId, storage::ComponentSet, Bundle, Component};
+
+pub struct Ref<'a, T>
+where
+    T: Component,
+{
+    pub entity: EntityId,
+    component: MappedRwLockReadGuard<'a, T>,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<'a, T> std::ops::Deref for Ref<'a, T>
+where
+    T: Component,
+{
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.component
+    }
+}
+
+pub struct Mut<'a, T>
+where
+    T: Component,
+{
+    pub entity: EntityId,
+    component: MappedRwLockWriteGuard<'a, T>,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<'a, T> std::ops::Deref for Mut<'a, T>
+where
+    T: Component,
+{
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.component
+    }
+}
+
+impl<'a, T> std::ops::DerefMut for Mut<'a, T>
+where
+    T: Component,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.component
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct QueryAccess {
+    pub reads: ComponentSet,
+    pub writes: ComponentSet,
+    pub withs: ComponentSet,
+    pub withouts: ComponentSet,
 }
 
 impl QueryAccess {
-    fn matches_archetype(&self, archetype: &ComponentSet) -> bool {
+    pub fn matches_archetype(&self, archetype: &Archetype) -> bool {
         let mut includes = ComponentSet::default();
 
         includes.extend(&self.reads);
         includes.extend(&self.writes);
         includes.extend(&self.withs);
 
-        let mut filtered = archetype.clone();
+        if !self.withouts.is_empty() && self.withouts.is_subset(&archetype.components) {
+            return false;
+        }
 
-        filtered.retain(|component_id| !self.withouts.contains(component_id));
-        filtered.retain(|component_id| includes.contains(component_id));
+        includes.is_subset(&archetype.components)
+    }
 
-        filtered == includes
+    pub fn fetched_components(&self) -> ComponentSet {
+        let mut fetched = ComponentSet::default();
+
+        fetched.extend(&self.reads);
+        fetched.extend(&self.writes);
+
+        fetched
     }
 }
 
@@ -45,71 +98,30 @@ where
     type Item: Bundle;
     type ItemRef: 'a + Send;
 
-    // Gets the item from the given components, if it exists.
-    fn get(entries: &'a ComponentMap) -> Option<Self::ItemRef>;
+    fn get(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef>;
 
-    fn reads() -> Option<ComponentSet> {
-        None
-    }
-    fn writes() -> Option<ComponentSet> {
-        None
-    }
-    fn withs() -> Option<ComponentSet> {
-        F::withs()
-    }
-    fn withouts() -> Option<ComponentSet> {
-        F::withouts()
-    }
-    fn maybes() -> Option<ComponentSet> {
-        None
-    }
+    fn access() -> QueryAccess;
 }
 
-/// Collects the components that match the query, based on the given entities.
-#[inline(never)]
-fn collect_entities<'a, T: Queryable<'a, F>, F: QueryFilter<'a>>(
-    components: &Components,
-) -> EntitySet {
-    let reads = T::reads().unwrap_or_default();
-    let writes = T::writes().unwrap_or_default();
-    let withs = T::withs().unwrap_or_default();
-    let withouts = T::withouts().unwrap_or_default();
+impl<'a, F> Queryable<'a, F> for ()
+where
+    F: QueryFilter<'a>,
+{
+    type Item = ();
+    type ItemRef = ();
 
-    let access = QueryAccess {
-        reads,
-        writes,
-        withs,
-        withouts,
-    };
-
-    let mut required = ComponentSet::default();
-    required.extend(&access.reads);
-    required.extend(&access.writes);
-
-    let matching_archetypes = components
-        .archetypes
-        .iter()
-        .filter_map(|(archetype, entities)| {
-            if !entities.is_empty() && access.matches_archetype(archetype) {
-                Some(entities)
-            } else {
-                None
-            }
-        });
-
-    let mut entries = EntitySet::default();
-
-    for entities in matching_archetypes {
-        for &entity in entities.iter() {
-            let components = components.entity_components.get(&entity).unwrap();
-
-            if required.iter().all(|id| components.read().contains_key(id)) {
-                entries.insert(entity);
-            }
-        }
+    fn get(_entity: EntityId, _components: &'a Components) -> Option<Self::ItemRef> {
+        Some(())
     }
 
-    entries
+    fn access() -> QueryAccess {
+        QueryAccess {
+            reads: ComponentSet::default(),
+            writes: ComponentSet::default(),
+            withs: F::withs(),
+            withouts: F::withouts(),
+        }
+    }
 }
 
 impl<'a, T, F> Queryable<'a, F> for &'a T
@@ -118,18 +130,28 @@ where
     F: QueryFilter<'a>,
 {
     type Item = T;
-    type ItemRef = MappedRwLockReadGuard<'a, T>;
+    type ItemRef = Ref<'a, T>;
 
-    fn get(entries: &'a ComponentMap) -> Option<Self::ItemRef> {
-        entries.get(&T::static_id()).map(|component| {
-            RwLockReadGuard::map(component.component.read(), |component| {
-                (*component).as_any().downcast_ref::<T>().unwrap()
-            })
+    fn get(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
+        let components = components.entity_components.get(&entity)?;
+        let component = components.get(&T::static_id())?;
+        let component = RwLockReadGuard::map(component.component.read(), |component| {
+            (*component).as_any().downcast_ref::<T>().unwrap()
+        });
+        Some(Ref {
+            entity,
+            component,
+            _marker: std::marker::PhantomData,
         })
     }
 
-    fn reads() -> Option<ComponentSet> {
-        Some(ComponentSet::from_iter(vec![T::static_id()]))
+    fn access() -> QueryAccess {
+        QueryAccess {
+            reads: ComponentSet::from_iter([T::static_id()]),
+            writes: ComponentSet::default(),
+            withs: F::withs(),
+            withouts: F::withouts(),
+        }
     }
 }
 
@@ -139,27 +161,38 @@ where
     F: QueryFilter<'a>,
 {
     type Item = T;
-    type ItemRef = MappedRwLockWriteGuard<'a, T>;
-    fn get(entries: &'a ComponentMap) -> Option<Self::ItemRef> {
-        entries.get(&T::static_id()).map(|component| {
+    type ItemRef = Mut<'a, T>;
+    fn get(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
+        let components = components.entity_components.get(&entity)?;
+        let component = components.get(&T::static_id()).map(|component| {
             RwLockWriteGuard::map(component.component.write(), |component| {
                 (*component).as_any_mut().downcast_mut::<T>().unwrap()
             })
+        })?;
+        Some(Mut {
+            entity,
+            component,
+            _marker: std::marker::PhantomData,
         })
     }
 
-    fn writes() -> Option<ComponentSet> {
-        Some(ComponentSet::from_iter(vec![T::static_id()]))
+    fn access() -> QueryAccess {
+        QueryAccess {
+            reads: ComponentSet::default(),
+            writes: ComponentSet::from_iter([T::static_id()]),
+            withs: F::withs(),
+            withouts: F::withouts(),
+        }
     }
 }
 
 /// Very similar to a Queryable, but instead of yielding a reference to the component, it is just used for filtering.
 pub trait QueryFilter<'a> {
-    fn withs() -> Option<ComponentSet> {
-        None
+    fn withs() -> ComponentSet {
+        ComponentSet::default()
     }
-    fn withouts() -> Option<ComponentSet> {
-        None
+    fn withouts() -> ComponentSet {
+        ComponentSet::default()
     }
 }
 
@@ -174,8 +207,8 @@ impl<'a, T> QueryFilter<'a> for With<'a, T>
 where
     T: Component,
 {
-    fn withs() -> Option<ComponentSet> {
-        Some(ComponentSet::from_iter(vec![T::static_id()]))
+    fn withs() -> ComponentSet {
+        ComponentSet::from_iter([T::static_id()])
     }
 }
 
@@ -187,71 +220,148 @@ impl<'a, T> QueryFilter<'a> for Without<'a, T>
 where
     T: Component,
 {
-    fn withouts() -> Option<ComponentSet> {
-        Some(ComponentSet::from_iter(vec![T::static_id()]))
+    fn withouts() -> ComponentSet {
+        ComponentSet::from_iter([T::static_id()])
     }
 }
 
-pub struct Query<'a, T, F = ()>
+pub struct QueryState<'a, Q, F>
 where
-    T: Queryable<'a, F>,
+    Q: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    pub(crate) entries: FxHashMap<EntityId, ComponentMap>,
-
-    _phantom: std::marker::PhantomData<&'a (T, F)>,
+    entities: EntitySet,
+    _filter: std::marker::PhantomData<&'a (Q, F)>,
 }
 
-impl<'a, T, F> Query<'a, T, F>
+impl<'a, Q, F> QueryState<'a, Q, F>
 where
-    T: Queryable<'a, F>,
+    Q: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    pub fn new(components: RwLockReadGuard<'a, Components>) -> Self {
-        let entities = collect_entities::<T, F>(&components);
+    pub fn new(components: &Components) -> Self {
+        let entities = components.entities_matching_access(&Q::access());
 
-        let mut required = T::reads().unwrap_or_default();
-        required.extend(&T::writes().unwrap_or_default());
+        QueryState {
+            entities,
+            _filter: std::marker::PhantomData,
+        }
+    }
 
-        let mut entries = FxHashMap::default();
+    pub fn get(&self, entity: EntityId, components: &'a Components) -> Option<Q::ItemRef> {
+        Q::get(entity, components)
+    }
 
-        for entity in entities {
-            let components = components.entity_components.get(&entity).unwrap();
+    pub fn iter(&'a self, components: &'a Components) -> QueryIter<'a, Q, F> {
+        QueryIter {
+            components,
+            entities: self.entities.iter(),
+            _filter: std::marker::PhantomData,
+        }
+    }
+}
 
-            for &id in required.iter() {
-                if let Some(component) = components.read().get(&id) {
-                    entries
-                        .entry(entity)
-                        .or_insert_with(ComponentMap::default)
-                        .insert(id, component.clone());
-                }
+pub struct Query<'a, Q, F = ()>
+where
+    Q: Queryable<'a, F>,
+    F: QueryFilter<'a>,
+{
+    components: &'a Components,
+    state: QueryState<'a, Q, F>,
+}
+
+impl<'a, Q, F> Query<'a, Q, F>
+where
+    Q: Queryable<'a, F>,
+    F: QueryFilter<'a>,
+{
+    pub fn new(components: &'a Components) -> Self {
+        Query {
+            components,
+            state: QueryState::new(components),
+        }
+    }
+
+    pub fn get(&self, entity: EntityId) -> Option<Q::ItemRef> {
+        self.state.get(entity, self.components)
+    }
+
+    pub fn iter(&'a self) -> QueryIter<'a, Q, F> {
+        self.state.iter(self.components)
+    }
+}
+
+pub struct QueryIter<'a, Q, F>
+where
+    Q: Queryable<'a, F>,
+    F: QueryFilter<'a>,
+{
+    components: &'a Components,
+    entities: std::collections::hash_set::Iter<'a, EntityId>,
+    _filter: std::marker::PhantomData<(Q, F)>,
+}
+
+impl<'a, Q, F> Iterator for QueryIter<'a, Q, F>
+where
+    Q: Queryable<'a, F>,
+    F: QueryFilter<'a>,
+{
+    type Item = Q::ItemRef;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for entity in self.entities.by_ref() {
+            if let Some(item) = Q::get(*entity, self.components) {
+                return Some(item);
             }
         }
 
-        Self {
-            entries,
-            _phantom: std::marker::PhantomData,
-        }
-    }
-
-    pub fn get(&'a self, entity: EntityId) -> Option<T::ItemRef> {
-        self.entries
-            .get(&entity)
-            .and_then(|entries| T::get(entries))
-    }
-
-    pub fn entities(&self) -> impl Iterator<Item = EntityId> + '_ {
-        self.entries.keys().copied()
-    }
-
-    pub fn iter(&'a self) -> impl Iterator<Item = T::ItemRef> + '_ {
-        self.entities().filter_map(move |entity| self.get(entity))
+        None
     }
 }
 
-weaver_proc_macro::impl_queryable_for_n_tuple!(2);
-weaver_proc_macro::impl_queryable_for_n_tuple!(3);
-weaver_proc_macro::impl_queryable_for_n_tuple!(4);
+macro_rules! impl_queryable_for_tuple {
+    ($($name:ident),*) => {
+        impl<'a, $($name),*, F> Queryable<'a, F> for ($($name,)*)
+        where
+            $($name: Queryable<'a>,)*
+            F: QueryFilter<'a>,
+        {
+            type Item = ($($name::Item,)*);
+            type ItemRef = ($($name::ItemRef,)*);
+
+            fn get(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
+                Some(($($name::get(entity, components)?,)*))
+            }
+
+            fn access() -> QueryAccess {
+                let mut reads = ComponentSet::default();
+                let mut writes = ComponentSet::default();
+                let mut withs = ComponentSet::default();
+                let mut withouts = ComponentSet::default();
+
+                $({
+                    let access = $name::access();
+                    reads.extend(&access.reads);
+                    writes.extend(&access.writes);
+                    withs.extend(&access.withs);
+                    withouts.extend(&access.withouts);
+                })*
+
+                QueryAccess {
+                    reads,
+                    writes,
+                    withs,
+                    withouts,
+                }
+            }
+        }
+    };
+}
+
+impl_queryable_for_tuple!(A);
+impl_queryable_for_tuple!(A, B);
+impl_queryable_for_tuple!(A, B, C);
+impl_queryable_for_tuple!(A, B, C, D);
 
 macro_rules! impl_queryfilter_for_tuple {
     ($($name:ident),*) => {
@@ -259,30 +369,20 @@ macro_rules! impl_queryfilter_for_tuple {
         where
             $($name: QueryFilter<'a>,)*
         {
-            fn withs() -> Option<ComponentSet> {
+            fn withs() -> ComponentSet {
                 let mut all = ComponentSet::default();
                 $(
-                    if let Some(withs) = $name::withs() {
-                        all.extend(&withs);
-                    }
+                    all.extend(&$name::withs());
                 )*
-                if all.is_empty() {
-                    return None;
-                }
-                Some(all)
+                all
             }
 
-            fn withouts() -> Option<ComponentSet> {
+            fn withouts() -> ComponentSet {
                 let mut all = ComponentSet::default();
                 $(
-                    if let Some(withouts) = $name::withouts() {
-                        all.extend(&withouts);
-                    }
+                    all.extend(&$name::withouts());
                 )*
-                if all.is_empty() {
-                    return None;
-                }
-                Some(all)
+                all
             }
         }
     };

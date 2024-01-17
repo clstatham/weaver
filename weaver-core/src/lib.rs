@@ -5,7 +5,6 @@ pub mod app;
 pub mod asset_server;
 pub mod camera;
 pub mod color;
-pub mod commands;
 pub mod doodads;
 pub mod input;
 pub mod light;

@@ -33,9 +33,9 @@ fn window_update(mut window: ResMut<Window>, input: Res<Input>) {
     window.fps_mode = input.mouse_button_pressed(MouseButton::Right);
 }
 
-#[system(UiUpdate)]
-fn ui_update(
-    commands: Commands,
+#[system(Update)]
+fn update(
+    mut commands: Commands,
     mut asset_server: ResMut<AssetServer>,
     mut ctx: ResMut<EguiContext>,
     mut fps_display: ResMut<FpsDisplay>,
@@ -154,7 +154,7 @@ fn ui_update(
                     light_intensity,
                     light_radius,
                 );
-                state.lights.push(commands.spawn(light).unwrap());
+                state.lights.push(commands.spawn(light));
             }
         }
 
@@ -208,7 +208,7 @@ fn ui_update(
                     _ => unreachable!(),
                 };
 
-                state.npcs.push(npc.unwrap());
+                state.npcs.push(npc);
             }
         }
     });
@@ -237,7 +237,7 @@ fn debug_lights(mut doodads: ResMut<Doodads>, mut point_lights: Query<&PointLigh
 
 #[system(Setup)]
 fn setup(
-    commands: Commands,
+    mut commands: Commands,
     mut asset_server: ResMut<AssetServer>,
     mut renderer: ResMut<Renderer>,
     hdr_loader: Res<HdrLoader>,
@@ -246,7 +246,7 @@ fn setup(
     // renderer.sky_pass.disable();
 
     let skybox = asset_server.load_skybox("meadow_2k.hdr", &hdr_loader)?;
-    commands.spawn(skybox)?;
+    commands.spawn(skybox);
 
     let mut material = asset_server.load_material("materials/wood_tiles.glb")?;
     material.texture_scaling = 100.0;
@@ -263,7 +263,7 @@ fn setup(
         material,
         ground: maps::Ground,
     };
-    commands.spawn((ground, WoodTile))?;
+    commands.spawn((ground, WoodTile));
 
     let material = asset_server.load_material("materials/wood.glb")?;
 
@@ -280,7 +280,7 @@ fn setup(
             material,
         },
         Wood,
-    ))?;
+    ));
 
     let camera_controller = FollowCameraController {
         stiffness: 50.0,
@@ -288,12 +288,12 @@ fn setup(
         pitch_sensitivity: 0.5,
         ..Default::default()
     };
-    commands.spawn((camera_controller, Camera::default()))?;
+    commands.spawn((camera_controller, Camera::default()));
 }
 
 #[system(Setup_2)]
 fn setup_2(
-    commands: Commands,
+    mut commands: Commands,
     mut asset_server: ResMut<AssetServer>,
     mut renderer: ResMut<Renderer>,
     hdr_loader: Res<HdrLoader>,
@@ -302,7 +302,7 @@ fn setup_2(
     // renderer.sky_pass.disable();
 
     let skybox = asset_server.load_skybox("meadow_2k.hdr", &hdr_loader)?;
-    commands.spawn(skybox)?;
+    commands.spawn(skybox);
 
     let material = asset_server.load_material("materials/wood.glb").unwrap();
     let mesh = asset_server.load_mesh("meshes/monkey_2x.glb").unwrap();
@@ -315,14 +315,12 @@ fn setup_2(
         let z = rand::thread_rng().gen_range(-range..=range);
         let y = rand::thread_rng().gen_range(-range..=range);
 
-        commands
-            .spawn((
-                Transform::from_translation(Vec3::new(x, y, z)),
-                mesh.clone(),
-                material.clone(),
-                Wood,
-            ))
-            .unwrap();
+        commands.spawn((
+            Transform::from_translation(Vec3::new(x, y, z)),
+            mesh.clone(),
+            material.clone(),
+            Wood,
+        ));
     }
 
     let view_matrix = Mat4::look_at_rh(
@@ -333,16 +331,14 @@ fn setup_2(
 
     let proj_matrix = Mat4::perspective_rh(90.0_f32.to_radians(), 1600.0 / 900.0, 0.1, 100.0);
 
-    commands
-        .spawn(Camera::new(view_matrix, proj_matrix))
-        .unwrap();
+    commands.spawn(Camera::new(view_matrix, proj_matrix));
 
     commands.spawn(PointLight::new(
         Vec3::new(0.0, 0.0, 0.0),
         Color::WHITE,
         10.0,
         30.0,
-    ))?;
+    ));
 }
 
 #[system(FpsDisplayUpdate)]
@@ -401,11 +397,10 @@ pub fn main() -> anyhow::Result<()> {
     app.add_system_to_stage(Setup, SystemStage::Startup);
 
     app.add_system(WindowUpdate);
-    app.add_system(ParticleUpdate);
     app.add_system(FollowCameraUpdate);
     app.add_system(FollowCameraMovement);
     // app.add_system(FpsDisplayUpdate);
-    app.add_system(UiUpdate);
+    app.add_system(Update);
     app.add_system(PlayerInput);
     app.add_system(PlayerMovement);
     // app.add_system(SpinNpcs);

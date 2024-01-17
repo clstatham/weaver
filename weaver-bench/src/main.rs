@@ -2,43 +2,62 @@
 
 extern crate test;
 
-use std::sync::Arc;
-use weaver::prelude::*;
-use weaver_ecs::system::SystemStage;
-
-#[system(Test)]
-fn test(query: Query<&Transform>) {
-    for transform in query.iter() {
-        assert_eq!(transform.get_translation(), Vec3::ZERO);
-    }
+#[derive(Debug, Default, weaver_ecs::Component, bevy_ecs::component::Component)]
+pub struct TestComponent {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
 }
 
 fn main() {
-    let mut world = World::new();
+    let mut world = weaver_ecs::World::new();
 
     for _ in 0..32_000 {
-        world.spawn((Transform::default(),)).unwrap();
+        world.spawn((TestComponent::default(),));
     }
 
-    let world = Arc::new(parking_lot::RwLock::new(world));
-
     loop {
-        let _ = Query::<&Transform>::new(world.read().components());
+        let q = world.query::<&TestComponent>();
+        q.iter().count();
     }
 }
 
 #[bench]
-fn bench_query(b: &mut test::Bencher) {
-    let mut world = World::new();
+fn bench_weaver_query(b: &mut test::Bencher) {
+    let mut world = weaver_ecs::world::World::new();
 
     for _ in 0..32_000 {
-        world.spawn((Transform::default(),)).unwrap();
+        world.spawn(TestComponent {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        });
     }
 
-    let world = Arc::new(parking_lot::RwLock::new(world));
     b.iter(|| {
         test::black_box({
-            let _ = Query::<&Transform>::new(world.read().components());
-        })
+            let q = world.query::<&TestComponent>();
+            q.iter().count()
+        });
+    });
+}
+
+#[bench]
+fn bench_bevy_query(b: &mut test::Bencher) {
+    let mut world = bevy_ecs::world::World::new();
+
+    for _ in 0..32_000 {
+        world.spawn(TestComponent {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        });
+    }
+
+    b.iter(|| {
+        test::black_box({
+            let mut q = world.query::<&TestComponent>();
+            q.iter(&world).count()
+        });
     });
 }

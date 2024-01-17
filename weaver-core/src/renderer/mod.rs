@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use weaver_proc_macro::Resource;
 use winit::window::Window;
 
-use weaver_ecs::{Query, World};
+use weaver_ecs::World;
 
 use crate::{
     camera::Camera,
@@ -401,7 +401,7 @@ impl Renderer {
         // - Camera
 
         {
-            let query = world.query::<&Material, ()>();
+            let query = world.query::<&Material>();
             for material in query.iter() {
                 material.lazy_init(resource_manager).unwrap();
                 material.update_resources(world).unwrap();
@@ -411,7 +411,7 @@ impl Renderer {
         {
             self.point_lights.clear();
 
-            let query = world.query::<&PointLight, ()>();
+            let query = world.query::<&PointLight>();
             for light in query.iter() {
                 light.lazy_init(resource_manager).unwrap();
                 light.update_resources(world).unwrap();
@@ -422,7 +422,7 @@ impl Renderer {
         }
 
         {
-            let query = world.query::<&Camera, ()>();
+            let query = world.query::<&Camera>();
             for camera in query.iter() {
                 camera.lazy_init(resource_manager).unwrap();
                 camera.update_resources(world).unwrap();

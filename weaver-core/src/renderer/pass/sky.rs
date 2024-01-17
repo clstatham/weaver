@@ -1,4 +1,4 @@
-use weaver_ecs::{Query, World};
+use weaver_ecs::World;
 
 use crate::{
     camera::Camera,
@@ -131,11 +131,11 @@ impl Pass for SkyRenderPass {
         let manager = &renderer.resource_manager;
         let cache = &renderer.bind_group_layout_cache;
 
-        let skybox = world.query::<&Skybox, ()>();
+        let skybox = world.query::<&Skybox>();
         let skybox = skybox.iter().next().unwrap();
         let skybox_bind_group = skybox.lazy_init_bind_group(manager, cache)?;
 
-        let camera = world.query::<&Camera, ()>();
+        let camera = world.query::<&Camera>();
         let camera = camera.iter().next().unwrap();
         let camera_bind_group = camera.lazy_init_bind_group(manager, cache)?;
 

@@ -1032,10 +1032,11 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
                                 }
                             }
                             "Commands" => {
-                                if commands_binding.is_some() {
-                                    panic!("Only one Commands argument is allowed")
-                                }
-                                commands_binding = Some(outer_pat.clone());
+                                let commands_name = match outer_pat.as_ref() {
+                                    syn::Pat::Ident(ident) => ident.ident.clone(),
+                                    _ => panic!("Invalid argument type"),
+                                };
+                                commands_binding = Some(commands_name.clone());
                             }
                             _ => panic!(
                                 "Invalid argument type: Expected one of `Query`, `Res`, or `ResMut`"
@@ -1052,10 +1053,37 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
     let body = &ast.block;
 
     let commands = match commands_binding {
-        Some(commands) => quote! {
-            let mut #commands = weaver_core::commands::Commands::new(&world);
-        },
+        Some(ref commands) => quote! { let mut #commands = weaver_ecs::commands::Commands::new(&world.read()); },
         None => quote! {},
+    };
+
+    let commands_finalize = match commands_binding {
+        Some(commands) => quote! { {
+            #commands.finalize(&mut world.write());
+        } },
+        None => quote! {},
+    };
+
+    let run_fn = quote! {
+        fn run(&self, world: std::sync::Arc<parking_lot::RwLock<weaver_ecs::world::World>>) -> anyhow::Result<()> {
+            #commands
+            {
+                let world_lock = world.read();
+                #(
+                    let mut #query_names: Query<#query_types, #filter_types> = world_lock.query_filtered();
+                )*
+                #(
+                    let #res_names = world_lock.read_resource::<#res_types>()?;
+                )*
+                #(
+                    let mut #resmut_names = world_lock.write_resource::<#resmut_types>()?;
+                )*
+                
+                #body
+            }
+            #commands_finalize
+            Ok(())
+        }
     };
 
     let gen = quote! {
@@ -1064,28 +1092,13 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
 
         impl weaver_ecs::system::System for #system_struct_name {
             #[allow(unused_mut)]
-            fn run(&self, world: &weaver_ecs::World) -> anyhow::Result<()> {
-                #(
-                    let mut #query_names: Query<#query_types, #filter_types> = Query::new(world.components());
-                )*
-                #(
-                    let #res_names = world.read_resource::<#res_types>()?;
-                )*
-                #(
-                    let mut #resmut_names = world.write_resource::<#resmut_types>()?;
-                )*
-                #commands
-                {
-                    #body
-                }
-                Ok(())
-            }
+            #run_fn
 
             fn components_read(&self) -> Vec<u128> {
                 use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend_from_slice(&<#query_types as Queryable<#filter_types>>::reads().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    components.extend(<#query_types as Queryable<#filter_types>>::access().reads.iter().copied());
                 )*
                 components
             }
@@ -1094,7 +1107,7 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
                 use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend_from_slice(&<#query_types as Queryable<#filter_types>>::writes().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    components.extend(<#query_types as Queryable<#filter_types>>::access().writes.iter().copied());
                 )*
                 components
             }
@@ -1115,6 +1128,10 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
                     resources.push(<#resmut_types as weaver_ecs::StaticId>::static_id());
                 )*
                 resources
+            }
+
+            fn is_exclusive(&self) -> bool {
+                false // todo
             }
         }
     };
@@ -1144,11 +1161,11 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     });
     let gen = quote! {
         impl weaver_ecs::Bundle for #name {
-            fn build_on(self, entity: weaver_ecs::entity::Entity, world: &weaver_ecs::world::World) -> anyhow::Result<weaver_ecs::entity::Entity> {
+            fn build_on(self, entity: weaver_ecs::entity::Entity, world: &mut weaver_ecs::storage::Components) -> weaver_ecs::entity::Entity {
                 #(
-                    self.#fields.build_on(entity, world)?;
+                    self.#fields.build_on(entity, world);
                 )*
-                Ok(entity)
+                entity
             }
         }
     };

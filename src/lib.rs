@@ -14,7 +14,7 @@ pub mod prelude {
         light::{DirectionalLight, PointLight},
         material::Material,
         mesh::Mesh,
-        particles::{ParticleEmitter, ParticleUpdate},
+        particles::ParticleEmitter,
         renderer::{compute::hdr_loader::HdrLoader, pass::Pass, Renderer},
         time::Time,
         transform::Transform,

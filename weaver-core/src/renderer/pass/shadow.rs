@@ -2,7 +2,7 @@ use std::{num::NonZeroU32, sync::Arc};
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
-use weaver_ecs::{Query, World};
+use weaver_ecs::World;
 use weaver_proc_macro::{BindableComponent, GpuComponent, StaticId};
 
 use crate::{
@@ -51,7 +51,7 @@ struct UniqueMeshes {
 
 impl UniqueMeshes {
     pub fn gather(&mut self, world: &World) {
-        let query = Query::<(&Mesh, &Transform)>::new(world.components());
+        let query = world.query::<(&Mesh, &Transform)>();
 
         // clear the transforms
         for unique_mesh in self.unique_meshes.values_mut() {
@@ -508,7 +508,7 @@ impl OmniShadowRenderPass {
         renderer: &Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
-        let camera = world.query::<&Camera, ()>();
+        let camera = world.query::<&Camera>();
         let camera = camera.iter().next().unwrap();
         let camera_bind_group = camera.lazy_init_bind_group(
             &renderer.resource_manager,
@@ -604,9 +604,8 @@ impl Pass for OmniShadowRenderPass {
             .lazy_init(&renderer.resource_manager)?;
         self.unique_meshes.write().update_resources(world)?;
 
-        let point_lights = world.query::<&PointLight, ()>();
-        for (i, entity) in point_lights.entities().enumerate() {
-            let point_light = point_lights.get(entity).unwrap();
+        let point_lights = world.query::<&PointLight>();
+        for (i, point_light) in point_lights.iter().enumerate() {
             let mut views = [glam::Mat4::IDENTITY; 6];
             for (i, view) in views.iter_mut().enumerate() {
                 let view_transform = match i {
@@ -652,9 +651,8 @@ impl Pass for OmniShadowRenderPass {
         renderer: &Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
-        let lights = world.query::<&PointLight, ()>();
-        for (i, entity) in lights.entities().enumerate() {
-            let light = lights.get(entity).unwrap();
+        let lights = world.query::<&PointLight>();
+        for (i, light) in lights.iter().enumerate() {
             self.render_cube_map(encoder, renderer, &light, i)?;
         }
         self.overlay_shadow_cube_map(encoder, color_target, depth_target, renderer, world)?;

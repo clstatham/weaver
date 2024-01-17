@@ -14,5 +14,4 @@ impl<T: std::any::Any> Downcast for T {
 }
 
 /// A component is a data structure that can be attached to an entity.
-#[cfg_attr(feature = "serde", typetag::serde(tag = "type"))]
 pub trait Component: Downcast + Send + Sync + super::StaticId + 'static {}

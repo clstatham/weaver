@@ -1,8 +1,7 @@
 use rapier3d::prelude::*;
-use weaver_ecs::Query;
-use weaver_proc_macro::{system, Component, Resource};
+use weaver_proc_macro::{Component, Resource};
 
-use super::{time::Time, transform::Transform};
+use super::transform::Transform;
 
 #[derive(Resource)]
 pub struct RapierContext {
@@ -237,11 +236,11 @@ impl RigidBody {
     }
 }
 
-#[system(Physics)]
-pub fn physics(ctx: ResMut<RapierContext>, time: Res<Time>, bodies: Query<&mut RigidBody>) {
-    for mut body in bodies.iter() {
-        body.physics.lazy_init(&mut ctx);
-    }
+// #[system(Physics)]
+// pub fn physics(ctx: ResMut<RapierContext>, time: Res<Time>, bodies: Query<&mut RigidBody>) {
+//     for mut body in bodies.iter() {
+//         body.physics.lazy_init(&mut ctx);
+//     }
 
-    ctx.step(time.delta_seconds);
-}
+//     ctx.step(time.delta_seconds);
+// }

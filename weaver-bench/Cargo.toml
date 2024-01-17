@@ -7,7 +7,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-weaver = { path = "../" }
+bevy_ecs = "0.12.1"
+weaver-ecs = { path = "../weaver-ecs" }
 
 [profile.release]
 debug = true

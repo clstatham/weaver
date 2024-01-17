@@ -97,8 +97,8 @@ impl App {
         self.world.write().insert_resource(resource)
     }
 
-    pub fn spawn<T: Bundle>(&self, bundle: T) -> anyhow::Result<Entity> {
-        bundle.build(&self.world.read())
+    pub fn spawn<T: Bundle>(&self, bundle: T) -> Entity {
+        self.world.write().spawn(bundle)
     }
 
     pub fn add_system<T: System + 'static>(&self, system: T) -> SystemId {

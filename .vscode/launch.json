@@ -19,11 +19,11 @@
                 },
                 "args": [
                     "build",
-                    "--bin=weaver",
-                    "--package=weaver",
+                    "--bin=weaver-game",
+                    "--package=weaver-game",
                 ],
                 "filter": {
-                    "name": "weaver",
+                    "name": "weaver-game",
                     "kind": "bin",
                 }
             },

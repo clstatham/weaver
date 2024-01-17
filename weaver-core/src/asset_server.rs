@@ -13,7 +13,7 @@ use crate::{
 use std::{path::PathBuf, sync::Arc};
 
 use rustc_hash::FxHashMap;
-use weaver_ecs::{Query, World};
+use weaver_ecs::World;
 use weaver_proc_macro::Resource;
 
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -293,42 +293,42 @@ impl AssetServer {
         Ok(Skybox::new(texture, irradiance))
     }
 
-    pub fn load_all_assets(&mut self, world: &World) -> anyhow::Result<()> {
-        // locate all the assets in the world
-        {
-            let query = world.query::<&mut Mesh, ()>();
-            for mut mesh in query.iter() {
-                let id = mesh.asset_id().clone();
-                let path = id.load_path().clone();
-                let loaded = if let Some(extension) = path.extension() {
-                    if extension == "obj" {
-                        self.load_obj_mesh_with_id(path, id)?
-                    } else {
-                        self.load_gltf_mesh_with_id(path, id)?
-                    }
-                } else {
-                    self.load_gltf_mesh_with_id(path.clone(), id.clone())
-                        .unwrap_or_else(|_| {
-                            self.load_obj_mesh_with_id(path.clone(), id)
-                                .unwrap_or_else(|_| {
-                                    panic!("Failed to load mesh at path: {:?}", path);
-                                })
-                        })
-                };
-                *mesh = loaded;
-            }
-        }
+    // pub fn load_all_assets(&mut self, world: &World) -> anyhow::Result<()> {
+    //     // locate all the assets in the world
+    //     {
+    //         let query = world.query::<&mut Mesh, ()>();
+    //         for mut mesh in query.iter() {
+    //             let id = mesh.asset_id().clone();
+    //             let path = id.load_path().clone();
+    //             let loaded = if let Some(extension) = path.extension() {
+    //                 if extension == "obj" {
+    //                     self.load_obj_mesh_with_id(path, id)?
+    //                 } else {
+    //                     self.load_gltf_mesh_with_id(path, id)?
+    //                 }
+    //             } else {
+    //                 self.load_gltf_mesh_with_id(path.clone(), id.clone())
+    //                     .unwrap_or_else(|_| {
+    //                         self.load_obj_mesh_with_id(path.clone(), id)
+    //                             .unwrap_or_else(|_| {
+    //                                 panic!("Failed to load mesh at path: {:?}", path);
+    //                             })
+    //                     })
+    //             };
+    //             *mesh = loaded;
+    //         }
+    //     }
 
-        {
-            let query = world.query::<&mut Material, ()>();
-            for mut material in query.iter() {
-                let id = material.asset_id().clone();
-                let path = id.load_path().clone();
-                let loaded = self.load_material_with_id(path, id)?;
-                *material = loaded;
-            }
-        }
+    //     {
+    //         let query = world.query::<&mut Material, ()>();
+    //         for mut material in query.iter() {
+    //             let id = material.asset_id().clone();
+    //             let path = id.load_path().clone();
+    //             let loaded = self.load_material_with_id(path, id)?;
+    //             *material = loaded;
+    //         }
+    //     }
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }

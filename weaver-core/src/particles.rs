@@ -1,9 +1,6 @@
 use glam::{Vec3, Vec4};
 use rand::Rng;
-use weaver_ecs::Query;
-use weaver_proc_macro::{system, Component};
-
-use crate::time::Time;
+use weaver_proc_macro::Component;
 
 use super::texture::Texture;
 
@@ -109,9 +106,9 @@ impl ParticleEmitter {
     }
 }
 
-#[system(ParticleUpdate)]
-pub fn particle_update(particle: Query<&mut ParticleEmitter>, time: Res<Time>) {
-    for mut particle in particle.iter() {
-        particle.update(time.delta_seconds);
-    }
-}
+// #[system(ParticleUpdate)]
+// pub fn particle_update(particle: Query<&mut ParticleEmitter>, time: Res<Time>) {
+//     for mut particle in particle.iter() {
+//         particle.update(time.delta_seconds);
+//     }
+// }

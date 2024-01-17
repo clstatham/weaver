@@ -4,7 +4,7 @@ use parking_lot::RwLock;
 use weaver_proc_macro::{BindableComponent, GpuComponent, StaticId};
 use wgpu::util::DeviceExt;
 
-use weaver_ecs::{Query, World};
+use weaver_ecs::World;
 
 use crate::{
     camera::{Camera, CameraUniform},
@@ -391,7 +391,7 @@ impl Pass for DoodadRenderPass {
         let mut cone_transforms_handle = self.cones.transform_buffer.lazy_init(manager)?;
 
         let mut camera_handle = self.camera_buffer.lazy_init(manager)?;
-        let camera = world.query::<&Camera, ()>();
+        let camera = world.query::<&Camera>();
         let camera = camera.iter().next().unwrap();
         camera_handle.update(&[CameraUniform::from(&*camera)]);
 
@@ -455,7 +455,7 @@ impl Pass for DoodadRenderPass {
             .cones
             .lazy_init_bind_group(manager, &renderer.bind_group_layout_cache)?;
 
-        let camera = world.query::<&Camera, ()>();
+        let camera = world.query::<&Camera>();
         let camera = camera.iter().next().unwrap();
         let camera_bind_group =
             camera.lazy_init_bind_group(manager, &renderer.bind_group_layout_cache)?;

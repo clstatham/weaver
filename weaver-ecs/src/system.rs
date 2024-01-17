@@ -44,11 +44,12 @@ pub enum SystemStage {
 }
 
 pub trait System: Send + Sync {
-    fn run(&self, world: &World) -> anyhow::Result<()>;
+    fn run(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()>;
     fn components_read(&self) -> Vec<u128>;
     fn components_written(&self) -> Vec<u128>;
     fn resources_read(&self) -> Vec<u128>;
     fn resources_written(&self) -> Vec<u128>;
+    fn is_exclusive(&self) -> bool;
 }
 
 pub struct SystemNode {
@@ -216,7 +217,7 @@ impl SystemGraph {
         false
     }
 
-    pub fn run(&self, world: &World) -> anyhow::Result<()> {
+    pub fn run(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()> {
         if self.graph.node_count() == 0 {
             return Ok(());
         }
@@ -233,7 +234,7 @@ impl SystemGraph {
 
         while let Some(node) = bfs.next(&self.graph) {
             let system = &self.graph[node].system;
-            system.run(world)?;
+            system.run(world.clone())?;
         }
 
         Ok(())
@@ -273,7 +274,7 @@ impl SystemGraph {
 
                 let (tx, rx) = crossbeam_channel::bounded(1);
                 rayon::spawn(move || {
-                    system.run(&world.read()).unwrap();
+                    system.run(world.clone()).unwrap();
                     let _ = tx.send(()); // notify that the system has finished running
                 });
 
@@ -320,7 +321,7 @@ impl SystemGraph {
                     let world = world.clone();
                     let (tx, rx) = crossbeam_channel::bounded(1);
                     rayon::spawn(move || {
-                        system.run(&world.read()).unwrap();
+                        system.run(world.clone()).unwrap();
                         let _ = tx.send(()); // notify that the system has finished running
                     });
 
