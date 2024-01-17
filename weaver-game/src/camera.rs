@@ -1,13 +1,11 @@
 use super::player::Player;
-use weaver_core::{camera::Camera, input::Input, time::Time, transform::Transform};
-use weaver_ecs::*;
-use winit::event::MouseButton;
+use weaver::prelude::*;
 
 #[derive(Debug, Clone, Copy, Component)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FollowCameraController {
     pub target: Entity,
-    pub rotation: glam::Quat,
+    pub rotation: Quat,
 
     pub pitch_sensitivity: f32,
 
@@ -20,9 +18,9 @@ pub struct FollowCameraController {
     pub near: f32,
     pub far: f32,
 
-    pub translation: glam::Vec3,
-    pub desired_translation: glam::Vec3,
-    pub target_translation: glam::Vec3,
+    pub translation: Vec3,
+    pub desired_translation: Vec3,
+    pub target_translation: Vec3,
 
     pub pitch: f32,
     pub min_pitch: f32,
@@ -35,7 +33,7 @@ impl Default for FollowCameraController {
     fn default() -> Self {
         Self {
             target: Entity::PLACEHOLDER,
-            rotation: glam::Quat::IDENTITY,
+            rotation: Quat::IDENTITY,
             fov: std::f32::consts::FRAC_PI_2,
             pitch_sensitivity: 0.05,
             aspect: 16.0 / 9.0,
@@ -43,9 +41,9 @@ impl Default for FollowCameraController {
             far: 100.0,
             min_pitch: -std::f32::consts::FRAC_PI_2 + 0.001,
             max_pitch: std::f32::consts::FRAC_PI_2 - 0.001,
-            translation: glam::Vec3::new(0.0, 5.0, -5.0),
-            desired_translation: glam::Vec3::new(0.0, 5.0, -5.0),
-            target_translation: glam::Vec3::ZERO,
+            translation: Vec3::new(0.0, 5.0, -5.0),
+            desired_translation: Vec3::new(0.0, 5.0, -5.0),
+            target_translation: Vec3::ZERO,
             pitch: 0.0,
             stiffness: 2.0,
             distance: 5.0,
@@ -56,12 +54,12 @@ impl Default for FollowCameraController {
 }
 
 impl FollowCameraController {
-    pub fn view_matrix(&self) -> glam::Mat4 {
-        glam::Mat4::look_at_rh(self.translation, self.target_translation, glam::Vec3::Y)
+    pub fn view_matrix(&self) -> Mat4 {
+        Mat4::look_at_rh(self.translation, self.target_translation, Vec3::Y)
     }
 
-    pub fn projection_matrix(&self) -> glam::Mat4 {
-        glam::Mat4::perspective_rh(self.fov, self.aspect, self.near, self.far)
+    pub fn projection_matrix(&self) -> Mat4 {
+        Mat4::perspective_rh(self.fov, self.aspect, self.near, self.far)
     }
 }
 
@@ -89,10 +87,10 @@ pub fn follow_camera_update(
             .distance
             .clamp(controller.min_distance, controller.max_distance);
 
-        controller.rotation = glam::Quat::from_rotation_x(controller.pitch);
+        controller.rotation = Quat::from_rotation_x(controller.pitch);
 
         let rotation = player_rotation * controller.rotation;
-        let translation = player_translation + rotation * glam::Vec3::NEG_Z * controller.distance;
+        let translation = player_translation + rotation * Vec3::NEG_Z * controller.distance;
 
         controller.desired_translation = translation;
         // controller.translation = controller.translation.lerp(

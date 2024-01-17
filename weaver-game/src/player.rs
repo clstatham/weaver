@@ -1,8 +1,4 @@
-use glam::{Quat, Vec3};
-use weaver_core::{input::Input, material::Material, mesh::Mesh, time::Time, transform::Transform};
-use weaver_ecs::*;
-use weaver_proc_macro::Component;
-use winit::{event::MouseButton, keyboard::KeyCode};
+use weaver::prelude::*;
 
 #[derive(Debug, Clone, Copy, Component)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

@@ -1,3 +1,4 @@
+use parking_lot::RwLock;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::ops::{Deref, DerefMut};
 
@@ -6,7 +7,7 @@ use super::{entity::EntityId, world::ComponentPtr};
 pub type EntitySet = FxHashSet<EntityId>;
 pub type ComponentSet = FxHashSet<u128>;
 pub type ComponentMap = FxHashMap<u128, ComponentPtr>;
-pub type EntityComponentsMap = FxHashMap<EntityId, ComponentMap>;
+pub type EntityComponentsMap = FxHashMap<EntityId, RwLock<ComponentMap>>;
 pub type QueryMap = FxHashMap<EntityId, Vec<ComponentPtr>>;
 
 #[derive(Default)]
@@ -41,12 +42,14 @@ impl Components {
         let component_id = component.component_id;
 
         if let Some(components) = self.entity_components.get_mut(&entity) {
-            components.insert(component_id, component.clone());
+            components.write().insert(component_id, component.clone());
         } else {
-            self.entity_components.insert(entity, FxHashMap::default());
+            self.entity_components
+                .insert(entity, RwLock::new(ComponentMap::default()));
             self.entity_components
                 .get_mut(&entity)
                 .unwrap()
+                .write()
                 .insert(component_id, component.clone());
         }
 
@@ -56,7 +59,7 @@ impl Components {
     pub fn remove_component(&mut self, entity: EntityId, component_id: u128) {
         self.entity_components
             .get_mut(&entity)
-            .and_then(|components| components.remove(&component_id));
+            .and_then(|components| components.write().remove(&component_id));
 
         self.recalculate_archetype(entity);
     }
@@ -69,7 +72,7 @@ impl Components {
     pub fn generate_archetype(&self, entity: EntityId) -> Option<ComponentSet> {
         self.entity_components
             .get(&entity)
-            .map(|components| FxHashSet::from_iter(components.keys().copied()))
+            .map(|components| FxHashSet::from_iter(components.read().keys().copied()))
     }
 
     pub fn recalculate_archetype(&mut self, entity: EntityId) {

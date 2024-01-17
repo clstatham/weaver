@@ -51,7 +51,7 @@ struct UniqueMeshes {
 
 impl UniqueMeshes {
     pub fn gather(&mut self, world: &World) {
-        let query = Query::<(&Mesh, &Transform)>::new(world);
+        let query = Query::<(&Mesh, &Transform)>::new(world.components());
 
         // clear the transforms
         for unique_mesh in self.unique_meshes.values_mut() {
@@ -508,7 +508,7 @@ impl OmniShadowRenderPass {
         renderer: &Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
-        let camera = Query::<&Camera>::new(world);
+        let camera = world.query::<&Camera, ()>();
         let camera = camera.iter().next().unwrap();
         let camera_bind_group = camera.lazy_init_bind_group(
             &renderer.resource_manager,
@@ -604,7 +604,7 @@ impl Pass for OmniShadowRenderPass {
             .lazy_init(&renderer.resource_manager)?;
         self.unique_meshes.write().update_resources(world)?;
 
-        let point_lights = Query::<&PointLight>::new(world);
+        let point_lights = world.query::<&PointLight, ()>();
         for (i, entity) in point_lights.entities().enumerate() {
             let point_light = point_lights.get(entity).unwrap();
             let mut views = [glam::Mat4::IDENTITY; 6];
@@ -652,7 +652,7 @@ impl Pass for OmniShadowRenderPass {
         renderer: &Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
-        let lights = Query::<&PointLight>::new(world);
+        let lights = world.query::<&PointLight, ()>();
         for (i, entity) in lights.entities().enumerate() {
             let light = lights.get(entity).unwrap();
             self.render_cube_map(encoder, renderer, &light, i)?;

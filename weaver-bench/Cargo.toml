@@ -1,4 +1,4 @@
-workspace = { members = ["weaver-core", "weaver-ecs", "weaver-renderer"] }
+
 [package]
 name = "weaver-bench"
 version = "0.1.0"
@@ -8,3 +8,7 @@ edition = "2021"
 
 [dependencies]
 weaver = { path = "../" }
+
+[profile.release]
+debug = true
+opt-level = 3

@@ -1,5 +1,4 @@
-use weaver_core::{material::Material, mesh::Mesh, transform::Transform};
-use weaver_proc_macro::{Bundle, Component};
+use weaver::prelude::*;
 
 #[derive(Debug, Clone, Copy, Component)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

@@ -1066,7 +1066,7 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
             #[allow(unused_mut)]
             fn run(&self, world: &weaver_ecs::World) -> anyhow::Result<()> {
                 #(
-                    let mut #query_names: Query<#query_types, #filter_types> = Query::new(world);
+                    let mut #query_names: Query<#query_types, #filter_types> = Query::new(world.components());
                 )*
                 #(
                     let #res_names = world.read_resource::<#res_types>()?;
@@ -1177,7 +1177,7 @@ pub fn impl_queryable_for_n_tuple(input: proc_macro::TokenStream) -> proc_macro:
             type Item = (#(#names::Item),*);
             type ItemRef = (#(#names::ItemRef),*);
 
-            fn get(entries: &'a [ComponentPtr]) -> Option<Self::ItemRef> {
+            fn get(entries: &'a ComponentMap) -> Option<Self::ItemRef> {
                 #(
                     let #names = #names::get(entries)?;
                 )*

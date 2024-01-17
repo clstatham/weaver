@@ -296,7 +296,7 @@ impl AssetServer {
     pub fn load_all_assets(&mut self, world: &World) -> anyhow::Result<()> {
         // locate all the assets in the world
         {
-            let query = Query::<&mut Mesh>::new(world);
+            let query = world.query::<&mut Mesh, ()>();
             for mut mesh in query.iter() {
                 let id = mesh.asset_id().clone();
                 let path = id.load_path().clone();
@@ -320,7 +320,7 @@ impl AssetServer {
         }
 
         {
-            let query = Query::<&mut Material>::new(world);
+            let query = world.query::<&mut Material, ()>();
             for mut material in query.iter() {
                 let id = material.asset_id().clone();
                 let path = id.load_path().clone();

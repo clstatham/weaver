@@ -1,27 +1,12 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use glam::{Mat4, Quat, Vec3};
 use rand::Rng;
-use weaver_core::{
-    app::{App, Window},
-    asset_server::AssetServer,
-    camera::Camera,
-    color::Color,
-    doodads::{Cube, Doodad, Doodads},
-    input::Input,
-    light::{PointLight, MAX_LIGHTS},
-    material::Material,
-    mesh::MAX_MESHES,
-    particles::ParticleUpdate,
-    renderer::{compute::hdr_loader::HdrLoader, pass::Pass, Renderer},
-    time::Time,
-    transform::Transform,
-    ui::{builtin::FpsDisplay, EguiContext},
+
+use weaver::prelude::{
+    weaver_core::{light::MAX_LIGHTS, mesh::MAX_MESHES},
+    *,
 };
-use weaver_ecs::*;
-use weaver_proc_macro::Resource;
-use winit::event::MouseButton;
 
 use self::{
     camera::{FollowCameraController, FollowCameraMovement, FollowCameraUpdate},
@@ -381,6 +366,7 @@ struct Args {
 }
 
 pub fn main() -> anyhow::Result<()> {
+    env_logger::init();
     let args = Args::parse();
 
     #[cfg(feature = "serde")]

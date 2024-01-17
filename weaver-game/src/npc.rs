@@ -1,4 +1,4 @@
-use weaver_proc_macro::Component;
+use weaver::prelude::*;
 
 #[derive(Debug, Clone, Copy, Component)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

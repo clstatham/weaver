@@ -17,12 +17,17 @@ name = "weaver"
 path = "src/lib.rs"
 
 [dependencies]
+glam = "0.24"
+anyhow = "1.0"
+parking_lot = "0.12"
+winit = "0.29"
+egui = "0.25"
 weaver-core = { path = "weaver-core" }
 weaver-ecs = { path = "weaver-ecs" }
 
 
 [profile.release]
 debug = true
-opt-level = 2
+opt-level = 3
 # codegen-units = 1
 # lto = "thin"

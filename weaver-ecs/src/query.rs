@@ -1,6 +1,11 @@
+use std::sync::Arc;
+
 use parking_lot::{
-    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLockReadGuard, RwLockWriteGuard,
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
 };
+use rustc_hash::FxHashMap;
+
+use crate::storage::{ComponentMap, EntityComponentsMap, EntitySet};
 
 use super::{
     entity::EntityId,
@@ -41,7 +46,7 @@ where
     type ItemRef: 'a + Send;
 
     // Gets the item from the given components, if it exists.
-    fn get(entries: &'a [ComponentPtr]) -> Option<Self::ItemRef>;
+    fn get(entries: &'a ComponentMap) -> Option<Self::ItemRef>;
 
     fn reads() -> Option<ComponentSet> {
         None
@@ -61,9 +66,10 @@ where
 }
 
 /// Collects the components that match the query, based on the given entities.
-fn collect_components<'a, T: Queryable<'a, F>, F: QueryFilter<'a>>(
+#[inline(never)]
+fn collect_entities<'a, T: Queryable<'a, F>, F: QueryFilter<'a>>(
     components: &Components,
-) -> QueryMap {
+) -> EntitySet {
     let reads = T::reads().unwrap_or_default();
     let writes = T::writes().unwrap_or_default();
     let withs = T::withs().unwrap_or_default();
@@ -91,29 +97,14 @@ fn collect_components<'a, T: Queryable<'a, F>, F: QueryFilter<'a>>(
             }
         });
 
-    let mut entries = QueryMap::default();
+    let mut entries = EntitySet::default();
 
     for entities in matching_archetypes {
         for &entity in entities.iter() {
-            let mut entity_entries = Vec::with_capacity(required.len());
-            for component_id in required.iter() {
-                let component = components
-                    .entity_components
-                    .get(&entity)
-                    .and_then(|components| components.get(component_id));
+            let components = components.entity_components.get(&entity).unwrap();
 
-                if let Some(component) = component {
-                    entity_entries.push(component.clone());
-                } else {
-                    break;
-                }
-            }
-            if entity_entries.len() == required.len() {
-                if let Some(entry) = entries.get_mut(&entity) {
-                    entry.extend(entity_entries);
-                } else {
-                    entries.insert(entity, entity_entries);
-                }
+            if required.iter().all(|id| components.read().contains_key(id)) {
+                entries.insert(entity);
             }
         }
     }
@@ -129,15 +120,11 @@ where
     type Item = T;
     type ItemRef = MappedRwLockReadGuard<'a, T>;
 
-    fn get(entries: &'a [ComponentPtr]) -> Option<Self::ItemRef> {
-        entries.iter().find_map(|entry| {
-            if entry.component_id == T::static_id() {
-                Some(RwLockReadGuard::map(entry.component.read(), |component| {
-                    (*component).as_any().downcast_ref::<T>().unwrap()
-                }))
-            } else {
-                None
-            }
+    fn get(entries: &'a ComponentMap) -> Option<Self::ItemRef> {
+        entries.get(&T::static_id()).map(|component| {
+            RwLockReadGuard::map(component.component.read(), |component| {
+                (*component).as_any().downcast_ref::<T>().unwrap()
+            })
         })
     }
 
@@ -153,17 +140,11 @@ where
 {
     type Item = T;
     type ItemRef = MappedRwLockWriteGuard<'a, T>;
-
-    fn get(entries: &'a [ComponentPtr]) -> Option<Self::ItemRef> {
-        entries.iter().find_map(|entry| {
-            if entry.component_id == T::static_id() {
-                Some(RwLockWriteGuard::map(
-                    entry.component.write(),
-                    |component| component.as_any_mut().downcast_mut::<T>().unwrap(),
-                ))
-            } else {
-                None
-            }
+    fn get(entries: &'a ComponentMap) -> Option<Self::ItemRef> {
+        entries.get(&T::static_id()).map(|component| {
+            RwLockWriteGuard::map(component.component.write(), |component| {
+                (*component).as_any_mut().downcast_mut::<T>().unwrap()
+            })
         })
     }
 
@@ -216,7 +197,7 @@ where
     T: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    pub(crate) entries: QueryMap,
+    pub(crate) entries: FxHashMap<EntityId, ComponentMap>,
 
     _phantom: std::marker::PhantomData<&'a (T, F)>,
 }
@@ -226,8 +207,26 @@ where
     T: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    pub fn new(world: &World) -> Self {
-        let entries = collect_components::<T, F>(&world.components.read());
+    pub fn new(components: RwLockReadGuard<'a, Components>) -> Self {
+        let entities = collect_entities::<T, F>(&components);
+
+        let mut required = T::reads().unwrap_or_default();
+        required.extend(&T::writes().unwrap_or_default());
+
+        let mut entries = FxHashMap::default();
+
+        for entity in entities {
+            let components = components.entity_components.get(&entity).unwrap();
+
+            for &id in required.iter() {
+                if let Some(component) = components.read().get(&id) {
+                    entries
+                        .entry(entity)
+                        .or_insert_with(ComponentMap::default)
+                        .insert(id, component.clone());
+                }
+            }
+        }
 
         Self {
             entries,

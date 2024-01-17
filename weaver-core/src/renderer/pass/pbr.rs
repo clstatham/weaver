@@ -49,7 +49,7 @@ pub struct UniqueMeshes {
 
 impl UniqueMeshes {
     pub fn gather(&mut self, world: &World, renderer: &Renderer) {
-        let query = Query::<(&Mesh, &mut Material, &Transform)>::new(world);
+        let query = Query::<(&Mesh, &mut Material, &Transform)>::new(world.components());
 
         // clear the transforms
         for unique_mesh in self.unique_meshes.values_mut() {
@@ -246,7 +246,7 @@ impl PbrRenderPass {
         world: &World,
         encoder: &mut wgpu::CommandEncoder,
     ) -> anyhow::Result<()> {
-        let skybox = Query::<&Skybox>::new(world);
+        let skybox = Query::<&Skybox>::new(world.components());
         let skybox = skybox.iter().next().unwrap();
 
         let skybox_handle = &skybox
@@ -260,7 +260,7 @@ impl PbrRenderPass {
         let skybox_texture = skybox_handle.get_texture().unwrap();
         let irradiance_texture = irradiance_handle.get_texture().unwrap();
 
-        let camera = Query::<&Camera>::new(world);
+        let camera = Query::<&Camera>::new(world.components());
         let camera = camera.iter().next().unwrap();
 
         let camera_handle = camera.handle.lazy_init(&renderer.resource_manager)?;

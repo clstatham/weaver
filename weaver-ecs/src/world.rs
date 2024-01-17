@@ -7,10 +7,10 @@ use std::{
 #[cfg(feature = "serde")]
 use std::io::{Read, Write};
 
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard};
 use rustc_hash::FxHashMap;
 
-use crate::storage::ComponentMap;
+use crate::{query::QueryFilter, storage::ComponentMap, Query, Queryable};
 
 use super::{
     resource::{Res, ResMut, Resource},
@@ -98,12 +98,20 @@ impl World {
         self.components
             .write()
             .entity_components
-            .insert(id, ComponentMap::default());
+            .insert(id, RwLock::new(ComponentMap::default()));
         entity
     }
 
     pub fn spawn<T: Bundle>(&self, bundle: T) -> anyhow::Result<Entity> {
         bundle.build(self)
+    }
+
+    pub fn components(&self) -> RwLockReadGuard<'_, Components> {
+        self.components.read()
+    }
+
+    pub fn query<'a, 'b: 'a, T: Queryable<'a, F>, F: QueryFilter<'a>>(&'b self) -> Query<'a, T, F> {
+        Query::new(self.components.read())
     }
 
     pub fn add_component<T: Component>(&self, entity: Entity, component: T) -> anyhow::Result<()> {
@@ -131,7 +139,7 @@ impl World {
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
         if let Some(components) = self.components.read().entity_components.get(&entity.id()) {
-            components.contains_key(&T::static_id())
+            components.read().contains_key(&T::static_id())
         } else {
             false
         }

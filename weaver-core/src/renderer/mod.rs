@@ -401,7 +401,7 @@ impl Renderer {
         // - Camera
 
         {
-            let query = Query::<&Material>::new(world);
+            let query = world.query::<&Material, ()>();
             for material in query.iter() {
                 material.lazy_init(resource_manager).unwrap();
                 material.update_resources(world).unwrap();
@@ -411,7 +411,7 @@ impl Renderer {
         {
             self.point_lights.clear();
 
-            let query = Query::<&PointLight>::new(world);
+            let query = world.query::<&PointLight, ()>();
             for light in query.iter() {
                 light.lazy_init(resource_manager).unwrap();
                 light.update_resources(world).unwrap();
@@ -422,7 +422,7 @@ impl Renderer {
         }
 
         {
-            let query = Query::<&Camera>::new(world);
+            let query = world.query::<&Camera, ()>();
             for camera in query.iter() {
                 camera.lazy_init(resource_manager).unwrap();
                 camera.update_resources(world).unwrap();
@@ -529,7 +529,7 @@ impl Renderer {
                 });
             }
 
-            // self.pbr_pass.render(self, &hdr_pass_view, world, encoder)?;
+            self.pbr_pass.render(self, &hdr_pass_view, world, encoder)?;
 
             for pass in self.extra_passes.iter() {
                 pass.render_if_enabled(
@@ -621,7 +621,7 @@ impl Renderer {
         log::trace!("Preparing passes");
         let world = &self.world.read();
 
-        // self.pbr_pass.prepare(world, self);
+        self.pbr_pass.prepare(world, self);
         self.shadow_pass.prepare_if_enabled(world, self).unwrap();
         self.doodad_pass.prepare_if_enabled(world, self).unwrap();
         self.sky_pass.prepare_if_enabled(world, self).unwrap();
