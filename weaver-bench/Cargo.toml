@@ -1,0 +1,10 @@
+workspace = { members = ["weaver-core", "weaver-ecs", "weaver-renderer"] }
+[package]
+name = "weaver-bench"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+weaver = { path = "../" }

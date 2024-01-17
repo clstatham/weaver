@@ -1,6 +1,5 @@
 use quote::{format_ident, quote};
 
-static NEXT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 #[proc_macro_derive(StaticId)]
 pub fn static_id_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -11,10 +10,10 @@ pub fn static_id_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 fn impl_static_id_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     let name = &ast.ident;
 
-    let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let id = uuid::Uuid::new_v4().as_u128();
     let gen = quote! {
-        unsafe impl crate::ecs::StaticId for #name {
-            fn static_id() -> usize
+        unsafe impl weaver_ecs::StaticId for #name {
+            fn static_id() -> u128
             where
                 Self: Sized,
             {
@@ -34,13 +33,13 @@ pub fn component_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 fn impl_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     let name = &ast.ident;
 
-    let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let id = uuid::Uuid::new_v4().as_u128();
     let gen = quote! {
         #[cfg_attr(feature = "serde", typetag::serde)]
-        impl crate::ecs::component::Component for #name {}
+        impl weaver_ecs::component::Component for #name {}
 
-        unsafe impl crate::ecs::StaticId for #name {
-            fn static_id() -> usize
+        unsafe impl weaver_ecs::StaticId for #name {
+            fn static_id() -> u128
             where
                 Self: Sized,
             {
@@ -60,12 +59,12 @@ pub fn resource_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
 fn impl_resource_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     let name = &ast.ident;
 
-    let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let id = uuid::Uuid::new_v4().as_u128();
     let gen = quote! {
-        impl crate::ecs::resource::Resource for #name {}
+        impl weaver_ecs::resource::Resource for #name {}
 
-        unsafe impl crate::ecs::StaticId for #name {
-            fn static_id() -> usize
+        unsafe impl weaver_ecs::StaticId for #name {
+            fn static_id() -> u128
             where
                 Self: Sized,
             {
@@ -272,7 +271,7 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
         match ty {
             GpuComponentMemberType::Handle => {
                 lazy_init.push(quote! {
-                    out.push(self.#name.lazy_init(manager)?);
+                    self.#name.lazy_init(manager)?;
                 });
                 destroy_resources.push(quote! {
                     self.#name.mark_destroyed();
@@ -281,7 +280,7 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
             GpuComponentMemberType::HandleVec => {
                 lazy_init.push(quote! {
                     for handle in self.#name.iter() {
-                        out.push(handle.lazy_init(manager)?);
+                        handle.lazy_init(manager)?;
                     }
                 });
                 destroy_resources.push(quote! {
@@ -293,7 +292,7 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
             GpuComponentMemberType::HandleMap => {
                 lazy_init.push(quote! {
                     for handle in self.#name.values() {
-                        out.push(handle.lazy_init(manager)?);
+                        handle.lazy_init(manager)?;
                     }
                 });
                 destroy_resources.push(quote! {
@@ -304,7 +303,7 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
             }
             GpuComponentMemberType::Component => {
                 lazy_init.push(quote! {
-                    out.extend(self.#name.lazy_init(manager)?);
+                    self.#name.lazy_init(manager)?;
                 });
                 update_resources.push(quote! {
                     self.#name.update_resources(world)?;
@@ -316,7 +315,7 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
             GpuComponentMemberType::ComponentVec => {
                 lazy_init.push(quote! {
                     for component in self.#name.iter() {
-                        out.extend(component.lazy_init(manager)?);
+                        component.lazy_init(manager)?;
                     }
                 });
                 update_resources.push(quote! {
@@ -333,7 +332,7 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
             GpuComponentMemberType::ComponentMap => {
                 lazy_init.push(quote! {
                     for component in self.#name.values() {
-                        out.extend(component.lazy_init(manager)?);
+                        component.lazy_init(manager)?;
                     }
                 });
                 update_resources.push(quote! {
@@ -350,7 +349,7 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
             GpuComponentMemberType::ComponentOption => {
                 lazy_init.push(quote! {
                     if let Some(component) = &self.#name {
-                        out.extend(component.lazy_init(manager)?);
+                        component.lazy_init(manager)?;
                     }
                 });
                 update_resources.push(quote! {
@@ -369,15 +368,14 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
 
     let gen = quote! {
         impl crate::renderer::internals::GpuComponent for #name {
-            fn lazy_init(&self, manager: &crate::renderer::internals::GpuResourceManager) -> anyhow::Result<Vec<crate::renderer::internals::GpuHandle>> {
-                let mut out = vec![];
+            fn lazy_init(&self, manager: &crate::renderer::internals::GpuResourceManager) -> anyhow::Result<()> {
                 #(
                     #lazy_init
                 )*
-                Ok(out)
+                Ok(())
             }
 
-            fn update_resources(&self, world: &crate::ecs::World) -> anyhow::Result<()> {
+            fn update_resources(&self, world: &weaver_ecs::World) -> anyhow::Result<()> {
                 self.#gpu_update(world)?;
                 #(
                     #update_resources
@@ -779,7 +777,7 @@ fn impl_bindable_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStr
             }
             BindingType::Texture { format, view_dimension, layers, .. } => {
                 quote! {
-                    let #name = &#name.lazy_init(manager)?[0];
+                    let #name = #name.handle().lazy_init(manager)?;
                     let #name = #name.get_texture().unwrap();
                     let #name = #name.create_view(&wgpu::TextureViewDescriptor {
                         label: Some(concat!(stringify!(#name), " Texture View")),
@@ -1055,7 +1053,7 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
 
     let commands = match commands_binding {
         Some(commands) => quote! {
-            let mut #commands = Commands::new(&world);
+            let mut #commands = weaver_core::commands::Commands::new(&world);
         },
         None => quote! {},
     };
@@ -1064,9 +1062,9 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
         #[allow(non_camel_case_types, dead_code)]
         #vis struct #system_struct_name;
 
-        impl crate::ecs::system::System for #system_struct_name {
+        impl weaver_ecs::system::System for #system_struct_name {
             #[allow(unused_mut)]
-            fn run(&self, world: &crate::ecs::World) -> anyhow::Result<()> {
+            fn run(&self, world: &weaver_ecs::World) -> anyhow::Result<()> {
                 #(
                     let mut #query_names: Query<#query_types, #filter_types> = Query::new(world);
                 )*
@@ -1083,40 +1081,38 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
                 Ok(())
             }
 
-            fn components_read(&self) -> Vec<usize> {
-                use crate::ecs::query::Queryable;
-                use crate::ecs::storage::Set;
+            fn components_read(&self) -> Vec<u128> {
+                use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend_from_slice(&<#query_types as Queryable<#filter_types>>::reads().unwrap_or_default().set_iter().collect::<Vec<_>>());
+                    components.extend_from_slice(&<#query_types as Queryable<#filter_types>>::reads().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
                 components
             }
 
-            fn components_written(&self) -> Vec<usize> {
-                use crate::ecs::query::Queryable;
-                use crate::ecs::storage::Set;
+            fn components_written(&self) -> Vec<u128> {
+                use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend_from_slice(&<#query_types as Queryable<#filter_types>>::writes().unwrap_or_default().set_iter().collect::<Vec<_>>());
+                    components.extend_from_slice(&<#query_types as Queryable<#filter_types>>::writes().unwrap_or_default().into_iter().collect::<Vec<_>>());
                 )*
                 components
             }
 
-            fn resources_read(&self) -> Vec<usize> {
-                use crate::ecs::StaticId;
+            fn resources_read(&self) -> Vec<u128> {
+                use weaver_ecs::StaticId;
                 let mut resources = Vec::new();
                 #(
-                    resources.push(<#res_types as crate::ecs::StaticId>::static_id());
+                    resources.push(<#res_types as weaver_ecs::StaticId>::static_id());
                 )*
                 resources
             }
 
-            fn resources_written(&self) -> Vec<usize> {
-                use crate::ecs::StaticId;
+            fn resources_written(&self) -> Vec<u128> {
+                use weaver_ecs::StaticId;
                 let mut resources = Vec::new();
                 #(
-                    resources.push(<#resmut_types as crate::ecs::StaticId>::static_id());
+                    resources.push(<#resmut_types as weaver_ecs::StaticId>::static_id());
                 )*
                 resources
             }
@@ -1147,8 +1143,8 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
         }
     });
     let gen = quote! {
-        impl crate::ecs::Bundle for #name {
-            fn build_on(self, entity: crate::ecs::entity::Entity, world: &crate::ecs::world::World) -> anyhow::Result<crate::ecs::entity::Entity> {
+        impl weaver_ecs::Bundle for #name {
+            fn build_on(self, entity: weaver_ecs::entity::Entity, world: &weaver_ecs::world::World) -> anyhow::Result<weaver_ecs::entity::Entity> {
                 #(
                     self.#fields.build_on(entity, world)?;
                 )*
@@ -1172,11 +1168,11 @@ pub fn impl_queryable_for_n_tuple(input: proc_macro::TokenStream) -> proc_macro:
     }
 
     let gen = quote! {
-        impl<'a, #(#names),*, F> crate::ecs::query::Queryable<'a, F> for (#(#names),*)
+        impl<'a, #(#names),*, F> crate::query::Queryable<'a, F> for (#(#names),*)
         where
-            F: crate::ecs::query::QueryFilter<'a>,
-            #(#names: crate::ecs::query::Queryable<'a, F>,)*
-            #(#names::Item: crate::ecs::Component,)*
+            F: crate::query::QueryFilter<'a>,
+            #(#names: crate::query::Queryable<'a, F>,)*
+            #(#names::Item: crate::Component,)*
         {
             type Item = (#(#names::Item),*);
             type ItemRef = (#(#names::ItemRef),*);
@@ -1191,7 +1187,7 @@ pub fn impl_queryable_for_n_tuple(input: proc_macro::TokenStream) -> proc_macro:
             fn reads() -> Option<ComponentSet> {
                 let mut reads = ComponentSet::default();
                 #(
-                    Set::<usize>::set_union_with(&mut reads, &#names::reads().unwrap_or_default());
+                    reads.extend(#names::reads().unwrap_or_default());
                 )*
                 Some(reads)
             }
@@ -1199,7 +1195,7 @@ pub fn impl_queryable_for_n_tuple(input: proc_macro::TokenStream) -> proc_macro:
             fn writes() -> Option<ComponentSet> {
                 let mut writes = ComponentSet::default();
                 #(
-                    Set::<usize>::set_union_with(&mut writes, &#names::writes().unwrap_or_default());
+                    writes.extend(#names::writes().unwrap_or_default());
                 )*
                 Some(writes)
             }
@@ -1207,7 +1203,7 @@ pub fn impl_queryable_for_n_tuple(input: proc_macro::TokenStream) -> proc_macro:
             fn withs() -> Option<ComponentSet> {
                 let mut withs = ComponentSet::default();
                 #(
-                    Set::<usize>::set_union_with(&mut withs, &#names::withs().unwrap_or_default());
+                    withs.extend(#names::withs().unwrap_or_default());
                 )*
                 Some(withs)
             }
@@ -1215,7 +1211,7 @@ pub fn impl_queryable_for_n_tuple(input: proc_macro::TokenStream) -> proc_macro:
             fn withouts() -> Option<ComponentSet> {
                 let mut withouts = ComponentSet::default();
                 #(
-                    Set::<usize>::set_union_with(&mut withouts, &#names::withouts().unwrap_or_default());
+                    withouts.extend(#names::withouts().unwrap_or_default());
                 )*
                 Some(withouts)
             }

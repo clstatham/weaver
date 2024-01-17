@@ -1,0 +1,60 @@
+[package]
+name = "weaver-ecs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.75"
+env_logger = "0.10.0"
+log = "0.4.20"
+thiserror = "1.0.49"
+winit = "0.29"
+winit_input_helper = "0.15"
+glam = { version = "0.24", features = ["serde", "bytemuck"] }
+rustc-hash = "1.1.0"
+bytemuck = { version = "1.14.0", features = ["derive"] }
+tobj = "4.0.0"
+egui = "0.25"
+egui-wgpu = "0.25"
+egui-winit = { version = "0.25", default-features = false, features = [
+    "links",
+] }
+wgpu = { version = "0.18", features = ["naga"] }
+rand = "0.8.5"
+futures = "0.3.29"
+itertools = "0.12.0"
+gltf = "1.4"
+pollster = "0.3.0"
+weaver-proc-macro = { path = "../weaver-proc-macro" }
+static_assertions = "1.1.0"
+petgraph = "0.6.4"
+egui_plot = "0.25"
+futures-channel = "0.3.30"
+rapier3d = { version = "0.17.2", features = ["serde", "serde-serialize"] }
+nalgebra = { version = "0.32.3", features = ["convert-glam024"] }
+clap = { version = "4.4.13", features = ["derive"] }
+image = { version = "0.24.7", default-features = false, features = [
+    "png",
+    "jpeg",
+    "bmp",
+    "tga",
+    "hdr",
+] }
+parking_lot = { version = "0.12.1", features = [
+    "send_guard",
+    "hardware-lock-elision",
+    "arc_lock",
+] }
+crossbeam-channel = "0.5.11"
+rayon = "1.8.0"
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+typetag = { version = "0.2", optional = true }
+postcard = { version = "1.0.8", features = ["alloc"], optional = true }
+path-slash = "0.2.1"
+naga = { version = "0.14.2", features = ["wgsl-in", "wgsl-out"] }
+naga_oil = "0.11.0"
+fixedbitset = "0.4.2"
+bit-vec = "0.6.3"

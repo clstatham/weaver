@@ -1,6 +1,9 @@
 /target
 /profile.json
 /weaver-proc-macro/target
+/weaver-bench/target
+/weaver-core/target
+/weaver-game/target
 /weaver-ecs/target
 /imgui.ini
 /*.dot
