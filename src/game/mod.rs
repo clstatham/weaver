@@ -416,7 +416,7 @@ pub fn run() -> anyhow::Result<()> {
     app.add_system(UiUpdate);
     app.add_system(PlayerInput);
     app.add_system(PlayerMovement);
-    app.add_system(SpinNpcs);
+    // app.add_system(SpinNpcs);
     app.add_system(DebugLights);
 
     app.run()

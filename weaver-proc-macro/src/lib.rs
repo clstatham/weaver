@@ -1179,9 +1179,9 @@ pub fn impl_queryable_for_n_tuple(input: proc_macro::TokenStream) -> proc_macro:
             type Item = (#(#names::Item),*);
             type ItemRef = (#(#names::ItemRef),*);
 
-            fn get(entity: EntityId, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
+            fn get(entries: &'a [ComponentPtr]) -> Option<Self::ItemRef> {
                 #(
-                    let #names = #names::get(entity, entries)?;
+                    let #names = #names::get(entries)?;
                 )*
                 Some((#(#names),*))
             }

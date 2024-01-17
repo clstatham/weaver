@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use parking_lot::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLockReadGuard, RwLockWriteGuard,
 };
@@ -32,22 +30,6 @@ impl QueryAccess {
     }
 }
 
-#[derive(Clone)]
-pub struct QueryEntry {
-    entity: EntityId,
-    component: ComponentPtr,
-}
-
-impl Debug for QueryEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("QueryEntry")
-            .field("entity", &self.entity)
-            .field("component_name", &self.component.component_name)
-            .field("component_id", &self.component.component_id)
-            .finish()
-    }
-}
-
 pub trait Queryable<'a, F = ()>
 where
     F: QueryFilter<'a>,
@@ -56,7 +38,7 @@ where
     type ItemRef: 'a + Send;
 
     /// Collects the components that match the query, based on the given entities.
-    fn collect(components: &Components) -> FxHashMap<EntityId, Vec<QueryEntry>> {
+    fn collect(components: &Components) -> FxHashMap<EntityId, Vec<ComponentPtr>> {
         // let mut entries: FxHashMap<Entity, Vec<QueryEntry>> = FxHashMap::default();
 
         let reads = Self::reads().unwrap_or_default();
@@ -94,7 +76,7 @@ where
 
         for entities in matching_archetypes {
             let these_entries = entities
-                .par_iter()
+                .iter()
                 .filter_map(|entity| {
                     let mut entry = Vec::with_capacity(required.len());
                     for component_id in required.iter() {
@@ -103,10 +85,7 @@ where
                             .get(entity)
                             .and_then(|components| components.get(component_id));
                         if let Some(component) = component {
-                            entry.push(QueryEntry {
-                                entity: *entity,
-                                component: component.clone(),
-                            });
+                            entry.push(component.clone());
                         } else {
                             break;
                         }
@@ -125,8 +104,8 @@ where
         entries
     }
 
-    // Gets the item from the given entity, if it exists.
-    fn get(entity: EntityId, entries: &'a [QueryEntry]) -> Option<Self::ItemRef>;
+    // Gets the item from the given components, if it exists.
+    fn get(entries: &'a [ComponentPtr]) -> Option<Self::ItemRef>;
 
     fn reads() -> Option<FxHashSet<usize>> {
         None
@@ -153,13 +132,12 @@ where
     type Item = T;
     type ItemRef = MappedRwLockReadGuard<'a, T>;
 
-    fn get(entity: EntityId, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
+    fn get(entries: &'a [ComponentPtr]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
-            if entry.entity == entity && entry.component.component_id == T::static_id() {
-                Some(RwLockReadGuard::map(
-                    entry.component.component.read(),
-                    |component| component.as_any().downcast_ref::<T>().unwrap(),
-                ))
+            if entry.component_id == T::static_id() {
+                Some(RwLockReadGuard::map(entry.component.read(), |component| {
+                    component.as_any().downcast_ref::<T>().unwrap()
+                }))
             } else {
                 None
             }
@@ -179,11 +157,11 @@ where
     type Item = T;
     type ItemRef = MappedRwLockWriteGuard<'a, T>;
 
-    fn get(entity: EntityId, entries: &'a [QueryEntry]) -> Option<Self::ItemRef> {
+    fn get(entries: &'a [ComponentPtr]) -> Option<Self::ItemRef> {
         entries.iter().find_map(|entry| {
-            if entry.entity == entity && entry.component.component_id == T::static_id() {
+            if entry.component_id == T::static_id() {
                 Some(RwLockWriteGuard::map(
-                    entry.component.component.write(),
+                    entry.component.write(),
                     |component| component.as_any_mut().downcast_mut::<T>().unwrap(),
                 ))
             } else {
@@ -241,7 +219,7 @@ where
     T: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    pub(crate) entries: FxHashMap<EntityId, Vec<QueryEntry>>,
+    pub(crate) entries: FxHashMap<EntityId, Vec<ComponentPtr>>,
 
     _phantom: std::marker::PhantomData<&'a (T, F)>,
 }
@@ -263,23 +241,28 @@ where
     pub fn get(&'a self, entity: EntityId) -> Option<T::ItemRef> {
         self.entries
             .get(&entity)
-            .and_then(|entries| T::get(entity, entries))
+            .and_then(|entries| T::get(entries))
     }
 
     pub fn entities(&self) -> impl Iterator<Item = EntityId> + '_ {
         self.entries.keys().copied()
     }
 
-    pub fn iter(&'a self) -> impl Iterator<Item = T::ItemRef> + '_ {
-        self.entries
-            .iter()
-            .filter_map(move |(&entity, entries)| T::get(entity, entries))
+    pub fn par_entities(&self) -> impl ParallelIterator<Item = EntityId> + '_ {
+        self.entries.par_iter().map(|(entity, _)| *entity)
     }
 
-    pub fn par_iter(&'a self) -> impl ParallelIterator<Item = T::ItemRef> + '_ {
-        self.entries
-            .par_iter()
-            .filter_map(move |(&entity, entries)| T::get(entity, entries))
+    pub fn iter(&'a self) -> impl Iterator<Item = T::ItemRef> + '_ {
+        self.entities().filter_map(move |entity| self.get(entity))
+    }
+
+    pub fn par_iter(&'a self) -> impl ParallelIterator<Item = T::ItemRef> + '_
+    where
+        T: Sync,
+        F: Sync,
+    {
+        self.par_entities()
+            .filter_map(move |entity| self.get(entity))
     }
 }
 
