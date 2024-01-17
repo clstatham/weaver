@@ -2078,6 +2078,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "216080ab382b992234dda86873c18d4c48358f5cfcb70fd693d7f6f2131b628b"
 
 [[package]]
+name = "retain_mut"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c31b5c4033f8fdde8700e4657be2c497e7288f01515be52168c631e2e4d4086"
+
+[[package]]
+name = "roaring"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6106b5cf8587f5834158895e9715a3c6c9716c8aefab57f1f7680917191c7873"
+dependencies = [
+ "bytemuck",
+ "byteorder",
+ "retain_mut",
+]
+
+[[package]]
 name = "robust"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2793,6 +2810,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bit-set",
+ "bit-vec",
  "bytemuck",
  "clap",
  "crossbeam-channel",
@@ -2820,6 +2838,7 @@ dependencies = [
  "rand",
  "rapier3d",
  "rayon",
+ "roaring",
  "rustc-hash",
  "serde",
  "serde_json",

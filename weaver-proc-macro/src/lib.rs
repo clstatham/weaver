@@ -1085,18 +1085,20 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
 
             fn components_read(&self) -> Vec<usize> {
                 use crate::ecs::query::Queryable;
+                use crate::ecs::storage::Set;
                 let mut components = Vec::new();
                 #(
-                    components.extend_from_slice(&<#query_types as Queryable<#filter_types>>::reads().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    components.extend_from_slice(&<#query_types as Queryable<#filter_types>>::reads().unwrap_or_default().set_iter().collect::<Vec<_>>());
                 )*
                 components
             }
 
             fn components_written(&self) -> Vec<usize> {
                 use crate::ecs::query::Queryable;
+                use crate::ecs::storage::Set;
                 let mut components = Vec::new();
                 #(
-                    components.extend_from_slice(&<#query_types as Queryable<#filter_types>>::writes().unwrap_or_default().into_iter().collect::<Vec<_>>());
+                    components.extend_from_slice(&<#query_types as Queryable<#filter_types>>::writes().unwrap_or_default().set_iter().collect::<Vec<_>>());
                 )*
                 components
             }
@@ -1186,34 +1188,34 @@ pub fn impl_queryable_for_n_tuple(input: proc_macro::TokenStream) -> proc_macro:
                 Some((#(#names),*))
             }
 
-            fn reads() -> Option<FxHashSet<usize>> {
-                let mut reads = FxHashSet::default();
+            fn reads() -> Option<ComponentSet> {
+                let mut reads = ComponentSet::default();
                 #(
-                    reads.extend(#names::reads().unwrap_or_default().into_iter());
+                    Set::<usize>::set_union_with(&mut reads, &#names::reads().unwrap_or_default());
                 )*
                 Some(reads)
             }
 
-            fn writes() -> Option<FxHashSet<usize>> {
-                let mut writes = FxHashSet::default();
+            fn writes() -> Option<ComponentSet> {
+                let mut writes = ComponentSet::default();
                 #(
-                    writes.extend(#names::writes().unwrap_or_default().into_iter());
+                    Set::<usize>::set_union_with(&mut writes, &#names::writes().unwrap_or_default());
                 )*
                 Some(writes)
             }
 
-            fn withs() -> Option<FxHashSet<usize>> {
-                let mut withs = FxHashSet::default();
+            fn withs() -> Option<ComponentSet> {
+                let mut withs = ComponentSet::default();
                 #(
-                    withs.extend(#names::withs().unwrap_or_default().into_iter());
+                    Set::<usize>::set_union_with(&mut withs, &#names::withs().unwrap_or_default());
                 )*
                 Some(withs)
             }
 
-            fn withouts() -> Option<FxHashSet<usize>> {
-                let mut withouts = FxHashSet::default();
+            fn withouts() -> Option<ComponentSet> {
+                let mut withouts = ComponentSet::default();
                 #(
-                    withouts.extend(#names::withouts().unwrap_or_default().into_iter());
+                    Set::<usize>::set_union_with(&mut withouts, &#names::withouts().unwrap_or_default());
                 )*
                 Some(withouts)
             }

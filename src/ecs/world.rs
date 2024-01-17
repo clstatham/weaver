@@ -11,7 +11,7 @@ use rustc_hash::FxHashMap;
 
 use super::{
     resource::{Res, ResMut, Resource},
-    storage::{Components, EntityComponents},
+    storage::{Components, SparseMap},
     system::{SystemGraph, SystemId, SystemStage},
     Bundle, Component, Entity, System,
 };
@@ -95,7 +95,7 @@ impl World {
         self.components
             .write()
             .entity_components
-            .insert(id, EntityComponents::default());
+            .insert(id, SparseMap::new());
         entity
     }
 
@@ -131,8 +131,8 @@ impl World {
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
-        if let Some(components) = self.components.read().entity_components.get(&entity.id()) {
-            components.contains_key(&T::static_id())
+        if let Some(components) = self.components.read().entity_components.get(entity.id()) {
+            components.contains(T::static_id())
         } else {
             false
         }

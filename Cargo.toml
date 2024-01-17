@@ -65,6 +65,8 @@ naga = { version = "0.14.2", features = ["wgsl-in", "wgsl-out"] }
 naga_oil = "0.11.0"
 fixedbitset = "0.4.2"
 bit-set = "0.5.3"
+bit-vec = "0.6.3"
+roaring = "0.10.2"
 
 [profile.release]
 debug = true

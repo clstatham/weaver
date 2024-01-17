@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use rand::Rng;
-use rayon::iter::ParallelIterator;
 
 use crate::{
     app::Window,
@@ -225,7 +224,7 @@ fn ui_update(
 
 #[system(SpinNpcs)]
 fn spin_npcs(time: Res<Time>, mut query: Query<&mut Transform, With<npc::Npc>>) {
-    query.par_iter().for_each(|mut transform| {
+    query.iter().for_each(|mut transform| {
         let mut rotation = transform.get_rotation();
         rotation *= Quat::from_rotation_y(time.delta_seconds * rand::random::<f32>());
         transform.set_rotation(rotation);

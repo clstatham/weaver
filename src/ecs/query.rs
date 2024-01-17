@@ -1,32 +1,35 @@
 use parking_lot::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLockReadGuard, RwLockWriteGuard,
 };
-use rayon::prelude::*;
-use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::{entity::EntityId, storage::Components, world::ComponentPtr, Bundle, Component, World};
+use super::{
+    entity::EntityId,
+    storage::{ComponentSet, Components, QueryMap, Set},
+    world::ComponentPtr,
+    Bundle, Component, World,
+};
 
 struct QueryAccess {
-    reads: FxHashSet<usize>,
-    writes: FxHashSet<usize>,
-    withs: FxHashSet<usize>,
-    withouts: FxHashSet<usize>,
+    reads: ComponentSet,
+    writes: ComponentSet,
+    withs: ComponentSet,
+    withouts: ComponentSet,
 }
 
 impl QueryAccess {
-    fn matches_archetype(&self, archetype: &FxHashSet<usize>) -> bool {
-        let mut includes = FxHashSet::<usize>::default();
+    fn matches_archetype(&self, archetype: &ComponentSet) -> bool {
+        let mut includes = ComponentSet::default();
 
-        includes.extend(&self.reads);
-        includes.extend(&self.writes);
-        includes.extend(&self.withs);
+        Set::<usize>::set_union_with(&mut includes, &self.reads);
+        Set::<usize>::set_union_with(&mut includes, &self.writes);
+        Set::<usize>::set_union_with(&mut includes, &self.withs);
 
         let mut filtered = archetype.clone();
 
-        filtered.retain(|component_id| includes.contains(component_id));
-        filtered.retain(|component_id| !self.withouts.contains(component_id));
+        Set::<usize>::set_difference_with(&mut filtered, &self.withouts);
+        Set::<usize>::set_intersection_with(&mut filtered, &includes);
 
-        filtered == includes
+        Set::<usize>::set_eq(&filtered, &includes)
     }
 }
 
@@ -37,91 +40,85 @@ where
     type Item: Bundle;
     type ItemRef: 'a + Send;
 
-    /// Collects the components that match the query, based on the given entities.
-    fn collect(components: &Components) -> FxHashMap<EntityId, Vec<ComponentPtr>> {
-        // let mut entries: FxHashMap<Entity, Vec<QueryEntry>> = FxHashMap::default();
-
-        let reads = Self::reads().unwrap_or_default();
-        let writes = Self::writes().unwrap_or_default();
-        let withs = Self::withs().unwrap_or_default();
-        let withouts = Self::withouts().unwrap_or_default();
-
-        let access = QueryAccess {
-            reads,
-            writes,
-            withs,
-            withouts,
-        };
-
-        let required: FxHashSet<usize> = access.reads.union(&access.writes).copied().collect();
-
-        let mut entries = FxHashMap::default();
-
-        let matching_archetypes =
-            components
-                .archetypes
-                .iter()
-                .filter_map(|(archetype, entities)| {
-                    if !entities.is_empty() {
-                        let matches = access.matches_archetype(archetype);
-                        if matches {
-                            Some(entities)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                });
-
-        for entities in matching_archetypes {
-            let these_entries = entities
-                .iter()
-                .filter_map(|entity| {
-                    let mut entry = Vec::with_capacity(required.len());
-                    for component_id in required.iter() {
-                        let component = components
-                            .entity_components
-                            .get(entity)
-                            .and_then(|components| components.get(component_id));
-                        if let Some(component) = component {
-                            entry.push(component.clone());
-                        } else {
-                            break;
-                        }
-                    }
-                    if entry.len() == required.len() {
-                        Some((*entity, entry))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<FxHashMap<_, _>>();
-
-            entries.extend(these_entries);
-        }
-
-        entries
-    }
-
     // Gets the item from the given components, if it exists.
     fn get(entries: &'a [ComponentPtr]) -> Option<Self::ItemRef>;
 
-    fn reads() -> Option<FxHashSet<usize>> {
+    fn reads() -> Option<ComponentSet> {
         None
     }
-    fn writes() -> Option<FxHashSet<usize>> {
+    fn writes() -> Option<ComponentSet> {
         None
     }
-    fn withs() -> Option<FxHashSet<usize>> {
+    fn withs() -> Option<ComponentSet> {
         F::withs()
     }
-    fn withouts() -> Option<FxHashSet<usize>> {
+    fn withouts() -> Option<ComponentSet> {
         F::withouts()
     }
-    fn maybes() -> Option<FxHashSet<usize>> {
+    fn maybes() -> Option<ComponentSet> {
         None
     }
+}
+
+/// Collects the components that match the query, based on the given entities.
+fn collect_components<'a, T: Queryable<'a, F>, F: QueryFilter<'a>>(
+    components: &Components,
+) -> QueryMap {
+    let reads = T::reads().unwrap_or_default();
+    let writes = T::writes().unwrap_or_default();
+    let withs = T::withs().unwrap_or_default();
+    let withouts = T::withouts().unwrap_or_default();
+
+    let access = QueryAccess {
+        reads,
+        writes,
+        withs,
+        withouts,
+    };
+
+    let mut required = ComponentSet::default();
+    Set::<usize>::set_union_with(&mut required, &access.reads);
+    Set::<usize>::set_union_with(&mut required, &access.writes);
+
+    let mut entries = QueryMap::default();
+
+    let matching_archetypes = components
+        .archetypes
+        .iter()
+        .filter_map(|(archetype, entities)| {
+            if !entities.is_empty() && access.matches_archetype(archetype) {
+                Some(entities)
+            } else {
+                None
+            }
+        });
+
+    for entities in matching_archetypes {
+        for entity in entities.set_iter() {
+            let mut entity_entries = Vec::with_capacity(Set::<usize>::set_len(&required));
+            for component_id in required.set_iter() {
+                let component = components
+                    .entity_components
+                    .get(entity)
+                    .and_then(|components| components.get(component_id));
+
+                if let Some(component) = component {
+                    entity_entries.push(component.clone());
+                } else {
+                    break;
+                }
+            }
+            if entity_entries.len() == Set::<usize>::set_len(&required) {
+                if let Some(entry) = entries.get_mut(entity) {
+                    entry.extend(entity_entries);
+                } else {
+                    entries.insert(entity, entity_entries);
+                }
+            }
+        }
+    }
+
+    entries
 }
 
 impl<'a, T, F> Queryable<'a, F> for &'a T
@@ -144,8 +141,8 @@ where
         })
     }
 
-    fn reads() -> Option<FxHashSet<usize>> {
-        Some(FxHashSet::from_iter(vec![T::static_id()]))
+    fn reads() -> Option<ComponentSet> {
+        Some(ComponentSet::set_from_iter(vec![T::static_id()]))
     }
 }
 
@@ -170,17 +167,17 @@ where
         })
     }
 
-    fn writes() -> Option<FxHashSet<usize>> {
-        Some(FxHashSet::from_iter(vec![T::static_id()]))
+    fn writes() -> Option<ComponentSet> {
+        Some(ComponentSet::set_from_iter(vec![T::static_id()]))
     }
 }
 
 /// Very similar to a Queryable, but instead of yielding a reference to the component, it is just used for filtering.
 pub trait QueryFilter<'a> {
-    fn withs() -> Option<FxHashSet<usize>> {
+    fn withs() -> Option<ComponentSet> {
         None
     }
-    fn withouts() -> Option<FxHashSet<usize>> {
+    fn withouts() -> Option<ComponentSet> {
         None
     }
 }
@@ -196,8 +193,8 @@ impl<'a, T> QueryFilter<'a> for With<'a, T>
 where
     T: Component,
 {
-    fn withs() -> Option<FxHashSet<usize>> {
-        Some(FxHashSet::from_iter(vec![T::static_id()]))
+    fn withs() -> Option<ComponentSet> {
+        Some(ComponentSet::set_from_iter(vec![T::static_id()]))
     }
 }
 
@@ -209,8 +206,8 @@ impl<'a, T> QueryFilter<'a> for Without<'a, T>
 where
     T: Component,
 {
-    fn withouts() -> Option<FxHashSet<usize>> {
-        Some(FxHashSet::from_iter(vec![T::static_id()]))
+    fn withouts() -> Option<ComponentSet> {
+        Some(ComponentSet::set_from_iter(vec![T::static_id()]))
     }
 }
 
@@ -219,7 +216,7 @@ where
     T: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    pub(crate) entries: FxHashMap<EntityId, Vec<ComponentPtr>>,
+    pub(crate) entries: QueryMap,
 
     _phantom: std::marker::PhantomData<&'a (T, F)>,
 }
@@ -230,7 +227,7 @@ where
     F: QueryFilter<'a>,
 {
     pub(crate) fn new(world: &World) -> Self {
-        let entries = T::collect(&world.components.read());
+        let entries = collect_components::<T, F>(&world.components.read());
 
         Self {
             entries,
@@ -239,30 +236,15 @@ where
     }
 
     pub fn get(&'a self, entity: EntityId) -> Option<T::ItemRef> {
-        self.entries
-            .get(&entity)
-            .and_then(|entries| T::get(entries))
+        self.entries.get(entity).and_then(|entries| T::get(entries))
     }
 
     pub fn entities(&self) -> impl Iterator<Item = EntityId> + '_ {
-        self.entries.keys().copied()
-    }
-
-    pub fn par_entities(&self) -> impl ParallelIterator<Item = EntityId> + '_ {
-        self.entries.par_iter().map(|(entity, _)| *entity)
+        self.entries.keys()
     }
 
     pub fn iter(&'a self) -> impl Iterator<Item = T::ItemRef> + '_ {
         self.entities().filter_map(move |entity| self.get(entity))
-    }
-
-    pub fn par_iter(&'a self) -> impl ParallelIterator<Item = T::ItemRef> + '_
-    where
-        T: Sync,
-        F: Sync,
-    {
-        self.par_entities()
-            .filter_map(move |entity| self.get(entity))
     }
 }
 
@@ -276,11 +258,11 @@ macro_rules! impl_queryfilter_for_tuple {
         where
             $($name: QueryFilter<'a>,)*
         {
-            fn withs() -> Option<FxHashSet<usize>> {
-                let mut all = FxHashSet::default();
+            fn withs() -> Option<ComponentSet> {
+                let mut all = ComponentSet::default();
                 $(
                     if let Some(withs) = $name::withs() {
-                        all.extend(&withs);
+                        Set::<usize>::set_union_with(&mut all, &withs);
                     }
                 )*
                 if all.is_empty() {
@@ -289,11 +271,11 @@ macro_rules! impl_queryfilter_for_tuple {
                 Some(all)
             }
 
-            fn withouts() -> Option<FxHashSet<usize>> {
-                let mut all = FxHashSet::default();
+            fn withouts() -> Option<ComponentSet> {
+                let mut all = ComponentSet::default();
                 $(
                     if let Some(withouts) = $name::withouts() {
-                        all.extend(&withouts);
+                        Set::<usize>::set_union_with(&mut all, &withouts);
                     }
                 )*
                 if all.is_empty() {
