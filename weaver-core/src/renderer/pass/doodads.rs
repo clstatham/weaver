@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use weaver_proc_macro::{BindableComponent, GpuComponent, StaticId};
+use weaver_proc_macro::{BindableComponent, GpuComponent};
 use wgpu::util::DeviceExt;
 
 use weaver_ecs::World;
@@ -192,7 +192,7 @@ impl DoodadVertex {
     }
 }
 
-#[derive(StaticId, GpuComponent, BindableComponent)]
+#[derive(GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 struct DoodadBuffers {
     bind_group: LazyBindGroup<Self>,

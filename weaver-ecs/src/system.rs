@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, fmt::Debug, sync::Arc};
+use std::{any::TypeId, collections::VecDeque, fmt::Debug, sync::Arc};
 
 use super::World;
 use parking_lot::RwLock;
@@ -45,10 +45,10 @@ pub enum SystemStage {
 
 pub trait System: Send + Sync {
     fn run(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()>;
-    fn components_read(&self) -> Vec<u128>;
-    fn components_written(&self) -> Vec<u128>;
-    fn resources_read(&self) -> Vec<u128>;
-    fn resources_written(&self) -> Vec<u128>;
+    fn components_read(&self) -> Vec<TypeId>;
+    fn components_written(&self) -> Vec<TypeId>;
+    fn resources_read(&self) -> Vec<TypeId>;
+    fn resources_written(&self) -> Vec<TypeId>;
     fn is_exclusive(&self) -> bool;
 }
 

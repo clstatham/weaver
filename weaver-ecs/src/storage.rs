@@ -1,15 +1,18 @@
-use std::sync::atomic::{AtomicBool, AtomicU32};
+use std::{
+    any::TypeId,
+    sync::atomic::{AtomicBool, AtomicU32},
+};
 
 use atomic_refcell::AtomicRefCell;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{archetype::Archetype, query::QueryAccess, Entity};
+use crate::{archetype::Archetype, query::QueryAccess, Entity, TypeIdMap, TypeIdSet};
 
 use super::{entity::EntityId, world::ComponentPtr};
 
 pub type EntitySet = FxHashSet<EntityId>;
-pub type ComponentSet = FxHashSet<u128>;
-pub type ComponentMap = FxHashMap<u128, ComponentPtr>;
+pub type ComponentSet = TypeIdSet;
+pub type ComponentMap = TypeIdMap<ComponentPtr>;
 pub type EntityComponentsMap = FxHashMap<EntityId, ComponentStorage>;
 pub type QueryMap = FxHashMap<EntityId, Vec<ComponentPtr>>;
 
@@ -27,27 +30,27 @@ impl ComponentStorage {
         }
     }
 
-    pub fn insert(&mut self, component_id: u128, component: ComponentPtr) {
+    pub fn insert(&mut self, component_id: TypeId, component: ComponentPtr) {
         self.set.insert(component_id);
         self.components.insert(component_id, component);
     }
 
-    pub fn remove(&mut self, component_id: &u128) -> Option<ComponentPtr> {
+    pub fn remove(&mut self, component_id: &TypeId) -> Option<ComponentPtr> {
         if !self.set.remove(component_id) {
             return None;
         }
         self.components.remove(component_id)
     }
 
-    pub fn get(&self, component_id: &u128) -> Option<&ComponentPtr> {
+    pub fn get(&self, component_id: &TypeId) -> Option<&ComponentPtr> {
         self.components.get(component_id)
     }
 
-    pub fn get_mut(&mut self, component_id: &u128) -> Option<&mut ComponentPtr> {
+    pub fn get_mut(&mut self, component_id: &TypeId) -> Option<&mut ComponentPtr> {
         self.components.get_mut(component_id)
     }
 
-    pub fn contains_component(&self, component_id: &u128) -> bool {
+    pub fn contains_component(&self, component_id: &TypeId) -> bool {
         self.set.contains(component_id)
     }
 
@@ -72,7 +75,7 @@ impl ComponentStorage {
             .retain(|k, _| !other.components.contains_key(k));
     }
 
-    pub fn keys(&self) -> impl Iterator<Item = &u128> {
+    pub fn keys(&self) -> impl Iterator<Item = &TypeId> {
         self.set.iter()
     }
 
@@ -80,11 +83,11 @@ impl ComponentStorage {
         self.components.values()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&u128, &ComponentPtr)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&TypeId, &ComponentPtr)> {
         self.components.iter()
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&u128, &mut ComponentPtr)> {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&TypeId, &mut ComponentPtr)> {
         self.components.iter_mut()
     }
 
@@ -143,7 +146,7 @@ impl Components {
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    pub fn remove_component(&mut self, entity: EntityId, component_id: u128) {
+    pub fn remove_component(&mut self, entity: EntityId, component_id: TypeId) {
         self.entity_components
             .get_mut(&entity)
             .and_then(|components| components.remove(&component_id));

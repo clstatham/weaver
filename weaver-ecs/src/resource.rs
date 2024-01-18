@@ -1,8 +1,8 @@
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 
-use super::{component::Downcast, StaticId};
+use super::component::Downcast;
 
-pub trait Resource: Downcast + Send + Sync + StaticId + 'static {}
+pub trait Resource: Downcast + Send + Sync + 'static {}
 
 pub struct Res<'a, T: Resource> {
     resource: RwLockReadGuard<'a, dyn Resource>,

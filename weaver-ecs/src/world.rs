@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt::Debug, sync::Arc};
+use std::{any::TypeId, borrow::Cow, fmt::Debug, sync::Arc};
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
@@ -17,7 +17,7 @@ use super::{
 
 #[derive(Clone)]
 pub struct ComponentPtr {
-    pub component_id: u128,
+    pub component_id: TypeId,
     pub component_name: Cow<'static, str>,
     pub component: Arc<RwLock<dyn Component>>,
 }
@@ -34,7 +34,7 @@ impl Debug for ComponentPtr {
 pub struct World {
     pub(crate) components: Components,
     pub(crate) systems: FxHashMap<SystemStage, Arc<RwLock<SystemGraph>>>,
-    pub(crate) resources: FxHashMap<u128, Arc<RwLock<dyn Resource>>>,
+    pub(crate) resources: FxHashMap<TypeId, Arc<RwLock<dyn Resource>>>,
 }
 
 impl World {
@@ -59,7 +59,7 @@ impl World {
         self.components.add_component(
             entity.id(),
             ComponentPtr {
-                component_id: T::static_id(),
+                component_id: TypeId::of::<T>(),
                 component_name: Cow::Borrowed(std::any::type_name::<T>()),
                 component,
             },
@@ -68,12 +68,12 @@ impl World {
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) {
         self.components
-            .remove_component(entity.id(), T::static_id());
+            .remove_component(entity.id(), TypeId::of::<T>());
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
         if let Some(components) = self.components.entity_components.get(&entity.id()) {
-            components.contains_component(&T::static_id())
+            components.contains_component(&TypeId::of::<T>())
         } else {
             false
         }
@@ -88,14 +88,14 @@ impl World {
             return Err(anyhow::anyhow!("Resource already exists"));
         }
         let resource = Arc::new(RwLock::new(resource));
-        self.resources.insert(T::static_id(), resource);
+        self.resources.insert(TypeId::of::<T>(), resource);
         Ok(())
     }
 
     pub fn read_resource<T: Resource>(&self) -> anyhow::Result<Res<T>> {
         let resource = self
             .resources
-            .get(&T::static_id())
+            .get(&TypeId::of::<T>())
             .ok_or(anyhow::anyhow!("Resource does not exist"))?;
         Ok(Res::new(resource.read()))
     }
@@ -103,14 +103,14 @@ impl World {
     pub fn write_resource<T: Resource>(&self) -> anyhow::Result<ResMut<T>> {
         let resource = self
             .resources
-            .get(&T::static_id())
+            .get(&TypeId::of::<T>())
             .ok_or(anyhow::anyhow!("Resource does not exist"))?;
 
         Ok(ResMut::new(resource.write()))
     }
 
     pub fn has_resource<T: Resource>(&self) -> bool {
-        self.resources.contains_key(&T::static_id())
+        self.resources.contains_key(&TypeId::of::<T>())
     }
 
     pub fn add_system<T: System + 'static>(&mut self, system: T) -> SystemId {

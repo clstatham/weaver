@@ -1,3 +1,5 @@
+use std::any::TypeId;
+
 use parking_lot::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLockReadGuard, RwLockWriteGuard,
 };
@@ -134,7 +136,7 @@ where
 
     fn get(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
         let components = components.entity_components.get(&entity)?;
-        let component = components.get(&T::static_id())?;
+        let component = components.get(&TypeId::of::<T>())?;
         let component = RwLockReadGuard::map(component.component.read(), |component| {
             (*component).as_any().downcast_ref::<T>().unwrap()
         });
@@ -147,7 +149,7 @@ where
 
     fn access() -> QueryAccess {
         QueryAccess {
-            reads: ComponentSet::from_iter([T::static_id()]),
+            reads: ComponentSet::from_iter([TypeId::of::<T>()]),
             writes: ComponentSet::default(),
             withs: F::withs(),
             withouts: F::withouts(),
@@ -164,7 +166,7 @@ where
     type ItemRef = Mut<'a, T>;
     fn get(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
         let components = components.entity_components.get(&entity)?;
-        let component = components.get(&T::static_id()).map(|component| {
+        let component = components.get(&TypeId::of::<T>()).map(|component| {
             RwLockWriteGuard::map(component.component.write(), |component| {
                 (*component).as_any_mut().downcast_mut::<T>().unwrap()
             })
@@ -179,7 +181,7 @@ where
     fn access() -> QueryAccess {
         QueryAccess {
             reads: ComponentSet::default(),
-            writes: ComponentSet::from_iter([T::static_id()]),
+            writes: ComponentSet::from_iter([TypeId::of::<T>()]),
             withs: F::withs(),
             withouts: F::withouts(),
         }
@@ -208,7 +210,7 @@ where
     T: Component,
 {
     fn withs() -> ComponentSet {
-        ComponentSet::from_iter([T::static_id()])
+        ComponentSet::from_iter([TypeId::of::<T>()])
     }
 }
 
@@ -221,7 +223,7 @@ where
     T: Component,
 {
     fn withouts() -> ComponentSet {
-        ComponentSet::from_iter([T::static_id()])
+        ComponentSet::from_iter([TypeId::of::<T>()])
     }
 }
 

@@ -21,92 +21,44 @@ pub use {
     world::World,
 };
 
-use std::sync::Arc;
+use std::{
+    any::TypeId,
+    collections::{HashMap, HashSet},
+    hash::BuildHasherDefault,
+};
 
-pub use weaver_proc_macro::{system, Bundle, Component, Resource, StaticId};
+use rustc_hash::FxHasher;
+pub use weaver_proc_macro::{system, Bundle, Component, Resource};
 
-/// A unique identifier for something that is known at compile time.
-/// This is used to identify components and resources.
-///
-/// # Safety
-///
-/// This trait is unsafe because it is up to the implementor to ensure that
-/// the ID is unique.
-pub unsafe trait StaticId {
-    fn static_id() -> u128
-    where
-        Self: Sized;
+#[derive(Default)]
+pub struct TypeIdHasher(u64);
 
-    fn static_name() -> &'static str
-    where
-        Self: Sized,
-    {
-        std::any::type_name::<Self>()
+impl std::hash::Hasher for TypeIdHasher {
+    fn write_u64(&mut self, i: u64) {
+        debug_assert_eq!(self.0, 0);
+        self.0 = i;
+    }
+
+    fn write_u128(&mut self, i: u128) {
+        debug_assert_eq!(self.0, 0);
+        self.0 = i as u64;
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        debug_assert_eq!(self.0, 0);
+
+        let mut hasher = FxHasher::default();
+        hasher.write(bytes);
+        self.0 = hasher.finish();
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
     }
 }
 
-unsafe impl<T: StaticId> StaticId for Option<T> {
-    fn static_id() -> u128
-    where
-        Self: Sized,
-    {
-        T::static_id()
-    }
-}
-
-unsafe impl<T: StaticId> StaticId for Vec<T> {
-    fn static_id() -> u128
-    where
-        Self: Sized,
-    {
-        T::static_id()
-    }
-}
-
-unsafe impl<T: StaticId> StaticId for Box<T> {
-    fn static_id() -> u128
-    where
-        Self: Sized,
-    {
-        T::static_id()
-    }
-}
-
-unsafe impl<T: StaticId> StaticId for Arc<T> {
-    fn static_id() -> u128
-    where
-        Self: Sized,
-    {
-        T::static_id()
-    }
-}
-
-unsafe impl<T: StaticId> StaticId for &T {
-    fn static_id() -> u128
-    where
-        Self: Sized,
-    {
-        T::static_id()
-    }
-}
-
-unsafe impl<T: StaticId> StaticId for &mut T {
-    fn static_id() -> u128
-    where
-        Self: Sized,
-    {
-        T::static_id()
-    }
-}
-
-unsafe impl<T: StaticId> StaticId for parking_lot::RwLock<T> {
-    fn static_id() -> u128
-    where
-        Self: Sized,
-    {
-        T::static_id()
-    }
-}
+pub(crate) type TypeIdMap<T> = HashMap<TypeId, T, BuildHasherDefault<TypeIdHasher>>;
+pub(crate) type TypeIdSet = HashSet<TypeId, BuildHasherDefault<TypeIdHasher>>;
 
 #[cfg(test)]
 mod tests {

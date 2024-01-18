@@ -8,6 +8,7 @@ edition = "2021"
 
 [dependencies]
 bevy_ecs = "0.12.1"
+hecs = "0.10.4"
 weaver-ecs = { path = "../weaver-ecs" }
 
 [profile.release]

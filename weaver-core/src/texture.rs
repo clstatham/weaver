@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
-use weaver_ecs::{Component, StaticId};
+use weaver_ecs::Component;
 
 use crate::renderer::internals::{
     BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager, GpuResourceType,
@@ -12,7 +12,7 @@ use crate::renderer::internals::{
 
 use super::color::Color;
 
-pub trait TextureFormat: StaticId {
+pub trait TextureFormat: 'static {
     const FORMAT: wgpu::TextureFormat;
     const SAMPLE_TYPE: wgpu::TextureSampleType;
 
@@ -22,7 +22,7 @@ pub trait TextureFormat: StaticId {
 macro_rules! texture_formats {
     ($($name:ident: $format:ident, $sample_type:expr;)*) => {
         $(
-            #[derive(Clone, StaticId, weaver_proc_macro::GpuComponent)]
+            #[derive(Clone, weaver_proc_macro::GpuComponent)]
             #[gpu(update = "update")]
             pub struct $name {
                 #[gpu(component)]

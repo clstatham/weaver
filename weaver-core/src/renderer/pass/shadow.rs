@@ -3,7 +3,7 @@ use std::{num::NonZeroU32, sync::Arc};
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use weaver_ecs::World;
-use weaver_proc_macro::{BindableComponent, GpuComponent, StaticId};
+use weaver_proc_macro::{BindableComponent, GpuComponent};
 
 use crate::{
     camera::Camera,
@@ -28,7 +28,7 @@ use super::Pass;
 
 const SHADOW_DEPTH_TEXTURE_SIZE: u32 = 1024;
 
-#[derive(StaticId, GpuComponent)]
+#[derive(GpuComponent)]
 #[gpu(update = "update")]
 struct UniqueMesh {
     mesh: Mesh,
@@ -42,7 +42,7 @@ impl UniqueMesh {
     }
 }
 
-#[derive(Default, StaticId, GpuComponent)]
+#[derive(Default, GpuComponent)]
 #[gpu(update = "update")]
 struct UniqueMeshes {
     #[gpu(component)]
@@ -76,7 +76,7 @@ impl UniqueMeshes {
     }
 }
 
-#[derive(Clone, StaticId, GpuComponent, BindableComponent)]
+#[derive(Clone, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 struct LightViews {
     #[storage]
@@ -105,7 +105,7 @@ impl LightViews {
     }
 }
 
-#[derive(StaticId, Clone, GpuComponent)]
+#[derive(Clone, GpuComponent)]
 #[gpu(update = "update")]
 struct ShadowBuffers {
     shadow_cubemap: LazyGpuHandle,

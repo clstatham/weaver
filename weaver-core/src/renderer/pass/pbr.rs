@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
-use weaver_proc_macro::{BindableComponent, GpuComponent, StaticId};
+use weaver_proc_macro::{BindableComponent, GpuComponent};
 
 use weaver_ecs::World;
 
@@ -25,7 +25,7 @@ use crate::{
 
 use super::sky::{SKYBOX_CUBEMAP_SIZE, SKYBOX_IRRADIANCE_MAP_SIZE};
 
-#[derive(StaticId, GpuComponent)]
+#[derive(GpuComponent)]
 #[gpu(update = "update")]
 pub struct UniqueMesh {
     pub mesh: Mesh,
@@ -40,7 +40,7 @@ impl UniqueMesh {
     }
 }
 
-#[derive(Default, StaticId, GpuComponent)]
+#[derive(Default, GpuComponent)]
 #[gpu(update = "update")]
 pub struct UniqueMeshes {
     #[gpu(component)]
@@ -80,7 +80,7 @@ impl UniqueMeshes {
     }
 }
 
-#[derive(Clone, StaticId, GpuComponent, BindableComponent)]
+#[derive(Clone, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct PbrBuffers {
     #[uniform]

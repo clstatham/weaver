@@ -1,17 +1,21 @@
-use std::{borrow::Cow, fmt::Debug};
+use std::{
+    any::{type_name, TypeId},
+    borrow::Cow,
+    fmt::Debug,
+};
 
 use rustc_hash::FxHashMap;
 
 use crate::{
     entity::EntityId,
     storage::{ComponentSet, EntitySet},
-    Component,
+    Component, TypeIdMap,
 };
 
 #[derive(Default)]
 pub struct Archetype {
     pub(crate) components: ComponentSet,
-    pub(crate) component_names: FxHashMap<u128, Cow<'static, str>>,
+    pub(crate) component_names: TypeIdMap<Cow<'static, str>>,
     pub(crate) entities: EntitySet,
 }
 
@@ -31,18 +35,22 @@ impl Archetype {
     pub fn new() -> Self {
         Self {
             components: ComponentSet::default(),
-            component_names: FxHashMap::default(),
+            component_names: TypeIdMap::default(),
             entities: EntitySet::default(),
         }
     }
 
     pub fn insert_component<T: Component>(&mut self) {
-        self.components.insert(T::static_id());
+        self.components.insert(TypeId::of::<T>());
         self.component_names
-            .insert(T::static_id(), Cow::Borrowed(T::static_name()));
+            .insert(TypeId::of::<T>(), Cow::Borrowed(type_name::<T>()));
     }
 
-    pub fn insert_raw_component(&mut self, component_id: u128, component_name: Cow<'static, str>) {
+    pub fn insert_raw_component(
+        &mut self,
+        component_id: TypeId,
+        component_name: Cow<'static, str>,
+    ) {
         self.components.insert(component_id);
         self.component_names.insert(component_id, component_name);
     }
@@ -59,7 +67,7 @@ impl Archetype {
         self.entities.contains(entity)
     }
 
-    pub fn contains_component(&self, component_id: &u128) -> bool {
+    pub fn contains_component(&self, component_id: &TypeId) -> bool {
         self.components.contains(component_id)
     }
 
@@ -71,7 +79,7 @@ impl Archetype {
         &self.components
     }
 
-    pub fn component_names(&self) -> &FxHashMap<u128, Cow<'static, str>> {
+    pub fn component_names(&self) -> &TypeIdMap<Cow<'static, str>> {
         &self.component_names
     }
 

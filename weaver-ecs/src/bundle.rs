@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    any::{type_name, TypeId},
+    sync::Arc,
+};
 
 use parking_lot::RwLock;
 
@@ -28,8 +31,8 @@ impl<T: Component> Bundle for T {
         world.add_component(
             entity.id(),
             ComponentPtr {
-                component_id: T::static_id(),
-                component_name: T::static_name().into(),
+                component_id: TypeId::of::<T>(),
+                component_name: type_name::<T>().into(),
                 component: Arc::new(RwLock::new(self)),
             },
         );

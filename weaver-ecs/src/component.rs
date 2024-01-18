@@ -14,4 +14,4 @@ impl<T: std::any::Any> Downcast for T {
 }
 
 /// A component is a data structure that can be attached to an entity.
-pub trait Component: Downcast + Send + Sync + super::StaticId + 'static {}
+pub trait Component: Downcast + Send + Sync + 'static {}

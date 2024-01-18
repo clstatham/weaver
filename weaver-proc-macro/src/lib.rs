@@ -1,29 +1,6 @@
 use quote::{format_ident, quote};
 
 
-#[proc_macro_derive(StaticId)]
-pub fn static_id_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let ast = syn::parse(input).unwrap();
-    impl_static_id_macro(&ast)
-}
-
-fn impl_static_id_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
-    let name = &ast.ident;
-
-    let id = uuid::Uuid::new_v4().as_u128();
-    let gen = quote! {
-        unsafe impl weaver_ecs::StaticId for #name {
-            fn static_id() -> u128
-            where
-                Self: Sized,
-            {
-                #id
-            }
-        }
-    };
-    gen.into()
-}
-
 #[proc_macro_derive(Component)]
 pub fn component_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = syn::parse(input).unwrap();
@@ -33,19 +10,9 @@ pub fn component_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 fn impl_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     let name = &ast.ident;
 
-    let id = uuid::Uuid::new_v4().as_u128();
     let gen = quote! {
         #[cfg_attr(feature = "serde", typetag::serde)]
         impl weaver_ecs::component::Component for #name {}
-
-        unsafe impl weaver_ecs::StaticId for #name {
-            fn static_id() -> u128
-            where
-                Self: Sized,
-            {
-                #id
-            }
-        }
     };
     gen.into()
 }
@@ -59,18 +26,8 @@ pub fn resource_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
 fn impl_resource_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
     let name = &ast.ident;
 
-    let id = uuid::Uuid::new_v4().as_u128();
     let gen = quote! {
         impl weaver_ecs::resource::Resource for #name {}
-
-        unsafe impl weaver_ecs::StaticId for #name {
-            fn static_id() -> u128
-            where
-                Self: Sized,
-            {
-                #id
-            }
-        }
     };
     gen.into()
 }
@@ -1094,7 +1051,7 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
             #[allow(unused_mut)]
             #run_fn
 
-            fn components_read(&self) -> Vec<u128> {
+            fn components_read(&self) -> Vec<std::any::TypeId> {
                 use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
@@ -1103,7 +1060,7 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
                 components
             }
 
-            fn components_written(&self) -> Vec<u128> {
+            fn components_written(&self) -> Vec<std::any::TypeId> {
                 use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
@@ -1112,20 +1069,18 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
                 components
             }
 
-            fn resources_read(&self) -> Vec<u128> {
-                use weaver_ecs::StaticId;
+            fn resources_read(&self) -> Vec<std::any::TypeId> {
                 let mut resources = Vec::new();
                 #(
-                    resources.push(<#res_types as weaver_ecs::StaticId>::static_id());
+                    resources.push(std::any::TypeId::of::<#res_types>());
                 )*
                 resources
             }
 
-            fn resources_written(&self) -> Vec<u128> {
-                use weaver_ecs::StaticId;
+            fn resources_written(&self) -> Vec<std::any::TypeId> {
                 let mut resources = Vec::new();
                 #(
-                    resources.push(<#resmut_types as weaver_ecs::StaticId>::static_id());
+                    resources.push(std::any::TypeId::of::<#resmut_types>());
                 )*
                 resources
             }

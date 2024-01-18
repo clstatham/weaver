@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use weaver_ecs::{StaticId, World};
+use weaver_ecs::World;
 
 use super::{BindGroupLayoutCache, GpuResourceManager};
 
 /// A component that holds handles to GPU resources.
-pub trait GpuComponent: StaticId {
+pub trait GpuComponent: 'static {
     /// Lazily initialize the component's GPU resources, or return the existing handles if they have already been initialized.
     fn lazy_init(&self, manager: &GpuResourceManager) -> anyhow::Result<()>;
 
@@ -16,7 +16,7 @@ pub trait GpuComponent: StaticId {
 }
 
 /// A component that holds a GPU bind group.
-pub trait BindableComponent: StaticId {
+pub trait BindableComponent: 'static {
     /// Creates a bind group layout for the component.
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
     where
