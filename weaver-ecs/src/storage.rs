@@ -5,13 +5,14 @@ use std::{
 };
 
 use atomic_refcell::AtomicRefCell;
-use rustc_hash::{FxHashMap, FxHashSet};
+use fixedbitset::FixedBitSet;
+use rustc_hash::FxHashMap;
 
 use crate::{archetype::Archetype, query::QueryAccess, Entity, TypeIdHasher, TypeIdSet};
 
 use super::{entity::EntityId, world::ComponentPtr};
 
-pub type EntitySet = FxHashSet<EntityId>;
+pub type EntitySet = FixedBitSet;
 pub type ComponentSet = TypeIdSet;
 pub type ComponentMap = SparseSet<TypeId, ComponentPtr>;
 pub type EntityComponentsMap = SparseSet<EntityId, ComponentStorage>;
@@ -223,7 +224,8 @@ impl Components {
             .next_entity_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        self.entities.insert(entity);
+        self.entities.grow(entity as usize + 1);
+        self.entities.insert(entity as usize);
 
         self.entity_components
             .insert(entity, ComponentStorage::new(entity));
@@ -257,7 +259,7 @@ impl Components {
             components.remove(&component_id);
         }
 
-        self.entities.remove(&entity);
+        self.entities.set(entity as usize, false);
 
         self.archetypes_dirty
             .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -294,9 +296,14 @@ impl Components {
         self.next_entity_id
             .store(next_id, std::sync::atomic::Ordering::Relaxed);
 
-        for entity in other.components.entities.drain() {
-            let components = other.components.entity_components.remove(&entity).unwrap();
-            self.entity_components.insert(entity, components);
+        for entity in other.components.entities.ones() {
+            let components = other
+                .components
+                .entity_components
+                .remove(&(entity as EntityId))
+                .unwrap();
+            self.entity_components
+                .insert(entity as EntityId, components);
         }
 
         self.archetypes_dirty
@@ -353,7 +360,7 @@ impl Components {
 
         for archetype in self.archetypes.borrow().iter() {
             if access.matches_archetype(archetype) {
-                entities.extend(archetype.entities.iter());
+                entities.extend(archetype.entities.ones());
             }
         }
 

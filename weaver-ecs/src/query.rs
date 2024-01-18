@@ -287,7 +287,7 @@ where
     }
 
     pub fn get(&self, entity: EntityId, components: &'a Components) -> Option<Q::ItemRef> {
-        if self.entities.contains(&entity) {
+        if self.entities.contains(entity as usize) {
             let components = components.entity_components.get(&entity)?;
             Q::fetch(components)
         } else {
@@ -300,7 +300,7 @@ where
             components
                 .entity_components
                 .dense_iter()
-                .filter(|c| self.entities.contains(&c.entity))
+                .filter(|c| self.entities.contains(c.entity as usize))
         };
 
         let iter = Q::map_iter(&iter);

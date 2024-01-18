@@ -54,7 +54,8 @@ impl Archetype {
     }
 
     pub fn insert_entity(&mut self, entity_id: EntityId) {
-        self.entities.insert(entity_id);
+        self.entities.grow(entity_id as usize + 1);
+        self.entities.insert(entity_id as usize);
     }
 
     pub fn contains_component(&self, component_id: &TypeId) -> bool {
