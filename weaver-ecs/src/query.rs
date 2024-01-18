@@ -56,7 +56,7 @@ where
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct QueryAccess {
     pub reads: ComponentSet,
     pub writes: ComponentSet,
@@ -167,7 +167,7 @@ where
 
     fn access() -> QueryAccess {
         QueryAccess {
-            reads: ComponentSet::from_iter([TypeId::of::<T>()]),
+            reads: ComponentSet::from_iter([(TypeId::of::<T>(), ())]),
             writes: ComponentSet::default(),
             withs: F::withs(),
             withouts: F::withouts(),
@@ -217,7 +217,7 @@ where
     fn access() -> QueryAccess {
         QueryAccess {
             reads: ComponentSet::default(),
-            writes: ComponentSet::from_iter([TypeId::of::<T>()]),
+            writes: ComponentSet::from_iter([(TypeId::of::<T>(), ())]),
             withs: F::withs(),
             withouts: F::withouts(),
         }
@@ -246,7 +246,7 @@ where
     T: Component,
 {
     fn withs() -> ComponentSet {
-        ComponentSet::from_iter([TypeId::of::<T>()])
+        ComponentSet::from_iter([(TypeId::of::<T>(), ())])
     }
 }
 
@@ -259,7 +259,7 @@ where
     T: Component,
 {
     fn withouts() -> ComponentSet {
-        ComponentSet::from_iter([TypeId::of::<T>()])
+        ComponentSet::from_iter([(TypeId::of::<T>(), ())])
     }
 }
 

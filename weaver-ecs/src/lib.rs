@@ -21,11 +21,7 @@ pub use {
     world::World,
 };
 
-use std::{
-    any::TypeId,
-    collections::{HashMap, HashSet},
-    hash::BuildHasherDefault,
-};
+use std::{any::TypeId, collections::HashMap, hash::BuildHasherDefault};
 
 use rustc_hash::FxHasher;
 pub use weaver_proc_macro::{system, Bundle, Component, Resource};
@@ -58,7 +54,6 @@ impl std::hash::Hasher for TypeIdHasher {
 }
 
 pub(crate) type TypeIdMap<T> = HashMap<TypeId, T, BuildHasherDefault<TypeIdHasher>>;
-pub(crate) type TypeIdSet = HashSet<TypeId, BuildHasherDefault<TypeIdHasher>>;
 
 #[cfg(test)]
 mod tests {

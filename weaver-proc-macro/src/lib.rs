@@ -1055,7 +1055,7 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
                 use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend(<#query_types as Queryable<#filter_types>>::access().reads.iter().copied());
+                    components.extend(<#query_types as Queryable<#filter_types>>::access().reads.sparse_iter().copied());
                 )*
                 components
             }
@@ -1064,7 +1064,7 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
                 use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend(<#query_types as Queryable<#filter_types>>::access().writes.iter().copied());
+                    components.extend(<#query_types as Queryable<#filter_types>>::access().writes.sparse_iter().copied());
                 )*
                 components
             }

@@ -39,7 +39,7 @@ impl Archetype {
     }
 
     pub fn insert_component<T: Component>(&mut self) {
-        self.components.insert(TypeId::of::<T>());
+        self.components.insert(TypeId::of::<T>(), ());
         self.component_names
             .insert(TypeId::of::<T>(), Cow::Borrowed(type_name::<T>()));
     }
@@ -49,7 +49,7 @@ impl Archetype {
         component_id: TypeId,
         component_name: Cow<'static, str>,
     ) {
-        self.components.insert(component_id);
+        self.components.insert(component_id, ());
         self.component_names.insert(component_id, component_name);
     }
 

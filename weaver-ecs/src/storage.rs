@@ -8,12 +8,12 @@ use atomic_refcell::AtomicRefCell;
 use fixedbitset::FixedBitSet;
 use rustc_hash::FxHashMap;
 
-use crate::{archetype::Archetype, query::QueryAccess, Entity, TypeIdHasher, TypeIdSet};
+use crate::{archetype::Archetype, query::QueryAccess, Entity, TypeIdHasher};
 
 use super::{entity::EntityId, world::ComponentPtr};
 
 pub type EntitySet = FixedBitSet;
-pub type ComponentSet = TypeIdSet;
+pub type ComponentSet = SparseSet<TypeId, ()>;
 pub type ComponentMap = SparseSet<TypeId, ComponentPtr>;
 pub type EntityComponentsMap = SparseSet<EntityId, ComponentStorage>;
 
@@ -51,6 +51,7 @@ impl Index for TypeId {
     }
 }
 
+#[derive(PartialEq)]
 pub struct SparseSet<I: Index, T> {
     pub(crate) dense: Vec<T>,
     pub(crate) sparse: FxHashMap<I, usize>,
@@ -98,6 +99,16 @@ impl<I: Index, T> SparseSet<I, T> {
         Some(self.dense.pop().unwrap())
     }
 
+    pub fn extend(&mut self, other: &Self)
+    where
+        T: Clone,
+    {
+        for (index, value) in other.sparse.iter() {
+            let value = other.dense.get(*value).unwrap();
+            self.insert(*index, value.clone());
+        }
+    }
+
     pub fn get(&self, index: &I) -> Option<&T> {
         let dense_index = self.sparse.get(index)?;
         self.dense.get(*dense_index)
@@ -106,6 +117,28 @@ impl<I: Index, T> SparseSet<I, T> {
     pub fn get_mut(&mut self, index: &I) -> Option<&mut T> {
         let dense_index = self.sparse.get(index)?;
         self.dense.get_mut(*dense_index)
+    }
+
+    pub fn is_superset(&self, other: &Self) -> bool {
+        for index in other.sparse.keys() {
+            if !self.sparse.contains_key(index) {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn is_subset(&self, other: &Self) -> bool {
+        for index in self.sparse.keys() {
+            if !other.sparse.contains_key(index) {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn contains(&self, index: &I) -> bool {
+        self.sparse.contains_key(index)
     }
 
     pub fn len(&self) -> usize {
@@ -127,6 +160,20 @@ impl<I: Index, T> SparseSet<I, T> {
 
     pub fn dense_iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
         self.dense.iter_mut()
+    }
+
+    pub fn sparse_iter(&self) -> impl Iterator<Item = &I> {
+        self.sparse.keys()
+    }
+}
+
+impl<I: Index, T> FromIterator<(I, T)> for SparseSet<I, T> {
+    fn from_iter<TIter: IntoIterator<Item = (I, T)>>(iter: TIter) -> Self {
+        let mut set = Self::new();
+        for (index, value) in iter {
+            set.insert(index, value);
+        }
+        set
     }
 }
 
@@ -152,14 +199,12 @@ impl ComponentStorage {
     }
 
     pub fn insert(&mut self, component_id: TypeId, component: ComponentPtr) {
-        self.component_set.insert(component_id);
+        self.component_set.insert(component_id, ());
         self.components.insert(component_id, component);
     }
 
     pub fn remove(&mut self, component_id: &TypeId) -> Option<ComponentPtr> {
-        if !self.component_set.remove(component_id) {
-            return None;
-        }
+        self.component_set.remove(component_id)?;
         self.components.remove(component_id)
     }
 
@@ -180,7 +225,7 @@ impl ComponentStorage {
     }
 
     pub fn keys(&self) -> impl Iterator<Item = &TypeId> {
-        self.component_set.iter()
+        self.component_set.sparse.keys()
     }
 
     pub fn values(&self) -> impl Iterator<Item = &ComponentPtr> {
