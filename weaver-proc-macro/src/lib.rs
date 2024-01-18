@@ -1051,36 +1051,36 @@ fn impl_system_macro(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_m
             #[allow(unused_mut)]
             #run_fn
 
-            fn components_read(&self) -> Vec<std::any::TypeId> {
+            fn components_read(&self) -> Vec<weaver_ecs::StaticId> {
                 use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend(<#query_types as Queryable<#filter_types>>::access().reads.sparse_iter().copied());
+                    components.extend(<#query_types as Queryable<#filter_types>>::access().reads.ones().map(|id| id as weaver_ecs::StaticId));
                 )*
                 components
             }
 
-            fn components_written(&self) -> Vec<std::any::TypeId> {
+            fn components_written(&self) -> Vec<weaver_ecs::StaticId> {
                 use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend(<#query_types as Queryable<#filter_types>>::access().writes.sparse_iter().copied());
+                    components.extend(<#query_types as Queryable<#filter_types>>::access().writes.ones().map(|id| id as weaver_ecs::StaticId));
                 )*
                 components
             }
 
-            fn resources_read(&self) -> Vec<std::any::TypeId> {
+            fn resources_read(&self) -> Vec<weaver_ecs::StaticId> {
                 let mut resources = Vec::new();
                 #(
-                    resources.push(std::any::TypeId::of::<#res_types>());
+                    resources.push(weaver_ecs::static_id::<#res_types>());
                 )*
                 resources
             }
 
-            fn resources_written(&self) -> Vec<std::any::TypeId> {
+            fn resources_written(&self) -> Vec<weaver_ecs::StaticId> {
                 let mut resources = Vec::new();
                 #(
-                    resources.push(std::any::TypeId::of::<#resmut_types>());
+                    resources.push(weaver_ecs::static_id::<#resmut_types>());
                 )*
                 resources
             }

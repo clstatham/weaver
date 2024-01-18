@@ -1,4 +1,6 @@
-use std::{any::TypeId, collections::VecDeque, fmt::Debug, sync::Arc};
+use std::{collections::VecDeque, fmt::Debug, sync::Arc};
+
+use crate::StaticId;
 
 use super::World;
 use parking_lot::RwLock;
@@ -45,10 +47,10 @@ pub enum SystemStage {
 
 pub trait System: Send + Sync {
     fn run(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()>;
-    fn components_read(&self) -> Vec<TypeId>;
-    fn components_written(&self) -> Vec<TypeId>;
-    fn resources_read(&self) -> Vec<TypeId>;
-    fn resources_written(&self) -> Vec<TypeId>;
+    fn components_read(&self) -> Vec<StaticId>;
+    fn components_written(&self) -> Vec<StaticId>;
+    fn resources_read(&self) -> Vec<StaticId>;
+    fn resources_written(&self) -> Vec<StaticId>;
     fn is_exclusive(&self) -> bool;
 }
 

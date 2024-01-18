@@ -6,10 +6,20 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[bin]]
+name = "weaver-bench"
+path = "src/main.rs"
+
+[[bench]]
+name = "weaver-bench"
+path = "src/bench.rs"
+harness = false
+
 [dependencies]
-bevy_ecs = "0.12.1"
-hecs = "0.10.4"
-weaver-ecs = { path = "../weaver-ecs" }
+weaver-ecs = { path = "../weaver-ecs", features = [] }
+
+[dev-dependencies]
+criterion = "0.5.1"
 
 [profile.release]
 debug = true

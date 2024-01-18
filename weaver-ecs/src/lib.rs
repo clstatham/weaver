@@ -23,6 +23,7 @@ pub use {
 
 use std::{any::TypeId, collections::HashMap, hash::BuildHasherDefault};
 
+use parking_lot::Mutex;
 use rustc_hash::FxHasher;
 pub use weaver_proc_macro::{system, Bundle, Component, Resource};
 
@@ -54,6 +55,27 @@ impl std::hash::Hasher for TypeIdHasher {
 }
 
 pub(crate) type TypeIdMap<T> = HashMap<TypeId, T, BuildHasherDefault<TypeIdHasher>>;
+
+pub type StaticId = u64;
+
+lazy_static::lazy_static! {
+    pub(crate) static ref TYPE_ID_MAP: Mutex<TypeIdMap<StaticId>> = Mutex::new(TypeIdMap::default());
+}
+
+#[inline]
+pub fn static_id<T: 'static>() -> StaticId {
+    let mut type_id_map = TYPE_ID_MAP.lock();
+
+    let type_id = TypeId::of::<T>();
+
+    if let Some(id) = type_id_map.get(&type_id) {
+        *id
+    } else {
+        let id = type_id_map.len() as StaticId;
+        type_id_map.insert(type_id, id);
+        id
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -105,7 +127,7 @@ mod tests {
         world.spawn((A::default(), C::default()));
         world.spawn((A::default(), B::default(), C::default()));
 
-        let query = world.query_filtered::<(), With<A>>();
+        let query = world.query_filtered::<&B, With<A>>();
 
         let mut count = 0;
 
@@ -113,7 +135,7 @@ mod tests {
             count += 1;
         }
 
-        assert_eq!(count, 4);
+        assert_eq!(count, 3);
     }
 
     #[test]
@@ -125,9 +147,7 @@ mod tests {
         world.spawn((A::default(), C::default()));
         world.spawn((A::default(), B::default(), C::default()));
 
-        dbg!(&world.components.archetypes);
-
-        let query = world.query_filtered::<(), Without<C>>();
+        let query = world.query_filtered::<&B, Without<C>>();
 
         let mut count = 0;
 
@@ -136,5 +156,67 @@ mod tests {
         }
 
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_query_get() {
+        let mut world = World::new();
+
+        let entity = world.spawn((A::default(), B::default(), C::default()));
+
+        let query = world.query::<(&A, &B, &C)>();
+
+        let (a, b, c) = query.get(entity.id()).unwrap();
+
+        assert_eq!(a.a, 0);
+        assert_eq!(b.b, 0);
+        assert_eq!(c.c, 0);
+    }
+
+    #[test]
+    fn test_query_get_multiple_archetypes() {
+        let mut world = World::new();
+
+        let entity1 = world.spawn((A::default(), B::default(), C::default()));
+        let entity2 = world.spawn((A::default(), B::default()));
+        let entity3 = world.spawn((A::default(), C::default()));
+        let entity4 = world.spawn((A::default(), B::default(), C::default()));
+
+        let query = world.query::<(&A, &B, &C)>();
+
+        let (a, b, c) = query.get(entity4.id()).unwrap();
+
+        assert_eq!(a.a, 0);
+        assert_eq!(b.b, 0);
+        assert_eq!(c.c, 0);
+    }
+
+    #[test]
+    fn test_query_get_filtered() {
+        let mut world = World::new();
+
+        let entity = world.spawn((A::default(), B::default(), C::default()));
+
+        let query = world.query_filtered::<&B, With<A>>();
+
+        let b = query.get(entity.id()).unwrap();
+
+        assert_eq!(b.b, 0);
+    }
+
+    #[test]
+    fn test_query_get_filtered_multiple_archetypes() {
+        let mut world = World::new();
+
+        let entity1 = world.spawn((A::default(), B::default(), C::default()));
+        let entity2 = world.spawn((A::default(), B::default()));
+        let entity3 = world.spawn((A::default(), C::default()));
+        let entity4 = world.spawn((A::default(), B::default(), C::default()));
+
+        let query = world.query_filtered::<&B, With<A>>();
+
+        let b = query.get(entity4.id()).unwrap();
+
+        assert_eq!(b.b, 0);
     }
 }

@@ -1,11 +1,8 @@
-use std::{
-    any::{type_name, TypeId},
-    sync::Arc,
-};
+use std::{any::type_name, sync::Arc};
 
 use atomic_refcell::AtomicRefCell;
 
-use crate::{storage::Components, world::ComponentPtr};
+use crate::{static_id, storage::Components, world::ComponentPtr};
 
 use super::{Component, Entity};
 
@@ -31,7 +28,7 @@ impl<T: Component> Bundle for T {
         world.add_component(
             entity.id(),
             ComponentPtr {
-                component_id: TypeId::of::<T>(),
+                component_id: static_id::<T>(),
                 component_name: type_name::<T>().into(),
                 component: Arc::new(AtomicRefCell::new(self)),
             },

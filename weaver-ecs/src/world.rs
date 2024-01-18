@@ -1,4 +1,4 @@
-use std::{any::TypeId, borrow::Cow, fmt::Debug, sync::Arc};
+use std::{borrow::Cow, fmt::Debug, sync::Arc};
 
 use atomic_refcell::AtomicRefCell;
 use parking_lot::RwLock;
@@ -6,7 +6,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     query::{Query, QueryFilter},
-    Queryable,
+    Queryable, StaticId,
 };
 
 use super::{
@@ -18,7 +18,7 @@ use super::{
 
 #[derive(Clone)]
 pub struct ComponentPtr {
-    pub component_id: TypeId,
+    pub component_id: StaticId,
     pub component_name: Cow<'static, str>,
     pub component: Arc<AtomicRefCell<dyn Component>>,
 }
@@ -35,7 +35,7 @@ impl Debug for ComponentPtr {
 pub struct World {
     pub(crate) components: Components,
     pub(crate) systems: FxHashMap<SystemStage, Arc<RwLock<SystemGraph>>>,
-    pub(crate) resources: FxHashMap<TypeId, Arc<RwLock<dyn Resource>>>,
+    pub(crate) resources: FxHashMap<StaticId, Arc<RwLock<dyn Resource>>>,
 }
 
 impl World {
@@ -60,7 +60,7 @@ impl World {
         self.components.add_component(
             entity.id(),
             ComponentPtr {
-                component_id: TypeId::of::<T>(),
+                component_id: crate::static_id::<T>(),
                 component_name: Cow::Borrowed(std::any::type_name::<T>()),
                 component,
             },
@@ -69,12 +69,12 @@ impl World {
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) {
         self.components
-            .remove_component(entity.id(), TypeId::of::<T>());
+            .remove_component(entity.id(), crate::static_id::<T>());
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
         if let Some(components) = self.components.entity_components.get(&entity.id()) {
-            components.contains_component(&TypeId::of::<T>())
+            components.contains_component(&crate::static_id::<T>())
         } else {
             false
         }
@@ -89,14 +89,14 @@ impl World {
             return Err(anyhow::anyhow!("Resource already exists"));
         }
         let resource = Arc::new(RwLock::new(resource));
-        self.resources.insert(TypeId::of::<T>(), resource);
+        self.resources.insert(crate::static_id::<T>(), resource);
         Ok(())
     }
 
     pub fn read_resource<T: Resource>(&self) -> anyhow::Result<Res<T>> {
         let resource = self
             .resources
-            .get(&TypeId::of::<T>())
+            .get(&crate::static_id::<T>())
             .ok_or(anyhow::anyhow!("Resource does not exist"))?;
         Ok(Res::new(resource.read()))
     }
@@ -104,14 +104,14 @@ impl World {
     pub fn write_resource<T: Resource>(&self) -> anyhow::Result<ResMut<T>> {
         let resource = self
             .resources
-            .get(&TypeId::of::<T>())
+            .get(&crate::static_id::<T>())
             .ok_or(anyhow::anyhow!("Resource does not exist"))?;
 
         Ok(ResMut::new(resource.write()))
     }
 
     pub fn has_resource<T: Resource>(&self) -> bool {
-        self.resources.contains_key(&TypeId::of::<T>())
+        self.resources.contains_key(&crate::static_id::<T>())
     }
 
     pub fn add_system<T: System + 'static>(&mut self, system: T) -> SystemId {

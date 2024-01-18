@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::fmt::Debug;
 
 use atomic_refcell::{AtomicRef, AtomicRefMut};
 
@@ -66,17 +66,26 @@ pub struct QueryAccess {
 
 impl QueryAccess {
     pub fn matches_archetype(&self, archetype: &Archetype) -> bool {
-        let mut includes = ComponentSet::default();
-
-        includes.extend(&self.reads);
-        includes.extend(&self.writes);
-        includes.extend(&self.withs);
-
-        if !self.withouts.is_empty() && self.withouts.is_subset(&archetype.components) {
+        if !self.withouts.is_clear()
+            && self.withouts.intersection(&archetype.components).count() > 0
+        {
             return false;
         }
 
-        includes.is_subset(&archetype.components)
+        self.reads.is_subset(&archetype.components)
+            && self.writes.is_subset(&archetype.components)
+            && self.withs.is_subset(&archetype.components)
+    }
+}
+
+impl Debug for QueryAccess {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("QueryAccess")
+            .field("reads", &self.reads.ones().collect::<Vec<_>>())
+            .field("writes", &self.writes.ones().collect::<Vec<_>>())
+            .field("withs", &self.withs.ones().collect::<Vec<_>>())
+            .field("withouts", &self.withouts.ones().collect::<Vec<_>>())
+            .finish()
     }
 }
 
@@ -88,11 +97,6 @@ where
     type ItemRef: 'a + Send;
 
     fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef>;
-
-    fn map_iter<Gen, I>(gen_base: &Gen) -> Box<dyn Iterator<Item = Self::ItemRef> + 'a>
-    where
-        Gen: Fn() -> I + 'a,
-        I: Iterator<Item = &'a ComponentStorage> + 'a;
 
     fn access() -> QueryAccess;
 }
@@ -106,14 +110,6 @@ where
 
     fn fetch(_components: &ComponentStorage) -> Option<Self::ItemRef> {
         Some(())
-    }
-
-    fn map_iter<Gen, I>(gen_base: &Gen) -> Box<dyn Iterator<Item = Self::ItemRef> + 'a>
-    where
-        Gen: Fn() -> I + 'a,
-        I: Iterator<Item = &'a ComponentStorage> + 'a,
-    {
-        Box::new(gen_base().map(|_| ()))
     }
 
     fn access() -> QueryAccess {
@@ -135,7 +131,7 @@ where
     type ItemRef = Ref<'a, T>;
 
     fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef> {
-        let component = components.get(&TypeId::of::<Self::Item>())?;
+        let component = components.get(&crate::static_id::<Self::Item>())?;
         Some(Ref {
             component: AtomicRef::map(component.component.borrow(), |component| {
                 (*component).as_any().downcast_ref::<T>().unwrap()
@@ -144,30 +140,9 @@ where
         })
     }
 
-    fn map_iter<Gen, I>(gen_base: &Gen) -> Box<dyn Iterator<Item = Self::ItemRef> + 'a>
-    where
-        Gen: Fn() -> I + 'a,
-        I: Iterator<Item = &'a ComponentStorage> + 'a,
-    {
-        Box::new(gen_base().filter_map(|c| {
-            c.components.dense_iter().find_map(|c| {
-                if c.component_id == TypeId::of::<T>() {
-                    Some(Ref {
-                        component: AtomicRef::map(c.component.borrow(), |component| {
-                            (*component).as_any().downcast_ref::<T>().unwrap()
-                        }),
-                        _marker: std::marker::PhantomData,
-                    })
-                } else {
-                    None
-                }
-            })
-        }))
-    }
-
     fn access() -> QueryAccess {
         QueryAccess {
-            reads: ComponentSet::from_iter([(TypeId::of::<T>(), ())]),
+            reads: ComponentSet::from_iter([crate::static_id::<T>() as usize]),
             writes: ComponentSet::default(),
             withs: F::withs(),
             withouts: F::withouts(),
@@ -184,7 +159,7 @@ where
     type ItemRef = Mut<'a, T>;
 
     fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef> {
-        let component = components.get(&TypeId::of::<Self::Item>())?;
+        let component = components.get(&crate::static_id::<Self::Item>())?;
         Some(Mut {
             component: AtomicRefMut::map(component.component.borrow_mut(), |component| {
                 (*component).as_any_mut().downcast_mut::<T>().unwrap()
@@ -193,31 +168,10 @@ where
         })
     }
 
-    fn map_iter<Gen, I>(gen_base: &Gen) -> Box<dyn Iterator<Item = Self::ItemRef> + 'a>
-    where
-        Gen: Fn() -> I + 'a,
-        I: Iterator<Item = &'a ComponentStorage> + 'a,
-    {
-        Box::new(gen_base().filter_map(|c| {
-            c.components.dense_iter().find_map(|c| {
-                if c.component_id == TypeId::of::<T>() {
-                    Some(Mut {
-                        component: AtomicRefMut::map(c.component.borrow_mut(), |component| {
-                            (*component).as_any_mut().downcast_mut::<T>().unwrap()
-                        }),
-                        _marker: std::marker::PhantomData,
-                    })
-                } else {
-                    None
-                }
-            })
-        }))
-    }
-
     fn access() -> QueryAccess {
         QueryAccess {
             reads: ComponentSet::default(),
-            writes: ComponentSet::from_iter([(TypeId::of::<T>(), ())]),
+            writes: ComponentSet::from_iter([crate::static_id::<T>() as usize]),
             withs: F::withs(),
             withouts: F::withouts(),
         }
@@ -246,7 +200,7 @@ where
     T: Component,
 {
     fn withs() -> ComponentSet {
-        ComponentSet::from_iter([(TypeId::of::<T>(), ())])
+        ComponentSet::from_iter([crate::static_id::<T>() as usize])
     }
 }
 
@@ -259,7 +213,7 @@ where
     T: Component,
 {
     fn withouts() -> ComponentSet {
-        ComponentSet::from_iter([(TypeId::of::<T>(), ())])
+        ComponentSet::from_iter([crate::static_id::<T>() as usize])
     }
 }
 
@@ -296,14 +250,16 @@ where
     }
 
     pub fn iter(&'a self, components: &'a Components) -> QueryIter<'a, Q, F> {
-        let iter = || {
-            components
-                .entity_components
-                .dense_iter()
-                .filter(|c| self.entities.contains(c.entity as usize))
+        let iter = {
+            components.entity_components.dense_iter().filter_map(|c| {
+                if self.entities.contains(c.entity as usize) {
+                    // if the entity isn't fetched, it's because it doesn't match the filter - and that's a bug
+                    Some(Q::fetch(c).unwrap())
+                } else {
+                    None
+                }
+            })
         };
-
-        let iter = Q::map_iter(&iter);
 
         QueryIter {
             iter: Box::new(iter),
@@ -374,24 +330,19 @@ macro_rules! impl_queryable_for_tuple {
             type Item = ($($name::Item,)*);
             type ItemRef = ($($name::ItemRef,)*);
 
-            fn fetch(component: &'a ComponentStorage) -> Option<Self::ItemRef> {
-                let ($($name,)*) = ($($name::fetch(component)?,)*);
+            fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef> {
+                let ($($name,)*) = ($({
+                    let comp = $name::fetch(components);
+                    if comp.is_none() {
+                        log::error!("Failed to fetch component {}: {}", crate::static_id::<$name::Item>(), std::any::type_name::<$name>());
+                        log::error!("Access: {:?}", $name::access());
+                        log::error!("Components: {:?}", components);
+                    }
+                    comp?
+                },
+                )*);
                 Some(($($name,)*))
             }
-
-            fn map_iter<Gen, I>(gen_base: &Gen) -> Box<dyn Iterator<Item = Self::ItemRef> + 'a>
-            where
-                Gen: Fn() -> I + 'a,
-                I: Iterator<Item = &'a ComponentStorage> + 'a,
-            {
-
-                $(
-                    let $name = $name::map_iter(gen_base);
-                )*
-
-                Box::new(itertools::multizip(($($name,)*)))
-            }
-
 
             fn access() -> QueryAccess {
                 let mut reads = ComponentSet::default();
@@ -401,10 +352,10 @@ macro_rules! impl_queryable_for_tuple {
 
                 $({
                     let access = $name::access();
-                    reads.extend(&access.reads);
-                    writes.extend(&access.writes);
-                    withs.extend(&access.withs);
-                    withouts.extend(&access.withouts);
+                    reads.union_with(&access.reads);
+                    writes.union_with(&access.writes);
+                    withs.union_with(&access.withs);
+                    withouts.union_with(&access.withouts);
                 })*
 
                 QueryAccess {
@@ -432,7 +383,7 @@ macro_rules! impl_queryfilter_for_tuple {
             fn withs() -> ComponentSet {
                 let mut all = ComponentSet::default();
                 $(
-                    all.extend(&$name::withs());
+                    all.union_with(&$name::withs());
                 )*
                 all
             }
@@ -440,7 +391,7 @@ macro_rules! impl_queryfilter_for_tuple {
             fn withouts() -> ComponentSet {
                 let mut all = ComponentSet::default();
                 $(
-                    all.extend(&$name::withouts());
+                    all.union_with(&$name::withouts());
                 )*
                 all
             }
