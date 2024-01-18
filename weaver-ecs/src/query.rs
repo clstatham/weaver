@@ -133,9 +133,8 @@ where
     fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef> {
         let component = components.get(&crate::static_id::<Self::Item>())?;
         Some(Ref {
-            component: AtomicRef::map(component.component.borrow(), |component| {
-                (*component).as_any().downcast_ref::<T>().unwrap()
-            }),
+            // SAFETY: `component` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
+            component: unsafe { component.borrow_as_ref_unchecked() },
             _marker: std::marker::PhantomData,
         })
     }
@@ -161,9 +160,8 @@ where
     fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef> {
         let component = components.get(&crate::static_id::<Self::Item>())?;
         Some(Mut {
-            component: AtomicRefMut::map(component.component.borrow_mut(), |component| {
-                (*component).as_any_mut().downcast_mut::<T>().unwrap()
-            }),
+            // SAFETY: `component` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
+            component: unsafe { component.borrow_as_mut_unchecked() },
             _marker: std::marker::PhantomData,
         })
     }
@@ -332,13 +330,7 @@ macro_rules! impl_queryable_for_tuple {
 
             fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef> {
                 let ($($name,)*) = ($({
-                    let comp = $name::fetch(components);
-                    if comp.is_none() {
-                        log::error!("Failed to fetch component {}: {}", crate::static_id::<$name::Item>(), std::any::type_name::<$name>());
-                        log::error!("Access: {:?}", $name::access());
-                        log::error!("Components: {:?}", components);
-                    }
-                    comp?
+                    $name::fetch(components)?
                 },
                 )*);
                 Some(($($name,)*))

@@ -8,11 +8,11 @@ use fixedbitset::FixedBitSet;
 
 use crate::{archetype::Archetype, query::QueryAccess, Entity, StaticId};
 
-use super::{entity::EntityId, world::ComponentPtr};
+use super::{component::ComponentPtr, entity::EntityId};
 
 pub type EntitySet = FixedBitSet;
 pub type ComponentSet = FixedBitSet;
-pub type ComponentMap = SparseSet<StaticId, ComponentPtr>;
+pub type ComponentMap = SparseSet<u64, ComponentPtr>;
 pub type EntityComponentsMap = SparseSet<EntityId, ComponentStorage>;
 
 pub trait Index: Copy + Eq + std::hash::Hash + std::fmt::Debug {
@@ -205,10 +205,10 @@ impl<I: Index, T: HasIndex> Debug for SparseSet<I, T> {
 }
 
 impl HasIndex for ComponentPtr {
-    type Index = StaticId;
+    type Index = u64;
 
     fn index(&self) -> Self::Index {
-        self.component_id
+        self.type_info.id
     }
 }
 
@@ -311,7 +311,7 @@ impl Components {
     }
 
     pub fn add_component(&mut self, entity: EntityId, component: ComponentPtr) {
-        let component_id = component.component_id;
+        let component_id = component.id();
 
         if let Some(components) = self.entity_components.get_mut(&entity) {
             components.insert(component_id, component);

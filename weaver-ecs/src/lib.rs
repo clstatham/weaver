@@ -1,3 +1,5 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+
 pub mod archetype;
 pub mod bundle;
 pub mod commands;
@@ -57,6 +59,42 @@ impl std::hash::Hasher for TypeIdHasher {
 pub(crate) type TypeIdMap<T> = HashMap<TypeId, T, BuildHasherDefault<TypeIdHasher>>;
 
 pub type StaticId = u64;
+
+pub struct TypeInfo {
+    pub(crate) id: StaticId,
+    pub(crate) name: &'static str,
+    pub(crate) drop_fn: unsafe fn(*mut u8),
+    pub(crate) layout: std::alloc::Layout,
+}
+
+impl TypeInfo {
+    pub fn of<T: Send + Sync + 'static>() -> Self {
+        Self {
+            id: static_id::<T>(),
+            name: std::any::type_name::<T>(),
+            drop_fn: |ptr| unsafe {
+                std::ptr::drop_in_place::<T>(ptr.cast());
+            },
+            layout: std::alloc::Layout::new::<T>(),
+        }
+    }
+
+    pub fn id(&self) -> StaticId {
+        self.id
+    }
+
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
+
+    pub fn drop_fn(&self) -> unsafe fn(*mut u8) {
+        self.drop_fn
+    }
+
+    pub fn layout(&self) -> std::alloc::Layout {
+        self.layout
+    }
+}
 
 lazy_static::lazy_static! {
     pub(crate) static ref TYPE_ID_MAP: Mutex<TypeIdMap<StaticId>> = Mutex::new(TypeIdMap::default());

@@ -1,10 +1,10 @@
-use std::{borrow::Cow, fmt::Debug, sync::Arc};
+use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 
 use crate::{
+    component::ComponentPtr,
     query::{Query, QueryFilter},
     Queryable, StaticId,
 };
@@ -15,22 +15,6 @@ use super::{
     system::{SystemGraph, SystemId, SystemStage},
     Bundle, Component, Entity, System,
 };
-
-#[derive(Clone)]
-pub struct ComponentPtr {
-    pub component_id: StaticId,
-    pub component_name: Cow<'static, str>,
-    pub component: Arc<AtomicRefCell<dyn Component>>,
-}
-
-impl Debug for ComponentPtr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ComponentPtr")
-            .field("component_id", &self.component_id)
-            .field("component_name", &self.component_name)
-            .finish()
-    }
-}
 
 pub struct World {
     pub(crate) components: Components,
@@ -56,15 +40,8 @@ impl World {
     }
 
     pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
-        let component = Arc::new(AtomicRefCell::new(component));
-        self.components.add_component(
-            entity.id(),
-            ComponentPtr {
-                component_id: crate::static_id::<T>(),
-                component_name: Cow::Borrowed(std::any::type_name::<T>()),
-                component,
-            },
-        );
+        self.components
+            .add_component(entity.id(), ComponentPtr::new(component));
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) {

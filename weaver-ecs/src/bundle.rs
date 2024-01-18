@@ -1,8 +1,12 @@
-use std::{any::type_name, sync::Arc};
+use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
-use crate::{static_id, storage::Components, world::ComponentPtr};
+use crate::{
+    component::{ComponentPtr, DynComponent},
+    storage::Components,
+    TypeInfo,
+};
 
 use super::{Component, Entity};
 
@@ -28,9 +32,8 @@ impl<T: Component> Bundle for T {
         world.add_component(
             entity.id(),
             ComponentPtr {
-                component_id: static_id::<T>(),
-                component_name: type_name::<T>().into(),
-                component: Arc::new(AtomicRefCell::new(self)),
+                type_info: Arc::new(TypeInfo::of::<T>()),
+                component: Arc::new(AtomicRefCell::new(DynComponent::new(self))),
             },
         );
         entity
