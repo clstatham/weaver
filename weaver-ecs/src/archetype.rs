@@ -4,8 +4,6 @@ use std::{
     fmt::Debug,
 };
 
-use rustc_hash::FxHashMap;
-
 use crate::{
     entity::EntityId,
     storage::{ComponentSet, EntitySet},
@@ -55,16 +53,8 @@ impl Archetype {
         self.component_names.insert(component_id, component_name);
     }
 
-    pub fn insert_entity(&mut self, entity: EntityId) {
-        self.entities.insert(entity);
-    }
-
-    pub fn remove_entity(&mut self, entity: &EntityId) -> bool {
-        self.entities.remove(entity)
-    }
-
-    pub fn contains_entity(&self, entity: &EntityId) -> bool {
-        self.entities.contains(entity)
+    pub fn insert_entity(&mut self, entity_id: EntityId) {
+        self.entities.insert(entity_id);
     }
 
     pub fn contains_component(&self, component_id: &TypeId) -> bool {
@@ -81,9 +71,5 @@ impl Archetype {
 
     pub fn component_names(&self) -> &TypeIdMap<Cow<'static, str>> {
         &self.component_names
-    }
-
-    pub fn entities(&self) -> &EntitySet {
-        &self.entities
     }
 }

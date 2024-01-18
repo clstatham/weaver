@@ -1,5 +1,6 @@
 use std::{any::TypeId, borrow::Cow, fmt::Debug, sync::Arc};
 
+use atomic_refcell::AtomicRefCell;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 
@@ -19,7 +20,7 @@ use super::{
 pub struct ComponentPtr {
     pub component_id: TypeId,
     pub component_name: Cow<'static, str>,
-    pub component: Arc<RwLock<dyn Component>>,
+    pub component: Arc<AtomicRefCell<dyn Component>>,
 }
 
 impl Debug for ComponentPtr {
@@ -55,7 +56,7 @@ impl World {
     }
 
     pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
-        let component = Arc::new(RwLock::new(component));
+        let component = Arc::new(AtomicRefCell::new(component));
         self.components.add_component(
             entity.id(),
             ComponentPtr {

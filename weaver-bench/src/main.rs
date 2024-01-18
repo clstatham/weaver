@@ -12,6 +12,10 @@ pub struct TestComponent {
 pub const N: usize = 32_000;
 
 fn main() {
+    main_weaver()
+}
+
+fn main_weaver() {
     let mut world = weaver_ecs::World::new();
 
     for _ in 0..N {
@@ -20,6 +24,19 @@ fn main() {
 
     loop {
         let q = world.query::<&TestComponent>();
+        q.iter().count();
+    }
+}
+
+fn main_hecs() {
+    let mut world = hecs::World::new();
+
+    for _ in 0..N {
+        world.spawn((TestComponent::default(),));
+    }
+
+    loop {
+        let mut q = world.query::<&TestComponent>();
         q.iter().count();
     }
 }

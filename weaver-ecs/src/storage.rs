@@ -1,42 +1,162 @@
 use std::{
     any::TypeId,
+    hash::{BuildHasher, BuildHasherDefault},
     sync::atomic::{AtomicBool, AtomicU32},
 };
 
 use atomic_refcell::AtomicRefCell;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{archetype::Archetype, query::QueryAccess, Entity, TypeIdMap, TypeIdSet};
+use crate::{archetype::Archetype, query::QueryAccess, Entity, TypeIdHasher, TypeIdSet};
 
 use super::{entity::EntityId, world::ComponentPtr};
 
 pub type EntitySet = FxHashSet<EntityId>;
 pub type ComponentSet = TypeIdSet;
-pub type ComponentMap = TypeIdMap<ComponentPtr>;
-pub type EntityComponentsMap = FxHashMap<EntityId, ComponentStorage>;
-pub type QueryMap = FxHashMap<EntityId, Vec<ComponentPtr>>;
+pub type ComponentMap = SparseSet<TypeId, ComponentPtr>;
+pub type EntityComponentsMap = SparseSet<EntityId, ComponentStorage>;
 
-#[derive(Default)]
+pub trait Index: Copy + Eq + std::hash::Hash + std::fmt::Debug {
+    fn as_index(&self) -> usize;
+}
+
+impl Index for usize {
+    fn as_index(&self) -> usize {
+        *self
+    }
+}
+
+impl Index for u32 {
+    fn as_index(&self) -> usize {
+        *self as usize
+    }
+}
+
+impl Index for u64 {
+    fn as_index(&self) -> usize {
+        *self as usize
+    }
+}
+
+impl Index for u128 {
+    fn as_index(&self) -> usize {
+        *self as usize
+    }
+}
+
+impl Index for TypeId {
+    fn as_index(&self) -> usize {
+        BuildHasherDefault::<TypeIdHasher>::default().hash_one(*self) as usize
+    }
+}
+
+pub struct SparseSet<I: Index, T> {
+    pub(crate) dense: Vec<T>,
+    pub(crate) sparse: FxHashMap<I, usize>,
+    pub(crate) inverse_sparse: FxHashMap<usize, I>,
+}
+
+impl<I: Index, T> SparseSet<I, T> {
+    pub fn new() -> Self {
+        Self {
+            dense: Vec::new(),
+            sparse: FxHashMap::default(),
+            inverse_sparse: FxHashMap::default(),
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            dense: Vec::with_capacity(capacity),
+            sparse: FxHashMap::default(),
+            inverse_sparse: FxHashMap::default(),
+        }
+    }
+
+    pub fn insert(&mut self, index: I, value: T) {
+        let dense_index = self.dense.len();
+        self.dense.push(value);
+        self.sparse.insert(index, dense_index);
+        self.inverse_sparse.insert(dense_index, index);
+    }
+
+    pub fn remove(&mut self, index: &I) -> Option<T> {
+        let dense_index = *self.sparse.get(index)?;
+        if dense_index >= self.dense.len() {
+            return None;
+        }
+
+        if dense_index < self.dense.len() - 1 {
+            let last = self.dense.len() - 1;
+            self.dense.swap(dense_index, last);
+            let last_index = self.inverse_sparse.remove(&last).unwrap();
+            self.sparse.insert(last_index, dense_index);
+            self.inverse_sparse.insert(dense_index, last_index);
+        }
+        self.sparse.remove(index);
+        Some(self.dense.pop().unwrap())
+    }
+
+    pub fn get(&self, index: &I) -> Option<&T> {
+        let dense_index = self.sparse.get(index)?;
+        self.dense.get(*dense_index)
+    }
+
+    pub fn get_mut(&mut self, index: &I) -> Option<&mut T> {
+        let dense_index = self.sparse.get(index)?;
+        self.dense.get_mut(*dense_index)
+    }
+
+    pub fn len(&self) -> usize {
+        self.dense.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.dense.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.dense.clear();
+        self.sparse.clear();
+    }
+
+    pub fn dense_iter(&self) -> impl Iterator<Item = &T> {
+        self.dense.iter()
+    }
+
+    pub fn dense_iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.dense.iter_mut()
+    }
+}
+
+impl<I: Index, T> Default for SparseSet<I, T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct ComponentStorage {
-    pub set: ComponentSet,
+    pub entity: EntityId,
+    pub component_set: ComponentSet,
     pub(crate) components: ComponentMap,
 }
 
 impl ComponentStorage {
-    pub fn new() -> Self {
+    pub fn new(entity: EntityId) -> Self {
         Self {
-            set: ComponentSet::default(),
+            entity,
+            component_set: ComponentSet::default(),
             components: ComponentMap::default(),
         }
     }
 
     pub fn insert(&mut self, component_id: TypeId, component: ComponentPtr) {
-        self.set.insert(component_id);
+        self.component_set.insert(component_id);
         self.components.insert(component_id, component);
     }
 
     pub fn remove(&mut self, component_id: &TypeId) -> Option<ComponentPtr> {
-        if !self.set.remove(component_id) {
+        if !self.component_set.remove(component_id) {
             return None;
         }
         self.components.remove(component_id)
@@ -51,56 +171,39 @@ impl ComponentStorage {
     }
 
     pub fn contains_component(&self, component_id: &TypeId) -> bool {
-        self.set.contains(component_id)
+        self.component_set.contains(component_id)
     }
 
     pub fn contains_components(&self, components: &ComponentSet) -> bool {
-        self.set.is_superset(components)
-    }
-
-    pub fn union_with(&mut self, other: &Self) {
-        self.set.extend(&other.set);
-        self.components.extend(other.components.clone());
-    }
-
-    pub fn intersection_with(&mut self, other: &Self) {
-        self.set = self.set.intersection(&other.set).copied().collect();
-        self.components
-            .retain(|k, _| other.components.contains_key(k));
-    }
-
-    pub fn difference_with(&mut self, other: &Self) {
-        self.set = self.set.difference(&other.set).copied().collect();
-        self.components
-            .retain(|k, _| !other.components.contains_key(k));
+        self.component_set.is_superset(components)
     }
 
     pub fn keys(&self) -> impl Iterator<Item = &TypeId> {
-        self.set.iter()
+        self.component_set.iter()
     }
 
     pub fn values(&self) -> impl Iterator<Item = &ComponentPtr> {
-        self.components.values()
+        self.components.dense_iter()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&TypeId, &ComponentPtr)> {
-        self.components.iter()
+    pub fn iter(&self) -> impl Iterator<Item = &ComponentPtr> {
+        self.components.dense_iter()
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&TypeId, &mut ComponentPtr)> {
-        self.components.iter_mut()
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut ComponentPtr> {
+        self.components.dense_iter_mut()
     }
 
     pub fn len(&self) -> usize {
-        self.set.len()
+        self.component_set.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.set.is_empty()
+        self.component_set.is_empty()
     }
 
     pub fn clear(&mut self) {
-        self.set.clear();
+        self.component_set.clear();
         self.components.clear();
     }
 }
@@ -108,6 +211,7 @@ impl ComponentStorage {
 #[derive(Default)]
 pub struct Components {
     next_entity_id: AtomicU32,
+    entities: EntitySet,
     pub entity_components: EntityComponentsMap,
     archetypes_dirty: AtomicBool,
     pub archetypes: AtomicRefCell<Vec<Archetype>>,
@@ -119,8 +223,10 @@ impl Components {
             .next_entity_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
+        self.entities.insert(entity);
+
         self.entity_components
-            .insert(entity, ComponentStorage::default());
+            .insert(entity, ComponentStorage::new(entity));
 
         self.archetypes_dirty
             .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -135,7 +241,7 @@ impl Components {
             components.insert(component_id, component.clone());
         } else {
             self.entity_components
-                .insert(entity, ComponentStorage::default());
+                .insert(entity, ComponentStorage::new(entity));
             self.entity_components
                 .get_mut(&entity)
                 .unwrap()
@@ -147,9 +253,11 @@ impl Components {
     }
 
     pub fn remove_component(&mut self, entity: EntityId, component_id: TypeId) {
-        self.entity_components
-            .get_mut(&entity)
-            .and_then(|components| components.remove(&component_id));
+        if let Some(components) = self.entity_components.get_mut(&entity) {
+            components.remove(&component_id);
+        }
+
+        self.entities.remove(&entity);
 
         self.archetypes_dirty
             .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -181,12 +289,13 @@ impl Components {
         let next_id = other
             .components
             .next_entity_id
-            .load(std::sync::atomic::Ordering::Relaxed);
+            .load(std::sync::atomic::Ordering::Acquire);
 
         self.next_entity_id
             .store(next_id, std::sync::atomic::Ordering::Relaxed);
 
-        for (entity, components) in other.components.entity_components.drain() {
+        for entity in other.components.entities.drain() {
+            let components = other.components.entity_components.remove(&entity).unwrap();
             self.entity_components.insert(entity, components);
         }
 
@@ -198,8 +307,9 @@ impl Components {
         let mut archetype = Archetype::new();
 
         if let Some(components) = self.entity_components.get(&entity) {
-            for (component_id, component) in components.iter() {
-                archetype.insert_raw_component(*component_id, component.component_name.clone());
+            for component in components.iter() {
+                archetype
+                    .insert_raw_component(component.component_id, component.component_name.clone());
             }
         }
 
@@ -209,26 +319,26 @@ impl Components {
     pub fn fix_archetypes(&self) {
         if !self
             .archetypes_dirty
-            .swap(false, std::sync::atomic::Ordering::Relaxed)
+            .swap(false, std::sync::atomic::Ordering::Acquire)
         {
             return;
         }
         let mut archetypes: Vec<Archetype> = Vec::new();
 
-        for (entity, components) in self.entity_components.iter() {
+        for components in self.entity_components.dense_iter() {
             let mut found = false;
 
             for archetype in archetypes.iter_mut() {
-                if archetype.components == components.set {
-                    archetype.insert_entity(*entity);
+                if archetype.components == components.component_set {
+                    archetype.insert_entity(components.entity);
                     found = true;
                     break;
                 }
             }
 
             if !found {
-                let mut archetype = self.calculate_archetype(*entity);
-                archetype.insert_entity(*entity);
+                let mut archetype = self.calculate_archetype(components.entity);
+                archetype.insert_entity(components.entity);
                 archetypes.push(archetype);
             }
         }

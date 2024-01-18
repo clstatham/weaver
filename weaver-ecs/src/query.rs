@@ -1,12 +1,10 @@
 use std::any::TypeId;
 
-use parking_lot::{
-    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLockReadGuard, RwLockWriteGuard,
-};
+use atomic_refcell::{AtomicRef, AtomicRefMut};
 
 use crate::{
     archetype::Archetype,
-    storage::{Components, EntitySet},
+    storage::{ComponentStorage, Components, EntitySet},
 };
 
 use super::{entity::EntityId, storage::ComponentSet, Bundle, Component};
@@ -15,8 +13,7 @@ pub struct Ref<'a, T>
 where
     T: Component,
 {
-    pub entity: EntityId,
-    component: MappedRwLockReadGuard<'a, T>,
+    component: AtomicRef<'a, T>,
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -35,8 +32,7 @@ pub struct Mut<'a, T>
 where
     T: Component,
 {
-    pub entity: EntityId,
-    component: MappedRwLockWriteGuard<'a, T>,
+    component: AtomicRefMut<'a, T>,
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -82,15 +78,6 @@ impl QueryAccess {
 
         includes.is_subset(&archetype.components)
     }
-
-    pub fn fetched_components(&self) -> ComponentSet {
-        let mut fetched = ComponentSet::default();
-
-        fetched.extend(&self.reads);
-        fetched.extend(&self.writes);
-
-        fetched
-    }
 }
 
 pub trait Queryable<'a, F = ()>
@@ -100,7 +87,12 @@ where
     type Item: Bundle;
     type ItemRef: 'a + Send;
 
-    fn get(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef>;
+    fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef>;
+
+    fn map_iter<Gen, I>(gen_base: &Gen) -> Box<dyn Iterator<Item = Self::ItemRef> + 'a>
+    where
+        Gen: Fn() -> I + 'a,
+        I: Iterator<Item = &'a ComponentStorage> + 'a;
 
     fn access() -> QueryAccess;
 }
@@ -112,8 +104,16 @@ where
     type Item = ();
     type ItemRef = ();
 
-    fn get(_entity: EntityId, _components: &'a Components) -> Option<Self::ItemRef> {
+    fn fetch(_components: &ComponentStorage) -> Option<Self::ItemRef> {
         Some(())
+    }
+
+    fn map_iter<Gen, I>(gen_base: &Gen) -> Box<dyn Iterator<Item = Self::ItemRef> + 'a>
+    where
+        Gen: Fn() -> I + 'a,
+        I: Iterator<Item = &'a ComponentStorage> + 'a,
+    {
+        Box::new(gen_base().map(|_| ()))
     }
 
     fn access() -> QueryAccess {
@@ -134,17 +134,35 @@ where
     type Item = T;
     type ItemRef = Ref<'a, T>;
 
-    fn get(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
-        let components = components.entity_components.get(&entity)?;
-        let component = components.get(&TypeId::of::<T>())?;
-        let component = RwLockReadGuard::map(component.component.read(), |component| {
-            (*component).as_any().downcast_ref::<T>().unwrap()
-        });
+    fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef> {
+        let component = components.get(&TypeId::of::<Self::Item>())?;
         Some(Ref {
-            entity,
-            component,
+            component: AtomicRef::map(component.component.borrow(), |component| {
+                (*component).as_any().downcast_ref::<T>().unwrap()
+            }),
             _marker: std::marker::PhantomData,
         })
+    }
+
+    fn map_iter<Gen, I>(gen_base: &Gen) -> Box<dyn Iterator<Item = Self::ItemRef> + 'a>
+    where
+        Gen: Fn() -> I + 'a,
+        I: Iterator<Item = &'a ComponentStorage> + 'a,
+    {
+        Box::new(gen_base().filter_map(|c| {
+            c.components.dense_iter().find_map(|c| {
+                if c.component_id == TypeId::of::<T>() {
+                    Some(Ref {
+                        component: AtomicRef::map(c.component.borrow(), |component| {
+                            (*component).as_any().downcast_ref::<T>().unwrap()
+                        }),
+                        _marker: std::marker::PhantomData,
+                    })
+                } else {
+                    None
+                }
+            })
+        }))
     }
 
     fn access() -> QueryAccess {
@@ -164,18 +182,36 @@ where
 {
     type Item = T;
     type ItemRef = Mut<'a, T>;
-    fn get(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
-        let components = components.entity_components.get(&entity)?;
-        let component = components.get(&TypeId::of::<T>()).map(|component| {
-            RwLockWriteGuard::map(component.component.write(), |component| {
-                (*component).as_any_mut().downcast_mut::<T>().unwrap()
-            })
-        })?;
+
+    fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef> {
+        let component = components.get(&TypeId::of::<Self::Item>())?;
         Some(Mut {
-            entity,
-            component,
+            component: AtomicRefMut::map(component.component.borrow_mut(), |component| {
+                (*component).as_any_mut().downcast_mut::<T>().unwrap()
+            }),
             _marker: std::marker::PhantomData,
         })
+    }
+
+    fn map_iter<Gen, I>(gen_base: &Gen) -> Box<dyn Iterator<Item = Self::ItemRef> + 'a>
+    where
+        Gen: Fn() -> I + 'a,
+        I: Iterator<Item = &'a ComponentStorage> + 'a,
+    {
+        Box::new(gen_base().filter_map(|c| {
+            c.components.dense_iter().find_map(|c| {
+                if c.component_id == TypeId::of::<T>() {
+                    Some(Mut {
+                        component: AtomicRefMut::map(c.component.borrow_mut(), |component| {
+                            (*component).as_any_mut().downcast_mut::<T>().unwrap()
+                        }),
+                        _marker: std::marker::PhantomData,
+                    })
+                } else {
+                    None
+                }
+            })
+        }))
     }
 
     fn access() -> QueryAccess {
@@ -251,13 +287,26 @@ where
     }
 
     pub fn get(&self, entity: EntityId, components: &'a Components) -> Option<Q::ItemRef> {
-        Q::get(entity, components)
+        if self.entities.contains(&entity) {
+            let components = components.entity_components.get(&entity)?;
+            Q::fetch(components)
+        } else {
+            None
+        }
     }
 
     pub fn iter(&'a self, components: &'a Components) -> QueryIter<'a, Q, F> {
+        let iter = || {
+            components
+                .entity_components
+                .dense_iter()
+                .filter(|c| self.entities.contains(&c.entity))
+        };
+
+        let iter = Q::map_iter(&iter);
+
         QueryIter {
-            components,
-            entities: self.entities.iter(),
+            iter: Box::new(iter),
             _filter: std::marker::PhantomData,
         }
     }
@@ -298,8 +347,7 @@ where
     Q: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    components: &'a Components,
-    entities: std::collections::hash_set::Iter<'a, EntityId>,
+    iter: Box<dyn Iterator<Item = Q::ItemRef> + 'a>,
     _filter: std::marker::PhantomData<(Q, F)>,
 }
 
@@ -311,18 +359,13 @@ where
     type Item = Q::ItemRef;
 
     fn next(&mut self) -> Option<Self::Item> {
-        for entity in self.entities.by_ref() {
-            if let Some(item) = Q::get(*entity, self.components) {
-                return Some(item);
-            }
-        }
-
-        None
+        self.iter.next()
     }
 }
 
 macro_rules! impl_queryable_for_tuple {
     ($($name:ident),*) => {
+        #[allow(non_snake_case)]
         impl<'a, $($name),*, F> Queryable<'a, F> for ($($name,)*)
         where
             $($name: Queryable<'a>,)*
@@ -331,9 +374,24 @@ macro_rules! impl_queryable_for_tuple {
             type Item = ($($name::Item,)*);
             type ItemRef = ($($name::ItemRef,)*);
 
-            fn get(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
-                Some(($($name::get(entity, components)?,)*))
+            fn fetch(component: &'a ComponentStorage) -> Option<Self::ItemRef> {
+                let ($($name,)*) = ($($name::fetch(component)?,)*);
+                Some(($($name,)*))
             }
+
+            fn map_iter<Gen, I>(gen_base: &Gen) -> Box<dyn Iterator<Item = Self::ItemRef> + 'a>
+            where
+                Gen: Fn() -> I + 'a,
+                I: Iterator<Item = &'a ComponentStorage> + 'a,
+            {
+
+                $(
+                    let $name = $name::map_iter(gen_base);
+                )*
+
+                Box::new(itertools::multizip(($($name,)*)))
+            }
+
 
             fn access() -> QueryAccess {
                 let mut reads = ComponentSet::default();

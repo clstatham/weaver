@@ -14,3 +14,5 @@ rayon = "1.8"
 crossbeam-channel = "0.5"
 atomic_refcell = "0.1.13"
 weaver-proc-macro = { path = "../weaver-proc-macro" }
+fixedbitset = "0.4.2"
+itertools = "0.12.0"

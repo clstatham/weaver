@@ -2774,6 +2774,8 @@ dependencies = [
  "anyhow",
  "atomic_refcell",
  "crossbeam-channel",
+ "fixedbitset",
+ "itertools",
  "parking_lot",
  "petgraph",
  "rayon",

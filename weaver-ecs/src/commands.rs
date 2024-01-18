@@ -26,10 +26,10 @@ impl Commands {
     }
 
     pub fn finalize(self, world: &mut World) {
+        world.components.merge(self.created_components);
+
         for entity in self.despawned_entities {
             world.despawn(entity);
         }
-
-        world.components.merge(self.created_components);
     }
 }

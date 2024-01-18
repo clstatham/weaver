@@ -3,14 +3,14 @@ use std::{
     sync::Arc,
 };
 
-use parking_lot::RwLock;
+use atomic_refcell::AtomicRefCell;
 
 use crate::{storage::Components, world::ComponentPtr};
 
 use super::{Component, Entity};
 
 /// A collection of components that can be built and added to an entity.
-pub trait Bundle: Sized {
+pub trait Bundle: Sized + 'static {
     fn build(self, world: &mut Components) -> Entity {
         self.build_on(world.create_entity(), world)
     }
@@ -33,7 +33,7 @@ impl<T: Component> Bundle for T {
             ComponentPtr {
                 component_id: TypeId::of::<T>(),
                 component_name: type_name::<T>().into(),
-                component: Arc::new(RwLock::new(self)),
+                component: Arc::new(AtomicRefCell::new(self)),
             },
         );
         entity
