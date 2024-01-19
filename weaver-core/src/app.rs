@@ -80,16 +80,6 @@ impl App {
             .write()
             .add_system_to_stage(Render, SystemStage::PostUpdate);
 
-        #[cfg(feature = "serde")]
-        {
-            if world_path.is_some() {
-                // we need to load the assets
-                let world = world.read();
-                let mut asset_server = world.write_resource::<AssetServer>().unwrap();
-                asset_server.load_all_assets(&world).unwrap();
-            }
-        }
-
         Ok(Self { event_loop, world })
     }
 
@@ -121,65 +111,67 @@ impl App {
         let (window_event_tx, window_event_rx) = crossbeam_channel::unbounded();
         let (device_event_tx, device_event_rx) = crossbeam_channel::unbounded();
         let update_world = self.world.clone();
-        rayon::spawn(move || {
-            loop {
-                World::run_stage(&update_world, SystemStage::PreUpdate).unwrap();
+        std::thread::Builder::new()
+            .name("Weaver ECS Update Loop".to_owned())
+            .spawn(move || {
+                loop {
+                    World::run_stage(&update_world, SystemStage::PreUpdate).unwrap();
 
-                {
-                    let world = update_world.read();
-                    let mut input = world.write_resource::<Input>().unwrap();
-                    input.prepare_for_update();
+                    {
+                        let world = update_world.read();
+                        let mut input = world.write_resource::<Input>().unwrap();
+                        input.prepare_for_update();
 
-                    while let Ok(event) = window_event_rx.try_recv() {
-                        input.update_window(&event);
+                        while let Ok(event) = window_event_rx.try_recv() {
+                            input.update_window(&event);
+
+                            let window = world.read_resource::<Window>().unwrap();
+                            let mut ui = world.write_resource::<EguiContext>().unwrap();
+                            ui.handle_input(&window.window, &event);
+                        }
+                        while let Ok(event) = device_event_rx.try_recv() {
+                            input.update_device(&event);
+                        }
+                    }
+
+                    {
+                        let world = update_world.read();
+                        let mut time = world.write_resource::<Time>().unwrap();
+                        time.update();
 
                         let window = world.read_resource::<Window>().unwrap();
-                        let mut ui = world.write_resource::<EguiContext>().unwrap();
-                        ui.handle_input(&window.window, &event);
+                        let mut gui = world.write_resource::<EguiContext>().unwrap();
+                        gui.begin_frame(&window.window);
                     }
-                    while let Ok(event) = device_event_rx.try_recv() {
-                        input.update_device(&event);
+
+                    World::run_stage_parallel(&update_world, SystemStage::Update).unwrap();
+
+                    {
+                        let world = update_world.read();
+                        let mut gui = world.write_resource::<EguiContext>().unwrap();
+                        gui.end_frame();
                     }
+
+                    World::run_stage(&update_world, SystemStage::PostUpdate).unwrap();
+
+                    if killswitch_rx.try_recv().is_ok() {
+                        break;
+                    }
+
+                    {
+                        let world = update_world.read();
+                        let window = world.read_resource::<Window>().unwrap();
+                        window.window.request_redraw();
+                    }
+
+                    std::thread::sleep(std::time::Duration::from_millis(1));
                 }
 
-                {
-                    let world = update_world.read();
-                    let mut time = world.write_resource::<Time>().unwrap();
-                    time.update();
-
-                    let window = world.read_resource::<Window>().unwrap();
-                    let mut gui = world.write_resource::<EguiContext>().unwrap();
-                    gui.begin_frame(&window.window);
-                }
-
-                World::run_stage(&update_world, SystemStage::Update).unwrap();
-
-                {
-                    let world = update_world.read();
-                    let mut gui = world.write_resource::<EguiContext>().unwrap();
-                    gui.end_frame();
-                }
-
-                World::run_stage(&update_world, SystemStage::PostUpdate).unwrap();
-
-                if killswitch_rx.try_recv().is_ok() {
-                    break;
-                }
-
-                {
-                    let world = update_world.read();
-                    let window = world.read_resource::<Window>().unwrap();
-                    window.window.request_redraw();
-                }
-
-                std::thread::yield_now();
-            }
-
-            World::run_stage(&update_world, SystemStage::Shutdown).unwrap();
-        });
+                World::run_stage(&update_world, SystemStage::Shutdown).unwrap();
+            })?;
 
         self.event_loop.run(move |event, target| {
-            target.set_control_flow(winit::event_loop::ControlFlow::Poll);
+            // target.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
             match event {
                 winit::event::Event::LoopExiting => {
@@ -193,8 +185,6 @@ impl App {
                     match event {
                         winit::event::WindowEvent::CloseRequested => {
                             target.exit();
-                            #[cfg(feature = "serde")]
-                            self.world.read().to_json_file("world.json").unwrap();
                         }
                         winit::event::WindowEvent::Resized(_size) => {
                             // todo

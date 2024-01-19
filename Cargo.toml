@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = ["weaver-proc-macro", "weaver-core", "weaver-ecs", "weaver-game"]
+members = ["weaver-proc-macro", "weaver-core", "weaver-ecs", "weaver-game", "weaver-editor"]
 exclude = ["weaver-bench"]
 
 [features]

@@ -95,6 +95,16 @@ impl World {
         if let Some(systems) = world_lock.systems.get(&stage).cloned() {
             drop(world_lock);
             systems.write().autodetect_dependencies()?;
+            systems.read().run(world)?;
+        }
+        Ok(())
+    }
+
+    pub fn run_stage_parallel(world: &Arc<RwLock<Self>>, stage: SystemStage) -> anyhow::Result<()> {
+        let world_lock = world.read();
+        if let Some(systems) = world_lock.systems.get(&stage).cloned() {
+            drop(world_lock);
+            systems.write().autodetect_dependencies()?;
             systems.read().run_parallel(world)?;
         }
         Ok(())

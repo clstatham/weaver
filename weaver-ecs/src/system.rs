@@ -219,7 +219,7 @@ impl SystemGraph {
         false
     }
 
-    pub fn run(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()> {
+    pub fn run(&self, world: &Arc<RwLock<World>>) -> anyhow::Result<()> {
         if self.graph.node_count() == 0 {
             return Ok(());
         }

@@ -392,7 +392,11 @@ impl Pass for DoodadRenderPass {
 
         let mut camera_handle = self.camera_buffer.lazy_init(manager)?;
         let camera = world.query::<&Camera>();
-        let camera = camera.iter().next().unwrap();
+        let camera = camera.iter().next();
+        if camera.is_none() {
+            return Ok(());
+        }
+        let camera = camera.unwrap();
         camera_handle.update(&[CameraUniform::from(&*camera)]);
 
         let mut cube_transforms = Vec::new();
@@ -456,7 +460,11 @@ impl Pass for DoodadRenderPass {
             .lazy_init_bind_group(manager, &renderer.bind_group_layout_cache)?;
 
         let camera = world.query::<&Camera>();
-        let camera = camera.iter().next().unwrap();
+        let camera = camera.iter().next();
+        if camera.is_none() {
+            return Ok(());
+        }
+        let camera = camera.unwrap();
         let camera_bind_group =
             camera.lazy_init_bind_group(manager, &renderer.bind_group_layout_cache)?;
 

@@ -509,7 +509,11 @@ impl OmniShadowRenderPass {
         world: &World,
     ) -> anyhow::Result<()> {
         let camera = world.query::<&Camera>();
-        let camera = camera.iter().next().unwrap();
+        let camera = camera.iter().next();
+        if camera.is_none() {
+            return Ok(());
+        }
+        let camera = camera.unwrap();
         let camera_bind_group = camera.lazy_init_bind_group(
             &renderer.resource_manager,
             &renderer.bind_group_layout_cache,

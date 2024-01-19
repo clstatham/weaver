@@ -247,7 +247,11 @@ impl PbrRenderPass {
         encoder: &mut wgpu::CommandEncoder,
     ) -> anyhow::Result<()> {
         let skybox = world.query::<&Skybox>();
-        let skybox = skybox.iter().next().unwrap();
+        let skybox = skybox.iter().next();
+        if skybox.is_none() {
+            return Ok(());
+        }
+        let skybox = skybox.unwrap();
 
         let skybox_handle = &skybox
             .texture
@@ -261,7 +265,11 @@ impl PbrRenderPass {
         let irradiance_texture = irradiance_handle.get_texture().unwrap();
 
         let camera = world.query::<&Camera>();
-        let camera = camera.iter().next().unwrap();
+        let camera = camera.iter().next();
+        if camera.is_none() {
+            return Ok(());
+        }
+        let camera = camera.unwrap();
 
         let camera_handle = camera.handle.lazy_init(&renderer.resource_manager)?;
 
