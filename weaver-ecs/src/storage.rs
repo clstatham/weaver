@@ -2,6 +2,7 @@ use std::{collections::HashSet, fmt::Debug, hash::BuildHasherDefault, sync::atom
 
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use fixedbitset::FixedBitSet;
+use rustc_hash::FxHashSet;
 
 use crate::{
     component::Data, query::QueryAccess, Bundle, Component, Entity, SortedTypeIdMap, StaticId,
@@ -233,6 +234,7 @@ impl Column {
 /// A unique combination of components. Also maintains a list of entities that have this combination.
 pub struct Archetype {
     pub(crate) entities: EntitySet,
+    pub(crate) entities_hashset: FxHashSet<EntityId>,
     pub(crate) component_types: Box<[TypeInfo]>,
     pub(crate) columns: SortedTypeIdMap<AtomicRefCell<Column>>,
 }
@@ -247,6 +249,7 @@ impl Archetype {
 
         Self {
             entities: EntitySet::default(),
+            entities_hashset: FxHashSet::default(),
             component_types: component_types.into_boxed_slice(),
             columns: SortedTypeIdMap::new(columns.into_iter()),
         }
@@ -255,6 +258,8 @@ impl Archetype {
     pub(crate) fn insert_entity(&mut self, entity: EntityId, component: Data) {
         self.entities.grow(entity as usize + 1);
         self.entities.insert(entity as usize);
+        self.entities_hashset.insert(entity);
+
         self.columns
             .get(&component.id())
             .unwrap()
@@ -264,6 +269,7 @@ impl Archetype {
 
     pub(crate) fn remove_entity(&mut self, entity: EntityId) {
         self.entities.set(entity as usize, false);
+        self.entities_hashset.remove(&entity);
 
         for (_, column) in self.columns.iter() {
             column.borrow_mut().remove(entity);
@@ -291,6 +297,7 @@ impl Archetype {
 
     pub fn component_drain(&mut self, entity: EntityId) -> impl Iterator<Item = Data> + '_ {
         self.entities.set(entity as usize, false);
+        self.entities_hashset.remove(&entity);
         self.columns
             .iter()
             .filter_map(move |(_, column)| column.borrow_mut().remove(entity))

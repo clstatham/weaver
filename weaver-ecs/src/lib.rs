@@ -17,6 +17,7 @@ pub use {
     component::Component,
     entity::Entity,
     query::{Query, Queryable, With, Without},
+    rayon::prelude::*,
     resource::{Res, ResMut, Resource},
     system::{System, SystemStage},
     world::World,

@@ -95,7 +95,7 @@ impl World {
         if let Some(systems) = world_lock.systems.get(&stage).cloned() {
             drop(world_lock);
             systems.write().autodetect_dependencies()?;
-            systems.read().run(world.clone())?;
+            systems.read().run_parallel(world)?;
         }
         Ok(())
     }

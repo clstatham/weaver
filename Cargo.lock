@@ -2773,6 +2773,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "atomic_refcell",
+ "bit-set",
  "crossbeam-channel",
  "fixedbitset",
  "itertools",
@@ -2782,6 +2783,7 @@ dependencies = [
  "petgraph",
  "rayon",
  "rustc-hash",
+ "static_assertions",
  "weaver-proc-macro",
 ]
 

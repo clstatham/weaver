@@ -1,8 +1,8 @@
+use atomic_refcell::{AtomicRef, AtomicRefMut};
+use rayon::prelude::*;
 use std::fmt::Debug;
 
-use atomic_refcell::{AtomicRef, AtomicRefMut};
-
-use crate::storage::{Archetype, ComponentSet, Components, EntitySet};
+use crate::storage::{Archetype, ComponentSet, Components};
 
 use super::{entity::EntityId, Bundle, Component};
 
@@ -240,61 +240,13 @@ where
     }
 }
 
-pub struct QueryState<'a, Q, F>
-where
-    Q: Queryable<'a, F>,
-    F: QueryFilter<'a>,
-{
-    entities: EntitySet,
-    _filter: std::marker::PhantomData<&'a (Q, F)>,
-}
-
-impl<'a, Q, F> QueryState<'a, Q, F>
-where
-    Q: Queryable<'a, F>,
-    F: QueryFilter<'a>,
-{
-    pub fn new(components: &Components) -> Self {
-        let entities = components.entities_matching_access(&Q::access());
-
-        QueryState {
-            entities,
-            _filter: std::marker::PhantomData,
-        }
-    }
-
-    pub fn get(&self, entity: EntityId, archetype: &'a Archetype) -> Option<Q::ItemRef> {
-        if self.entities.contains(entity as usize) {
-            Q::fetch(entity, archetype)
-        } else {
-            None
-        }
-    }
-
-    pub fn iter(&'a self, components: &'a Components) -> QueryIter<'a, Q, F> {
-        let iter = {
-            self.entities.ones().filter_map(move |entity| {
-                Q::fetch(
-                    entity as EntityId,
-                    components.find_archetype(entity as EntityId)?,
-                )
-            })
-        };
-
-        QueryIter {
-            iter: Box::new(iter),
-            _filter: std::marker::PhantomData,
-        }
-    }
-}
-
 pub struct Query<'a, Q, F = ()>
 where
     Q: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    components: &'a Components,
-    state: QueryState<'a, Q, F>,
+    archetypes: Vec<&'a Archetype>,
+    _marker: std::marker::PhantomData<(Q, F)>,
 }
 
 impl<'a, Q, F> Query<'a, Q, F>
@@ -303,40 +255,40 @@ where
     F: QueryFilter<'a>,
 {
     pub fn new(components: &'a Components) -> Self {
+        let archetypes = components
+            .archetypes
+            .iter()
+            .filter(|archetype| Q::access().matches_archetype(archetype))
+            .collect();
         Query {
-            components,
-            state: QueryState::new(components),
+            archetypes,
+            _marker: std::marker::PhantomData,
         }
     }
 
     pub fn get(&self, entity: EntityId) -> Option<Q::ItemRef> {
-        self.state
-            .get(entity, self.components.find_archetype(entity)?)
+        self.archetypes
+            .iter()
+            .filter_map(|archetype| Q::fetch(entity, archetype))
+            .next()
     }
 
-    pub fn iter(&'a self) -> QueryIter<'a, Q, F> {
-        self.state.iter(self.components)
+    pub fn iter(&'a self) -> impl Iterator<Item = Q::ItemRef> + 'a {
+        self.archetypes.iter().flat_map(|archetype| {
+            archetype
+                .entities
+                .ones()
+                .filter_map(move |entity| Q::fetch(entity as EntityId, archetype))
+        })
     }
-}
 
-pub struct QueryIter<'a, Q, F>
-where
-    Q: Queryable<'a, F>,
-    F: QueryFilter<'a>,
-{
-    iter: Box<dyn Iterator<Item = Q::ItemRef> + 'a>,
-    _filter: std::marker::PhantomData<(Q, F)>,
-}
-
-impl<'a, Q, F> Iterator for QueryIter<'a, Q, F>
-where
-    Q: Queryable<'a, F>,
-    F: QueryFilter<'a>,
-{
-    type Item = Q::ItemRef;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+    pub fn par_iter(&'a self) -> impl ParallelIterator<Item = Q::ItemRef> + Sync + 'a {
+        self.archetypes.par_iter().flat_map(|archetype| {
+            archetype
+                .entities_hashset
+                .par_iter()
+                .filter_map(move |entity| Q::fetch(*entity, archetype))
+        })
     }
 }
 

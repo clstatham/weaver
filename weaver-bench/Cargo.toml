@@ -20,6 +20,7 @@ weaver-ecs = { path = "../weaver-ecs", features = [] }
 
 [dev-dependencies]
 criterion = "0.5.1"
+hecs = "0.10.4"
 
 [profile.release]
 debug = true
