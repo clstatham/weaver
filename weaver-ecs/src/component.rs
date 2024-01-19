@@ -1,10 +1,4 @@
-use std::{
-    fmt::Debug,
-    ptr::NonNull,
-    sync::{atomic::AtomicBool, Arc},
-};
-
-use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
+use std::{ptr::NonNull, sync::atomic::AtomicBool};
 
 use crate::{StaticId, TypeInfo};
 
@@ -65,7 +59,7 @@ pub struct Data {
     ptr: NonNull<u8>,
 }
 
-// SAFETY: `Whatever` is `Send` and `Sync` because `T` is always `Send` and `Sync`.
+// SAFETY: `Data` is `Send` and `Sync` because `T` is always `Send` and `Sync`.
 unsafe impl Send for Data {}
 unsafe impl Sync for Data {}
 
@@ -151,92 +145,90 @@ impl Drop for Data {
     }
 }
 
-#[derive(Clone)]
-pub struct ComponentPtr {
-    pub info: TypeInfo,
-    pub component: Arc<AtomicRefCell<Data>>,
-}
+// #[derive(Clone)]
+// pub struct ComponentPtr {
+//     pub info: TypeInfo,
+//     pub component: Arc<AtomicRefCell<Data>>,
+// }
 
-impl ComponentPtr {
-    #[inline]
-    pub fn new<T: Component>(component: T) -> Self {
-        Self {
-            info: TypeInfo::of::<T>(),
-            component: Arc::new(AtomicRefCell::new(Data::new(component))),
-        }
-    }
+// impl ComponentPtr {
+//     #[inline]
+//     pub fn new<T: Component>(component: T) -> Self {
+//         Self {
+//             info: TypeInfo::of::<T>(),
+//             component: Arc::new(AtomicRefCell::new(Data::new(component))),
+//         }
+//     }
 
-    #[inline]
-    pub fn from_data(data: Data) -> Self {
-        Self {
-            info: data.info,
-            component: Arc::new(AtomicRefCell::new(data)),
-        }
-    }
+//     #[inline]
+//     pub fn from_data(data: Data) -> Self {
+//         Self {
+//             info: data.info,
+//             component: Arc::new(AtomicRefCell::new(data)),
+//         }
+//     }
 
-    #[inline]
-    pub fn id(&self) -> StaticId {
-        self.info.id
-    }
+//     #[inline]
+//     pub fn id(&self) -> StaticId {
+//         self.info.id
+//     }
 
-    #[inline]
-    pub fn name(&self) -> &'static str {
-        self.info.name
-    }
+//     #[inline]
+//     pub fn name(&self) -> &'static str {
+//         self.info.name
+//     }
 
-    #[inline]
-    pub fn info(&self) -> TypeInfo {
-        self.info
-    }
+//     #[inline]
+//     pub fn info(&self) -> TypeInfo {
+//         self.info
+//     }
 
-    #[inline]
-    pub fn borrow_as_ref<T: Component>(&self) -> AtomicRef<'_, T> {
-        assert_eq!(self.info.id, crate::static_id::<T>());
-        // SAFETY: `self.component` is a valid pointer to a `T` because `self.id` is the same as `crate::static_id::<T>()`.
-        AtomicRef::map(self.component.borrow(), |component| unsafe {
-            component.as_ref_unchecked::<T>()
-        })
-    }
+//     #[inline]
+//     pub fn borrow_as_ref<T: Component>(&self) -> AtomicRef<'_, T> {
+//         assert_eq!(self.info.id, crate::static_id::<T>());
+//         // SAFETY: `self.component` is a valid pointer to a `T` because `self.id` is the same as `crate::static_id::<T>()`.
+//         unsafe { self.borrow_as_ref_unchecked() }
+//     }
 
-    #[inline]
-    pub fn borrow_as_mut<T: Component>(&self) -> AtomicRefMut<'_, T> {
-        assert_eq!(self.info.id, crate::static_id::<T>());
-        // SAFETY: `self.component` is a valid pointer to a `T` because `self.id` is the same as `crate::static_id::<T>()`.
-        AtomicRefMut::map(self.component.borrow_mut(), |component| unsafe {
-            component.as_mut_unchecked::<T>()
-        })
-    }
+//     #[inline]
+//     pub fn borrow_as_mut<T: Component>(&self) -> AtomicRefMut<'_, T> {
+//         assert_eq!(self.info.id, crate::static_id::<T>());
+//         // SAFETY: `self.component` is a valid pointer to a `T` because `self.id` is the same as `crate::static_id::<T>()`.
+//         unsafe { self.borrow_as_mut_unchecked() }
+//     }
 
-    /// # Safety
-    ///
-    /// `self.id` must be the same as `crate::static_id::<T>()`.
-    #[inline]
-    pub unsafe fn borrow_as_ref_unchecked<T: Component>(&self) -> AtomicRef<'_, T> {
-        debug_assert_eq!(self.info.id, crate::static_id::<T>());
-        // SAFETY: `self.component` is a valid pointer to a `T` because `self.id` is the same as `crate::static_id::<T>()`.
-        AtomicRef::map(self.component.borrow(), |component| unsafe {
-            component.as_ref_unchecked::<T>()
-        })
-    }
+//     /// # Safety
+//     ///
+//     /// `self.id` must be the same as `crate::static_id::<T>()`.
+//     #[inline(never)]
+//     pub unsafe fn borrow_as_ref_unchecked<T: Component>(&self) -> AtomicRef<'_, T> {
+//         debug_assert_eq!(self.info.id, crate::static_id::<T>());
+//         // SAFETY: `self.component` is a valid pointer to a `T` because `self.id` is the same as `crate::static_id::<T>()`.
+//         let lock = self.component.borrow();
+//         AtomicRef::map(lock, |component| unsafe {
+//             component.as_ref_unchecked::<T>()
+//         })
+//     }
 
-    /// # Safety
-    ///
-    /// `self.id` must be the same as `crate::static_id::<T>()`.
-    #[inline]
-    pub unsafe fn borrow_as_mut_unchecked<T: Component>(&self) -> AtomicRefMut<'_, T> {
-        debug_assert_eq!(self.info.id, crate::static_id::<T>());
-        // SAFETY: `self.component` is a valid pointer to a `T` because `self.id` is the same as `crate::static_id::<T>()`.
-        AtomicRefMut::map(self.component.borrow_mut(), |component| unsafe {
-            component.as_mut_unchecked::<T>()
-        })
-    }
-}
+//     /// # Safety
+//     ///
+//     /// `self.id` must be the same as `crate::static_id::<T>()`.
+//     #[inline(never)]
+//     pub unsafe fn borrow_as_mut_unchecked<T: Component>(&self) -> AtomicRefMut<'_, T> {
+//         debug_assert_eq!(self.info.id, crate::static_id::<T>());
+//         // SAFETY: `self.component` is a valid pointer to a `T` because `self.id` is the same as `crate::static_id::<T>()`.
+//         let lock = self.component.borrow_mut();
+//         AtomicRefMut::map(lock, |component| unsafe {
+//             component.as_mut_unchecked::<T>()
+//         })
+//     }
+// }
 
-impl Debug for ComponentPtr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ComponentPtr")
-            .field("component_id", &self.info.id)
-            .field("component_name", &self.info.name)
-            .finish()
-    }
-}
+// impl Debug for ComponentPtr {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         f.debug_struct("ComponentPtr")
+//             .field("component_id", &self.info.id)
+//             .field("component_name", &self.info.name)
+//             .finish()
+//     }
+// }

@@ -1,4 +1,4 @@
-use crate::{component::ComponentPtr, storage::Components, TypeInfo};
+use crate::{component::Data, storage::Components, TypeInfo};
 
 use super::{Component, Entity};
 
@@ -8,7 +8,7 @@ pub trait Bundle: Sized + Send + Sync + 'static {
         components.build(self)
     }
     fn component_infos() -> Vec<TypeInfo>;
-    fn components(self) -> Vec<ComponentPtr>;
+    fn components(self) -> Vec<Data>;
 }
 
 impl Bundle for () {
@@ -18,7 +18,7 @@ impl Bundle for () {
     fn component_infos() -> Vec<TypeInfo> {
         Vec::new()
     }
-    fn components(self) -> Vec<ComponentPtr> {
+    fn components(self) -> Vec<Data> {
         Vec::new()
     }
 }
@@ -27,8 +27,8 @@ impl<T: Component> Bundle for T {
     fn component_infos() -> Vec<TypeInfo> {
         vec![TypeInfo::of::<T>()]
     }
-    fn components(self) -> Vec<ComponentPtr> {
-        vec![ComponentPtr::new(self)]
+    fn components(self) -> Vec<Data> {
+        vec![Data::new(self)]
     }
 }
 
@@ -36,7 +36,7 @@ impl<A: Bundle> Bundle for (A,) {
     fn component_infos() -> Vec<TypeInfo> {
         A::component_infos()
     }
-    fn components(self) -> Vec<ComponentPtr> {
+    fn components(self) -> Vec<Data> {
         let (a,) = self;
         a.components()
     }
@@ -51,9 +51,10 @@ macro_rules! impl_bundle_for_tuple {
                 infos.sort_by_key(|info| info.id);
                 infos
             }
-            fn components(self) -> Vec<ComponentPtr> {
+            fn components(self) -> Vec<Data> {
                 let ($($name,)*) = self;
-                let mut comps = vec![$($name.components()),*].concat();
+                let mut comps = vec![];
+                $(comps.extend($name.components());)*
                 comps.sort_by_key(|comp| comp.id());
                 comps
             }

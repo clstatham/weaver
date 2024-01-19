@@ -1130,10 +1130,10 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
                 infos.sort_by_key(|info| info.id());
                 infos
             }
-            fn components(self) -> Vec<weaver_ecs::component::ComponentPtr> {
+            fn components(self) -> Vec<weaver_ecs::component::Data> {
                 let mut components = Vec::new();
                 #(
-                    components.push(weaver_ecs::component::ComponentPtr::new(self.#field_names));
+                    components.push(weaver_ecs::component::Data::new(self.#field_names));
                 )*
                 components.sort_by_key(|ptr| ptr.id());
                 components

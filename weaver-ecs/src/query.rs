@@ -116,7 +116,7 @@ where
     type Item: Bundle;
     type ItemRef: 'a + Send;
 
-    fn fetch(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef>;
+    fn fetch(entity: EntityId, archetype: &'a Archetype) -> Option<Self::ItemRef>;
 
     fn access() -> QueryAccess;
 }
@@ -128,7 +128,7 @@ where
     type Item = ();
     type ItemRef = ();
 
-    fn fetch(_entity: EntityId, _components: &'a Components) -> Option<Self::ItemRef> {
+    fn fetch(_entity: EntityId, _archetype: &'a Archetype) -> Option<Self::ItemRef> {
         Some(())
     }
 
@@ -150,13 +150,15 @@ where
     type Item = T;
     type ItemRef = Ref<'a, T>;
 
-    fn fetch(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
-        let component = components
-            .component_iter(entity)
-            .find(|c| c.info.id == crate::static_id::<Self::Item>())?;
+    fn fetch(entity: EntityId, archetype: &'a Archetype) -> Option<Self::ItemRef> {
+        let id = crate::static_id::<T>();
+        let column = archetype.get_column(id)?;
+        let component = AtomicRef::map(column, |column| unsafe {
+            column.get(entity).unwrap().as_ref_unchecked()
+        });
         Some(Ref {
             // SAFETY: `component` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
-            component: unsafe { component.borrow_as_ref_unchecked() },
+            component,
             _marker: std::marker::PhantomData,
         })
     }
@@ -179,13 +181,15 @@ where
     type Item = T;
     type ItemRef = Mut<'a, T>;
 
-    fn fetch(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
-        let component = components
-            .component_iter(entity)
-            .find(|c| c.info.id == crate::static_id::<Self::Item>())?;
+    fn fetch(entity: EntityId, archetype: &'a Archetype) -> Option<Self::ItemRef> {
+        let id = crate::static_id::<T>();
+        let column = archetype.get_column_mut(id)?;
+        let component = AtomicRefMut::map(column, |column| unsafe {
+            column.get_mut(entity).unwrap().as_mut_unchecked()
+        });
         Some(Mut {
             // SAFETY: `component` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
-            component: unsafe { component.borrow_as_mut_unchecked() },
+            component,
             _marker: std::marker::PhantomData,
         })
     }
@@ -262,9 +266,9 @@ where
         }
     }
 
-    pub fn get(&self, entity: EntityId, components: &'a Components) -> Option<Q::ItemRef> {
+    pub fn get(&self, entity: EntityId, archetype: &'a Archetype) -> Option<Q::ItemRef> {
         if self.entities.contains(entity as usize) {
-            Q::fetch(entity, components)
+            Q::fetch(entity, archetype)
         } else {
             None
         }
@@ -272,9 +276,12 @@ where
 
     pub fn iter(&'a self, components: &'a Components) -> QueryIter<'a, Q, F> {
         let iter = {
-            self.entities
-                .ones()
-                .filter_map(move |entity| Q::fetch(entity as EntityId, components))
+            self.entities.ones().filter_map(move |entity| {
+                Q::fetch(
+                    entity as EntityId,
+                    components.find_archetype(entity as EntityId)?,
+                )
+            })
         };
 
         QueryIter {
@@ -306,7 +313,8 @@ where
     }
 
     pub fn get(&self, entity: EntityId) -> Option<Q::ItemRef> {
-        self.state.get(entity, self.components)
+        self.state
+            .get(entity, self.components.find_archetype(entity)?)
     }
 
     pub fn iter(&'a self) -> QueryIter<'a, Q, F> {
@@ -347,9 +355,9 @@ macro_rules! impl_queryable_for_tuple {
             type Item = ($($name::Item,)*);
             type ItemRef = ($($name::ItemRef,)*);
 
-            fn fetch(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
+            fn fetch(entity: EntityId, archetype: &'a Archetype) -> Option<Self::ItemRef> {
                 let ($($name,)*) = ($({
-                    $name::fetch(entity, components)?
+                    $name::fetch(entity, archetype)?
                 },
                 )*);
                 Some(($($name,)*))
