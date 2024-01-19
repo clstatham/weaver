@@ -2,9 +2,9 @@ use std::fmt::Debug;
 
 use atomic_refcell::{AtomicRef, AtomicRefMut};
 
-use crate::storage::{Archetype, Components, EntitySet};
+use crate::storage::{Archetype, ComponentSet, Components, EntitySet};
 
-use super::{entity::EntityId, storage::ComponentSet, Bundle, Component};
+use super::{entity::EntityId, Bundle, Component};
 
 pub struct Ref<'a, T>
 where
@@ -63,7 +63,7 @@ pub struct QueryAccess {
 
 impl QueryAccess {
     pub fn matches_archetype(&self, archetype: &Archetype) -> bool {
-        if !self.withouts.is_clear()
+        if !self.withouts.is_empty()
             && self
                 .withouts
                 .intersection(&archetype.component_ids())
@@ -73,23 +73,20 @@ impl QueryAccess {
             return false;
         }
 
-        if !self.withs.is_clear()
-            && self.withs.intersection(&archetype.component_ids()).count()
-                != self.withs.ones().count()
+        if !self.withs.is_empty()
+            && self.withs.intersection(&archetype.component_ids()).count() != self.withs.len()
         {
             return false;
         }
 
-        if !self.reads.is_clear()
-            && self.reads.intersection(&archetype.component_ids()).count()
-                != self.reads.ones().count()
+        if !self.reads.is_empty()
+            && self.reads.intersection(&archetype.component_ids()).count() != self.reads.len()
         {
             return false;
         }
 
-        if !self.writes.is_clear()
-            && self.writes.intersection(&archetype.component_ids()).count()
-                != self.writes.ones().count()
+        if !self.writes.is_empty()
+            && self.writes.intersection(&archetype.component_ids()).count() != self.writes.len()
         {
             return false;
         }
@@ -101,10 +98,10 @@ impl QueryAccess {
 impl Debug for QueryAccess {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("QueryAccess")
-            .field("reads", &self.reads.ones().collect::<Vec<_>>())
-            .field("writes", &self.writes.ones().collect::<Vec<_>>())
-            .field("withs", &self.withs.ones().collect::<Vec<_>>())
-            .field("withouts", &self.withouts.ones().collect::<Vec<_>>())
+            .field("reads", &self.reads.iter().collect::<Vec<_>>())
+            .field("writes", &self.writes.iter().collect::<Vec<_>>())
+            .field("withs", &self.withs.iter().collect::<Vec<_>>())
+            .field("withouts", &self.withouts.iter().collect::<Vec<_>>())
             .finish()
     }
 }
@@ -165,7 +162,7 @@ where
 
     fn access() -> QueryAccess {
         QueryAccess {
-            reads: ComponentSet::from_iter([crate::static_id::<T>() as usize]),
+            reads: ComponentSet::from_iter([crate::static_id::<T>()]),
             writes: ComponentSet::default(),
             withs: F::withs(),
             withouts: F::withouts(),
@@ -197,7 +194,7 @@ where
     fn access() -> QueryAccess {
         QueryAccess {
             reads: ComponentSet::default(),
-            writes: ComponentSet::from_iter([crate::static_id::<T>() as usize]),
+            writes: ComponentSet::from_iter([crate::static_id::<T>()]),
             withs: F::withs(),
             withouts: F::withouts(),
         }
@@ -226,7 +223,7 @@ where
     T: Component,
 {
     fn withs() -> ComponentSet {
-        ComponentSet::from_iter([crate::static_id::<T>() as usize])
+        ComponentSet::from_iter([crate::static_id::<T>()])
     }
 }
 
@@ -239,7 +236,7 @@ where
     T: Component,
 {
     fn withouts() -> ComponentSet {
-        ComponentSet::from_iter([crate::static_id::<T>() as usize])
+        ComponentSet::from_iter([crate::static_id::<T>()])
     }
 }
 
@@ -371,10 +368,10 @@ macro_rules! impl_queryable_for_tuple {
 
                 $({
                     let access = $name::access();
-                    reads.union_with(&access.reads);
-                    writes.union_with(&access.writes);
-                    withs.union_with(&access.withs);
-                    withouts.union_with(&access.withouts);
+                    reads.extend(&access.reads);
+                    writes.extend(&access.writes);
+                    withs.extend(&access.withs);
+                    withouts.extend(&access.withouts);
                 })*
 
                 QueryAccess {
@@ -402,7 +399,7 @@ macro_rules! impl_queryfilter_for_tuple {
             fn withs() -> ComponentSet {
                 let mut all = ComponentSet::default();
                 $(
-                    all.union_with(&$name::withs());
+                    all.extend(&$name::withs());
                 )*
                 all
             }
@@ -410,7 +407,7 @@ macro_rules! impl_queryfilter_for_tuple {
             fn withouts() -> ComponentSet {
                 let mut all = ComponentSet::default();
                 $(
-                    all.union_with(&$name::withouts());
+                    all.extend(&$name::withouts());
                 )*
                 all
             }

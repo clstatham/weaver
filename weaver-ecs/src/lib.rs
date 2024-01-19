@@ -22,9 +22,8 @@ pub use {
     world::World,
 };
 
-use std::{any::TypeId, collections::HashMap, hash::BuildHasherDefault};
+use std::any::TypeId;
 
-use parking_lot::Mutex;
 use rustc_hash::FxHasher;
 pub use weaver_proc_macro::{system, Bundle, Component, Resource};
 
@@ -55,9 +54,42 @@ impl std::hash::Hasher for TypeIdHasher {
     }
 }
 
-pub(crate) type TypeIdMap<T> = HashMap<TypeId, T, BuildHasherDefault<TypeIdHasher>>;
+pub struct SortedTypeIdMap<T>(Box<[(TypeId, T)]>);
 
-pub type StaticId = u64;
+impl<T> SortedTypeIdMap<T> {
+    pub fn new(map: impl Iterator<Item = (TypeId, T)>) -> Self {
+        let mut vec: Vec<_> = map.collect();
+        vec.sort_unstable_by_key(|(type_id, _)| *type_id);
+        Self(vec.into_boxed_slice())
+    }
+
+    pub fn get(&self, id: &TypeId) -> Option<&T> {
+        self.0
+            .binary_search_by_key(id, |(type_id, _)| *type_id)
+            .ok()
+            .map(|index| &self.0[index].1)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &(TypeId, T)> {
+        self.0.iter()
+    }
+
+    pub fn contains_key(&self, id: &TypeId) -> bool {
+        self.0
+            .binary_search_by_key(id, |(type_id, _)| *type_id)
+            .is_ok()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+pub type StaticId = TypeId;
 
 #[derive(Clone, Copy)]
 pub struct TypeInfo {
@@ -96,23 +128,28 @@ impl TypeInfo {
     }
 }
 
-lazy_static::lazy_static! {
-    pub(crate) static ref TYPE_ID_MAP: Mutex<TypeIdMap<StaticId>> = Mutex::new(TypeIdMap::default());
-}
+// lazy_static::lazy_static! {
+//     pub(crate) static ref TYPE_ID_MAP: Mutex<TypeIdMap<StaticId>> = Mutex::new(TypeIdMap::default());
+// }
+
+// #[inline]
+// pub fn static_id<T: 'static>() -> StaticId {
+//     let mut type_id_map = TYPE_ID_MAP.lock();
+
+//     let type_id = TypeId::of::<T>();
+
+//     if let Some(id) = type_id_map.get(&type_id) {
+//         *id
+//     } else {
+//         let id = type_id_map.len() as StaticId;
+//         type_id_map.insert(type_id, id);
+//         id
+//     }
+// }
 
 #[inline]
 pub fn static_id<T: 'static>() -> StaticId {
-    let mut type_id_map = TYPE_ID_MAP.lock();
-
-    let type_id = TypeId::of::<T>();
-
-    if let Some(id) = type_id_map.get(&type_id) {
-        *id
-    } else {
-        let id = type_id_map.len() as StaticId;
-        type_id_map.insert(type_id, id);
-        id
-    }
+    TypeId::of::<T>()
 }
 
 #[cfg(test)]

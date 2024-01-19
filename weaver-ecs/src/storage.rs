@@ -1,14 +1,17 @@
-use std::{fmt::Debug, sync::atomic::AtomicU32};
+use std::{collections::HashSet, fmt::Debug, hash::BuildHasherDefault, sync::atomic::AtomicU32};
 
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use fixedbitset::FixedBitSet;
 
-use crate::{component::Data, query::QueryAccess, Bundle, Component, Entity, StaticId, TypeInfo};
+use crate::{
+    component::Data, query::QueryAccess, Bundle, Component, Entity, SortedTypeIdMap, StaticId,
+    TypeIdHasher, TypeInfo,
+};
 
 use super::entity::EntityId;
 
 pub type EntitySet = FixedBitSet;
-pub type ComponentSet = FixedBitSet;
+pub type ComponentSet = HashSet<StaticId, BuildHasherDefault<TypeIdHasher>>;
 
 pub trait Index: Copy + Debug + Eq + Ord + std::hash::Hash {
     fn into_usize(self) -> usize;
@@ -21,14 +24,6 @@ impl Index for usize {
     }
     fn from_usize(index: usize) -> Self {
         index
-    }
-}
-impl Index for StaticId {
-    fn into_usize(self) -> usize {
-        self as usize
-    }
-    fn from_usize(index: usize) -> Self {
-        index as StaticId
     }
 }
 impl Index for EntityId {
@@ -236,25 +231,24 @@ impl Column {
 }
 
 /// A unique combination of components. Also maintains a list of entities that have this combination.
-#[derive(Default)]
 pub struct Archetype {
     pub(crate) entities: EntitySet,
     pub(crate) component_types: Box<[TypeInfo]>,
-    pub(crate) columns: SparseSet<StaticId, AtomicRefCell<Column>>,
+    pub(crate) columns: SortedTypeIdMap<AtomicRefCell<Column>>,
 }
 
 impl Archetype {
     pub fn with_component_types(component_types: Vec<TypeInfo>) -> Self {
-        let mut columns = SparseSet::new();
+        let mut columns = Vec::new();
 
         for info in component_types.iter() {
-            columns.insert(info.id(), AtomicRefCell::new(Column::new_with_info(*info)));
+            columns.push((info.id(), AtomicRefCell::new(Column::new_with_info(*info))));
         }
 
         Self {
             entities: EntitySet::default(),
             component_types: component_types.into_boxed_slice(),
-            columns,
+            columns: SortedTypeIdMap::new(columns.into_iter()),
         }
     }
 
@@ -262,7 +256,7 @@ impl Archetype {
         self.entities.grow(entity as usize + 1);
         self.entities.insert(entity as usize);
         self.columns
-            .get_mut(&component.id())
+            .get(&component.id())
             .unwrap()
             .borrow_mut()
             .insert(entity, component);
@@ -271,16 +265,16 @@ impl Archetype {
     pub(crate) fn remove_entity(&mut self, entity: EntityId) {
         self.entities.set(entity as usize, false);
 
-        for column in self.columns.dense_iter_mut() {
+        for (_, column) in self.columns.iter() {
             column.borrow_mut().remove(entity);
         }
     }
 
     pub fn exclusively_contains_components(&self, component_ids: &ComponentSet) -> bool {
         component_ids
-            .ones()
-            .all(|index| self.columns.contains(&(index as StaticId)))
-            && self.columns.indices.len() == component_ids.count_ones(..)
+            .iter()
+            .all(|index| self.columns.contains_key(index))
+            && self.columns.len() == component_ids.len()
     }
 
     pub fn contains_entity(&self, entity: EntityId) -> bool {
@@ -298,16 +292,12 @@ impl Archetype {
     pub fn component_drain(&mut self, entity: EntityId) -> impl Iterator<Item = Data> + '_ {
         self.entities.set(entity as usize, false);
         self.columns
-            .dense_iter_mut()
-            .filter_map(move |column| column.borrow_mut().remove(entity))
+            .iter()
+            .filter_map(move |(_, column)| column.borrow_mut().remove(entity))
     }
 
     pub fn component_ids(&self) -> ComponentSet {
-        self.columns
-            .indices
-            .iter()
-            .map(|x| x.into_usize())
-            .collect::<ComponentSet>()
+        self.columns.iter().map(|x| x.0).collect()
     }
 }
 
@@ -356,7 +346,7 @@ impl Components {
     ) {
         let component_ids = component_infos
             .iter()
-            .map(|info| info.id as usize)
+            .map(|info| info.id)
             .collect::<ComponentSet>();
 
         // find the archetype that matches the components, if any
