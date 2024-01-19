@@ -4,7 +4,6 @@ use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    component::ComponentPtr,
     query::{Query, QueryFilter},
     Queryable, StaticId,
 };
@@ -13,7 +12,7 @@ use super::{
     resource::{Res, ResMut, Resource},
     storage::Components,
     system::{SystemGraph, SystemId, SystemStage},
-    Bundle, Component, Entity, System,
+    Bundle, Entity, System,
 };
 
 pub struct World {
@@ -37,24 +36,6 @@ impl World {
 
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
         bundle.build(&mut self.components)
-    }
-
-    pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
-        self.components
-            .add_component(entity.id(), ComponentPtr::new(component));
-    }
-
-    pub fn remove_component<T: Component>(&mut self, entity: Entity) {
-        self.components
-            .remove_component(entity.id(), crate::static_id::<T>());
-    }
-
-    pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
-        if let Some(components) = self.components.entity_components.get(&entity.id()) {
-            components.contains_component(&crate::static_id::<T>())
-        } else {
-            false
-        }
     }
 
     pub fn despawn(&mut self, entity: Entity) {

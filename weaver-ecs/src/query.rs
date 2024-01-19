@@ -2,10 +2,7 @@ use std::fmt::Debug;
 
 use atomic_refcell::{AtomicRef, AtomicRefMut};
 
-use crate::{
-    archetype::Archetype,
-    storage::{ComponentStorage, Components, EntitySet},
-};
+use crate::storage::{Archetype, Components, EntitySet};
 
 use super::{entity::EntityId, storage::ComponentSet, Bundle, Component};
 
@@ -67,14 +64,37 @@ pub struct QueryAccess {
 impl QueryAccess {
     pub fn matches_archetype(&self, archetype: &Archetype) -> bool {
         if !self.withouts.is_clear()
-            && self.withouts.intersection(&archetype.components).count() > 0
+            && self
+                .withouts
+                .intersection(&archetype.component_ids())
+                .count()
+                > 0
         {
             return false;
         }
 
-        self.reads.is_subset(&archetype.components)
-            && self.writes.is_subset(&archetype.components)
-            && self.withs.is_subset(&archetype.components)
+        if !self.withs.is_clear()
+            && self.withs.intersection(&archetype.component_ids()).count()
+                != self.withs.ones().count()
+        {
+            return false;
+        }
+
+        if !self.reads.is_clear()
+            && self.reads.intersection(&archetype.component_ids()).count()
+                != self.reads.ones().count()
+        {
+            return false;
+        }
+
+        if !self.writes.is_clear()
+            && self.writes.intersection(&archetype.component_ids()).count()
+                != self.writes.ones().count()
+        {
+            return false;
+        }
+
+        true
     }
 }
 
@@ -96,7 +116,7 @@ where
     type Item: Bundle;
     type ItemRef: 'a + Send;
 
-    fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef>;
+    fn fetch(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef>;
 
     fn access() -> QueryAccess;
 }
@@ -108,7 +128,7 @@ where
     type Item = ();
     type ItemRef = ();
 
-    fn fetch(_components: &ComponentStorage) -> Option<Self::ItemRef> {
+    fn fetch(_entity: EntityId, _components: &'a Components) -> Option<Self::ItemRef> {
         Some(())
     }
 
@@ -130,8 +150,10 @@ where
     type Item = T;
     type ItemRef = Ref<'a, T>;
 
-    fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef> {
-        let component = components.get(&crate::static_id::<Self::Item>())?;
+    fn fetch(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
+        let component = components
+            .component_iter(entity)
+            .find(|c| c.info.id == crate::static_id::<Self::Item>())?;
         Some(Ref {
             // SAFETY: `component` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
             component: unsafe { component.borrow_as_ref_unchecked() },
@@ -157,8 +179,10 @@ where
     type Item = T;
     type ItemRef = Mut<'a, T>;
 
-    fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef> {
-        let component = components.get(&crate::static_id::<Self::Item>())?;
+    fn fetch(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
+        let component = components
+            .component_iter(entity)
+            .find(|c| c.info.id == crate::static_id::<Self::Item>())?;
         Some(Mut {
             // SAFETY: `component` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
             component: unsafe { component.borrow_as_mut_unchecked() },
@@ -240,8 +264,7 @@ where
 
     pub fn get(&self, entity: EntityId, components: &'a Components) -> Option<Q::ItemRef> {
         if self.entities.contains(entity as usize) {
-            let components = components.entity_components.get(&entity)?;
-            Q::fetch(components)
+            Q::fetch(entity, components)
         } else {
             None
         }
@@ -249,14 +272,9 @@ where
 
     pub fn iter(&'a self, components: &'a Components) -> QueryIter<'a, Q, F> {
         let iter = {
-            components.entity_components.dense_iter().filter_map(|c| {
-                if self.entities.contains(c.entity as usize) {
-                    // if the entity isn't fetched, it's because it doesn't match the filter - and that's a bug
-                    Some(Q::fetch(c).unwrap())
-                } else {
-                    None
-                }
-            })
+            self.entities
+                .ones()
+                .filter_map(move |entity| Q::fetch(entity as EntityId, components))
         };
 
         QueryIter {
@@ -322,15 +340,16 @@ macro_rules! impl_queryable_for_tuple {
         #[allow(non_snake_case)]
         impl<'a, $($name),*, F> Queryable<'a, F> for ($($name,)*)
         where
-            $($name: Queryable<'a>,)*
+            $($name: Queryable<'a, F>,)*
             F: QueryFilter<'a>,
+            ($($name::Item,)*) : Bundle,
         {
             type Item = ($($name::Item,)*);
             type ItemRef = ($($name::ItemRef,)*);
 
-            fn fetch(components: &'a ComponentStorage) -> Option<Self::ItemRef> {
+            fn fetch(entity: EntityId, components: &'a Components) -> Option<Self::ItemRef> {
                 let ($($name,)*) = ($({
-                    $name::fetch(components)?
+                    $name::fetch(entity, components)?
                 },
                 )*);
                 Some(($($name,)*))

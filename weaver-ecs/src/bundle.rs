@@ -1,63 +1,61 @@
-use std::sync::Arc;
-
-use atomic_refcell::AtomicRefCell;
-
-use crate::{
-    component::{ComponentPtr, DynComponent},
-    storage::Components,
-    TypeInfo,
-};
+use crate::{component::ComponentPtr, storage::Components, TypeInfo};
 
 use super::{Component, Entity};
 
 /// A collection of components that can be built and added to an entity.
-pub trait Bundle: Sized + 'static {
-    fn build(self, world: &mut Components) -> Entity {
-        self.build_on(world.create_entity(), world)
+pub trait Bundle: Sized + Send + Sync + 'static {
+    fn build(self, components: &mut Components) -> Entity {
+        components.build(self)
     }
-    fn build_on(self, entity: Entity, world: &mut Components) -> Entity;
+    fn component_infos() -> Vec<TypeInfo>;
+    fn components(self) -> Vec<ComponentPtr>;
 }
 
 impl Bundle for () {
-    fn build(self, world: &mut Components) -> Entity {
-        world.create_entity()
+    fn build(self, components: &mut Components) -> Entity {
+        components.create_entity()
     }
-    fn build_on(self, entity: Entity, _world: &mut Components) -> Entity {
-        entity
+    fn component_infos() -> Vec<TypeInfo> {
+        Vec::new()
+    }
+    fn components(self) -> Vec<ComponentPtr> {
+        Vec::new()
     }
 }
 
 impl<T: Component> Bundle for T {
-    fn build_on(self, entity: Entity, world: &mut Components) -> Entity {
-        world.add_component(
-            entity.id(),
-            ComponentPtr {
-                type_info: Arc::new(TypeInfo::of::<T>()),
-                component: Arc::new(AtomicRefCell::new(DynComponent::new(self))),
-            },
-        );
-        entity
+    fn component_infos() -> Vec<TypeInfo> {
+        vec![TypeInfo::of::<T>()]
+    }
+    fn components(self) -> Vec<ComponentPtr> {
+        vec![ComponentPtr::new(self)]
     }
 }
 
 impl<A: Bundle> Bundle for (A,) {
-    fn build_on(self, entity: Entity, world: &mut Components) -> Entity {
+    fn component_infos() -> Vec<TypeInfo> {
+        A::component_infos()
+    }
+    fn components(self) -> Vec<ComponentPtr> {
         let (a,) = self;
-        a.build_on(entity, world);
-        entity
+        a.components()
     }
 }
 
 macro_rules! impl_bundle_for_tuple {
     (($($name:ident),*)) => {
+        #[allow(non_snake_case)]
         impl<$($name: Bundle),*> Bundle for ($($name,)*) {
-            #[allow(non_snake_case)]
-            fn build_on(self, entity: Entity, world: &mut Components) -> Entity {
+            fn component_infos() -> Vec<TypeInfo> {
+                let mut infos = vec![$($name::component_infos()),*].concat();
+                infos.sort_by_key(|info| info.id);
+                infos
+            }
+            fn components(self) -> Vec<ComponentPtr> {
                 let ($($name,)*) = self;
-                $(
-                    $name.build_on(entity, world);
-                )*
-                entity
+                let mut comps = vec![$($name.components()),*].concat();
+                comps.sort_by_key(|comp| comp.id());
+                comps
             }
         }
     };

@@ -1108,19 +1108,35 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
         },
         _ => panic!("Invalid struct"),
     };
-    let fields = fields.iter().map(|field| {
+    let field_names = fields.iter().map(|field| {
         let name = &field.ident;
         quote! {
             #name
         }
-    });
+    }).collect::<Vec<_>>();
+    let field_types = fields.clone().into_iter().map(|field| {
+        let ty = &field.ty;
+        quote! {
+            #ty
+        }
+    }).collect::<Vec<_>>();
     let gen = quote! {
         impl weaver_ecs::Bundle for #name {
-            fn build_on(self, entity: weaver_ecs::entity::Entity, world: &mut weaver_ecs::storage::Components) -> weaver_ecs::entity::Entity {
+            fn component_infos() -> Vec<weaver_ecs::TypeInfo> {
+                let mut infos = Vec::new();
                 #(
-                    self.#fields.build_on(entity, world);
+                    infos.push(weaver_ecs::TypeInfo::of::<#field_types>());
                 )*
-                entity
+                infos.sort_by_key(|info| info.id());
+                infos
+            }
+            fn components(self) -> Vec<weaver_ecs::component::ComponentPtr> {
+                let mut components = Vec::new();
+                #(
+                    components.push(weaver_ecs::component::ComponentPtr::new(self.#field_names));
+                )*
+                components.sort_by_key(|ptr| ptr.id());
+                components
             }
         }
     };

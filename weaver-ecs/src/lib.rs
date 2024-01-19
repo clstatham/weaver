@@ -1,6 +1,5 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-pub mod archetype;
 pub mod bundle;
 pub mod commands;
 pub mod component;
@@ -60,6 +59,7 @@ pub(crate) type TypeIdMap<T> = HashMap<TypeId, T, BuildHasherDefault<TypeIdHashe
 
 pub type StaticId = u64;
 
+#[derive(Clone, Copy)]
 pub struct TypeInfo {
     pub(crate) id: StaticId,
     pub(crate) name: &'static str,
@@ -140,10 +140,16 @@ mod tests {
     fn test_query() {
         let mut world = World::new();
 
+        println!("Adding entity 1 (A, B, C)");
         world.spawn((A::default(), B::default(), C::default()));
+        println!("Adding entity 2 (A, B)");
         world.spawn((A::default(), B::default()));
+        println!("Adding entity 3 (A, C)");
         world.spawn((A::default(), C::default()));
+        println!("Adding entity 4 (A, B, C)");
         world.spawn((A::default(), B::default(), C::default()));
+
+        dbg!(world.components.archetypes.len());
 
         let query = world.query::<(&A, &B, &C)>();
 
