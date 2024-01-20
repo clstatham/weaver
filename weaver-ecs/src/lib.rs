@@ -57,41 +57,39 @@ impl std::hash::Hasher for TypeIdHasher {
     }
 }
 
-pub struct SortedTypeIdMap<T>(Box<[(TypeId, T)]>);
+pub struct SortedMap<K: Ord + Copy, V>(Box<[(K, V)]>);
 
-impl<T> SortedTypeIdMap<T> {
-    pub fn new(map: impl Iterator<Item = (TypeId, T)>) -> Self {
-        let mut vec: Vec<_> = map.collect();
-        vec.sort_unstable_by_key(|(type_id, _)| *type_id);
+impl<K: Ord + Copy, V> SortedMap<K, V> {
+    pub fn new(map: impl IntoIterator<Item = (K, V)>) -> Self {
+        let mut vec: Vec<_> = map.into_iter().collect();
+        vec.sort_unstable_by_key(|(key, _)| *key);
         Self(vec.into_boxed_slice())
     }
 
-    pub fn get(&self, id: &TypeId) -> Option<&T> {
+    pub fn get(&self, key: &K) -> Option<&V> {
         self.0
-            .binary_search_by_key(id, |(type_id, _)| *type_id)
+            .binary_search_by_key(key, |(key, _)| *key)
             .ok()
             .map(|index| &self.0[index].1)
     }
 
-    pub fn get_mut(&mut self, id: &TypeId) -> Option<&mut T> {
+    pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
         self.0
-            .binary_search_by_key(id, |(type_id, _)| *type_id)
+            .binary_search_by_key(key, |(key, _)| *key)
             .ok()
-            .map(move |index| &mut self.0[index].1)
+            .map(|index| &mut self.0[index].1)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &(TypeId, T)> {
-        self.0.iter()
+    pub fn iter(&self) -> impl Iterator<Item = (K, &V)> {
+        self.0.iter().map(|(key, value)| (*key, value))
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut (TypeId, T)> {
-        self.0.iter_mut()
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (K, &mut V)> {
+        self.0.iter_mut().map(|(key, value)| (*key, value))
     }
 
-    pub fn contains_key(&self, id: &TypeId) -> bool {
-        self.0
-            .binary_search_by_key(id, |(type_id, _)| *type_id)
-            .is_ok()
+    pub fn contains_key(&self, key: &K) -> bool {
+        self.0.binary_search_by_key(key, |(key, _)| *key).is_ok()
     }
 
     pub fn len(&self) -> usize {

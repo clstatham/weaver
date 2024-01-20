@@ -1,6 +1,7 @@
 use atomic_refcell::{AtomicRef, AtomicRefMut};
 use rayon::prelude::*;
 use std::fmt::Debug;
+use weaver_proc_macro::all_tuples;
 
 use crate::{
     component::Data,
@@ -254,6 +255,7 @@ where
     Q: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
+    components: &'a Components,
     archetypes: Vec<&'a Archetype>,
     _marker: std::marker::PhantomData<(Q, F)>,
 }
@@ -270,16 +272,22 @@ where
             .filter(|archetype| Q::access().matches_archetype(archetype))
             .collect();
         Query {
+            components,
             archetypes,
             _marker: std::marker::PhantomData,
         }
     }
 
     pub fn get(&self, entity: EntityId) -> Option<Q::ItemRef> {
-        self.archetypes
-            .iter()
-            .filter_map(|archetype| Q::fetch(entity, archetype))
-            .next()
+        self.components
+            .entity_archetype(entity)
+            .and_then(|archetype| {
+                if Q::access().matches_archetype(archetype) {
+                    Q::fetch(entity, archetype)
+                } else {
+                    None
+                }
+            })
     }
 
     pub fn iter(&'a self) -> impl Iterator<Item = Q::ItemRef> + 'a {
@@ -304,10 +312,10 @@ where
 macro_rules! impl_queryable_for_tuple {
     ($($name:ident),*) => {
         #[allow(non_snake_case)]
-        impl<'a, $($name),*, F> Queryable<'a, F> for ($($name,)*)
+        impl<'a, $($name),*, Filter> Queryable<'a, Filter> for ($($name,)*)
         where
-            $($name: Queryable<'a, F>,)*
-            F: QueryFilter<'a>,
+            $($name: Queryable<'a, Filter>,)*
+            Filter: QueryFilter<'a>,
             ($($name::Item,)*) : Bundle,
         {
             type Item = ($($name::Item,)*);
@@ -346,10 +354,7 @@ macro_rules! impl_queryable_for_tuple {
     };
 }
 
-impl_queryable_for_tuple!(A);
-impl_queryable_for_tuple!(A, B);
-impl_queryable_for_tuple!(A, B, C);
-impl_queryable_for_tuple!(A, B, C, D);
+all_tuples!(1..=16, impl_queryable_for_tuple);
 
 macro_rules! impl_queryfilter_for_tuple {
     ($($name:ident),*) => {

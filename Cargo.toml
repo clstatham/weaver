@@ -12,8 +12,8 @@ members = [
     "weaver-ecs",
     "weaver-game",
     "weaver-editor",
+    "weaver-bench",
 ]
-exclude = ["weaver-bench"]
 
 [features]
 default = []

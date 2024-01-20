@@ -1,3 +1,5 @@
+use weaver_proc_macro::all_tuples;
+
 use crate::{
     component::{Component, Data},
     storage::Components,
@@ -36,18 +38,8 @@ impl<T: Component> Bundle for T {
     }
 }
 
-impl<A: Bundle> Bundle for (A,) {
-    fn component_types() -> Vec<TypeInfo> {
-        A::component_types()
-    }
-    fn components(self) -> Vec<Data> {
-        let (a,) = self;
-        a.components()
-    }
-}
-
 macro_rules! impl_bundle_for_tuple {
-    (($($name:ident),*)) => {
+    ($($name:ident),*) => {
         #[allow(non_snake_case)]
         impl<$($name: Bundle),*> Bundle for ($($name,)*) {
             fn component_types() -> Vec<TypeInfo> {
@@ -66,10 +58,4 @@ macro_rules! impl_bundle_for_tuple {
     };
 }
 
-impl_bundle_for_tuple!((A, B));
-impl_bundle_for_tuple!((A, B, C));
-impl_bundle_for_tuple!((A, B, C, D));
-impl_bundle_for_tuple!((A, B, C, D, E));
-impl_bundle_for_tuple!((A, B, C, D, E, F));
-impl_bundle_for_tuple!((A, B, C, D, E, F, G));
-impl_bundle_for_tuple!((A, B, C, D, E, F, G, H));
+all_tuples!(1..=16, impl_bundle_for_tuple);

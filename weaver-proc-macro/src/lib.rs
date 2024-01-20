@@ -1,4 +1,8 @@
+use std::ops::RangeInclusive;
+
 use proc_macro::TokenStream;
+use quote::{format_ident, quote};
+use syn::{punctuated::Punctuated, Token};
 
 mod bindable_component;
 mod bundle;
@@ -41,4 +45,60 @@ pub fn derive_bindable_component(input: TokenStream) -> TokenStream {
 pub fn system(attr: TokenStream, item: TokenStream) -> TokenStream {
     let ast = syn::parse_macro_input!(item as syn::ItemFn);
     system::system(attr, &ast)
+}
+
+#[proc_macro]
+pub fn big_tuple(input: TokenStream) -> TokenStream {
+    let n = syn::parse_macro_input!(input as syn::LitInt);
+    let n = n.base10_parse::<usize>().unwrap();
+
+    let mut fields = vec![];
+    for i in 1..=n {
+        let name = format_ident!("T{}", i);
+        fields.push(quote! { #name });
+    }
+
+    let fields: Punctuated<_, Token![,]> = fields.into_iter().collect();
+
+    let gen = quote! {
+        (#fields)
+    };
+
+    gen.into()
+}
+
+struct AllTuples {
+    n: RangeInclusive<usize>,
+    ident: syn::Ident,
+}
+
+impl syn::parse::Parse for AllTuples {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let start = input.parse::<syn::LitInt>()?.base10_parse::<usize>()?;
+        input.parse::<syn::Token![..=]>()?;
+        let end = input.parse::<syn::LitInt>()?.base10_parse::<usize>()?;
+        input.parse::<syn::Token![,]>()?;
+        let func = input.parse()?;
+        Ok(Self {
+            n: start..=end,
+            ident: func,
+        })
+    }
+}
+
+#[proc_macro]
+pub fn all_tuples(input: TokenStream) -> TokenStream {
+    let AllTuples { n, ident: func } = syn::parse_macro_input!(input as AllTuples);
+
+    let mut gen = quote! {};
+
+    for i in n {
+        let tuple: proc_macro2::TokenStream = big_tuple(quote! { #i }.into()).into();
+
+        gen.extend(quote! {
+            #func! #tuple;
+        });
+    }
+
+    gen.into()
 }

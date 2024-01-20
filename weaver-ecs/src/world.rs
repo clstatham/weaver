@@ -6,6 +6,7 @@ use rustc_hash::FxHashMap;
 use crate::{
     bundle::Bundle,
     entity::Entity,
+    prelude::Component,
     query::{Query, QueryFilter, Queryable},
     resource::{Res, ResMut, Resource},
     storage::Components,
@@ -31,6 +32,10 @@ impl World {
 
     pub fn create_entity(&mut self) -> Entity {
         self.components.create_entity()
+    }
+
+    pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
+        self.components.add_component(entity.id(), component);
     }
 
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
