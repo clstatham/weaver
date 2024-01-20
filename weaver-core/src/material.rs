@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 use weaver_ecs::prelude::*;
 use weaver_proc_macro::{BindableComponent, Component, GpuComponent};

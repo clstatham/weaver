@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use parking_lot::RwLock;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 use wgpu::util::DeviceExt;
