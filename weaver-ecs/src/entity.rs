@@ -5,27 +5,18 @@ pub type EntityId = u32;
 #[repr(C)]
 pub struct Entity {
     id: EntityId,
-    generation: u32,
 }
 
 impl Entity {
-    pub const PLACEHOLDER: Self = Self {
-        id: EntityId::MAX,
-        generation: u32::MAX,
-    };
+    pub const PLACEHOLDER: Self = Self { id: EntityId::MAX };
 
     /// Creates a new entity with the given id and generation.
-    pub fn new(id: EntityId, generation: u32) -> Self {
-        Self { id, generation }
+    pub fn new(id: EntityId) -> Self {
+        Self { id }
     }
 
     /// Returns the id of the entity.
     pub fn id(&self) -> EntityId {
         self.id
-    }
-
-    /// Returns the generation of the entity.
-    pub fn generation(&self) -> u32 {
-        self.generation
     }
 }

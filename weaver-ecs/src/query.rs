@@ -1,11 +1,10 @@
 use atomic_refcell::{AtomicRef, AtomicRefMut};
-use rayon::prelude::*;
 use std::fmt::Debug;
 use weaver_proc_macro::all_tuples;
 
 use crate::{
-    component::Data,
-    storage::{Archetype, ComponentSet, Components},
+    component::LockedData,
+    storage::{Archetype, ComponentMap, ComponentSet, Components, SparseSet},
 };
 
 use super::{bundle::Bundle, component::Component, entity::EntityId};
@@ -15,7 +14,6 @@ where
     T: Component,
 {
     component: AtomicRef<'a, T>,
-    _marker: std::marker::PhantomData<T>,
 }
 
 impl<'a, T> std::ops::Deref for Ref<'a, T>
@@ -34,7 +32,6 @@ where
     T: Component,
 {
     component: AtomicRefMut<'a, T>,
-    _marker: std::marker::PhantomData<T>,
 }
 
 impl<'a, T> std::ops::Deref for Mut<'a, T>
@@ -117,7 +114,7 @@ where
     type Item: Bundle;
     type ItemRef: 'a + Send;
 
-    fn fetch(entity: EntityId, archetype: &'a Archetype) -> Option<Self::ItemRef>;
+    fn fetch(data: &'a ComponentMap<&'a LockedData>) -> Option<Self::ItemRef>;
 
     fn access() -> QueryAccess;
 }
@@ -129,7 +126,7 @@ where
     type Item = ();
     type ItemRef = ();
 
-    fn fetch(_entity: EntityId, _archetype: &'a Archetype) -> Option<Self::ItemRef> {
+    fn fetch(_data: &'a ComponentMap<&'a LockedData>) -> Option<Self::ItemRef> {
         Some(())
     }
 
@@ -151,19 +148,17 @@ where
     type Item = T;
     type ItemRef = Ref<'a, T>;
 
-    fn fetch(entity: EntityId, archetype: &'a Archetype) -> Option<Self::ItemRef> {
-        let id = crate::static_id::<T>();
-        let column = archetype.get_column(id)?;
-        let component = column.get(entity).unwrap();
-        let component = AtomicRef::map(component, |component| {
-            // SAFETY:
-            // - `component` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
-            // - There are no other references to `component` because `component` is locked.
-            unsafe { component.as_ref_unchecked() }
-        });
+    #[inline(never)]
+    fn fetch(data: &'a ComponentMap<&'a LockedData>) -> Option<Self::ItemRef> {
+        let data = data.get(&crate::static_id::<T>())?;
+        let data = data.borrow();
         Some(Ref {
-            component,
-            _marker: std::marker::PhantomData,
+            component: AtomicRef::map(data, |data| {
+                // SAFETY:
+                // - `data` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
+                // - There are no other references to `data` because `data` is locked.
+                unsafe { data.as_ref_unchecked::<T>() }
+            }),
         })
     }
 
@@ -185,19 +180,17 @@ where
     type Item = T;
     type ItemRef = Mut<'a, T>;
 
-    fn fetch(entity: EntityId, archetype: &'a Archetype) -> Option<Self::ItemRef> {
-        let id = crate::static_id::<T>();
-        let column = archetype.get_column(id)?;
-        let component = column.get_mut(entity).unwrap();
-        let component = AtomicRefMut::map(component, |component: &mut Data| {
-            // SAFETY:
-            // - `component` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
-            // - There are no other references to `component` because `component` is locked.
-            unsafe { component.as_mut_unchecked() }
-        });
+    #[inline(never)]
+    fn fetch(data: &'a ComponentMap<&'a LockedData>) -> Option<Self::ItemRef> {
+        let data = data.get(&crate::static_id::<T>())?;
+        let data = data.borrow_mut();
         Some(Mut {
-            component,
-            _marker: std::marker::PhantomData,
+            component: AtomicRefMut::map(data, |data| {
+                // SAFETY:
+                // - `data` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
+                // - There are no other references to `data` because `data` is locked.
+                unsafe { data.as_mut_unchecked::<T>() }
+            }),
         })
     }
 
@@ -255,8 +248,7 @@ where
     Q: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    components: &'a Components,
-    archetypes: Vec<&'a Archetype>,
+    entries: SparseSet<EntityId, ComponentMap<&'a LockedData>>,
     _marker: std::marker::PhantomData<(Q, F)>,
 }
 
@@ -266,46 +258,22 @@ where
     F: QueryFilter<'a>,
 {
     pub fn new(components: &'a Components) -> Self {
-        let archetypes = components
-            .archetypes
-            .iter()
-            .filter(|archetype| Q::access().matches_archetype(archetype))
-            .collect();
+        let entries = components.components_matching_access(Q::access()).collect();
         Query {
-            components,
-            archetypes,
+            entries,
             _marker: std::marker::PhantomData,
         }
     }
 
-    pub fn get(&self, entity: EntityId) -> Option<Q::ItemRef> {
-        self.components
-            .entity_archetype(entity)
-            .and_then(|archetype| {
-                if Q::access().matches_archetype(archetype) {
-                    Q::fetch(entity, archetype)
-                } else {
-                    None
-                }
-            })
+    pub fn get(&'a self, entity: EntityId) -> Option<Q::ItemRef> {
+        let data = self.entries.get(&entity)?;
+        Q::fetch(data)
     }
 
     pub fn iter(&'a self) -> impl Iterator<Item = Q::ItemRef> + 'a {
-        self.archetypes.iter().flat_map(|archetype| {
-            archetype
-                .entities
-                .ones()
-                .filter_map(move |entity| Q::fetch(entity as EntityId, archetype))
-        })
-    }
-
-    pub fn par_iter(&'a self) -> impl ParallelIterator<Item = Q::ItemRef> + Sync + 'a {
-        self.archetypes.par_iter().flat_map(|archetype| {
-            archetype
-                .entities_hashset
-                .par_iter()
-                .filter_map(move |entity| Q::fetch(*entity, archetype))
-        })
+        self.entries
+            .iter()
+            .filter_map(move |(_, data)| Q::fetch(data))
     }
 }
 
@@ -321,12 +289,8 @@ macro_rules! impl_queryable_for_tuple {
             type Item = ($($name::Item,)*);
             type ItemRef = ($($name::ItemRef,)*);
 
-            fn fetch(entity: EntityId, archetype: &'a Archetype) -> Option<Self::ItemRef> {
-                let ($($name,)*) = ($({
-                    $name::fetch(entity, archetype)?
-                },
-                )*);
-                Some(($($name,)*))
+            fn fetch(data: &'a ComponentMap<&'a LockedData>) -> Option<Self::ItemRef> {
+                Some(($($name::fetch(data)?,)*))
             }
 
             fn access() -> QueryAccess {
@@ -381,7 +345,4 @@ macro_rules! impl_queryfilter_for_tuple {
     };
 }
 
-impl_queryfilter_for_tuple!(A);
-impl_queryfilter_for_tuple!(A, B);
-impl_queryfilter_for_tuple!(A, B, C);
-impl_queryfilter_for_tuple!(A, B, C, D);
+all_tuples!(1..=16, impl_queryfilter_for_tuple);

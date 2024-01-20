@@ -19,7 +19,6 @@ harness = false
 weaver-ecs = { path = "../weaver-ecs", features = [] }
 weaver-proc-macro = { path = "../weaver-proc-macro", features = [] }
 
-[dev-dependencies]
 criterion = "0.5.1"
 hecs = "0.10.4"
 rand = "0.8.4"

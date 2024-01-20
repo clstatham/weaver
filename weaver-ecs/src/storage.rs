@@ -7,13 +7,13 @@ use std::{
 
 use atomic_refcell::{AtomicRef, AtomicRefMut};
 use fixedbitset::FixedBitSet;
-use rustc_hash::FxHashSet;
 
 use crate::{
     bundle::Bundle,
     component::Component,
     component::{Data, LockedData},
     entity::Entity,
+    query::QueryAccess,
     SortedMap, StaticId, TypeIdHasher, TypeInfo,
 };
 
@@ -152,6 +152,10 @@ impl<I: Index, V> SparseSet<I, V> {
         self.indices.iter().copied()
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (I, &V)> + '_ {
+        self.indices.iter().copied().zip(self.dense.iter())
+    }
+
     pub fn contains(&self, index: &I) -> bool {
         let index = index.into_usize();
 
@@ -185,7 +189,20 @@ impl<I: Index, V> SparseSet<I, V> {
     }
 }
 
+impl<I: Index, V> FromIterator<(I, V)> for SparseSet<I, V> {
+    fn from_iter<T: IntoIterator<Item = (I, V)>>(iter: T) -> Self {
+        let mut set = Self::new();
+
+        for (index, value) in iter {
+            set.insert(index, value);
+        }
+
+        set
+    }
+}
+
 /// A single "column" of an archetypal table.
+/// Contains all the instances of a single component type within a single archetype.
 pub struct Column {
     pub(crate) info: TypeInfo,
     pub(crate) storage: SparseSet<EntityId, LockedData>,
@@ -245,7 +262,6 @@ impl Column {
 pub struct Archetype {
     pub(crate) id: usize,
     pub(crate) entities: EntitySet,
-    pub(crate) entities_hashset: FxHashSet<EntityId>,
     pub(crate) component_types: Box<[TypeInfo]>,
     pub(crate) columns: SortedMap<StaticId, Column>,
 }
@@ -261,7 +277,6 @@ impl Archetype {
         Self {
             id,
             entities: EntitySet::default(),
-            entities_hashset: FxHashSet::default(),
             component_types: component_types.into_boxed_slice(),
             columns: SortedMap::new(columns),
         }
@@ -270,7 +285,6 @@ impl Archetype {
     pub fn insert_entity(&mut self, entity: EntityId, component: Data) {
         self.entities.grow(entity as usize + 1);
         self.entities.insert(entity as usize);
-        self.entities_hashset.insert(entity);
 
         self.columns
             .get_mut(&component.id())
@@ -280,7 +294,6 @@ impl Archetype {
 
     pub fn remove_entity(&mut self, entity: EntityId) {
         self.entities.set(entity as usize, false);
-        self.entities_hashset.remove(&entity);
 
         for (_, column) in self.columns.iter_mut() {
             column.remove(entity);
@@ -304,7 +317,6 @@ impl Archetype {
 
     pub fn component_drain(&mut self, entity: EntityId) -> impl Iterator<Item = Data> + '_ {
         self.entities.set(entity as usize, false);
-        self.entities_hashset.remove(&entity);
         self.columns
             .iter_mut()
             .filter_map(move |(_, column)| column.remove(entity))
@@ -333,7 +345,7 @@ impl Components {
         self.entities.grow(entity as usize + 1);
         self.entities.insert(entity as usize);
 
-        Entity::new(entity, 0)
+        Entity::new(entity)
     }
 
     pub fn add_component<T: Component>(&mut self, entity: EntityId, component: T) {
@@ -461,6 +473,50 @@ impl Components {
         self.component_archetypes.get_mut(&component_id)
     }
 
+    pub fn entity_components(&self, entity: EntityId) -> Option<Vec<AtomicRef<'_, Data>>> {
+        self.entity_archetype(entity).map(|archetype| {
+            archetype
+                .columns
+                .iter()
+                .filter_map(move |(_, column)| column.get(entity))
+                .collect()
+        })
+    }
+
+    pub fn entity_components_mut(&self, entity: EntityId) -> Option<Vec<AtomicRefMut<'_, Data>>> {
+        self.entity_archetype(entity).map(|archetype| {
+            archetype
+                .columns
+                .iter()
+                .filter_map(move |(_, column)| column.get_mut(entity))
+                .collect()
+        })
+    }
+
+    pub fn entity_components_iter(
+        &self,
+        entity: EntityId,
+    ) -> Option<impl Iterator<Item = AtomicRef<'_, Data>>> {
+        self.entity_archetype(entity).map(|archetype| {
+            archetype
+                .columns
+                .iter()
+                .filter_map(move |(_, column)| column.get(entity))
+        })
+    }
+
+    pub fn entity_components_iter_mut(
+        &self,
+        entity: EntityId,
+    ) -> Option<impl Iterator<Item = AtomicRefMut<'_, Data>>> {
+        self.entity_archetype(entity).map(|archetype| {
+            archetype
+                .columns
+                .iter()
+                .filter_map(move |(_, column)| column.get_mut(entity))
+        })
+    }
+
     pub fn split(&self) -> TemporaryComponents {
         let id = self
             .next_entity_id
@@ -504,6 +560,63 @@ impl Components {
                 self.build_on_with_components(entity as EntityId, components, component_types);
             }
         }
+    }
+
+    pub fn entities_matching_access<'a>(
+        &'a self,
+        access: &'a QueryAccess,
+    ) -> impl Iterator<Item = EntityId> + '_ {
+        self.archetypes
+            .iter()
+            .flat_map(move |archetype| {
+                if access.matches_archetype(archetype) {
+                    Some(
+                        archetype
+                            .entities
+                            .ones()
+                            .map(move |entity| entity as EntityId),
+                    )
+                } else {
+                    None
+                }
+            })
+            .flatten()
+    }
+
+    pub fn components_matching_access(
+        &self,
+        access: QueryAccess,
+    ) -> impl Iterator<Item = (EntityId, ComponentMap<&'_ LockedData>)> + '_ {
+        self.archetypes
+            .iter()
+            .flat_map(move |archetype| {
+                if access.matches_archetype(archetype) {
+                    Some(
+                        archetype
+                            .entities
+                            .ones()
+                            .map(move |entity| {
+                                (
+                                    entity as EntityId,
+                                    archetype
+                                        .columns
+                                        .iter()
+                                        .filter_map(move |(id, column)| {
+                                            column
+                                                .storage
+                                                .get(&(entity as EntityId))
+                                                .map(|x| (id, x))
+                                        })
+                                        .collect(),
+                                )
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .flatten()
     }
 }
 
