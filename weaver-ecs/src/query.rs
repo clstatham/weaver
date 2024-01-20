@@ -2,7 +2,10 @@ use atomic_refcell::{AtomicRef, AtomicRefMut};
 use rayon::prelude::*;
 use std::fmt::Debug;
 
-use crate::storage::{Archetype, ComponentSet, Components};
+use crate::{
+    component::Data,
+    storage::{Archetype, ComponentSet, Components},
+};
 
 use super::{bundle::Bundle, component::Component, entity::EntityId};
 
@@ -150,11 +153,14 @@ where
     fn fetch(entity: EntityId, archetype: &'a Archetype) -> Option<Self::ItemRef> {
         let id = crate::static_id::<T>();
         let column = archetype.get_column(id)?;
-        let component = AtomicRef::map(column, |column| unsafe {
-            column.get(entity).unwrap().as_ref_unchecked()
+        let component = column.get(entity).unwrap();
+        let component = AtomicRef::map(component, |component| {
+            // SAFETY:
+            // - `component` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
+            // - There are no other references to `component` because `component` is locked.
+            unsafe { component.as_ref_unchecked() }
         });
         Some(Ref {
-            // SAFETY: `component` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
             component,
             _marker: std::marker::PhantomData,
         })
@@ -180,12 +186,15 @@ where
 
     fn fetch(entity: EntityId, archetype: &'a Archetype) -> Option<Self::ItemRef> {
         let id = crate::static_id::<T>();
-        let column = archetype.get_column_mut(id)?;
-        let component = AtomicRefMut::map(column, |column| unsafe {
-            column.get_mut(entity).unwrap().as_mut_unchecked()
+        let column = archetype.get_column(id)?;
+        let component = column.get_mut(entity).unwrap();
+        let component = AtomicRefMut::map(component, |component: &mut Data| {
+            // SAFETY:
+            // - `component` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
+            // - There are no other references to `component` because `component` is locked.
+            unsafe { component.as_mut_unchecked() }
         });
         Some(Mut {
-            // SAFETY: `component` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
             component,
             _marker: std::marker::PhantomData,
         })

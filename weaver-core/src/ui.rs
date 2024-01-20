@@ -58,12 +58,6 @@ pub mod builtin {
                 if self.history.len() > 500 {
                     self.history.pop_front();
                 }
-
-                // // check for FPS spikes based on our history's average
-                // let avg = self.history.iter().sum::<f32>() / self.history.len() as f32;
-                // if self.fps < avg * 0.9 {
-                //     eprintln!("FPS spike: {:.2}", self.fps);
-                // }
             }
 
             if now - self.last_print > self.print_interval {
@@ -82,7 +76,8 @@ pub mod builtin {
             .color(egui::Color32::from_rgb(0, 255, 0));
 
             egui::Window::new("FPS")
-                .default_height(300.0)
+                .default_height(100.0)
+                .default_width(200.0)
                 .show(ctx, |ui| {
                     ui.vertical_centered_justified(|ui| {
                         ui.heading(format!("FPS: {:.2}", self.fps));

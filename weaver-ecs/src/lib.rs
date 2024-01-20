@@ -26,7 +26,7 @@ pub mod prelude {
     pub use weaver_proc_macro::{system, Bundle, Component, Resource};
 }
 
-use std::any::TypeId;
+use std::{any::TypeId, fmt::Debug};
 
 use rustc_hash::FxHasher;
 
@@ -73,8 +73,19 @@ impl<T> SortedTypeIdMap<T> {
             .map(|index| &self.0[index].1)
     }
 
+    pub fn get_mut(&mut self, id: &TypeId) -> Option<&mut T> {
+        self.0
+            .binary_search_by_key(id, |(type_id, _)| *type_id)
+            .ok()
+            .map(move |index| &mut self.0[index].1)
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &(TypeId, T)> {
         self.0.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut (TypeId, T)> {
+        self.0.iter_mut()
     }
 
     pub fn contains_key(&self, id: &TypeId) -> bool {
@@ -128,6 +139,15 @@ impl TypeInfo {
 
     pub fn layout(&self) -> std::alloc::Layout {
         self.layout
+    }
+}
+
+impl Debug for TypeInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TypeInfo")
+            .field("name", &self.name)
+            .field("id", &self.id)
+            .finish()
     }
 }
 

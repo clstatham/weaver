@@ -11,7 +11,7 @@ pub trait Bundle: Sized + Send + Sync + 'static {
     fn build(self, components: &mut Components) -> Entity {
         components.build(self)
     }
-    fn component_infos() -> Vec<TypeInfo>;
+    fn component_types() -> Vec<TypeInfo>;
     fn components(self) -> Vec<Data>;
 }
 
@@ -19,7 +19,7 @@ impl Bundle for () {
     fn build(self, components: &mut Components) -> Entity {
         components.create_entity()
     }
-    fn component_infos() -> Vec<TypeInfo> {
+    fn component_types() -> Vec<TypeInfo> {
         Vec::new()
     }
     fn components(self) -> Vec<Data> {
@@ -28,7 +28,7 @@ impl Bundle for () {
 }
 
 impl<T: Component> Bundle for T {
-    fn component_infos() -> Vec<TypeInfo> {
+    fn component_types() -> Vec<TypeInfo> {
         vec![TypeInfo::of::<T>()]
     }
     fn components(self) -> Vec<Data> {
@@ -37,8 +37,8 @@ impl<T: Component> Bundle for T {
 }
 
 impl<A: Bundle> Bundle for (A,) {
-    fn component_infos() -> Vec<TypeInfo> {
-        A::component_infos()
+    fn component_types() -> Vec<TypeInfo> {
+        A::component_types()
     }
     fn components(self) -> Vec<Data> {
         let (a,) = self;
@@ -50,8 +50,8 @@ macro_rules! impl_bundle_for_tuple {
     (($($name:ident),*)) => {
         #[allow(non_snake_case)]
         impl<$($name: Bundle),*> Bundle for ($($name,)*) {
-            fn component_infos() -> Vec<TypeInfo> {
-                let mut infos = vec![$($name::component_infos()),*].concat();
+            fn component_types() -> Vec<TypeInfo> {
+                let mut infos = vec![$($name::component_types()),*].concat();
                 infos.sort_by_key(|info| info.id);
                 infos
             }

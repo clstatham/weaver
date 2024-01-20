@@ -30,7 +30,7 @@ pub fn derive_bundle(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
         .collect::<Vec<_>>();
     let gen = quote! {
         impl weaver_ecs::bundle::Bundle for #name {
-            fn component_infos() -> Vec<weaver_ecs::TypeInfo> {
+            fn component_types() -> Vec<weaver_ecs::TypeInfo> {
                 let mut infos = Vec::new();
                 #(
                     infos.push(weaver_ecs::TypeInfo::of::<#field_types>());

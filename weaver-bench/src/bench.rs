@@ -1,27 +1,29 @@
+use weaver_ecs::prelude::*;
+
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-#[derive(Debug, Default, weaver_ecs::Component)]
+#[derive(Debug, Default, Component)]
 pub struct A {
     pub x: f32,
     pub y: f32,
     pub z: f32,
 }
 
-#[derive(Debug, Default, weaver_ecs::Component)]
+#[derive(Debug, Default, Component)]
 pub struct B {
     pub x: f32,
     pub y: f32,
     pub z: f32,
 }
 
-#[derive(Debug, Default, weaver_ecs::Component)]
+#[derive(Debug, Default, Component)]
 pub struct C {
     pub x: f32,
     pub y: f32,
     pub z: f32,
 }
 
-#[derive(Debug, Default, weaver_ecs::Component)]
+#[derive(Debug, Default, Component)]
 pub struct D {
     pub x: f32,
     pub y: f32,
@@ -31,8 +33,6 @@ pub struct D {
 pub const ENTITY_COUNTS: &[usize] = &[100, 1_000, 10_000, 100_000];
 
 pub fn weaver_query_iter_many_entities(c: &mut Criterion) {
-    use weaver_ecs::*;
-
     let plot_config =
         criterion::PlotConfiguration::default().summary_scale(criterion::AxisScale::Logarithmic);
 

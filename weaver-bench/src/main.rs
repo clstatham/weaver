@@ -1,9 +1,10 @@
 #![allow(unused)]
 
+use weaver_ecs::prelude::*;
 #[cfg(test)]
 mod bench;
 
-#[derive(Debug, Default, weaver_ecs::Component)]
+#[derive(Debug, Default, Component)]
 pub struct TestComponent {
     pub x: f32,
     pub y: f32,

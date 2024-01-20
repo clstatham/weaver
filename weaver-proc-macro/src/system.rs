@@ -1,6 +1,6 @@
 use quote::quote;
 
-pub fn impl_system(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_macro::TokenStream {
+pub fn system(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_macro::TokenStream {
     let vis = &ast.vis;
     // get the name from the first attr
     let system_struct_name = syn::parse::<syn::Ident>(attr).unwrap();
@@ -263,7 +263,7 @@ pub fn impl_system(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_mac
             }
 
             fn is_exclusive(&self) -> bool {
-                false // todo
+                todo!("System::is_exclusive")
             }
         }
     };
