@@ -1,4 +1,4 @@
-use weaver_proc_macro::Bundle;
+use weaver_ecs::prelude::*;
 
 use super::{material::Material, mesh::Mesh, physics::RigidBody, transform::Transform};
 

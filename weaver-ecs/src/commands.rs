@@ -1,6 +1,6 @@
 use crate as weaver_ecs;
 use crate::storage::TemporaryComponents;
-use crate::{entity::Entity, Bundle, World};
+use crate::{bundle::Bundle, entity::Entity, world::World};
 use weaver_proc_macro::Resource;
 
 #[derive(Resource)]

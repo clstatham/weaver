@@ -4,7 +4,7 @@ pub mod prelude {
     pub use glam::*;
     pub use parking_lot;
     pub use weaver_core::{
-        self as weaver_core,
+        self,
         app::{App, Window},
         asset_server::AssetServer,
         camera::{Camera, FlyCameraController},
@@ -20,6 +20,7 @@ pub mod prelude {
         transform::Transform,
         ui::{builtin::*, EguiContext},
     };
-    pub use weaver_ecs::{self, *};
+    pub use weaver_ecs::{self, prelude::*};
+    pub use weaver_proc_macro::{Bundle, Component, Resource};
     pub use winit::event::MouseButton;
 }

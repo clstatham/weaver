@@ -4,7 +4,7 @@ use std::fmt::Debug;
 
 use crate::storage::{Archetype, ComponentSet, Components};
 
-use super::{entity::EntityId, Bundle, Component};
+use super::{bundle::Bundle, component::Component, entity::EntityId};
 
 pub struct Ref<'a, T>
 where

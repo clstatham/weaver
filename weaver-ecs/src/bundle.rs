@@ -1,6 +1,10 @@
-use crate::{component::Data, storage::Components, TypeInfo};
+use crate::{
+    component::{Component, Data},
+    storage::Components,
+    TypeInfo,
+};
 
-use super::{Component, Entity};
+use super::entity::Entity;
 
 /// A collection of components that can be built and added to an entity.
 pub trait Bundle: Sized + Send + Sync + 'static {

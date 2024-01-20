@@ -4,7 +4,7 @@ use weaver_proc_macro::{BindableComponent, Component, GpuComponent};
 
 use crate::renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle};
 
-use weaver_ecs::World;
+use weaver_ecs::prelude::*;
 
 use super::color::Color;
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use weaver_ecs::World;
+use weaver_ecs::prelude::*;
 
 use super::{BindGroupLayoutCache, GpuResourceManager};
 

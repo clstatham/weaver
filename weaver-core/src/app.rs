@@ -5,8 +5,7 @@ use crate::{
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use weaver_ecs::{system::SystemId, Bundle, Entity, Resource, System, SystemStage, World};
-use weaver_proc_macro::system;
+use weaver_ecs::prelude::*;
 use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use crate::renderer::{compute::hdr_loader::HdrLoader, Renderer};

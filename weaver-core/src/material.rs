@@ -1,11 +1,12 @@
-use crate::asset_server::AssetId;
-
 use std::{path::Path, sync::Arc};
 
-use weaver_ecs::World;
+use weaver_ecs::prelude::*;
 use weaver_proc_macro::{BindableComponent, Component, GpuComponent};
 
-use crate::renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle};
+use crate::{
+    asset_server::AssetId,
+    renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle},
+};
 
 use super::{
     color::Color,

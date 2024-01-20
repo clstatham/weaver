@@ -1,4 +1,4 @@
-use weaver_ecs::World;
+use weaver_ecs::prelude::*;
 
 use crate::{
     include_shader,

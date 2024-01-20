@@ -4,7 +4,7 @@ use parking_lot::RwLock;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 use wgpu::util::DeviceExt;
 
-use weaver_ecs::World;
+use weaver_ecs::prelude::*;
 
 use crate::{
     camera::{Camera, CameraUniform},

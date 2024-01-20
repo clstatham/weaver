@@ -2716,6 +2716,7 @@ dependencies = [
  "parking_lot",
  "weaver-core",
  "weaver-ecs",
+ "weaver-proc-macro",
  "winit",
 ]
 

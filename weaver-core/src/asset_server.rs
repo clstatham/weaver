@@ -13,7 +13,7 @@ use crate::{
 use std::{path::PathBuf, sync::Arc};
 
 use rustc_hash::FxHashMap;
-use weaver_ecs::World;
+use weaver_ecs::prelude::*;
 use weaver_proc_macro::Resource;
 
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]

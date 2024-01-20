@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use weaver_proc_macro::Resource;
 use winit::window::Window;
 
-use weaver_ecs::World;
+use weaver_ecs::prelude::*;
 
 use crate::{
     camera::Camera,

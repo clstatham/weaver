@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
-use weaver_ecs::Component;
+use weaver_ecs::prelude::*;
 
 use crate::renderer::internals::{
     BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager, GpuResourceType,
@@ -105,7 +105,7 @@ macro_rules! texture_format_impls {
                     self.texture.handle()
                 }
 
-                fn update(&self, world: &weaver_ecs::World) -> anyhow::Result<()> {
+                fn update(&self, world: &World) -> anyhow::Result<()> {
                     self.texture.update_resources(world)
                 }
             }
@@ -205,7 +205,7 @@ impl Texture {
         Self { handle }
     }
 
-    fn update(&self, _world: &weaver_ecs::World) -> anyhow::Result<()> {
+    fn update(&self, _world: &World) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -384,7 +384,7 @@ impl Skybox {
         HdrCubeTexture::new(1, 1, None)
     }
 
-    fn update(&self, world: &weaver_ecs::World) -> anyhow::Result<()> {
+    fn update(&self, world: &World) -> anyhow::Result<()> {
         self.texture.update(world)?;
         self.irradiance.update(world)?;
         Ok(())

@@ -332,7 +332,7 @@ fn impl_gpu_component_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
                 Ok(())
             }
 
-            fn update_resources(&self, world: &weaver_ecs::World) -> anyhow::Result<()> {
+            fn update_resources(&self, world: &weaver_ecs::world::World) -> anyhow::Result<()> {
                 self.#gpu_update(world)?;
                 #(
                     #update_resources
@@ -1121,7 +1121,7 @@ fn impl_bundle_macro(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
         }
     }).collect::<Vec<_>>();
     let gen = quote! {
-        impl weaver_ecs::Bundle for #name {
+        impl weaver_ecs::bundle::Bundle for #name {
             fn component_infos() -> Vec<weaver_ecs::TypeInfo> {
                 let mut infos = Vec::new();
                 #(

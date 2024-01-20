@@ -2,7 +2,7 @@ use crate::renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle};
 
 use std::sync::Arc;
 
-use weaver_ecs::World;
+use weaver_ecs::prelude::*;
 use weaver_proc_macro::{BindableComponent, Component, GpuComponent};
 use winit::event::MouseButton;
 pub use winit::keyboard::KeyCode;

@@ -2,7 +2,7 @@ use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 
 use crate::StaticId;
 
-use super::World;
+use super::world::World;
 use parking_lot::RwLock;
 use petgraph::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};

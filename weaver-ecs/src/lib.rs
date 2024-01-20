@@ -11,22 +11,24 @@ pub mod storage;
 pub mod system;
 pub mod world;
 
-pub use {
-    bundle::Bundle,
-    commands::Commands,
-    component::Component,
-    entity::Entity,
-    query::{Query, Queryable, With, Without},
-    rayon::prelude::*,
-    resource::{Res, ResMut, Resource},
-    system::{System, SystemStage},
-    world::World,
-};
+pub mod prelude {
+    pub use crate::{
+        bundle::Bundle,
+        commands::Commands,
+        component::Component,
+        entity::Entity,
+        query::{Query, Queryable, With, Without},
+        resource::{Res, ResMut, Resource},
+        system::{System, SystemId, SystemStage},
+        world::World,
+    };
+    pub use rayon::prelude::*;
+    pub use weaver_proc_macro::{system, Bundle, Component, Resource};
+}
 
 use std::any::TypeId;
 
 use rustc_hash::FxHasher;
-pub use weaver_proc_macro::{system, Bundle, Component, Resource};
 
 #[derive(Default)]
 pub struct TypeIdHasher(u64);
@@ -156,8 +158,8 @@ pub fn static_id<T: 'static>() -> StaticId {
 #[cfg(test)]
 mod tests {
     #![allow(dead_code, unused)]
-    use super::*;
     use crate as weaver_ecs;
+    use crate::prelude::*;
 
     #[derive(Debug, Default, Component)]
     struct A {

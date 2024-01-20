@@ -4,15 +4,14 @@ use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    query::{Query, QueryFilter},
-    Queryable, StaticId,
-};
-
-use super::{
+    bundle::Bundle,
+    entity::Entity,
+    query::{Query, QueryFilter, Queryable},
     resource::{Res, ResMut, Resource},
     storage::Components,
+    system::System,
     system::{SystemGraph, SystemId, SystemStage},
-    Bundle, Entity, System,
+    StaticId,
 };
 
 pub struct World {

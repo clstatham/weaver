@@ -5,8 +5,8 @@ use fixedbitset::FixedBitSet;
 use rustc_hash::FxHashSet;
 
 use crate::{
-    component::Data, query::QueryAccess, Bundle, Component, Entity, SortedTypeIdMap, StaticId,
-    TypeIdHasher, TypeInfo,
+    bundle::Bundle, component::Component, component::Data, entity::Entity, query::QueryAccess,
+    SortedTypeIdMap, StaticId, TypeIdHasher, TypeInfo,
 };
 
 use super::entity::EntityId;

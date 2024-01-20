@@ -2,7 +2,7 @@ use std::{num::NonZeroU32, sync::Arc};
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
-use weaver_ecs::World;
+use weaver_ecs::prelude::*;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
 use crate::{
