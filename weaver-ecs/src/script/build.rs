@@ -146,7 +146,19 @@ impl BuildOnWorld for Query {
         let mut params = DynamicQueryParams::default();
         for component in &self.components {
             let id = component.build(world.clone())?;
-            params = params.read(id);
+            if component.mutability {
+                params = params.write(id);
+            } else {
+                params = params.read(id);
+            }
+        }
+        for with in &self.with {
+            let id = with.build(world.clone())?;
+            params = params.with(id);
+        }
+        for without in &self.without {
+            let id = without.build(world.clone())?;
+            params = params.without(id);
         }
         Ok(params)
     }
@@ -157,5 +169,13 @@ impl BuildOnWorld for TypedIdent {
 
     fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicId> {
         Ok(world.read().named_id(&self.ty))
+    }
+}
+
+impl BuildOnWorld for String {
+    type Output = DynamicId;
+
+    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicId> {
+        Ok(world.read().named_id(self))
     }
 }

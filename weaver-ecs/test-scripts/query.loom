@@ -1,9 +1,5 @@
 system Test {
-    a: [a: A] foreach {
+    query [a: A, mut b: B] with[C] {
         print(a);
-        b: [b: B] foreach {
-            print(b);
-        };
     };
-    
 };

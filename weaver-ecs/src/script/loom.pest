@@ -1,60 +1,78 @@
-WHITESPACE = _{ " " | "\t" | NEWLINE }
-COMMENT    = _{ "//" ~ !NEWLINE+ ~ NEWLINE }
+// Ignored
+WHITESPACE    = _{ " " | "\t" | NEWLINE }
+COMMENT       = _{ line_comment | block_comment }
+line_comment  = _{ "//" ~ (!NEWLINE ~ ANY)* }
+block_comment = _{ "/*" ~ (block_comment | (!"*/" ~ ANY))* ~ "*/" }
 
 // Tokens
-lparen = _{ "(" }
-rparen = _{ ")" }
-comma  = _{ "," }
-colon  = _{ ":" }
-semi   = _{ ";" }
-lbrack = _{ "[" }
-rbrack = _{ "]" }
-lbrace = _{ "{" }
-rbrace = _{ "}" }
-digit  =  { '0'..'9' }
-letter =  { 'a'..'z' | 'A'..'Z' }
+period   = _{ "." }
+comma    = _{ "," }
+colon    = _{ ":" }
+semi     = _{ ";" }
+lparen   = _{ "(" }
+rparen   = _{ ")" }
+lbrack   = _{ "[" }
+rbrack   = _{ "]" }
+lbrace   = _{ "{" }
+rbrace   = _{ "}" }
+plus     = _{ "+" }
+minus    = _{ "-" }
+star     = _{ "*" }
+slash    = _{ "/" }
+eq       = _{ "=" }
+plus_eq  = _{ "+=" }
+minus_eq = _{ "-=" }
+star_eq  = _{ "*=" }
+slash_eq = _{ "/=" }
 
-ident = @{ (letter | "_") ~ (letter | digit | "_")* }
+// Literals
+
+letter         =  { ASCII_ALPHA | "_" }
+string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+float_literal  = @{ ASCII_DIGIT+ ~ period ~ ASCII_DIGIT+ }
+int_literal    = @{ ASCII_DIGIT+ }
+literal        =  { float_literal | int_literal | string_literal }
+ident          = @{ (letter | "_") ~ (letter | ASCII_DIGIT | "_")* }
 
 // Keywords
-
 component = _{ "component" }
 system    = _{ "system" }
-foreach   = _{ "foreach" }
+query     = _{ "query" }
+mutable   = _{ "mut" }
+with      = _{ "with" }
+without   = _{ "without" }
 
 // Types
-
-i32 = { "i32" }
-i64 = { "i64" }
-f32 = { "f32" }
-f64 = { "f64" }
-
-type = { i32 | i64 | f32 | f64 | ident }
-
-typed_ident = { ident ~ colon ~ type }
-
-// Rules
+i32             = { "i32" }
+i64             = { "i64" }
+f32             = { "f32" }
+f64             = { "f64" }
+typ             = { i32 | i64 | f32 | f64 | ident }
+typed_ident     = { ident ~ colon ~ typ }
+mut_typed_ident = { mutable ~ ident ~ colon ~ typ }
 
 // Top level
-
-program = { SOI ~ statements ~ EOI }
-
+program    = { SOI ~ statements ~ EOI }
 statements = { statement* }
 
 // Statements
-
-statement = { (component_stmt | system_stmt | query_stmt | call_stmt | block_stmt) ~ ";" }
-
-block_stmt = { lbrace ~ statements ~ rbrace }
-
+statement      = { (component_stmt | system_stmt | query_stmt | expr) ~ ";" }
 component_stmt = { component ~ ident ~ lbrace ~ (typed_ident ~ semi)* ~ rbrace }
+system_stmt    = { system ~ ident ~ block_expr }
+query_stmt     = { query ~ lbrack ~ typed_args ~ rbrack ~ with_clause? ~ without_clause? ~ block_expr }
+typed_args     = { ((mut_typed_ident | typed_ident) ~ comma)* ~ (mut_typed_ident | typed_ident)? }
+with_clause    = { with ~ lbrack ~ (typ ~ comma)* ~ typ? ~ rbrack }
+without_clause = { without ~ lbrack ~ (typ ~ comma)* ~ typ? ~ rbrack }
 
-system_stmt = { system ~ ident ~ block_stmt }
+// Operators
+prefix = { plus | minus }
+infix  = { plus | minus | star | slash | eq | plus_eq | minus_eq | star_eq | slash_eq }
 
-query_stmt = { ident ~ colon ~ lbrack ~ typed_args ~ rbrack ~ foreach ~ block_stmt }
-
-call_stmt = { ident ~ lparen ~ args ~ rparen }
-
-typed_args = { (typed_ident ~ comma)* ~ typed_ident }
-
-args = { (ident ~ comma)* ~ ident }
+// Expressions
+call_expr    =  { ident ~ lparen ~ args ~ rparen }
+args         =  { (ident ~ comma)* ~ ident? }
+block_expr   =  { lbrace ~ statements ~ rbrace }
+literal_expr =  { literal }
+ident_expr   =  { ident }
+primary_expr = _{ call_expr | block_expr | literal_expr | ident_expr | (lparen ~ expr ~ rparen) }
+expr         =  { prefix? ~ primary_expr ~ (infix ~ prefix? ~ primary_expr)* }

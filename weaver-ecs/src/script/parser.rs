@@ -1,8 +1,9 @@
-use pest::{iterators::Pair, Parser};
+use pest::{iterators::Pair, pratt_parser::PrattParser, Parser};
 use pest_derive::Parser;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypedIdent {
+    pub mutability: bool,
     pub name: String,
     pub ty: String,
 }
@@ -38,6 +39,8 @@ pub struct Block {
 pub struct Query {
     pub name: String,
     pub components: Vec<TypedIdent>,
+    pub with: Vec<String>,
+    pub without: Vec<String>,
     pub iter_type: String,
     pub block: Block,
 }
@@ -62,13 +65,23 @@ impl Default for Scope {
     }
 }
 
-#[derive(Parser, Default, Debug)]
+#[derive(Parser)]
 #[grammar = "../weaver-ecs/src/script/loom.pest"]
 pub struct LoomParser {
+    query_counter: usize,
     top_scope: Scope,
+    pratt: PrattParser<Rule>,
 }
 
 impl LoomParser {
+    pub fn new() -> Self {
+        Self {
+            query_counter: 0,
+            top_scope: Scope::default(),
+            pratt: PrattParser::new(),
+        }
+    }
+
     pub fn finish(self) -> Vec<Scope> {
         match self.top_scope {
             Scope::Program(scopes) => scopes,
@@ -140,7 +153,18 @@ impl LoomParser {
             Rule::component_stmt => self.parse_component_stmt(first),
             Rule::system_stmt => self.parse_system_stmt(first),
             Rule::query_stmt => self.parse_query_stmt(first),
-            Rule::call_stmt => self.parse_call_stmt(first),
+            Rule::expr => self.parse_expr(first),
+            _ => panic!("Unexpected rule: {:?}", first.as_rule()),
+        }
+    }
+
+    fn parse_expr(&mut self, pair: Pair<Rule>) -> Statement {
+        assert_eq!(pair.as_rule(), Rule::expr);
+        let mut inner = pair.into_inner();
+        let first = inner.next().unwrap();
+
+        match first.as_rule() {
+            Rule::call_expr => self.parse_call_expr(first),
             _ => panic!("Unexpected rule: {:?}", first.as_rule()),
         }
     }
@@ -180,9 +204,10 @@ impl LoomParser {
         assert_eq!(pair.as_rule(), Rule::system_stmt);
         let mut inner = pair.into_inner();
         let name = inner.next().unwrap();
-        let stmts = inner.next().unwrap();
 
-        let block = self.parse_block_stmt(stmts);
+        let block = inner.next().unwrap();
+
+        let block = self.parse_block_expr(block);
         let block = if let Statement::Block(block) = block {
             block
         } else {
@@ -199,22 +224,81 @@ impl LoomParser {
     fn parse_query_stmt(&mut self, pair: Pair<Rule>) -> Statement {
         assert_eq!(pair.as_rule(), Rule::query_stmt);
         let mut inner = pair.into_inner();
-        let name = inner.next().unwrap();
         let components = inner.next().unwrap();
-        let block = inner.next().unwrap();
 
-        let name = self.parse_ident(name);
+        let block;
+        let mut with_clause = None;
+        let mut without_clause = None;
+
+        let next = inner.next().unwrap();
+        match next.as_rule() {
+            Rule::block_expr => {
+                block = next;
+            }
+            Rule::with_clause => {
+                with_clause = Some(next);
+
+                let next = inner.next().unwrap();
+                match next.as_rule() {
+                    Rule::block_expr => {
+                        block = next;
+                    }
+                    Rule::without_clause => {
+                        without_clause = Some(next);
+                        block = inner.next().unwrap();
+                    }
+                    _ => panic!("Unexpected rule: {:?}", next.as_rule()),
+                }
+            }
+            Rule::without_clause => {
+                without_clause = Some(next);
+
+                let next = inner.next().unwrap();
+
+                match next.as_rule() {
+                    Rule::block_expr => {
+                        block = next;
+                    }
+                    _ => panic!("Unexpected rule: {:?}", next.as_rule()),
+                }
+            }
+            _ => panic!("Unexpected rule: {:?}", next.as_rule()),
+        }
+
+        let name = format!("query_{}", self.query_counter);
+        self.query_counter += 1;
         let components = self.parse_typed_args(components);
-        let block = self.parse_block_stmt(block);
+        let block = self.parse_block_expr(block);
         let block = if let Statement::Block(block) = block {
             block
         } else {
             panic!("Expected block statement");
         };
 
+        let mut with = Vec::new();
+        let mut without = Vec::new();
+
+        if let Some(with_clause) = with_clause {
+            let mut inner = with_clause.into_inner();
+            let with_pair = inner.next().unwrap();
+            with_pair.into_inner().for_each(|ident| {
+                with.push(self.parse_ident(ident));
+            });
+        }
+
+        if let Some(without_clause) = without_clause {
+            let mut inner = without_clause.into_inner();
+            let without_pair = inner.next().unwrap();
+            without_pair.into_inner().for_each(|ident| {
+                without.push(self.parse_ident(ident));
+            });
+        }
+
         Statement::Query(Query {
             name,
             components,
+            with,
+            without,
             iter_type: "foreach".to_string(),
             block,
         })
@@ -237,8 +321,8 @@ impl LoomParser {
         scoped_idents
     }
 
-    fn parse_block_stmt(&mut self, pair: Pair<Rule>) -> Statement {
-        assert_eq!(pair.as_rule(), Rule::block_stmt);
+    fn parse_block_expr(&mut self, pair: Pair<Rule>) -> Statement {
+        assert_eq!(pair.as_rule(), Rule::block_expr);
         let mut inner = pair.into_inner();
         let stmts = inner.next().unwrap();
 
@@ -251,8 +335,8 @@ impl LoomParser {
         })
     }
 
-    fn parse_call_stmt(&mut self, pair: Pair<Rule>) -> Statement {
-        assert_eq!(pair.as_rule(), Rule::call_stmt);
+    fn parse_call_expr(&mut self, pair: Pair<Rule>) -> Statement {
+        assert_eq!(pair.as_rule(), Rule::call_expr);
         let mut inner = pair.into_inner();
         let name = inner.next().unwrap();
         let args = inner.next().unwrap();
@@ -269,8 +353,24 @@ impl LoomParser {
     }
 
     fn parse_type(&mut self, pair: Pair<Rule>) -> String {
-        assert_eq!(pair.as_rule(), Rule::r#type);
+        assert_eq!(pair.as_rule(), Rule::typ);
         pair.as_str().to_string()
+    }
+
+    fn parse_mut_typed_ident(&mut self, pair: Pair<Rule>) -> TypedIdent {
+        assert_eq!(pair.as_rule(), Rule::mut_typed_ident);
+        let mut inner = pair.into_inner();
+        let ident = inner.next().unwrap();
+        let ty = inner.next().unwrap();
+
+        let ident = self.parse_ident(ident);
+        let ty = self.parse_type(ty);
+
+        TypedIdent {
+            mutability: true,
+            name: ident.as_str().to_string(),
+            ty: ty.as_str().to_string(),
+        }
     }
 
     fn parse_typed_ident(&mut self, pair: Pair<Rule>) -> TypedIdent {
@@ -283,6 +383,7 @@ impl LoomParser {
         let ty = self.parse_type(ty);
 
         TypedIdent {
+            mutability: false,
             name: ident.as_str().to_string(),
             ty: ty.as_str().to_string(),
         }
@@ -291,7 +392,11 @@ impl LoomParser {
     fn parse_typed_idents(&mut self, pair: Pair<Rule>) -> Vec<TypedIdent> {
         let mut fields = Vec::new();
         for field in pair.into_inner() {
-            fields.push(self.parse_typed_ident(field));
+            match field.as_rule() {
+                Rule::typed_ident => fields.push(self.parse_typed_ident(field)),
+                Rule::mut_typed_ident => fields.push(self.parse_mut_typed_ident(field)),
+                _ => panic!("Unexpected rule: {:?}", field.as_rule()),
+            }
         }
         fields
     }
@@ -308,9 +413,15 @@ impl LoomParser {
     fn parse_typed_args(&mut self, pair: Pair<Rule>) -> Vec<TypedIdent> {
         assert_eq!(pair.as_rule(), Rule::typed_args);
         let mut args = Vec::new();
-        for arg in pair.into_inner() {
-            args.push(self.parse_typed_ident(arg));
+        for arg in self.parse_typed_idents(pair).into_iter() {
+            args.push(arg);
         }
         args
+    }
+}
+
+impl Default for LoomParser {
+    fn default() -> Self {
+        Self::new()
     }
 }

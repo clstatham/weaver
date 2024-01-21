@@ -45,7 +45,7 @@ impl Script {
         if self.is_parsed() {
             return;
         }
-        let mut parser = LoomParser::default();
+        let mut parser = LoomParser::new();
         parser.parse_script(&self.content).unwrap();
         self.scopes = parser.finish();
     }
