@@ -6,73 +6,89 @@ use rustc_hash::FxHashMap;
 use crate::{
     id::DynamicId,
     prelude::World,
-    query::{DynamicQuery, DynamicQueryParams},
-    system::{DynamicSystem, ScriptParam, ScriptParamType},
+    query::{DynamicQuery, DynamicQueryParams, DynamicQueryRef},
+    system::{DynamicSystem, ScriptParam},
 };
 
 use super::{
-    parser::{Query, Scope, Statement, System, TypedIdent},
+    parser::{Call, Query, Scope, Statement, System, TypedIdent},
     Script,
 };
 
-pub fn query_foreach(script_query: &Query, query: &DynamicQuery) -> anyhow::Result<()> {
-    for entries in query.iter() {
-        let mut params = FxHashMap::default();
-        for (ident, entry) in script_query.components.iter().zip(entries.iter()) {
-            params.insert(&ident.name, entry);
-        }
-
-        for statement in script_query.block.statements.iter() {
-            match statement {
-                super::parser::Statement::Call(call) => match call.name.as_str() {
-                    "dbg" => {
-                        for arg in &call.args {
-                            let value = params
-                                .get(arg)
-                                .ok_or(anyhow::anyhow!("Argument `{}` not found", arg))?;
-                            println!("{}: {:?}", arg, value);
-                        }
-                    }
-                    _ => {
-                        todo!("Implement other calls");
-                    }
-                },
-                _ => {
-                    todo!("Implement other statements");
-                }
-            }
-        }
-    }
-
-    Ok(())
+pub struct InterpreterContext<'a, 'b> {
+    pub world: Arc<RwLock<World>>,
+    pub params: FxHashMap<String, &'b ScriptParam<'a>>,
+    pub scoped_idents: FxHashMap<String, DynamicQueryRef<'a>>,
 }
 
-pub fn interpret_script(system: &System, params: &[ScriptParam]) -> anyhow::Result<()> {
-    for statement in &system.block.statements {
+impl<'a, 'b> InterpreterContext<'a, 'b>
+where
+    'b: 'a,
+{
+    pub fn interp_statement(&mut self, statement: &Statement) -> anyhow::Result<()> {
         match statement {
             Statement::Query(script_query) => {
-                let query = params
-                    .iter()
-                    .find_map(|param| match &**param {
-                        ScriptParamType::Query(query) => {
-                            if param.name == script_query.name {
-                                Some(query)
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    })
-                    .unwrap();
-                query_foreach(script_query, query)?;
+                let query = self.params.get(&script_query.name).unwrap().unwrap_query();
+                self.interp_query_foreach(script_query, query)?;
+            }
+            Statement::Call(call) => {
+                self.interp_call(call)?;
             }
             _ => {
                 todo!("Implement other statements");
             }
         }
+        Ok(())
     }
 
-    Ok(())
+    pub fn interp_call(&mut self, call: &Call) -> anyhow::Result<()> {
+        match call.name.as_str() {
+            "print" => {
+                let mut params = Vec::new();
+                for arg in &call.args {
+                    let param = self.scoped_idents.get(arg).unwrap();
+                    params.push(format!("{:?}", param));
+                }
+                println!("{}", params.join("\n"));
+            }
+            _ => {
+                todo!("Implement other calls");
+            }
+        }
+        Ok(())
+    }
+
+    pub fn interp_query_foreach(
+        &mut self,
+        script_query: &Query,
+        query: &'a DynamicQuery,
+    ) -> anyhow::Result<()> {
+        for entries in query.iter() {
+            let mut idents = Vec::new();
+            for (ident, entry) in script_query.components.iter().zip(entries) {
+                idents.push(ident.name.clone());
+                self.scoped_idents.insert(ident.name.clone(), entry);
+            }
+
+            for statement in script_query.block.statements.iter() {
+                self.interp_statement(statement)?;
+            }
+
+            for ident in idents {
+                self.scoped_idents.remove(&ident);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn interp_script(&mut self, system: &System) -> anyhow::Result<()> {
+        for statement in &system.block.statements {
+            self.interp_statement(statement)?;
+        }
+
+        Ok(())
+    }
 }
 
 pub trait BuildOnWorld {
@@ -99,8 +115,17 @@ impl BuildOnWorld for Script {
                     }
 
                     let system = system.clone();
+                    let world_clone = world.clone();
                     let script = script.build(world.clone(), move |params| {
-                        interpret_script(&system, params)
+                        let mut ctx = InterpreterContext {
+                            world: world_clone.clone(),
+                            params: params
+                                .iter()
+                                .map(|param| (param.name.clone(), param))
+                                .collect(),
+                            scoped_idents: FxHashMap::default(),
+                        };
+                        ctx.interp_script(&system)
                     });
                     systems.push(script);
                 }

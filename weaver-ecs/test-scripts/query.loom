@@ -1,5 +1,9 @@
 system Test {
-    abc: [a: A, b: B, c: C] foreach {
-        dbg(a, b, c);
+    a: [a: A] foreach {
+        print(a);
+        b: [b: B] foreach {
+            print(b);
+        };
     };
+    
 };

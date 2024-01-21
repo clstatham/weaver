@@ -157,21 +157,22 @@ impl LoomParser {
         Statement::Component(Component { name, fields })
     }
 
-    fn extract_queries(&mut self, block: Pair<Rule>) -> Vec<Query> {
+    #[allow(clippy::only_used_in_recursion)]
+    fn extract_queries(&mut self, block: &Block) -> Vec<Query> {
         let mut queries = Vec::new();
-        for stmt in block.into_inner() {
-            let stmts = match stmt.as_rule() {
-                Rule::statements => self.parse_statements(stmt),
-                _ => panic!("Unexpected rule: {:?}", stmt.as_rule()),
-            };
-            for stmt in stmts {
-                if let Statement::Query(query) = stmt {
-                    queries.push(query);
-                } else {
-                    panic!("Expected query statement");
+        for stmt in &block.statements {
+            match stmt {
+                Statement::Query(query) => {
+                    queries.push(query.clone());
+                    queries.extend(self.extract_queries(&query.block));
                 }
+                Statement::Block(block) => {
+                    queries.extend(self.extract_queries(block));
+                }
+                _ => {}
             }
         }
+
         queries
     }
 
@@ -181,13 +182,13 @@ impl LoomParser {
         let name = inner.next().unwrap();
         let stmts = inner.next().unwrap();
 
-        let queries = self.extract_queries(stmts.clone());
         let block = self.parse_block_stmt(stmts);
         let block = if let Statement::Block(block) = block {
             block
         } else {
             panic!("Expected block statement");
         };
+        let queries = self.extract_queries(&block);
         Statement::System(System {
             name: name.as_str().to_string(),
             queries,

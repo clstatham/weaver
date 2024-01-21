@@ -465,7 +465,7 @@ impl<'a> DynamicQuery<'a> {
         }
     }
 
-    pub fn get(&'a self, entity: &'a Entity) -> Option<Vec<DynamicQueryRef<'a>>> {
+    pub fn get(&self, entity: &'a Entity) -> Option<Vec<DynamicQueryRef<'a>>> {
         let data = self.entries.get(entity)?;
         let mut refs = Vec::new();
         for param in self.params.iter() {
@@ -485,10 +485,10 @@ impl<'a> DynamicQuery<'a> {
         Some(refs)
     }
 
-    pub fn iter(&'a self) -> impl Iterator<Item = Vec<DynamicQueryRef<'a>>> + 'a {
+    pub fn iter<'b: 'a>(&'b self) -> impl Iterator<Item = Vec<DynamicQueryRef<'a>>> + '_ {
         self.entries
             .iter()
-            .filter_map(|(entity, _)| self.get(entity))
+            .filter_map(move |(entity, _)| self.get(entity))
     }
 
     pub fn access(&self) -> &QueryAccess {
