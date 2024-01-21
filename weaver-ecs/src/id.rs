@@ -55,6 +55,14 @@ impl Registry {
             .borrow_mut()
             .extend(other.static_ids.borrow().iter());
     }
+
+    pub fn static_name<T: 'static>(&self) -> String {
+        std::any::type_name::<T>()
+            .split("::")
+            .last()
+            .unwrap()
+            .to_string()
+    }
 }
 
 impl Default for Registry {

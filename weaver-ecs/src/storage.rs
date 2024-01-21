@@ -402,7 +402,12 @@ impl Components {
         }
     }
 
-    pub fn add_component<T: Component>(&mut self, entity: &Entity, component: T) {
+    pub fn add_component<T: Component>(
+        &mut self,
+        entity: &Entity,
+        component: T,
+        field_name: Option<&str>,
+    ) {
         // the components of the entity are changing, therefore the archetype must change
         let components = if let Some(old_archetype) = self.entity_archetype_mut(entity.id()) {
             // remove the entity from the old archetype
@@ -412,10 +417,10 @@ impl Components {
             let mut components = old_archetype
                 .component_drain(entity.id())
                 .collect::<Vec<_>>();
-            components.push(Data::new(component, &self.registry));
+            components.push(Data::new(component, field_name, &self.registry));
             components
         } else {
-            vec![Data::new(component, &self.registry)]
+            vec![Data::new(component, field_name, &self.registry)]
         };
 
         let component_ids = components.iter().map(|x| x.id()).collect::<Vec<_>>();
@@ -600,6 +605,7 @@ impl Components {
         {
             if !self.living_entities.contains(&id) {
                 self.living_entities.insert(id, entity);
+                self.entity_generations.insert(id, entity.generation());
 
                 let archetype = other.components.entity_archetype_mut(id).unwrap();
 

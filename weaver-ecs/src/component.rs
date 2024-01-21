@@ -23,17 +23,24 @@ pub trait Component: Downcast + Send + Sync + 'static {}
 /// A unique pointer to a type-erased component.
 pub struct Data {
     id: DynamicId,
+    type_name: String,
+    field_name: Option<String>,
     data: Box<dyn Downcast + Send + Sync + 'static>,
 }
 
 impl Data {
-    pub fn new<T: Component>(data: T, registry: &Registry) -> Self {
+    pub fn new<T: Component>(data: T, field_name: Option<&str>, registry: &Registry) -> Self {
         let id = registry.get_static::<T>();
         if id == registry.get_static::<Data>() {
             panic!("Cannot create a Data from a Data")
         }
         let data = Box::new(data);
-        Self { data, id }
+        Self {
+            data,
+            id,
+            type_name: registry.static_name::<T>(),
+            field_name: field_name.map(|s| s.to_string()),
+        }
     }
 
     #[inline]
@@ -49,6 +56,24 @@ impl Data {
     #[inline]
     pub const fn id(&self) -> DynamicId {
         self.id
+    }
+
+    #[inline]
+    pub fn type_name(&self) -> &str {
+        &self.type_name
+    }
+
+    #[inline]
+    pub fn field_name(&self) -> Option<&str> {
+        self.field_name.as_deref()
+    }
+
+    #[inline]
+    pub fn name(&self) -> String {
+        match self.field_name() {
+            Some(field_name) => format!("{}.{}", self.type_name(), field_name),
+            None => self.type_name().to_string(),
+        }
     }
 }
 

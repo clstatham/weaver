@@ -10,15 +10,15 @@ use crate::{
     prelude::Component,
     query::{DynamicQueryBuilder, Query, QueryFilter, Queryable},
     resource::{Res, ResMut, Resource},
-    storage::Components,
+    storage::{Components, SparseSet},
     system::System,
-    system::{SystemGraph, SystemId, SystemStage},
+    system::{SystemGraph, SystemStage},
 };
 
 pub struct World {
     pub(crate) components: Components,
     pub(crate) systems: FxHashMap<SystemStage, Arc<RwLock<SystemGraph>>>,
-    pub(crate) resources: FxHashMap<DynamicId, Arc<RwLock<dyn Resource>>>,
+    pub(crate) resources: SparseSet<DynamicId, Arc<RwLock<dyn Resource>>>,
 }
 
 impl World {
@@ -26,7 +26,7 @@ impl World {
         Self {
             components: Components::default(),
             systems: FxHashMap::default(),
-            resources: FxHashMap::default(),
+            resources: SparseSet::default(),
         }
     }
 
@@ -34,8 +34,13 @@ impl World {
         self.components.create_entity()
     }
 
-    pub fn add_component<T: Component>(&mut self, entity: &Entity, component: T) {
-        self.components.add_component(entity, component);
+    pub fn add_component<T: Component>(
+        &mut self,
+        entity: &Entity,
+        component: T,
+        field_name: Option<&str>,
+    ) {
+        self.components.add_component(entity, component, field_name);
     }
 
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
@@ -77,25 +82,19 @@ impl World {
 
     pub fn has_resource<T: Resource>(&self) -> bool {
         let id = self.components.registry().get_static::<T>();
-        self.resources.contains_key(&id)
+        self.resources.contains(&id)
     }
 
-    pub fn add_system<T: System + 'static>(&mut self, system: T) -> SystemId {
+    pub fn add_system<T: System>(&mut self, system: T) -> DynamicId {
         self.add_system_to_stage(system, SystemStage::default())
     }
 
-    pub fn add_system_to_stage<T: System + 'static>(
-        &mut self,
-        system: T,
-        stage: SystemStage,
-    ) -> SystemId {
-        let system = Arc::new(system);
-
+    pub fn add_system_to_stage<T: System>(&mut self, system: T, stage: SystemStage) -> DynamicId {
         self.systems
             .entry(stage)
             .or_default()
             .write()
-            .add_system(system)
+            .add_system(system, self.components.registry())
     }
 
     pub fn run_stage(world: &Arc<RwLock<Self>>, stage: SystemStage) -> anyhow::Result<()> {

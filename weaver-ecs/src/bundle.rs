@@ -34,7 +34,7 @@ impl<T: Component> Bundle for T {
         vec![registry.get_static::<T>()]
     }
     fn components(self, registry: &Registry) -> Vec<Data> {
-        vec![Data::new(self, registry)]
+        vec![Data::new(self, Some("self"), registry)]
     }
 }
 

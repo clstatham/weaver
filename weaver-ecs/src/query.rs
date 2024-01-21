@@ -313,7 +313,7 @@ where
     Q: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    pub fn new(components: &'a Components) -> Self {
+    pub(crate) fn new(components: &'a Components) -> Self {
         let registry = components.registry();
         let entries = components.components_matching_access(Q::access(registry));
         Query {
@@ -359,7 +359,7 @@ pub struct DynamicQuery<'a> {
 }
 
 impl<'a> DynamicQuery<'a> {
-    pub fn new(components: &'a Components, params: Vec<DynamicQueryParam>) -> Self {
+    pub(crate) fn new(components: &'a Components, params: Vec<DynamicQueryParam>) -> Self {
         let mut access = QueryAccess {
             reads: ComponentSet::default(),
             writes: ComponentSet::default(),

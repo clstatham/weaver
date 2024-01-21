@@ -28,6 +28,12 @@ pub fn derive_bundle(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
             }
         })
         .collect::<Vec<_>>();
+
+    let field_name_strs = field_names
+        .iter()
+        .map(|name| name.to_string())
+        .collect::<Vec<_>>();
+
     let gen = quote! {
         impl weaver_ecs::bundle::Bundle for #name {
             fn component_types(registry: &weaver_ecs::id::Registry) -> Vec<weaver_ecs::id::DynamicId> {
@@ -41,7 +47,7 @@ pub fn derive_bundle(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
             fn components(self, registry: &weaver_ecs::id::Registry) -> Vec<weaver_ecs::component::Data> {
                 let mut components = Vec::new();
                 #(
-                    components.push(weaver_ecs::component::Data::new(self.#field_names, registry));
+                    components.push(weaver_ecs::component::Data::new(self.#field_names, Some(#field_name_strs), registry));
                 )*
                 components.sort_unstable_by_key(|ptr| ptr.id());
                 components

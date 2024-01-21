@@ -56,3 +56,45 @@ impl<'a, T: Resource> std::ops::DerefMut for ResMut<'a, T> {
         (*self.resource).as_any_mut().downcast_mut::<T>().unwrap()
     }
 }
+
+pub struct DynRes<'a> {
+    resource: RwLockReadGuard<'a, dyn Resource>,
+}
+
+impl<'a> DynRes<'a> {
+    pub fn new(resource: RwLockReadGuard<'a, dyn Resource>) -> Self {
+        Self { resource }
+    }
+}
+
+impl<'a> std::ops::Deref for DynRes<'a> {
+    type Target = dyn Resource;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.resource
+    }
+}
+
+pub struct DynResMut<'a> {
+    resource: RwLockWriteGuard<'a, dyn Resource>,
+}
+
+impl<'a> DynResMut<'a> {
+    pub fn new(resource: RwLockWriteGuard<'a, dyn Resource>) -> Self {
+        Self { resource }
+    }
+}
+
+impl<'a> std::ops::Deref for DynResMut<'a> {
+    type Target = dyn Resource;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.resource
+    }
+}
+
+impl<'a> std::ops::DerefMut for DynResMut<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.resource
+    }
+}
