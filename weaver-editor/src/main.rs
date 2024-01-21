@@ -11,8 +11,8 @@ fn main() -> anyhow::Result<()> {
 
     let app = App::new(1600, 900)?;
 
-    app.insert_resource(EditorState::default())?;
-    app.insert_resource(FpsDisplay::new())?;
+    app.add_resource(EditorState::default())?;
+    app.add_resource(FpsDisplay::new())?;
 
     app.add_system_to_stage(ui::UiMain, SystemStage::Update);
 

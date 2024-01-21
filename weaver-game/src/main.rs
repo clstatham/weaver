@@ -385,9 +385,9 @@ pub fn main() -> anyhow::Result<()> {
         args.world,
     )?;
 
-    app.insert_resource(FpsDisplay::new())?;
+    app.add_resource(FpsDisplay::new())?;
 
-    app.insert_resource(State {
+    app.add_resource(State {
         light_intensity: 10.0,
         light_radius: 30.0,
         ..Default::default()

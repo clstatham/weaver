@@ -59,18 +59,18 @@ impl App {
 
         let hdr_loader = HdrLoader::new(renderer.device());
 
-        world.write().insert_resource(renderer)?;
-        world.write().insert_resource(hdr_loader)?;
-        world.write().insert_resource(Time::new())?;
-        world.write().insert_resource(Input::default())?;
-        world.write().insert_resource(ui)?;
-        world.write().insert_resource(Doodads::default())?;
+        world.write().add_resource(renderer)?;
+        world.write().add_resource(hdr_loader)?;
+        world.write().add_resource(Time::new())?;
+        world.write().add_resource(Input::default())?;
+        world.write().add_resource(ui)?;
+        world.write().add_resource(Doodads::default())?;
 
         let asset_server = AssetServer::new(&world.read())?;
 
-        world.write().insert_resource(asset_server)?;
+        world.write().add_resource(asset_server)?;
 
-        world.write().insert_resource(Window {
+        world.write().add_resource(Window {
             window,
             fps_mode: false,
         })?;
@@ -82,12 +82,8 @@ impl App {
         Ok(Self { event_loop, world })
     }
 
-    pub fn insert_resource<T: Resource>(&self, resource: T) -> anyhow::Result<()> {
-        self.world.write().insert_resource(resource)
-    }
-
-    pub fn spawn<T: Bundle>(&self, bundle: T) -> Entity {
-        self.world.write().spawn(bundle)
+    pub fn add_resource<T: Resource>(&self, resource: T) -> anyhow::Result<()> {
+        self.world.write().add_resource(resource)
     }
 
     pub fn add_system<T: System + 'static>(&self, system: T) -> SystemId {

@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 
-use crate::StaticId;
+use crate::id::{DynamicId, IdRegistry};
 
 use super::world::World;
 use parking_lot::RwLock;
@@ -47,27 +47,16 @@ pub enum SystemStage {
 
 pub trait System: Send + Sync {
     fn run(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()>;
-    fn components_read(&self) -> Vec<StaticId>;
-    fn components_written(&self) -> Vec<StaticId>;
-    fn resources_read(&self) -> Vec<StaticId>;
-    fn resources_written(&self) -> Vec<StaticId>;
+    fn components_read(&self, registry: &IdRegistry) -> Vec<DynamicId>;
+    fn components_written(&self, registry: &IdRegistry) -> Vec<DynamicId>;
+    fn resources_read(&self, registry: &IdRegistry) -> Vec<DynamicId>;
+    fn resources_written(&self, registry: &IdRegistry) -> Vec<DynamicId>;
     fn is_exclusive(&self) -> bool;
 }
 
 pub struct SystemNode {
     pub id: SystemId,
     pub system: Arc<dyn System>,
-}
-
-impl Debug for SystemNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "System\nr: {:?}\nw: {:?}",
-            self.system.components_read(),
-            self.system.components_written()
-        )
-    }
 }
 
 #[derive(Default)]
@@ -113,19 +102,19 @@ impl SystemGraph {
         self.graph.add_edge(dependency.into(), dependent.into(), ());
     }
 
-    pub fn autodetect_dependencies(&mut self) -> anyhow::Result<()> {
+    pub fn autodetect_dependencies(&mut self, registry: &IdRegistry) -> anyhow::Result<()> {
         let mut components_read = FxHashMap::default();
         let mut components_written = FxHashMap::default();
 
         for node in self.graph.node_indices() {
             let system = &self.graph[node].system;
-            for component in system.components_read() {
+            for component in system.components_read(registry) {
                 components_read
                     .entry(component)
                     .or_insert_with(Vec::new)
                     .push(node);
             }
-            for component in system.components_written() {
+            for component in system.components_written(registry) {
                 components_written
                     .entry(component)
                     .or_insert_with(Vec::new)

@@ -1,8 +1,7 @@
-use std::sync::Arc;
+use std::{any::TypeId, sync::Arc};
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
-use weaver_ecs::{static_id, StaticId};
 
 use super::BindableComponent;
 
@@ -10,7 +9,7 @@ use super::BindableComponent;
 #[derive(Default)]
 pub struct BindGroupLayoutCache {
     /// Bind group layouts for each component id.
-    pub(crate) layouts: RwLock<FxHashMap<StaticId, Arc<wgpu::BindGroupLayout>>>,
+    pub(crate) layouts: RwLock<FxHashMap<TypeId, Arc<wgpu::BindGroupLayout>>>,
 }
 
 impl BindGroupLayoutCache {
@@ -20,7 +19,7 @@ impl BindGroupLayoutCache {
         device: &wgpu::Device,
     ) -> Arc<wgpu::BindGroupLayout> {
         // check if the layout already exists
-        let id = static_id::<T>();
+        let id = TypeId::of::<T>();
         if let Some(layout) = self.layouts.read().get(&id) {
             // return the existing layout
             return layout.clone();

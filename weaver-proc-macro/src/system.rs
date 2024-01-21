@@ -228,36 +228,36 @@ pub fn system(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_macro::T
             #[allow(unused_mut)]
             #run_fn
 
-            fn components_read(&self) -> Vec<weaver_ecs::StaticId> {
+            fn components_read(&self, registry: &weaver_ecs::id::IdRegistry) -> Vec<weaver_ecs::id::DynamicId> {
                 use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend(<#query_types as Queryable<#filter_types>>::access().reads);
+                    components.extend(<#query_types as Queryable<#filter_types>>::access(registry).reads);
                 )*
                 components
             }
 
-            fn components_written(&self) -> Vec<weaver_ecs::StaticId> {
+            fn components_written(&self, registry: &weaver_ecs::id::IdRegistry) -> Vec<weaver_ecs::id::DynamicId> {
                 use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend(<#query_types as Queryable<#filter_types>>::access().writes);
+                    components.extend(<#query_types as Queryable<#filter_types>>::access(registry).writes);
                 )*
                 components
             }
 
-            fn resources_read(&self) -> Vec<weaver_ecs::StaticId> {
+            fn resources_read(&self, registry: &weaver_ecs::id::IdRegistry) -> Vec<weaver_ecs::id::DynamicId> {
                 let mut resources = Vec::new();
                 #(
-                    resources.push(weaver_ecs::static_id::<#res_types>());
+                    resources.push(registry.get_static::<#res_types>());
                 )*
                 resources
             }
 
-            fn resources_written(&self) -> Vec<weaver_ecs::StaticId> {
+            fn resources_written(&self, registry: &weaver_ecs::id::IdRegistry) -> Vec<weaver_ecs::id::DynamicId> {
                 let mut resources = Vec::new();
                 #(
-                    resources.push(weaver_ecs::static_id::<#resmut_types>());
+                    resources.push(registry.get_static::<#resmut_types>());
                 )*
                 resources
             }

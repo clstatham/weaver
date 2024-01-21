@@ -4,10 +4,11 @@ use weaver_proc_macro::all_tuples;
 
 use crate::{
     component::LockedData,
+    id::{DynamicId, IdRegistry},
     storage::{Archetype, ComponentMap, ComponentSet, Components, SparseSet},
 };
 
-use super::{bundle::Bundle, component::Component, entity::EntityId};
+use super::{bundle::Bundle, component::Component};
 
 pub struct Ref<'a, T>
 where
@@ -114,9 +115,12 @@ where
     type Item: Bundle;
     type ItemRef: 'a + Send;
 
-    fn fetch(data: &'a ComponentMap<&'a LockedData>) -> Option<Self::ItemRef>;
+    fn fetch(
+        data: &'a ComponentMap<&'a LockedData>,
+        registry: &'a IdRegistry,
+    ) -> Option<Self::ItemRef>;
 
-    fn access() -> QueryAccess;
+    fn access(registry: &IdRegistry) -> QueryAccess;
 }
 
 impl<'a, F> Queryable<'a, F> for ()
@@ -126,16 +130,19 @@ where
     type Item = ();
     type ItemRef = ();
 
-    fn fetch(_data: &'a ComponentMap<&'a LockedData>) -> Option<Self::ItemRef> {
+    fn fetch(
+        _data: &'a ComponentMap<&'a LockedData>,
+        _registry: &'a IdRegistry,
+    ) -> Option<Self::ItemRef> {
         Some(())
     }
 
-    fn access() -> QueryAccess {
+    fn access(registry: &IdRegistry) -> QueryAccess {
         QueryAccess {
             reads: ComponentSet::default(),
             writes: ComponentSet::default(),
-            withs: F::withs(),
-            withouts: F::withouts(),
+            withs: F::withs(registry),
+            withouts: F::withouts(registry),
         }
     }
 }
@@ -149,25 +156,24 @@ where
     type ItemRef = Ref<'a, T>;
 
     #[inline(never)]
-    fn fetch(data: &'a ComponentMap<&'a LockedData>) -> Option<Self::ItemRef> {
-        let data = data.get(&crate::static_id::<T>())?;
+    fn fetch(
+        data: &'a ComponentMap<&'a LockedData>,
+        registry: &IdRegistry,
+    ) -> Option<Self::ItemRef> {
+        let data = data.get(&registry.get_static::<T>())?;
         let data = data.borrow();
+
         Some(Ref {
-            component: AtomicRef::map(data, |data| {
-                // SAFETY:
-                // - `data` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
-                // - There are no other references to `data` because `data` is locked.
-                unsafe { data.as_ref_unchecked::<T>() }
-            }),
+            component: AtomicRef::map(data, |data| data.get_as::<T>().unwrap()),
         })
     }
 
-    fn access() -> QueryAccess {
+    fn access(registry: &IdRegistry) -> QueryAccess {
         QueryAccess {
-            reads: ComponentSet::from_iter([crate::static_id::<T>()]),
+            reads: ComponentSet::from_iter([registry.get_static::<T>()]),
             writes: ComponentSet::default(),
-            withs: F::withs(),
-            withouts: F::withouts(),
+            withs: F::withs(registry),
+            withouts: F::withouts(registry),
         }
     }
 }
@@ -181,35 +187,34 @@ where
     type ItemRef = Mut<'a, T>;
 
     #[inline(never)]
-    fn fetch(data: &'a ComponentMap<&'a LockedData>) -> Option<Self::ItemRef> {
-        let data = data.get(&crate::static_id::<T>())?;
+    fn fetch(
+        data: &'a ComponentMap<&'a LockedData>,
+        registry: &'a IdRegistry,
+    ) -> Option<Self::ItemRef> {
+        let data = data.get(&registry.get_static::<T>())?;
         let data = data.borrow_mut();
+
         Some(Mut {
-            component: AtomicRefMut::map(data, |data| {
-                // SAFETY:
-                // - `data` is a valid pointer to a `T` because `crate::static_id::<T>()` is the same as `Self::Item::id()`.
-                // - There are no other references to `data` because `data` is locked.
-                unsafe { data.as_mut_unchecked::<T>() }
-            }),
+            component: AtomicRefMut::map(data, |data| data.get_as_mut::<T>().unwrap()),
         })
     }
 
-    fn access() -> QueryAccess {
+    fn access(registry: &IdRegistry) -> QueryAccess {
         QueryAccess {
             reads: ComponentSet::default(),
-            writes: ComponentSet::from_iter([crate::static_id::<T>()]),
-            withs: F::withs(),
-            withouts: F::withouts(),
+            writes: ComponentSet::from_iter([registry.get_static::<T>()]),
+            withs: F::withs(registry),
+            withouts: F::withouts(registry),
         }
     }
 }
 
 /// Very similar to a Queryable, but instead of yielding a reference to the component, it is just used for filtering.
 pub trait QueryFilter<'a> {
-    fn withs() -> ComponentSet {
+    fn withs(_registry: &IdRegistry) -> ComponentSet {
         ComponentSet::default()
     }
-    fn withouts() -> ComponentSet {
+    fn withouts(_registry: &IdRegistry) -> ComponentSet {
         ComponentSet::default()
     }
 }
@@ -225,8 +230,8 @@ impl<'a, T> QueryFilter<'a> for With<'a, T>
 where
     T: Component,
 {
-    fn withs() -> ComponentSet {
-        ComponentSet::from_iter([crate::static_id::<T>()])
+    fn withs(registry: &IdRegistry) -> ComponentSet {
+        ComponentSet::from_iter([registry.get_static::<T>()])
     }
 }
 
@@ -238,8 +243,8 @@ impl<'a, T> QueryFilter<'a> for Without<'a, T>
 where
     T: Component,
 {
-    fn withouts() -> ComponentSet {
-        ComponentSet::from_iter([crate::static_id::<T>()])
+    fn withouts(registry: &IdRegistry) -> ComponentSet {
+        ComponentSet::from_iter([registry.get_static::<T>()])
     }
 }
 
@@ -248,7 +253,8 @@ where
     Q: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    entries: SparseSet<EntityId, ComponentMap<&'a LockedData>>,
+    registry: &'a IdRegistry,
+    entries: SparseSet<DynamicId, ComponentMap<&'a LockedData>>,
     _marker: std::marker::PhantomData<(Q, F)>,
 }
 
@@ -258,22 +264,26 @@ where
     F: QueryFilter<'a>,
 {
     pub fn new(components: &'a Components) -> Self {
-        let entries = components.components_matching_access(Q::access()).collect();
+        let registry = components.registry();
+        let entries = components
+            .components_matching_access(Q::access(registry))
+            .collect();
         Query {
+            registry,
             entries,
             _marker: std::marker::PhantomData,
         }
     }
 
-    pub fn get(&'a self, entity: EntityId) -> Option<Q::ItemRef> {
+    pub fn get(&'a self, entity: DynamicId) -> Option<Q::ItemRef> {
         let data = self.entries.get(&entity)?;
-        Q::fetch(data)
+        Q::fetch(data, self.registry)
     }
 
     pub fn iter(&'a self) -> impl Iterator<Item = Q::ItemRef> + 'a {
         self.entries
             .iter()
-            .filter_map(move |(_, data)| Q::fetch(data))
+            .filter_map(move |(_, data)| Q::fetch(data, self.registry))
     }
 }
 
@@ -289,18 +299,18 @@ macro_rules! impl_queryable_for_tuple {
             type Item = ($($name::Item,)*);
             type ItemRef = ($($name::ItemRef,)*);
 
-            fn fetch(data: &'a ComponentMap<&'a LockedData>) -> Option<Self::ItemRef> {
-                Some(($($name::fetch(data)?,)*))
+            fn fetch(data: &'a ComponentMap<&'a LockedData>, registry: &'a IdRegistry) -> Option<Self::ItemRef> {
+                Some(($($name::fetch(data, registry)?,)*))
             }
 
-            fn access() -> QueryAccess {
+            fn access(registry: &IdRegistry) -> QueryAccess {
                 let mut reads = ComponentSet::default();
                 let mut writes = ComponentSet::default();
                 let mut withs = ComponentSet::default();
                 let mut withouts = ComponentSet::default();
 
                 $({
-                    let access = $name::access();
+                    let access = $name::access(registry);
                     reads.extend(&access.reads);
                     writes.extend(&access.writes);
                     withs.extend(&access.withs);
@@ -326,18 +336,18 @@ macro_rules! impl_queryfilter_for_tuple {
         where
             $($name: QueryFilter<'a>,)*
         {
-            fn withs() -> ComponentSet {
+            fn withs(registry: &IdRegistry) -> ComponentSet {
                 let mut all = ComponentSet::default();
                 $(
-                    all.extend(&$name::withs());
+                    all.extend(&$name::withs(registry));
                 )*
                 all
             }
 
-            fn withouts() -> ComponentSet {
+            fn withouts(registry: &IdRegistry) -> ComponentSet {
                 let mut all = ComponentSet::default();
                 $(
-                    all.extend(&$name::withouts());
+                    all.extend(&$name::withouts(registry));
                 )*
                 all
             }

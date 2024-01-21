@@ -6,19 +6,19 @@ use rustc_hash::FxHashMap;
 use crate::{
     bundle::Bundle,
     entity::Entity,
+    id::DynamicId,
     prelude::Component,
     query::{Query, QueryFilter, Queryable},
     resource::{Res, ResMut, Resource},
     storage::Components,
     system::System,
     system::{SystemGraph, SystemId, SystemStage},
-    StaticId,
 };
 
 pub struct World {
     pub(crate) components: Components,
     pub(crate) systems: FxHashMap<SystemStage, Arc<RwLock<SystemGraph>>>,
-    pub(crate) resources: FxHashMap<StaticId, Arc<RwLock<dyn Resource>>>,
+    pub(crate) resources: FxHashMap<DynamicId, Arc<RwLock<dyn Resource>>>,
 }
 
 impl World {
@@ -46,34 +46,38 @@ impl World {
         self.components.despawn(entity.id());
     }
 
-    pub fn insert_resource<T: Resource>(&mut self, resource: T) -> anyhow::Result<()> {
+    pub fn add_resource<T: Resource>(&mut self, resource: T) -> anyhow::Result<()> {
         if self.has_resource::<T>() {
             return Err(anyhow::anyhow!("Resource already exists"));
         }
         let resource = Arc::new(RwLock::new(resource));
-        self.resources.insert(crate::static_id::<T>(), resource);
+        let id = self.components.registry().get_static::<T>();
+        self.resources.insert(id, resource);
         Ok(())
     }
 
     pub fn read_resource<T: Resource>(&self) -> anyhow::Result<Res<T>> {
+        let id = self.components.registry().get_static::<T>();
         let resource = self
             .resources
-            .get(&crate::static_id::<T>())
+            .get(&id)
             .ok_or(anyhow::anyhow!("Resource does not exist"))?;
         Ok(Res::new(resource.read()))
     }
 
     pub fn write_resource<T: Resource>(&self) -> anyhow::Result<ResMut<T>> {
+        let id = self.components.registry().get_static::<T>();
         let resource = self
             .resources
-            .get(&crate::static_id::<T>())
+            .get(&id)
             .ok_or(anyhow::anyhow!("Resource does not exist"))?;
 
         Ok(ResMut::new(resource.write()))
     }
 
     pub fn has_resource<T: Resource>(&self) -> bool {
-        self.resources.contains_key(&crate::static_id::<T>())
+        let id = self.components.registry().get_static::<T>();
+        self.resources.contains_key(&id)
     }
 
     pub fn add_system<T: System + 'static>(&mut self, system: T) -> SystemId {
@@ -97,8 +101,10 @@ impl World {
     pub fn run_stage(world: &Arc<RwLock<Self>>, stage: SystemStage) -> anyhow::Result<()> {
         let world_lock = world.read();
         if let Some(systems) = world_lock.systems.get(&stage).cloned() {
+            systems
+                .write()
+                .autodetect_dependencies(world_lock.components.registry())?;
             drop(world_lock);
-            systems.write().autodetect_dependencies()?;
             systems.read().run(world)?;
         }
         Ok(())
@@ -107,8 +113,10 @@ impl World {
     pub fn run_stage_parallel(world: &Arc<RwLock<Self>>, stage: SystemStage) -> anyhow::Result<()> {
         let world_lock = world.read();
         if let Some(systems) = world_lock.systems.get(&stage).cloned() {
+            systems
+                .write()
+                .autodetect_dependencies(world_lock.components.registry())?;
             drop(world_lock);
-            systems.write().autodetect_dependencies()?;
             systems.read().run_parallel(world)?;
         }
         Ok(())
