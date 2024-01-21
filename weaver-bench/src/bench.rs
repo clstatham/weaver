@@ -174,10 +174,189 @@ pub fn weaver_query_iter_increasing_archetypes(c: &mut Criterion) {
     group.finish();
 }
 
+pub fn weaver_query_dynamic_iter_increasing_entities(c: &mut Criterion) {
+    let mut world = World::new();
+
+    let plot_config =
+        criterion::PlotConfiguration::default().summary_scale(criterion::AxisScale::Logarithmic);
+
+    let mut group = c.benchmark_group("weaver_query_dynamic_iter_increasing_entities");
+    group.plot_config(plot_config);
+    group.sampling_mode(criterion::SamplingMode::Linear);
+
+    for &n in ENTITY_COUNTS.iter() {
+        for _ in 0..n {
+            world.spawn(A);
+        }
+
+        let q = world.query_dynamic().read::<A>().build();
+
+        group.throughput(criterion::Throughput::Elements(n as u64));
+        group.bench_with_input(format!("{} entities", n), &n, |b, _| {
+            b.iter(|| {
+                black_box(q.iter().count());
+            })
+        });
+    }
+
+    group.finish();
+}
+
+pub fn weaver_query_dynamic_iter_increasing_components(c: &mut Criterion) {
+    let mut world = World::new();
+
+    let plot_config =
+        criterion::PlotConfiguration::default().summary_scale(criterion::AxisScale::Logarithmic);
+
+    let mut group = c.benchmark_group("weaver_query_dynamic_iter_increasing_components");
+    group.plot_config(plot_config);
+    group.sampling_mode(criterion::SamplingMode::Linear);
+
+    for n in COMPONENT_COUNTS.iter() {
+        match n {
+            1 => {
+                for _ in 0..ENTITY_DEFAULT_COUNT {
+                    world.spawn(A);
+                }
+
+                let q = world.query_dynamic().read::<A>().build();
+                group.throughput(criterion::Throughput::Elements(*n as u64));
+                group.bench_with_input(format!("{} components", n), n, |b, _| {
+                    b.iter(|| {
+                        black_box(q.iter().count());
+                    })
+                });
+            }
+            2 => {
+                for _ in 0..ENTITY_DEFAULT_COUNT {
+                    world.spawn((A, B));
+                }
+
+                let q = world.query_dynamic().read::<A>().read::<B>().build();
+                group.throughput(criterion::Throughput::Elements(*n as u64));
+                group.bench_with_input(format!("{} components", n), n, |b, _| {
+                    b.iter(|| {
+                        black_box(q.iter().count());
+                    })
+                });
+            }
+            4 => {
+                for _ in 0..ENTITY_DEFAULT_COUNT {
+                    world.spawn((A, B, C, D));
+                }
+
+                let q = world
+                    .query_dynamic()
+                    .read::<A>()
+                    .read::<B>()
+                    .read::<C>()
+                    .read::<D>()
+                    .build();
+                group.throughput(criterion::Throughput::Elements(*n as u64));
+                group.bench_with_input(format!("{} components", n), n, |b, _| {
+                    b.iter(|| {
+                        black_box(q.iter().count());
+                    })
+                });
+            }
+            8 => {
+                for _ in 0..ENTITY_DEFAULT_COUNT {
+                    world.spawn((A, B, C, D, E, F, G, H));
+                }
+
+                let q = world
+                    .query_dynamic()
+                    .read::<A>()
+                    .read::<B>()
+                    .read::<C>()
+                    .read::<D>()
+                    .read::<E>()
+                    .read::<F>()
+                    .read::<G>()
+                    .read::<H>()
+                    .build();
+                group.throughput(criterion::Throughput::Elements(*n as u64));
+                group.bench_with_input(format!("{} components", n), n, |b, _| {
+                    b.iter(|| {
+                        black_box(q.iter().count());
+                    })
+                });
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    group.finish();
+}
+
+pub fn weaver_query_dynamic_iter_increasing_archetypes(c: &mut Criterion) {
+    let mut world = World::new();
+
+    let plot_config =
+        criterion::PlotConfiguration::default().summary_scale(criterion::AxisScale::Logarithmic);
+
+    let mut group = c.benchmark_group("weaver_query_dynamic_iter_increasing_archetypes");
+    group.plot_config(plot_config);
+    group.sampling_mode(criterion::SamplingMode::Linear);
+
+    for n in ARCHETYPE_COUNTS.iter() {
+        match n {
+            1 => {
+                for _ in 0..ENTITY_DEFAULT_COUNT {
+                    world.spawn(A);
+                }
+            }
+            2 => {
+                for _ in 0..ENTITY_DEFAULT_COUNT {
+                    world.spawn(A);
+                    world.spawn(B);
+                }
+            }
+            4 => {
+                for _ in 0..ENTITY_DEFAULT_COUNT {
+                    world.spawn(A);
+                    world.spawn(B);
+                    world.spawn(C);
+                    world.spawn(D);
+                }
+            }
+            8 => {
+                for _ in 0..ENTITY_DEFAULT_COUNT {
+                    world.spawn(A);
+                    world.spawn(B);
+                    world.spawn(C);
+                    world.spawn(D);
+                    world.spawn(E);
+                    world.spawn(F);
+                    world.spawn(G);
+                    world.spawn(H);
+                }
+            }
+            _ => unreachable!(),
+        }
+
+        let q = world.query_dynamic().read::<A>().build();
+        group.throughput(criterion::Throughput::Elements(*n as u64));
+        group.bench_with_input(format!("{} archetypes", n), n, |b, _| {
+            b.iter(|| {
+                black_box(q.iter().count());
+            })
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
-    weaver_benches,
+    weaver_static_query_benches,
     weaver_query_iter_increasing_entities,
     weaver_query_iter_increasing_components,
     weaver_query_iter_increasing_archetypes
 );
-criterion_main!(weaver_benches);
+criterion_group!(
+    weaver_dynamic_query_benches,
+    weaver_query_dynamic_iter_increasing_entities,
+    weaver_query_dynamic_iter_increasing_components,
+    weaver_query_dynamic_iter_increasing_archetypes
+);
+criterion_main!(weaver_static_query_benches, weaver_dynamic_query_benches);

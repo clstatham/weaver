@@ -116,7 +116,7 @@ mod tests {
 
         let query = world.query::<(&A, &B, &C)>();
 
-        let (a, b, c) = query.get(entity.id()).unwrap();
+        let (a, b, c) = query.get(entity).unwrap();
 
         assert_eq!(a.a, 0);
         assert_eq!(b.b, 0);
@@ -134,7 +134,7 @@ mod tests {
 
         let query = world.query::<(&A, &B, &C)>();
 
-        let (a, b, c) = query.get(entity4.id()).unwrap();
+        let (a, b, c) = query.get(entity4).unwrap();
 
         assert_eq!(a.a, 0);
         assert_eq!(b.b, 0);
@@ -149,7 +149,7 @@ mod tests {
 
         let query = world.query_filtered::<&B, With<A>>();
 
-        let b = query.get(entity.id()).unwrap();
+        let b = query.get(entity).unwrap();
 
         assert_eq!(b.b, 0);
     }
@@ -165,8 +165,33 @@ mod tests {
 
         let query = world.query_filtered::<&B, With<A>>();
 
-        let b = query.get(entity4.id()).unwrap();
+        let b = query.get(entity4).unwrap();
 
         assert_eq!(b.b, 0);
+    }
+
+    #[test]
+    fn test_query_dynamic() {
+        let mut world = World::new();
+
+        world.spawn((A::default(), B::default(), C::default()));
+        world.spawn((A::default(), B::default()));
+        world.spawn((A::default(), C::default()));
+        world.spawn((A::default(), B::default(), C::default()));
+
+        let query = world
+            .query_dynamic()
+            .read::<A>()
+            .read::<B>()
+            .read::<C>()
+            .build();
+
+        let mut count = 0;
+
+        for entry in query.iter() {
+            count += 1;
+        }
+
+        assert_eq!(count, 2);
     }
 }

@@ -8,7 +8,7 @@ use crate::{
     entity::Entity,
     id::DynamicId,
     prelude::Component,
-    query::{Query, QueryFilter, Queryable},
+    query::{DynamicQueryBuilder, Query, QueryFilter, Queryable},
     resource::{Res, ResMut, Resource},
     storage::Components,
     system::System,
@@ -34,8 +34,8 @@ impl World {
         self.components.create_entity()
     }
 
-    pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
-        self.components.add_component(entity.id(), component);
+    pub fn add_component<T: Component>(&mut self, entity: &Entity, component: T) {
+        self.components.add_component(entity, component);
     }
 
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
@@ -130,6 +130,10 @@ impl World {
         &'a self,
     ) -> Query<'a, T, F> {
         Query::new(&self.components)
+    }
+
+    pub fn query_dynamic(&self) -> DynamicQueryBuilder<'_> {
+        DynamicQueryBuilder::new(&self.components)
     }
 }
 

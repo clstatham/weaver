@@ -1,23 +1,24 @@
-use std::{any::TypeId, collections::HashMap, hash::BuildHasherDefault, sync::atomic::AtomicU64};
+use std::{any::TypeId, collections::HashMap, hash::BuildHasherDefault, sync::atomic::AtomicU32};
 
 use atomic_refcell::AtomicRefCell;
 use rustc_hash::FxHasher;
 
-pub type DynamicId = u64;
+pub type DynamicId = u32;
 
-pub struct IdRegistry {
-    next_id: AtomicU64,
+pub struct Registry {
+    next_id: AtomicU32,
     static_ids: AtomicRefCell<TypeIdMap<DynamicId>>,
 }
 
-impl IdRegistry {
+impl Registry {
     pub fn new() -> Self {
         Self {
-            next_id: AtomicU64::new(1),
+            next_id: AtomicU32::new(1),
             static_ids: AtomicRefCell::new(HashMap::default()),
         }
     }
 
+    #[inline]
     pub fn create(&self) -> DynamicId {
         self.next_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
@@ -29,9 +30,7 @@ impl IdRegistry {
         }
 
         let static_id = TypeId::of::<T>();
-        let id = self
-            .next_id
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = self.create();
 
         self.static_ids.borrow_mut().insert(static_id, id);
         id
@@ -42,7 +41,7 @@ impl IdRegistry {
         let static_ids = self.static_ids.borrow().clone();
 
         Self {
-            next_id: AtomicU64::new(next_id),
+            next_id: AtomicU32::new(next_id),
             static_ids: AtomicRefCell::new(static_ids),
         }
     }
@@ -58,7 +57,7 @@ impl IdRegistry {
     }
 }
 
-impl Default for IdRegistry {
+impl Default for Registry {
     fn default() -> Self {
         Self::new()
     }

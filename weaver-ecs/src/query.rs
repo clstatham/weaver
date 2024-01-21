@@ -3,8 +3,9 @@ use std::fmt::Debug;
 use weaver_proc_macro::all_tuples;
 
 use crate::{
-    component::LockedData,
-    id::{DynamicId, IdRegistry},
+    component::{Data, LockedData},
+    id::{DynamicId, Registry},
+    prelude::Entity,
     storage::{Archetype, ComponentMap, ComponentSet, Components, SparseSet},
 };
 
@@ -14,7 +15,17 @@ pub struct Ref<'a, T>
 where
     T: Component,
 {
+    entity: Entity,
     component: AtomicRef<'a, T>,
+}
+
+impl<'a, T> Ref<'a, T>
+where
+    T: Component,
+{
+    pub fn entity(&self) -> Entity {
+        self.entity
+    }
 }
 
 impl<'a, T> std::ops::Deref for Ref<'a, T>
@@ -32,7 +43,17 @@ pub struct Mut<'a, T>
 where
     T: Component,
 {
+    entity: Entity,
     component: AtomicRefMut<'a, T>,
+}
+
+impl<'a, T> Mut<'a, T>
+where
+    T: Component,
+{
+    pub fn entity(&self) -> Entity {
+        self.entity
+    }
 }
 
 impl<'a, T> std::ops::Deref for Mut<'a, T>
@@ -116,11 +137,12 @@ where
     type ItemRef: 'a + Send;
 
     fn fetch(
+        entity: Entity,
         data: &'a ComponentMap<&'a LockedData>,
-        registry: &'a IdRegistry,
+        registry: &'a Registry,
     ) -> Option<Self::ItemRef>;
 
-    fn access(registry: &IdRegistry) -> QueryAccess;
+    fn access(registry: &Registry) -> QueryAccess;
 }
 
 impl<'a, F> Queryable<'a, F> for ()
@@ -131,13 +153,14 @@ where
     type ItemRef = ();
 
     fn fetch(
+        _entity: Entity,
         _data: &'a ComponentMap<&'a LockedData>,
-        _registry: &'a IdRegistry,
+        _registry: &'a Registry,
     ) -> Option<Self::ItemRef> {
         Some(())
     }
 
-    fn access(registry: &IdRegistry) -> QueryAccess {
+    fn access(registry: &Registry) -> QueryAccess {
         QueryAccess {
             reads: ComponentSet::default(),
             writes: ComponentSet::default(),
@@ -155,20 +178,21 @@ where
     type Item = T;
     type ItemRef = Ref<'a, T>;
 
-    #[inline(never)]
     fn fetch(
+        entity: Entity,
         data: &'a ComponentMap<&'a LockedData>,
-        registry: &IdRegistry,
+        registry: &Registry,
     ) -> Option<Self::ItemRef> {
         let data = data.get(&registry.get_static::<T>())?;
         let data = data.borrow();
 
         Some(Ref {
+            entity,
             component: AtomicRef::map(data, |data| data.get_as::<T>().unwrap()),
         })
     }
 
-    fn access(registry: &IdRegistry) -> QueryAccess {
+    fn access(registry: &Registry) -> QueryAccess {
         QueryAccess {
             reads: ComponentSet::from_iter([registry.get_static::<T>()]),
             writes: ComponentSet::default(),
@@ -186,20 +210,21 @@ where
     type Item = T;
     type ItemRef = Mut<'a, T>;
 
-    #[inline(never)]
     fn fetch(
+        entity: Entity,
         data: &'a ComponentMap<&'a LockedData>,
-        registry: &'a IdRegistry,
+        registry: &'a Registry,
     ) -> Option<Self::ItemRef> {
         let data = data.get(&registry.get_static::<T>())?;
         let data = data.borrow_mut();
 
         Some(Mut {
+            entity,
             component: AtomicRefMut::map(data, |data| data.get_as_mut::<T>().unwrap()),
         })
     }
 
-    fn access(registry: &IdRegistry) -> QueryAccess {
+    fn access(registry: &Registry) -> QueryAccess {
         QueryAccess {
             reads: ComponentSet::default(),
             writes: ComponentSet::from_iter([registry.get_static::<T>()]),
@@ -209,12 +234,37 @@ where
     }
 }
 
+impl<'a, F> Queryable<'a, F> for Entity
+where
+    F: QueryFilter<'a>,
+{
+    type Item = Entity;
+    type ItemRef = Entity;
+
+    fn fetch(
+        entity: Entity,
+        _data: &'a ComponentMap<&'a LockedData>,
+        _registry: &'a Registry,
+    ) -> Option<Self::ItemRef> {
+        Some(entity)
+    }
+
+    fn access(registry: &Registry) -> QueryAccess {
+        QueryAccess {
+            reads: ComponentSet::default(),
+            writes: ComponentSet::default(),
+            withs: F::withs(registry),
+            withouts: F::withouts(registry),
+        }
+    }
+}
+
 /// Very similar to a Queryable, but instead of yielding a reference to the component, it is just used for filtering.
 pub trait QueryFilter<'a> {
-    fn withs(_registry: &IdRegistry) -> ComponentSet {
+    fn withs(_registry: &Registry) -> ComponentSet {
         ComponentSet::default()
     }
-    fn withouts(_registry: &IdRegistry) -> ComponentSet {
+    fn withouts(_registry: &Registry) -> ComponentSet {
         ComponentSet::default()
     }
 }
@@ -230,7 +280,7 @@ impl<'a, T> QueryFilter<'a> for With<'a, T>
 where
     T: Component,
 {
-    fn withs(registry: &IdRegistry) -> ComponentSet {
+    fn withs(registry: &Registry) -> ComponentSet {
         ComponentSet::from_iter([registry.get_static::<T>()])
     }
 }
@@ -243,7 +293,7 @@ impl<'a, T> QueryFilter<'a> for Without<'a, T>
 where
     T: Component,
 {
-    fn withouts(registry: &IdRegistry) -> ComponentSet {
+    fn withouts(registry: &Registry) -> ComponentSet {
         ComponentSet::from_iter([registry.get_static::<T>()])
     }
 }
@@ -253,8 +303,8 @@ where
     Q: Queryable<'a, F>,
     F: QueryFilter<'a>,
 {
-    registry: &'a IdRegistry,
-    entries: SparseSet<DynamicId, ComponentMap<&'a LockedData>>,
+    registry: &'a Registry,
+    entries: SparseSet<Entity, ComponentMap<&'a LockedData>>,
     _marker: std::marker::PhantomData<(Q, F)>,
 }
 
@@ -265,9 +315,7 @@ where
 {
     pub fn new(components: &'a Components) -> Self {
         let registry = components.registry();
-        let entries = components
-            .components_matching_access(Q::access(registry))
-            .collect();
+        let entries = components.components_matching_access(Q::access(registry));
         Query {
             registry,
             entries,
@@ -275,15 +323,170 @@ where
         }
     }
 
-    pub fn get(&'a self, entity: DynamicId) -> Option<Q::ItemRef> {
+    pub fn get(&'a self, entity: Entity) -> Option<Q::ItemRef> {
         let data = self.entries.get(&entity)?;
-        Q::fetch(data, self.registry)
+        Q::fetch(entity, data, self.registry)
     }
 
     pub fn iter(&'a self) -> impl Iterator<Item = Q::ItemRef> + 'a {
         self.entries
             .iter()
-            .filter_map(move |(_, data)| Q::fetch(data, self.registry))
+            .filter_map(|(entity, data)| Q::fetch(*entity, data, self.registry))
+    }
+
+    pub fn access(&self) -> QueryAccess {
+        Q::access(self.registry)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum DynamicQueryParam {
+    Read(DynamicId),
+    Write(DynamicId),
+    With(DynamicId),
+    Without(DynamicId),
+}
+
+pub enum DynamicQueryRef<'a> {
+    Ref(AtomicRef<'a, Data>),
+    Mut(AtomicRefMut<'a, Data>),
+}
+
+pub struct DynamicQuery<'a> {
+    entries: SparseSet<Entity, ComponentMap<&'a LockedData>>,
+    params: Vec<DynamicQueryParam>,
+    access: QueryAccess,
+}
+
+impl<'a> DynamicQuery<'a> {
+    pub fn new(components: &'a Components, params: Vec<DynamicQueryParam>) -> Self {
+        let mut access = QueryAccess {
+            reads: ComponentSet::default(),
+            writes: ComponentSet::default(),
+            withs: ComponentSet::default(),
+            withouts: ComponentSet::default(),
+        };
+
+        for param in params.iter().copied() {
+            match param {
+                DynamicQueryParam::Read(id) => {
+                    access.reads.insert(id, ());
+                }
+                DynamicQueryParam::Write(id) => {
+                    access.writes.insert(id, ());
+                }
+                DynamicQueryParam::With(id) => {
+                    access.withs.insert(id, ());
+                }
+                DynamicQueryParam::Without(id) => {
+                    access.withouts.insert(id, ());
+                }
+            }
+        }
+
+        let entries = components.components_matching_access(access);
+
+        Self {
+            entries,
+            params,
+            access: QueryAccess::default(),
+        }
+    }
+
+    pub fn get(&'a self, entity: &'a Entity) -> Option<Vec<DynamicQueryRef<'a>>> {
+        let data = self.entries.get(entity)?;
+        let mut refs = Vec::new();
+        for param in self.params.iter() {
+            match param {
+                DynamicQueryParam::Read(id) => {
+                    let data = data.get(id)?;
+                    refs.push(DynamicQueryRef::Ref(data.borrow()));
+                }
+                DynamicQueryParam::Write(id) => {
+                    let data = data.get(id)?;
+                    refs.push(DynamicQueryRef::Mut(data.borrow_mut()));
+                }
+                DynamicQueryParam::With(_) => {}
+                DynamicQueryParam::Without(_) => {}
+            }
+        }
+        Some(refs)
+    }
+
+    pub fn iter(&'a self) -> impl Iterator<Item = Vec<DynamicQueryRef<'a>>> + 'a {
+        self.entries
+            .iter()
+            .filter_map(|(entity, _)| self.get(entity))
+    }
+
+    pub fn access(&self) -> &QueryAccess {
+        &self.access
+    }
+}
+
+pub struct DynamicQueryBuilder<'a> {
+    components: &'a Components,
+    params: Vec<DynamicQueryParam>,
+}
+
+impl<'a> DynamicQueryBuilder<'a> {
+    pub fn new(components: &'a Components) -> Self {
+        Self {
+            components,
+            params: Vec::new(),
+        }
+    }
+
+    pub fn read<T: Component>(mut self) -> Self {
+        self.params.push(DynamicQueryParam::Read(
+            self.components.registry().get_static::<T>(),
+        ));
+        self
+    }
+
+    pub fn write<T: Component>(mut self) -> Self {
+        self.params.push(DynamicQueryParam::Write(
+            self.components.registry().get_static::<T>(),
+        ));
+        self
+    }
+
+    pub fn with<T: Component>(mut self) -> Self {
+        self.params.push(DynamicQueryParam::With(
+            self.components.registry().get_static::<T>(),
+        ));
+        self
+    }
+
+    pub fn without<T: Component>(mut self) -> Self {
+        self.params.push(DynamicQueryParam::Without(
+            self.components.registry().get_static::<T>(),
+        ));
+        self
+    }
+
+    pub fn read_id(mut self, id: DynamicId) -> Self {
+        self.params.push(DynamicQueryParam::Read(id));
+        self
+    }
+
+    pub fn write_id(mut self, id: DynamicId) -> Self {
+        self.params.push(DynamicQueryParam::Write(id));
+        self
+    }
+
+    pub fn with_id(mut self, id: DynamicId) -> Self {
+        self.params.push(DynamicQueryParam::With(id));
+        self
+    }
+
+    pub fn without_id(mut self, id: DynamicId) -> Self {
+        self.params.push(DynamicQueryParam::Without(id));
+        self
+    }
+
+    pub fn build(self) -> DynamicQuery<'a> {
+        DynamicQuery::new(self.components, self.params)
     }
 }
 
@@ -299,11 +502,11 @@ macro_rules! impl_queryable_for_tuple {
             type Item = ($($name::Item,)*);
             type ItemRef = ($($name::ItemRef,)*);
 
-            fn fetch(data: &'a ComponentMap<&'a LockedData>, registry: &'a IdRegistry) -> Option<Self::ItemRef> {
-                Some(($($name::fetch(data, registry)?,)*))
+            fn fetch(entity: Entity, data: &'a ComponentMap<&'a LockedData>, registry: &'a Registry) -> Option<Self::ItemRef> {
+                Some(($($name::fetch(entity, data, registry)?,)*))
             }
 
-            fn access(registry: &IdRegistry) -> QueryAccess {
+            fn access(registry: &Registry) -> QueryAccess {
                 let mut reads = ComponentSet::default();
                 let mut writes = ComponentSet::default();
                 let mut withs = ComponentSet::default();
@@ -311,10 +514,10 @@ macro_rules! impl_queryable_for_tuple {
 
                 $({
                     let access = $name::access(registry);
-                    reads.extend(&access.reads);
-                    writes.extend(&access.writes);
-                    withs.extend(&access.withs);
-                    withouts.extend(&access.withouts);
+                    reads.extend(access.reads);
+                    writes.extend(access.writes);
+                    withs.extend(access.withs);
+                    withouts.extend(access.withouts);
                 })*
 
                 QueryAccess {
@@ -336,18 +539,18 @@ macro_rules! impl_queryfilter_for_tuple {
         where
             $($name: QueryFilter<'a>,)*
         {
-            fn withs(registry: &IdRegistry) -> ComponentSet {
+            fn withs(registry: &Registry) -> ComponentSet {
                 let mut all = ComponentSet::default();
                 $(
-                    all.extend(&$name::withs(registry));
+                    all.extend($name::withs(registry));
                 )*
                 all
             }
 
-            fn withouts(registry: &IdRegistry) -> ComponentSet {
+            fn withouts(registry: &Registry) -> ComponentSet {
                 let mut all = ComponentSet::default();
                 $(
-                    all.extend(&$name::withouts(registry));
+                    all.extend($name::withouts(registry));
                 )*
                 all
             }

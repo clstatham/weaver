@@ -228,25 +228,25 @@ pub fn system(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_macro::T
             #[allow(unused_mut)]
             #run_fn
 
-            fn components_read(&self, registry: &weaver_ecs::id::IdRegistry) -> Vec<weaver_ecs::id::DynamicId> {
+            fn components_read(&self, registry: &weaver_ecs::id::Registry) -> Vec<weaver_ecs::id::DynamicId> {
                 use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend(<#query_types as Queryable<#filter_types>>::access(registry).reads);
+                    components.extend(<#query_types as Queryable<#filter_types>>::access(registry).reads.sparse_iter());
                 )*
                 components
             }
 
-            fn components_written(&self, registry: &weaver_ecs::id::IdRegistry) -> Vec<weaver_ecs::id::DynamicId> {
+            fn components_written(&self, registry: &weaver_ecs::id::Registry) -> Vec<weaver_ecs::id::DynamicId> {
                 use weaver_ecs::query::Queryable;
                 let mut components = Vec::new();
                 #(
-                    components.extend(<#query_types as Queryable<#filter_types>>::access(registry).writes);
+                    components.extend(<#query_types as Queryable<#filter_types>>::access(registry).writes.sparse_iter());
                 )*
                 components
             }
 
-            fn resources_read(&self, registry: &weaver_ecs::id::IdRegistry) -> Vec<weaver_ecs::id::DynamicId> {
+            fn resources_read(&self, registry: &weaver_ecs::id::Registry) -> Vec<weaver_ecs::id::DynamicId> {
                 let mut resources = Vec::new();
                 #(
                     resources.push(registry.get_static::<#res_types>());
@@ -254,7 +254,7 @@ pub fn system(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_macro::T
                 resources
             }
 
-            fn resources_written(&self, registry: &weaver_ecs::id::IdRegistry) -> Vec<weaver_ecs::id::DynamicId> {
+            fn resources_written(&self, registry: &weaver_ecs::id::Registry) -> Vec<weaver_ecs::id::DynamicId> {
                 let mut resources = Vec::new();
                 #(
                     resources.push(registry.get_static::<#resmut_types>());

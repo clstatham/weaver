@@ -1,42 +1,38 @@
 use std::fmt::Debug;
 
 use atomic_refcell::{AtomicRef, AtomicRefMut};
-use fixedbitset::FixedBitSet;
-use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     bundle::Bundle,
     component::Component,
     component::{Data, LockedData},
     entity::Entity,
-    id::{DynamicId, IdRegistry, SortedMap},
+    id::{DynamicId, Registry, SortedMap},
     query::QueryAccess,
 };
 
-pub type EntitySet = FixedBitSet;
-pub type ArchetypeSet = FixedBitSet;
-pub type ComponentSet = FxHashSet<DynamicId>;
-pub type ComponentMap<T> = FxHashMap<DynamicId, T>;
+pub type EntitySet = SparseSet<Entity, ()>;
+pub type ArchetypeSet = SparseSet<usize, ()>;
+pub type ComponentSet = SparseSet<DynamicId, ()>;
+pub type ComponentMap<T> = SparseSet<DynamicId, T>;
 
-pub trait Index: Copy + Debug + Eq + Ord + std::hash::Hash {
-    fn into_usize(self) -> usize;
-    fn from_usize(index: usize) -> Self;
+pub trait Index: Debug + Eq + Ord + std::hash::Hash {
+    fn as_usize(&self) -> usize;
 }
 
 impl Index for usize {
-    fn into_usize(self) -> usize {
-        self
-    }
-    fn from_usize(index: usize) -> Self {
-        index
+    fn as_usize(&self) -> usize {
+        *self
     }
 }
 impl Index for DynamicId {
-    fn into_usize(self) -> usize {
-        self as usize
+    fn as_usize(&self) -> usize {
+        *self as usize
     }
-    fn from_usize(index: usize) -> Self {
-        index as DynamicId
+}
+impl Index for Entity {
+    fn as_usize(&self) -> usize {
+        self.id() as usize
     }
 }
 
@@ -69,8 +65,9 @@ impl<I: Index, V> SparseSet<I, V> {
         }
     }
 
+    #[inline]
     pub fn dense_index_of(&self, index: &I) -> Option<usize> {
-        let index = index.into_usize();
+        let index = index.as_usize();
 
         if index >= self.sparse.len() {
             return None;
@@ -87,35 +84,35 @@ impl<I: Index, V> SparseSet<I, V> {
             None => {
                 let dense_index = self.dense.len();
 
+                if index.as_usize() >= self.sparse.len() {
+                    self.sparse.resize(index.as_usize() + 1, None);
+                }
+                self.sparse[index.as_usize()] = Some(dense_index);
                 self.indices.push(index);
                 self.dense.push(value);
-                if index.into_usize() >= self.sparse.len() {
-                    self.sparse.resize(index.into_usize() + 1, None);
-                }
-                self.sparse[index.into_usize()] = Some(dense_index);
             }
         }
     }
 
-    pub fn remove(&mut self, index: I) -> Option<V> {
-        if index.into_usize() >= self.sparse.len() {
+    pub fn remove(&mut self, index: &I) -> Option<V> {
+        if index.as_usize() >= self.sparse.len() {
             return None;
         }
-        let dense_index = self.sparse[index.into_usize()].take()?;
+        let dense_index = self.sparse[index.as_usize()].take()?;
 
         let value = self.dense.swap_remove(dense_index);
         let _index = self.indices.swap_remove(dense_index);
 
         if dense_index != self.dense.len() {
-            let swapped_index = self.indices[dense_index];
-            self.sparse[swapped_index.into_usize()] = Some(dense_index);
+            let swapped_index = &self.indices[dense_index];
+            self.sparse[swapped_index.as_usize()] = Some(dense_index);
         }
 
         Some(value)
     }
 
     pub fn get(&self, index: &I) -> Option<&V> {
-        let index = index.into_usize();
+        let index = index.as_usize();
 
         self.sparse
             .get(index)
@@ -125,7 +122,7 @@ impl<I: Index, V> SparseSet<I, V> {
     }
 
     pub fn get_mut(&mut self, index: &I) -> Option<&mut V> {
-        let index = index.into_usize();
+        let index = index.as_usize();
 
         self.sparse
             .get(index)
@@ -142,16 +139,20 @@ impl<I: Index, V> SparseSet<I, V> {
         self.dense.iter_mut()
     }
 
-    pub fn sparse_iter(&self) -> impl Iterator<Item = I> + '_ {
-        self.indices.iter().copied()
+    pub fn sparse_iter(&self) -> impl Iterator<Item = &I> + '_ {
+        self.indices.iter()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (I, &V)> + '_ {
-        self.indices.iter().copied().zip(self.dense.iter())
+    pub fn iter(&self) -> impl Iterator<Item = (&I, &V)> + '_ {
+        self.indices.iter().zip(self.dense.iter())
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&I, &mut V)> + '_ {
+        self.indices.iter().zip(self.dense.iter_mut())
     }
 
     pub fn contains(&self, index: &I) -> bool {
-        let index = index.into_usize();
+        let index = index.as_usize();
 
         if index >= self.sparse.len() {
             return false;
@@ -181,6 +182,12 @@ impl<I: Index, V> SparseSet<I, V> {
     pub fn is_subset(&self, other: &Self) -> bool {
         other.is_superset(self)
     }
+
+    pub fn intersection<'a>(&'a self, other: &'a Self) -> impl Iterator<Item = (&I, &V)> + '_ {
+        self.indices
+            .iter()
+            .filter_map(move |index| other.get(index).map(|value| (index, value)))
+    }
 }
 
 impl<I: Index, V> IntoIterator for SparseSet<I, V> {
@@ -204,6 +211,18 @@ impl<I: Index, V> FromIterator<(I, V)> for SparseSet<I, V> {
     }
 }
 
+impl<I: Index> FromIterator<I> for SparseSet<I, ()> {
+    fn from_iter<T: IntoIterator<Item = I>>(iter: T) -> Self {
+        let mut set = Self::new();
+
+        for index in iter {
+            set.insert(index, ());
+        }
+
+        set
+    }
+}
+
 impl<I: Index, V> Extend<(I, V)> for SparseSet<I, V> {
     fn extend<T: IntoIterator<Item = (I, V)>>(&mut self, iter: T) {
         for (index, value) in iter {
@@ -212,7 +231,7 @@ impl<I: Index, V> Extend<(I, V)> for SparseSet<I, V> {
     }
 }
 
-impl<I: Index, V: Clone> Clone for SparseSet<I, V> {
+impl<I: Index + Clone, V: Clone> Clone for SparseSet<I, V> {
     fn clone(&self) -> Self {
         Self {
             indices: self.indices.clone(),
@@ -247,7 +266,7 @@ impl Debug for Column {
 }
 
 impl Column {
-    pub fn new_with_static<T: Component>(registry: &IdRegistry) -> Self {
+    pub fn new_with_static<T: Component>(registry: &Registry) -> Self {
         Self {
             id: registry.get_static::<T>(),
             storage: SparseSet::new(),
@@ -266,23 +285,23 @@ impl Column {
         self.storage.insert(entity, LockedData::new(component));
     }
 
-    pub fn remove(&mut self, entity: DynamicId) -> Option<Data> {
+    pub fn remove(&mut self, entity: &DynamicId) -> Option<Data> {
         self.storage.remove(entity).map(|x| x.into_inner())
     }
 
-    pub fn get(&self, entity: DynamicId) -> Option<AtomicRef<'_, Data>> {
-        self.storage.get(&entity).map(|x| x.borrow())
+    pub fn get(&self, entity: &DynamicId) -> Option<AtomicRef<'_, Data>> {
+        self.storage.get(entity).map(|x| x.borrow())
     }
 
-    pub fn get_mut(&self, entity: DynamicId) -> Option<AtomicRefMut<'_, Data>> {
-        self.storage.get(&entity).map(|x| x.borrow_mut())
+    pub fn get_mut(&self, entity: &DynamicId) -> Option<AtomicRefMut<'_, Data>> {
+        self.storage.get(entity).map(|x| x.borrow_mut())
     }
 }
 
 /// A unique combination of components. Also maintains a list of entities that have this combination.
 pub struct Archetype {
     pub(crate) id: usize,
-    pub(crate) entities: EntitySet,
+    pub(crate) entities: SparseSet<DynamicId, ()>,
     pub(crate) component_types: Box<[DynamicId]>,
     pub(crate) columns: SortedMap<DynamicId, Column>,
 }
@@ -297,15 +316,14 @@ impl Archetype {
 
         Self {
             id: arch_id,
-            entities: EntitySet::default(),
+            entities: SparseSet::default(),
             component_types: component_ids.into_boxed_slice(),
             columns: SortedMap::new(columns),
         }
     }
 
     pub fn insert_entity(&mut self, entity: DynamicId, component: Data) {
-        self.entities.grow(entity as usize + 1);
-        self.entities.insert(entity as usize);
+        self.entities.insert(entity, ());
 
         self.columns
             .get_mut(&component.id())
@@ -314,10 +332,10 @@ impl Archetype {
     }
 
     pub fn remove_entity(&mut self, entity: DynamicId) {
-        self.entities.set(entity as usize, false);
+        self.entities.remove(&entity);
 
         for (_, column) in self.columns.iter_mut() {
-            column.remove(entity);
+            column.remove(&entity);
         }
     }
 
@@ -329,7 +347,7 @@ impl Archetype {
     }
 
     pub fn contains_entity(&self, entity: DynamicId) -> bool {
-        self.entities.contains(entity as usize)
+        self.entities.contains(&entity)
     }
 
     pub fn get_column(&self, component_id: DynamicId) -> Option<&Column> {
@@ -337,10 +355,10 @@ impl Archetype {
     }
 
     pub fn component_drain(&mut self, entity: DynamicId) -> impl Iterator<Item = Data> + '_ {
-        self.entities.set(entity as usize, false);
+        self.entities.remove(&entity);
         self.columns
             .iter_mut()
-            .filter_map(move |(_, column)| column.remove(entity))
+            .filter_map(move |(_, column)| column.remove(&entity))
     }
 
     pub fn component_ids(&self) -> ComponentSet {
@@ -350,44 +368,59 @@ impl Archetype {
 
 #[derive(Default)]
 pub struct Components {
-    registry: IdRegistry,
-    entities: EntitySet,
-    pub(crate) archetypes: Vec<Archetype>,
+    registry: Registry,
+    living_entities: SparseSet<DynamicId, Entity>,
+    entity_generations: SparseSet<DynamicId, u32>,
+    archetypes: Vec<Archetype>,
     entity_archetypes: SparseSet<DynamicId, usize>,
     component_archetypes: ComponentMap<ArchetypeSet>,
 }
 
 impl Components {
-    pub fn registry(&self) -> &IdRegistry {
+    pub fn registry(&self) -> &Registry {
         &self.registry
     }
 
     pub fn create_entity(&mut self) -> Entity {
         let id = self.registry.create();
+        let entity = Entity::new(id);
 
-        self.entities.grow(id as usize + 1);
-        self.entities.insert(id as usize);
+        self.living_entities.insert(id, entity);
+        self.entity_generations.insert(id, entity.generation());
 
-        Entity::new(id)
+        entity
     }
 
-    pub fn add_component<T: Component>(&mut self, entity: DynamicId, component: T) {
+    pub fn entity(&self, id: DynamicId) -> Option<Entity> {
+        if self.living_entities.contains(&id) {
+            Some(Entity::new_with_generation(
+                id,
+                *self.entity_generations.get(&id)?,
+            ))
+        } else {
+            None
+        }
+    }
+
+    pub fn add_component<T: Component>(&mut self, entity: &Entity, component: T) {
         // the components of the entity are changing, therefore the archetype must change
-        let components = if let Some(old_archetype) = self.entity_archetype_mut(entity) {
+        let components = if let Some(old_archetype) = self.entity_archetype_mut(entity.id()) {
             // remove the entity from the old archetype
-            old_archetype.remove_entity(entity);
+            old_archetype.remove_entity(entity.id());
 
             // add the component to create the new archetype
-            let mut components = old_archetype.component_drain(entity).collect::<Vec<_>>();
+            let mut components = old_archetype
+                .component_drain(entity.id())
+                .collect::<Vec<_>>();
             components.push(Data::new(component, &self.registry));
             components
         } else {
             vec![Data::new(component, &self.registry)]
         };
 
-        let component_types = components.iter().map(|x| x.id()).collect::<Vec<_>>();
+        let component_ids = components.iter().map(|x| x.id()).collect::<Vec<_>>();
 
-        self.build_on_with_components(entity, components, component_types);
+        self.build_on_with_components(entity.id(), components, component_ids);
     }
 
     pub fn build<B: Bundle>(&mut self, bundle: B) -> Entity {
@@ -401,10 +434,10 @@ impl Components {
     pub fn build_with_components(
         &mut self,
         components: Vec<Data>,
-        component_types: Vec<DynamicId>,
+        component_ids: Vec<DynamicId>,
     ) -> Entity {
         let entity = self.create_entity();
-        self.build_on_with_components(entity.id(), components, component_types);
+        self.build_on_with_components(entity.id(), components, component_ids);
         entity
     }
 
@@ -446,14 +479,12 @@ impl Components {
     fn push_archetype(&mut self, archetype: Archetype) {
         // todo: assert that the archetype is unique
 
-        for component_id in archetype.component_ids().iter() {
+        for component_id in archetype.component_ids().sparse_iter() {
             if let Some(archetype_set) = self.component_archetypes.get_mut(component_id) {
-                archetype_set.grow(archetype.id + 1);
-                archetype_set.insert(archetype.id);
+                archetype_set.insert(archetype.id, ());
             } else {
                 let mut archetype_set = ArchetypeSet::default();
-                archetype_set.grow(archetype.id + 1);
-                archetype_set.insert(archetype.id);
+                archetype_set.insert(archetype.id, ());
                 self.component_archetypes
                     .insert(*component_id, archetype_set);
             }
@@ -465,7 +496,19 @@ impl Components {
     pub fn despawn(&mut self, entity: DynamicId) {
         let archetype = self.entity_archetype_mut(entity).unwrap();
         archetype.remove_entity(entity);
-        self.entity_archetypes.remove(entity);
+        self.living_entities.remove(&entity);
+        *self.entity_generations.get_mut(&entity).unwrap() += 1;
+        self.entity_archetypes.remove(&entity);
+    }
+
+    pub fn respawn(&mut self, entity: DynamicId) -> Entity {
+        let e = Entity::new_with_generation(entity, *self.entity_generations.get(&entity).unwrap());
+        if self.living_entities.contains(&entity) {
+            e
+        } else {
+            self.living_entities.insert(entity, e);
+            e
+        }
     }
 
     pub fn entity_archetype(&self, entity: DynamicId) -> Option<&Archetype> {
@@ -496,7 +539,7 @@ impl Components {
             archetype
                 .columns
                 .iter()
-                .filter_map(move |(_, column)| column.get(entity))
+                .filter_map(|(_, column)| column.get(&entity))
                 .collect()
         })
     }
@@ -506,7 +549,7 @@ impl Components {
             archetype
                 .columns
                 .iter()
-                .filter_map(move |(_, column)| column.get_mut(entity))
+                .filter_map(|(_, column)| column.get_mut(&entity))
                 .collect()
         })
     }
@@ -519,7 +562,7 @@ impl Components {
             archetype
                 .columns
                 .iter()
-                .filter_map(move |(_, column)| column.get(entity))
+                .filter_map(move |(_, column)| column.get(&entity))
         })
     }
 
@@ -531,7 +574,7 @@ impl Components {
             archetype
                 .columns
                 .iter()
-                .filter_map(move |(_, column)| column.get_mut(entity))
+                .filter_map(move |(_, column)| column.get_mut(&entity))
         })
     }
 
@@ -548,23 +591,23 @@ impl Components {
     pub fn merge(&mut self, mut other: TemporaryComponents) {
         self.registry.merge(&other.components.registry);
 
-        for entity in other.components.entities.ones().collect::<Vec<_>>() {
-            if !self.entities.contains(entity) {
-                self.entities.grow(entity + 1);
-                self.entities.insert(entity);
+        for (id, entity) in other
+            .components
+            .living_entities
+            .iter()
+            .map(|(id, entity)| (*id, *entity))
+            .collect::<Vec<_>>()
+        {
+            if !self.living_entities.contains(&id) {
+                self.living_entities.insert(id, entity);
 
-                let archetype = other
-                    .components
-                    .entity_archetype_mut(entity as DynamicId)
-                    .unwrap();
+                let archetype = other.components.entity_archetype_mut(id).unwrap();
 
-                let components = archetype
-                    .component_drain(entity as DynamicId)
-                    .collect::<Vec<_>>();
+                let components = archetype.component_drain(id).collect::<Vec<_>>();
 
                 let component_types = archetype.component_types.to_vec();
 
-                self.build_on_with_components(entity as DynamicId, components, component_types);
+                self.build_on_with_components(id, components, component_types);
             }
         }
     }
@@ -572,7 +615,7 @@ impl Components {
     pub fn entities_matching_access<'a>(
         &'a self,
         access: &'a QueryAccess,
-    ) -> impl Iterator<Item = DynamicId> + '_ {
+    ) -> impl Iterator<Item = Entity> + '_ {
         self.archetypes
             .iter()
             .flat_map(move |archetype| {
@@ -580,8 +623,8 @@ impl Components {
                     Some(
                         archetype
                             .entities
-                            .ones()
-                            .map(move |entity| entity as DynamicId),
+                            .sparse_iter()
+                            .flat_map(|entity| self.entity(*entity)),
                     )
                 } else {
                     None
@@ -593,7 +636,7 @@ impl Components {
     pub fn components_matching_access(
         &self,
         access: QueryAccess,
-    ) -> impl Iterator<Item = (DynamicId, ComponentMap<&'_ LockedData>)> + '_ {
+    ) -> SparseSet<Entity, ComponentMap<&'_ LockedData>> {
         self.archetypes
             .iter()
             .flat_map(move |archetype| {
@@ -601,18 +644,16 @@ impl Components {
                     Some(
                         archetype
                             .entities
-                            .ones()
+                            .sparse_iter()
+                            .flat_map(|entity| self.entity(*entity))
                             .map(move |entity| {
                                 (
-                                    entity as DynamicId,
+                                    entity,
                                     archetype
                                         .columns
                                         .iter()
                                         .filter_map(move |(id, column)| {
-                                            column
-                                                .storage
-                                                .get(&(entity as DynamicId))
-                                                .map(|x| (id, x))
+                                            column.storage.get(&entity.id()).map(|x| (id, x))
                                         })
                                         .collect(),
                                 )
@@ -624,6 +665,7 @@ impl Components {
                 }
             })
             .flatten()
+            .collect()
     }
 }
 

@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 
-use crate::id::{DynamicId, IdRegistry};
+use crate::id::{DynamicId, Registry};
 
 use super::world::World;
 use parking_lot::RwLock;
@@ -47,10 +47,10 @@ pub enum SystemStage {
 
 pub trait System: Send + Sync {
     fn run(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()>;
-    fn components_read(&self, registry: &IdRegistry) -> Vec<DynamicId>;
-    fn components_written(&self, registry: &IdRegistry) -> Vec<DynamicId>;
-    fn resources_read(&self, registry: &IdRegistry) -> Vec<DynamicId>;
-    fn resources_written(&self, registry: &IdRegistry) -> Vec<DynamicId>;
+    fn components_read(&self, registry: &Registry) -> Vec<DynamicId>;
+    fn components_written(&self, registry: &Registry) -> Vec<DynamicId>;
+    fn resources_read(&self, registry: &Registry) -> Vec<DynamicId>;
+    fn resources_written(&self, registry: &Registry) -> Vec<DynamicId>;
     fn is_exclusive(&self) -> bool;
 }
 
@@ -102,7 +102,7 @@ impl SystemGraph {
         self.graph.add_edge(dependency.into(), dependent.into(), ());
     }
 
-    pub fn autodetect_dependencies(&mut self, registry: &IdRegistry) -> anyhow::Result<()> {
+    pub fn autodetect_dependencies(&mut self, registry: &Registry) -> anyhow::Result<()> {
         let mut components_read = FxHashMap::default();
         let mut components_written = FxHashMap::default();
 

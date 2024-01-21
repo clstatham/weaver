@@ -1,6 +1,6 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 
-use crate::id::{DynamicId, IdRegistry};
+use crate::id::{DynamicId, Registry};
 
 pub trait Downcast: std::any::Any {
     fn as_any(&self) -> &dyn std::any::Any;
@@ -27,7 +27,7 @@ pub struct Data {
 }
 
 impl Data {
-    pub fn new<T: Component>(data: T, registry: &IdRegistry) -> Self {
+    pub fn new<T: Component>(data: T, registry: &Registry) -> Self {
         let id = registry.get_static::<T>();
         if id == registry.get_static::<Data>() {
             panic!("Cannot create a Data from a Data")
