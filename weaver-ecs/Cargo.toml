@@ -24,3 +24,5 @@ log = "0.4"
 static_assertions = "1.1.0"
 bit-set = "0.5.3"
 fixedbitset = "0.4.2"
+pest = { version = "2.7.6", features = ["pretty-print"] }
+pest_derive = "2.7.6"

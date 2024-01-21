@@ -5,6 +5,7 @@ use crate::{
     prelude::Commands,
     query::{DynamicQuery, DynamicQueryParam, DynamicQueryParams},
     resource::{DynRes, DynResMut},
+    script::build::BuildOnWorld,
 };
 
 use super::world::World;
@@ -42,6 +43,7 @@ pub enum RunFn {
 
 pub struct DynamicSystem {
     pub run_fn: RunFn,
+    pub name: String,
     pub components_read: Vec<DynamicId>,
     pub components_written: Vec<DynamicId>,
     pub resources_read: Vec<DynamicId>,
@@ -56,13 +58,15 @@ impl DynamicSystem {
         RR: IntoIterator<Item = DynamicId>,
         RW: IntoIterator<Item = DynamicId>,
     >(
-        run_fn: F,
+        name: impl Into<String>,
         components_read: CR,
         components_written: CW,
         resources_read: RR,
         resources_written: RW,
+        run_fn: F,
     ) -> Self {
         Self {
+            name: name.into(),
             run_fn: RunFn::Dynamic(Box::new(run_fn)),
             components_read: components_read.into_iter().collect(),
             components_written: components_written.into_iter().collect(),
@@ -73,6 +77,7 @@ impl DynamicSystem {
 
     pub fn from_system<T: System>(system: T, registry: &Registry) -> Self {
         Self {
+            name: std::any::type_name::<T>().to_string(),
             components_read: system.components_read(registry),
             components_written: system.components_written(registry),
             resources_read: system.resources_read(registry),
@@ -81,12 +86,22 @@ impl DynamicSystem {
         }
     }
 
-    pub fn builder() -> DynamicSystemBuilder {
-        DynamicSystemBuilder::new()
+    pub fn builder(name: &str) -> DynamicSystemBuilder {
+        DynamicSystemBuilder::new(name)
     }
 
-    pub fn script_builder() -> ScriptSystemBuilder {
-        ScriptSystemBuilder::new()
+    pub fn script_builder(name: &str) -> ScriptSystemBuilder {
+        ScriptSystemBuilder::new(name)
+    }
+
+    pub fn load_script(
+        path: impl AsRef<std::path::Path>,
+        world: Arc<RwLock<World>>,
+    ) -> anyhow::Result<Vec<Self>> {
+        let mut script = crate::script::Script::load(path)?;
+        script.parse();
+        let systems = script.build(world)?;
+        Ok(systems)
     }
 }
 
@@ -120,6 +135,7 @@ impl System for DynamicSystem {
 }
 
 pub struct DynamicSystemBuilder {
+    name: String,
     components_read: Vec<DynamicId>,
     components_written: Vec<DynamicId>,
     resources_read: Vec<DynamicId>,
@@ -127,8 +143,9 @@ pub struct DynamicSystemBuilder {
 }
 
 impl DynamicSystemBuilder {
-    pub fn new() -> Self {
+    pub fn new(name: &str) -> Self {
         Self {
+            name: name.into(),
             components_read: Vec::new(),
             components_written: Vec::new(),
             resources_read: Vec::new(),
@@ -161,18 +178,13 @@ impl DynamicSystemBuilder {
         F: Fn() -> anyhow::Result<()> + Send + Sync + 'static,
     {
         DynamicSystem::new(
-            run,
+            self.name,
             self.components_read,
             self.components_written,
             self.resources_read,
             self.resources_written,
+            run,
         )
-    }
-}
-
-impl Default for DynamicSystemBuilder {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -221,34 +233,43 @@ impl<'a> ScriptParams<'a> {
 }
 
 pub struct ScriptSystemBuilder {
+    name: String,
     params: Vec<ScriptBuilderParams>,
 }
 
 impl ScriptSystemBuilder {
-    pub fn new() -> Self {
-        Self { params: Vec::new() }
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.into(),
+            params: Vec::new(),
+        }
     }
 
+    #[must_use]
     pub fn query(mut self, query: DynamicQueryParams) -> Self {
         self.params.push(ScriptBuilderParams::Query(query));
         self
     }
 
+    #[must_use]
     pub fn res(mut self, resource: DynamicId) -> Self {
         self.params.push(ScriptBuilderParams::Res(resource));
         self
     }
 
+    #[must_use]
     pub fn res_mut(mut self, resource: DynamicId) -> Self {
         self.params.push(ScriptBuilderParams::ResMut(resource));
         self
     }
 
+    #[must_use]
     pub fn commands(mut self) -> Self {
         self.params.push(ScriptBuilderParams::Commands);
         self
     }
 
+    #[must_use]
     pub fn build<S>(self, world: Arc<RwLock<World>>, script: S) -> DynamicSystem
     where
         S: Fn(&[ScriptParams]) -> anyhow::Result<()> + Send + Sync + 'static,
@@ -334,23 +355,18 @@ impl ScriptSystemBuilder {
         };
 
         DynamicSystem::new(
-            run_fn,
+            self.name,
             components_read,
             components_written,
             resources_read,
             resources_written,
+            run_fn,
         )
     }
 }
 
-impl Default for ScriptSystemBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 pub struct SystemNode {
-    pub id: DynamicId,
+    pub id: NodeIndex,
     pub system: Arc<DynamicSystem>,
 }
 
@@ -360,46 +376,55 @@ pub struct SystemGraph {
 }
 
 impl SystemGraph {
-    pub fn has_system(&self, id: DynamicId) -> bool {
-        self.graph.contains_node(id.into())
+    pub fn has_system(&self, id: NodeIndex) -> bool {
+        self.graph.contains_node(id)
     }
 
-    pub fn add_system<T: System>(&mut self, system: T, registry: &Registry) -> DynamicId {
+    pub fn add_dynamic_system(&mut self, system: DynamicSystem) -> NodeIndex {
         let index = self.graph.add_node(SystemNode {
-            id: DynamicId::MAX,
+            id: NodeIndex::default(),
+            system: Arc::new(system),
+        });
+        self.graph[index].id = index;
+        self.graph[index].id
+    }
+
+    pub fn add_system<T: System>(&mut self, system: T, registry: &Registry) -> NodeIndex {
+        let index = self.graph.add_node(SystemNode {
+            id: NodeIndex::default(),
             system: Arc::new(DynamicSystem::from_system(system, registry)),
         });
-        self.graph[index].id = index.index() as DynamicId;
+        self.graph[index].id = index;
         self.graph[index].id
     }
 
     pub fn add_system_after<T: System>(
         &mut self,
         system: T,
-        after: DynamicId,
+        after: NodeIndex,
         registry: &Registry,
-    ) -> DynamicId {
+    ) -> NodeIndex {
         let index = self.graph.add_node(SystemNode {
-            id: DynamicId::MAX,
+            id: NodeIndex::default(),
             system: Arc::new(DynamicSystem::from_system(system, registry)),
         });
-        self.graph[index].id = index.index() as DynamicId;
-        self.graph.add_edge(after.into(), index, ());
+        self.graph[index].id = index;
+        self.graph.add_edge(after, index, ());
         self.graph[index].id
     }
 
     pub fn add_system_before<T: System>(
         &mut self,
         system: T,
-        before: DynamicId,
+        before: NodeIndex,
         registry: &Registry,
-    ) -> DynamicId {
+    ) -> NodeIndex {
         let index = self.graph.add_node(SystemNode {
-            id: DynamicId::MAX,
+            id: NodeIndex::default(),
             system: Arc::new(DynamicSystem::from_system(system, registry)),
         });
-        self.graph[index].id = index.index() as DynamicId;
-        self.graph.add_edge(index, before.into(), ());
+        self.graph[index].id = index;
+        self.graph.add_edge(index, before, ());
         self.graph[index].id
     }
 
@@ -477,7 +502,7 @@ impl SystemGraph {
         Ok(())
     }
 
-    pub fn detect_cycles(&self) -> Option<Vec<DynamicId>> {
+    pub fn detect_cycles(&self) -> Option<Vec<NodeIndex>> {
         let mut visited = FxHashSet::default();
         let mut stack = Vec::new();
         let mut path = Vec::new();
@@ -498,7 +523,7 @@ impl SystemGraph {
         node: NodeIndex,
         visited: &mut FxHashSet<NodeIndex>,
         stack: &mut Vec<NodeIndex>,
-        path: &mut Vec<DynamicId>,
+        path: &mut Vec<NodeIndex>,
     ) -> bool {
         visited.insert(node);
         stack.push(node);

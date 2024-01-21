@@ -5,7 +5,8 @@ use crate::{
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use weaver_ecs::{id::DynamicId, prelude::*};
+use petgraph::prelude::NodeIndex;
+use weaver_ecs::prelude::*;
 use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use crate::renderer::{compute::hdr_loader::HdrLoader, Renderer};
@@ -86,7 +87,7 @@ impl App {
         self.world.write().add_resource(resource)
     }
 
-    pub fn add_system<T: System + 'static>(&self, system: T) -> DynamicId {
+    pub fn add_system<T: System + 'static>(&self, system: T) -> NodeIndex {
         self.world.write().add_system(system)
     }
 
@@ -94,7 +95,7 @@ impl App {
         &self,
         system: T,
         stage: SystemStage,
-    ) -> DynamicId {
+    ) -> NodeIndex {
         self.world.write().add_system_to_stage(system, stage)
     }
 

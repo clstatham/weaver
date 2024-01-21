@@ -1,21 +1,44 @@
 use std::{any::TypeId, collections::HashMap, hash::BuildHasherDefault, sync::atomic::AtomicU32};
 
 use atomic_refcell::AtomicRefCell;
-use rustc_hash::FxHasher;
+use rustc_hash::{FxHashMap, FxHasher};
 
 pub type DynamicId = u32;
 
 pub struct Registry {
     next_id: AtomicU32,
     static_ids: AtomicRefCell<TypeIdMap<DynamicId>>,
+    named_ids: AtomicRefCell<FxHashMap<String, DynamicId>>,
 }
 
 impl Registry {
     pub fn new() -> Self {
-        Self {
+        let registry = Self {
             next_id: AtomicU32::new(1),
             static_ids: AtomicRefCell::new(HashMap::default()),
-        }
+            named_ids: AtomicRefCell::new(FxHashMap::default()),
+        };
+
+        // register builtin types
+        registry.get_static::<()>();
+        registry.get_static::<bool>();
+        registry.get_static::<u8>();
+        registry.get_static::<u16>();
+        registry.get_static::<u32>();
+        registry.get_static::<u64>();
+        registry.get_static::<u128>();
+        registry.get_static::<usize>();
+        registry.get_static::<i8>();
+        registry.get_static::<i16>();
+        registry.get_static::<i32>();
+        registry.get_static::<i64>();
+        registry.get_static::<i128>();
+        registry.get_static::<isize>();
+        registry.get_static::<f32>();
+        registry.get_static::<f64>();
+        registry.get_static::<String>();
+
+        registry
     }
 
     #[inline]
@@ -33,16 +56,33 @@ impl Registry {
         let id = self.create();
 
         self.static_ids.borrow_mut().insert(static_id, id);
+
+        let name = self.static_name::<T>();
+        self.named_ids.borrow_mut().insert(name, id);
+
+        id
+    }
+
+    pub fn get_named(&self, name: &str) -> DynamicId {
+        if let Some(id) = self.named_ids.borrow().get(name) {
+            return *id;
+        }
+
+        let id = self.create();
+
+        self.named_ids.borrow_mut().insert(name.to_string(), id);
         id
     }
 
     pub fn split(&self) -> Self {
         let next_id = self.next_id.load(std::sync::atomic::Ordering::Relaxed);
         let static_ids = self.static_ids.borrow().clone();
+        let named_ids = self.named_ids.borrow().clone();
 
         Self {
             next_id: AtomicU32::new(next_id),
             static_ids: AtomicRefCell::new(static_ids),
+            named_ids: AtomicRefCell::new(named_ids),
         }
     }
 
@@ -53,15 +93,19 @@ impl Registry {
         );
         self.static_ids
             .borrow_mut()
-            .extend(other.static_ids.borrow().iter());
+            .extend(other.static_ids.borrow().clone());
+        self.named_ids
+            .borrow_mut()
+            .extend(other.named_ids.borrow().clone());
     }
 
     pub fn static_name<T: 'static>(&self) -> String {
-        std::any::type_name::<T>()
-            .split("::")
-            .last()
-            .unwrap()
-            .to_string()
+        let name = std::any::type_name::<T>().split("::").last().unwrap();
+        if name.is_empty() {
+            std::any::type_name::<T>().to_string()
+        } else {
+            name.to_string()
+        }
     }
 }
 

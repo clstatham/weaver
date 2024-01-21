@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
+use petgraph::prelude::NodeIndex;
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -11,7 +12,7 @@ use crate::{
     query::{DynamicQueryBuilder, Query, QueryFilter, Queryable},
     resource::{Res, ResMut, Resource},
     storage::{Components, SparseSet},
-    system::System,
+    system::{DynamicSystem, System},
     system::{SystemGraph, SystemStage},
 };
 
@@ -85,16 +86,28 @@ impl World {
         self.resources.contains(&id)
     }
 
-    pub fn add_system<T: System>(&mut self, system: T) -> DynamicId {
+    pub fn add_system<T: System>(&mut self, system: T) -> NodeIndex {
         self.add_system_to_stage(system, SystemStage::default())
     }
 
-    pub fn add_system_to_stage<T: System>(&mut self, system: T, stage: SystemStage) -> DynamicId {
+    pub fn add_system_to_stage<T: System>(&mut self, system: T, stage: SystemStage) -> NodeIndex {
         self.systems
             .entry(stage)
             .or_default()
             .write()
             .add_system(system, self.components.registry())
+    }
+
+    pub fn add_dynamic_system_to_stage(
+        &mut self,
+        system: DynamicSystem,
+        stage: SystemStage,
+    ) -> NodeIndex {
+        self.systems
+            .entry(stage)
+            .or_default()
+            .write()
+            .add_dynamic_system(system)
     }
 
     pub fn run_stage(world: &Arc<RwLock<Self>>, stage: SystemStage) -> anyhow::Result<()> {
@@ -137,6 +150,10 @@ impl World {
 
     pub fn dynamic_id<T: Component>(&self) -> DynamicId {
         self.components.registry().get_static::<T>()
+    }
+
+    pub fn named_id(&self, name: &str) -> DynamicId {
+        self.components.registry().get_named(name)
     }
 }
 

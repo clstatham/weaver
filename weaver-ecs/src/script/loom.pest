@@ -1,0 +1,61 @@
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT    = _{ "//" ~ !NEWLINE+ ~ NEWLINE }
+
+// Tokens
+lparen = _{ "(" }
+rparen = _{ ")" }
+comma  = _{ "," }
+colon  = _{ ":" }
+semi   = _{ ";" }
+lbrack = _{ "[" }
+rbrack = _{ "]" }
+lbrace = _{ "{" }
+rbrace = _{ "}" }
+digit  =  { '0'..'9' }
+letter =  { 'a'..'z' | 'A'..'Z' }
+
+ident = @{ (letter | "_") ~ (letter | digit | "_")* }
+
+// Keywords
+
+component = _{ "component" }
+system    = _{ "system" }
+foreach   = _{ "foreach" }
+query     = _{ "query" }
+
+// Types
+
+i32 = { "i32" }
+i64 = { "i64" }
+f32 = { "f32" }
+f64 = { "f64" }
+
+type = { i32 | i64 | f32 | f64 | ident }
+
+typed_ident = { ident ~ colon ~ type }
+
+// Rules
+
+// Top level
+
+program = { SOI ~ statements ~ EOI }
+
+statements = { statement* }
+
+// Statements
+
+statement = { (component_stmt | system_stmt | query_stmt | call_stmt | block_stmt) ~ ";" }
+
+block_stmt = { lbrace ~ statements ~ rbrace }
+
+component_stmt = { component ~ ident ~ lbrace ~ (typed_ident ~ semi)* ~ rbrace }
+
+system_stmt = { system ~ ident ~ block_stmt }
+
+query_stmt = { query ~ lbrack ~ typed_args ~ rbrack ~ foreach ~ block_stmt }
+
+call_stmt = { ident ~ lparen ~ args ~ rparen }
+
+typed_args = { (typed_ident ~ comma)* ~ typed_ident }
+
+args = { (ident ~ comma)* ~ ident }

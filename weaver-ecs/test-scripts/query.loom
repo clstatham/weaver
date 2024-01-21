@@ -1,0 +1,5 @@
+system Test {
+    query[a: A, b: B, c: C] foreach {
+        dbg(a);
+    };
+};

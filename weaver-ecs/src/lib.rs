@@ -1,5 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
+pub mod script;
+
 pub mod bundle;
 pub mod commands;
 pub mod component;
@@ -29,6 +31,7 @@ pub mod prelude {
 #[cfg(test)]
 mod tests {
     #![allow(dead_code, unused)]
+    use std::path::PathBuf;
     use std::sync::Arc;
 
     use parking_lot::RwLock;
@@ -36,6 +39,8 @@ mod tests {
     use crate as weaver_ecs;
     use crate::prelude::*;
     use crate::query::DynamicQueryParams;
+    use crate::script::build::BuildOnWorld;
+    use crate::script::Script;
     use crate::system::DynamicSystem;
 
     #[derive(Debug, Default, Component)]
@@ -240,7 +245,7 @@ mod tests {
 
         let world = Arc::new(RwLock::new(world));
 
-        let mut system = DynamicSystem::script_builder()
+        let mut system = DynamicSystem::script_builder("test")
             .query(DynamicQueryParams::new().read(a_id).read(b_id).read(c_id))
             .build(world.clone(), move |params| {
                 let query = params[0].unwrap_query();
@@ -258,6 +263,38 @@ mod tests {
         world
             .write()
             .add_system_to_stage(system, SystemStage::Update);
+
+        World::run_stage(&world, SystemStage::Update);
+    }
+
+    #[test]
+    fn test_script_system_load() {
+        let mut world = World::new();
+
+        world.spawn((A::default(), B::default(), C::default()));
+        world.spawn((A::default(), B::default()));
+        world.spawn((A::default(), C::default()));
+        world.spawn((A::default(), B::default(), C::default()));
+
+        let a_id = world.dynamic_id::<A>();
+        let b_id = world.dynamic_id::<B>();
+        let c_id = world.dynamic_id::<C>();
+
+        let world = Arc::new(RwLock::new(world));
+
+        let systems = DynamicSystem::load_script(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("test-scripts")
+                .join("query.loom"),
+            world.clone(),
+        )
+        .unwrap();
+
+        for system in systems {
+            world
+                .write()
+                .add_system_to_stage(system, SystemStage::Update);
+        }
 
         World::run_stage(&world, SystemStage::Update);
     }
