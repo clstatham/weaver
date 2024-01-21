@@ -395,6 +395,31 @@ pub enum DynamicQueryRef<'a> {
     Mut(AtomicRefMut<'a, Data>),
 }
 
+impl<'a> Debug for DynamicQueryRef<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DynamicQueryRef::Ref(data) => write!(f, "{:?}", data.data()),
+            DynamicQueryRef::Mut(data) => write!(f, "{:?}", data.data()),
+        }
+    }
+}
+
+impl<'a> DynamicQueryRef<'a> {
+    pub fn get<T: Component>(&self) -> Option<&T> {
+        match self {
+            DynamicQueryRef::Ref(data) => data.get_as::<T>(),
+            DynamicQueryRef::Mut(data) => data.get_as::<T>(),
+        }
+    }
+
+    pub fn get_mut<T: Component>(&mut self) -> Option<&mut T> {
+        match self {
+            DynamicQueryRef::Ref(_) => None,
+            DynamicQueryRef::Mut(data) => data.get_as_mut::<T>(),
+        }
+    }
+}
+
 pub struct DynamicQuery<'a> {
     entries: SparseSet<Entity, ComponentMap<&'a LockedData>>,
     params: DynamicQueryParams,

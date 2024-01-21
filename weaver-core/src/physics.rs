@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use rapier3d::prelude::*;
 use weaver_proc_macro::{Component, Resource};
 
@@ -125,7 +127,7 @@ impl RapierContext {
     }
 }
 
-#[derive(Component, Clone)]
+#[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct InitializedRigidBody {
     rb: RigidBodyHandle,
@@ -173,6 +175,12 @@ impl RigidBodyPhysics {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RigidBody {
     physics: RigidBodyPhysics,
+}
+
+impl Debug for RigidBody {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RigidBody").finish()
+    }
 }
 
 impl RigidBody {

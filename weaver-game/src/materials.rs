@@ -1,25 +1,25 @@
 use weaver::prelude::*;
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Wood;
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Metal;
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WoodTile;
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BrickWall;
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StoneWall;
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Banana;

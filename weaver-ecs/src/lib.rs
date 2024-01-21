@@ -246,7 +246,10 @@ mod tests {
         let world = Arc::new(RwLock::new(world));
 
         let mut system = DynamicSystem::script_builder("test")
-            .query(DynamicQueryParams::new().read(a_id).read(b_id).read(c_id))
+            .query(
+                "abc",
+                DynamicQueryParams::new().read(a_id).read(b_id).read(c_id),
+            )
             .build(world.clone(), move |params| {
                 let query = params[0].unwrap_query();
                 let mut count = 0;
@@ -282,19 +285,13 @@ mod tests {
 
         let world = Arc::new(RwLock::new(world));
 
-        let systems = DynamicSystem::load_script(
+        World::add_script_to_stage(
+            &world,
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("test-scripts")
                 .join("query.loom"),
-            world.clone(),
-        )
-        .unwrap();
-
-        for system in systems {
-            world
-                .write()
-                .add_system_to_stage(system, SystemStage::Update);
-        }
+            SystemStage::Update,
+        );
 
         World::run_stage(&world, SystemStage::Update);
     }

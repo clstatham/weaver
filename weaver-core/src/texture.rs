@@ -1,5 +1,5 @@
-use std::path::Path;
 use std::sync::Arc;
+use std::{fmt::Debug, path::Path};
 
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
@@ -200,6 +200,12 @@ pub struct Texture {
     pub(crate) handle: LazyGpuHandle,
 }
 
+impl Debug for Texture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Texture").finish()
+    }
+}
+
 impl Texture {
     pub(crate) fn from_handle(handle: LazyGpuHandle) -> Self {
         Self { handle }
@@ -368,6 +374,12 @@ pub struct Skybox {
     pub irradiance: HdrCubeTexture,
     #[cfg_attr(feature = "serde", serde(skip))]
     bind_group: LazyBindGroup<Self>,
+}
+
+impl Debug for Skybox {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Skybox").finish()
+    }
 }
 
 impl Skybox {

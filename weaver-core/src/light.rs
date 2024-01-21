@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use weaver_proc_macro::{BindableComponent, Component, GpuComponent};
 
 use crate::renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle};
@@ -23,6 +25,17 @@ pub struct PointLight {
     pub(crate) handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
+}
+
+impl Debug for PointLight {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PointLight")
+            .field("position", &self.position)
+            .field("color", &self.color)
+            .field("intensity", &self.intensity)
+            .field("radius", &self.radius)
+            .finish()
+    }
 }
 
 impl PointLight {
@@ -101,7 +114,7 @@ pub(crate) struct PointLightArrayUniform {
     pub(crate) lights: [PointLightUniform; MAX_LIGHTS],
 }
 
-#[derive(Component, GpuComponent, BindableComponent)]
+#[derive(GpuComponent, BindableComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[gpu(update = "update")]
 pub(crate) struct PointLightArray {

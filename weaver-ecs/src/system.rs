@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, fmt::Debug, sync::Arc};
+use std::{collections::VecDeque, fmt::Debug, ops::Deref, sync::Arc};
 
 use crate::{
     id::{DynamicId, Registry},
@@ -188,45 +188,63 @@ impl DynamicSystemBuilder {
     }
 }
 
-pub enum ScriptBuilderParams {
+pub enum ScriptBuilderParamType {
     Query(DynamicQueryParams),
     Res(DynamicId),
     ResMut(DynamicId),
     Commands,
 }
 
-pub enum ScriptParams<'a> {
+pub struct ScriptBuilderParam {
+    pub name: String,
+    pub param: ScriptBuilderParamType,
+}
+
+pub enum ScriptParamType<'a> {
     Query(DynamicQuery<'a>),
     Res(DynRes<'a>),
     ResMut(DynResMut<'a>),
     Commands(Commands),
 }
 
-impl<'a> ScriptParams<'a> {
+pub struct ScriptParam<'a> {
+    pub name: String,
+    pub param: ScriptParamType<'a>,
+}
+
+impl<'a> Deref for ScriptParam<'a> {
+    type Target = ScriptParamType<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.param
+    }
+}
+
+impl<'a> ScriptParamType<'a> {
     pub fn unwrap_query(&self) -> &DynamicQuery<'a> {
         match self {
-            ScriptParams::Query(query) => query,
+            ScriptParamType::Query(query) => query,
             _ => panic!("Expected ScriptParams::Query"),
         }
     }
 
     pub fn unwrap_res(&self) -> &DynRes<'a> {
         match self {
-            ScriptParams::Res(res) => res,
+            ScriptParamType::Res(res) => res,
             _ => panic!("Expected ScriptParams::Res"),
         }
     }
 
     pub fn unwrap_res_mut(&self) -> &DynResMut<'a> {
         match self {
-            ScriptParams::ResMut(res) => res,
+            ScriptParamType::ResMut(res) => res,
             _ => panic!("Expected ScriptParams::ResMut"),
         }
     }
 
     pub fn unwrap_commands(&self) -> &Commands {
         match self {
-            ScriptParams::Commands(commands) => commands,
+            ScriptParamType::Commands(commands) => commands,
             _ => panic!("Expected ScriptParams::Commands"),
         }
     }
@@ -234,7 +252,7 @@ impl<'a> ScriptParams<'a> {
 
 pub struct ScriptSystemBuilder {
     name: String,
-    params: Vec<ScriptBuilderParams>,
+    params: Vec<ScriptBuilderParam>,
 }
 
 impl ScriptSystemBuilder {
@@ -246,33 +264,45 @@ impl ScriptSystemBuilder {
     }
 
     #[must_use]
-    pub fn query(mut self, query: DynamicQueryParams) -> Self {
-        self.params.push(ScriptBuilderParams::Query(query));
+    pub fn query(mut self, name: &str, query: DynamicQueryParams) -> Self {
+        self.params.push(ScriptBuilderParam {
+            name: name.into(),
+            param: ScriptBuilderParamType::Query(query),
+        });
         self
     }
 
     #[must_use]
-    pub fn res(mut self, resource: DynamicId) -> Self {
-        self.params.push(ScriptBuilderParams::Res(resource));
+    pub fn res(mut self, name: &str, resource: DynamicId) -> Self {
+        self.params.push(ScriptBuilderParam {
+            name: name.into(),
+            param: ScriptBuilderParamType::Res(resource),
+        });
         self
     }
 
     #[must_use]
-    pub fn res_mut(mut self, resource: DynamicId) -> Self {
-        self.params.push(ScriptBuilderParams::ResMut(resource));
+    pub fn res_mut(mut self, name: &str, resource: DynamicId) -> Self {
+        self.params.push(ScriptBuilderParam {
+            name: name.into(),
+            param: ScriptBuilderParamType::ResMut(resource),
+        });
         self
     }
 
     #[must_use]
     pub fn commands(mut self) -> Self {
-        self.params.push(ScriptBuilderParams::Commands);
+        self.params.push(ScriptBuilderParam {
+            name: "commands".into(),
+            param: ScriptBuilderParamType::Commands,
+        });
         self
     }
 
     #[must_use]
     pub fn build<S>(self, world: Arc<RwLock<World>>, script: S) -> DynamicSystem
     where
-        S: Fn(&[ScriptParams]) -> anyhow::Result<()> + Send + Sync + 'static,
+        S: Fn(&[ScriptParam]) -> anyhow::Result<()> + Send + Sync + 'static,
     {
         let mut components_read = Vec::new();
         let mut components_written = Vec::new();
@@ -280,8 +310,8 @@ impl ScriptSystemBuilder {
         let mut resources_written = Vec::new();
 
         for param in self.params.iter() {
-            match param {
-                ScriptBuilderParams::Query(query) => {
+            match &param.param {
+                ScriptBuilderParamType::Query(query) => {
                     for param in query.iter() {
                         match param {
                             DynamicQueryParam::Read(component) => {
@@ -294,13 +324,13 @@ impl ScriptSystemBuilder {
                         }
                     }
                 }
-                ScriptBuilderParams::Res(res) => {
+                ScriptBuilderParamType::Res(res) => {
                     resources_read.push(*res);
                 }
-                ScriptBuilderParams::ResMut(res) => {
+                ScriptBuilderParamType::ResMut(res) => {
                     resources_written.push(*res);
                 }
-                ScriptBuilderParams::Commands => {}
+                ScriptBuilderParamType::Commands => {}
             }
         }
 
@@ -311,26 +341,38 @@ impl ScriptSystemBuilder {
             let mut has_commands = false;
 
             for param in self.params.iter() {
-                match param {
-                    ScriptBuilderParams::Query(query) => {
-                        params.push(ScriptParams::Query(DynamicQuery::new(
-                            &world_lock.components,
-                            query.clone(),
-                        )));
+                match &param.param {
+                    ScriptBuilderParamType::Query(query) => {
+                        params.push(ScriptParam {
+                            name: param.name.clone(),
+                            param: ScriptParamType::Query(DynamicQuery::new(
+                                &world_lock.components,
+                                query.clone(),
+                            )),
+                        });
                     }
-                    ScriptBuilderParams::Res(res) => {
-                        params.push(ScriptParams::Res(DynRes::new(
-                            world_lock.resources.get(res).unwrap().read(),
-                        )));
+                    ScriptBuilderParamType::Res(res) => {
+                        params.push(ScriptParam {
+                            name: param.name.clone(),
+                            param: ScriptParamType::Res(DynRes::new(
+                                world_lock.resources.get(res).unwrap().read(),
+                            )),
+                        });
                     }
-                    ScriptBuilderParams::ResMut(res) => {
-                        params.push(ScriptParams::ResMut(DynResMut::new(
-                            world_lock.resources.get(res).unwrap().write(),
-                        )));
+                    ScriptBuilderParamType::ResMut(res) => {
+                        params.push(ScriptParam {
+                            name: param.name.clone(),
+                            param: ScriptParamType::ResMut(DynResMut::new(
+                                world_lock.resources.get(res).unwrap().write(),
+                            )),
+                        });
                     }
-                    ScriptBuilderParams::Commands => {
+                    ScriptBuilderParamType::Commands => {
                         has_commands = true;
-                        params.push(ScriptParams::Commands(Commands::new(&world_lock)));
+                        params.push(ScriptParam {
+                            name: param.name.clone(),
+                            param: ScriptParamType::Commands(Commands::new(&world_lock)),
+                        });
                     }
                 }
             }
@@ -340,8 +382,8 @@ impl ScriptSystemBuilder {
             if has_commands {
                 let commands = params
                     .drain(..)
-                    .find_map(|param| match param {
-                        ScriptParams::Commands(commands) => Some(commands),
+                    .find_map(|param| match param.param {
+                        ScriptParamType::Commands(commands) => Some(commands),
                         _ => None,
                     })
                     .unwrap();

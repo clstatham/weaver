@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use glam::{Vec3, Vec4};
 use rand::Rng;
 use weaver_proc_macro::Component;
@@ -29,6 +31,28 @@ pub struct ParticleEmitter {
     pub particle_velocity_randomness: Vec3,
 
     pub particle_texture: Option<Texture>,
+}
+
+impl Debug for ParticleEmitter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ParticleEmitter")
+            .field("particles", &self.particles)
+            .field("origin", &self.origin)
+            .field("spawn_rate", &self.spawn_rate)
+            .field("spawn_timer", &self.spawn_timer)
+            .field("max_particles", &self.max_particles)
+            .field("particle_lifetime", &self.particle_lifetime)
+            .field(
+                "particle_lifetime_randomness",
+                &self.particle_lifetime_randomness,
+            )
+            .field("particle_velocity", &self.particle_velocity)
+            .field(
+                "particle_velocity_randomness",
+                &self.particle_velocity_randomness,
+            )
+            .finish()
+    }
 }
 
 impl Default for ParticleEmitter {

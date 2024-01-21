@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fmt::Debug, path::Path};
 
 use weaver_ecs::prelude::*;
 use weaver_proc_macro::{BindableComponent, Component, GpuComponent};
@@ -82,6 +82,17 @@ pub struct Material {
 
     #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
+}
+
+impl Debug for Material {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Material")
+            .field("diffuse", &self.diffuse)
+            .field("metallic", &self.metallic)
+            .field("roughness", &self.roughness)
+            .field("texture_scaling", &self.texture_scaling)
+            .finish()
+    }
 }
 
 impl Material {

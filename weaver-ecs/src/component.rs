@@ -20,14 +20,31 @@ impl<T: std::any::Any> Downcast for T {
 }
 
 /// A component is a data structure that can be attached to an entity.
-pub trait Component: Downcast + Send + Sync + 'static {}
+pub trait Component: Debug + Downcast + Send + Sync + 'static {}
+
+impl Component for bool {}
+impl Component for u8 {}
+impl Component for u16 {}
+impl Component for u32 {}
+impl Component for u64 {}
+impl Component for u128 {}
+impl Component for usize {}
+impl Component for i8 {}
+impl Component for i16 {}
+impl Component for i32 {}
+impl Component for i64 {}
+impl Component for i128 {}
+impl Component for isize {}
+impl Component for f32 {}
+impl Component for f64 {}
+impl Component for String {}
 
 /// A unique pointer to a type-erased component.
 pub struct Data {
     id: DynamicId,
     type_name: String,
     field_name: Option<String>,
-    data: Box<dyn Downcast + Send + Sync + 'static>,
+    data: Box<dyn Component>,
 }
 
 impl Data {
@@ -77,6 +94,11 @@ impl Data {
             None => self.type_name(),
         }
     }
+
+    #[inline]
+    pub fn data(&self) -> &dyn Component {
+        &*self.data
+    }
 }
 
 impl Debug for Data {
@@ -85,6 +107,7 @@ impl Debug for Data {
             .field("id", &self.id)
             .field("type_name", &self.type_name)
             .field("field_name", &self.field_name)
+            .field("data", &format!("{:?}", self.data))
             .finish()
     }
 }

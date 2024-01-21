@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate::renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle};
 
 use weaver_ecs::prelude::*;
@@ -49,6 +51,15 @@ pub struct Camera {
     pub(crate) handle: LazyGpuHandle,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
+}
+
+impl Debug for Camera {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Camera")
+            .field("view_matrix", &self.view_matrix)
+            .field("projection_matrix", &self.projection_matrix)
+            .finish()
+    }
 }
 
 impl Camera {

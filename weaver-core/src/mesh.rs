@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc};
+use std::{fmt::Debug, path::Path, sync::Arc};
 
 use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
@@ -124,7 +124,7 @@ fn calculate_tangents(vertices: &mut [Vertex], indices: &[u32]) {
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct MeshInner {
     pub asset_id: AssetId,
@@ -140,6 +140,14 @@ struct MeshInner {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Mesh {
     inner: Arc<MeshInner>,
+}
+
+impl Debug for Mesh {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Mesh")
+            .field("asset_id", &self.inner.asset_id)
+            .finish()
+    }
 }
 
 impl Mesh {

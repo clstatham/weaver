@@ -21,7 +21,6 @@ ident = @{ (letter | "_") ~ (letter | digit | "_")* }
 component = _{ "component" }
 system    = _{ "system" }
 foreach   = _{ "foreach" }
-query     = _{ "query" }
 
 // Types
 
@@ -52,7 +51,7 @@ component_stmt = { component ~ ident ~ lbrace ~ (typed_ident ~ semi)* ~ rbrace }
 
 system_stmt = { system ~ ident ~ block_stmt }
 
-query_stmt = { query ~ lbrack ~ typed_args ~ rbrack ~ foreach ~ block_stmt }
+query_stmt = { ident ~ colon ~ lbrack ~ typed_args ~ rbrack ~ foreach ~ block_stmt }
 
 call_stmt = { ident ~ lparen ~ args ~ rparen }
 

@@ -1,25 +1,25 @@
 use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypedIdent {
     pub name: String,
     pub ty: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Component {
     pub name: String,
     pub fields: Vec<TypedIdent>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Call {
     pub name: String,
     pub args: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Component(Component),
     System(System),
@@ -28,22 +28,25 @@ pub enum Statement {
     Block(Block),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Block {
+    pub scoped_idents: Vec<TypedIdent>,
     pub statements: Vec<Statement>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Query {
+    pub name: String,
     pub components: Vec<TypedIdent>,
     pub iter_type: String,
     pub block: Block,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct System {
     pub name: String,
     pub queries: Vec<Query>,
+    pub block: Block,
 }
 
 #[derive(Debug)]
@@ -178,19 +181,28 @@ impl LoomParser {
         let name = inner.next().unwrap();
         let stmts = inner.next().unwrap();
 
-        let queries = self.extract_queries(stmts);
+        let queries = self.extract_queries(stmts.clone());
+        let block = self.parse_block_stmt(stmts);
+        let block = if let Statement::Block(block) = block {
+            block
+        } else {
+            panic!("Expected block statement");
+        };
         Statement::System(System {
             name: name.as_str().to_string(),
             queries,
+            block,
         })
     }
 
     fn parse_query_stmt(&mut self, pair: Pair<Rule>) -> Statement {
         assert_eq!(pair.as_rule(), Rule::query_stmt);
         let mut inner = pair.into_inner();
+        let name = inner.next().unwrap();
         let components = inner.next().unwrap();
         let block = inner.next().unwrap();
 
+        let name = self.parse_ident(name);
         let components = self.parse_typed_args(components);
         let block = self.parse_block_stmt(block);
         let block = if let Statement::Block(block) = block {
@@ -200,10 +212,28 @@ impl LoomParser {
         };
 
         Statement::Query(Query {
+            name,
             components,
             iter_type: "foreach".to_string(),
             block,
         })
+    }
+
+    fn extract_scoped_idents(&mut self, block: Pair<Rule>) -> Vec<TypedIdent> {
+        let mut scoped_idents = Vec::new();
+        for stmt in block.into_inner() {
+            let stmts = match stmt.as_rule() {
+                Rule::statements => self.parse_statements(stmt),
+                Rule::statement => vec![self.parse_statement(stmt)],
+                _ => panic!("Unexpected rule: {:?}", stmt.as_rule()),
+            };
+            for stmt in stmts {
+                if let Statement::Query(query) = stmt {
+                    scoped_idents.extend(query.components);
+                }
+            }
+        }
+        scoped_idents
     }
 
     fn parse_block_stmt(&mut self, pair: Pair<Rule>) -> Statement {
@@ -211,9 +241,13 @@ impl LoomParser {
         let mut inner = pair.into_inner();
         let stmts = inner.next().unwrap();
 
+        let scoped_idents = self.extract_scoped_idents(stmts.clone());
         let stmts = self.parse_statements(stmts);
 
-        Statement::Block(Block { statements: stmts })
+        Statement::Block(Block {
+            statements: stmts,
+            scoped_idents,
+        })
     }
 
     fn parse_call_stmt(&mut self, pair: Pair<Rule>) -> Statement {
