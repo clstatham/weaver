@@ -14,11 +14,12 @@ impl Entity {
         generation: u32::MAX,
     };
 
-    /// Creates a new entity with the given id.
+    /// Creates a new entity with the given id. The generation is set to 0.
     pub fn new(id: DynamicId) -> Self {
         Self { id, generation: 0 }
     }
 
+    /// Creates a new entity with the given id and generation.
     pub(crate) fn new_with_generation(id: DynamicId, generation: u32) -> Self {
         Self { id, generation }
     }

@@ -1,5 +1,5 @@
 use atomic_refcell::{AtomicRef, AtomicRefMut};
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::Deref};
 use weaver_proc_macro::all_tuples;
 
 use crate::{
@@ -347,6 +347,49 @@ pub enum DynamicQueryParam {
     Without(DynamicId),
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct DynamicQueryParams {
+    params: Vec<DynamicQueryParam>,
+}
+
+impl DynamicQueryParams {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub fn read(mut self, id: DynamicId) -> Self {
+        self.params.push(DynamicQueryParam::Read(id));
+        self
+    }
+
+    #[must_use]
+    pub fn write(mut self, id: DynamicId) -> Self {
+        self.params.push(DynamicQueryParam::Write(id));
+        self
+    }
+
+    #[must_use]
+    pub fn with(mut self, id: DynamicId) -> Self {
+        self.params.push(DynamicQueryParam::With(id));
+        self
+    }
+
+    #[must_use]
+    pub fn without(mut self, id: DynamicId) -> Self {
+        self.params.push(DynamicQueryParam::Without(id));
+        self
+    }
+}
+
+impl Deref for DynamicQueryParams {
+    type Target = [DynamicQueryParam];
+
+    fn deref(&self) -> &Self::Target {
+        &self.params
+    }
+}
+
 pub enum DynamicQueryRef<'a> {
     Ref(AtomicRef<'a, Data>),
     Mut(AtomicRefMut<'a, Data>),
@@ -354,12 +397,16 @@ pub enum DynamicQueryRef<'a> {
 
 pub struct DynamicQuery<'a> {
     entries: SparseSet<Entity, ComponentMap<&'a LockedData>>,
-    params: Vec<DynamicQueryParam>,
+    params: DynamicQueryParams,
     access: QueryAccess,
 }
 
 impl<'a> DynamicQuery<'a> {
-    pub(crate) fn new(components: &'a Components, params: Vec<DynamicQueryParam>) -> Self {
+    pub fn builder(components: &'a Components) -> DynamicQueryBuilder {
+        DynamicQueryBuilder::new(components)
+    }
+
+    pub(crate) fn new(components: &'a Components, params: DynamicQueryParams) -> Self {
         let mut access = QueryAccess {
             reads: ComponentSet::default(),
             writes: ComponentSet::default(),
@@ -426,65 +473,74 @@ impl<'a> DynamicQuery<'a> {
 
 pub struct DynamicQueryBuilder<'a> {
     components: &'a Components,
-    params: Vec<DynamicQueryParam>,
+    params: DynamicQueryParams,
 }
 
 impl<'a> DynamicQueryBuilder<'a> {
     pub fn new(components: &'a Components) -> Self {
         Self {
             components,
-            params: Vec::new(),
+            params: DynamicQueryParams::new(),
         }
     }
 
+    #[must_use]
     pub fn read<T: Component>(mut self) -> Self {
-        self.params.push(DynamicQueryParam::Read(
-            self.components.registry().get_static::<T>(),
-        ));
+        self.params = self
+            .params
+            .read(self.components.registry().get_static::<T>());
         self
     }
 
+    #[must_use]
     pub fn write<T: Component>(mut self) -> Self {
-        self.params.push(DynamicQueryParam::Write(
-            self.components.registry().get_static::<T>(),
-        ));
+        self.params = self
+            .params
+            .write(self.components.registry().get_static::<T>());
         self
     }
 
+    #[must_use]
     pub fn with<T: Component>(mut self) -> Self {
-        self.params.push(DynamicQueryParam::With(
-            self.components.registry().get_static::<T>(),
-        ));
+        self.params = self
+            .params
+            .with(self.components.registry().get_static::<T>());
         self
     }
 
+    #[must_use]
     pub fn without<T: Component>(mut self) -> Self {
-        self.params.push(DynamicQueryParam::Without(
-            self.components.registry().get_static::<T>(),
-        ));
+        self.params = self
+            .params
+            .without(self.components.registry().get_static::<T>());
         self
     }
 
+    #[must_use]
     pub fn read_id(mut self, id: DynamicId) -> Self {
-        self.params.push(DynamicQueryParam::Read(id));
+        self.params = self.params.read(id);
         self
     }
 
+    #[must_use]
     pub fn write_id(mut self, id: DynamicId) -> Self {
-        self.params.push(DynamicQueryParam::Write(id));
+        self.params = self.params.write(id);
         self
     }
 
+    #[must_use]
     pub fn with_id(mut self, id: DynamicId) -> Self {
-        self.params.push(DynamicQueryParam::With(id));
+        self.params = self.params.with(id);
         self
     }
 
+    #[must_use]
     pub fn without_id(mut self, id: DynamicId) -> Self {
-        self.params.push(DynamicQueryParam::Without(id));
+        self.params = self.params.without(id);
         self
     }
 
+    #[must_use]
     pub fn build(self) -> DynamicQuery<'a> {
         DynamicQuery::new(self.components, self.params)
     }

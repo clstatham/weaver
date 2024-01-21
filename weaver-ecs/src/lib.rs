@@ -29,8 +29,14 @@ pub mod prelude {
 #[cfg(test)]
 mod tests {
     #![allow(dead_code, unused)]
+    use std::sync::Arc;
+
+    use parking_lot::RwLock;
+
     use crate as weaver_ecs;
     use crate::prelude::*;
+    use crate::query::DynamicQueryParams;
+    use crate::system::DynamicSystem;
 
     #[derive(Debug, Default, Component)]
     struct A {
@@ -192,5 +198,67 @@ mod tests {
         }
 
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_query_dynamic_ids() {
+        let mut world = World::new();
+
+        world.spawn((A::default(), B::default(), C::default()));
+        world.spawn((A::default(), B::default()));
+        world.spawn((A::default(), C::default()));
+        world.spawn((A::default(), B::default(), C::default()));
+
+        let query = world
+            .query_dynamic()
+            .read_id(world.dynamic_id::<A>())
+            .read_id(world.dynamic_id::<B>())
+            .read_id(world.dynamic_id::<C>())
+            .build();
+
+        let mut count = 0;
+
+        for entry in query.iter() {
+            count += 1;
+        }
+
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_script_system() {
+        let mut world = World::new();
+
+        world.spawn((A::default(), B::default(), C::default()));
+        world.spawn((A::default(), B::default()));
+        world.spawn((A::default(), C::default()));
+        world.spawn((A::default(), B::default(), C::default()));
+
+        let a_id = world.dynamic_id::<A>();
+        let b_id = world.dynamic_id::<B>();
+        let c_id = world.dynamic_id::<C>();
+
+        let world = Arc::new(RwLock::new(world));
+
+        let mut system = DynamicSystem::script_builder()
+            .query(DynamicQueryParams::new().read(a_id).read(b_id).read(c_id))
+            .build(world.clone(), move |params| {
+                let query = params[0].unwrap_query();
+                let mut count = 0;
+
+                for entry in query.iter() {
+                    count += 1;
+                }
+
+                assert_eq!(count, 2);
+
+                Ok(())
+            });
+
+        world
+            .write()
+            .add_system_to_stage(system, SystemStage::Update);
+
+        World::run_stage(&world, SystemStage::Update);
     }
 }

@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 
 use crate::id::{DynamicId, Registry};
@@ -69,11 +71,21 @@ impl Data {
     }
 
     #[inline]
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> &str {
         match self.field_name() {
-            Some(field_name) => format!("{}.{}", self.type_name(), field_name),
-            None => self.type_name().to_string(),
+            Some(field_name) => field_name,
+            None => self.type_name(),
         }
+    }
+}
+
+impl Debug for Data {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Data")
+            .field("id", &self.id)
+            .field("type_name", &self.type_name)
+            .field("field_name", &self.field_name)
+            .finish()
     }
 }
 

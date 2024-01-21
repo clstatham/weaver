@@ -134,6 +134,10 @@ impl World {
     pub fn query_dynamic(&self) -> DynamicQueryBuilder<'_> {
         DynamicQueryBuilder::new(&self.components)
     }
+
+    pub fn dynamic_id<T: Component>(&self) -> DynamicId {
+        self.components.registry().get_static::<T>()
+    }
 }
 
 impl Default for World {

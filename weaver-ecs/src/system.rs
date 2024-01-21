@@ -3,7 +3,7 @@ use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 use crate::{
     id::{DynamicId, Registry},
     prelude::Commands,
-    query::{DynamicQuery, DynamicQueryParam},
+    query::{DynamicQuery, DynamicQueryParam, DynamicQueryParams},
     resource::{DynRes, DynResMut},
 };
 
@@ -177,7 +177,7 @@ impl Default for DynamicSystemBuilder {
 }
 
 pub enum ScriptBuilderParams {
-    Query(Vec<DynamicQueryParam>),
+    Query(DynamicQueryParams),
     Res(DynamicId),
     ResMut(DynamicId),
     Commands,
@@ -190,6 +190,36 @@ pub enum ScriptParams<'a> {
     Commands(Commands),
 }
 
+impl<'a> ScriptParams<'a> {
+    pub fn unwrap_query(&self) -> &DynamicQuery<'a> {
+        match self {
+            ScriptParams::Query(query) => query,
+            _ => panic!("Expected ScriptParams::Query"),
+        }
+    }
+
+    pub fn unwrap_res(&self) -> &DynRes<'a> {
+        match self {
+            ScriptParams::Res(res) => res,
+            _ => panic!("Expected ScriptParams::Res"),
+        }
+    }
+
+    pub fn unwrap_res_mut(&self) -> &DynResMut<'a> {
+        match self {
+            ScriptParams::ResMut(res) => res,
+            _ => panic!("Expected ScriptParams::ResMut"),
+        }
+    }
+
+    pub fn unwrap_commands(&self) -> &Commands {
+        match self {
+            ScriptParams::Commands(commands) => commands,
+            _ => panic!("Expected ScriptParams::Commands"),
+        }
+    }
+}
+
 pub struct ScriptSystemBuilder {
     params: Vec<ScriptBuilderParams>,
 }
@@ -199,22 +229,22 @@ impl ScriptSystemBuilder {
         Self { params: Vec::new() }
     }
 
-    pub fn query(&mut self, query: Vec<DynamicQueryParam>) -> &mut Self {
+    pub fn query(mut self, query: DynamicQueryParams) -> Self {
         self.params.push(ScriptBuilderParams::Query(query));
         self
     }
 
-    pub fn res(&mut self, resource: DynamicId) -> &mut Self {
+    pub fn res(mut self, resource: DynamicId) -> Self {
         self.params.push(ScriptBuilderParams::Res(resource));
         self
     }
 
-    pub fn res_mut(&mut self, resource: DynamicId) -> &mut Self {
+    pub fn res_mut(mut self, resource: DynamicId) -> Self {
         self.params.push(ScriptBuilderParams::ResMut(resource));
         self
     }
 
-    pub fn commands(&mut self) -> &mut Self {
+    pub fn commands(mut self) -> Self {
         self.params.push(ScriptBuilderParams::Commands);
         self
     }
