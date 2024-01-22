@@ -70,6 +70,6 @@ without_clause = { without ~ lbrack ~ (typ ~ comma)* ~ typ? ~ rbrack }
 prefix       = _{ minus }
 infix        = _{ plus | minus | star | slash }
 call_expr    =  { ident ~ lparen ~ (expr ~ comma)* ~ expr? ~ rparen }
-assign_expr  =  { ident ~ eq ~ expr }
+assign_expr  =  { ident ~ (plus_eq | minus_eq | star_eq | slash_eq | eq) ~ expr }
 primary_expr = _{ literal | call_expr | assign_expr | ident | block | (lparen ~ expr ~ rparen) }
 expr         =  { primary_expr ~ (infix ~ prefix? ~ primary_expr)* }

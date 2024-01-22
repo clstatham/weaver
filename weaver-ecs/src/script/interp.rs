@@ -1,4 +1,4 @@
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Rem, RemAssign, Sub, SubAssign};
+use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::sync::Arc;
 
 use parking_lot::RwLock;
@@ -63,15 +63,15 @@ macro_rules! match_rhs {
         }
     };
 
-    (ref mut $lhs:ident: $lhs_value:ident, $lhs_ty:ty ; $rhs:ident; $expr:ident; $self:ident ;) => {
+    (ref mut $lhs:ident: $lhs_value:ident, $lhs_ty:ty ; $rhs:ident; $expr:ident; $self:ident; $($op:ident)?) => {
         match $rhs {
-            Value::U32(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: U32, u32; $self;),
-            Value::U64(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: U64, u64; $self;),
-            Value::Usize(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: Usize, usize; $self;),
-            Value::I32(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: I32, i32; $self;),
-            Value::I64(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: I64, i64; $self;),
-            Value::F32(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: F32, f32; $self;),
-            Value::Component { .. } => match_rhs!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs; $expr; $self;),
+            Value::U32(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: U32, u32; $self; $($op)?),
+            Value::U64(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: U64, u64; $self; $($op)?),
+            Value::Usize(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: Usize, usize; $self; $($op)?),
+            Value::I32(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: I32, i32; $self; $($op)?),
+            Value::I64(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: I64, i64; $self; $($op)?),
+            Value::F32(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: F32, f32; $self; $($op)?),
+            Value::Component { .. } => match_rhs!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs; $expr; $self; $($op)?),
             _ => {
                 todo!("Implement other values for rhs: {:?}", $rhs);
             }
@@ -116,15 +116,15 @@ macro_rules! match_rhs {
         }
     };
 
-    (ref mut $lhs:ident: $lhs_value:ident, $lhs_ty:ty ; ref $rhs:ident; $expr:ident; $self:ident ;) => {
+    (ref mut $lhs:ident: $lhs_value:ident, $lhs_ty:ty ; ref $rhs:ident; $expr:ident; $self:ident ; $($op:ident)?) => {
         match $rhs {
             Value::Component { ref ty, .. } => match ty.as_str() {
-                "u32" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: U32, u32; $self;),
-                "u64" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: U64, u64; $self;),
-                "usize" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: Usize, usize; $self;),
-                "i32" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: I32, i32; $self;),
-                "i64" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: I64, i64; $self;),
-                "f32" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: F32, f32; $self;),
+                "u32" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: U32, u32; $self; $($op)?),
+                "u64" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: U64, u64; $self; $($op)?),
+                "usize" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: Usize, usize; $self; $($op)?),
+                "i32" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: I32, i32; $self; $($op)?),
+                "i64" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: I64, i64; $self; $($op)?),
+                "f32" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: F32, f32; $self; $($op)?),
                 _ => {
                     todo!("Implement other values for rhs: {:?}", $rhs);
                 }
@@ -152,7 +152,7 @@ macro_rules! match_lhs_rhs {
         }
     };
 
-    (ref $lhs:ident; $rhs:ident; $expr:ident; $self:ident; $op:ident ) => {
+    (ref $lhs:ident; $rhs:ident; $expr:ident; $self:ident; $op:ident) => {
         match $lhs {
             Value::Component { ref ty, .. } => match ty.as_str() {
                 "u32" => match_rhs!(ref $lhs: U32, u32; $rhs; $expr; $self; $op),
@@ -172,16 +172,16 @@ macro_rules! match_lhs_rhs {
     };
 
 
-    (ref mut $lhs:ident; $rhs:ident; $expr:ident; $self:ident;) => {
+    (ref mut $lhs:ident; $rhs:ident; $expr:ident; $self:ident; $($op:ident)?) => {
         match $lhs {
             Value::Component { ref ty, .. } => match ty.as_str() {
 
-                "u32" => match_rhs!(ref mut $lhs: U32, u32; $rhs; $expr; $self;),
-                "u64" => match_rhs!(ref mut $lhs: U64, u64; $rhs; $expr; $self;),
-                "usize" => match_rhs!(ref mut $lhs: Usize, usize; $rhs; $expr; $self;),
-                "i32" => match_rhs!(ref mut $lhs: I32, i32; $rhs; $expr; $self;),
-                "i64" => match_rhs!(ref mut $lhs: I64, i64; $rhs; $expr; $self;),
-                "f32" => match_rhs!(ref mut $lhs: F32, f32; $rhs; $expr; $self;),
+                "u32" => match_rhs!(ref mut $lhs: U32, u32; $rhs; $expr; $self; $($op)?),
+                "u64" => match_rhs!(ref mut $lhs: U64, u64; $rhs; $expr; $self; $($op)?),
+                "usize" => match_rhs!(ref mut $lhs: Usize, usize; $rhs; $expr; $self; $($op)?),
+                "i32" => match_rhs!(ref mut $lhs: I32, i32; $rhs; $expr; $self; $($op)?),
+                "i64" => match_rhs!(ref mut $lhs: I64, i64; $rhs; $expr; $self; $($op)?),
+                "f32" => match_rhs!(ref mut $lhs: F32, f32; $rhs; $expr; $self; $($op)?),
                 _ => {
                     todo!("Implement other values for lhs: {:?}", $lhs);
                 }
@@ -205,6 +205,41 @@ macro_rules! value_arithmetic {
         match_lhs_rhs!($lhs ; $rhs ; value_arithmetic ; $self; $op)
     };
 
+    // ex: a += b
+    (ref mut $lhs:ident : $lhs_value:ident, $lhs_ty:ty ; ref $rhs:ident: $rhs_value:ident, $rhs_ty:ty; $self:ident; $op:ident) => {{
+        let rhs = match $rhs {
+            Value::Component { ref name, .. } => name.clone(),
+            _ => unreachable!(),
+        };
+        let rhs = $self.current_scope().query_params.get(&rhs).unwrap();
+        let rhs = *rhs.get::<$rhs_ty>().unwrap();
+
+        let lhs = match $lhs {
+            Value::Component { ref name, .. } => name.clone(),
+            _ => unreachable!(),
+        };
+        let lhs = $self.current_scope().query_params.get_mut(&lhs).unwrap();
+        let lhs = lhs.get_mut::<$lhs_ty>().unwrap();
+
+        *lhs = lhs.$op(rhs as $lhs_ty);
+
+        Ok(Value::Void)
+    }};
+
+    // ex: a += 5
+    (ref mut $lhs:ident : $lhs_value:ident, $lhs_ty:ty; $rhs:ident: $rhs_value:ident, $rhs_ty:ty ; $self:ident; $op:ident) => {{
+        let lhs = match $lhs {
+            Value::Component { ref name, .. } => name.clone(),
+            _ => unreachable!(),
+        };
+        let lhs = $self.current_scope().query_params.get_mut(&lhs).unwrap();
+        let lhs = lhs.get_mut::<$lhs_ty>().unwrap();
+
+        *lhs = lhs.$op($rhs as $lhs_ty);
+
+        Ok(Value::Void)
+    }};
+
     // ex: a = b
     (ref mut $lhs:ident : $lhs_value:ident, $lhs_ty:ty ; ref $rhs:ident: $rhs_value:ident, $rhs_ty:ty; $self:ident;) => {{
         let rhs = match $rhs {
@@ -227,7 +262,7 @@ macro_rules! value_arithmetic {
     }};
 
     // ex: a = 5
-    (ref mut $lhs:ident : $lhs_value:ident, $lhs_ty:ty;     $rhs:ident: $rhs_value:ident, $rhs_ty:ty ; $self:ident; ) => {{
+    (ref mut $lhs:ident : $lhs_value:ident, $lhs_ty:ty; $rhs:ident: $rhs_value:ident, $rhs_ty:ty ; $self:ident; ) => {{
         let lhs = match $lhs {
             Value::Component { ref name, .. } => name.clone(),
             _ => unreachable!(),
@@ -241,17 +276,17 @@ macro_rules! value_arithmetic {
     }};
 
     // ex: 4 + 5
-    (    $lhs:ident : $lhs_value:ident, $lhs_ty:ty ;  $rhs:ident: $rhs_value:ident, $rhs_ty:ty ; $self:ident; $op:ident) => {{
+    (    $lhs:ident : $lhs_value:ident, $lhs_ty:ty; $rhs:ident: $rhs_value:ident, $rhs_ty:ty ; $self:ident; $op:ident) => {{
         Ok(Value::$lhs_value($lhs.$op ($rhs as $lhs_ty)))
     }};
 
     // ex: 5 + b
-    (    $lhs:ident : $lhs_value:ident, $lhs_ty:ty ; ref $rhs:ident: $rhs_value:ident, $rhs_ty:ty; $self:ident; $op:ident) => {{
+    (    $lhs:ident : $lhs_value:ident, $lhs_ty:ty; ref $rhs:ident: $rhs_value:ident, $rhs_ty:ty; $self:ident; $op:ident) => {{
         value_arithmetic!(ref $rhs: $rhs_value, $rhs_ty ; $lhs: $lhs_value, $lhs_ty ; $self; $op)
     }};
 
     // ex: a + 5
-    (ref $lhs:ident : $lhs_value:ident, $lhs_ty:ty  ;     $rhs:ident: $rhs_value:ident, $rhs_ty:ty ; $self:ident; $op:ident) => {{
+    (ref $lhs:ident : $lhs_value:ident, $lhs_ty:ty; $rhs:ident: $rhs_value:ident, $rhs_ty:ty; $self:ident; $op:ident) => {{
         let lhs = match $lhs {
             Value::Component { ref name, .. } => name.clone(),
             _ => unreachable!(),
@@ -393,6 +428,11 @@ where
                     "/" => value_arithmetic!(lhs rhs; self; div),
                     "%" => value_arithmetic!(lhs rhs; self; rem),
                     "=" => value_arithmetic!(lhs rhs; self;),
+                    "+=" => value_arithmetic!(lhs rhs; self; add assign),
+                    "-=" => value_arithmetic!(lhs rhs; self; sub assign),
+                    "*=" => value_arithmetic!(lhs rhs; self; mul assign),
+                    "/=" => value_arithmetic!(lhs rhs; self; div assign),
+                    "%=" => value_arithmetic!(lhs rhs; self; rem assign),
                     _ => {
                         todo!("Implement other infix operators");
                     }
