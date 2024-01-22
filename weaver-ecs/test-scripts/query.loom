@@ -1,5 +1,6 @@
 system Test {
-    query [a: A, mut b: B] with[C] {
-        print(a);
+    query [a: i32, mut b: i64] with[C] {
+        b = b / a;
+        print(a, b);
     };
 };

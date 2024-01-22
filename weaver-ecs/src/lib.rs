@@ -1,3 +1,4 @@
+#![feature(type_name_of_val)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod script;
@@ -39,7 +40,7 @@ mod tests {
     use crate as weaver_ecs;
     use crate::prelude::*;
     use crate::query::DynamicQueryParams;
-    use crate::script::build::BuildOnWorld;
+    use crate::script::interp::BuildOnWorld;
     use crate::script::Script;
     use crate::system::DynamicSystem;
 
@@ -274,14 +275,10 @@ mod tests {
     fn test_script_system_load() {
         let mut world = World::new();
 
-        world.spawn((A::default(), B::default(), C::default()));
-        world.spawn((A::default(), B::default()));
-        world.spawn((A::default(), C::default()));
-        world.spawn((A::default(), B::default(), C::default()));
+        world.spawn((4i32, (4i64.pow(10)), C::default()));
 
-        let a_id = world.dynamic_id::<A>();
-        let b_id = world.dynamic_id::<B>();
-        let c_id = world.dynamic_id::<C>();
+        let a_id = world.dynamic_id::<i32>();
+        let b_id = world.dynamic_id::<i64>();
 
         let world = Arc::new(RwLock::new(world));
 
@@ -293,6 +290,17 @@ mod tests {
             SystemStage::Update,
         );
 
-        World::run_stage(&world, SystemStage::Update);
+        for _ in 0..10 {
+            World::run_stage(&world, SystemStage::Update);
+        }
+
+        let world = world.read();
+
+        let query = world.query::<(&i32, &i64)>();
+
+        for (a, b) in query.iter() {
+            assert_eq!(*a, 4);
+            assert_eq!(*b, 1);
+        }
     }
 }

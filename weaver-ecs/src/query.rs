@@ -418,6 +418,13 @@ impl<'a> DynamicQueryRef<'a> {
             DynamicQueryRef::Mut(data) => data.get_as_mut::<T>(),
         }
     }
+
+    pub fn type_name(&self) -> &str {
+        match self {
+            DynamicQueryRef::Ref(data) => data.type_name(),
+            DynamicQueryRef::Mut(data) => data.type_name(),
+        }
+    }
 }
 
 pub struct DynamicQuery<'a> {

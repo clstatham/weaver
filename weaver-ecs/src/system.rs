@@ -5,7 +5,7 @@ use crate::{
     prelude::Commands,
     query::{DynamicQuery, DynamicQueryParam, DynamicQueryParams},
     resource::{DynRes, DynResMut},
-    script::build::BuildOnWorld,
+    script::interp::BuildOnWorld,
 };
 
 use super::world::World;

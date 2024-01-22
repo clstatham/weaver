@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use self::parser::{LoomParser, Scope};
 
-pub mod build;
+pub mod interp;
 pub mod parser;
 
 pub struct Script {

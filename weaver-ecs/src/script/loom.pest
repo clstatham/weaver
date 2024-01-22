@@ -15,15 +15,15 @@ lbrack   = _{ "[" }
 rbrack   = _{ "]" }
 lbrace   = _{ "{" }
 rbrace   = _{ "}" }
-plus     = _{ "+" }
-minus    = _{ "-" }
-star     = _{ "*" }
-slash    = _{ "/" }
-eq       = _{ "=" }
-plus_eq  = _{ "+=" }
-minus_eq = _{ "-=" }
-star_eq  = _{ "*=" }
-slash_eq = _{ "/=" }
+plus     =  { "+" }
+minus    =  { "-" }
+star     =  { "*" }
+slash    =  { "/" }
+eq       =  { "=" }
+plus_eq  =  { "+=" }
+minus_eq =  { "-=" }
+star_eq  =  { "*=" }
+slash_eq =  { "/=" }
 
 // Literals
 
@@ -31,7 +31,7 @@ letter         =  { ASCII_ALPHA | "_" }
 string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 float_literal  = @{ ASCII_DIGIT+ ~ period ~ ASCII_DIGIT+ }
 int_literal    = @{ ASCII_DIGIT+ }
-literal        =  { float_literal | int_literal | string_literal }
+literal        = _{ float_literal | int_literal | string_literal }
 ident          = @{ (letter | "_") ~ (letter | ASCII_DIGIT | "_")* }
 
 // Keywords
@@ -56,23 +56,20 @@ program    = { SOI ~ statements ~ EOI }
 statements = { statement* }
 
 // Statements
+block          = { lbrace ~ statements ~ rbrace }
 statement      = { (component_stmt | system_stmt | query_stmt | expr) ~ ";" }
 component_stmt = { component ~ ident ~ lbrace ~ (typed_ident ~ semi)* ~ rbrace }
-system_stmt    = { system ~ ident ~ block_expr }
-query_stmt     = { query ~ lbrack ~ typed_args ~ rbrack ~ with_clause? ~ without_clause? ~ block_expr }
+system_stmt    = { system ~ ident ~ block }
+query_stmt     = { query ~ lbrack ~ typed_args ~ rbrack ~ with_clause? ~ without_clause? ~ block }
 typed_args     = { ((mut_typed_ident | typed_ident) ~ comma)* ~ (mut_typed_ident | typed_ident)? }
 with_clause    = { with ~ lbrack ~ (typ ~ comma)* ~ typ? ~ rbrack }
 without_clause = { without ~ lbrack ~ (typ ~ comma)* ~ typ? ~ rbrack }
 
-// Operators
-prefix = { plus | minus }
-infix  = { plus | minus | star | slash | eq | plus_eq | minus_eq | star_eq | slash_eq }
-
 // Expressions
-call_expr    =  { ident ~ lparen ~ args ~ rparen }
-args         =  { (ident ~ comma)* ~ ident? }
-block_expr   =  { lbrace ~ statements ~ rbrace }
-literal_expr =  { literal }
-ident_expr   =  { ident }
-primary_expr = _{ call_expr | block_expr | literal_expr | ident_expr | (lparen ~ expr ~ rparen) }
-expr         =  { prefix? ~ primary_expr ~ (infix ~ prefix? ~ primary_expr)* }
+
+prefix       = _{ minus }
+infix        = _{ plus | minus | star | slash }
+call_expr    =  { ident ~ lparen ~ (expr ~ comma)* ~ expr? ~ rparen }
+assign_expr  =  { ident ~ eq ~ expr }
+primary_expr = _{ literal | call_expr | assign_expr | ident | block | (lparen ~ expr ~ rparen) }
+expr         =  { primary_expr ~ (infix ~ prefix? ~ primary_expr)* }

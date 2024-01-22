@@ -1,4 +1,8 @@
-use pest::{iterators::Pair, pratt_parser::PrattParser, Parser};
+use pest::{
+    iterators::Pair,
+    pratt_parser::{Assoc, Op, PrattParser},
+    Parser,
+};
 use pest_derive::Parser;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -17,7 +21,26 @@ pub struct Component {
 #[derive(Debug, Clone)]
 pub struct Call {
     pub name: String,
-    pub args: Vec<String>,
+    pub args: Vec<Expr>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Expr {
+    Ident(String),
+    IntLiteral(i64),
+    FloatLiteral(f64),
+    StringLiteral(String),
+    Call(Call),
+    Block(Block),
+    Infix {
+        op: String,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Prefix {
+        op: String,
+        rhs: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -25,8 +48,7 @@ pub enum Statement {
     Component(Component),
     System(System),
     Query(Query),
-    Call(Call),
-    Block(Block),
+    Expr(Expr),
 }
 
 #[derive(Debug, Clone)]
@@ -70,7 +92,6 @@ impl Default for Scope {
 pub struct LoomParser {
     query_counter: usize,
     top_scope: Scope,
-    pratt: PrattParser<Rule>,
 }
 
 impl LoomParser {
@@ -78,7 +99,6 @@ impl LoomParser {
         Self {
             query_counter: 0,
             top_scope: Scope::default(),
-            pratt: PrattParser::new(),
         }
     }
 
@@ -153,18 +173,7 @@ impl LoomParser {
             Rule::component_stmt => self.parse_component_stmt(first),
             Rule::system_stmt => self.parse_system_stmt(first),
             Rule::query_stmt => self.parse_query_stmt(first),
-            Rule::expr => self.parse_expr(first),
-            _ => panic!("Unexpected rule: {:?}", first.as_rule()),
-        }
-    }
-
-    fn parse_expr(&mut self, pair: Pair<Rule>) -> Statement {
-        assert_eq!(pair.as_rule(), Rule::expr);
-        let mut inner = pair.into_inner();
-        let first = inner.next().unwrap();
-
-        match first.as_rule() {
-            Rule::call_expr => self.parse_call_expr(first),
+            Rule::expr => Statement::Expr(self.parse_expr(first)),
             _ => panic!("Unexpected rule: {:?}", first.as_rule()),
         }
     }
@@ -190,7 +199,7 @@ impl LoomParser {
                     queries.push(query.clone());
                     queries.extend(self.extract_queries(&query.block));
                 }
-                Statement::Block(block) => {
+                Statement::Expr(Expr::Block(block)) => {
                     queries.extend(self.extract_queries(block));
                 }
                 _ => {}
@@ -207,8 +216,8 @@ impl LoomParser {
 
         let block = inner.next().unwrap();
 
-        let block = self.parse_block_expr(block);
-        let block = if let Statement::Block(block) = block {
+        let block = self.parse_block(block);
+        let block = if let Expr::Block(block) = block {
             block
         } else {
             panic!("Expected block statement");
@@ -232,7 +241,7 @@ impl LoomParser {
 
         let next = inner.next().unwrap();
         match next.as_rule() {
-            Rule::block_expr => {
+            Rule::block => {
                 block = next;
             }
             Rule::with_clause => {
@@ -240,7 +249,7 @@ impl LoomParser {
 
                 let next = inner.next().unwrap();
                 match next.as_rule() {
-                    Rule::block_expr => {
+                    Rule::block => {
                         block = next;
                     }
                     Rule::without_clause => {
@@ -256,7 +265,7 @@ impl LoomParser {
                 let next = inner.next().unwrap();
 
                 match next.as_rule() {
-                    Rule::block_expr => {
+                    Rule::block => {
                         block = next;
                     }
                     _ => panic!("Unexpected rule: {:?}", next.as_rule()),
@@ -268,8 +277,8 @@ impl LoomParser {
         let name = format!("query_{}", self.query_counter);
         self.query_counter += 1;
         let components = self.parse_typed_args(components);
-        let block = self.parse_block_expr(block);
-        let block = if let Statement::Block(block) = block {
+        let block = self.parse_block(block);
+        let block = if let Expr::Block(block) = block {
             block
         } else {
             panic!("Expected block statement");
@@ -321,34 +330,116 @@ impl LoomParser {
         scoped_idents
     }
 
-    fn parse_block_expr(&mut self, pair: Pair<Rule>) -> Statement {
-        assert_eq!(pair.as_rule(), Rule::block_expr);
+    fn parse_expr(&mut self, pair: Pair<Rule>) -> Expr {
+        let inner = pair.into_inner();
+
+        let pratt = PrattParser::new()
+            .op(Op::infix(Rule::plus, Assoc::Left) | Op::infix(Rule::minus, Assoc::Left))
+            .op(Op::infix(Rule::star, Assoc::Left) | Op::infix(Rule::slash, Assoc::Left))
+            .op(Op::infix(Rule::eq, Assoc::Right));
+
+        pratt
+            .map_primary(|primary| match primary.as_rule() {
+                Rule::ident => Expr::Ident(self.parse_ident(primary)),
+                Rule::int_literal => Expr::IntLiteral(primary.as_str().parse().unwrap()),
+                Rule::float_literal => Expr::FloatLiteral(primary.as_str().parse().unwrap()),
+                Rule::string_literal => Expr::StringLiteral(primary.as_str().to_string()),
+                Rule::call_expr => self.parse_call_expr(primary),
+                Rule::block => self.parse_block(primary),
+                Rule::expr => self.parse_expr(primary), // parenthesized expression
+                Rule::assign_expr => self.parse_assign_expr(primary),
+                _ => panic!("Unexpected rule: {:?}", primary.as_rule()),
+            })
+            .map_prefix(|op, rhs| {
+                let op = match op.as_rule() {
+                    Rule::plus => "+".to_string(),
+                    Rule::minus => "-".to_string(),
+                    _ => panic!("Unexpected rule: {:?}", op.as_rule()),
+                };
+
+                Expr::Prefix {
+                    op,
+                    rhs: Box::new(rhs),
+                }
+            })
+            .map_infix(|lhs, op, rhs| {
+                let op = match op.as_rule() {
+                    Rule::plus => "+".to_string(),
+                    Rule::minus => "-".to_string(),
+                    Rule::star => "*".to_string(),
+                    Rule::slash => "/".to_string(),
+                    _ => panic!("Unexpected rule: {:?}", op.as_rule()),
+                };
+
+                Expr::Infix {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                }
+            })
+            .parse(inner)
+    }
+
+    fn parse_assign_expr(&mut self, pair: Pair<Rule>) -> Expr {
+        assert_eq!(pair.as_rule(), Rule::assign_expr);
+        let mut inner = pair.into_inner();
+        let lhs = inner.next().unwrap();
+        let op = inner.next().unwrap();
+        let rhs = inner.next().unwrap();
+
+        let lhs = match lhs.as_rule() {
+            Rule::ident => Expr::Ident(self.parse_ident(lhs)),
+            _ => panic!("Unexpected rule: {:?}", lhs.as_rule()),
+        };
+
+        let rhs = self.parse_expr(rhs);
+
+        Expr::Infix {
+            op: op.as_str().to_string(),
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        }
+    }
+
+    fn parse_block(&mut self, pair: Pair<Rule>) -> Expr {
+        assert_eq!(pair.as_rule(), Rule::block);
         let mut inner = pair.into_inner();
         let stmts = inner.next().unwrap();
 
         let scoped_idents = self.extract_scoped_idents(stmts.clone());
         let stmts = self.parse_statements(stmts);
 
-        Statement::Block(Block {
+        Expr::Block(Block {
             statements: stmts,
             scoped_idents,
         })
     }
 
-    fn parse_call_expr(&mut self, pair: Pair<Rule>) -> Statement {
+    fn parse_call_expr(&mut self, pair: Pair<Rule>) -> Expr {
         assert_eq!(pair.as_rule(), Rule::call_expr);
         let mut inner = pair.into_inner();
         let name = inner.next().unwrap();
-        let args = inner.next().unwrap();
 
         let name = self.parse_ident(name);
-        let args = self.parse_args(args);
 
-        Statement::Call(Call { name, args })
+        let mut args_vec = Vec::new();
+
+        for arg in inner {
+            match arg.as_rule() {
+                Rule::expr => args_vec.push(self.parse_expr(arg)),
+                Rule::ident => args_vec.push(Expr::Ident(self.parse_ident(arg))),
+                _ => panic!("Unexpected rule: {:?} {}", arg.as_rule(), arg.as_str()),
+            }
+        }
+
+        Expr::Call(Call {
+            name,
+            args: args_vec,
+        })
     }
 
     fn parse_ident(&mut self, pair: Pair<Rule>) -> String {
-        assert_eq!(pair.as_rule(), Rule::ident);
+        assert!(matches!(pair.as_rule(), Rule::ident));
         pair.as_str().to_string()
     }
 
@@ -399,15 +490,6 @@ impl LoomParser {
             }
         }
         fields
-    }
-
-    fn parse_args(&mut self, pair: Pair<Rule>) -> Vec<String> {
-        assert_eq!(pair.as_rule(), Rule::args);
-        let mut args = Vec::new();
-        for arg in pair.into_inner() {
-            args.push(self.parse_ident(arg));
-        }
-        args
     }
 
     fn parse_typed_args(&mut self, pair: Pair<Rule>) -> Vec<TypedIdent> {
