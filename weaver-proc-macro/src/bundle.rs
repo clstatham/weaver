@@ -49,7 +49,7 @@ pub fn derive_bundle(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
                 #(
                     components.push(weaver_ecs::component::Data::new(self.#field_names, Some(#field_name_strs), registry));
                 )*
-                components.sort_unstable_by_key(|ptr| ptr.id());
+                components.sort_unstable_by_key(|ptr| ptr.type_id());
                 components
             }
         }

@@ -334,6 +334,38 @@ impl ScriptSystemBuilder {
             }
         }
 
+        for param in self.params.iter() {
+            match &param.param {
+                ScriptBuilderParamType::Query(query) => {
+                    // check it's compatible with all the other queries
+                    for other_param in self.params.iter() {
+                        if let ScriptBuilderParamType::Query(other_query) = &other_param.param {
+                            if query == other_query {
+                                continue;
+                            }
+                            if !query.access().check_compatibility(&other_query.access()) {
+                                panic!(
+                                    "Queries {:?} and {:?} are incompatible",
+                                    query, other_query
+                                );
+                            }
+                        }
+                    }
+                }
+                ScriptBuilderParamType::Res(res) => {
+                    if resources_written.contains(res) {
+                        panic!("Resource {:?} is both read and written", res);
+                    }
+                }
+                ScriptBuilderParamType::ResMut(res) => {
+                    if resources_read.contains(res) {
+                        panic!("Resource {:?} is both read and written", res);
+                    }
+                }
+                ScriptBuilderParamType::Commands => {}
+            }
+        }
+
         let world_clone = world.clone();
         let run_fn = move || {
             let world_lock = world_clone.read();

@@ -116,6 +116,11 @@ impl QueryAccess {
 
         true
     }
+
+    pub fn check_compatibility(&self, other: &Self) -> bool {
+        // todo: this isn't perfect
+        self.writes.is_disjoint(&other.writes)
+    }
 }
 
 impl Debug for QueryAccess {
@@ -339,7 +344,7 @@ where
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DynamicQueryParam {
     Read(DynamicId),
     Write(DynamicId),
@@ -347,7 +352,7 @@ pub enum DynamicQueryParam {
     Without(DynamicId),
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct DynamicQueryParams {
     params: Vec<DynamicQueryParam>,
 }
@@ -355,6 +360,37 @@ pub struct DynamicQueryParams {
 impl DynamicQueryParams {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn access(&self) -> QueryAccess {
+        let mut reads = ComponentSet::default();
+        let mut writes = ComponentSet::default();
+        let mut withs = ComponentSet::default();
+        let mut withouts = ComponentSet::default();
+
+        for param in self.params.iter().copied() {
+            match param {
+                DynamicQueryParam::Read(id) => {
+                    reads.insert(id, ());
+                }
+                DynamicQueryParam::Write(id) => {
+                    writes.insert(id, ());
+                }
+                DynamicQueryParam::With(id) => {
+                    withs.insert(id, ());
+                }
+                DynamicQueryParam::Without(id) => {
+                    withouts.insert(id, ());
+                }
+            }
+        }
+
+        QueryAccess {
+            reads,
+            writes,
+            withs,
+            withouts,
+        }
     }
 
     #[must_use]
@@ -425,6 +461,20 @@ impl<'a> DynamicQueryRef<'a> {
             DynamicQueryRef::Mut(data) => data.type_name(),
         }
     }
+
+    pub fn data(&self) -> &Data {
+        match self {
+            DynamicQueryRef::Ref(data) => &*data,
+            DynamicQueryRef::Mut(data) => &*data,
+        }
+    }
+
+    pub fn data_mut(&mut self) -> Option<&mut Data> {
+        match self {
+            DynamicQueryRef::Ref(_) => None,
+            DynamicQueryRef::Mut(data) => Some(&mut *data),
+        }
+    }
 }
 
 pub struct DynamicQuery<'a> {
@@ -492,7 +542,7 @@ impl<'a> DynamicQuery<'a> {
         Some(refs)
     }
 
-    pub fn iter<'b: 'a>(&'b self) -> impl Iterator<Item = Vec<DynamicQueryRef<'a>>> + '_ {
+    pub fn iter(&'a self) -> impl Iterator<Item = Vec<DynamicQueryRef<'a>>> + '_ {
         self.entries
             .iter()
             .filter_map(move |(entity, _)| self.get(entity))

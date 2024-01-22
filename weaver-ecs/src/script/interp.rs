@@ -1,5 +1,7 @@
-use std::ops::{Add, Div, Mul, Rem, Sub};
-use std::sync::Arc;
+use std::{
+    ops::{Add, Div, Mul, Sub},
+    sync::Arc,
+};
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
@@ -12,353 +14,219 @@ use crate::{
 };
 
 use super::{
-    parser::{Call, Expr, Query, Scope, Statement, System, TypedIdent},
+    parser::{Call, Component, Expr, Query, Scope, Statement, System, TypedIdent},
     Script,
 };
+
+macro_rules! match_two_components_helper {
+    ($cx:ident, $ty:ty, $value_ty:ident; $lhs:ident = $lhs_binding:ident; $rhs:ident = $rhs_binding:ident => $block:block else $els:block) => {
+        match $lhs {
+            Value::Component { ty, name: lhs_name } if ty.as_str() == stringify!($ty) => match $rhs
+            {
+                Value::Component { ty, name: rhs_name } if ty.as_str() == stringify!($ty) => {
+                    let $lhs_binding = $cx.current_scope().get_param(&lhs_name).unwrap();
+                    let $lhs_binding = $lhs_binding.data().get_as::<$ty>().unwrap();
+                    let $rhs_binding = $cx.current_scope().get_param(&rhs_name).unwrap();
+                    let $rhs_binding = $rhs_binding.data().get_as::<$ty>().unwrap();
+                    Value::$value_ty($block)
+                }
+                _ => $els,
+            },
+            _ => $els,
+        }
+    };
+}
+
+macro_rules! match_two_components {
+    ($cx:ident, $lhs:ident = $lhs_binding:ident; $rhs:ident = $rhs_binding:ident => $block:block) => {
+        match_two_components_helper!($cx, f32, Float; $lhs = $lhs_binding; $rhs = $rhs_binding => $block else {
+            match_two_components_helper!($cx, i64, Int; $lhs = $lhs_binding; $rhs = $rhs_binding => $block else {
+                todo!("Implement other types")
+            })
+        })
+    };
+}
+
+macro_rules! match_two_components_mut_helper {
+    ($cx:ident, $ty:ty, $value_ty:ident; $lhs:ident = $lhs_binding:ident; $rhs:ident = $rhs_binding:ident => $block:block else $els:block) => {
+        match $lhs {
+            Value::Component { ty, name: lhs_name } if ty.as_str() == stringify!($ty) => match $rhs
+            {
+                Value::Component { ty, name: rhs_name } if ty.as_str() == stringify!($ty) => {
+                    let scope = $cx.current_scope_mut();
+                    let $rhs_binding = scope.get_param(&rhs_name).unwrap();
+                    let $rhs_binding = *$rhs_binding.data().get_as::<$ty>().unwrap();
+                    let $lhs_binding = scope.get_param_mut(&lhs_name).unwrap();
+                    let $lhs_binding = $lhs_binding
+                        .data_mut()
+                        .unwrap()
+                        .get_as_mut::<$ty>()
+                        .unwrap();
+
+                    $block;
+                    Value::Void
+                }
+                _ => $els,
+            },
+            _ => $els,
+        }
+    };
+}
+
+macro_rules! match_two_components_mut {
+    ($cx:ident, $lhs:ident = $lhs_binding:ident; $rhs:ident = $rhs_binding:ident => $block:block) => {
+        match_two_components_mut_helper!($cx, f32, Float; $lhs = $lhs_binding; $rhs = $rhs_binding => $block else {
+            match_two_components_mut_helper!($cx, i64, Int; $lhs = $lhs_binding; $rhs = $rhs_binding => $block else {
+                todo!("Implement other types")
+            })
+        })
+    };
+}
 
 #[derive(Debug, Clone)]
 pub enum Value {
     Void,
+    Float(f32),
+    Int(i64),
     Bool(bool),
-    U32(u32),
-    U64(u64),
-    Usize(usize),
-    I32(i32),
-    I64(i64),
-    F32(f32),
-    String(String),
-    Component { name: String, ty: String },
+    Component {
+        name: String,
+        ty: String,
+    },
+    Field {
+        name: String,
+        ty: String,
+        parent: Box<Value>,
+    },
 }
 
-// warning: arcane macro magic ahead that makes rust-analyzer cry
-
-macro_rules! match_rhs {
-    ($lhs:ident: $lhs_value:ident, $lhs_ty:ty ;  $rhs:ident; $expr:ident; $self:ident; $op:ident) => {
-        match $rhs {
-            Value::U32(rhs) => $expr!($lhs: $lhs_value, $lhs_ty; rhs: U32, u32; $self; $op),
-            Value::U64(rhs) => $expr!($lhs: $lhs_value, $lhs_ty; rhs: U64, u64; $self; $op),
-            Value::Usize(rhs) => $expr!($lhs: $lhs_value, $lhs_ty; rhs: Usize, usize; $self; $op),
-            Value::I32(rhs) => $expr!($lhs: $lhs_value, $lhs_ty; rhs: I32, i32; $self; $op),
-            Value::I64(rhs) => $expr!($lhs: $lhs_value, $lhs_ty; rhs: I64, i64; $self; $op),
-            Value::F32(rhs) => $expr!($lhs: $lhs_value, $lhs_ty; rhs: F32, f32; $self; $op),
-            Value::Component { .. } => match_rhs!($lhs: $lhs_value, $lhs_ty; ref $rhs; $expr; $self; $op),
-            _ => {
-                todo!("Implement other values for rhs: {:?}", $rhs);
-            }
+impl Value {
+    pub fn type_name(&self) -> &str {
+        match self {
+            Value::Void => "()",
+            Value::Float(_) => "f64",
+            Value::Int(_) => "i64",
+            Value::Bool(_) => "bool",
+            Value::Component { ty, .. } => ty,
+            Value::Field { ty, .. } => ty,
         }
-    };
+    }
 
-    (ref $lhs:ident: $lhs_value:ident, $lhs_ty:ty ; $rhs:ident; $expr:ident; $self:ident ; $op:ident) => {
-        match $rhs {
-            Value::U32(rhs) => $expr!(ref $lhs: $lhs_value, $lhs_ty; rhs: U32, u32; $self; $op),
-            Value::U64(rhs) => $expr!(ref $lhs: $lhs_value, $lhs_ty; rhs: U64, u64; $self; $op),
-            Value::Usize(rhs) => $expr!(ref $lhs: $lhs_value, $lhs_ty; rhs: Usize, usize; $self; $op),
-            Value::I32(rhs) => $expr!(ref $lhs: $lhs_value, $lhs_ty; rhs: I32, i32; $self; $op),
-            Value::I64(rhs) => $expr!(ref $lhs: $lhs_value, $lhs_ty; rhs: I64, i64; $self; $op),
-            Value::F32(rhs) => $expr!(ref $lhs: $lhs_value, $lhs_ty; rhs: F32, f32; $self; $op),
-            Value::Component { .. } => match_rhs!(ref $lhs: $lhs_value, $lhs_ty; ref $rhs; $expr; $self; $op),
-            _ => {
-                todo!("Implement other values for rhs: {:?}", $rhs);
-            }
-        }
-    };
-
-    (ref mut $lhs:ident: $lhs_value:ident, $lhs_ty:ty ; $rhs:ident; $expr:ident; $self:ident; $($op:ident)?) => {
-        match $rhs {
-            Value::U32(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: U32, u32; $self; $($op)?),
-            Value::U64(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: U64, u64; $self; $($op)?),
-            Value::Usize(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: Usize, usize; $self; $($op)?),
-            Value::I32(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: I32, i32; $self; $($op)?),
-            Value::I64(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: I64, i64; $self; $($op)?),
-            Value::F32(rhs) => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; rhs: F32, f32; $self; $($op)?),
-            Value::Component { .. } => match_rhs!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs; $expr; $self; $($op)?),
-            _ => {
-                todo!("Implement other values for rhs: {:?}", $rhs);
-            }
-        }
-    };
-
-    ($lhs:ident: $lhs_value:ident, $lhs_ty:ty ; ref $rhs:ident; $expr:ident; $self:ident ; $op:ident) => {
-        match $rhs {
-            Value::Component { ref ty, .. } => match ty.as_str() {
-                "u32" => $expr!($lhs: $lhs_value, $lhs_ty; ref $rhs: U32, u32; $self; $op),
-                "u64" => $expr!($lhs: $lhs_value, $lhs_ty; ref $rhs: U64, u64; $self; $op),
-                "usize" => $expr!($lhs: $lhs_value, $lhs_ty; ref $rhs: Usize, usize; $self; $op),
-                "i32" => $expr!($lhs: $lhs_value, $lhs_ty; ref $rhs: I32, i32; $self; $op),
-                "i64" => $expr!($lhs: $lhs_value, $lhs_ty; ref $rhs: I64, i64; $self; $op),
-                "f32" => $expr!($lhs: $lhs_value, $lhs_ty; ref $rhs: F32, f32; $self; $op),
-                _ => {
-                    todo!("Implement other values for rhs: {:?}", $rhs);
-                }
+    pub fn add(&self, rhs: &Self, cx: &mut InterpreterContext<'_>) -> anyhow::Result<Self> {
+        match (self, rhs) {
+            (Value::Component { .. }, Value::Component { .. }) => {
+                Ok(match_two_components!(cx, self = lhs; rhs = rhs => {
+                    lhs.add(rhs)
+                }))
             }
             _ => {
-                todo!("Implement other values for rhs: {:?}", $rhs);
+                todo!("Implement {:?} + {:?}", self, rhs);
             }
         }
-    };
+    }
 
-    (ref $lhs:ident: $lhs_value:ident, $lhs_ty:ty ; ref $rhs:ident; $expr:ident; $self:ident ; $op:ident) => {
-        match $rhs {
-            Value::Component { ref ty, .. } => match ty.as_str() {
-                "u32" => $expr!(ref $lhs: $lhs_value, $lhs_ty; ref $rhs: U32, u32; $self; $op),
-                "u64" => $expr!(ref $lhs: $lhs_value, $lhs_ty; ref $rhs: U64, u64; $self; $op),
-                "usize" => $expr!(ref $lhs: $lhs_value, $lhs_ty; ref $rhs: Usize, usize; $self; $op),
-                "i32" => $expr!(ref $lhs: $lhs_value, $lhs_ty; ref $rhs: I32, i32; $self; $op),
-                "i64" => $expr!(ref $lhs: $lhs_value, $lhs_ty; ref $rhs: I64, i64; $self; $op),
-                "f32" => $expr!(ref $lhs: $lhs_value, $lhs_ty; ref $rhs: F32, f32; $self; $op),
-                _ => {
-                    todo!("Implement other values for rhs: {:?}", $rhs);
-                }
+    pub fn sub(&self, rhs: &Self, cx: &mut InterpreterContext<'_>) -> anyhow::Result<Self> {
+        match (self, rhs) {
+            (Value::Component { .. }, Value::Component { .. }) => {
+                Ok(match_two_components!(cx, self = lhs; rhs = rhs => {
+                    lhs.sub(rhs)
+                }))
             }
             _ => {
-                todo!("Implement other values for rhs: {:?}", $rhs);
+                todo!("Implement {:?} - {:?}", self, rhs);
             }
         }
-    };
+    }
 
-    (ref mut $lhs:ident: $lhs_value:ident, $lhs_ty:ty ; ref $rhs:ident; $expr:ident; $self:ident ; $($op:ident)?) => {
-        match $rhs {
-            Value::Component { ref ty, .. } => match ty.as_str() {
-                "u32" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: U32, u32; $self; $($op)?),
-                "u64" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: U64, u64; $self; $($op)?),
-                "usize" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: Usize, usize; $self; $($op)?),
-                "i32" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: I32, i32; $self; $($op)?),
-                "i64" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: I64, i64; $self; $($op)?),
-                "f32" => $expr!(ref mut $lhs: $lhs_value, $lhs_ty; ref $rhs: F32, f32; $self; $($op)?),
-                _ => {
-                    todo!("Implement other values for rhs: {:?}", $rhs);
-                }
+    pub fn add_assign(&self, rhs: &Self, cx: &mut InterpreterContext<'_>) -> anyhow::Result<Self> {
+        match (self, rhs) {
+            (Value::Component { .. }, Value::Component { .. }) => {
+                Ok(match_two_components_mut!(cx, self = lhs; rhs = rhs => {
+                    *lhs += rhs;
+                }))
             }
             _ => {
-                todo!("Implement other values for rhs: {:?}", $rhs);
+                todo!("Implement {:?} += {:?}", self, rhs);
             }
         }
-    };
-}
+    }
 
-macro_rules! match_lhs_rhs {
-    ($lhs:ident; $rhs:ident;  $expr:ident; $self:ident; $op:ident) => {
-        match $lhs {
-            Value::U32(lhs) => match_rhs!(lhs: U32, u32; $rhs; $expr; $self; $op),
-            Value::U64(lhs) => match_rhs!(lhs: U64, u64; $rhs; $expr; $self; $op),
-            Value::Usize(lhs) => match_rhs!(lhs: Usize, usize; $rhs; $expr; $self; $op),
-            Value::I32(lhs) => match_rhs!(lhs: I32, i32; $rhs; $expr; $self; $op),
-            Value::I64(lhs) => match_rhs!(lhs: I64, i64; $rhs; $expr; $self; $op),
-            Value::F32(lhs) => match_rhs!(lhs: F32, f32; $rhs; $expr; $self; $op),
-            Value::Component { .. } => match_lhs_rhs!(ref $lhs; $rhs; $expr; $self; $op),
-            _ => {
-                todo!("Implement other values for lhs: {:?}", $lhs);
-            }
-        }
-    };
-
-    (ref $lhs:ident; $rhs:ident; $expr:ident; $self:ident; $op:ident) => {
-        match $lhs {
-            Value::Component { ref ty, .. } => match ty.as_str() {
-                "u32" => match_rhs!(ref $lhs: U32, u32; $rhs; $expr; $self; $op),
-                "u64" => match_rhs!(ref $lhs: U64, u64; $rhs; $expr; $self; $op),
-                "usize" => match_rhs!(ref $lhs: Usize, usize; $rhs; $expr; $self; $op),
-                "i32" => match_rhs!(ref $lhs: I32, i32; $rhs; $expr; $self; $op),
-                "i64" => match_rhs!(ref $lhs: I64, i64; $rhs; $expr; $self; $op),
-                "f32" => match_rhs!(ref $lhs: F32, f32; $rhs; $expr; $self; $op),
-                _ => {
-                    todo!("Implement other values for lhs: {:?}", $lhs);
-                }
+    pub fn sub_assign(&self, rhs: &Self, cx: &mut InterpreterContext<'_>) -> anyhow::Result<Self> {
+        match (self, rhs) {
+            (Value::Component { .. }, Value::Component { .. }) => {
+                Ok(match_two_components_mut!(cx, self = lhs; rhs = rhs => {
+                    *lhs -= rhs;
+                }))
             }
             _ => {
-                todo!("Implement other values for lhs: {:?}", $lhs);
+                todo!("Implement {:?} -= {:?}", self, rhs);
             }
         }
-    };
-
-
-    (ref mut $lhs:ident; $rhs:ident; $expr:ident; $self:ident; $($op:ident)?) => {
-        match $lhs {
-            Value::Component { ref ty, .. } => match ty.as_str() {
-
-                "u32" => match_rhs!(ref mut $lhs: U32, u32; $rhs; $expr; $self; $($op)?),
-                "u64" => match_rhs!(ref mut $lhs: U64, u64; $rhs; $expr; $self; $($op)?),
-                "usize" => match_rhs!(ref mut $lhs: Usize, usize; $rhs; $expr; $self; $($op)?),
-                "i32" => match_rhs!(ref mut $lhs: I32, i32; $rhs; $expr; $self; $($op)?),
-                "i64" => match_rhs!(ref mut $lhs: I64, i64; $rhs; $expr; $self; $($op)?),
-                "f32" => match_rhs!(ref mut $lhs: F32, f32; $rhs; $expr; $self; $($op)?),
-                _ => {
-                    todo!("Implement other values for lhs: {:?}", $lhs);
-                }
-            }
-            _ => {
-                todo!("Implement other values for lhs: {:?}", $lhs);
-            }
-        }
-    };
-}
-
-macro_rules! value_arithmetic {
-    // entry points
-    ($lhs:ident $rhs:ident; $self:ident;) => {
-        match_lhs_rhs!(ref mut $lhs ; $rhs ; value_arithmetic ; $self;)
-    };
-    ($lhs:ident $rhs:ident; $self:ident; $op:ident assign) => {
-        match_lhs_rhs!(ref mut $lhs ; $rhs ; value_arithmetic ; $self; $op)
-    };
-    ($lhs:ident $rhs:ident; $self:ident; $op:ident) => {
-        match_lhs_rhs!($lhs ; $rhs ; value_arithmetic ; $self; $op)
-    };
-
-    // ex: a += b
-    (ref mut $lhs:ident : $lhs_value:ident, $lhs_ty:ty ; ref $rhs:ident: $rhs_value:ident, $rhs_ty:ty; $self:ident; $op:ident) => {{
-        let rhs = match $rhs {
-            Value::Component { ref name, .. } => name.clone(),
-            _ => unreachable!(),
-        };
-        let rhs = $self.current_scope().query_params.get(&rhs).unwrap();
-        let rhs = *rhs.get::<$rhs_ty>().unwrap();
-
-        let lhs = match $lhs {
-            Value::Component { ref name, .. } => name.clone(),
-            _ => unreachable!(),
-        };
-        let lhs = $self.current_scope().query_params.get_mut(&lhs).unwrap();
-        let lhs = lhs.get_mut::<$lhs_ty>().unwrap();
-
-        *lhs = lhs.$op(rhs as $lhs_ty);
-
-        Ok(Value::Void)
-    }};
-
-    // ex: a += 5
-    (ref mut $lhs:ident : $lhs_value:ident, $lhs_ty:ty; $rhs:ident: $rhs_value:ident, $rhs_ty:ty ; $self:ident; $op:ident) => {{
-        let lhs = match $lhs {
-            Value::Component { ref name, .. } => name.clone(),
-            _ => unreachable!(),
-        };
-        let lhs = $self.current_scope().query_params.get_mut(&lhs).unwrap();
-        let lhs = lhs.get_mut::<$lhs_ty>().unwrap();
-
-        *lhs = lhs.$op($rhs as $lhs_ty);
-
-        Ok(Value::Void)
-    }};
-
-    // ex: a = b
-    (ref mut $lhs:ident : $lhs_value:ident, $lhs_ty:ty ; ref $rhs:ident: $rhs_value:ident, $rhs_ty:ty; $self:ident;) => {{
-        let rhs = match $rhs {
-            Value::Component { ref name, .. } => name.clone(),
-            _ => unreachable!(),
-        };
-        let rhs = $self.current_scope().query_params.get(&rhs).unwrap();
-        let rhs = *rhs.get::<$rhs_ty>().unwrap();
-
-        let lhs = match $lhs {
-            Value::Component { ref name, .. } => name.clone(),
-            _ => unreachable!(),
-        };
-        let lhs = $self.current_scope().query_params.get_mut(&lhs).unwrap();
-        let lhs = lhs.get_mut::<$lhs_ty>().unwrap();
-
-        *lhs = (rhs as $lhs_ty);
-
-        Ok(Value::Void)
-    }};
-
-    // ex: a = 5
-    (ref mut $lhs:ident : $lhs_value:ident, $lhs_ty:ty; $rhs:ident: $rhs_value:ident, $rhs_ty:ty ; $self:ident; ) => {{
-        let lhs = match $lhs {
-            Value::Component { ref name, .. } => name.clone(),
-            _ => unreachable!(),
-        };
-        let lhs = $self.current_scope().query_params.get_mut(&lhs).unwrap();
-        let lhs = lhs.get_mut::<$lhs_ty>().unwrap();
-
-        *lhs = ($rhs as $lhs_ty);
-
-        Ok(Value::Void)
-    }};
-
-    // ex: 4 + 5
-    (    $lhs:ident : $lhs_value:ident, $lhs_ty:ty; $rhs:ident: $rhs_value:ident, $rhs_ty:ty ; $self:ident; $op:ident) => {{
-        Ok(Value::$lhs_value($lhs.$op ($rhs as $lhs_ty)))
-    }};
-
-    // ex: 5 + b
-    (    $lhs:ident : $lhs_value:ident, $lhs_ty:ty; ref $rhs:ident: $rhs_value:ident, $rhs_ty:ty; $self:ident; $op:ident) => {{
-        value_arithmetic!(ref $rhs: $rhs_value, $rhs_ty ; $lhs: $lhs_value, $lhs_ty ; $self; $op)
-    }};
-
-    // ex: a + 5
-    (ref $lhs:ident : $lhs_value:ident, $lhs_ty:ty; $rhs:ident: $rhs_value:ident, $rhs_ty:ty; $self:ident; $op:ident) => {{
-        let lhs = match $lhs {
-            Value::Component { ref name, .. } => name.clone(),
-            _ => unreachable!(),
-        };
-        let lhs = $self.current_scope().query_params.get(&lhs).unwrap();
-        let lhs = lhs.get::<$lhs_ty>().unwrap();
-
-        Ok(Value::$lhs_value((lhs.$op ($rhs as $lhs_ty))))
-    }};
-
-    // ex: a + b
-    (ref $lhs:ident : $lhs_value:ident, $lhs_ty:ty; ref $rhs:ident: $rhs_value:ident, $rhs_ty:ty; $self:ident; $op:ident) => {{
-
-        let rhs = match $rhs {
-            Value::Component { ref name, .. } => name.clone(),
-            _ => unreachable!(),
-        };
-        let rhs = $self.current_scope().query_params.get(&rhs).unwrap();
-        let rhs = *rhs.get::<$rhs_ty>().unwrap();
-
-        let lhs = match $lhs {
-            Value::Component { ref name, .. } => name.clone(),
-            _ => unreachable!(),
-        };
-        let lhs = $self.current_scope().query_params.get(&lhs).unwrap();
-        let lhs = lhs.get::<$lhs_ty>().unwrap();
-
-        Ok(Value::$lhs_value((lhs.$op (rhs as $lhs_ty))))
-    }};
+    }
 }
 
 pub struct InterpreterScope<'a> {
     pub values: FxHashMap<String, Value>,
-    pub query_params: FxHashMap<String, DynamicQueryRef<'a>>,
+    pub params: FxHashMap<String, DynamicQueryRef<'a>>,
 }
 
-pub struct InterpreterContext<'a, 'b> {
+impl<'a> InterpreterScope<'a> {
+    pub fn new() -> Self {
+        Self {
+            values: FxHashMap::default(),
+            params: FxHashMap::default(),
+        }
+    }
+
+    pub fn get_param<'get>(&'get self, name: &str) -> Option<&'get DynamicQueryRef<'a>> {
+        self.params.get(name)
+    }
+
+    pub fn get_param_mut<'get>(
+        &'get mut self,
+        name: &str,
+    ) -> Option<&'get mut DynamicQueryRef<'a>> {
+        self.params.get_mut(name)
+    }
+}
+
+pub struct InterpreterContext<'a> {
     pub world: Arc<RwLock<World>>,
-    pub params: FxHashMap<String, &'b ScriptParam<'a>>,
+    pub params: FxHashMap<String, &'a ScriptParam<'a>>,
     pub scopes: Vec<InterpreterScope<'a>>,
 }
 
-impl<'a, 'b> InterpreterContext<'a, 'b>
-where
-    'b: 'a,
-{
+impl<'a> InterpreterContext<'a> {
     fn push_scope(&mut self) {
         if let Some(scope) = self.scopes.last_mut() {
             let new_scope = InterpreterScope {
                 values: scope.values.clone(),
-                query_params: scope.query_params.drain().collect(),
+                params: scope.params.drain().collect(),
             };
             self.scopes.push(new_scope);
         } else {
             self.scopes.push(InterpreterScope {
                 values: FxHashMap::default(),
-                query_params: FxHashMap::default(),
+                params: FxHashMap::default(),
             });
         }
     }
 
     fn pop_scope(&mut self) {
         let old_scope = self.scopes.pop();
-        if let Some(old_scope) = old_scope {
+        if let Some(mut old_scope) = old_scope {
             if let Some(current_scope) = self.scopes.last_mut() {
-                current_scope.values.extend(old_scope.values);
-                current_scope.query_params.extend(old_scope.query_params);
+                current_scope.values.extend(old_scope.values.drain());
+                current_scope.params.extend(old_scope.params.drain());
             }
         }
     }
 
-    fn current_scope(&mut self) -> &mut InterpreterScope<'a> {
+    fn current_scope<'scope>(&'scope self) -> &'scope InterpreterScope<'a> {
+        self.scopes.last().unwrap()
+    }
+
+    fn current_scope_mut(&mut self) -> &mut InterpreterScope<'a> {
         self.scopes.last_mut().unwrap()
     }
 
@@ -388,55 +256,64 @@ where
     pub fn interp_expr(&mut self, expr: &Expr) -> anyhow::Result<Value> {
         let value = match expr {
             Expr::Call(call) => self.interp_call(call),
-            Expr::FloatLiteral(float) => Ok(Value::F32(*float as f32)),
-            Expr::IntLiteral(int) => Ok(Value::I64(*int)),
-            Expr::StringLiteral(string) => Ok(Value::String(string.clone())),
+            Expr::FloatLiteral(float) => Ok(Value::Float(*float as f32)),
+            Expr::IntLiteral(int) => Ok(Value::Int(*int)),
+            Expr::StringLiteral(_string) => todo!("Implement string literals"),
             Expr::Block(block) => self.interp_block(&block.statements),
             Expr::Ident(ident) => {
-                let param = self.current_scope().query_params.get(ident).unwrap();
+                let scope = self.current_scope();
+                let param = scope.get_param(ident).unwrap();
                 let ty = param.type_name();
                 Ok(Value::Component {
                     name: ident.clone(),
                     ty: ty.to_string(),
                 })
             }
-            Expr::Prefix { op, rhs } => {
-                let rhs = self.interp_expr(rhs)?;
-                match op.as_str() {
-                    "-" => match rhs {
-                        Value::U32(rhs) => Ok(Value::I32(-(rhs as i32))),
-                        Value::U64(rhs) => Ok(Value::I64(-(rhs as i64))),
-                        Value::I32(rhs) => Ok(Value::I32(-rhs)),
-                        Value::I64(rhs) => Ok(Value::I64(-rhs)),
-                        Value::F32(rhs) => Ok(Value::F32(-rhs)),
-                        _ => {
-                            todo!("Implement other prefix operators");
-                        }
-                    },
+            Expr::Member { lhs, rhs } => {
+                let lhs = self.interp_expr(lhs)?;
+                let lhs_name = match lhs {
+                    Value::Component { name, .. } => name,
                     _ => {
-                        todo!("Implement other prefix operators");
+                        todo!("Implement other member access");
                     }
-                }
+                };
+                let scope = self.current_scope_mut();
+                let lhs = scope.get_param(&lhs_name).unwrap();
+                let rhs_name = match &**rhs {
+                    Expr::Ident(ident) => ident,
+                    _ => {
+                        todo!("Implement other member access");
+                    }
+                };
+
+                let lhs_ty = lhs.type_name();
+
+                let value = Value::Field {
+                    name: rhs_name.clone(),
+                    ty: lhs_ty.to_string(),
+                    parent: Box::new(Value::Component {
+                        name: lhs_name.clone(),
+                        ty: lhs_ty.to_string(),
+                    }),
+                };
+
+                Ok(value)
             }
             Expr::Infix { op, lhs, rhs } => {
                 let lhs = self.interp_expr(lhs)?;
                 let rhs = self.interp_expr(rhs)?;
                 match op.as_str() {
-                    "+" => value_arithmetic!(lhs rhs; self; add),
-                    "-" => value_arithmetic!(lhs rhs; self; sub),
-                    "*" => value_arithmetic!(lhs rhs; self; mul),
-                    "/" => value_arithmetic!(lhs rhs; self; div),
-                    "%" => value_arithmetic!(lhs rhs; self; rem),
-                    "=" => value_arithmetic!(lhs rhs; self;),
-                    "+=" => value_arithmetic!(lhs rhs; self; add assign),
-                    "-=" => value_arithmetic!(lhs rhs; self; sub assign),
-                    "*=" => value_arithmetic!(lhs rhs; self; mul assign),
-                    "/=" => value_arithmetic!(lhs rhs; self; div assign),
-                    "%=" => value_arithmetic!(lhs rhs; self; rem assign),
+                    "+" => lhs.add(&rhs, self),
+                    "-" => lhs.sub(&rhs, self),
+                    "+=" => lhs.add_assign(&rhs, self),
+                    "-=" => lhs.sub_assign(&rhs, self),
                     _ => {
                         todo!("Implement other infix operators");
                     }
                 }
+            }
+            expr => {
+                todo!("Implement other expressions: {:?}", expr);
             }
         }?;
         Ok(value)
@@ -450,7 +327,8 @@ where
                     let param = self.interp_expr(arg)?;
                     let param = match param {
                         Value::Component { name, .. } => {
-                            let param = self.current_scope().query_params.get(&name).unwrap();
+                            let scope = self.current_scope();
+                            let param = scope.get_param(&name).unwrap();
                             format!("{}: {} = {:?}", name, param.type_name(), param)
                         }
                         _ => format!("{:?}", param),
@@ -475,15 +353,16 @@ where
             let mut idents = Vec::new();
             for (ident, entry) in script_query.components.iter().zip(entries) {
                 idents.push(ident.name.clone());
-                self.current_scope().values.insert(
+                self.current_scope_mut().values.insert(
                     ident.name.clone(),
                     Value::Component {
                         name: ident.name.clone(),
                         ty: ident.ty.clone(),
                     },
                 );
-                self.current_scope()
-                    .query_params
+
+                self.current_scope_mut()
+                    .params
                     .insert(ident.name.clone(), entry);
             }
 
@@ -517,26 +396,11 @@ impl BuildOnWorld for Script {
         for scope in &self.scopes {
             match scope {
                 Scope::System(ref system) => {
-                    let mut script = DynamicSystem::script_builder(&system.name);
-
-                    for query in &system.queries {
-                        script = script.query(&query.name, query.build(world.clone())?);
-                    }
-
-                    let system = system.clone();
-                    let world_clone = world.clone();
-                    let script = script.build(world.clone(), move |params| {
-                        let mut ctx = InterpreterContext {
-                            world: world_clone.clone(),
-                            params: params
-                                .iter()
-                                .map(|param| (param.name.clone(), param))
-                                .collect(),
-                            scopes: Vec::new(),
-                        };
-                        ctx.interp_system(&system)
-                    });
+                    let script = system.build(world.clone())?;
                     systems.push(script);
+                }
+                Scope::Component(component) => {
+                    component.build(world.clone())?;
                 }
                 _ => {
                     todo!("Implement other scopes");
@@ -545,6 +409,48 @@ impl BuildOnWorld for Script {
         }
 
         Ok(systems)
+    }
+}
+
+impl BuildOnWorld for Component {
+    type Output = DynamicId;
+
+    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicId> {
+        let mut world = world.write();
+        let mut builder = world.components.create_component(&self.name);
+        for field in &self.fields {
+            builder = builder.dynamic_field(&field.name, &field.ty);
+        }
+
+        todo!("Implement component builder")
+    }
+}
+
+impl BuildOnWorld for System {
+    type Output = DynamicSystem;
+
+    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicSystem> {
+        let mut script = DynamicSystem::script_builder(&self.name);
+
+        for query in &self.queries {
+            script = script.query(&query.name, query.build(world.clone())?);
+        }
+
+        let system = self.clone();
+        let world_clone = world.clone();
+        let script = script.build(world.clone(), move |params| {
+            let mut ctx = InterpreterContext {
+                world: world_clone.clone(),
+                params: params
+                    .iter()
+                    .map(|param| (param.name.clone(), param))
+                    .collect(),
+                scopes: Vec::new(),
+            };
+            ctx.interp_system(&system)
+        });
+
+        Ok(script)
     }
 }
 

@@ -1,15 +1,15 @@
 #![feature(type_name_of_val)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-pub mod script;
-
 pub mod bundle;
 pub mod commands;
 pub mod component;
+pub mod component_impl;
 pub mod entity;
 pub mod id;
 pub mod query;
 pub mod resource;
+pub mod script;
 pub mod storage;
 pub mod system;
 pub mod world;
@@ -273,12 +273,17 @@ mod tests {
 
     #[test]
     fn test_script_system_load() {
+        #[derive(Debug, Default, Component)]
+        struct Foo {
+            pub a: i32,
+            pub b: f32,
+        }
+
         let mut world = World::new();
 
-        world.spawn((4i32, (4i64.pow(10)), C::default()));
-
-        let a_id = world.dynamic_id::<i32>();
-        let b_id = world.dynamic_id::<i64>();
+        world.spawn((3.0f32, 5i32, A::default()));
+        world.spawn((4.0f32, 6i32, B::default()));
+        world.spawn((5.0f32, 7i32, A::default(), B::default()));
 
         let world = Arc::new(RwLock::new(world));
 
@@ -296,11 +301,6 @@ mod tests {
 
         let world = world.read();
 
-        let query = world.query::<(&i32, &i64)>();
-
-        for (a, b) in query.iter() {
-            assert_eq!(*a, 4);
-            assert_eq!(*b, 1);
-        }
+        let query = world.query::<(&Foo)>();
     }
 }

@@ -84,24 +84,24 @@ impl PointLight {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 pub struct PointLightUniform {
-    pub position: [f32; 4],
-    pub color: [f32; 4],
+    pub position: glam::Vec4,
+    pub color: glam::Vec4,
     pub projection_transform: glam::Mat4,
     pub intensity: f32,
     pub radius: f32,
     #[cfg_attr(feature = "serde", serde(skip))]
-    _pad: [f32; 2],
+    _pad: glam::Vec2,
 }
 
 impl From<&PointLight> for PointLightUniform {
     fn from(light: &PointLight) -> Self {
         Self {
-            position: [light.position.x, light.position.y, light.position.z, 1.0],
-            color: [light.color.r, light.color.g, light.color.b, 1.0],
+            position: glam::Vec4::new(light.position.x, light.position.y, light.position.z, 1.0),
+            color: glam::Vec4::new(light.color.r, light.color.g, light.color.b, 1.0),
             projection_transform: light.projection_transform(),
             intensity: light.intensity,
             radius: light.radius,
-            _pad: [0.0; 2],
+            _pad: glam::Vec2::ZERO,
         }
     }
 }

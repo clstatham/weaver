@@ -183,6 +183,10 @@ impl<I: Index, V> SparseSet<I, V> {
         other.is_superset(self)
     }
 
+    pub fn is_disjoint(&self, other: &Self) -> bool {
+        self.indices.iter().all(|index| !other.contains(index))
+    }
+
     pub fn intersection<'a>(&'a self, other: &'a Self) -> impl Iterator<Item = (&I, &V)> + '_ {
         self.indices
             .iter()
@@ -281,7 +285,7 @@ impl Column {
     }
 
     pub fn insert(&mut self, entity: DynamicId, component: Data) {
-        assert_eq!(self.id, component.id());
+        assert_eq!(self.id, component.type_id());
         self.storage.insert(entity, LockedData::new(component));
     }
 
@@ -326,7 +330,7 @@ impl Archetype {
         self.entities.insert(entity, ());
 
         self.columns
-            .get_mut(&component.id())
+            .get_mut(&component.type_id())
             .unwrap()
             .insert(entity, component);
     }
@@ -366,6 +370,57 @@ impl Archetype {
     }
 }
 
+pub struct ComponentBuilder<'a> {
+    components: &'a mut Components,
+    pub(crate) id: DynamicId,
+    pub(crate) fields: Vec<(String, String)>,
+}
+
+impl<'a> ComponentBuilder<'a> {
+    pub fn new(components: &'a mut Components, id: DynamicId) -> Self {
+        Self {
+            components,
+            id,
+            fields: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn static_field<T: Component>(mut self, name: &str) -> Self {
+        let type_name = self.components.registry.static_name::<T>();
+        self.fields.push((name.to_string(), type_name));
+        self
+    }
+
+    #[must_use]
+    pub fn dynamic_field(mut self, name: &str, type_name: &str) -> Self {
+        self.fields.push((name.to_string(), type_name.to_string()));
+        self
+    }
+
+    #[must_use]
+    pub fn build(self) -> DynamicId {
+        let component_id = self.id;
+        let fields = self.fields.clone();
+        let mut field_data = Vec::new();
+        let mut field_ids = Vec::new();
+        for (field_name, field_type_name) in fields {
+            let field = Data::new_meta(
+                Some(&field_name),
+                &field_type_name,
+                Vec::new(),
+                &self.components.registry,
+            );
+            let field_type_id = field.type_id();
+            field_data.push(field);
+            field_ids.push(field_type_id);
+        }
+        self.components
+            .build_on_with_components(component_id, field_data, field_ids);
+        component_id
+    }
+}
+
 #[derive(Default)]
 pub struct Components {
     registry: Registry,
@@ -389,6 +444,11 @@ impl Components {
         self.entity_generations.insert(id, entity.generation());
 
         entity
+    }
+
+    pub fn create_component(&mut self, type_name: &str) -> ComponentBuilder {
+        let id = self.registry.get_named(type_name);
+        ComponentBuilder::new(self, id)
     }
 
     pub fn entity(&self, id: DynamicId) -> Option<Entity> {
@@ -423,7 +483,7 @@ impl Components {
             vec![Data::new(component, field_name, &self.registry)]
         };
 
-        let component_ids = components.iter().map(|x| x.id()).collect::<Vec<_>>();
+        let component_ids = components.iter().map(|x| x.type_id()).collect::<Vec<_>>();
 
         self.build_on_with_components(entity.id(), components, component_ids);
     }

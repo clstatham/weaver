@@ -1,6 +1,8 @@
 system Test {
-    query [a: i32, mut b: i64] with[C] {
-        b /= a;
-        print(a, b);
+    query [mut a: f32] with[A] {
+        query [b: f32] without[A]  {
+            a += b;
+            print(a);
+        };
     };
 };

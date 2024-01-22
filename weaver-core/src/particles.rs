@@ -8,7 +8,7 @@ use super::texture::Texture;
 
 pub const TOTAL_MAX_PARTICLES: usize = 10000;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Component)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Particle {
     pub position: Vec3,
@@ -20,7 +20,7 @@ pub struct Particle {
 #[derive(Component, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ParticleEmitter {
-    pub particles: Vec<Particle>,
+    pub(crate) particles: Vec<Particle>,
     pub origin: Vec3,
     pub spawn_rate: f32,
     pub spawn_timer: f32,
@@ -30,7 +30,8 @@ pub struct ParticleEmitter {
     pub particle_velocity: Vec3,
     pub particle_velocity_randomness: Vec3,
 
-    pub particle_texture: Option<Texture>,
+    #[allow(unused)]
+    pub(crate) particle_texture: Option<Texture>,
 }
 
 impl Debug for ParticleEmitter {

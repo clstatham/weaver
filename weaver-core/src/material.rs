@@ -35,7 +35,7 @@ pub struct Material {
     #[cfg_attr(feature = "serde", serde(skip))]
     #[gpu(component)]
     #[texture(format = Rgba8UnormSrgb, sample_type = filterable_float, view_dimension = D2, default = SdrTexture::default)]
-    pub diffuse_texture: Option<SdrTexture>,
+    pub(crate) diffuse_texture: Option<SdrTexture>,
 
     #[cfg_attr(
         feature = "serde",
@@ -47,7 +47,7 @@ pub struct Material {
     #[cfg_attr(feature = "serde", serde(skip))]
     #[gpu(component)]
     #[texture(format = Rgba8Unorm, sample_type = filterable_float, view_dimension = D2, default = NormalMapTexture::default)]
-    pub normal_texture: Option<NormalMapTexture>,
+    pub(crate) normal_texture: Option<NormalMapTexture>,
 
     #[cfg_attr(
         feature = "serde",
@@ -59,7 +59,7 @@ pub struct Material {
     #[cfg_attr(feature = "serde", serde(skip))]
     #[gpu(component)]
     #[texture(format = Rgba8UnormSrgb, sample_type = filterable_float, view_dimension = D2, default = SdrTexture::default)]
-    pub roughness_texture: Option<SdrTexture>,
+    pub(crate) roughness_texture: Option<SdrTexture>,
 
     #[cfg_attr(
         feature = "serde",
@@ -71,7 +71,7 @@ pub struct Material {
     #[cfg_attr(feature = "serde", serde(skip))]
     #[gpu(component)]
     #[texture(format = Rgba8UnormSrgb, sample_type = filterable_float, view_dimension = D2, default = SdrTexture::default)]
-    pub ambient_occlusion_texture: Option<SdrTexture>,
+    pub(crate) ambient_occlusion_texture: Option<SdrTexture>,
 
     #[cfg_attr(
         feature = "serde",
@@ -345,17 +345,17 @@ impl Material {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 pub struct MaterialUniform {
-    pub base_color: [f32; 4],
-    pub properties: [f32; 4], // metallic, roughness, 0, 0
-    pub texture_scaling: [f32; 4],
+    pub base_color: glam::Vec4,
+    pub properties: glam::Vec4, // metallic, roughness, 0, 0
+    pub texture_scaling: glam::Vec4,
 }
 
 impl From<&Material> for MaterialUniform {
     fn from(material: &Material) -> Self {
         Self {
-            base_color: material.diffuse.vec4().into(),
-            properties: [material.metallic, material.roughness, 0.0, 0.0],
-            texture_scaling: [material.texture_scaling; 4],
+            base_color: material.diffuse.vec4(),
+            properties: [material.metallic, material.roughness, 0.0, 0.0].into(),
+            texture_scaling: [material.texture_scaling; 4].into(),
         }
     }
 }

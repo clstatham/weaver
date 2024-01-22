@@ -17,18 +17,6 @@ pub trait Bundle: Sized + Send + Sync + 'static {
     fn components(self, registry: &Registry) -> Vec<Data>;
 }
 
-impl Bundle for () {
-    fn build(self, components: &mut Components) -> Entity {
-        components.create_entity()
-    }
-    fn component_types(_registry: &Registry) -> Vec<DynamicId> {
-        Vec::new()
-    }
-    fn components(self, _registry: &Registry) -> Vec<Data> {
-        Vec::new()
-    }
-}
-
 impl<T: Component> Bundle for T {
     fn component_types(registry: &Registry) -> Vec<DynamicId> {
         vec![registry.get_static::<T>()]
@@ -51,7 +39,7 @@ macro_rules! impl_bundle_for_tuple {
                 let ($($name,)*) = self;
                 let mut comps = vec![];
                 $(comps.extend($name.components(registry));)*
-                comps.sort_unstable_by_key(|comp| comp.id());
+                comps.sort_unstable_by_key(|comp| comp.type_id());
                 comps
             }
         }

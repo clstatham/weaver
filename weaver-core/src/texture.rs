@@ -367,11 +367,11 @@ pub struct Skybox {
     #[cfg_attr(feature = "serde", serde(skip, default = "Skybox::default_texture"))]
     #[gpu(component)]
     #[texture(format = Rgba32Float, sample_type = float, view_dimension = Cube, layers = 6)]
-    pub texture: HdrCubeTexture,
+    pub(crate) texture: HdrCubeTexture,
     #[cfg_attr(feature = "serde", serde(skip, default = "Skybox::default_texture"))]
     #[gpu(component)]
     #[texture(format = Rgba32Float, sample_type = float, view_dimension = Cube, layers = 6)]
-    pub irradiance: HdrCubeTexture,
+    pub(crate) irradiance: HdrCubeTexture,
     #[cfg_attr(feature = "serde", serde(skip))]
     bind_group: LazyBindGroup<Self>,
 }
