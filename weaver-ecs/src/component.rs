@@ -20,7 +20,15 @@ impl<T: std::any::Any> Downcast for T {
 }
 
 /// A component is a data structure that can be attached to an entity.
-pub trait Component: Debug + Downcast + Send + Sync + 'static {
+pub trait Component: Downcast + Send + Sync + 'static {
+    #[allow(unused)]
+    fn field_ids(registry: &Registry) -> Vec<DynamicId>
+    where
+        Self: Sized,
+    {
+        vec![]
+    }
+
     #[allow(unused)]
     fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
@@ -47,19 +55,6 @@ impl Component for isize {}
 impl Component for f32 {}
 impl Component for f64 {}
 impl Component for String {}
-
-#[derive(Debug)]
-pub struct MetaComponent {
-    pub type_id: DynamicId,
-    pub type_name: String,
-    pub field_name: Option<String>,
-}
-
-impl Component for MetaComponent {
-    fn fields(&self, _registry: &Arc<Registry>) -> Vec<Data> {
-        vec![]
-    }
-}
 
 macro_rules! data_arithmetic {
     ($registry:ident, $lhs:ident, $op:tt, $rhs:ident; $($ty:ty),*) => {
@@ -98,14 +93,57 @@ macro_rules! data_display {
     };
 }
 
+#[derive(Clone)]
+pub struct MetaData {
+    pub(crate) type_id: DynamicId,
+    pub(crate) type_name: String,
+    pub(crate) fields: Vec<DynamicId>,
+}
+
+impl MetaData {
+    pub fn new<T: Component>(registry: &Registry) -> Self {
+        let type_id = registry.get_static::<T>();
+        let fields = T::field_ids(registry);
+        Self {
+            type_id,
+            type_name: registry.static_name::<T>(),
+            fields,
+        }
+    }
+
+    pub fn new_meta(type_name: &str, fields: Vec<DynamicId>, registry: &Registry) -> Self {
+        let type_id = registry.get_named(type_name);
+        Self {
+            type_id,
+            type_name: type_name.to_string(),
+            fields,
+        }
+    }
+
+    #[inline]
+    pub const fn type_id(&self) -> DynamicId {
+        self.type_id
+    }
+
+    #[inline]
+    pub fn type_name(&self) -> &str {
+        &self.type_name
+    }
+
+    #[inline]
+    pub fn fields(&self) -> &[DynamicId] {
+        &self.fields
+    }
+}
+
 /// A shared pointer to a type-erased component.
 #[derive(Clone)]
 pub struct Data {
-    type_id: DynamicId,
-    type_name: String,
-    field_name: Option<String>,
+    pub(crate) type_id: DynamicId,
+    pub(crate) type_name: String,
+    pub(crate) field_name: Option<String>,
     data: Arc<AtomicRefCell<dyn Component>>,
-    fields: Vec<Data>,
+    pub(crate) fields: Vec<Data>,
     registry: Arc<Registry>,
 }
 
@@ -124,19 +162,15 @@ impl Data {
         }
     }
 
-    pub fn new_meta(
-        field_name: Option<&str>,
+    pub fn new_dynamic(
         type_name: &str,
+        field_name: Option<&str>,
         fields: Vec<Data>,
         registry: &Arc<Registry>,
     ) -> Self {
         let type_id = registry.get_named(type_name);
         Self {
-            data: Arc::new(AtomicRefCell::new(MetaComponent {
-                type_id,
-                type_name: type_name.to_string(),
-                field_name: field_name.map(|s| s.to_string()),
-            })),
+            data: Arc::new(AtomicRefCell::new(())),
             type_id,
             type_name: type_name.to_string(),
             field_name: field_name.map(|s| s.to_string()),
@@ -385,7 +419,6 @@ impl Debug for Data {
             .field("id", &self.type_id)
             .field("type_name", &self.type_name)
             .field("field_name", &self.field_name)
-            .field("data", &format!("{:?}", self.data))
             .field("fields", &self.fields)
             .finish()
     }

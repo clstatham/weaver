@@ -24,29 +24,16 @@ impl Script {
 
     pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref().to_path_buf();
-        let name = path
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .split('.')
-            .next()
-            .unwrap()
-            .to_string();
+        let name = path.file_stem().unwrap().to_str().unwrap().to_string();
         let content = std::fs::read_to_string(&path)?;
-        Ok(Self::new(name, path, content))
-    }
-
-    pub fn is_parsed(&self) -> bool {
-        !self.scopes.is_empty()
-    }
-
-    pub fn parse(&mut self) {
-        if self.is_parsed() {
-            return;
-        }
         let mut parser = LoomParser::new();
-        parser.parse_script(&self.content).unwrap();
-        self.scopes = parser.finish();
+        parser.parse_script(&content).unwrap();
+        let scopes = parser.finish();
+        Ok(Self {
+            name,
+            path,
+            content,
+            scopes,
+        })
     }
 }

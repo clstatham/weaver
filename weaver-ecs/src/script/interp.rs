@@ -11,13 +11,13 @@ use typed_arena::Arena;
 use crate::{
     component::Data,
     id::DynamicId,
-    prelude::World,
+    prelude::{Entity, SystemStage, World},
     query::{DynamicQueryParam, DynamicQueryParams, DynamicQueryRef},
     system::DynamicSystem,
 };
 
 use super::{
-    parser::{Call, Expr, Query, Scope, Statement, System, TypedIdent},
+    parser::{Call, Component, Expr, Query, Scope, Statement, System, TypedIdent},
     Script,
 };
 
@@ -27,6 +27,7 @@ pub enum Value {
     Int(i64),
     Data(Data),
     DataMut(Data),
+    Entity(Entity),
 }
 
 impl Debug for Value {
@@ -55,6 +56,7 @@ impl Display for Value {
                 data.display(f);
                 Ok(())
             }
+            Value::Entity(entity) => write!(f, "{:?}", entity),
         }
     }
 }
@@ -67,6 +69,7 @@ impl Value {
             Value::Int(_) => "i64",
             Value::Data(data) => data.type_name(),
             Value::DataMut(data) => data.type_name(),
+            Value::Entity(_) => "Entity",
         }
     }
 
@@ -401,6 +404,14 @@ impl InterpreterContext {
                 println!();
                 Ok(self.alloc_value(None, Arc::new(Value::Void)))
             }
+            "spawn" => {
+                let component = match &call.args[0] {
+                    Expr::Construct { name, args } => self.interp_construct(env, name, args)?,
+                    _ => anyhow::bail!("Invalid component"),
+                };
+
+                Ok(component)
+            }
             _ => todo!("Implement other calls"),
         }
     }
@@ -509,6 +520,7 @@ impl InterpreterContext {
                     Value::DataMut(Data::new(*float, None, env.world.read().registry()))
                 }
                 Value::Void => anyhow::bail!("Cannot assign void value"),
+                Value::Entity(entity) => Value::Entity(*entity),
             }
         } else {
             match &*value {
@@ -519,9 +531,73 @@ impl InterpreterContext {
                     Value::Data(Data::new(*float, None, env.world.read().registry()))
                 }
                 Value::Void => anyhow::bail!("Cannot assign void value"),
+                Value::Entity(entity) => Value::Entity(*entity),
             }
         };
         Ok(self.alloc_value(Some(ident), Arc::new(value)))
+    }
+
+    pub fn interp_construct(
+        &mut self,
+        env: &RuntimeEnv,
+        name: &str,
+        args: &[Expr],
+    ) -> anyhow::Result<ValueHandle> {
+        let mut world = env.world.write();
+
+        let entity = world.components.create_entity();
+
+        let mut fields = FxHashMap::default();
+
+        for arg in args {
+            let (value, field_name) = if let Expr::Infix { op, lhs, rhs } = arg {
+                if op != "=" {
+                    anyhow::bail!("Invalid constructor argument");
+                }
+                let field_name = match lhs.as_ref() {
+                    Expr::Ident(ident) => ident,
+                    _ => anyhow::bail!("Invalid constructor argument"),
+                }
+                .to_owned();
+                let value = self.interp_expr(env, rhs)?;
+                (value, Some(field_name))
+            } else {
+                anyhow::bail!("Invalid constructor argument");
+            };
+            let value = value.value.to_owned();
+
+            match &*value {
+                Value::Data(data) => {
+                    fields.insert(field_name.unwrap().to_owned(), data.to_owned());
+                }
+                Value::DataMut(data) => {
+                    fields.insert(field_name.unwrap().to_owned(), data.to_owned());
+                }
+                Value::Int(int) => {
+                    let data = Data::new(*int, field_name.as_deref(), world.registry());
+                    fields.insert(field_name.unwrap().to_owned(), data);
+                }
+                Value::Float(float) => {
+                    let data = Data::new(*float, field_name.as_deref(), world.registry());
+                    fields.insert(field_name.unwrap().to_owned(), data);
+                }
+                Value::Entity(_) => anyhow::bail!("Cannot assign entity value"),
+                Value::Void => anyhow::bail!("Cannot assign void value"),
+            }
+        }
+
+        let component = Data::new_dynamic(
+            name,
+            None,
+            fields.values().cloned().collect(),
+            world.registry(),
+        );
+
+        world
+            .components
+            .add_dynamic_component(&entity, component, None);
+
+        Ok(self.alloc_value(None, Arc::new(Value::Entity(entity))))
     }
 
     pub fn interp_query(&mut self, env: &RuntimeEnv, query: &Query) -> anyhow::Result<ValueHandle> {
@@ -572,44 +648,76 @@ pub trait BuildOnWorld {
 }
 
 impl BuildOnWorld for Script {
-    type Output = Vec<DynamicSystem>;
+    type Output = ();
 
-    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<Vec<DynamicSystem>> {
-        if !self.is_parsed() {
-            return Err(anyhow::anyhow!("Script is not parsed"));
-        }
-        let mut systems = Vec::new();
+    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()> {
         for scope in &self.scopes {
             match scope {
                 Scope::System(ref system) => {
-                    let script = system.build(world.clone())?;
-                    systems.push(script);
+                    system.build(world.clone())?;
                 }
-                _ => {
-                    todo!("Implement other scopes");
+                Scope::Component(ref component) => {
+                    component.build(world.clone())?;
                 }
+                Scope::Program(_) => unreachable!(),
             }
         }
 
-        Ok(systems)
+        Ok(())
     }
 }
 
 impl BuildOnWorld for System {
-    type Output = DynamicSystem;
+    type Output = ();
 
-    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicSystem> {
+    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()> {
         let script = DynamicSystem::script_builder(&self.name);
 
         let system = self.clone();
+        let world_clone = world.clone();
         let script = script.build(move |_| {
-            let env = RuntimeEnv::new(world.clone());
+            let env = RuntimeEnv::new(world_clone.clone());
             let ctx = env.push_scope(None);
             ctx.interp_system(&env, &system)?;
             Ok(())
         });
 
-        Ok(script)
+        if let Some(tag) = &self.tag {
+            match tag.as_str() {
+                "@startup" => {
+                    world
+                        .write()
+                        .add_dynamic_system_to_stage(script, SystemStage::Startup);
+                }
+                "@update" => {
+                    world
+                        .write()
+                        .add_dynamic_system_to_stage(script, SystemStage::Update);
+                }
+                _ => todo!("Implement other tags"),
+            }
+        } else {
+            world
+                .write()
+                .add_dynamic_system_to_stage(script, SystemStage::Update);
+        }
+
+        Ok(())
+    }
+}
+
+impl BuildOnWorld for Component {
+    type Output = DynamicId;
+
+    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicId> {
+        let mut world = world.write();
+
+        let mut builder = world.components.create_component(&self.name);
+        for field in &self.fields {
+            builder = builder.dynamic_field(&field.name, &field.ty);
+        }
+
+        Ok(builder.build())
     }
 }
 

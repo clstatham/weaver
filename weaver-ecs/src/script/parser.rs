@@ -32,6 +32,10 @@ pub enum Expr {
         ident: String,
         initial_value: Box<Expr>,
     },
+    Construct {
+        name: String,
+        args: Vec<Expr>,
+    },
     IntLiteral(i64),
     FloatLiteral(f64),
     StringLiteral(String),
@@ -78,6 +82,7 @@ pub struct Query {
 
 #[derive(Debug, Clone)]
 pub struct System {
+    pub tag: Option<String>,
     pub name: String,
     pub queries: Vec<Query>,
     pub block: Block,
@@ -220,7 +225,12 @@ impl LoomParser {
     fn parse_system_stmt(&mut self, pair: Pair<Rule>) -> Statement {
         assert_eq!(pair.as_rule(), Rule::system_stmt);
         let mut inner = pair.into_inner();
-        let name = inner.next().unwrap();
+        let tag = inner.next().unwrap();
+        let (name, tag) = if tag.as_rule() == Rule::system_tag {
+            (inner.next().unwrap(), Some(tag.as_str().to_string()))
+        } else {
+            (tag, None)
+        };
 
         let block = inner.next().unwrap();
 
@@ -232,6 +242,7 @@ impl LoomParser {
         };
         let queries = self.extract_queries(&block);
         Statement::System(System {
+            tag,
             name: name.as_str().to_string(),
             queries,
             block,
@@ -357,6 +368,7 @@ impl LoomParser {
                 Rule::assign_expr => self.parse_assign_expr(primary),
                 Rule::member_expr => self.parse_member_expr(primary),
                 Rule::decl_expr => self.parse_decl_expr(primary),
+                Rule::constructor_expr => self.parse_constructor_expr(primary),
                 _ => panic!("Unexpected rule: {:?}", primary.as_rule()),
             })
             .map_prefix(|op, rhs| {
@@ -485,8 +497,31 @@ impl LoomParser {
         }
     }
 
+    fn parse_constructor_expr(&mut self, pair: Pair<Rule>) -> Expr {
+        assert_eq!(pair.as_rule(), Rule::constructor_expr);
+        let mut inner = pair.into_inner();
+        let name = inner.next().unwrap();
+
+        let name = self.parse_type(name);
+
+        let mut args_vec = Vec::new();
+
+        for arg in inner {
+            match arg.as_rule() {
+                Rule::expr => args_vec.push(self.parse_expr(arg)),
+                Rule::ident => args_vec.push(Expr::Ident(self.parse_ident(arg))),
+                _ => panic!("Unexpected rule: {:?} {}", arg.as_rule(), arg.as_str()),
+            }
+        }
+
+        Expr::Construct {
+            name,
+            args: args_vec,
+        }
+    }
+
     fn parse_block(&mut self, pair: Pair<Rule>) -> Expr {
-        assert_eq!(pair.as_rule(), Rule::block);
+        assert_eq!(pair.as_rule(), Rule::block, "{:?}", pair.as_str());
         let mut inner = pair.into_inner();
         let stmts = inner.next().unwrap();
 

@@ -2,8 +2,8 @@ use std::{fmt::Debug, sync::Arc};
 
 use crate::{
     bundle::Bundle,
-    component::Component,
     component::Data,
+    component::{Component, MetaData},
     entity::Entity,
     id::{DynamicId, Registry, SortedMap},
     query::QueryAccess,
@@ -372,15 +372,15 @@ impl Archetype {
 
 pub struct ComponentBuilder<'a> {
     components: &'a mut Components,
-    pub(crate) id: DynamicId,
+    name: String,
     pub(crate) fields: Vec<(String, String)>,
 }
 
 impl<'a> ComponentBuilder<'a> {
-    pub fn new(components: &'a mut Components, id: DynamicId) -> Self {
+    pub fn new(components: &'a mut Components, name: &str) -> Self {
         Self {
             components,
-            id,
+            name: name.to_string(),
             fields: Vec::new(),
         }
     }
@@ -400,24 +400,14 @@ impl<'a> ComponentBuilder<'a> {
 
     #[must_use]
     pub fn build(self) -> DynamicId {
-        let component_id = self.id;
         let fields = self.fields.clone();
-        let mut field_data = Vec::new();
         let mut field_ids = Vec::new();
-        for (field_name, field_type_name) in fields {
-            let field = Data::new_meta(
-                Some(&field_name),
-                &field_type_name,
-                Vec::new(),
-                &self.components.registry,
-            );
-            let field_type_id = field.type_id();
-            field_data.push(field);
+        for (_field_name, field_type_name) in fields {
+            let field_type_id = self.components.registry.get_named(&field_type_name);
             field_ids.push(field_type_id);
         }
-        self.components
-            .build_on_with_components(component_id, field_data, field_ids);
-        component_id
+        let data = MetaData::new_meta(&self.name, field_ids, &self.components.registry);
+        data.type_id()
     }
 }
 
@@ -447,8 +437,7 @@ impl Components {
     }
 
     pub fn create_component(&mut self, type_name: &str) -> ComponentBuilder {
-        let id = self.registry.get_named(type_name);
-        ComponentBuilder::new(self, id)
+        ComponentBuilder::new(self, type_name)
     }
 
     pub fn entity(&self, id: DynamicId) -> Option<Entity> {
@@ -481,6 +470,32 @@ impl Components {
             components
         } else {
             vec![Data::new(component, field_name, &self.registry)]
+        };
+
+        let component_ids = components.iter().map(|x| x.type_id()).collect::<Vec<_>>();
+
+        self.build_on_with_components(entity.id(), components, component_ids);
+    }
+
+    pub fn add_dynamic_component(
+        &mut self,
+        entity: &Entity,
+        component: Data,
+        field_name: Option<&str>,
+    ) {
+        // the components of the entity are changing, therefore the archetype must change
+        let components = if let Some(old_archetype) = self.entity_archetype_mut(entity.id()) {
+            // remove the entity from the old archetype
+            old_archetype.remove_entity(entity.id());
+
+            // add the component to create the new archetype
+            let mut components = old_archetype
+                .component_drain(entity.id())
+                .collect::<Vec<_>>();
+            components.push(component);
+            components
+        } else {
+            vec![component]
         };
 
         let component_ids = components.iter().map(|x| x.type_id()).collect::<Vec<_>>();

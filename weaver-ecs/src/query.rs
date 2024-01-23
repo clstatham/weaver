@@ -425,15 +425,6 @@ pub enum DynamicQueryRef {
     Mut(Data),
 }
 
-impl Debug for DynamicQueryRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DynamicQueryRef::Ref(data) => write!(f, "{:?}", data.borrow()),
-            DynamicQueryRef::Mut(data) => write!(f, "{:?}", data.borrow()),
-        }
-    }
-}
-
 impl DynamicQueryRef {
     pub fn get<T: Component>(&self) -> AtomicRef<'_, T> {
         match self {

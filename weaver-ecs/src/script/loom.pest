@@ -38,19 +38,22 @@ ident             = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* 
 capitalized_ident = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | ASCII_DIGIT | "_")* }
 
 // Keywords
-component = _{ "component" }
-system    = _{ "system" }
-let       = _{ "let" }
-var       = _{ "var" }
-query     = _{ "query" }
-with      = _{ "with" }
-without   = _{ "without" }
-keyword   = @{ component | system | let | var | query | with | without }
+component  = _{ "component" }
+system     = _{ "system" }
+let        = _{ "let" }
+var        = _{ "var" }
+query      = _{ "query" }
+with       = _{ "with" }
+without    = _{ "without" }
+startup    = _{ "@startup" }
+update     = _{ "@update" }
+keyword    = @{ component | system | let | var | query | with | without | startup | update }
+system_tag = @{ startup | update }
 
 // Types
 int             = { "int" }
 float           = { "float" }
-type            = { int | float | ident }
+type            = { int | float | capitalized_ident }
 let_ident       = { let ~ ident }
 var_ident       = { var ~ ident }
 typed_ident     = { ident ~ colon ~ type }
@@ -64,19 +67,20 @@ statements = { statement* }
 // Statements
 block          = { lbrace ~ statements ~ rbrace }
 statement      = { (component_stmt | system_stmt | query_stmt | expr) ~ semi? }
-component_stmt = { component ~ ident ~ lbrace ~ (typed_ident ~ semi)* ~ rbrace }
-system_stmt    = { system ~ capitalized_ident ~ block }
+component_stmt = { component ~ ident ~ lbrace ~ typed_ident* ~ rbrace }
+system_stmt    = { system_tag? ~ system ~ capitalized_ident ~ block }
 query_stmt     = { query ~ lbrack ~ typed_args ~ rbrack ~ with_clause? ~ without_clause? ~ tilde ~ block }
 typed_args     = { ((var_typed_ident | let_typed_ident) ~ comma)* ~ (var_typed_ident | let_typed_ident)? }
 with_clause    = { with ~ lbrack ~ (type ~ comma)* ~ type? ~ rbrack }
 without_clause = { without ~ lbrack ~ (type ~ comma)* ~ type? ~ rbrack }
 
 // Expressions
-prefix       = _{ minus }
-infix        = _{ plus | minus | star | slash | percent }
-call_expr    =  { ident ~ lparen ~ (expr ~ comma)* ~ expr? ~ rparen }
-member_expr  =  { ident ~ period ~ ident }
-assign_expr  =  { (member_expr | ident) ~ (plus_eq | minus_eq | star_eq | slash_eq | percent_eq | eq) ~ expr }
-decl_expr    =  { (var_ident | let_ident) ~ eq ~ expr }
-primary_expr = _{ literal | call_expr | decl_expr | assign_expr | member_expr | ident | block | (lparen ~ expr ~ rparen) }
-expr         =  { primary_expr ~ (infix ~ prefix? ~ primary_expr)* }
+prefix           = _{ minus }
+infix            = _{ plus | minus | star | slash | percent }
+call_expr        =  { ident ~ lparen ~ (expr ~ comma)* ~ expr? ~ rparen }
+member_expr      =  { ident ~ period ~ ident }
+assign_expr      =  { (member_expr | ident) ~ (plus_eq | minus_eq | star_eq | slash_eq | percent_eq | eq) ~ expr }
+decl_expr        =  { (var_ident | let_ident) ~ eq ~ expr }
+constructor_expr =  { type ~ lbrace ~ expr* ~ rbrace }
+primary_expr     = _{ literal | constructor_expr | call_expr | decl_expr | assign_expr | member_expr | ident | block | (lparen ~ expr ~ rparen) }
+expr             =  { primary_expr ~ (infix ~ prefix? ~ primary_expr)* }

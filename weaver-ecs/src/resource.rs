@@ -1,8 +1,12 @@
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 
+use crate::prelude::Component;
+
 use super::component::Downcast;
 
 pub trait Resource: Downcast + Send + Sync + 'static {}
+
+impl<T: Resource> Component for T {}
 
 pub struct Res<'a, T: Resource> {
     resource: RwLockReadGuard<'a, dyn Resource>,

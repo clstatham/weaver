@@ -3,12 +3,16 @@ use std::{any::TypeId, collections::HashMap, hash::BuildHasherDefault, sync::ato
 use atomic_refcell::AtomicRefCell;
 use rustc_hash::{FxHashMap, FxHasher};
 
+use crate::{component::MetaData, prelude::Component};
+
 pub type DynamicId = u32;
 
 pub struct Registry {
     next_id: AtomicU32,
     static_ids: AtomicRefCell<TypeIdMap<DynamicId>>,
     named_ids: AtomicRefCell<FxHashMap<String, DynamicId>>,
+    id_names: AtomicRefCell<FxHashMap<DynamicId, String>>,
+    meta: AtomicRefCell<FxHashMap<DynamicId, MetaData>>,
 }
 
 impl Registry {
@@ -17,6 +21,8 @@ impl Registry {
             next_id: AtomicU32::new(1),
             static_ids: AtomicRefCell::new(HashMap::default()),
             named_ids: AtomicRefCell::new(FxHashMap::default()),
+            id_names: AtomicRefCell::new(FxHashMap::default()),
+            meta: AtomicRefCell::new(FxHashMap::default()),
         };
 
         // register builtin types
@@ -47,7 +53,7 @@ impl Registry {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub fn get_static<T: 'static>(&self) -> DynamicId {
+    pub fn get_static<T: Component>(&self) -> DynamicId {
         if let Some(id) = self.static_ids.borrow().get(&TypeId::of::<T>()) {
             return *id;
         }
@@ -58,7 +64,24 @@ impl Registry {
         self.static_ids.borrow_mut().insert(static_id, id);
 
         let name = self.static_name::<T>();
-        self.named_ids.borrow_mut().insert(name, id);
+        self.named_ids.borrow_mut().insert(name.clone(), id);
+        self.id_names.borrow_mut().insert(id, name);
+
+        id
+    }
+
+    pub fn get_component<T: Component>(&self) -> DynamicId {
+        let id = self.get_static::<T>();
+
+        if self.meta.borrow().contains_key(&id) {
+            return id;
+        }
+
+        self.meta.borrow_mut().insert(id, MetaData::new::<T>(self));
+
+        for field in T::field_ids(self) {
+            self.register_field(id, field);
+        }
 
         id
     }
@@ -71,18 +94,33 @@ impl Registry {
         let id = self.create();
 
         self.named_ids.borrow_mut().insert(name.to_string(), id);
+        self.id_names.borrow_mut().insert(id, name.to_string());
         id
+    }
+
+    pub fn register_field(&self, type_id: DynamicId, field: DynamicId) {
+        self.meta.borrow_mut().entry(type_id).and_modify(|data| {
+            data.fields.push(field);
+        });
+    }
+
+    pub fn meta(&self, type_id: DynamicId) -> Option<MetaData> {
+        self.meta.borrow().get(&type_id).cloned()
     }
 
     pub fn split(&self) -> Self {
         let next_id = self.next_id.load(std::sync::atomic::Ordering::Relaxed);
         let static_ids = self.static_ids.borrow().clone();
         let named_ids = self.named_ids.borrow().clone();
+        let id_names = self.id_names.borrow().clone();
+        let fields = self.meta.borrow().clone();
 
         Self {
             next_id: AtomicU32::new(next_id),
             static_ids: AtomicRefCell::new(static_ids),
             named_ids: AtomicRefCell::new(named_ids),
+            id_names: AtomicRefCell::new(id_names),
+            meta: AtomicRefCell::new(fields),
         }
     }
 
@@ -97,6 +135,10 @@ impl Registry {
         self.named_ids
             .borrow_mut()
             .extend(other.named_ids.borrow().clone());
+        self.id_names
+            .borrow_mut()
+            .extend(other.id_names.borrow().clone());
+        self.meta.borrow_mut().extend(other.meta.borrow().clone());
     }
 
     pub fn static_name<T: 'static>(&self) -> String {

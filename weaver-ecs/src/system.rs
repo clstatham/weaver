@@ -4,7 +4,7 @@ use crate::{
     id::{DynamicId, Registry},
     query::{DynamicQuery, DynamicQueryParam, DynamicQueryParams},
     resource::{DynRes, DynResMut},
-    script::interp::BuildOnWorld,
+    script::{interp::BuildOnWorld, Script},
 };
 
 use super::world::World;
@@ -96,11 +96,10 @@ impl DynamicSystem {
     pub fn load_script(
         path: impl AsRef<std::path::Path>,
         world: Arc<RwLock<World>>,
-    ) -> anyhow::Result<Vec<Self>> {
-        let mut script = crate::script::Script::load(path)?;
-        script.parse();
-        let systems = script.build(world)?;
-        Ok(systems)
+    ) -> anyhow::Result<()> {
+        let script = Script::load(path)?;
+        script.build(world)?;
+        Ok(())
     }
 }
 

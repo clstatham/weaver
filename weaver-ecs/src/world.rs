@@ -110,15 +110,8 @@ impl World {
             .add_dynamic_system(system)
     }
 
-    pub fn add_script_to_stage(
-        world: &Arc<RwLock<Self>>,
-        script_path: impl AsRef<Path>,
-        stage: SystemStage,
-    ) {
-        let script = DynamicSystem::load_script(script_path, world.clone()).unwrap();
-        for system in script {
-            Self::add_dynamic_system_to_stage(&mut world.write(), system, stage);
-        }
+    pub fn add_script(world: &Arc<RwLock<Self>>, script_path: impl AsRef<Path>) {
+        DynamicSystem::load_script(script_path, world.clone()).unwrap();
     }
 
     pub fn run_stage(world: &Arc<RwLock<Self>>, stage: SystemStage) -> anyhow::Result<()> {

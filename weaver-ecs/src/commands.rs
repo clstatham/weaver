@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate as weaver_ecs;
 use crate::storage::TemporaryComponents;
 use crate::{bundle::Bundle, entity::Entity, world::World};
@@ -31,5 +33,11 @@ impl Commands {
         for entity in self.despawned_entities {
             world.despawn(entity);
         }
+    }
+}
+
+impl Debug for Commands {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Commands").finish()
     }
 }

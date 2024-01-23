@@ -1,4 +1,3 @@
-#![feature(type_name_of_val)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod bundle;
@@ -234,27 +233,18 @@ mod tests {
     #[test]
     fn test_script_system() {
         env_logger::init();
-        #[derive(Debug, Default, Component)]
-        struct Foo {
-            pub a: i64,
-            pub b: f32,
-        }
-
         let mut world = World::new();
-
-        world.spawn((Foo::default(),));
-        world.spawn((Foo::default(),));
-        world.spawn((Foo::default(),));
 
         let world = Arc::new(RwLock::new(world));
 
-        World::add_script_to_stage(
+        World::add_script(
             &world,
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("test-scripts")
                 .join("test.loom"),
-            SystemStage::Update,
         );
+
+        World::run_stage(&world, SystemStage::Startup).unwrap();
 
         for _ in 0..10 {
             World::run_stage(&world, SystemStage::Update).unwrap();

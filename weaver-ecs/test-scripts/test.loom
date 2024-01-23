@@ -1,3 +1,17 @@
+component Foo {
+    a: int
+    b: float
+}
+
+@startup
+system Setup {
+    spawn(Foo {
+        a = 5
+        b = 2.0
+    })
+}
+
+@update
 system Test {
     var bar = 0
     query [var foo: Foo] ~ {
