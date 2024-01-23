@@ -40,17 +40,20 @@ ident          = @{ (letter | "_") ~ (letter | ASCII_DIGIT | "_")* }
 component = _{ "component" }
 system    = _{ "system" }
 query     = _{ "query" }
-mutable   = _{ "mut" }
 with      = _{ "with" }
 without   = _{ "without" }
+let       = _{ "let" }
+var       = _{ "var" }
 
 // Types
-i32             = { "i32" }
-i64             = { "i64" }
-f32             = { "f32" }
-typ             = { i32 | i64 | f32 | ident }
+int             = { "int" }
+float           = { "float" }
+typ             = { int | float | ident }
+let_ident       = { let ~ ident }
+var_ident       = { var ~ ident }
 typed_ident     = { ident ~ colon ~ typ }
-mut_typed_ident = { mutable ~ ident ~ colon ~ typ }
+let_typed_ident = { let ~ ident ~ colon ~ typ }
+var_typed_ident = { var ~ ident ~ colon ~ typ }
 
 // Top level
 program    = { SOI ~ statements ~ EOI }
@@ -62,7 +65,7 @@ statement      = { (component_stmt | system_stmt | query_stmt | expr) ~ ";" }
 component_stmt = { component ~ ident ~ lbrace ~ (typed_ident ~ semi)* ~ rbrace }
 system_stmt    = { system ~ ident ~ block }
 query_stmt     = { query ~ lbrack ~ typed_args ~ rbrack ~ with_clause? ~ without_clause? ~ block }
-typed_args     = { ((mut_typed_ident | typed_ident) ~ comma)* ~ (mut_typed_ident | typed_ident)? }
+typed_args     = { ((var_typed_ident | let_typed_ident) ~ comma)* ~ (var_typed_ident | let_typed_ident)? }
 with_clause    = { with ~ lbrack ~ (typ ~ comma)* ~ typ? ~ rbrack }
 without_clause = { without ~ lbrack ~ (typ ~ comma)* ~ typ? ~ rbrack }
 
@@ -72,5 +75,6 @@ infix        = _{ plus | minus | star | slash | percent }
 call_expr    =  { ident ~ lparen ~ (expr ~ comma)* ~ expr? ~ rparen }
 member_expr  =  { ident ~ period ~ ident }
 assign_expr  =  { (member_expr | ident) ~ (plus_eq | minus_eq | star_eq | slash_eq | percent_eq | eq) ~ expr }
-primary_expr = _{ literal | call_expr | assign_expr | member_expr | ident | block | (lparen ~ expr ~ rparen) }
+decl_expr    =  { (var_ident | let_ident) ~ eq ~ expr }
+primary_expr = _{ literal | call_expr | decl_expr | assign_expr | member_expr | ident | block | (lparen ~ expr ~ rparen) }
 expr         =  { primary_expr ~ (infix ~ prefix? ~ primary_expr)* }

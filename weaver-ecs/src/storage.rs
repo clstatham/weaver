@@ -432,7 +432,7 @@ pub struct Components {
 }
 
 impl Components {
-    pub fn registry(&self) -> &Registry {
+    pub fn registry(&self) -> &Arc<Registry> {
         &self.registry
     }
 

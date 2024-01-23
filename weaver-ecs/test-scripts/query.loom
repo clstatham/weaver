@@ -1,7 +1,9 @@
 system Test {
-    query [mut foo: Foo] {
+    var bar = 10;
+    query [var foo: Foo] {
         foo.a += 5;
+        bar += foo.a;
         foo.b -= 1.0;
-        print(foo.a, foo.b);
+        print(bar);
     };
 };

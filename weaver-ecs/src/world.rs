@@ -154,6 +154,10 @@ impl World {
     pub fn named_id(&self, name: &str) -> DynamicId {
         self.components.registry().get_named(name)
     }
+
+    pub fn registry(&self) -> &Arc<crate::id::Registry> {
+        self.components.registry()
+    }
 }
 
 impl Default for World {

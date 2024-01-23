@@ -78,6 +78,9 @@ impl Value {
                 "*" => Ok(Value::Int(lhs * rhs)),
                 "/" => Ok(Value::Int(lhs / rhs)),
                 "%" => Ok(Value::Int(lhs % rhs)),
+                "=" | "+=" | "-=" | "*=" | "/=" | "%=" => {
+                    Err(anyhow::anyhow!("Invalid operator {} for integer types", op))
+                }
                 _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
             },
             (Value::Float(lhs), Value::Float(rhs)) => match op {
@@ -86,6 +89,9 @@ impl Value {
                 "*" => Ok(Value::Float(lhs * rhs)),
                 "/" => Ok(Value::Float(lhs / rhs)),
                 "%" => Ok(Value::Float(lhs % rhs)),
+                "=" | "+=" | "-=" | "*=" | "/=" | "%=" => {
+                    Err(anyhow::anyhow!("Invalid operator {} for float types", op))
+                }
                 _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
             },
             (Value::Data(lhs), Value::Data(rhs)) | (Value::Data(lhs), Value::DataMut(rhs)) => {
@@ -95,6 +101,11 @@ impl Value {
                     "*" => Ok(Value::Data(lhs.mul(rhs)?)),
                     "/" => Ok(Value::Data(lhs.div(rhs)?)),
                     "%" => Ok(Value::Data(lhs.rem(rhs)?)),
+                    "=" | "+=" | "-=" | "*=" | "/=" | "%=" => Err(anyhow::anyhow!(
+                        "Invalid operator {}: cannot assign to immutable variable {}",
+                        op,
+                        lhs.name()
+                    )),
                     _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
                 }
             }
@@ -106,6 +117,11 @@ impl Value {
                     "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
                     "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
                     "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
+                    "=" | "+=" | "-=" | "*=" | "/=" | "%=" => Err(anyhow::anyhow!(
+                        "Invalid operator {}: cannot assign to immutable variable {}",
+                        op,
+                        lhs.name()
+                    )),
                     _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
                 }
             }
@@ -117,6 +133,9 @@ impl Value {
                     "*" => Ok(Value::DataMut(lhs.mul(rhs)?)),
                     "/" => Ok(Value::DataMut(lhs.div(rhs)?)),
                     "%" => Ok(Value::DataMut(lhs.rem(rhs)?)),
+                    "=" | "+=" | "-=" | "*=" | "/=" | "%=" => {
+                        Err(anyhow::anyhow!("Invalid operator {} for integer types", op,))
+                    }
                     _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
                 }
             }
@@ -163,6 +182,11 @@ impl Value {
                     "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
                     "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
                     "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
+                    "=" | "+=" | "-=" | "*=" | "/=" | "%=" => Err(anyhow::anyhow!(
+                        "Invalid operator {}: cannot assign to immutable variable {}",
+                        op,
+                        lhs.name()
+                    )),
                     _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
                 }
             }
@@ -174,6 +198,9 @@ impl Value {
                     "*" => Ok(Value::DataMut(lhs.mul(rhs)?)),
                     "/" => Ok(Value::DataMut(lhs.div(rhs)?)),
                     "%" => Ok(Value::DataMut(lhs.rem(rhs)?)),
+                    "=" | "+=" | "-=" | "*=" | "/=" | "%=" => {
+                        Err(anyhow::anyhow!("Invalid operator {} for float types", op,))
+                    }
                     _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
                 }
             }
@@ -279,7 +306,6 @@ impl RuntimeEnv {
     }
 
     pub fn push_scope(&self, inherit: Option<&InterpreterContext>) -> &mut InterpreterContext {
-        log::debug!("Pushing scope");
         if let Some(inherit) = inherit {
             self.arena.alloc(inherit.clone())
         } else {
@@ -302,11 +328,11 @@ impl InterpreterContext {
         }
     }
 
-    pub fn alloc_value(&mut self, name: Option<&str>, value: Value) -> ValueHandle {
+    pub fn alloc_value(&mut self, name: Option<&str>, value: Arc<Value>) -> ValueHandle {
         let handle = ValueHandle {
             name: name.map(|s| s.to_owned()),
             id: self.heap.len(),
-            value: Arc::new(value),
+            value,
         };
         self.heap.insert(handle.id, handle.clone());
         if let Some(name) = name {
@@ -356,6 +382,11 @@ impl InterpreterContext {
             Expr::Block(block) => self.interp_block(env, &block.statements),
             Expr::Infix { op, lhs, rhs } => self.interp_infix(env, op, lhs, rhs),
             Expr::Member { lhs, rhs } => self.interp_member(env, lhs, rhs),
+            Expr::Decl {
+                mutability,
+                ident,
+                initial_value,
+            } => self.interp_decl(env, *mutability, ident, initial_value),
             _ => todo!("Implement other expressions"),
         }
     }
@@ -368,7 +399,7 @@ impl InterpreterContext {
                     print!("{} ", *value);
                 }
                 println!();
-                Ok(self.alloc_value(None, Value::Void))
+                Ok(self.alloc_value(None, Arc::new(Value::Void)))
             }
             _ => todo!("Implement other calls"),
         }
@@ -390,11 +421,11 @@ impl InterpreterContext {
     }
 
     pub fn interp_int_literal(&mut self, int: i64) -> anyhow::Result<ValueHandle> {
-        Ok(self.alloc_value(None, Value::Int(int)))
+        Ok(self.alloc_value(None, Arc::new(Value::Int(int))))
     }
 
     pub fn interp_float_literal(&mut self, float: f32) -> anyhow::Result<ValueHandle> {
-        Ok(self.alloc_value(None, Value::Float(float)))
+        Ok(self.alloc_value(None, Arc::new(Value::Float(float))))
     }
 
     pub fn interp_block(
@@ -406,7 +437,7 @@ impl InterpreterContext {
         for statement in block {
             scope.interp_statement(env, statement)?;
         }
-        Ok(self.alloc_value(None, Value::Void))
+        Ok(self.alloc_value(None, Arc::new(Value::Void)))
     }
 
     pub fn interp_infix(
@@ -420,7 +451,7 @@ impl InterpreterContext {
         let rhs = self.interp_expr(env, rhs)?;
 
         let result = lhs.infix(op, &rhs)?;
-        Ok(self.alloc_value(None, result))
+        Ok(self.alloc_value(None, Arc::new(result)))
     }
 
     pub fn interp_member(
@@ -443,7 +474,7 @@ impl InterpreterContext {
                     .name
                     .map(|s| format!("{}.{}", s, rhs))
                     .or_else(|| Some(rhs.to_owned()));
-                Ok(self.alloc_value(name.as_deref(), value))
+                Ok(self.alloc_value(name.as_deref(), Arc::new(value)))
             }
             Value::DataMut(data) => {
                 let field = data.field_by_name(rhs).unwrap().to_owned();
@@ -452,10 +483,45 @@ impl InterpreterContext {
                     .name
                     .map(|s| format!("{}.{}", s, rhs))
                     .or_else(|| Some(rhs.to_owned()));
-                Ok(self.alloc_value(name.as_deref(), value))
+                Ok(self.alloc_value(name.as_deref(), Arc::new(value)))
             }
             _ => anyhow::bail!("Invalid member access"),
         }
+    }
+
+    pub fn interp_decl(
+        &mut self,
+        env: &RuntimeEnv,
+        mutability: bool,
+        ident: &str,
+        initial_value: &Expr,
+    ) -> anyhow::Result<ValueHandle> {
+        let value = self.interp_expr(env, initial_value)?;
+        let value = value.value.to_owned();
+        let value = if mutability {
+            match &*value {
+                Value::Data(data) => Value::DataMut(data.to_owned()),
+                Value::DataMut(data) => Value::DataMut(data.to_owned()),
+                Value::Int(int) => {
+                    Value::DataMut(Data::new(*int, None, env.world.read().registry()))
+                }
+                Value::Float(float) => {
+                    Value::DataMut(Data::new(*float, None, env.world.read().registry()))
+                }
+                Value::Void => anyhow::bail!("Cannot assign void value"),
+            }
+        } else {
+            match &*value {
+                Value::Data(data) => Value::Data(data.to_owned()),
+                Value::DataMut(data) => Value::Data(data.to_owned()),
+                Value::Int(int) => Value::Data(Data::new(*int, None, env.world.read().registry())),
+                Value::Float(float) => {
+                    Value::Data(Data::new(*float, None, env.world.read().registry()))
+                }
+                Value::Void => anyhow::bail!("Cannot assign void value"),
+            }
+        };
+        Ok(self.alloc_value(Some(ident), Arc::new(value)))
     }
 
     pub fn interp_query(&mut self, env: &RuntimeEnv, query: &Query) -> anyhow::Result<ValueHandle> {
@@ -482,12 +548,12 @@ impl InterpreterContext {
                 match entry {
                     DynamicQueryRef::Ref(data) => {
                         let value = Value::Data(data.to_owned());
-                        scope.alloc_value(Some(name.as_str()), value);
+                        scope.alloc_value(Some(name.as_str()), Arc::new(value));
                         // self.current_scope().unwrap().values.insert(name, handle);
                     }
                     DynamicQueryRef::Mut(data) => {
                         let value = Value::DataMut(data.to_owned());
-                        scope.alloc_value(Some(name.as_str()), value);
+                        scope.alloc_value(Some(name.as_str()), Arc::new(value));
                         // self.current_scope().unwrap().values.insert(name, handle);
                     }
                 }
@@ -497,7 +563,7 @@ impl InterpreterContext {
             }
         }
 
-        Ok(self.alloc_value(None, Value::Void))
+        Ok(self.alloc_value(None, Arc::new(Value::Void)))
     }
 }
 

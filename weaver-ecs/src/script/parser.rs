@@ -27,6 +27,11 @@ pub struct Call {
 #[derive(Debug, Clone)]
 pub enum Expr {
     Ident(String),
+    Decl {
+        mutability: bool,
+        ident: String,
+        initial_value: Box<Expr>,
+    },
     IntLiteral(i64),
     FloatLiteral(f64),
     StringLiteral(String),
@@ -352,6 +357,7 @@ impl LoomParser {
                 Rule::expr => self.parse_expr(primary), // parenthesized expression
                 Rule::assign_expr => self.parse_assign_expr(primary),
                 Rule::member_expr => self.parse_member_expr(primary),
+                Rule::decl_expr => self.parse_decl_expr(primary),
                 _ => panic!("Unexpected rule: {:?}", primary.as_rule()),
             })
             .map_prefix(|op, rhs| {
@@ -429,6 +435,57 @@ impl LoomParser {
         }
     }
 
+    fn parse_decl_expr(&mut self, pair: Pair<Rule>) -> Expr {
+        assert_eq!(pair.as_rule(), Rule::decl_expr);
+        let mut inner = pair.into_inner();
+        let mutability = inner.next().unwrap();
+        let _eq = inner.next().unwrap();
+
+        match mutability.as_rule() {
+            Rule::var_typed_ident => {
+                let ident = self.parse_var_typed_ident(mutability.into_inner().next().unwrap());
+                let initial_value = inner.next().unwrap();
+                let initial_value = self.parse_expr(initial_value);
+                Expr::Decl {
+                    mutability: true,
+                    ident: ident.name,
+                    initial_value: Box::new(initial_value),
+                }
+            }
+            Rule::let_typed_ident => {
+                let ident = self.parse_typed_ident(mutability.into_inner().next().unwrap());
+                let initial_value = inner.next().unwrap();
+                let initial_value = self.parse_expr(initial_value);
+                Expr::Decl {
+                    mutability: false,
+                    ident: ident.name,
+                    initial_value: Box::new(initial_value),
+                }
+            }
+            Rule::var_ident => {
+                let ident = self.parse_ident(mutability.into_inner().next().unwrap());
+                let initial_value = inner.next().unwrap();
+                let initial_value = self.parse_expr(initial_value);
+                Expr::Decl {
+                    mutability: true,
+                    ident,
+                    initial_value: Box::new(initial_value),
+                }
+            }
+            Rule::let_ident => {
+                let ident = self.parse_ident(mutability.into_inner().next().unwrap());
+                let initial_value = inner.next().unwrap();
+                let initial_value = self.parse_expr(initial_value);
+                Expr::Decl {
+                    mutability: false,
+                    ident,
+                    initial_value: Box::new(initial_value),
+                }
+            }
+            _ => panic!("Unexpected rule: {:?}", mutability.as_rule()),
+        }
+    }
+
     fn parse_block(&mut self, pair: Pair<Rule>) -> Expr {
         assert_eq!(pair.as_rule(), Rule::block);
         let mut inner = pair.into_inner();
@@ -476,8 +533,8 @@ impl LoomParser {
         pair.as_str().to_string()
     }
 
-    fn parse_mut_typed_ident(&mut self, pair: Pair<Rule>) -> TypedIdent {
-        assert_eq!(pair.as_rule(), Rule::mut_typed_ident);
+    fn parse_var_typed_ident(&mut self, pair: Pair<Rule>) -> TypedIdent {
+        assert_eq!(pair.as_rule(), Rule::var_typed_ident);
         let mut inner = pair.into_inner();
         let ident = inner.next().unwrap();
         let ty = inner.next().unwrap();
@@ -493,7 +550,10 @@ impl LoomParser {
     }
 
     fn parse_typed_ident(&mut self, pair: Pair<Rule>) -> TypedIdent {
-        assert_eq!(pair.as_rule(), Rule::typed_ident);
+        assert!(matches!(
+            pair.as_rule(),
+            Rule::typed_ident | Rule::let_typed_ident
+        ));
         let mut inner = pair.into_inner();
         let ident = inner.next().unwrap();
         let ty = inner.next().unwrap();
@@ -513,7 +573,8 @@ impl LoomParser {
         for field in pair {
             match field.as_rule() {
                 Rule::typed_ident => fields.push(self.parse_typed_ident(field)),
-                Rule::mut_typed_ident => fields.push(self.parse_mut_typed_ident(field)),
+                Rule::var_typed_ident => fields.push(self.parse_var_typed_ident(field)),
+                Rule::let_typed_ident => fields.push(self.parse_typed_ident(field)),
                 _ => panic!("Unexpected rule: {:?}", field.as_rule()),
             }
         }
