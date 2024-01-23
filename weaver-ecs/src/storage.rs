@@ -1,11 +1,9 @@
-use std::fmt::Debug;
-
-use atomic_refcell::{AtomicRef, AtomicRefMut};
+use std::{fmt::Debug, sync::Arc};
 
 use crate::{
     bundle::Bundle,
     component::Component,
-    component::{Data, LockedData},
+    component::Data,
     entity::Entity,
     id::{DynamicId, Registry, SortedMap},
     query::QueryAccess,
@@ -249,7 +247,7 @@ impl<I: Index + Clone, V: Clone> Clone for SparseSet<I, V> {
 /// Contains all the instances of a single component type within a single archetype.
 pub struct Column {
     pub(crate) id: DynamicId,
-    pub(crate) storage: SparseSet<DynamicId, LockedData>,
+    pub(crate) storage: SparseSet<DynamicId, Data>,
 }
 
 impl HasIndex for Column {
@@ -286,19 +284,19 @@ impl Column {
 
     pub fn insert(&mut self, entity: DynamicId, component: Data) {
         assert_eq!(self.id, component.type_id());
-        self.storage.insert(entity, LockedData::new(component));
+        self.storage.insert(entity, component);
     }
 
     pub fn remove(&mut self, entity: &DynamicId) -> Option<Data> {
-        self.storage.remove(entity).map(|x| x.into_inner())
+        self.storage.remove(entity)
     }
 
-    pub fn get(&self, entity: &DynamicId) -> Option<AtomicRef<'_, Data>> {
-        self.storage.get(entity).map(|x| x.borrow())
+    pub fn get(&self, entity: &DynamicId) -> Option<&Data> {
+        self.storage.get(entity)
     }
 
-    pub fn get_mut(&self, entity: &DynamicId) -> Option<AtomicRefMut<'_, Data>> {
-        self.storage.get(entity).map(|x| x.borrow_mut())
+    pub fn get_mut(&mut self, entity: &DynamicId) -> Option<&mut Data> {
+        self.storage.get_mut(entity)
     }
 }
 
@@ -329,8 +327,10 @@ impl Archetype {
     pub fn insert_entity(&mut self, entity: DynamicId, component: Data) {
         self.entities.insert(entity, ());
 
+        let component_id = component.type_id();
+
         self.columns
-            .get_mut(&component.type_id())
+            .get_mut(&component_id)
             .unwrap()
             .insert(entity, component);
     }
@@ -423,7 +423,7 @@ impl<'a> ComponentBuilder<'a> {
 
 #[derive(Default)]
 pub struct Components {
-    registry: Registry,
+    registry: Arc<Registry>,
     living_entities: SparseSet<DynamicId, Entity>,
     entity_generations: SparseSet<DynamicId, u32>,
     archetypes: Vec<Archetype>,
@@ -506,7 +506,7 @@ impl Components {
         entity
     }
 
-    pub fn build_on_with_components(
+    pub(crate) fn build_on_with_components(
         &mut self,
         entity: DynamicId,
         mut components: Vec<Data>,
@@ -599,7 +599,7 @@ impl Components {
         self.component_archetypes.get_mut(&component_id)
     }
 
-    pub fn entity_components(&self, entity: DynamicId) -> Option<Vec<AtomicRef<'_, Data>>> {
+    pub fn entity_components(&self, entity: DynamicId) -> Option<Vec<&Data>> {
         self.entity_archetype(entity).map(|archetype| {
             archetype
                 .columns
@@ -609,20 +609,7 @@ impl Components {
         })
     }
 
-    pub fn entity_components_mut(&self, entity: DynamicId) -> Option<Vec<AtomicRefMut<'_, Data>>> {
-        self.entity_archetype(entity).map(|archetype| {
-            archetype
-                .columns
-                .iter()
-                .filter_map(|(_, column)| column.get_mut(&entity))
-                .collect()
-        })
-    }
-
-    pub fn entity_components_iter(
-        &self,
-        entity: DynamicId,
-    ) -> Option<impl Iterator<Item = AtomicRef<'_, Data>>> {
+    pub fn entity_components_iter(&self, entity: DynamicId) -> Option<impl Iterator<Item = &Data>> {
         self.entity_archetype(entity).map(|archetype| {
             archetype
                 .columns
@@ -632,13 +619,13 @@ impl Components {
     }
 
     pub fn entity_components_iter_mut(
-        &self,
+        &mut self,
         entity: DynamicId,
-    ) -> Option<impl Iterator<Item = AtomicRefMut<'_, Data>>> {
-        self.entity_archetype(entity).map(|archetype| {
+    ) -> Option<impl Iterator<Item = &mut Data>> {
+        self.entity_archetype_mut(entity).map(|archetype| {
             archetype
                 .columns
-                .iter()
+                .iter_mut()
                 .filter_map(move |(_, column)| column.get_mut(&entity))
         })
     }
@@ -648,7 +635,7 @@ impl Components {
 
         let registry = self.registry.split();
 
-        components.components.registry = registry;
+        components.components.registry = Arc::new(registry);
 
         components
     }
@@ -702,7 +689,7 @@ impl Components {
     pub fn components_matching_access(
         &self,
         access: QueryAccess,
-    ) -> SparseSet<Entity, ComponentMap<&'_ LockedData>> {
+    ) -> SparseSet<Entity, ComponentMap<Data>> {
         self.archetypes
             .iter()
             .flat_map(move |archetype| {
@@ -719,7 +706,10 @@ impl Components {
                                         .columns
                                         .iter()
                                         .filter_map(move |(id, column)| {
-                                            column.storage.get(&entity.id()).map(|x| (id, x))
+                                            column
+                                                .storage
+                                                .get(&entity.id())
+                                                .map(|x| (id, x.to_owned()))
                                         })
                                         .collect(),
                                 )

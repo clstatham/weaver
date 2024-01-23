@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 
@@ -22,7 +22,7 @@ impl<T: std::any::Any> Downcast for T {
 /// A component is a data structure that can be attached to an entity.
 pub trait Component: Debug + Downcast + Send + Sync + 'static {
     #[allow(unused)]
-    fn fields(&self, registry: &Registry) -> Vec<Data>
+    fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
     {
@@ -56,31 +56,71 @@ pub struct MetaComponent {
 }
 
 impl Component for MetaComponent {
-    fn fields(&self, _registry: &Registry) -> Vec<Data> {
+    fn fields(&self, _registry: &Arc<Registry>) -> Vec<Data> {
         vec![]
     }
 }
 
-/// A unique pointer to a type-erased component.
+macro_rules! data_arithmetic {
+    ($registry:ident, $lhs:ident, $op:tt, $rhs:ident; $($ty:ty),*) => {
+        $(
+            if let Some(lhs) = (&*$lhs).as_any().downcast_ref::<$ty>() {
+                if let Some(rhs) = (&*$rhs).as_any().downcast_ref::<$ty>() {
+                    return Ok(Data::new(*lhs $op *rhs, None, &$registry));
+                }
+            }
+        )*
+    };
+
+    (ref mut $lhs:ident, $op:tt, $rhs:ident; $($ty:ty),*) => {
+        $(
+            if let Some(lhs) = (&mut *$lhs).as_any_mut().downcast_mut::<$ty>() {
+                if let Some(rhs) = (&*$rhs).as_any().downcast_ref::<$ty>() {
+                    *lhs $op *rhs;
+                    return Ok(());
+                }
+            }
+        )*
+    };
+}
+
+macro_rules! data_display {
+    ($this:ident, $type_name:expr, $f:ident; $($ty:ty),*) => {
+        if true $( && (&*$this).as_any().downcast_ref::<$ty>().is_none())* {
+            write!($f, "<{}>", $type_name).unwrap();
+            return;
+        }
+        $(
+            if let Some(lhs) = (&*$this).as_any().downcast_ref::<$ty>() {
+                write!($f, "{}", lhs).unwrap();
+            }
+        )*
+    };
+}
+
+/// A shared pointer to a type-erased component.
+#[derive(Clone)]
 pub struct Data {
     type_id: DynamicId,
     type_name: String,
     field_name: Option<String>,
-    data: Box<dyn Component>,
+    data: Arc<AtomicRefCell<dyn Component>>,
     fields: Vec<Data>,
+    registry: Arc<Registry>,
 }
 
 impl Data {
-    pub fn new<T: Component>(data: T, field_name: Option<&str>, registry: &Registry) -> Self {
+    pub fn new<T: Component>(data: T, field_name: Option<&str>, registry: &Arc<Registry>) -> Self {
         let type_id = registry.get_static::<T>();
-        let data = Box::new(data);
         let fields = data.fields(registry);
+        let data = Arc::new(AtomicRefCell::new(data));
         Self {
             data,
             type_id,
             type_name: registry.static_name::<T>(),
             field_name: field_name.map(|s| s.to_string()),
             fields,
+            registry: registry.clone(),
         }
     }
 
@@ -88,30 +128,35 @@ impl Data {
         field_name: Option<&str>,
         type_name: &str,
         fields: Vec<Data>,
-        registry: &Registry,
+        registry: &Arc<Registry>,
     ) -> Self {
         let type_id = registry.get_named(type_name);
         Self {
-            data: Box::new(MetaComponent {
+            data: Arc::new(AtomicRefCell::new(MetaComponent {
                 type_id,
                 type_name: type_name.to_string(),
                 field_name: field_name.map(|s| s.to_string()),
-            }),
+            })),
             type_id,
             type_name: type_name.to_string(),
             field_name: field_name.map(|s| s.to_string()),
             fields,
+            registry: registry.clone(),
         }
     }
 
     #[inline]
-    pub fn get_as<T: Component>(&self) -> Option<&T> {
-        (*self.data).as_any().downcast_ref::<T>()
+    pub fn get_as<T: Component>(&self) -> AtomicRef<'_, T> {
+        AtomicRef::map(self.data.borrow(), |data| {
+            data.as_any().downcast_ref::<T>().unwrap()
+        })
     }
 
     #[inline]
-    pub fn get_as_mut<T: Component>(&mut self) -> Option<&mut T> {
-        (*self.data).as_any_mut().downcast_mut::<T>()
+    pub fn get_as_mut<T: Component>(&self) -> AtomicRefMut<'_, T> {
+        AtomicRefMut::map(self.data.borrow_mut(), |data| {
+            data.as_any_mut().downcast_mut::<T>().unwrap()
+        })
     }
 
     #[inline]
@@ -138,8 +183,18 @@ impl Data {
     }
 
     #[inline]
-    pub fn data(&self) -> &dyn Component {
-        &*self.data
+    pub fn registry(&self) -> &Arc<Registry> {
+        &self.registry
+    }
+
+    #[inline]
+    pub fn borrow(&self) -> AtomicRef<'_, dyn Component> {
+        self.data.borrow()
+    }
+
+    #[inline]
+    pub fn borrow_mut(&self) -> AtomicRefMut<'_, dyn Component> {
+        self.data.borrow_mut()
     }
 
     #[inline]
@@ -166,18 +221,161 @@ impl Data {
             })
     }
 
-    #[inline]
-    pub fn field_by_name_mut<'a>(&'a mut self, name: &str) -> Option<&'a mut Data> {
-        self.fields
-            .iter_mut()
-            .filter(|field| field.field_name().is_some())
-            .find(|field| {
-                if let Some(field_name) = field.field_name() {
-                    field_name == name
-                } else {
-                    false
-                }
-            })
+    pub fn display(&self, f: &mut std::fmt::Formatter<'_>) {
+        let this = self.borrow();
+        let type_name = self.type_name();
+        data_display!(this, type_name, f; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String);
+    }
+
+    pub fn add(&self, rhs: &Data) -> anyhow::Result<Data> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+
+        let reg = self.registry.clone();
+
+        let lhs = self.borrow();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(reg, lhs, +, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn sub(&self, rhs: &Data) -> anyhow::Result<Data> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+
+        let reg = self.registry.clone();
+
+        let lhs = self.borrow();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(reg, lhs, -, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn mul(&self, rhs: &Data) -> anyhow::Result<Data> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+
+        let reg = self.registry.clone();
+
+        let lhs = self.borrow();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(reg, lhs, *, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn div(&self, rhs: &Data) -> anyhow::Result<Data> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+
+        let reg = self.registry.clone();
+
+        let lhs = self.borrow();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(reg, lhs, /, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn rem(&self, rhs: &Data) -> anyhow::Result<Data> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+
+        let reg = self.registry.clone();
+
+        let lhs = self.borrow();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(reg, lhs, %, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn assign(&self, rhs: &Data) -> anyhow::Result<()> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+
+        let mut lhs = self.borrow_mut();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(ref mut lhs, =, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn add_assign(&self, rhs: &Data) -> anyhow::Result<()> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+        let mut lhs = self.borrow_mut();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(ref mut lhs, +=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn sub_assign(&self, rhs: &Data) -> anyhow::Result<()> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+        let mut lhs = self.borrow_mut();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(ref mut lhs, -=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn mul_assign(&self, rhs: &Data) -> anyhow::Result<()> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+
+        let mut lhs = self.borrow_mut();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(ref mut lhs, *=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn div_assign(&self, rhs: &Data) -> anyhow::Result<()> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+
+        let mut lhs = self.borrow_mut();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(ref mut lhs, /=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn rem_assign(&self, rhs: &Data) -> anyhow::Result<()> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+
+        let mut lhs = self.borrow_mut();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(ref mut lhs, %=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
+
+        Err(anyhow::anyhow!("Type mismatch"))
     }
 }
 
@@ -190,31 +388,5 @@ impl Debug for Data {
             .field("data", &format!("{:?}", self.data))
             .field("fields", &self.fields)
             .finish()
-    }
-}
-
-pub struct LockedData {
-    data: AtomicRefCell<Data>,
-}
-
-impl LockedData {
-    pub fn new(data: Data) -> Self {
-        Self {
-            data: AtomicRefCell::new(data),
-        }
-    }
-
-    #[inline]
-    pub fn borrow(&self) -> AtomicRef<'_, Data> {
-        self.data.borrow()
-    }
-
-    #[inline]
-    pub fn borrow_mut(&self) -> AtomicRefMut<'_, Data> {
-        self.data.borrow_mut()
-    }
-
-    pub fn into_inner(self) -> Data {
-        self.data.into_inner()
     }
 }

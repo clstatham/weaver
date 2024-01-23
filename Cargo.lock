@@ -2676,6 +2676,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "typed-arena"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
+
+[[package]]
 name = "typenum"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3044,6 +3050,7 @@ dependencies = [
  "atomic_refcell",
  "bit-set",
  "crossbeam-channel",
+ "env_logger",
  "fixedbitset",
  "glam",
  "itertools 0.12.0",
@@ -3056,6 +3063,7 @@ dependencies = [
  "rayon",
  "rustc-hash",
  "static_assertions",
+ "typed-arena",
  "weaver-proc-macro",
 ]
 

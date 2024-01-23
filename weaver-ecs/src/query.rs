@@ -3,7 +3,7 @@ use std::{fmt::Debug, ops::Deref};
 use weaver_proc_macro::all_tuples;
 
 use crate::{
-    component::{Data, LockedData},
+    component::Data,
     id::{DynamicId, Registry},
     prelude::Entity,
     storage::{Archetype, ComponentMap, ComponentSet, Components, SparseSet},
@@ -143,7 +143,7 @@ where
 
     fn fetch(
         entity: Entity,
-        data: &'a ComponentMap<&'a LockedData>,
+        data: &'a ComponentMap<Data>,
         registry: &'a Registry,
     ) -> Option<Self::ItemRef>;
 
@@ -159,7 +159,7 @@ where
 
     fn fetch(
         _entity: Entity,
-        _data: &'a ComponentMap<&'a LockedData>,
+        _data: &'a ComponentMap<Data>,
         _registry: &'a Registry,
     ) -> Option<Self::ItemRef> {
         Some(())
@@ -185,16 +185,13 @@ where
 
     fn fetch(
         entity: Entity,
-        data: &'a ComponentMap<&'a LockedData>,
+        data: &'a ComponentMap<Data>,
         registry: &Registry,
     ) -> Option<Self::ItemRef> {
         let data = data.get(&registry.get_static::<T>())?;
-        let data = data.borrow();
+        let component = data.get_as::<T>();
 
-        Some(Ref {
-            entity,
-            component: AtomicRef::map(data, |data| data.get_as::<T>().unwrap()),
-        })
+        Some(Ref { entity, component })
     }
 
     fn access(registry: &Registry) -> QueryAccess {
@@ -217,16 +214,13 @@ where
 
     fn fetch(
         entity: Entity,
-        data: &'a ComponentMap<&'a LockedData>,
+        data: &'a ComponentMap<Data>,
         registry: &'a Registry,
     ) -> Option<Self::ItemRef> {
         let data = data.get(&registry.get_static::<T>())?;
-        let data = data.borrow_mut();
+        let component = data.get_as_mut::<T>();
 
-        Some(Mut {
-            entity,
-            component: AtomicRefMut::map(data, |data| data.get_as_mut::<T>().unwrap()),
-        })
+        Some(Mut { entity, component })
     }
 
     fn access(registry: &Registry) -> QueryAccess {
@@ -248,7 +242,7 @@ where
 
     fn fetch(
         entity: Entity,
-        _data: &'a ComponentMap<&'a LockedData>,
+        _data: &'a ComponentMap<Data>,
         _registry: &'a Registry,
     ) -> Option<Self::ItemRef> {
         Some(entity)
@@ -309,7 +303,7 @@ where
     F: QueryFilter<'a>,
 {
     registry: &'a Registry,
-    entries: SparseSet<Entity, ComponentMap<&'a LockedData>>,
+    entries: SparseSet<Entity, ComponentMap<Data>>,
     _marker: std::marker::PhantomData<(Q, F)>,
 }
 
@@ -354,7 +348,7 @@ pub enum DynamicQueryParam {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DynamicQueryParams {
-    params: Vec<DynamicQueryParam>,
+    pub params: Vec<DynamicQueryParam>,
 }
 
 impl DynamicQueryParams {
@@ -426,69 +420,69 @@ impl Deref for DynamicQueryParams {
     }
 }
 
-pub enum DynamicQueryRef<'a> {
-    Ref(AtomicRef<'a, Data>),
-    Mut(AtomicRefMut<'a, Data>),
+pub enum DynamicQueryRef {
+    Ref(Data),
+    Mut(Data),
 }
 
-impl<'a> Debug for DynamicQueryRef<'a> {
+impl Debug for DynamicQueryRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DynamicQueryRef::Ref(data) => write!(f, "{:?}", data.data()),
-            DynamicQueryRef::Mut(data) => write!(f, "{:?}", data.data()),
+            DynamicQueryRef::Ref(data) => write!(f, "{:?}", data.borrow()),
+            DynamicQueryRef::Mut(data) => write!(f, "{:?}", data.borrow()),
         }
     }
 }
 
-impl<'a> DynamicQueryRef<'a> {
-    pub fn get<T: Component>(&self) -> Option<&T> {
+impl DynamicQueryRef {
+    pub fn get<T: Component>(&self) -> AtomicRef<'_, T> {
         match self {
-            DynamicQueryRef::Ref(data) => data.get_as::<T>(),
-            DynamicQueryRef::Mut(data) => data.get_as::<T>(),
+            DynamicQueryRef::Ref(data) => data.get_as(),
+            DynamicQueryRef::Mut(data) => data.get_as(),
         }
     }
 
-    pub fn get_mut<T: Component>(&mut self) -> Option<&mut T> {
+    pub fn get_mut<T: Component>(&mut self) -> Option<AtomicRefMut<'_, T>> {
         match self {
             DynamicQueryRef::Ref(_) => None,
-            DynamicQueryRef::Mut(data) => data.get_as_mut::<T>(),
+            DynamicQueryRef::Mut(data) => Some(data.get_as_mut()),
         }
     }
 
-    pub fn type_name(&self) -> &str {
+    pub fn type_name(&self) -> String {
         match self {
-            DynamicQueryRef::Ref(data) => data.type_name(),
-            DynamicQueryRef::Mut(data) => data.type_name(),
+            DynamicQueryRef::Ref(data) => data.type_name().to_owned(),
+            DynamicQueryRef::Mut(data) => data.type_name().to_owned(),
         }
     }
 
     pub fn data(&self) -> &Data {
         match self {
-            DynamicQueryRef::Ref(data) => &*data,
-            DynamicQueryRef::Mut(data) => &*data,
+            DynamicQueryRef::Ref(data) => data,
+            DynamicQueryRef::Mut(data) => data,
         }
     }
 
     pub fn data_mut(&mut self) -> Option<&mut Data> {
         match self {
             DynamicQueryRef::Ref(_) => None,
-            DynamicQueryRef::Mut(data) => Some(&mut *data),
+            DynamicQueryRef::Mut(data) => Some(data),
         }
     }
 }
 
-pub struct DynamicQuery<'a> {
-    entries: SparseSet<Entity, ComponentMap<&'a LockedData>>,
+pub struct DynamicQuery {
+    entries: SparseSet<Entity, ComponentMap<Data>>,
     params: DynamicQueryParams,
     access: QueryAccess,
 }
 
-impl<'a> DynamicQuery<'a> {
-    pub fn builder(components: &'a Components) -> DynamicQueryBuilder {
+impl DynamicQuery {
+    pub fn builder(components: &Components) -> DynamicQueryBuilder {
         DynamicQueryBuilder::new(components)
     }
 
-    pub(crate) fn new(components: &'a Components, params: DynamicQueryParams) -> Self {
+    pub(crate) fn new(components: &Components, params: DynamicQueryParams) -> Self {
         let mut access = QueryAccess {
             reads: ComponentSet::default(),
             writes: ComponentSet::default(),
@@ -522,18 +516,18 @@ impl<'a> DynamicQuery<'a> {
         }
     }
 
-    pub fn get(&self, entity: &'a Entity) -> Option<Vec<DynamicQueryRef<'a>>> {
-        let data = self.entries.get(entity)?;
+    pub fn get(&self, entity: Entity) -> Option<Vec<DynamicQueryRef>> {
+        let data = self.entries.get(&entity)?;
         let mut refs = Vec::new();
         for param in self.params.iter() {
             match param {
                 DynamicQueryParam::Read(id) => {
-                    let data = data.get(id)?;
-                    refs.push(DynamicQueryRef::Ref(data.borrow()));
+                    let data = data.get(id)?.to_owned();
+                    refs.push(DynamicQueryRef::Ref(data));
                 }
                 DynamicQueryParam::Write(id) => {
-                    let data = data.get(id)?;
-                    refs.push(DynamicQueryRef::Mut(data.borrow_mut()));
+                    let data = data.get(id)?.to_owned();
+                    refs.push(DynamicQueryRef::Mut(data));
                 }
                 DynamicQueryParam::With(_) => {}
                 DynamicQueryParam::Without(_) => {}
@@ -542,10 +536,10 @@ impl<'a> DynamicQuery<'a> {
         Some(refs)
     }
 
-    pub fn iter(&'a self) -> impl Iterator<Item = Vec<DynamicQueryRef<'a>>> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = Vec<DynamicQueryRef>> + '_ {
         self.entries
-            .iter()
-            .filter_map(move |(entity, _)| self.get(entity))
+            .sparse_iter()
+            .filter_map(move |entity| self.get(*entity))
     }
 
     pub fn access(&self) -> &QueryAccess {
@@ -623,7 +617,7 @@ impl<'a> DynamicQueryBuilder<'a> {
     }
 
     #[must_use]
-    pub fn build(self) -> DynamicQuery<'a> {
+    pub fn build(self) -> DynamicQuery {
         DynamicQuery::new(self.components, self.params)
     }
 }
@@ -640,7 +634,7 @@ macro_rules! impl_queryable_for_tuple {
             type Item = ($($name::Item,)*);
             type ItemRef = ($($name::ItemRef,)*);
 
-            fn fetch(entity: Entity, data: &'a ComponentMap<&'a LockedData>, registry: &'a Registry) -> Option<Self::ItemRef> {
+            fn fetch(entity: Entity, data: &'a ComponentMap<Data>, registry: &'a Registry) -> Option<Self::ItemRef> {
                 Some(($($name::fetch(entity, data, registry)?,)*))
             }
 

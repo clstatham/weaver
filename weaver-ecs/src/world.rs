@@ -133,18 +133,6 @@ impl World {
         Ok(())
     }
 
-    pub fn run_stage_parallel(world: &Arc<RwLock<Self>>, stage: SystemStage) -> anyhow::Result<()> {
-        let world_lock = world.read();
-        if let Some(systems) = world_lock.systems.get(&stage).cloned() {
-            systems
-                .write()
-                .autodetect_dependencies(world_lock.components.registry())?;
-            drop(world_lock);
-            systems.read().run_parallel(world)?;
-        }
-        Ok(())
-    }
-
     pub fn query<'a, T: Queryable<'a, ()>>(&'a self) -> Query<'a, T, ()> {
         Query::new(&self.components)
     }

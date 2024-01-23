@@ -140,7 +140,7 @@ impl App {
                         gui.begin_frame(&window.window);
                     }
 
-                    World::run_stage_parallel(&update_world, SystemStage::Update).unwrap();
+                    World::run_stage(&update_world, SystemStage::Update).unwrap();
 
                     {
                         let world = update_world.read();

@@ -233,57 +233,16 @@ mod tests {
 
     #[test]
     fn test_script_system() {
-        let mut world = World::new();
-
-        world.spawn((A::default(), B::default(), C::default()));
-        world.spawn((A::default(), B::default()));
-        world.spawn((A::default(), C::default()));
-        world.spawn((A::default(), B::default(), C::default()));
-
-        let a_id = world.dynamic_id::<A>();
-        let b_id = world.dynamic_id::<B>();
-        let c_id = world.dynamic_id::<C>();
-
-        let world = Arc::new(RwLock::new(world));
-
-        let mut system = DynamicSystem::script_builder("test")
-            .query(
-                "abc",
-                DynamicQueryParams::new().read(a_id).read(b_id).read(c_id),
-            )
-            .build(world.clone(), move |params| {
-                let query = params[0].unwrap_query();
-                let mut count = 0;
-
-                for entry in query.iter() {
-                    count += 1;
-                }
-
-                assert_eq!(count, 2);
-
-                Ok(())
-            });
-
-        world
-            .write()
-            .add_system_to_stage(system, SystemStage::Update);
-
-        World::run_stage(&world, SystemStage::Update);
-    }
-
-    #[test]
-    fn test_script_system_load() {
+        env_logger::init();
         #[derive(Debug, Default, Component)]
         struct Foo {
-            pub a: i32,
+            pub a: i64,
             pub b: f32,
         }
 
         let mut world = World::new();
 
-        world.spawn((3.0f32, 5i32, A::default()));
-        world.spawn((4.0f32, 6i32, B::default()));
-        world.spawn((5.0f32, 7i32, A::default(), B::default()));
+        world.spawn((Foo::default(),));
 
         let world = Arc::new(RwLock::new(world));
 
@@ -295,8 +254,8 @@ mod tests {
             SystemStage::Update,
         );
 
-        for _ in 0..10 {
-            World::run_stage(&world, SystemStage::Update);
+        for _ in 0..1 {
+            World::run_stage(&world, SystemStage::Update).unwrap();
         }
 
         let world = world.read();

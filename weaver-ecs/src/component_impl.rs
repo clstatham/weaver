@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use crate::{component::Data, id::Registry, prelude::*};
 
 impl<T: Component> Component for Vec<T> {
-    fn fields(&self, _registry: &Registry) -> Vec<Data>
+    fn fields(&self, _registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
     {
@@ -10,7 +12,7 @@ impl<T: Component> Component for Vec<T> {
 }
 
 impl<T: Component> Component for Option<T> {
-    fn fields(&self, registry: &Registry) -> Vec<Data>
+    fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
     {
@@ -22,7 +24,7 @@ impl<T: Component> Component for Option<T> {
 }
 
 impl Component for glam::Vec3 {
-    fn fields(&self, registry: &Registry) -> Vec<Data>
+    fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
     {
@@ -35,7 +37,7 @@ impl Component for glam::Vec3 {
 }
 
 impl Component for glam::Vec2 {
-    fn fields(&self, registry: &Registry) -> Vec<Data>
+    fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
     {
@@ -47,7 +49,7 @@ impl Component for glam::Vec2 {
 }
 
 impl Component for glam::Vec4 {
-    fn fields(&self, registry: &Registry) -> Vec<Data>
+    fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
     {
@@ -61,7 +63,7 @@ impl Component for glam::Vec4 {
 }
 
 impl Component for glam::Quat {
-    fn fields(&self, registry: &Registry) -> Vec<Data>
+    fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
     {
@@ -75,7 +77,7 @@ impl Component for glam::Quat {
 }
 
 impl Component for glam::Mat4 {
-    fn fields(&self, registry: &Registry) -> Vec<Data>
+    fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
     {

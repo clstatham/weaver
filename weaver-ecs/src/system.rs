@@ -1,8 +1,7 @@
-use std::{collections::VecDeque, fmt::Debug, ops::Deref, sync::Arc};
+use std::{fmt::Debug, ops::Deref, sync::Arc};
 
 use crate::{
     id::{DynamicId, Registry},
-    prelude::Commands,
     query::{DynamicQuery, DynamicQueryParam, DynamicQueryParams},
     resource::{DynRes, DynResMut},
     script::interp::BuildOnWorld,
@@ -200,13 +199,15 @@ pub struct ScriptBuilderParam {
     pub param: ScriptBuilderParamType,
 }
 
+#[derive(Clone)]
 pub enum ScriptParamType<'a> {
-    Query(DynamicQuery<'a>),
-    Res(DynRes<'a>),
-    ResMut(DynResMut<'a>),
-    Commands(Commands),
+    Query(Arc<DynamicQuery>),
+    Res(Arc<DynRes<'a>>),
+    ResMut(Arc<DynResMut<'a>>),
+    // Commands(Commands), // todo
 }
 
+#[derive(Clone)]
 pub struct ScriptParam<'a> {
     pub name: String,
     pub param: ScriptParamType<'a>,
@@ -221,7 +222,7 @@ impl<'a> Deref for ScriptParam<'a> {
 }
 
 impl<'a> ScriptParamType<'a> {
-    pub fn unwrap_query(&self) -> &DynamicQuery<'a> {
+    pub fn unwrap_query(&self) -> &DynamicQuery {
         match self {
             ScriptParamType::Query(query) => query,
             _ => panic!("Expected ScriptParams::Query"),
@@ -239,13 +240,6 @@ impl<'a> ScriptParamType<'a> {
         match self {
             ScriptParamType::ResMut(res) => res,
             _ => panic!("Expected ScriptParams::ResMut"),
-        }
-    }
-
-    pub fn unwrap_commands(&self) -> &Commands {
-        match self {
-            ScriptParamType::Commands(commands) => commands,
-            _ => panic!("Expected ScriptParams::Commands"),
         }
     }
 }
@@ -300,9 +294,9 @@ impl ScriptSystemBuilder {
     }
 
     #[must_use]
-    pub fn build<S>(self, world: Arc<RwLock<World>>, script: S) -> DynamicSystem
+    pub fn build<S>(self, script: S) -> DynamicSystem
     where
-        S: Fn(&[ScriptParam]) -> anyhow::Result<()> + Send + Sync + 'static,
+        S: Fn(Vec<ScriptParam>) -> anyhow::Result<()> + Send + Sync + 'static,
     {
         let mut components_read = Vec::new();
         let mut components_written = Vec::new();
@@ -366,65 +360,8 @@ impl ScriptSystemBuilder {
             }
         }
 
-        let world_clone = world.clone();
         let run_fn = move || {
-            let world_lock = world_clone.read();
-            let mut params = Vec::new();
-            let mut has_commands = false;
-
-            for param in self.params.iter() {
-                match &param.param {
-                    ScriptBuilderParamType::Query(query) => {
-                        params.push(ScriptParam {
-                            name: param.name.clone(),
-                            param: ScriptParamType::Query(DynamicQuery::new(
-                                &world_lock.components,
-                                query.clone(),
-                            )),
-                        });
-                    }
-                    ScriptBuilderParamType::Res(res) => {
-                        params.push(ScriptParam {
-                            name: param.name.clone(),
-                            param: ScriptParamType::Res(DynRes::new(
-                                world_lock.resources.get(res).unwrap().read(),
-                            )),
-                        });
-                    }
-                    ScriptBuilderParamType::ResMut(res) => {
-                        params.push(ScriptParam {
-                            name: param.name.clone(),
-                            param: ScriptParamType::ResMut(DynResMut::new(
-                                world_lock.resources.get(res).unwrap().write(),
-                            )),
-                        });
-                    }
-                    ScriptBuilderParamType::Commands => {
-                        has_commands = true;
-                        params.push(ScriptParam {
-                            name: param.name.clone(),
-                            param: ScriptParamType::Commands(Commands::new(&world_lock)),
-                        });
-                    }
-                }
-            }
-
-            (script)(&params)?;
-
-            if has_commands {
-                let commands = params
-                    .drain(..)
-                    .find_map(|param| match param.param {
-                        ScriptParamType::Commands(commands) => Some(commands),
-                        _ => None,
-                    })
-                    .unwrap();
-                drop(params);
-                drop(world_lock);
-                let mut world_lock = world_clone.write();
-                commands.finalize(&mut world_lock);
-            }
-
+            (script)(vec![])?;
             Ok(())
         };
 
@@ -636,130 +573,6 @@ impl SystemGraph {
         while let Some(node) = bfs.next(&self.graph) {
             let system = &self.graph[node].system;
             system.run(world.clone())?;
-        }
-
-        Ok(())
-    }
-
-    pub fn run_parallel(&self, world: &Arc<RwLock<World>>) -> anyhow::Result<()> {
-        if self.graph.node_count() == 0 {
-            return Ok(());
-        }
-
-        if self.detect_cycles().is_some() {
-            return Err(anyhow::anyhow!("System dependency cycle detected"));
-        }
-
-        let mut systems_running = FxHashMap::default();
-
-        let mut systems_finished = FxHashSet::default();
-
-        // add all systems with no dependencies to the queue
-        let mut queue = VecDeque::new();
-        for node in self.graph.externals(Direction::Incoming) {
-            queue.push_back(node);
-        }
-
-        if queue.is_empty() {
-            return Err(anyhow::anyhow!(
-                "System dependency cycle detected (no systems without dependencies)"
-            ));
-        }
-
-        if queue.len() == self.graph.node_count() {
-            // all systems have no dependencies
-            // run them all!
-            for node in queue {
-                let world = world.clone();
-                let system = self.graph[node].system.clone();
-
-                let (tx, rx) = crossbeam_channel::bounded(1);
-                rayon::spawn(move || {
-                    system.run(world.clone()).unwrap();
-                    let _ = tx.send(()); // notify that the system has finished running
-                });
-
-                systems_running.insert(node, rx);
-            }
-
-            // wait for all systems to finish running
-            loop {
-                if systems_running.is_empty() {
-                    break;
-                }
-
-                for (&node, rx) in systems_running.iter_mut() {
-                    if let Ok(()) = rx.try_recv() {
-                        // system finished running
-                        systems_finished.insert(node);
-                    }
-                }
-
-                // remove systems that have finished running
-                for node in systems_finished.iter() {
-                    systems_running.remove(node);
-                }
-
-                rayon::yield_now();
-            }
-
-            return Ok(());
-        }
-
-        // some systems have dependencies
-
-        loop {
-            // check if all systems have finished running
-            if systems_finished.len() == self.graph.node_count() {
-                break;
-            }
-            // check if there are any systems that can be run
-            if let Some(node) = queue.pop_front() {
-                if !systems_running.contains_key(&node) && !systems_finished.contains(&node) {
-                    let system = &self.graph[node].system.clone();
-
-                    let system = system.clone();
-                    let world = world.clone();
-                    let (tx, rx) = crossbeam_channel::bounded(1);
-                    rayon::spawn(move || {
-                        system.run(world.clone()).unwrap();
-                        let _ = tx.send(()); // notify that the system has finished running
-                    });
-
-                    systems_running.insert(node, rx);
-                }
-            }
-
-            // check if any systems have finished running
-            for (&node, rx) in systems_running.iter_mut() {
-                if let Ok(()) = rx.try_recv() {
-                    // system finished running
-                    systems_finished.insert(node);
-                }
-            }
-
-            // remove systems that have finished running
-            for node in systems_finished.iter() {
-                systems_running.remove(node);
-            }
-
-            // enqueue systems whose dependencies have been met
-            for node in self.graph.node_indices() {
-                if !systems_finished.contains(&node) && !queue.contains(&node) {
-                    let mut dependencies_met = true;
-                    for neighbor in self.graph.neighbors_directed(node, Direction::Incoming) {
-                        if !systems_finished.contains(&neighbor) {
-                            dependencies_met = false;
-                            break;
-                        }
-                    }
-                    if dependencies_met {
-                        queue.push_back(node);
-                    }
-                }
-            }
-
-            rayon::yield_now();
         }
 
         Ok(())

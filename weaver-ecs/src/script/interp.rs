@@ -1,103 +1,62 @@
 use std::{
-    ops::{Add, Div, Mul, Sub},
+    fmt::{Debug, Display},
+    ops::Deref,
     sync::Arc,
 };
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
+use typed_arena::Arena;
 
 use crate::{
+    component::Data,
     id::DynamicId,
     prelude::World,
-    query::{DynamicQuery, DynamicQueryParams, DynamicQueryRef},
-    system::{DynamicSystem, ScriptParam},
+    query::{DynamicQueryParam, DynamicQueryParams, DynamicQueryRef},
+    system::DynamicSystem,
 };
 
 use super::{
-    parser::{Call, Component, Expr, Query, Scope, Statement, System, TypedIdent},
+    parser::{Call, Expr, Query, Scope, Statement, System, TypedIdent},
     Script,
 };
 
-macro_rules! match_two_components_helper {
-    ($cx:ident, $ty:ty, $value_ty:ident; $lhs:ident = $lhs_binding:ident; $rhs:ident = $rhs_binding:ident => $block:block else $els:block) => {
-        match $lhs {
-            Value::Component { ty, name: lhs_name } if ty.as_str() == stringify!($ty) => match $rhs
-            {
-                Value::Component { ty, name: rhs_name } if ty.as_str() == stringify!($ty) => {
-                    let $lhs_binding = $cx.current_scope().get_param(&lhs_name).unwrap();
-                    let $lhs_binding = $lhs_binding.data().get_as::<$ty>().unwrap();
-                    let $rhs_binding = $cx.current_scope().get_param(&rhs_name).unwrap();
-                    let $rhs_binding = $rhs_binding.data().get_as::<$ty>().unwrap();
-                    Value::$value_ty($block)
-                }
-                _ => $els,
-            },
-            _ => $els,
-        }
-    };
-}
-
-macro_rules! match_two_components {
-    ($cx:ident, $lhs:ident = $lhs_binding:ident; $rhs:ident = $rhs_binding:ident => $block:block) => {
-        match_two_components_helper!($cx, f32, Float; $lhs = $lhs_binding; $rhs = $rhs_binding => $block else {
-            match_two_components_helper!($cx, i64, Int; $lhs = $lhs_binding; $rhs = $rhs_binding => $block else {
-                todo!("Implement other types")
-            })
-        })
-    };
-}
-
-macro_rules! match_two_components_mut_helper {
-    ($cx:ident, $ty:ty, $value_ty:ident; $lhs:ident = $lhs_binding:ident; $rhs:ident = $rhs_binding:ident => $block:block else $els:block) => {
-        match $lhs {
-            Value::Component { ty, name: lhs_name } if ty.as_str() == stringify!($ty) => match $rhs
-            {
-                Value::Component { ty, name: rhs_name } if ty.as_str() == stringify!($ty) => {
-                    let scope = $cx.current_scope_mut();
-                    let $rhs_binding = scope.get_param(&rhs_name).unwrap();
-                    let $rhs_binding = *$rhs_binding.data().get_as::<$ty>().unwrap();
-                    let $lhs_binding = scope.get_param_mut(&lhs_name).unwrap();
-                    let $lhs_binding = $lhs_binding
-                        .data_mut()
-                        .unwrap()
-                        .get_as_mut::<$ty>()
-                        .unwrap();
-
-                    $block;
-                    Value::Void
-                }
-                _ => $els,
-            },
-            _ => $els,
-        }
-    };
-}
-
-macro_rules! match_two_components_mut {
-    ($cx:ident, $lhs:ident = $lhs_binding:ident; $rhs:ident = $rhs_binding:ident => $block:block) => {
-        match_two_components_mut_helper!($cx, f32, Float; $lhs = $lhs_binding; $rhs = $rhs_binding => $block else {
-            match_two_components_mut_helper!($cx, i64, Int; $lhs = $lhs_binding; $rhs = $rhs_binding => $block else {
-                todo!("Implement other types")
-            })
-        })
-    };
-}
-
-#[derive(Debug, Clone)]
 pub enum Value {
     Void,
     Float(f32),
     Int(i64),
-    Bool(bool),
-    Component {
-        name: String,
-        ty: String,
-    },
-    Field {
-        name: String,
-        ty: String,
-        parent: Box<Value>,
-    },
+    Data(Data),
+    DataMut(Data),
+}
+
+impl Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Value::DataMut(data) = self {
+            write!(f, "DataMut({:?})", data.type_name())
+        } else if let Value::Data(data) = self {
+            write!(f, "Data({:?})", data.type_name())
+        } else {
+            write!(f, "{:?}", self.type_name())
+        }
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Void => write!(f, "()"),
+            Value::Float(float) => write!(f, "{}", float),
+            Value::Int(int) => write!(f, "{}", int),
+            Value::Data(data) => {
+                data.display(f);
+                Ok(())
+            }
+            Value::DataMut(data) => {
+                data.display(f);
+                Ok(())
+            }
+        }
+    }
 }
 
 impl Value {
@@ -106,276 +65,439 @@ impl Value {
             Value::Void => "()",
             Value::Float(_) => "f64",
             Value::Int(_) => "i64",
-            Value::Bool(_) => "bool",
-            Value::Component { ty, .. } => ty,
-            Value::Field { ty, .. } => ty,
+            Value::Data(data) => data.type_name(),
+            Value::DataMut(data) => data.type_name(),
         }
     }
 
-    pub fn add(&self, rhs: &Self, cx: &mut InterpreterContext<'_>) -> anyhow::Result<Self> {
+    pub fn infix(&self, op: &str, rhs: &Self) -> anyhow::Result<Self> {
         match (self, rhs) {
-            (Value::Component { .. }, Value::Component { .. }) => {
-                Ok(match_two_components!(cx, self = lhs; rhs = rhs => {
-                    lhs.add(rhs)
-                }))
+            (Value::Int(lhs), Value::Int(rhs)) => match op {
+                "+" => Ok(Value::Int(lhs + rhs)),
+                "-" => Ok(Value::Int(lhs - rhs)),
+                "*" => Ok(Value::Int(lhs * rhs)),
+                "/" => Ok(Value::Int(lhs / rhs)),
+                "%" => Ok(Value::Int(lhs % rhs)),
+                _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
+            },
+            (Value::Float(lhs), Value::Float(rhs)) => match op {
+                "+" => Ok(Value::Float(lhs + rhs)),
+                "-" => Ok(Value::Float(lhs - rhs)),
+                "*" => Ok(Value::Float(lhs * rhs)),
+                "/" => Ok(Value::Float(lhs / rhs)),
+                "%" => Ok(Value::Float(lhs % rhs)),
+                _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
+            },
+            (Value::Data(lhs), Value::Data(rhs)) | (Value::Data(lhs), Value::DataMut(rhs)) => {
+                match op {
+                    "+" => Ok(Value::Data(lhs.add(rhs)?)),
+                    "-" => Ok(Value::Data(lhs.sub(rhs)?)),
+                    "*" => Ok(Value::Data(lhs.mul(rhs)?)),
+                    "/" => Ok(Value::Data(lhs.div(rhs)?)),
+                    "%" => Ok(Value::Data(lhs.rem(rhs)?)),
+                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
+                }
             }
-            _ => {
-                todo!("Implement {:?} + {:?}", self, rhs);
+            (Value::Data(lhs), Value::Int(rhs)) => {
+                let rhs = Data::new(*rhs, None, lhs.registry());
+                match op {
+                    "+" => Ok(Value::DataMut(lhs.add(&rhs)?)),
+                    "-" => Ok(Value::DataMut(lhs.sub(&rhs)?)),
+                    "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
+                    "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
+                    "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
+                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
+                }
             }
-        }
-    }
-
-    pub fn sub(&self, rhs: &Self, cx: &mut InterpreterContext<'_>) -> anyhow::Result<Self> {
-        match (self, rhs) {
-            (Value::Component { .. }, Value::Component { .. }) => {
-                Ok(match_two_components!(cx, self = lhs; rhs = rhs => {
-                    lhs.sub(rhs)
-                }))
+            (Value::Int(lhs), Value::Data(rhs)) | (Value::Int(lhs), Value::DataMut(rhs)) => {
+                let lhs = Data::new(*lhs, None, rhs.registry());
+                match op {
+                    "+" => Ok(Value::DataMut(lhs.add(rhs)?)),
+                    "-" => Ok(Value::DataMut(lhs.sub(rhs)?)),
+                    "*" => Ok(Value::DataMut(lhs.mul(rhs)?)),
+                    "/" => Ok(Value::DataMut(lhs.div(rhs)?)),
+                    "%" => Ok(Value::DataMut(lhs.rem(rhs)?)),
+                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
+                }
             }
-            _ => {
-                todo!("Implement {:?} - {:?}", self, rhs);
+            (Value::DataMut(lhs), Value::Int(rhs)) => {
+                let rhs = Data::new(*rhs, None, lhs.registry());
+                match op {
+                    "+" => Ok(Value::DataMut(lhs.add(&rhs)?)),
+                    "-" => Ok(Value::DataMut(lhs.sub(&rhs)?)),
+                    "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
+                    "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
+                    "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
+                    "=" => {
+                        lhs.assign(&rhs)?;
+                        Ok(Value::Void)
+                    }
+                    "+=" => {
+                        lhs.add_assign(&rhs)?;
+                        Ok(Value::Void)
+                    }
+                    "-=" => {
+                        lhs.sub_assign(&rhs)?;
+                        Ok(Value::Void)
+                    }
+                    "*=" => {
+                        lhs.mul_assign(&rhs)?;
+                        Ok(Value::Void)
+                    }
+                    "/=" => {
+                        lhs.div_assign(&rhs)?;
+                        Ok(Value::Void)
+                    }
+                    "%=" => {
+                        lhs.rem_assign(&rhs)?;
+                        Ok(Value::Void)
+                    }
+                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
+                }
             }
-        }
-    }
-
-    pub fn add_assign(&self, rhs: &Self, cx: &mut InterpreterContext<'_>) -> anyhow::Result<Self> {
-        match (self, rhs) {
-            (Value::Component { .. }, Value::Component { .. }) => {
-                Ok(match_two_components_mut!(cx, self = lhs; rhs = rhs => {
-                    *lhs += rhs;
-                }))
+            (Value::Data(lhs), Value::Float(rhs)) => {
+                let rhs = Data::new(*rhs, None, lhs.registry());
+                match op {
+                    "+" => Ok(Value::DataMut(lhs.add(&rhs)?)),
+                    "-" => Ok(Value::DataMut(lhs.sub(&rhs)?)),
+                    "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
+                    "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
+                    "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
+                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
+                }
             }
-            _ => {
-                todo!("Implement {:?} += {:?}", self, rhs);
+            (Value::Float(lhs), Value::Data(rhs)) | (Value::Float(lhs), Value::DataMut(rhs)) => {
+                let lhs = Data::new(*lhs, None, rhs.registry());
+                match op {
+                    "+" => Ok(Value::DataMut(lhs.add(rhs)?)),
+                    "-" => Ok(Value::DataMut(lhs.sub(rhs)?)),
+                    "*" => Ok(Value::DataMut(lhs.mul(rhs)?)),
+                    "/" => Ok(Value::DataMut(lhs.div(rhs)?)),
+                    "%" => Ok(Value::DataMut(lhs.rem(rhs)?)),
+                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
+                }
             }
-        }
-    }
-
-    pub fn sub_assign(&self, rhs: &Self, cx: &mut InterpreterContext<'_>) -> anyhow::Result<Self> {
-        match (self, rhs) {
-            (Value::Component { .. }, Value::Component { .. }) => {
-                Ok(match_two_components_mut!(cx, self = lhs; rhs = rhs => {
-                    *lhs -= rhs;
-                }))
+            (Value::DataMut(lhs), Value::Float(rhs)) => {
+                let rhs = Data::new(*rhs, None, lhs.registry());
+                match op {
+                    "+" => Ok(Value::DataMut(lhs.add(&rhs)?)),
+                    "-" => Ok(Value::DataMut(lhs.sub(&rhs)?)),
+                    "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
+                    "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
+                    "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
+                    "=" => {
+                        lhs.assign(&rhs)?;
+                        Ok(Value::Void)
+                    }
+                    "+=" => {
+                        lhs.add_assign(&rhs)?;
+                        Ok(Value::Void)
+                    }
+                    "-=" => {
+                        lhs.sub_assign(&rhs)?;
+                        Ok(Value::Void)
+                    }
+                    "*=" => {
+                        lhs.mul_assign(&rhs)?;
+                        Ok(Value::Void)
+                    }
+                    "/=" => {
+                        lhs.div_assign(&rhs)?;
+                        Ok(Value::Void)
+                    }
+                    "%=" => {
+                        lhs.rem_assign(&rhs)?;
+                        Ok(Value::Void)
+                    }
+                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
+                }
             }
-            _ => {
-                todo!("Implement {:?} -= {:?}", self, rhs);
-            }
+            (Value::DataMut(lhs), Value::Data(rhs))
+            | (Value::DataMut(lhs), Value::DataMut(rhs)) => match op {
+                "+" => Ok(Value::DataMut(lhs.add(rhs)?)),
+                "-" => Ok(Value::DataMut(lhs.sub(rhs)?)),
+                "*" => Ok(Value::DataMut(lhs.mul(rhs)?)),
+                "/" => Ok(Value::DataMut(lhs.div(rhs)?)),
+                "%" => Ok(Value::DataMut(lhs.rem(rhs)?)),
+                "=" => {
+                    lhs.assign(rhs)?;
+                    Ok(Value::Void)
+                }
+                "+=" => {
+                    lhs.add_assign(rhs)?;
+                    Ok(Value::Void)
+                }
+                "-=" => {
+                    lhs.sub_assign(rhs)?;
+                    Ok(Value::Void)
+                }
+                "*=" => {
+                    lhs.mul_assign(rhs)?;
+                    Ok(Value::Void)
+                }
+                "/=" => {
+                    lhs.div_assign(rhs)?;
+                    Ok(Value::Void)
+                }
+                "%=" => {
+                    lhs.rem_assign(rhs)?;
+                    Ok(Value::Void)
+                }
+                _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
+            },
+            _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
         }
     }
 }
 
-pub struct InterpreterScope<'a> {
-    pub values: FxHashMap<String, Value>,
-    pub params: FxHashMap<String, DynamicQueryRef<'a>>,
+#[derive(Clone, Debug)]
+pub struct ValueHandle {
+    pub name: Option<String>,
+    pub id: usize,
+    pub value: Arc<Value>,
 }
 
-impl<'a> InterpreterScope<'a> {
+impl Deref for ValueHandle {
+    type Target = Value;
+
+    fn deref(&self) -> &Self::Target {
+        self.value.as_ref()
+    }
+}
+
+pub struct RuntimeEnv {
+    pub world: Arc<RwLock<World>>,
+    pub arena: Arena<InterpreterContext>,
+}
+
+impl RuntimeEnv {
+    pub fn new(world: Arc<RwLock<World>>) -> Self {
+        Self {
+            world,
+            arena: Arena::new(),
+        }
+    }
+
+    pub fn push_scope(&self, inherit: Option<&InterpreterContext>) -> &mut InterpreterContext {
+        log::debug!("Pushing scope");
+        if let Some(inherit) = inherit {
+            self.arena.alloc(inherit.clone())
+        } else {
+            self.arena.alloc(InterpreterContext::new())
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct InterpreterContext {
+    pub names: FxHashMap<String, usize>,
+    pub heap: FxHashMap<usize, ValueHandle>,
+}
+
+impl InterpreterContext {
     pub fn new() -> Self {
         Self {
-            values: FxHashMap::default(),
-            params: FxHashMap::default(),
+            names: FxHashMap::default(),
+            heap: FxHashMap::default(),
         }
     }
 
-    pub fn get_param<'get>(&'get self, name: &str) -> Option<&'get DynamicQueryRef<'a>> {
-        self.params.get(name)
-    }
-
-    pub fn get_param_mut<'get>(
-        &'get mut self,
-        name: &str,
-    ) -> Option<&'get mut DynamicQueryRef<'a>> {
-        self.params.get_mut(name)
-    }
-}
-
-pub struct InterpreterContext<'a> {
-    pub world: Arc<RwLock<World>>,
-    pub params: FxHashMap<String, &'a ScriptParam<'a>>,
-    pub scopes: Vec<InterpreterScope<'a>>,
-}
-
-impl<'a> InterpreterContext<'a> {
-    fn push_scope(&mut self) {
-        if let Some(scope) = self.scopes.last_mut() {
-            let new_scope = InterpreterScope {
-                values: scope.values.clone(),
-                params: scope.params.drain().collect(),
-            };
-            self.scopes.push(new_scope);
-        } else {
-            self.scopes.push(InterpreterScope {
-                values: FxHashMap::default(),
-                params: FxHashMap::default(),
-            });
+    pub fn alloc_value(&mut self, name: Option<&str>, value: Value) -> ValueHandle {
+        let handle = ValueHandle {
+            name: name.map(|s| s.to_owned()),
+            id: self.heap.len(),
+            value: Arc::new(value),
+        };
+        self.heap.insert(handle.id, handle.clone());
+        if let Some(name) = name {
+            self.names.insert(name.to_owned(), handle.id);
         }
+        handle
     }
 
-    fn pop_scope(&mut self) {
-        let old_scope = self.scopes.pop();
-        if let Some(mut old_scope) = old_scope {
-            if let Some(current_scope) = self.scopes.last_mut() {
-                current_scope.values.extend(old_scope.values.drain());
-                current_scope.params.extend(old_scope.params.drain());
-            }
+    pub fn get_value_handle(&self, name: &str) -> Option<ValueHandle> {
+        if let Some(id) = self.names.get(name) {
+            return self.heap.get(id).cloned();
         }
+        None
     }
 
-    fn current_scope<'scope>(&'scope self) -> &'scope InterpreterScope<'a> {
-        self.scopes.last().unwrap()
+    pub fn interp_system(&mut self, env: &RuntimeEnv, system: &System) -> anyhow::Result<()> {
+        for statement in &system.block.statements {
+            self.interp_statement(env, statement)?;
+        }
+        Ok(())
     }
 
-    fn current_scope_mut(&mut self) -> &mut InterpreterScope<'a> {
-        self.scopes.last_mut().unwrap()
-    }
-
-    pub fn interp_statement(&mut self, statement: &Statement) -> anyhow::Result<Value> {
+    pub fn interp_statement(
+        &mut self,
+        env: &RuntimeEnv,
+        statement: &Statement,
+    ) -> anyhow::Result<()> {
         match statement {
-            Statement::Query(script_query) => {
-                let query = self.params.get(&script_query.name).unwrap().unwrap_query();
-                self.interp_query(script_query, query)?;
-                Ok(Value::Void)
+            Statement::Expr(expr) => {
+                self.interp_expr(env, expr)?;
+                Ok(())
             }
-            Statement::Expr(expr) => self.interp_expr(expr),
-            _ => {
-                todo!("Implement other statements");
+            Statement::Query(query) => {
+                self.interp_query(env, query)?;
+                Ok(())
             }
+            _ => todo!("Implement other statements"),
         }
     }
 
-    pub fn interp_block(&mut self, statements: &[Statement]) -> anyhow::Result<Value> {
-        self.push_scope();
-        for statement in statements {
-            self.interp_statement(statement)?;
+    pub fn interp_expr(&mut self, env: &RuntimeEnv, expr: &Expr) -> anyhow::Result<ValueHandle> {
+        match expr {
+            Expr::Call(call) => self.interp_call(env, call),
+            Expr::Ident(ident) => self.interp_ident(ident),
+            Expr::IntLiteral(int) => self.interp_int_literal(*int),
+            Expr::FloatLiteral(float) => self.interp_float_literal(*float as f32),
+            Expr::Block(block) => self.interp_block(env, &block.statements),
+            Expr::Infix { op, lhs, rhs } => self.interp_infix(env, op, lhs, rhs),
+            Expr::Member { lhs, rhs } => self.interp_member(env, lhs, rhs),
+            _ => todo!("Implement other expressions"),
         }
-        self.pop_scope();
-        Ok(Value::Void)
     }
 
-    pub fn interp_expr(&mut self, expr: &Expr) -> anyhow::Result<Value> {
-        let value = match expr {
-            Expr::Call(call) => self.interp_call(call),
-            Expr::FloatLiteral(float) => Ok(Value::Float(*float as f32)),
-            Expr::IntLiteral(int) => Ok(Value::Int(*int)),
-            Expr::StringLiteral(_string) => todo!("Implement string literals"),
-            Expr::Block(block) => self.interp_block(&block.statements),
-            Expr::Ident(ident) => {
-                let scope = self.current_scope();
-                let param = scope.get_param(ident).unwrap();
-                let ty = param.type_name();
-                Ok(Value::Component {
-                    name: ident.clone(),
-                    ty: ty.to_string(),
-                })
-            }
-            Expr::Member { lhs, rhs } => {
-                let lhs = self.interp_expr(lhs)?;
-                let lhs_name = match lhs {
-                    Value::Component { name, .. } => name,
-                    _ => {
-                        todo!("Implement other member access");
-                    }
-                };
-                let scope = self.current_scope_mut();
-                let lhs = scope.get_param(&lhs_name).unwrap();
-                let rhs_name = match &**rhs {
-                    Expr::Ident(ident) => ident,
-                    _ => {
-                        todo!("Implement other member access");
-                    }
-                };
-
-                let lhs_ty = lhs.type_name();
-
-                let value = Value::Field {
-                    name: rhs_name.clone(),
-                    ty: lhs_ty.to_string(),
-                    parent: Box::new(Value::Component {
-                        name: lhs_name.clone(),
-                        ty: lhs_ty.to_string(),
-                    }),
-                };
-
-                Ok(value)
-            }
-            Expr::Infix { op, lhs, rhs } => {
-                let lhs = self.interp_expr(lhs)?;
-                let rhs = self.interp_expr(rhs)?;
-                match op.as_str() {
-                    "+" => lhs.add(&rhs, self),
-                    "-" => lhs.sub(&rhs, self),
-                    "+=" => lhs.add_assign(&rhs, self),
-                    "-=" => lhs.sub_assign(&rhs, self),
-                    _ => {
-                        todo!("Implement other infix operators");
-                    }
-                }
-            }
-            expr => {
-                todo!("Implement other expressions: {:?}", expr);
-            }
-        }?;
-        Ok(value)
-    }
-
-    pub fn interp_call(&mut self, call: &Call) -> anyhow::Result<Value> {
+    pub fn interp_call(&mut self, env: &RuntimeEnv, call: &Call) -> anyhow::Result<ValueHandle> {
         match call.name.as_str() {
             "print" => {
-                let mut params = Vec::new();
                 for arg in &call.args {
-                    let param = self.interp_expr(arg)?;
-                    let param = match param {
-                        Value::Component { name, .. } => {
-                            let scope = self.current_scope();
-                            let param = scope.get_param(&name).unwrap();
-                            format!("{}: {} = {:?}", name, param.type_name(), param)
-                        }
-                        _ => format!("{:?}", param),
-                    };
-                    params.push(param);
+                    let value = self.interp_expr(env, arg)?;
+                    print!("{} ", *value);
                 }
-                println!("{}", params.join("\n"));
-                Ok(Value::Void)
+                println!();
+                Ok(self.alloc_value(None, Value::Void))
             }
-            _ => {
-                todo!("Implement other calls");
-            }
+            _ => todo!("Implement other calls"),
         }
     }
 
-    pub fn interp_query(
+    pub fn interp_ident(&mut self, ident: &str) -> anyhow::Result<ValueHandle> {
+        if let Some(value) = self.get_value_handle(ident) {
+            return Ok(value);
+        }
+
+        log::debug!(
+            "Heap: {:?}",
+            self.heap
+                .values()
+                .map(|k| k.name.as_ref())
+                .collect::<Vec<_>>()
+        );
+        anyhow::bail!("Unknown identifier {}", ident)
+    }
+
+    pub fn interp_int_literal(&mut self, int: i64) -> anyhow::Result<ValueHandle> {
+        Ok(self.alloc_value(None, Value::Int(int)))
+    }
+
+    pub fn interp_float_literal(&mut self, float: f32) -> anyhow::Result<ValueHandle> {
+        Ok(self.alloc_value(None, Value::Float(float)))
+    }
+
+    pub fn interp_block(
         &mut self,
-        script_query: &Query,
-        query: &'a DynamicQuery,
-    ) -> anyhow::Result<()> {
-        for entries in query.iter() {
-            let mut idents = Vec::new();
-            for (ident, entry) in script_query.components.iter().zip(entries) {
-                idents.push(ident.name.clone());
-                self.current_scope_mut().values.insert(
-                    ident.name.clone(),
-                    Value::Component {
-                        name: ident.name.clone(),
-                        ty: ident.ty.clone(),
-                    },
-                );
-
-                self.current_scope_mut()
-                    .params
-                    .insert(ident.name.clone(), entry);
-            }
-
-            self.interp_block(&script_query.block.statements)?;
+        env: &RuntimeEnv,
+        block: &[Statement],
+    ) -> anyhow::Result<ValueHandle> {
+        let scope = env.push_scope(Some(self));
+        for statement in block {
+            scope.interp_statement(env, statement)?;
         }
-
-        Ok(())
+        Ok(self.alloc_value(None, Value::Void))
     }
 
-    pub fn interp_system(&mut self, system: &System) -> anyhow::Result<()> {
-        self.interp_block(&system.block.statements)?;
+    pub fn interp_infix(
+        &mut self,
+        env: &RuntimeEnv,
+        op: &str,
+        lhs: &Expr,
+        rhs: &Expr,
+    ) -> anyhow::Result<ValueHandle> {
+        let lhs = self.interp_expr(env, lhs)?;
+        let rhs = self.interp_expr(env, rhs)?;
 
-        Ok(())
+        let result = lhs.infix(op, &rhs)?;
+        Ok(self.alloc_value(None, result))
+    }
+
+    pub fn interp_member(
+        &mut self,
+        env: &RuntimeEnv,
+        lhs: &Expr,
+        rhs: &Expr,
+    ) -> anyhow::Result<ValueHandle> {
+        let lhs = self.interp_expr(env, lhs)?;
+        let rhs = match rhs {
+            Expr::Ident(ident) => ident,
+            _ => anyhow::bail!("Invalid member access"),
+        };
+
+        match lhs.value.as_ref() {
+            Value::Data(data) => {
+                let field = data.field_by_name(rhs).unwrap().to_owned();
+                let value = Value::Data(field);
+                let name = lhs
+                    .name
+                    .map(|s| format!("{}.{}", s, rhs))
+                    .or_else(|| Some(rhs.to_owned()));
+                Ok(self.alloc_value(name.as_deref(), value))
+            }
+            Value::DataMut(data) => {
+                let field = data.field_by_name(rhs).unwrap().to_owned();
+                let value = Value::DataMut(field);
+                let name = lhs
+                    .name
+                    .map(|s| format!("{}.{}", s, rhs))
+                    .or_else(|| Some(rhs.to_owned()));
+                Ok(self.alloc_value(name.as_deref(), value))
+            }
+            _ => anyhow::bail!("Invalid member access"),
+        }
+    }
+
+    pub fn interp_query(&mut self, env: &RuntimeEnv, query: &Query) -> anyhow::Result<ValueHandle> {
+        let params = query.build(env.world.clone())?;
+        let world = env.world.read();
+        let mut builder = world.query_dynamic();
+        for param in params.params {
+            match param {
+                DynamicQueryParam::Read(id) => builder = builder.read_id(id),
+                DynamicQueryParam::Write(id) => builder = builder.write_id(id),
+                DynamicQueryParam::With(id) => builder = builder.with_id(id),
+                DynamicQueryParam::Without(id) => builder = builder.without_id(id),
+            }
+        }
+        let typed_idents = query.components.clone();
+        let block = query.block.clone();
+        let query = builder.build();
+
+        for mut entries in query.iter() {
+            let scope = env.push_scope(Some(self));
+            for (entry, typed_ident) in entries.iter_mut().zip(typed_idents.iter()) {
+                let name = typed_ident.name.clone();
+
+                match entry {
+                    DynamicQueryRef::Ref(data) => {
+                        let value = Value::Data(data.to_owned());
+                        scope.alloc_value(Some(name.as_str()), value);
+                        // self.current_scope().unwrap().values.insert(name, handle);
+                    }
+                    DynamicQueryRef::Mut(data) => {
+                        let value = Value::DataMut(data.to_owned());
+                        scope.alloc_value(Some(name.as_str()), value);
+                        // self.current_scope().unwrap().values.insert(name, handle);
+                    }
+                }
+            }
+            for statement in &block.statements {
+                scope.interp_statement(env, statement)?;
+            }
+        }
+
+        Ok(self.alloc_value(None, Value::Void))
     }
 }
 
@@ -399,9 +521,6 @@ impl BuildOnWorld for Script {
                     let script = system.build(world.clone())?;
                     systems.push(script);
                 }
-                Scope::Component(component) => {
-                    component.build(world.clone())?;
-                }
                 _ => {
                     todo!("Implement other scopes");
                 }
@@ -412,42 +531,18 @@ impl BuildOnWorld for Script {
     }
 }
 
-impl BuildOnWorld for Component {
-    type Output = DynamicId;
-
-    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicId> {
-        let mut world = world.write();
-        let mut builder = world.components.create_component(&self.name);
-        for field in &self.fields {
-            builder = builder.dynamic_field(&field.name, &field.ty);
-        }
-
-        todo!("Implement component builder")
-    }
-}
-
 impl BuildOnWorld for System {
     type Output = DynamicSystem;
 
     fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicSystem> {
-        let mut script = DynamicSystem::script_builder(&self.name);
-
-        for query in &self.queries {
-            script = script.query(&query.name, query.build(world.clone())?);
-        }
+        let script = DynamicSystem::script_builder(&self.name);
 
         let system = self.clone();
-        let world_clone = world.clone();
-        let script = script.build(world.clone(), move |params| {
-            let mut ctx = InterpreterContext {
-                world: world_clone.clone(),
-                params: params
-                    .iter()
-                    .map(|param| (param.name.clone(), param))
-                    .collect(),
-                scopes: Vec::new(),
-            };
-            ctx.interp_system(&system)
+        let script = script.build(move |_| {
+            let env = RuntimeEnv::new(world.clone());
+            let ctx = env.push_scope(None);
+            ctx.interp_system(&env, &system)?;
+            Ok(())
         });
 
         Ok(script)
