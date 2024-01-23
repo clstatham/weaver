@@ -351,7 +351,6 @@ impl LoomParser {
                 Rule::ident => Expr::Ident(self.parse_ident(primary)),
                 Rule::int_literal => Expr::IntLiteral(primary.as_str().parse().unwrap()),
                 Rule::float_literal => Expr::FloatLiteral(primary.as_str().parse().unwrap()),
-                Rule::string_literal => Expr::StringLiteral(primary.as_str().to_string()),
                 Rule::call_expr => self.parse_call_expr(primary),
                 Rule::block => self.parse_block(primary),
                 Rule::expr => self.parse_expr(primary), // parenthesized expression
@@ -529,7 +528,7 @@ impl LoomParser {
     }
 
     fn parse_type(&mut self, pair: Pair<Rule>) -> String {
-        assert_eq!(pair.as_rule(), Rule::typ);
+        assert_eq!(pair.as_rule(), Rule::r#type);
         pair.as_str().to_string()
     }
 

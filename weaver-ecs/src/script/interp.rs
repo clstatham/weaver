@@ -549,12 +549,10 @@ impl InterpreterContext {
                     DynamicQueryRef::Ref(data) => {
                         let value = Value::Data(data.to_owned());
                         scope.alloc_value(Some(name.as_str()), Arc::new(value));
-                        // self.current_scope().unwrap().values.insert(name, handle);
                     }
                     DynamicQueryRef::Mut(data) => {
                         let value = Value::DataMut(data.to_owned());
                         scope.alloc_value(Some(name.as_str()), Arc::new(value));
-                        // self.current_scope().unwrap().values.insert(name, handle);
                     }
                 }
             }

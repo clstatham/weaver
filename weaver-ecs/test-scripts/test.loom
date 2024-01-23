@@ -1,0 +1,8 @@
+system Test {
+    var bar = 0
+    query [var foo: Foo] ~ {
+        bar += 5
+        foo.a += bar
+        print(foo.a)
+    }
+}

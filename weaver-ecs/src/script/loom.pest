@@ -9,6 +9,7 @@ period     = _{ "." }
 comma      = _{ "," }
 colon      = _{ ":" }
 semi       = _{ ";" }
+tilde      = _{ "~" }
 lparen     = _{ "(" }
 rparen     = _{ ")" }
 lbrack     = _{ "[" }
@@ -29,31 +30,32 @@ percent_eq =  { "%=" }
 
 // Literals
 
-letter         =  { ASCII_ALPHA | "_" }
-string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
-float_literal  = @{ ASCII_DIGIT+ ~ period ~ ASCII_DIGIT+ }
-int_literal    = @{ ASCII_DIGIT+ }
-literal        = _{ float_literal | int_literal | string_literal }
-ident          = @{ (letter | "_") ~ (letter | ASCII_DIGIT | "_")* }
+// string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+float_literal     = @{ ASCII_DIGIT+ ~ period ~ ASCII_DIGIT+ }
+int_literal       = @{ ASCII_DIGIT+ }
+literal           = _{ float_literal | int_literal }
+ident             = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
+capitalized_ident = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | ASCII_DIGIT | "_")* }
 
 // Keywords
 component = _{ "component" }
 system    = _{ "system" }
+let       = _{ "let" }
+var       = _{ "var" }
 query     = _{ "query" }
 with      = _{ "with" }
 without   = _{ "without" }
-let       = _{ "let" }
-var       = _{ "var" }
+keyword   = @{ component | system | let | var | query | with | without }
 
 // Types
 int             = { "int" }
 float           = { "float" }
-typ             = { int | float | ident }
+type            = { int | float | ident }
 let_ident       = { let ~ ident }
 var_ident       = { var ~ ident }
-typed_ident     = { ident ~ colon ~ typ }
-let_typed_ident = { let ~ ident ~ colon ~ typ }
-var_typed_ident = { var ~ ident ~ colon ~ typ }
+typed_ident     = { ident ~ colon ~ type }
+let_typed_ident = { let ~ ident ~ colon ~ type }
+var_typed_ident = { var ~ ident ~ colon ~ type }
 
 // Top level
 program    = { SOI ~ statements ~ EOI }
@@ -61,13 +63,13 @@ statements = { statement* }
 
 // Statements
 block          = { lbrace ~ statements ~ rbrace }
-statement      = { (component_stmt | system_stmt | query_stmt | expr) ~ ";" }
+statement      = { (component_stmt | system_stmt | query_stmt | expr) ~ semi? }
 component_stmt = { component ~ ident ~ lbrace ~ (typed_ident ~ semi)* ~ rbrace }
-system_stmt    = { system ~ ident ~ block }
-query_stmt     = { query ~ lbrack ~ typed_args ~ rbrack ~ with_clause? ~ without_clause? ~ block }
+system_stmt    = { system ~ capitalized_ident ~ block }
+query_stmt     = { query ~ lbrack ~ typed_args ~ rbrack ~ with_clause? ~ without_clause? ~ tilde ~ block }
 typed_args     = { ((var_typed_ident | let_typed_ident) ~ comma)* ~ (var_typed_ident | let_typed_ident)? }
-with_clause    = { with ~ lbrack ~ (typ ~ comma)* ~ typ? ~ rbrack }
-without_clause = { without ~ lbrack ~ (typ ~ comma)* ~ typ? ~ rbrack }
+with_clause    = { with ~ lbrack ~ (type ~ comma)* ~ type? ~ rbrack }
+without_clause = { without ~ lbrack ~ (type ~ comma)* ~ type? ~ rbrack }
 
 // Expressions
 prefix       = _{ minus }

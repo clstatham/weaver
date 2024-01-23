@@ -243,6 +243,8 @@ mod tests {
         let mut world = World::new();
 
         world.spawn((Foo::default(),));
+        world.spawn((Foo::default(),));
+        world.spawn((Foo::default(),));
 
         let world = Arc::new(RwLock::new(world));
 
@@ -250,16 +252,12 @@ mod tests {
             &world,
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("test-scripts")
-                .join("query.loom"),
+                .join("test.loom"),
             SystemStage::Update,
         );
 
-        for _ in 0..1 {
+        for _ in 0..10 {
             World::run_stage(&world, SystemStage::Update).unwrap();
         }
-
-        let world = world.read();
-
-        let query = world.query::<(&Foo)>();
     }
 }
