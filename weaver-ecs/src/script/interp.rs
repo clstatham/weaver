@@ -47,6 +47,7 @@ pub struct InterpreterContext {
     pub names: FxHashMap<String, usize>,
     pub heap: FxHashMap<usize, ValueHandle>,
     pub should_break: Option<Option<ValueHandle>>,
+    pub should_return: Option<Option<ValueHandle>>,
 }
 
 impl InterpreterContext {
@@ -55,6 +56,7 @@ impl InterpreterContext {
             names: FxHashMap::default(),
             heap: FxHashMap::default(),
             should_break: None,
+            should_return: None,
         }
     }
 
@@ -102,7 +104,16 @@ impl InterpreterContext {
                 self.should_break = Some(retval);
                 Ok(())
             }
-            _ => todo!("Implement other statements"),
+            Statement::Return(retval) => {
+                let retval = if let Some(retval) = retval {
+                    Some(self.interp_expr(env, retval)?)
+                } else {
+                    None
+                };
+                self.should_return = Some(retval);
+                Ok(())
+            }
+            _ => todo!("Implement other statements: {:?}", statement),
         }
     }
 
@@ -116,6 +127,7 @@ impl InterpreterContext {
             Expr::Block(block) => self.interp_block(env, &block.statements),
             Expr::Infix { op, lhs, rhs } => self.interp_infix(env, op, lhs, rhs),
             Expr::Member { lhs, rhs } => self.interp_member(env, lhs, rhs),
+            Expr::Construct { name, args } => self.interp_construct(env, name, args),
             Expr::Decl {
                 mutability,
                 ident,
@@ -150,12 +162,22 @@ impl InterpreterContext {
                 Ok(self.alloc_value(None, Value::Void))
             }
             "spawn" => {
-                let component = match &call.args[0] {
-                    Expr::Construct { name, args } => self.interp_construct(env, name, args)?,
-                    _ => anyhow::bail!("Invalid component"),
-                };
+                let mut world = env.world.write();
+                let entity = world.create_entity();
+                drop(world);
+                for arg in &call.args {
+                    let component = self.interp_expr(env, arg)?;
+                    let component = match &component.value {
+                        Value::Data(data) => data.to_owned(),
+                        Value::DataMut(data) => data.to_owned(),
+                        _ => anyhow::bail!("Invalid argument: {:?}", component),
+                    };
 
-                Ok(component)
+                    let mut world = env.world.write();
+                    world.add_dynamic_component(&entity, component);
+                }
+
+                Ok(self.alloc_value(None, Value::Entity(entity)))
             }
             "vec3" => {
                 if call.args.len() != 3 {
@@ -279,6 +301,16 @@ impl InterpreterContext {
                         return Ok(self.alloc_value(None, Value::Void));
                     }
                 }
+                if let Some(should_return) = scope.should_return.take() {
+                    if let Some(value) = should_return {
+                        return Ok(value);
+                    } else {
+                        if func.ret_type.is_some() {
+                            anyhow::bail!("Missing return value");
+                        }
+                        return Ok(self.alloc_value(None, Value::Void));
+                    }
+                }
 
                 Ok(self.alloc_value(None, Value::Void))
             }
@@ -327,9 +359,18 @@ impl InterpreterContext {
                     return Ok(self.alloc_value(None, Value::Void));
                 }
             }
+            if let Some(should_return) = scope.should_return.take() {
+                self.should_return = Some(should_return.clone());
+                if let Some(value) = should_return {
+                    return Ok(value);
+                } else {
+                    return Ok(self.alloc_value(None, Value::Void));
+                }
+            }
             scope.interp_statement(env, statement)?;
         }
         self.should_break = scope.should_break.take();
+        self.should_return = scope.should_return.take();
         Ok(self.alloc_value(None, Value::Void))
     }
 
@@ -417,6 +458,11 @@ impl InterpreterContext {
                             return Ok(self.alloc_value(None, Value::Void));
                         }
                     }
+                    if let Some(should_return) = scope.should_return.take() {
+                        return Ok(
+                            should_return.unwrap_or_else(|| self.alloc_value(None, Value::Void))
+                        );
+                    }
 
                     Ok(self.alloc_value(None, Value::Void))
                 } else {
@@ -458,9 +504,7 @@ impl InterpreterContext {
         name: &str,
         args: &[Expr],
     ) -> anyhow::Result<ValueHandle> {
-        let mut world = env.world.write();
-
-        let entity = world.components.create_entity();
+        let world = env.world.read();
 
         let mut fields = Vec::new();
 
@@ -535,9 +579,7 @@ impl InterpreterContext {
 
         let component = Data::new_dynamic(name, None, fields, world.registry());
 
-        world.components.add_dynamic_component(&entity, component);
-
-        Ok(self.alloc_value(None, Value::Entity(entity)))
+        Ok(self.alloc_value(None, Value::DataMut(component)))
     }
 
     pub fn interp_if(
@@ -626,6 +668,9 @@ impl InterpreterContext {
                         return Ok(self.alloc_value(None, Value::Void));
                     }
                 }
+                if let Some(should_return) = scope.should_return.take() {
+                    return Ok(should_return.unwrap_or_else(|| self.alloc_value(None, Value::Void)));
+                }
             }
 
             Ok(self.alloc_value(None, Value::Void))
@@ -656,6 +701,9 @@ impl InterpreterContext {
                     } else {
                         return Ok(self.alloc_value(None, Value::Void));
                     }
+                }
+                if let Some(should_return) = self.should_return.take() {
+                    return Ok(should_return.unwrap_or_else(|| self.alloc_value(None, Value::Void)));
                 }
             }
         }

@@ -44,6 +44,10 @@ impl World {
         self.components.add_component(entity, component, field_name);
     }
 
+    pub fn add_dynamic_component(&mut self, entity: &Entity, component: crate::component::Data) {
+        self.components.add_dynamic_component(entity, component);
+    }
+
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
         bundle.build(&mut self.components)
     }

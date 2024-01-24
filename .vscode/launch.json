@@ -84,33 +84,5 @@
             "args": [],
             "cwd": "${workspaceFolder}"
         },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in executable 'weaver'",
-            "env": {
-                "RUST_BACKTRACE": "1",
-                "RUST_LOG": "weaver=debug"
-            },
-            "cargo": {
-                "env": {
-                    "RUST_BACKTRACE": "1",
-                    "RUST_LOG": "weaver=debug"
-                },
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=weaver",
-                    "--package=weaver",
-                    // "--release",
-                ],
-                "filter": {
-                    "name": "weaver",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        }
     ]
 }

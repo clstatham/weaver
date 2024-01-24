@@ -37,6 +37,7 @@ or           =  { "||" }
 not          =  { "!" }
 xor          =  { "^" }
 double_quote = _{ "\"" }
+rarrow       = _{ "->" }
 
 // Literals
 
@@ -57,6 +58,7 @@ else       =  { "else" }
 elif       =  { "elif" }
 loop       = _{ "loop" }
 break      = _{ "break" }
+return     = _{ "return" }
 query      = _{ "query" }
 with       = _{ "with" }
 without    = _{ "without" }
@@ -90,12 +92,12 @@ statements = { statement* }
 
 // Statements
 block          = { lbrace ~ statements ~ rbrace }
-statement      = { (component_stmt | system_stmt | func_stmt | impl_stmt | break_stmt | expr) ~ semi? }
+statement      = { (component_stmt | system_stmt | func_stmt | impl_stmt | break_stmt | return_stmt | expr) ~ semi? }
 component_stmt = { component ~ ident ~ lbrace ~ typed_ident* ~ rbrace }
 system_stmt    = { system_tag? ~ system ~ ident ~ block }
-
 break_stmt     = { break ~ expr? }
-func_stmt      = { func ~ ident ~ lparen ~ typed_args ~ rparen ~ block }
+return_stmt    = { return ~ expr? }
+func_stmt      = { func ~ ident ~ lparen ~ typed_args ~ rparen ~ (rarrow ~ type)? ~ block }
 impl_stmt      = { impl ~ capitalized_ident ~ block }
 typed_args     = { (typed_ident ~ comma)* ~ typed_ident? }
 typed_decls    = { ((var_typed_ident | let_typed_ident) ~ comma)* ~ (var_typed_ident | let_typed_ident)? }

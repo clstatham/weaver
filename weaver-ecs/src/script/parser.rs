@@ -71,6 +71,7 @@ pub enum Expr {
 pub struct Func {
     pub name: String,
     pub params: Vec<TypedIdent>,
+    pub ret_type: Option<String>,
     pub block: Block,
 }
 
@@ -87,6 +88,7 @@ pub enum Statement {
     Func(Func),
     Expr(Expr),
     Break(Option<Expr>),
+    Return(Option<Expr>),
     Impl(Impl),
 }
 
@@ -218,11 +220,21 @@ impl LoomParser {
             Rule::expr => Statement::Expr(self.parse_expr(first)),
             Rule::impl_stmt => self.parse_impl_stmt(first),
             Rule::break_stmt => {
+                let mut inner = first.into_inner();
                 if let Some(expr) = inner.next() {
                     let expr = self.parse_expr(expr);
                     Statement::Break(Some(expr))
                 } else {
                     Statement::Break(None)
+                }
+            }
+            Rule::return_stmt => {
+                let mut inner = first.into_inner();
+                if let Some(expr) = inner.next() {
+                    let expr = self.parse_expr(expr);
+                    Statement::Return(Some(expr))
+                } else {
+                    Statement::Return(None)
                 }
             }
             _ => panic!("Unexpected rule: {:?}", first.as_rule()),
@@ -269,11 +281,16 @@ impl LoomParser {
         assert_eq!(pair.as_rule(), Rule::func_stmt);
         let mut inner = pair.into_inner();
         let name = inner.next().unwrap();
-        let args = inner.next().unwrap();
-        let block = inner.next().unwrap();
+        let params = inner.next().unwrap();
+        let ret_type = inner.next().unwrap();
+        let (block, ret_type) = if ret_type.as_rule() == Rule::r#type {
+            (inner.next().unwrap(), Some(ret_type.as_str().to_string()))
+        } else {
+            (ret_type, None)
+        };
 
         let name = self.parse_ident(name);
-        let args = self.parse_typed_args(args.into_inner());
+        let params = self.parse_typed_args(params.into_inner());
         let block = self.parse_block(block);
         let block = if let Expr::Block(block) = block {
             block
@@ -283,7 +300,8 @@ impl LoomParser {
 
         Statement::Func(Func {
             name,
-            params: args,
+            params,
+            ret_type,
             block,
         })
     }

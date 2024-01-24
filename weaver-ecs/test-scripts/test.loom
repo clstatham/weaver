@@ -1,9 +1,13 @@
 @startup
 system setup {
-    spawn(Player {
+    spawn(default_player())
+}
+
+func default_player() -> Player {
+    return Player {
         pos = vec3(0, 0, 0)
         vel = vec3(0, 0, 0)
-    })
+    }
 }
 
 @update
