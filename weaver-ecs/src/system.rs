@@ -293,9 +293,9 @@ impl ScriptSystemBuilder {
     }
 
     #[must_use]
-    pub fn build<S>(self, script: S) -> DynamicSystem
+    pub fn build<F>(self, run_fn: F) -> DynamicSystem
     where
-        S: Fn(Vec<ScriptParam>) -> anyhow::Result<()> + Send + Sync + 'static,
+        F: Fn() -> anyhow::Result<()> + Send + Sync + 'static,
     {
         let mut components_read = Vec::new();
         let mut components_written = Vec::new();
@@ -358,11 +358,6 @@ impl ScriptSystemBuilder {
                 ScriptBuilderParamType::Commands => {}
             }
         }
-
-        let run_fn = move || {
-            (script)(vec![])?;
-            Ok(())
-        };
 
         DynamicSystem::new(
             self.name,

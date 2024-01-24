@@ -374,13 +374,15 @@ impl Deref for ValueHandle {
 
 pub struct RuntimeEnv {
     pub world: Arc<RwLock<World>>,
+    pub scopes: Vec<Scope>,
     pub arena: Arena<InterpreterContext>,
 }
 
 impl RuntimeEnv {
-    pub fn new(world: Arc<RwLock<World>>) -> Self {
+    pub fn new(world: Arc<RwLock<World>>, scopes: Vec<Scope>) -> Self {
         Self {
             world,
+            scopes,
             arena: Arena::new(),
         }
     }
@@ -511,7 +513,57 @@ impl InterpreterContext {
 
                 Ok(component)
             }
-            _ => todo!("Implement other calls"),
+            name => {
+                let func = env
+                    .scopes
+                    .iter()
+                    .rev()
+                    .filter_map(|scope| match scope {
+                        Scope::Func(func) if func.name == name => Some(func),
+                        _ => None,
+                    })
+                    .next()
+                    .ok_or(anyhow::anyhow!("Unknown function {}", name))?;
+
+                let mut args = Vec::new();
+                for arg in &call.args {
+                    args.push(self.interp_expr(env, arg)?);
+                }
+
+                let scope = env.push_scope(Some(self));
+                for (arg, param) in args.iter().zip(func.params.iter()) {
+                    let value = arg.value.to_owned();
+                    let value = match &*value {
+                        // pass by reference
+                        Value::Data(data) => Value::Data(data.to_owned()),
+                        Value::DataMut(data) => Value::DataMut(data.to_owned()),
+                        Value::Int(int) => {
+                            Value::Data(Data::new(*int, None, env.world.read().registry()))
+                        }
+                        Value::Float(float) => {
+                            Value::Data(Data::new(*float, None, env.world.read().registry()))
+                        }
+                        Value::Bool(b) => {
+                            Value::Data(Data::new(*b, None, env.world.read().registry()))
+                        }
+                        Value::Void => anyhow::bail!("Cannot assign void value"),
+                        Value::Entity(entity) => Value::Entity(*entity),
+                    };
+                    scope.alloc_value(Some(param.name.as_str()), Arc::new(value));
+                }
+
+                scope.interp_block(env, &func.block.statements)?;
+
+                if let Some(should_break) = scope.should_break.take() {
+                    if let Some(value) = should_break {
+                        return Ok(value);
+                    } else {
+                        return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                    }
+                }
+
+                Ok(self.alloc_value(None, Arc::new(Value::Void)))
+            }
         }
     }
 
@@ -856,52 +908,44 @@ impl BuildOnWorld for Script {
         for scope in &self.scopes {
             match scope {
                 Scope::System(ref system) => {
-                    system.build(world.clone())?;
+                    let script = DynamicSystem::script_builder(&self.name);
+
+                    let system_clone = system.clone();
+                    let scopes = self.scopes.clone();
+                    let world_clone = world.clone();
+                    let script = script.build(move || {
+                        let env = RuntimeEnv::new(world_clone.clone(), scopes.clone());
+                        let ctx = env.push_scope(None);
+                        ctx.interp_system(&env, &system_clone)?;
+                        Ok(())
+                    });
+
+                    if let Some(tag) = &system.tag {
+                        match tag.as_str() {
+                            "@startup" => {
+                                world
+                                    .write()
+                                    .add_dynamic_system_to_stage(script, SystemStage::Startup);
+                            }
+                            "@update" => {
+                                world
+                                    .write()
+                                    .add_dynamic_system_to_stage(script, SystemStage::Update);
+                            }
+                            _ => todo!("Implement other tags"),
+                        }
+                    } else {
+                        world
+                            .write()
+                            .add_dynamic_system_to_stage(script, SystemStage::Update);
+                    }
                 }
                 Scope::Component(ref component) => {
                     component.build(world.clone())?;
                 }
+                Scope::Func(_) => {}
                 Scope::Program(_) => unreachable!(),
             }
-        }
-
-        Ok(())
-    }
-}
-
-impl BuildOnWorld for System {
-    type Output = ();
-
-    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()> {
-        let script = DynamicSystem::script_builder(&self.name);
-
-        let system = self.clone();
-        let world_clone = world.clone();
-        let script = script.build(move |_| {
-            let env = RuntimeEnv::new(world_clone.clone());
-            let ctx = env.push_scope(None);
-            ctx.interp_system(&env, &system)?;
-            Ok(())
-        });
-
-        if let Some(tag) = &self.tag {
-            match tag.as_str() {
-                "@startup" => {
-                    world
-                        .write()
-                        .add_dynamic_system_to_stage(script, SystemStage::Startup);
-                }
-                "@update" => {
-                    world
-                        .write()
-                        .add_dynamic_system_to_stage(script, SystemStage::Update);
-                }
-                _ => todo!("Implement other tags"),
-            }
-        } else {
-            world
-                .write()
-                .add_dynamic_system_to_stage(script, SystemStage::Update);
         }
 
         Ok(())

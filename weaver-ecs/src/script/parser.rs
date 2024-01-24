@@ -67,9 +67,17 @@ pub enum Expr {
 }
 
 #[derive(Debug, Clone)]
+pub struct Func {
+    pub name: String,
+    pub params: Vec<TypedIdent>,
+    pub block: Block,
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
     Component(Component),
     System(System),
+    Func(Func),
     Query(Query),
     Expr(Expr),
     Break(Option<Expr>),
@@ -99,11 +107,12 @@ pub struct System {
     pub block: Block,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Scope {
     Program(Vec<Scope>),
     Component(Component),
     System(System),
+    Func(Func),
 }
 
 impl Default for Scope {
@@ -170,6 +179,9 @@ impl LoomParser {
                 Statement::System(system) => {
                     stmts.push(Scope::System(system));
                 }
+                Statement::Func(func) => {
+                    stmts.push(Scope::Func(func));
+                }
                 _ => panic!("Unexpected statement"),
             },
             _ => panic!("Unexpected scope"),
@@ -197,6 +209,7 @@ impl LoomParser {
         match first.as_rule() {
             Rule::component_stmt => self.parse_component_stmt(first),
             Rule::system_stmt => self.parse_system_stmt(first),
+            Rule::func_stmt => self.parse_func_stmt(first),
             Rule::query_stmt => self.parse_query_stmt(first),
             Rule::expr => Statement::Expr(self.parse_expr(first)),
             Rule::break_stmt => {
@@ -264,6 +277,29 @@ impl LoomParser {
             tag,
             name: name.as_str().to_string(),
             queries,
+            block,
+        })
+    }
+
+    fn parse_func_stmt(&mut self, pair: Pair<Rule>) -> Statement {
+        assert_eq!(pair.as_rule(), Rule::func_stmt);
+        let mut inner = pair.into_inner();
+        let name = inner.next().unwrap();
+        let args = inner.next().unwrap();
+        let block = inner.next().unwrap();
+
+        let name = self.parse_ident(name);
+        let args = self.parse_typed_args(args.into_inner());
+        let block = self.parse_block(block);
+        let block = if let Expr::Block(block) = block {
+            block
+        } else {
+            panic!("Expected block statement");
+        };
+
+        Statement::Func(Func {
+            name,
+            params: args,
             block,
         })
     }

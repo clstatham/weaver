@@ -1,26 +1,24 @@
-component Foo {
-    a: int
-    b: int
-}
-
 @startup
 system Setup {
     var a = 0
     var b = 0
-    loop (a < 10) && (b < 10) {
-        spawn(Foo {
-            a = a
-            b = b
-        })
-
+    loop (a < 100) && (b < 100) {
         a += 1
         b += a
+
+        spawn(ABC {
+            a = a
+            b = b
+            c = a + b
+        })
     }
+}
+
+func threeplus(value: int) {
+    print(3 + value)
 }
 
 @update
 system Update {
-    loop query [let foo: Foo] {
-        print(foo.a, foo.b)
-    }
+    threeplus(5)
 }
