@@ -35,23 +35,13 @@ system Setup {
         a = 0
         b = 1
     })
-}
 
-@update
-system Test {
-    query [var bar: Bar] ~ {
-        query [let foo: Foo] ~ {
-            if bar.a < foo.b {
-                bar.a += 1
-                print(100)
-            } elif bar.a > foo.b {
-                bar.a -= 1
-                print(200)
-            } else {
-                bar.a = 0
-                print(300)
-            }
-            print(bar.a)
+    var x = 0
+    loop x < 100 {
+        x = x + 1
+        if x >= 50 {
+            break x
         }
+        print(x)
     }
 }

@@ -60,6 +60,10 @@ pub enum Expr {
         elif_blocks: Vec<(Box<Expr>, Box<Expr>)>,
         else_block: Option<Box<Expr>>,
     },
+    Loop {
+        condition: Option<Box<Expr>>,
+        block: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +72,7 @@ pub enum Statement {
     System(System),
     Query(Query),
     Expr(Expr),
+    Break(Option<Expr>),
 }
 
 #[derive(Debug, Clone)]
@@ -194,6 +199,14 @@ impl LoomParser {
             Rule::system_stmt => self.parse_system_stmt(first),
             Rule::query_stmt => self.parse_query_stmt(first),
             Rule::expr => Statement::Expr(self.parse_expr(first)),
+            Rule::break_stmt => {
+                if let Some(expr) = inner.next() {
+                    let expr = self.parse_expr(expr);
+                    Statement::Break(Some(expr))
+                } else {
+                    Statement::Break(None)
+                }
+            }
             _ => panic!("Unexpected rule: {:?}", first.as_rule()),
         }
     }
@@ -395,6 +408,7 @@ impl LoomParser {
                 Rule::decl_expr => self.parse_decl_expr(primary),
                 Rule::constructor_expr => self.parse_constructor_expr(primary),
                 Rule::if_expr => self.parse_if_expr(primary),
+                Rule::loop_expr => self.parse_loop_expr(primary),
                 _ => panic!("Unexpected rule: {:?}", primary.as_rule()),
             })
             .map_prefix(|op, rhs| {
@@ -593,6 +607,24 @@ impl LoomParser {
             elif_blocks,
             else_block,
         }
+    }
+
+    fn parse_loop_expr(&mut self, pair: Pair<Rule>) -> Expr {
+        assert_eq!(pair.as_rule(), Rule::loop_expr);
+        let mut inner = pair.into_inner();
+        let condition = inner.next().unwrap();
+
+        let (condition, block) = if condition.as_rule() == Rule::expr {
+            let block = inner.next().unwrap();
+            let condition = self.parse_expr(condition);
+            let block = self.parse_expr(block);
+            (Some(Box::new(condition)), Box::new(block))
+        } else {
+            let block = self.parse_expr(condition);
+            (None, Box::new(block))
+        };
+
+        Expr::Loop { condition, block }
     }
 
     fn parse_block(&mut self, pair: Pair<Rule>) -> Expr {

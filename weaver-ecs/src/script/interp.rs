@@ -398,6 +398,7 @@ impl RuntimeEnv {
 pub struct InterpreterContext {
     pub names: FxHashMap<String, usize>,
     pub heap: FxHashMap<usize, ValueHandle>,
+    pub should_break: Option<Option<ValueHandle>>,
 }
 
 impl InterpreterContext {
@@ -405,6 +406,7 @@ impl InterpreterContext {
         Self {
             names: FxHashMap::default(),
             heap: FxHashMap::default(),
+            should_break: None,
         }
     }
 
@@ -429,9 +431,7 @@ impl InterpreterContext {
     }
 
     pub fn interp_system(&mut self, env: &RuntimeEnv, system: &System) -> anyhow::Result<()> {
-        for statement in &system.block.statements {
-            self.interp_statement(env, statement)?;
-        }
+        self.interp_block(env, &system.block.statements)?;
         Ok(())
     }
 
@@ -447,6 +447,15 @@ impl InterpreterContext {
             }
             Statement::Query(query) => {
                 self.interp_query(env, query)?;
+                Ok(())
+            }
+            Statement::Break(retval) => {
+                let retval = if let Some(retval) = retval {
+                    Some(self.interp_expr(env, retval)?)
+                } else {
+                    None
+                };
+                self.should_break = Some(retval);
                 Ok(())
             }
             _ => todo!("Implement other statements"),
@@ -479,6 +488,7 @@ impl InterpreterContext {
                 elif_blocks,
                 else_block.as_deref(),
             ),
+            Expr::Loop { condition, block } => self.interp_loop(env, condition.as_deref(), block),
             _ => todo!("Implement other expressions: {:?}", expr),
         }
     }
@@ -535,8 +545,17 @@ impl InterpreterContext {
     ) -> anyhow::Result<ValueHandle> {
         let scope = env.push_scope(Some(self));
         for statement in block {
+            if let Some(should_break) = scope.should_break.take() {
+                self.should_break = Some(should_break.clone());
+                if let Some(value) = should_break {
+                    return Ok(value);
+                } else {
+                    return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                }
+            }
             scope.interp_statement(env, statement)?;
         }
+        self.should_break = scope.should_break.take();
         Ok(self.alloc_value(None, Arc::new(Value::Void)))
     }
 
@@ -740,6 +759,42 @@ impl InterpreterContext {
         }
     }
 
+    pub fn interp_loop(
+        &mut self,
+        env: &RuntimeEnv,
+        condition: Option<&Expr>,
+        block: &Expr,
+    ) -> anyhow::Result<ValueHandle> {
+        loop {
+            if let Some(condition) = condition {
+                let condition = self.interp_expr(env, condition)?;
+                let condition = match condition.value.as_ref() {
+                    Value::Int(int) => *int != 0,
+                    Value::Float(float) => *float != 0.0,
+                    Value::Bool(b) => *b,
+                    Value::Data(data) => *data.get_as::<bool>(),
+                    Value::DataMut(data) => *data.get_as::<bool>(),
+                    Value::Void => anyhow::bail!("Cannot use void value as condition"),
+                    Value::Entity(_) => anyhow::bail!("Cannot use entity value as condition"),
+                };
+
+                if !condition {
+                    return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                }
+            }
+
+            self.interp_expr(env, block)?;
+
+            if let Some(should_break) = self.should_break.take() {
+                if let Some(value) = should_break {
+                    return Ok(value);
+                } else {
+                    return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                }
+            }
+        }
+    }
+
     pub fn interp_query(&mut self, env: &RuntimeEnv, query: &Query) -> anyhow::Result<ValueHandle> {
         let params = query.build(env.world.clone())?;
         let world = env.world.read();
@@ -772,8 +827,14 @@ impl InterpreterContext {
                     }
                 }
             }
-            for statement in &block.statements {
-                scope.interp_statement(env, statement)?;
+            scope.interp_block(env, &block.statements)?;
+
+            if let Some(should_break) = scope.should_break.take() {
+                if let Some(value) = should_break {
+                    return Ok(value);
+                } else {
+                    return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                }
             }
         }
 
