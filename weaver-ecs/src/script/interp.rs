@@ -112,6 +112,7 @@ impl InterpreterContext {
             Expr::Ident(ident) => self.interp_ident(ident),
             Expr::IntLiteral(int) => self.interp_int_literal(*int),
             Expr::FloatLiteral(float) => self.interp_float_literal(*float as f32),
+            Expr::StringLiteral(string) => self.interp_string_literal(string),
             Expr::Block(block) => self.interp_block(env, &block.statements),
             Expr::Infix { op, lhs, rhs } => self.interp_infix(env, op, lhs, rhs),
             Expr::Member { lhs, rhs } => self.interp_member(env, lhs, rhs),
@@ -305,6 +306,10 @@ impl InterpreterContext {
 
     pub fn interp_float_literal(&mut self, float: f32) -> anyhow::Result<ValueHandle> {
         Ok(self.alloc_value(None, Value::Float(float)))
+    }
+
+    pub fn interp_string_literal(&mut self, string: &str) -> anyhow::Result<ValueHandle> {
+        Ok(self.alloc_value(None, Value::String(string.to_owned())))
     }
 
     pub fn interp_block(
@@ -515,6 +520,11 @@ impl InterpreterContext {
                 }
                 Value::Mat4(mat4) => {
                     let data = Data::new(*mat4, field_name.as_deref(), world.registry());
+                    fields.push(data);
+                }
+                Value::String(string) => {
+                    let data =
+                        Data::new(string.to_owned(), field_name.as_deref(), world.registry());
                     fields.push(data);
                 }
                 Value::Entity(_) => anyhow::bail!("Cannot assign entity value"),

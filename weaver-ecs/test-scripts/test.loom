@@ -17,6 +17,6 @@ system update {
     loop players {
         player.vel += vec3(0, -9.81, 0) * vec3(dt, dt, dt)
         player.pos += player.vel * vec3(dt, dt, dt)
-        print(player.pos)
+        print("player.pos =", player.pos)
     }
 }

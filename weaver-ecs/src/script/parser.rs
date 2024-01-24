@@ -389,6 +389,10 @@ impl LoomParser {
                 Rule::ident => Expr::Ident(self.parse_ident(primary)),
                 Rule::int_literal => Expr::IntLiteral(primary.as_str().parse().unwrap()),
                 Rule::float_literal => Expr::FloatLiteral(primary.as_str().parse().unwrap()),
+                Rule::string_literal => {
+                    let string = primary.as_str();
+                    Expr::StringLiteral(string[1..string.len() - 1].to_string())
+                }
                 Rule::call_expr => self.parse_call_expr(primary),
                 Rule::block => self.parse_block(primary),
                 Rule::statements => {

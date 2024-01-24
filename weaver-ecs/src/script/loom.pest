@@ -5,44 +5,45 @@ line_comment  = _{ "//" ~ (!NEWLINE ~ ANY)* }
 block_comment = _{ "/*" ~ (block_comment | (!"*/" ~ ANY))* ~ "*/" }
 
 // Tokens
-period     = _{ "." }
-comma      = _{ "," }
-colon      = _{ ":" }
-semi       = _{ ";" }
-lparen     = _{ "(" }
-rparen     = _{ ")" }
-lbrack     = _{ "[" }
-rbrack     = _{ "]" }
-lbrace     = _{ "{" }
-rbrace     = _{ "}" }
-plus       =  { "+" }
-minus      =  { "-" }
-star       =  { "*" }
-slash      =  { "/" }
-percent    =  { "%" }
-eq         =  { "=" }
-plus_eq    =  { "+=" }
-minus_eq   =  { "-=" }
-star_eq    =  { "*=" }
-slash_eq   =  { "/=" }
-percent_eq =  { "%=" }
-lt         =  { "<" }
-gt         =  { ">" }
-lte        =  { "<=" }
-gte        =  { ">=" }
-eqeq       =  { "==" }
-neq        =  { "!=" }
-and        =  { "&&" }
-or         =  { "||" }
-not        =  { "!" }
-xor        =  { "^" }
+period       = _{ "." }
+comma        = _{ "," }
+colon        = _{ ":" }
+semi         = _{ ";" }
+lparen       = _{ "(" }
+rparen       = _{ ")" }
+lbrack       = _{ "[" }
+rbrack       = _{ "]" }
+lbrace       = _{ "{" }
+rbrace       = _{ "}" }
+plus         =  { "+" }
+minus        =  { "-" }
+star         =  { "*" }
+slash        =  { "/" }
+percent      =  { "%" }
+eq           =  { "=" }
+plus_eq      =  { "+=" }
+minus_eq     =  { "-=" }
+star_eq      =  { "*=" }
+slash_eq     =  { "/=" }
+percent_eq   =  { "%=" }
+lt           =  { "<" }
+gt           =  { ">" }
+lte          =  { "<=" }
+gte          =  { ">=" }
+eqeq         =  { "==" }
+neq          =  { "!=" }
+and          =  { "&&" }
+or           =  { "||" }
+not          =  { "!" }
+xor          =  { "^" }
+double_quote = _{ "\"" }
 
 // Literals
 
-// string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
-float_literal = @{ minus? ~ ASCII_DIGIT+ ~ period ~ ASCII_DIGIT+ }
-int_literal   = @{ minus? ~ ASCII_DIGIT+ }
-literal       = _{ float_literal | int_literal }
+string_literal = @{ double_quote ~ (!double_quote ~ ANY)* ~ double_quote }
+float_literal  = @{ minus? ~ ASCII_DIGIT+ ~ period ~ ASCII_DIGIT+ }
+int_literal    = @{ minus? ~ ASCII_DIGIT+ }
+literal        = _{ float_literal | int_literal | string_literal }
 
 // Keywords
 component  = _{ "component" }
@@ -62,9 +63,9 @@ without    = _{ "without" }
 startup    = _{ "@startup" }
 update     = _{ "@update" }
 system_tag = @{ startup | update }
-attribute  = @{ startup | update }
-function   = @{ "print" | "spawn" | "vec3" | "vec4" | "mat4" | "quat" }
-keyword    = @{ component | system | impl | func | let | var | if | else | elif | loop | break | query | with | without }
+// attribute  = @{ startup | update }
+// function   = @{ "print" | "spawn" | "vec3" | "vec4" | "mat4" | "quat" }
+// keyword    = @{ component | system | impl | func | let | var | if | else | elif | loop | break | query | with | without }
 
 // Types
 int               =  { "Int" }
@@ -73,9 +74,10 @@ vec3              =  { "Vec3" }
 quat              =  { "Quat" }
 mat3              =  { "Mat3" }
 mat4              =  { "Mat4" }
+string            =  { "String" }
 ident             = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
 capitalized_ident = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | ASCII_DIGIT | "_")* }
-type              =  { int | float | vec3 | quat | mat3 | mat4 | capitalized_ident }
+type              =  { int | float | vec3 | quat | mat3 | mat4 | string | capitalized_ident }
 let_ident         =  { let ~ ident }
 var_ident         =  { var ~ ident }
 typed_ident       =  { ident ~ colon ~ type }

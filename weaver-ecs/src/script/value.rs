@@ -24,6 +24,7 @@ pub enum Value {
     Vec4(glam::Vec4),
     Mat4(glam::Mat4),
     Quat(glam::Quat),
+    String(String),
 }
 
 impl Debug for Value {
@@ -68,6 +69,7 @@ impl Display for Value {
             Value::Vec4(vec) => write!(f, "{}", vec),
             Value::Mat4(mat) => write!(f, "{}", mat),
             Value::Quat(quat) => write!(f, "{}", quat),
+            Value::String(string) => write!(f, "{}", string),
         }
     }
 }
@@ -87,6 +89,7 @@ impl Value {
             Value::Vec4(_) => "Vec4",
             Value::Mat4(_) => "Mat4",
             Value::Quat(_) => "Quat",
+            Value::String(_) => "String",
         }
     }
 
@@ -117,6 +120,11 @@ impl Value {
             Value::Vec4(vec4) => Value::Data(Data::new(*vec4, None, env.world.read().registry())),
             Value::Quat(quat) => Value::Data(Data::new(*quat, None, env.world.read().registry())),
             Value::Mat4(mat4) => Value::Data(Data::new(*mat4, None, env.world.read().registry())),
+            Value::String(string) => Value::Data(Data::new(
+                string.to_owned(),
+                None,
+                env.world.read().registry(),
+            )),
         };
         Ok(data)
     }
