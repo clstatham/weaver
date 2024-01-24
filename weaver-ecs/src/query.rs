@@ -76,7 +76,7 @@ where
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct QueryAccess {
     pub reads: ComponentSet,
     pub writes: ComponentSet,
@@ -462,6 +462,7 @@ impl DynamicQueryRef {
     }
 }
 
+#[derive(Clone)]
 pub struct DynamicQuery {
     entries: SparseSet<Entity, ComponentMap<Data>>,
     params: DynamicQueryParams,

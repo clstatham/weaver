@@ -84,10 +84,10 @@ statements = { statement* }
 
 // Statements
 block          = { lbrace ~ statements ~ rbrace }
-statement      = { (component_stmt | system_stmt | func_stmt | impl_stmt | query_stmt | break_stmt | expr) ~ semi? }
+statement      = { (component_stmt | system_stmt | func_stmt | impl_stmt | break_stmt | expr) ~ semi? }
 component_stmt = { component ~ ident ~ lbrace ~ typed_ident* ~ rbrace }
 system_stmt    = { system_tag? ~ system ~ capitalized_ident ~ block }
-query_stmt     = { loop ~ query ~ lbrack ~ typed_decls ~ rbrack ~ with_clause? ~ without_clause? ~ block }
+
 break_stmt     = { break ~ expr? }
 func_stmt      = { func ~ ident ~ lparen ~ typed_args ~ rparen ~ block }
 impl_stmt      = { impl ~ capitalized_ident ~ block }
@@ -105,6 +105,7 @@ assign_expr      =  { (member_expr | ident) ~ (plus_eq | minus_eq | star_eq | sl
 decl_expr        =  { (var_ident | let_ident) ~ eq ~ expr }
 constructor_expr =  { type ~ lbrace ~ expr* ~ rbrace }
 if_expr          =  { if ~ expr ~ block ~ (elif ~ expr ~ block)* ~ (else ~ block)? }
+query_expr       =  { query ~ ident ~ lbrace ~ typed_decls ~ (with_clause | without_clause)* ~ rbrace }
 loop_expr        =  { loop ~ expr? ~ block }
-primary_expr     = _{ literal | if_expr | loop_expr | constructor_expr | call_expr | decl_expr | assign_expr | member_expr | ident | block | (lparen ~ expr ~ rparen) }
+primary_expr     = _{ literal | query_expr | if_expr | loop_expr | constructor_expr | call_expr | decl_expr | assign_expr | member_expr | ident | block | (lparen ~ expr ~ rparen) }
 expr             =  { primary_expr ~ (infix ~ prefix? ~ primary_expr)* }

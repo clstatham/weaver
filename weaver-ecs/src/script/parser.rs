@@ -64,6 +64,7 @@ pub enum Expr {
         condition: Option<Box<Expr>>,
         block: Box<Expr>,
     },
+    Query(Query),
 }
 
 #[derive(Debug, Clone)]
@@ -84,7 +85,6 @@ pub enum Statement {
     Component(Component),
     System(System),
     Func(Func),
-    Query(Query),
     Expr(Expr),
     Break(Option<Expr>),
     Impl(Impl),
@@ -92,7 +92,6 @@ pub enum Statement {
 
 #[derive(Debug, Clone)]
 pub struct Block {
-    pub scoped_idents: Vec<TypedIdent>,
     pub statements: Vec<Statement>,
 }
 
@@ -102,15 +101,12 @@ pub struct Query {
     pub components: Vec<TypedIdent>,
     pub with: Vec<String>,
     pub without: Vec<String>,
-    pub iter_type: String,
-    pub block: Block,
 }
 
 #[derive(Debug, Clone)]
 pub struct System {
     pub tag: Option<String>,
     pub name: String,
-    pub queries: Vec<Query>,
     pub block: Block,
 }
 
@@ -221,7 +217,6 @@ impl LoomParser {
             Rule::component_stmt => self.parse_component_stmt(first),
             Rule::system_stmt => self.parse_system_stmt(first),
             Rule::func_stmt => self.parse_func_stmt(first),
-            Rule::query_stmt => self.parse_query_stmt(first),
             Rule::expr => Statement::Expr(self.parse_expr(first)),
             Rule::impl_stmt => self.parse_impl_stmt(first),
             Rule::break_stmt => {
@@ -252,10 +247,6 @@ impl LoomParser {
         let mut queries = Vec::new();
         for stmt in &block.statements {
             match stmt {
-                Statement::Query(query) => {
-                    queries.push(query.clone());
-                    queries.extend(self.extract_queries(&query.block));
-                }
                 Statement::Expr(Expr::Block(block)) => {
                     queries.extend(self.extract_queries(block));
                 }
@@ -284,11 +275,9 @@ impl LoomParser {
         } else {
             panic!("Expected block statement");
         };
-        let queries = self.extract_queries(&block);
         Statement::System(System {
             tag,
             name: name.as_str().to_string(),
-            queries,
             block,
         })
     }
@@ -340,104 +329,57 @@ impl LoomParser {
         Statement::Impl(Impl { ty, funcs })
     }
 
-    fn parse_query_stmt(&mut self, pair: Pair<Rule>) -> Statement {
-        assert_eq!(pair.as_rule(), Rule::query_stmt);
+    fn parse_query_expr(&mut self, pair: Pair<Rule>) -> Expr {
+        assert_eq!(pair.as_rule(), Rule::query_expr);
         let mut inner = pair.into_inner();
+        let name = inner.next().unwrap();
         let components = inner.next().unwrap();
+        let rest = inner;
 
-        let block;
-        let mut with_clause = None;
-        let mut without_clause = None;
+        let name = self.parse_ident(name);
+        let components = self.parse_typed_decls(components);
+        let (with, without) = self.parse_with_without(rest);
 
-        let next = inner.next().unwrap();
-        match next.as_rule() {
-            Rule::block => {
-                block = next;
-            }
-            Rule::with_clause => {
-                with_clause = Some(next);
-
-                let next = inner.next().unwrap();
-                match next.as_rule() {
-                    Rule::block => {
-                        block = next;
-                    }
-                    Rule::without_clause => {
-                        without_clause = Some(next);
-                        block = inner.next().unwrap();
-                    }
-                    _ => panic!("Unexpected rule: {:?}", next.as_rule()),
-                }
-            }
-            Rule::without_clause => {
-                without_clause = Some(next);
-
-                let next = inner.next().unwrap();
-
-                match next.as_rule() {
-                    Rule::block => {
-                        block = next;
-                    }
-                    _ => panic!("Unexpected rule: {:?}", next.as_rule()),
-                }
-            }
-            _ => panic!("Unexpected rule: {:?}", next.as_rule()),
-        }
-
-        let name = format!("query_{}", self.query_counter);
-        self.query_counter += 1;
-        let components = self.parse_typed_args(components.into_inner());
-        let block = self.parse_block(block);
-        let block = if let Expr::Block(block) = block {
-            block
-        } else {
-            panic!("Expected block statement");
-        };
-
-        let mut with = Vec::new();
-        let mut without = Vec::new();
-
-        if let Some(with_clause) = with_clause {
-            let mut inner = with_clause.into_inner();
-            let with_pair = inner.next().unwrap();
-            with_pair.into_inner().for_each(|ident| {
-                with.push(self.parse_ident(ident));
-            });
-        }
-
-        if let Some(without_clause) = without_clause {
-            let mut inner = without_clause.into_inner();
-            let without_pair = inner.next().unwrap();
-            without_pair.into_inner().for_each(|ident| {
-                without.push(self.parse_ident(ident));
-            });
-        }
-
-        Statement::Query(Query {
+        Expr::Query(Query {
             name,
             components,
             with,
             without,
-            iter_type: "foreach".to_string(),
-            block,
         })
     }
 
-    fn extract_scoped_idents(&mut self, block: Pair<Rule>) -> Vec<TypedIdent> {
-        let mut scoped_idents = Vec::new();
-        for stmt in block.into_inner() {
-            let stmts = match stmt.as_rule() {
-                Rule::statements => self.parse_statements(stmt),
-                Rule::statement => vec![self.parse_statement(stmt)],
-                _ => panic!("Unexpected rule: {:?}", stmt.as_rule()),
-            };
-            for stmt in stmts {
-                if let Statement::Query(query) = stmt {
-                    scoped_idents.extend(query.components);
-                }
+    fn parse_typed_decls(&mut self, pair: Pair<Rule>) -> Vec<TypedIdent> {
+        assert_eq!(pair.as_rule(), Rule::typed_decls);
+        let mut fields = Vec::new();
+        for field in pair.into_inner() {
+            match field.as_rule() {
+                Rule::var_typed_ident => fields.push(self.parse_var_typed_ident(field)),
+                Rule::let_typed_ident => fields.push(self.parse_typed_ident(field)),
+                _ => panic!("Unexpected rule: {:?}", field.as_rule()),
             }
         }
-        scoped_idents
+        fields
+    }
+
+    fn parse_with_without(&mut self, pair: Pairs<Rule>) -> (Vec<String>, Vec<String>) {
+        let mut with = Vec::new();
+        let mut without = Vec::new();
+        for pair in pair {
+            match pair.as_rule() {
+                Rule::with => {
+                    let mut inner = pair.into_inner();
+                    let name = inner.next().unwrap();
+                    with.push(name.as_str().to_string());
+                }
+                Rule::without => {
+                    let mut inner = pair.into_inner();
+                    let name = inner.next().unwrap();
+                    without.push(name.as_str().to_string());
+                }
+                _ => panic!("Unexpected rule: {:?}", pair.as_rule()),
+            }
+        }
+        (with, without)
     }
 
     fn parse_expr(&mut self, pair: Pair<Rule>) -> Expr {
@@ -467,12 +409,8 @@ impl LoomParser {
                 Rule::call_expr => self.parse_call_expr(primary),
                 Rule::block => self.parse_block(primary),
                 Rule::statements => {
-                    let stmts = self.parse_statements(primary.clone());
-                    let scoped_idents = self.extract_scoped_idents(primary);
-                    Expr::Block(Block {
-                        statements: stmts,
-                        scoped_idents,
-                    })
+                    let statements = self.parse_statements(primary.clone());
+                    Expr::Block(Block { statements })
                 }
                 Rule::expr => self.parse_expr(primary), // parenthesized expression
                 Rule::assign_expr => self.parse_assign_expr(primary),
@@ -481,6 +419,7 @@ impl LoomParser {
                 Rule::constructor_expr => self.parse_constructor_expr(primary),
                 Rule::if_expr => self.parse_if_expr(primary),
                 Rule::loop_expr => self.parse_loop_expr(primary),
+                Rule::query_expr => self.parse_query_expr(primary),
                 _ => panic!("Unexpected rule: {:?}", primary.as_rule()),
             })
             .map_prefix(|op, rhs| {
@@ -705,13 +644,9 @@ impl LoomParser {
         let mut inner = pair.into_inner();
         let stmts = inner.next().unwrap();
 
-        let scoped_idents = self.extract_scoped_idents(stmts.clone());
-        let stmts = self.parse_statements(stmts);
+        let statements = self.parse_statements(stmts);
 
-        Expr::Block(Block {
-            statements: stmts,
-            scoped_idents,
-        })
+        Expr::Block(Block { statements })
     }
 
     fn parse_call_expr(&mut self, pair: Pair<Rule>) -> Expr {

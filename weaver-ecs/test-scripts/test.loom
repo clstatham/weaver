@@ -22,7 +22,15 @@ impl Abc {
 
 @update
 system Update {
-    loop query [let abc: Abc] {
+    query q {
+        let abc: Abc
+    }
+
+    loop q {
+        abc.all_three()
+    }
+
+    loop q {
         abc.all_three()
     }
 }

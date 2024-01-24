@@ -11,7 +11,7 @@ use typed_arena::Arena;
 use crate::{
     component::Data,
     prelude::{Entity, SystemStage, World},
-    query::{DynamicQueryParam, DynamicQueryParams, DynamicQueryRef},
+    query::{DynamicQuery, DynamicQueryParam, DynamicQueryParams, DynamicQueryRef},
     registry::DynamicId,
     system::DynamicSystem,
 };
@@ -29,6 +29,10 @@ pub enum Value {
     Data(Data),
     DataMut(Data),
     Entity(Entity),
+    Query {
+        query: DynamicQuery,
+        typed_idents: Vec<TypedIdent>,
+    },
 }
 
 impl Debug for Value {
@@ -59,6 +63,19 @@ impl Display for Value {
                 Ok(())
             }
             Value::Entity(entity) => write!(f, "{:?}", entity),
+            Value::Query {
+                query,
+                typed_idents,
+            } => {
+                write!(f, "Query(")?;
+                for (i, typed_ident) in typed_idents.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", typed_ident.name)?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }
@@ -73,6 +90,7 @@ impl Value {
             Value::Data(data) => data.type_name(),
             Value::DataMut(data) => data.type_name(),
             Value::Entity(_) => "Entity",
+            Value::Query { .. } => "DynamicQuery",
         }
     }
 
@@ -447,10 +465,6 @@ impl InterpreterContext {
                 self.interp_expr(env, expr)?;
                 Ok(())
             }
-            Statement::Query(query) => {
-                self.interp_query(env, query)?;
-                Ok(())
-            }
             Statement::Break(retval) => {
                 let retval = if let Some(retval) = retval {
                     Some(self.interp_expr(env, retval)?)
@@ -491,6 +505,7 @@ impl InterpreterContext {
                 else_block.as_deref(),
             ),
             Expr::Loop { condition, block } => self.interp_loop(env, condition.as_deref(), block),
+            Expr::Query(query) => self.interp_query(env, query),
             _ => todo!("Implement other expressions: {:?}", expr),
         }
     }
@@ -547,6 +562,17 @@ impl InterpreterContext {
                             Value::Data(Data::new(*b, None, env.world.read().registry()))
                         }
                         Value::Void => anyhow::bail!("Cannot assign void value"),
+                        Value::Query {
+                            query,
+                            typed_idents,
+                        } => {
+                            let query = query.to_owned();
+                            let typed_idents = typed_idents.to_owned();
+                            Value::Query {
+                                query,
+                                typed_idents,
+                            }
+                        }
                         Value::Entity(entity) => Value::Entity(*entity),
                     };
                     scope.alloc_value(Some(param.name.as_str()), Arc::new(value));
@@ -692,6 +718,17 @@ impl InterpreterContext {
                                 Value::Data(Data::new(*b, None, env.world.read().registry()))
                             }
                             Value::Void => anyhow::bail!("Cannot assign void value"),
+                            Value::Query {
+                                query,
+                                typed_idents,
+                            } => {
+                                let query = query.to_owned();
+                                let typed_idents = typed_idents.to_owned();
+                                Value::Query {
+                                    query,
+                                    typed_idents,
+                                }
+                            }
                             Value::Entity(entity) => Value::Entity(*entity),
                         };
                         scope.alloc_value(Some(param.name.as_str()), Arc::new(value));
@@ -731,8 +768,8 @@ impl InterpreterContext {
         let value = value.value.to_owned();
         let value = if mutability {
             match &*value {
-                Value::Data(data) => Value::DataMut(data.to_owned()),
-                Value::DataMut(data) => Value::DataMut(data.to_owned()),
+                Value::Data(data) => Value::DataMut(data.try_clone().unwrap()),
+                Value::DataMut(data) => Value::DataMut(data.try_clone().unwrap()),
                 Value::Int(int) => {
                     Value::DataMut(Data::new(*int, None, env.world.read().registry()))
                 }
@@ -741,18 +778,20 @@ impl InterpreterContext {
                 }
                 Value::Bool(b) => Value::DataMut(Data::new(*b, None, env.world.read().registry())),
                 Value::Void => anyhow::bail!("Cannot assign void value"),
+                Value::Query { .. } => anyhow::bail!("Cannot assign query value"),
                 Value::Entity(entity) => Value::Entity(*entity),
             }
         } else {
             match &*value {
-                Value::Data(data) => Value::Data(data.to_owned()),
-                Value::DataMut(data) => Value::Data(data.to_owned()),
+                Value::Data(data) => Value::Data(data.try_clone().unwrap()),
+                Value::DataMut(data) => Value::Data(data.try_clone().unwrap()),
                 Value::Int(int) => Value::Data(Data::new(*int, None, env.world.read().registry())),
                 Value::Float(float) => {
                     Value::Data(Data::new(*float, None, env.world.read().registry()))
                 }
                 Value::Bool(b) => Value::Data(Data::new(*b, None, env.world.read().registry())),
                 Value::Void => anyhow::bail!("Cannot assign void value"),
+                Value::Query { .. } => anyhow::bail!("Cannot assign query value"),
                 Value::Entity(entity) => Value::Entity(*entity),
             }
         };
@@ -815,6 +854,7 @@ impl InterpreterContext {
                 }
                 Value::Entity(_) => anyhow::bail!("Cannot assign entity value"),
                 Value::Void => anyhow::bail!("Cannot assign void value"),
+                Value::Query { .. } => anyhow::bail!("Cannot assign query value"),
             }
         }
 
@@ -842,6 +882,7 @@ impl InterpreterContext {
             Value::DataMut(data) => *data.get_as::<bool>(),
             Value::Void => anyhow::bail!("Cannot use void value as condition"),
             Value::Entity(_) => anyhow::bail!("Cannot use entity value as condition"),
+            Value::Query { .. } => anyhow::bail!("Cannot use query value as condition"),
         };
 
         if condition {
@@ -857,6 +898,7 @@ impl InterpreterContext {
                     Value::DataMut(data) => *data.get_as::<bool>(),
                     Value::Void => anyhow::bail!("Cannot use void value as condition"),
                     Value::Entity(_) => anyhow::bail!("Cannot use entity value as condition"),
+                    Value::Query { .. } => anyhow::bail!("Cannot use query value as condition"),
                 };
 
                 if condition {
@@ -878,31 +920,72 @@ impl InterpreterContext {
         condition: Option<&Expr>,
         block: &Expr,
     ) -> anyhow::Result<ValueHandle> {
-        loop {
-            if let Some(condition) = condition {
-                let condition = self.interp_expr(env, condition)?;
-                let condition = match condition.value.as_ref() {
-                    Value::Int(int) => *int != 0,
-                    Value::Float(float) => *float != 0.0,
-                    Value::Bool(b) => *b,
-                    Value::Data(data) => *data.get_as::<bool>(),
-                    Value::DataMut(data) => *data.get_as::<bool>(),
-                    Value::Void => anyhow::bail!("Cannot use void value as condition"),
-                    Value::Entity(_) => anyhow::bail!("Cannot use entity value as condition"),
-                };
+        if let Some(Expr::Ident(query_ident)) = condition {
+            let query = self.interp_ident(query_ident)?;
+            let (query, typed_idents) = match query.value.as_ref() {
+                Value::Query {
+                    query,
+                    typed_idents,
+                } => (query, typed_idents),
+                _ => unreachable!(),
+            };
 
-                if !condition {
-                    return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+            for mut entries in query.iter() {
+                let scope = env.push_scope(Some(self));
+                for (entry, typed_ident) in entries.iter_mut().zip(typed_idents.iter()) {
+                    let name = typed_ident.name.clone();
+
+                    match entry {
+                        DynamicQueryRef::Ref(data) => {
+                            let value = Value::Data(data.to_owned());
+                            scope.alloc_value(Some(name.as_str()), Arc::new(value));
+                        }
+                        DynamicQueryRef::Mut(data) => {
+                            let value = Value::DataMut(data.to_owned());
+                            scope.alloc_value(Some(name.as_str()), Arc::new(value));
+                        }
+                    }
+                }
+                scope.interp_expr(env, &block)?;
+
+                if let Some(should_break) = scope.should_break.take() {
+                    if let Some(value) = should_break {
+                        return Ok(value);
+                    } else {
+                        return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                    }
                 }
             }
 
-            self.interp_expr(env, block)?;
+            Ok(self.alloc_value(None, Arc::new(Value::Void)))
+        } else {
+            loop {
+                if let Some(condition) = condition {
+                    let condition = self.interp_expr(env, condition)?;
+                    let condition = match condition.value.as_ref() {
+                        Value::Int(int) => *int != 0,
+                        Value::Float(float) => *float != 0.0,
+                        Value::Bool(b) => *b,
+                        Value::Data(data) => *data.get_as::<bool>(),
+                        Value::DataMut(data) => *data.get_as::<bool>(),
+                        Value::Void => anyhow::bail!("Cannot use void value as condition"),
+                        Value::Entity(_) => anyhow::bail!("Cannot use entity value as condition"),
+                        Value::Query { .. } => unreachable!(),
+                    };
 
-            if let Some(should_break) = self.should_break.take() {
-                if let Some(value) = should_break {
-                    return Ok(value);
-                } else {
-                    return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                    if !condition {
+                        return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                    }
+                }
+
+                self.interp_expr(env, block)?;
+
+                if let Some(should_break) = self.should_break.take() {
+                    if let Some(value) = should_break {
+                        return Ok(value);
+                    } else {
+                        return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                    }
                 }
             }
         }
@@ -920,38 +1003,17 @@ impl InterpreterContext {
                 DynamicQueryParam::Without(id) => builder = builder.without_id(id),
             }
         }
-        let typed_idents = query.components.clone();
-        let block = query.block.clone();
+        let name = query.name.as_str();
+        let typed_idents = query.components.to_owned();
         let query = builder.build();
 
-        for mut entries in query.iter() {
-            let scope = env.push_scope(Some(self));
-            for (entry, typed_ident) in entries.iter_mut().zip(typed_idents.iter()) {
-                let name = typed_ident.name.clone();
-
-                match entry {
-                    DynamicQueryRef::Ref(data) => {
-                        let value = Value::Data(data.to_owned());
-                        scope.alloc_value(Some(name.as_str()), Arc::new(value));
-                    }
-                    DynamicQueryRef::Mut(data) => {
-                        let value = Value::DataMut(data.to_owned());
-                        scope.alloc_value(Some(name.as_str()), Arc::new(value));
-                    }
-                }
-            }
-            scope.interp_block(env, &block.statements)?;
-
-            if let Some(should_break) = scope.should_break.take() {
-                if let Some(value) = should_break {
-                    return Ok(value);
-                } else {
-                    return Ok(self.alloc_value(None, Arc::new(Value::Void)));
-                }
-            }
-        }
-
-        Ok(self.alloc_value(None, Arc::new(Value::Void)))
+        Ok(self.alloc_value(
+            Some(name),
+            Arc::new(Value::Query {
+                query,
+                typed_idents,
+            }),
+        ))
     }
 }
 
