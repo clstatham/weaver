@@ -1,0 +1,42 @@
+{
+  "scopeName": "source.loom",
+  "patterns": [
+    {
+      "include": "#keyword"
+    },
+    {
+      "include": "#function"
+    },
+    {
+      "include": "#attribute"
+    },
+    {
+      "include": "#type"
+    },
+    {
+      "include": "#literal"
+    }
+  ],
+  "repository": {
+    "keyword": {
+      "name": "keyword.control",
+      "match": "component|system|impl|func|let|var|if|else|elif|loop|break|query|with|without"
+    },
+    "type": {
+      "name": "entity.name.type",
+      "match": "Int|Float|Vec3|Quat|Mat3|Mat4|[A-Z]([a-zA-Z0-9]|\\d|_)*"
+    },
+    "literal": {
+      "name": "constant.numeric",
+      "match": "(\\-)?\\d(\\d)*\\.\\d(\\d)*|(\\-)?\\d(\\d)*"
+    },
+    "function": {
+      "name": "entity.name.function",
+      "match": "print|spawn|vec3|vec4|mat4|quat"
+    },
+    "attribute": {
+      "name": "entity.other.attribute-name",
+      "match": "@startup|@update"
+    }
+  }
+}

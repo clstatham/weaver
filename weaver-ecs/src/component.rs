@@ -278,7 +278,7 @@ impl Data {
     pub fn display(&self, f: &mut std::fmt::Formatter<'_>) {
         let this = self.borrow();
         let type_name = self.type_name();
-        try_all_types!(this; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String; {
+        try_all_types!(this; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String, glam::Vec2, glam::Vec3, glam::Vec4, glam::Mat2, glam::Mat3, glam::Mat4, glam::Quat; {
             write!(f, "{}", *this).unwrap();
             return;
         } else {

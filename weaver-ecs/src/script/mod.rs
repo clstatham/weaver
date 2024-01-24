@@ -4,6 +4,7 @@ use self::parser::{LoomParser, Scope};
 
 pub mod interp;
 pub mod parser;
+pub mod value;
 
 pub struct Script {
     pub name: String,

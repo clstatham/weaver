@@ -246,7 +246,7 @@ mod tests {
 
         World::run_stage(&world, SystemStage::Startup).unwrap();
 
-        for _ in 0..1 {
+        for _ in 0..10 {
             World::run_stage(&world, SystemStage::Update).unwrap();
         }
     }

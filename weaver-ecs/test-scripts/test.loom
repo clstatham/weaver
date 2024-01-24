@@ -1,36 +1,22 @@
 @startup
-system Setup {
-    var a = 0
-    var b = 0
-    loop (a < 100) && (b < 100) {
-        a += 1
-        b += a
-
-        spawn(Abc {
-            a = a
-            b = b
-            c = a + b
-        })
-    }
-}
-
-impl Abc {
-    func all_three() {
-        print(self.a, self.b, self.c)
-    }
+system setup {
+    spawn(Player {
+        pos = vec3(0, 0, 0)
+        vel = vec3(0, 0, 0)
+    })
 }
 
 @update
-system Update {
-    query q {
-        let abc: Abc
+system update {
+    query players {
+        var player: Player
     }
 
-    loop q {
-        abc.all_three()
-    }
+    let dt = 1.0 / 60.0
 
-    loop q {
-        abc.all_three()
+    loop players {
+        player.vel += vec3(0, -9.81, 0) * vec3(dt, dt, dt)
+        player.pos += player.vel * vec3(dt, dt, dt)
+        print(player.pos)
     }
 }

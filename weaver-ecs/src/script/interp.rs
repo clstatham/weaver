@@ -1,8 +1,4 @@
-use std::{
-    fmt::{Debug, Display},
-    ops::Deref,
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
@@ -10,385 +6,17 @@ use typed_arena::Arena;
 
 use crate::{
     component::Data,
-    prelude::{Entity, SystemStage, World},
-    query::{DynamicQuery, DynamicQueryParam, DynamicQueryParams, DynamicQueryRef},
+    prelude::{SystemStage, World},
+    query::{DynamicQueryParam, DynamicQueryParams, DynamicQueryRef},
     registry::DynamicId,
     system::DynamicSystem,
 };
 
 use super::{
     parser::{Call, Component, Expr, Query, Scope, Statement, System, TypedIdent},
+    value::{Value, ValueHandle},
     Script,
 };
-
-pub enum Value {
-    Void,
-    Float(f32),
-    Int(i64),
-    Bool(bool),
-    Data(Data),
-    DataMut(Data),
-    Entity(Entity),
-    Query {
-        query: DynamicQuery,
-        typed_idents: Vec<TypedIdent>,
-    },
-}
-
-impl Debug for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Value::DataMut(data) = self {
-            write!(f, "DataMut({:?})", data.type_name())
-        } else if let Value::Data(data) = self {
-            write!(f, "Data({:?})", data.type_name())
-        } else {
-            write!(f, "{:?}", self.type_name())
-        }
-    }
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Value::Void => write!(f, "()"),
-            Value::Float(float) => write!(f, "{}", float),
-            Value::Int(int) => write!(f, "{}", int),
-            Value::Bool(bool) => write!(f, "{}", bool),
-            Value::Data(data) => {
-                data.display(f);
-                Ok(())
-            }
-            Value::DataMut(data) => {
-                data.display(f);
-                Ok(())
-            }
-            Value::Entity(entity) => write!(f, "{:?}", entity),
-            Value::Query {
-                query,
-                typed_idents,
-            } => {
-                write!(f, "Query(")?;
-                for (i, typed_ident) in typed_idents.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}", typed_ident.name)?;
-                }
-                write!(f, ")")
-            }
-        }
-    }
-}
-
-impl Value {
-    pub fn type_name(&self) -> &str {
-        match self {
-            Value::Void => "()",
-            Value::Float(_) => "f64",
-            Value::Int(_) => "i64",
-            Value::Bool(_) => "bool",
-            Value::Data(data) => data.type_name(),
-            Value::DataMut(data) => data.type_name(),
-            Value::Entity(_) => "Entity",
-            Value::Query { .. } => "DynamicQuery",
-        }
-    }
-
-    pub fn infix(&self, op: &str, rhs: &Self) -> anyhow::Result<Self> {
-        match (self, rhs) {
-            (Value::Int(lhs), Value::Int(rhs)) => match op {
-                "+" => Ok(Value::Int(lhs + rhs)),
-                "-" => Ok(Value::Int(lhs - rhs)),
-                "*" => Ok(Value::Int(lhs * rhs)),
-                "/" => Ok(Value::Int(lhs / rhs)),
-                "%" => Ok(Value::Int(lhs % rhs)),
-                ">" => Ok(Value::Bool(lhs > rhs)),
-                "<" => Ok(Value::Bool(lhs < rhs)),
-                ">=" => Ok(Value::Bool(lhs >= rhs)),
-                "<=" => Ok(Value::Bool(lhs <= rhs)),
-                "==" => Ok(Value::Bool(lhs == rhs)),
-                "=" | "+=" | "-=" | "*=" | "/=" | "%=" => {
-                    Err(anyhow::anyhow!("Invalid operator {} for integer types", op))
-                }
-                _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
-            },
-            (Value::Float(lhs), Value::Float(rhs)) => match op {
-                "+" => Ok(Value::Float(lhs + rhs)),
-                "-" => Ok(Value::Float(lhs - rhs)),
-                "*" => Ok(Value::Float(lhs * rhs)),
-                "/" => Ok(Value::Float(lhs / rhs)),
-                "%" => Ok(Value::Float(lhs % rhs)),
-                ">" => Ok(Value::Bool(lhs > rhs)),
-                "<" => Ok(Value::Bool(lhs < rhs)),
-                ">=" => Ok(Value::Bool(lhs >= rhs)),
-                "<=" => Ok(Value::Bool(lhs <= rhs)),
-                "==" => Ok(Value::Bool(lhs == rhs)),
-                "=" | "+=" | "-=" | "*=" | "/=" | "%=" => {
-                    Err(anyhow::anyhow!("Invalid operator {} for float types", op))
-                }
-                _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
-            },
-            (Value::Data(lhs), Value::Data(rhs)) | (Value::Data(lhs), Value::DataMut(rhs)) => {
-                match op {
-                    "+" => Ok(Value::Data(lhs.add(rhs)?)),
-                    "-" => Ok(Value::Data(lhs.sub(rhs)?)),
-                    "*" => Ok(Value::Data(lhs.mul(rhs)?)),
-                    "/" => Ok(Value::Data(lhs.div(rhs)?)),
-                    "%" => Ok(Value::Data(lhs.rem(rhs)?)),
-                    ">" => Ok(Value::Data(lhs.gt(rhs)?)),
-                    "<" => Ok(Value::Data(lhs.lt(rhs)?)),
-                    ">=" => Ok(Value::Data(lhs.ge(rhs)?)),
-                    "<=" => Ok(Value::Data(lhs.le(rhs)?)),
-                    "==" => Ok(Value::Data(lhs.eq(rhs)?)),
-                    "&&" => Ok(Value::Data(lhs.and(rhs)?)),
-                    "||" => Ok(Value::Data(lhs.or(rhs)?)),
-                    "^" => Ok(Value::Data(lhs.xor(rhs)?)),
-                    "=" | "+=" | "-=" | "*=" | "/=" | "%=" => Err(anyhow::anyhow!(
-                        "Invalid operator {}: cannot assign to immutable variable {}",
-                        op,
-                        lhs.name()
-                    )),
-                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
-                }
-            }
-            (Value::Data(lhs), Value::Int(rhs)) => {
-                let rhs = Data::new(*rhs, None, lhs.registry());
-                match op {
-                    "+" => Ok(Value::DataMut(lhs.add(&rhs)?)),
-                    "-" => Ok(Value::DataMut(lhs.sub(&rhs)?)),
-                    "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
-                    "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
-                    "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
-                    ">" => Ok(Value::DataMut(lhs.gt(&rhs)?)),
-                    "<" => Ok(Value::DataMut(lhs.lt(&rhs)?)),
-                    ">=" => Ok(Value::DataMut(lhs.ge(&rhs)?)),
-                    "<=" => Ok(Value::DataMut(lhs.le(&rhs)?)),
-                    "==" => Ok(Value::DataMut(lhs.eq(&rhs)?)),
-                    "&&" => Ok(Value::DataMut(lhs.and(&rhs)?)),
-                    "||" => Ok(Value::DataMut(lhs.or(&rhs)?)),
-                    "^" => Ok(Value::DataMut(lhs.xor(&rhs)?)),
-                    "=" | "+=" | "-=" | "*=" | "/=" | "%=" => Err(anyhow::anyhow!(
-                        "Invalid operator {}: cannot assign to immutable variable {}",
-                        op,
-                        lhs.name()
-                    )),
-                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
-                }
-            }
-            (Value::Int(lhs), Value::Data(rhs)) | (Value::Int(lhs), Value::DataMut(rhs)) => {
-                let lhs = Data::new(*lhs, None, rhs.registry());
-                match op {
-                    "+" => Ok(Value::DataMut(lhs.add(rhs)?)),
-                    "-" => Ok(Value::DataMut(lhs.sub(rhs)?)),
-                    "*" => Ok(Value::DataMut(lhs.mul(rhs)?)),
-                    "/" => Ok(Value::DataMut(lhs.div(rhs)?)),
-                    "%" => Ok(Value::DataMut(lhs.rem(rhs)?)),
-                    ">" => Ok(Value::DataMut(lhs.gt(rhs)?)),
-                    "<" => Ok(Value::DataMut(lhs.lt(rhs)?)),
-                    ">=" => Ok(Value::DataMut(lhs.ge(rhs)?)),
-                    "<=" => Ok(Value::DataMut(lhs.le(rhs)?)),
-                    "==" => Ok(Value::DataMut(lhs.eq(rhs)?)),
-                    "&&" => Ok(Value::DataMut(lhs.and(rhs)?)),
-                    "||" => Ok(Value::DataMut(lhs.or(rhs)?)),
-                    "^" => Ok(Value::DataMut(lhs.xor(rhs)?)),
-                    "=" | "+=" | "-=" | "*=" | "/=" | "%=" => {
-                        Err(anyhow::anyhow!("Invalid operator {} for integer types", op,))
-                    }
-                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
-                }
-            }
-            (Value::DataMut(lhs), Value::Int(rhs)) => {
-                let rhs = Data::new(*rhs, None, lhs.registry());
-                match op {
-                    "+" => Ok(Value::DataMut(lhs.add(&rhs)?)),
-                    "-" => Ok(Value::DataMut(lhs.sub(&rhs)?)),
-                    "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
-                    "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
-                    "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
-                    ">" => Ok(Value::DataMut(lhs.gt(&rhs)?)),
-                    "<" => Ok(Value::DataMut(lhs.lt(&rhs)?)),
-                    ">=" => Ok(Value::DataMut(lhs.ge(&rhs)?)),
-                    "<=" => Ok(Value::DataMut(lhs.le(&rhs)?)),
-                    "==" => Ok(Value::DataMut(lhs.eq(&rhs)?)),
-                    "&&" => Ok(Value::DataMut(lhs.and(&rhs)?)),
-                    "||" => Ok(Value::DataMut(lhs.or(&rhs)?)),
-                    "^" => Ok(Value::DataMut(lhs.xor(&rhs)?)),
-                    "=" => {
-                        lhs.assign(&rhs)?;
-                        Ok(Value::Void)
-                    }
-                    "+=" => {
-                        lhs.add_assign(&rhs)?;
-                        Ok(Value::Void)
-                    }
-                    "-=" => {
-                        lhs.sub_assign(&rhs)?;
-                        Ok(Value::Void)
-                    }
-                    "*=" => {
-                        lhs.mul_assign(&rhs)?;
-                        Ok(Value::Void)
-                    }
-                    "/=" => {
-                        lhs.div_assign(&rhs)?;
-                        Ok(Value::Void)
-                    }
-                    "%=" => {
-                        lhs.rem_assign(&rhs)?;
-                        Ok(Value::Void)
-                    }
-                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
-                }
-            }
-            (Value::Data(lhs), Value::Float(rhs)) => {
-                let rhs = Data::new(*rhs, None, lhs.registry());
-                match op {
-                    "+" => Ok(Value::DataMut(lhs.add(&rhs)?)),
-                    "-" => Ok(Value::DataMut(lhs.sub(&rhs)?)),
-                    "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
-                    "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
-                    "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
-                    ">" => Ok(Value::DataMut(lhs.gt(&rhs)?)),
-                    "<" => Ok(Value::DataMut(lhs.lt(&rhs)?)),
-                    ">=" => Ok(Value::DataMut(lhs.ge(&rhs)?)),
-                    "<=" => Ok(Value::DataMut(lhs.le(&rhs)?)),
-                    "==" => Ok(Value::DataMut(lhs.eq(&rhs)?)),
-                    "&&" => Ok(Value::DataMut(lhs.and(&rhs)?)),
-                    "||" => Ok(Value::DataMut(lhs.or(&rhs)?)),
-                    "^" => Ok(Value::DataMut(lhs.xor(&rhs)?)),
-                    "=" | "+=" | "-=" | "*=" | "/=" | "%=" => Err(anyhow::anyhow!(
-                        "Invalid operator {}: cannot assign to immutable variable {}",
-                        op,
-                        lhs.name()
-                    )),
-                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
-                }
-            }
-            (Value::Float(lhs), Value::Data(rhs)) | (Value::Float(lhs), Value::DataMut(rhs)) => {
-                let lhs = Data::new(*lhs, None, rhs.registry());
-                match op {
-                    "+" => Ok(Value::DataMut(lhs.add(rhs)?)),
-                    "-" => Ok(Value::DataMut(lhs.sub(rhs)?)),
-                    "*" => Ok(Value::DataMut(lhs.mul(rhs)?)),
-                    "/" => Ok(Value::DataMut(lhs.div(rhs)?)),
-                    "%" => Ok(Value::DataMut(lhs.rem(rhs)?)),
-                    ">" => Ok(Value::DataMut(lhs.gt(rhs)?)),
-                    "<" => Ok(Value::DataMut(lhs.lt(rhs)?)),
-                    ">=" => Ok(Value::DataMut(lhs.ge(rhs)?)),
-                    "<=" => Ok(Value::DataMut(lhs.le(rhs)?)),
-                    "==" => Ok(Value::DataMut(lhs.eq(rhs)?)),
-                    "&&" => Ok(Value::DataMut(lhs.and(rhs)?)),
-                    "||" => Ok(Value::DataMut(lhs.or(rhs)?)),
-                    "^" => Ok(Value::DataMut(lhs.xor(rhs)?)),
-                    "=" | "+=" | "-=" | "*=" | "/=" | "%=" => {
-                        Err(anyhow::anyhow!("Invalid operator {} for float types", op,))
-                    }
-                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
-                }
-            }
-            (Value::DataMut(lhs), Value::Float(rhs)) => {
-                let rhs = Data::new(*rhs, None, lhs.registry());
-                match op {
-                    "+" => Ok(Value::DataMut(lhs.add(&rhs)?)),
-                    "-" => Ok(Value::DataMut(lhs.sub(&rhs)?)),
-                    "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
-                    "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
-                    "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
-                    ">" => Ok(Value::DataMut(lhs.gt(&rhs)?)),
-                    "<" => Ok(Value::DataMut(lhs.lt(&rhs)?)),
-                    ">=" => Ok(Value::DataMut(lhs.ge(&rhs)?)),
-                    "<=" => Ok(Value::DataMut(lhs.le(&rhs)?)),
-                    "==" => Ok(Value::DataMut(lhs.eq(&rhs)?)),
-                    "&&" => Ok(Value::DataMut(lhs.and(&rhs)?)),
-                    "||" => Ok(Value::DataMut(lhs.or(&rhs)?)),
-                    "^" => Ok(Value::DataMut(lhs.xor(&rhs)?)),
-                    "=" => {
-                        lhs.assign(&rhs)?;
-                        Ok(Value::Void)
-                    }
-                    "+=" => {
-                        lhs.add_assign(&rhs)?;
-                        Ok(Value::Void)
-                    }
-                    "-=" => {
-                        lhs.sub_assign(&rhs)?;
-                        Ok(Value::Void)
-                    }
-                    "*=" => {
-                        lhs.mul_assign(&rhs)?;
-                        Ok(Value::Void)
-                    }
-                    "/=" => {
-                        lhs.div_assign(&rhs)?;
-                        Ok(Value::Void)
-                    }
-                    "%=" => {
-                        lhs.rem_assign(&rhs)?;
-                        Ok(Value::Void)
-                    }
-                    _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
-                }
-            }
-            (Value::DataMut(lhs), Value::Data(rhs))
-            | (Value::DataMut(lhs), Value::DataMut(rhs)) => match op {
-                "+" => Ok(Value::DataMut(lhs.add(rhs)?)),
-                "-" => Ok(Value::DataMut(lhs.sub(rhs)?)),
-                "*" => Ok(Value::DataMut(lhs.mul(rhs)?)),
-                "/" => Ok(Value::DataMut(lhs.div(rhs)?)),
-                "%" => Ok(Value::DataMut(lhs.rem(rhs)?)),
-                ">" => Ok(Value::DataMut(lhs.gt(rhs)?)),
-                "<" => Ok(Value::DataMut(lhs.lt(rhs)?)),
-                ">=" => Ok(Value::DataMut(lhs.ge(rhs)?)),
-                "<=" => Ok(Value::DataMut(lhs.le(rhs)?)),
-                "==" => Ok(Value::DataMut(lhs.eq(rhs)?)),
-                "&&" => Ok(Value::DataMut(lhs.and(rhs)?)),
-                "||" => Ok(Value::DataMut(lhs.or(rhs)?)),
-                "^" => Ok(Value::DataMut(lhs.xor(rhs)?)),
-                "=" => {
-                    lhs.assign(rhs)?;
-                    Ok(Value::Void)
-                }
-                "+=" => {
-                    lhs.add_assign(rhs)?;
-                    Ok(Value::Void)
-                }
-                "-=" => {
-                    lhs.sub_assign(rhs)?;
-                    Ok(Value::Void)
-                }
-                "*=" => {
-                    lhs.mul_assign(rhs)?;
-                    Ok(Value::Void)
-                }
-                "/=" => {
-                    lhs.div_assign(rhs)?;
-                    Ok(Value::Void)
-                }
-                "%=" => {
-                    lhs.rem_assign(rhs)?;
-                    Ok(Value::Void)
-                }
-                _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
-            },
-            _ => Err(anyhow::anyhow!("Invalid operator {}", op)),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct ValueHandle {
-    pub name: Option<String>,
-    pub id: usize,
-    pub value: Arc<Value>,
-}
-
-impl Deref for ValueHandle {
-    type Target = Value;
-
-    fn deref(&self) -> &Self::Target {
-        self.value.as_ref()
-    }
-}
 
 pub struct RuntimeEnv {
     pub world: Arc<RwLock<World>>,
@@ -430,7 +58,7 @@ impl InterpreterContext {
         }
     }
 
-    pub fn alloc_value(&mut self, name: Option<&str>, value: Arc<Value>) -> ValueHandle {
+    pub fn alloc_value(&mut self, name: Option<&str>, value: Value) -> ValueHandle {
         let handle = ValueHandle {
             name: name.map(|s| s.to_owned()),
             id: self.heap.len(),
@@ -518,7 +146,7 @@ impl InterpreterContext {
                     print!("{} ", *value);
                 }
                 println!();
-                Ok(self.alloc_value(None, Arc::new(Value::Void)))
+                Ok(self.alloc_value(None, Value::Void))
             }
             "spawn" => {
                 let component = match &call.args[0] {
@@ -527,6 +155,95 @@ impl InterpreterContext {
                 };
 
                 Ok(component)
+            }
+            "vec3" => {
+                if call.args.len() != 3 {
+                    anyhow::bail!("Invalid argument count");
+                }
+
+                let x = self.interp_expr(env, &call.args[0])?;
+                let y = self.interp_expr(env, &call.args[1])?;
+                let z = self.interp_expr(env, &call.args[2])?;
+
+                let x = match &x.value {
+                    Value::Int(int) => *int as f32,
+                    Value::Float(float) => *float,
+                    _ => anyhow::bail!("Invalid argument"),
+                };
+
+                let y = match &y.value {
+                    Value::Int(int) => *int as f32,
+                    Value::Float(float) => *float,
+                    _ => anyhow::bail!("Invalid argument"),
+                };
+
+                let z = match &z.value {
+                    Value::Int(int) => *int as f32,
+                    Value::Float(float) => *float,
+                    _ => anyhow::bail!("Invalid argument"),
+                };
+
+                let vec3 = glam::Vec3::new(x, y, z);
+
+                Ok(self.alloc_value(None, Value::Vec3(vec3)))
+            }
+            "vec4" | "quat" => {
+                if call.args.len() != 4 {
+                    anyhow::bail!("Invalid argument count");
+                }
+
+                let x = self.interp_expr(env, &call.args[0])?;
+                let y = self.interp_expr(env, &call.args[1])?;
+                let z = self.interp_expr(env, &call.args[2])?;
+                let w = self.interp_expr(env, &call.args[3])?;
+
+                let x = match &x.value {
+                    Value::Int(int) => *int as f32,
+                    Value::Float(float) => *float,
+                    _ => anyhow::bail!("Invalid argument"),
+                };
+
+                let y = match &y.value {
+                    Value::Int(int) => *int as f32,
+                    Value::Float(float) => *float,
+                    _ => anyhow::bail!("Invalid argument"),
+                };
+
+                let z = match &z.value {
+                    Value::Int(int) => *int as f32,
+                    Value::Float(float) => *float,
+                    _ => anyhow::bail!("Invalid argument"),
+                };
+
+                let w = match &w.value {
+                    Value::Int(int) => *int as f32,
+                    Value::Float(float) => *float,
+                    _ => anyhow::bail!("Invalid argument"),
+                };
+
+                let vec4 = glam::Vec4::new(x, y, z, w);
+
+                Ok(self.alloc_value(None, Value::Vec4(vec4)))
+            }
+            "mat4" => {
+                if call.args.len() != 16 {
+                    anyhow::bail!("Invalid argument count");
+                }
+
+                let mut mat4 = Vec::new();
+
+                for arg in &call.args[..16] {
+                    let x = match &self.interp_expr(env, arg)?.value {
+                        Value::Int(int) => *int as f32,
+                        Value::Float(float) => *float,
+                        _ => anyhow::bail!("Invalid argument"),
+                    };
+                    mat4.push(x);
+                }
+
+                let mat4 = glam::Mat4::from_cols_slice(&mat4);
+
+                Ok(self.alloc_value(None, Value::Mat4(mat4)))
             }
             name => {
                 let func = env
@@ -548,34 +265,8 @@ impl InterpreterContext {
                 let scope = env.push_scope(Some(self));
                 for (arg, param) in args.iter().zip(func.params.iter()) {
                     let value = arg.value.to_owned();
-                    let value = match &*value {
-                        // pass by reference
-                        Value::Data(data) => Value::Data(data.to_owned()),
-                        Value::DataMut(data) => Value::DataMut(data.to_owned()),
-                        Value::Int(int) => {
-                            Value::Data(Data::new(*int, None, env.world.read().registry()))
-                        }
-                        Value::Float(float) => {
-                            Value::Data(Data::new(*float, None, env.world.read().registry()))
-                        }
-                        Value::Bool(b) => {
-                            Value::Data(Data::new(*b, None, env.world.read().registry()))
-                        }
-                        Value::Void => anyhow::bail!("Cannot assign void value"),
-                        Value::Query {
-                            query,
-                            typed_idents,
-                        } => {
-                            let query = query.to_owned();
-                            let typed_idents = typed_idents.to_owned();
-                            Value::Query {
-                                query,
-                                typed_idents,
-                            }
-                        }
-                        Value::Entity(entity) => Value::Entity(*entity),
-                    };
-                    scope.alloc_value(Some(param.name.as_str()), Arc::new(value));
+                    let value = value.to_data(env)?;
+                    scope.alloc_value(Some(param.name.as_str()), value);
                 }
 
                 scope.interp_block(env, &func.block.statements)?;
@@ -584,11 +275,11 @@ impl InterpreterContext {
                     if let Some(value) = should_break {
                         return Ok(value);
                     } else {
-                        return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                        return Ok(self.alloc_value(None, Value::Void));
                     }
                 }
 
-                Ok(self.alloc_value(None, Arc::new(Value::Void)))
+                Ok(self.alloc_value(None, Value::Void))
             }
         }
     }
@@ -609,11 +300,11 @@ impl InterpreterContext {
     }
 
     pub fn interp_int_literal(&mut self, int: i64) -> anyhow::Result<ValueHandle> {
-        Ok(self.alloc_value(None, Arc::new(Value::Int(int))))
+        Ok(self.alloc_value(None, Value::Int(int)))
     }
 
     pub fn interp_float_literal(&mut self, float: f32) -> anyhow::Result<ValueHandle> {
-        Ok(self.alloc_value(None, Arc::new(Value::Float(float))))
+        Ok(self.alloc_value(None, Value::Float(float)))
     }
 
     pub fn interp_block(
@@ -628,13 +319,13 @@ impl InterpreterContext {
                 if let Some(value) = should_break {
                     return Ok(value);
                 } else {
-                    return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                    return Ok(self.alloc_value(None, Value::Void));
                 }
             }
             scope.interp_statement(env, statement)?;
         }
         self.should_break = scope.should_break.take();
-        Ok(self.alloc_value(None, Arc::new(Value::Void)))
+        Ok(self.alloc_value(None, Value::Void))
     }
 
     pub fn interp_infix(
@@ -644,11 +335,11 @@ impl InterpreterContext {
         lhs: &Expr,
         rhs: &Expr,
     ) -> anyhow::Result<ValueHandle> {
-        let lhs = self.interp_expr(env, lhs)?;
+        let mut lhs = self.interp_expr(env, lhs)?;
         let rhs = self.interp_expr(env, rhs)?;
 
         let result = lhs.infix(op, &rhs)?;
-        Ok(self.alloc_value(None, Arc::new(result)))
+        Ok(self.alloc_value(None, result))
     }
 
     pub fn interp_member(
@@ -660,7 +351,7 @@ impl InterpreterContext {
         let lhs = self.interp_expr(env, lhs)?;
 
         match rhs {
-            Expr::Ident(rhs) => match lhs.value.as_ref() {
+            Expr::Ident(rhs) => match &lhs.value {
                 Value::Data(data) => {
                     let field = data.field_by_name(rhs).unwrap().to_owned();
                     let value = Value::Data(field);
@@ -668,7 +359,7 @@ impl InterpreterContext {
                         .name
                         .map(|s| format!("{}.{}", s, rhs))
                         .or_else(|| Some(rhs.to_owned()));
-                    Ok(self.alloc_value(name.as_deref(), Arc::new(value)))
+                    Ok(self.alloc_value(name.as_deref(), value))
                 }
                 Value::DataMut(data) => {
                     let field = data.field_by_name(rhs).unwrap().to_owned();
@@ -677,7 +368,7 @@ impl InterpreterContext {
                         .name
                         .map(|s| format!("{}.{}", s, rhs))
                         .or_else(|| Some(rhs.to_owned()));
-                    Ok(self.alloc_value(name.as_deref(), Arc::new(value)))
+                    Ok(self.alloc_value(name.as_deref(), value))
                 }
                 _ => anyhow::bail!("Invalid member access"),
             },
@@ -704,34 +395,8 @@ impl InterpreterContext {
                     let scope = env.push_scope(Some(self));
                     for (arg, param) in args.iter().zip(func.params.iter()) {
                         let value = arg.value.to_owned();
-                        let value = match &*value {
-                            // pass by reference
-                            Value::Data(data) => Value::Data(data.to_owned()),
-                            Value::DataMut(data) => Value::DataMut(data.to_owned()),
-                            Value::Int(int) => {
-                                Value::Data(Data::new(*int, None, env.world.read().registry()))
-                            }
-                            Value::Float(float) => {
-                                Value::Data(Data::new(*float, None, env.world.read().registry()))
-                            }
-                            Value::Bool(b) => {
-                                Value::Data(Data::new(*b, None, env.world.read().registry()))
-                            }
-                            Value::Void => anyhow::bail!("Cannot assign void value"),
-                            Value::Query {
-                                query,
-                                typed_idents,
-                            } => {
-                                let query = query.to_owned();
-                                let typed_idents = typed_idents.to_owned();
-                                Value::Query {
-                                    query,
-                                    typed_idents,
-                                }
-                            }
-                            Value::Entity(entity) => Value::Entity(*entity),
-                        };
-                        scope.alloc_value(Some(param.name.as_str()), Arc::new(value));
+                        let value = value.to_data(env)?;
+                        scope.alloc_value(Some(param.name.as_str()), value);
                     }
 
                     // alloc a "self" value
@@ -744,11 +409,11 @@ impl InterpreterContext {
                         if let Some(value) = should_break {
                             return Ok(value);
                         } else {
-                            return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                            return Ok(self.alloc_value(None, Value::Void));
                         }
                     }
 
-                    Ok(self.alloc_value(None, Arc::new(Value::Void)))
+                    Ok(self.alloc_value(None, Value::Void))
                 } else {
                     anyhow::bail!("Invalid member access")
                 }
@@ -767,35 +432,19 @@ impl InterpreterContext {
         let value = self.interp_expr(env, initial_value)?;
         let value = value.value.to_owned();
         let value = if mutability {
-            match &*value {
+            match value {
                 Value::Data(data) => Value::DataMut(data.try_clone().unwrap()),
                 Value::DataMut(data) => Value::DataMut(data.try_clone().unwrap()),
-                Value::Int(int) => {
-                    Value::DataMut(Data::new(*int, None, env.world.read().registry()))
-                }
-                Value::Float(float) => {
-                    Value::DataMut(Data::new(*float, None, env.world.read().registry()))
-                }
-                Value::Bool(b) => Value::DataMut(Data::new(*b, None, env.world.read().registry())),
-                Value::Void => anyhow::bail!("Cannot assign void value"),
-                Value::Query { .. } => anyhow::bail!("Cannot assign query value"),
-                Value::Entity(entity) => Value::Entity(*entity),
+                _ => value,
             }
         } else {
-            match &*value {
+            match value {
                 Value::Data(data) => Value::Data(data.try_clone().unwrap()),
                 Value::DataMut(data) => Value::Data(data.try_clone().unwrap()),
-                Value::Int(int) => Value::Data(Data::new(*int, None, env.world.read().registry())),
-                Value::Float(float) => {
-                    Value::Data(Data::new(*float, None, env.world.read().registry()))
-                }
-                Value::Bool(b) => Value::Data(Data::new(*b, None, env.world.read().registry())),
-                Value::Void => anyhow::bail!("Cannot assign void value"),
-                Value::Query { .. } => anyhow::bail!("Cannot assign query value"),
-                Value::Entity(entity) => Value::Entity(*entity),
+                _ => value,
             }
         };
-        Ok(self.alloc_value(Some(ident), Arc::new(value)))
+        Ok(self.alloc_value(Some(ident), value))
     }
 
     pub fn interp_construct(
@@ -827,7 +476,7 @@ impl InterpreterContext {
             };
             let value = value.value.to_owned();
 
-            match &*value {
+            match &value {
                 Value::Data(data) => {
                     // fields.push(data.to_owned());
                     let mut data = data.try_clone().unwrap();
@@ -852,6 +501,22 @@ impl InterpreterContext {
                     let data = Data::new(*b, field_name.as_deref(), world.registry());
                     fields.push(data);
                 }
+                Value::Vec3(vec3) => {
+                    let data = Data::new(*vec3, field_name.as_deref(), world.registry());
+                    fields.push(data);
+                }
+                Value::Vec4(vec4) => {
+                    let data = Data::new(*vec4, field_name.as_deref(), world.registry());
+                    fields.push(data);
+                }
+                Value::Quat(quat) => {
+                    let data = Data::new(*quat, field_name.as_deref(), world.registry());
+                    fields.push(data);
+                }
+                Value::Mat4(mat4) => {
+                    let data = Data::new(*mat4, field_name.as_deref(), world.registry());
+                    fields.push(data);
+                }
                 Value::Entity(_) => anyhow::bail!("Cannot assign entity value"),
                 Value::Void => anyhow::bail!("Cannot assign void value"),
                 Value::Query { .. } => anyhow::bail!("Cannot assign query value"),
@@ -862,7 +527,7 @@ impl InterpreterContext {
 
         world.components.add_dynamic_component(&entity, component);
 
-        Ok(self.alloc_value(None, Arc::new(Value::Entity(entity))))
+        Ok(self.alloc_value(None, Value::Entity(entity)))
     }
 
     pub fn interp_if(
@@ -874,15 +539,13 @@ impl InterpreterContext {
         else_block: Option<&Expr>,
     ) -> anyhow::Result<ValueHandle> {
         let condition = self.interp_expr(env, condition)?;
-        let condition = match condition.value.as_ref() {
+        let condition = match &condition.value {
             Value::Int(int) => *int != 0,
             Value::Float(float) => *float != 0.0,
             Value::Bool(b) => *b,
             Value::Data(data) => *data.get_as::<bool>(),
             Value::DataMut(data) => *data.get_as::<bool>(),
-            Value::Void => anyhow::bail!("Cannot use void value as condition"),
-            Value::Entity(_) => anyhow::bail!("Cannot use entity value as condition"),
-            Value::Query { .. } => anyhow::bail!("Cannot use query value as condition"),
+            value => anyhow::bail!("Cannot use {:?} as condition", value),
         };
 
         if condition {
@@ -890,15 +553,13 @@ impl InterpreterContext {
         } else {
             for (condition, block) in elif_blocks {
                 let condition = self.interp_expr(env, condition)?;
-                let condition = match condition.value.as_ref() {
+                let condition = match &condition.value {
                     Value::Int(int) => *int != 0,
                     Value::Float(float) => *float != 0.0,
                     Value::Bool(b) => *b,
                     Value::Data(data) => *data.get_as::<bool>(),
                     Value::DataMut(data) => *data.get_as::<bool>(),
-                    Value::Void => anyhow::bail!("Cannot use void value as condition"),
-                    Value::Entity(_) => anyhow::bail!("Cannot use entity value as condition"),
-                    Value::Query { .. } => anyhow::bail!("Cannot use query value as condition"),
+                    value => anyhow::bail!("Cannot use {:?} as condition", value),
                 };
 
                 if condition {
@@ -909,7 +570,7 @@ impl InterpreterContext {
             if let Some(else_block) = else_block {
                 self.interp_expr(env, else_block)
             } else {
-                Ok(self.alloc_value(None, Arc::new(Value::Void)))
+                Ok(self.alloc_value(None, Value::Void))
             }
         }
     }
@@ -922,7 +583,7 @@ impl InterpreterContext {
     ) -> anyhow::Result<ValueHandle> {
         if let Some(Expr::Ident(query_ident)) = condition {
             let query = self.interp_ident(query_ident)?;
-            let (query, typed_idents) = match query.value.as_ref() {
+            let (query, typed_idents) = match &query.value {
                 Value::Query {
                     query,
                     typed_idents,
@@ -938,11 +599,11 @@ impl InterpreterContext {
                     match entry {
                         DynamicQueryRef::Ref(data) => {
                             let value = Value::Data(data.to_owned());
-                            scope.alloc_value(Some(name.as_str()), Arc::new(value));
+                            scope.alloc_value(Some(name.as_str()), value);
                         }
                         DynamicQueryRef::Mut(data) => {
                             let value = Value::DataMut(data.to_owned());
-                            scope.alloc_value(Some(name.as_str()), Arc::new(value));
+                            scope.alloc_value(Some(name.as_str()), value);
                         }
                     }
                 }
@@ -952,29 +613,28 @@ impl InterpreterContext {
                     if let Some(value) = should_break {
                         return Ok(value);
                     } else {
-                        return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                        return Ok(self.alloc_value(None, Value::Void));
                     }
                 }
             }
 
-            Ok(self.alloc_value(None, Arc::new(Value::Void)))
+            Ok(self.alloc_value(None, Value::Void))
         } else {
             loop {
                 if let Some(condition) = condition {
                     let condition = self.interp_expr(env, condition)?;
-                    let condition = match condition.value.as_ref() {
+                    let condition = match &condition.value {
                         Value::Int(int) => *int != 0,
                         Value::Float(float) => *float != 0.0,
                         Value::Bool(b) => *b,
                         Value::Data(data) => *data.get_as::<bool>(),
                         Value::DataMut(data) => *data.get_as::<bool>(),
-                        Value::Void => anyhow::bail!("Cannot use void value as condition"),
-                        Value::Entity(_) => anyhow::bail!("Cannot use entity value as condition"),
                         Value::Query { .. } => unreachable!(),
+                        value => anyhow::bail!("Cannot use {:?} as condition", value),
                     };
 
                     if !condition {
-                        return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                        return Ok(self.alloc_value(None, Value::Void));
                     }
                 }
 
@@ -984,7 +644,7 @@ impl InterpreterContext {
                     if let Some(value) = should_break {
                         return Ok(value);
                     } else {
-                        return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                        return Ok(self.alloc_value(None, Value::Void));
                     }
                 }
             }
@@ -1009,10 +669,10 @@ impl InterpreterContext {
 
         Ok(self.alloc_value(
             Some(name),
-            Arc::new(Value::Query {
+            Value::Query {
                 query,
                 typed_idents,
-            }),
+            },
         ))
     }
 }

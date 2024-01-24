@@ -40,8 +40,8 @@ xor        =  { "^" }
 // Literals
 
 // string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
-float_literal = @{ ASCII_DIGIT+ ~ period ~ ASCII_DIGIT+ }
-int_literal   = @{ ASCII_DIGIT+ }
+float_literal = @{ minus? ~ ASCII_DIGIT+ ~ period ~ ASCII_DIGIT+ }
+int_literal   = @{ minus? ~ ASCII_DIGIT+ }
 literal       = _{ float_literal | int_literal }
 
 // Keywords
@@ -62,16 +62,20 @@ without    = _{ "without" }
 startup    = _{ "@startup" }
 update     = _{ "@update" }
 system_tag = @{ startup | update }
-// attribute  = @{ startup | update }
-// function   = @{ "print" | "spawn" }
-// keyword    = @{ component | system | impl | func | let | var | if | else | elif | loop | break | query | with | without }
+attribute  = @{ startup | update }
+function   = @{ "print" | "spawn" | "vec3" | "vec4" | "mat4" | "quat" }
+keyword    = @{ component | system | impl | func | let | var | if | else | elif | loop | break | query | with | without }
 
 // Types
-int               =  { "int" }
-float             =  { "float" }
+int               =  { "Int" }
+float             =  { "Float" }
+vec3              =  { "Vec3" }
+quat              =  { "Quat" }
+mat3              =  { "Mat3" }
+mat4              =  { "Mat4" }
 ident             = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
 capitalized_ident = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | ASCII_DIGIT | "_")* }
-type              =  { int | float | capitalized_ident }
+type              =  { int | float | vec3 | quat | mat3 | mat4 | capitalized_ident }
 let_ident         =  { let ~ ident }
 var_ident         =  { var ~ ident }
 typed_ident       =  { ident ~ colon ~ type }
@@ -86,7 +90,7 @@ statements = { statement* }
 block          = { lbrace ~ statements ~ rbrace }
 statement      = { (component_stmt | system_stmt | func_stmt | impl_stmt | break_stmt | expr) ~ semi? }
 component_stmt = { component ~ ident ~ lbrace ~ typed_ident* ~ rbrace }
-system_stmt    = { system_tag? ~ system ~ capitalized_ident ~ block }
+system_stmt    = { system_tag? ~ system ~ ident ~ block }
 
 break_stmt     = { break ~ expr? }
 func_stmt      = { func ~ ident ~ lparen ~ typed_args ~ rparen ~ block }

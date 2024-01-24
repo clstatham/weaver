@@ -128,14 +128,12 @@ impl Default for Scope {
 #[derive(Parser)]
 #[grammar = "../weaver-ecs/src/script/loom.pest"]
 pub struct LoomParser {
-    query_counter: usize,
     top_scope: Scope,
 }
 
 impl LoomParser {
     pub fn new() -> Self {
         Self {
-            query_counter: 0,
             top_scope: Scope::default(),
         }
     }
@@ -240,21 +238,6 @@ impl LoomParser {
         let fields = self.parse_typed_idents(inner);
 
         Statement::Component(Component { name, fields })
-    }
-
-    #[allow(clippy::only_used_in_recursion)]
-    fn extract_queries(&mut self, block: &Block) -> Vec<Query> {
-        let mut queries = Vec::new();
-        for stmt in &block.statements {
-            match stmt {
-                Statement::Expr(Expr::Block(block)) => {
-                    queries.extend(self.extract_queries(block));
-                }
-                _ => {}
-            }
-        }
-
-        queries
     }
 
     fn parse_system_stmt(&mut self, pair: Pair<Rule>) -> Statement {
