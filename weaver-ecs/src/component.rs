@@ -79,15 +79,14 @@ macro_rules! data_arithmetic {
     };
 }
 
-macro_rules! data_display {
-    ($this:ident, $type_name:expr, $f:ident; $($ty:ty),*) => {
+macro_rules! try_all_types {
+    ($this:ident; $($ty:ty),*; $main:block else $els:block) => {
         if true $( && (&*$this).as_any().downcast_ref::<$ty>().is_none())* {
-            write!($f, "<{}>", $type_name).unwrap();
-            return;
+            $els
         }
         $(
-            if let Some(lhs) = (&*$this).as_any().downcast_ref::<$ty>() {
-                write!($f, "{}", lhs).unwrap();
+            if let Some($this) = (&*$this).as_any().downcast_ref::<$ty>() {
+                $main
             }
         )*
     };
@@ -255,10 +254,37 @@ impl Data {
             })
     }
 
+    #[inline]
+    pub fn clone_as<T: Component + Clone>(&self) -> Option<Self> {
+        let data = self.data.borrow();
+        let data = (*data).as_any().downcast_ref::<T>()?;
+        Some(Self::new(
+            data.clone(),
+            self.field_name.as_deref(),
+            &self.registry,
+        ))
+    }
+
+    pub fn try_clone(&self) -> Option<Self> {
+        let this = self.borrow();
+        try_all_types!(this; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String; {
+            return Some(Self::new(this.clone(), self.field_name.as_deref(), &self.registry));
+        } else {
+            return None;
+        });
+        None
+    }
+
     pub fn display(&self, f: &mut std::fmt::Formatter<'_>) {
         let this = self.borrow();
         let type_name = self.type_name();
-        data_display!(this, type_name, f; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String);
+        try_all_types!(this; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String; {
+            write!(f, "{}", *this).unwrap();
+            return;
+        } else {
+            write!(f, "{}", type_name).unwrap();
+            return
+        });
     }
 
     pub fn add(&self, rhs: &Data) -> anyhow::Result<Data> {

@@ -677,16 +677,17 @@ impl InterpreterContext {
             let value = value.value.to_owned();
 
             match &*value {
-                // TODO: This clones the data as a reference, which could hurt us in the future
-                // if this data belongs to another entity. We should probably clone the data
-                // by value instead.
-                Value::Data(_data) => {
+                Value::Data(data) => {
                     // fields.push(data.to_owned());
-                    todo!("pass by value")
+                    let mut data = data.try_clone().unwrap();
+                    data.field_name = field_name;
+                    fields.push(data);
                 }
-                Value::DataMut(_data) => {
+                Value::DataMut(data) => {
                     // fields.push(data.to_owned());
-                    todo!("pass by value")
+                    let mut data = data.try_clone().unwrap();
+                    data.field_name = field_name;
+                    fields.push(data);
                 }
                 Value::Int(int) => {
                     let data = Data::new(*int, field_name.as_deref(), world.registry());

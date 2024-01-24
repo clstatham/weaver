@@ -60,6 +60,7 @@ without    = _{ "without" }
 startup    = _{ "@startup" }
 update     = _{ "@update" }
 system_tag = @{ startup | update }
+keyword    = @{ component | system | let | var | if | else | elif | loop | break | query | with | without | startup | update }
 
 // Types
 int               =  { "int" }
