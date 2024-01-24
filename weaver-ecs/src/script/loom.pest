@@ -47,6 +47,7 @@ literal       = _{ float_literal | int_literal }
 // Keywords
 component  = _{ "component" }
 system     = _{ "system" }
+impl       = _{ "impl" }
 func       = _{ "func" }
 let        = _{ "let" }
 var        = _{ "var" }
@@ -61,9 +62,9 @@ without    = _{ "without" }
 startup    = _{ "@startup" }
 update     = _{ "@update" }
 system_tag = @{ startup | update }
-attribute  = @{ startup | update }
-function   = @{ "print" | "spawn" }
-keyword    = @{ component | system | func | let | var | if | else | elif | loop | break | query | with | without }
+// attribute  = @{ startup | update }
+// function   = @{ "print" | "spawn" }
+// keyword    = @{ component | system | impl | func | let | var | if | else | elif | loop | break | query | with | without }
 
 // Types
 int               =  { "int" }
@@ -83,12 +84,13 @@ statements = { statement* }
 
 // Statements
 block          = { lbrace ~ statements ~ rbrace }
-statement      = { (component_stmt | system_stmt | func_stmt | query_stmt | break_stmt | expr) ~ semi? }
+statement      = { (component_stmt | system_stmt | func_stmt | impl_stmt | query_stmt | break_stmt | expr) ~ semi? }
 component_stmt = { component ~ ident ~ lbrace ~ typed_ident* ~ rbrace }
 system_stmt    = { system_tag? ~ system ~ capitalized_ident ~ block }
 query_stmt     = { loop ~ query ~ lbrack ~ typed_decls ~ rbrack ~ with_clause? ~ without_clause? ~ block }
 break_stmt     = { break ~ expr? }
 func_stmt      = { func ~ ident ~ lparen ~ typed_args ~ rparen ~ block }
+impl_stmt      = { impl ~ capitalized_ident ~ block }
 typed_args     = { (typed_ident ~ comma)* ~ typed_ident? }
 typed_decls    = { ((var_typed_ident | let_typed_ident) ~ comma)* ~ (var_typed_ident | let_typed_ident)? }
 with_clause    = { with ~ lbrack ~ (type ~ comma)* ~ type? ~ rbrack }
@@ -98,7 +100,7 @@ without_clause = { without ~ lbrack ~ (type ~ comma)* ~ type? ~ rbrack }
 prefix           = _{ minus | not }
 infix            = _{ plus | minus | star | slash | percent | lte | gte | eqeq | neq | and | or | xor | lt | gt }
 call_expr        =  { ident ~ lparen ~ (expr ~ comma)* ~ expr? ~ rparen }
-member_expr      =  { ident ~ period ~ ident }
+member_expr      =  { ident ~ period ~ (call_expr | ident) }
 assign_expr      =  { (member_expr | ident) ~ (plus_eq | minus_eq | star_eq | slash_eq | percent_eq | eq) ~ expr }
 decl_expr        =  { (var_ident | let_ident) ~ eq ~ expr }
 constructor_expr =  { type ~ lbrace ~ expr* ~ rbrace }

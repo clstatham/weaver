@@ -6,7 +6,7 @@ system Setup {
         a += 1
         b += a
 
-        spawn(ABC {
+        spawn(Abc {
             a = a
             b = b
             c = a + b
@@ -14,11 +14,15 @@ system Setup {
     }
 }
 
-func threeplus(value: int) {
-    print(3 + value)
+impl Abc {
+    func all_three() {
+        print(self.a, self.b, self.c)
+    }
 }
 
 @update
 system Update {
-    threeplus(5)
+    loop query [let abc: Abc] {
+        abc.all_three()
+    }
 }

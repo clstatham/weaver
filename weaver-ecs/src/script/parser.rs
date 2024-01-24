@@ -74,6 +74,12 @@ pub struct Func {
 }
 
 #[derive(Debug, Clone)]
+pub struct Impl {
+    pub ty: String,
+    pub funcs: Vec<Func>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
     Component(Component),
     System(System),
@@ -81,6 +87,7 @@ pub enum Statement {
     Query(Query),
     Expr(Expr),
     Break(Option<Expr>),
+    Impl(Impl),
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +120,7 @@ pub enum Scope {
     Component(Component),
     System(System),
     Func(Func),
+    Impl(Impl),
 }
 
 impl Default for Scope {
@@ -182,7 +190,10 @@ impl LoomParser {
                 Statement::Func(func) => {
                     stmts.push(Scope::Func(func));
                 }
-                _ => panic!("Unexpected statement"),
+                Statement::Impl(impl_) => {
+                    stmts.push(Scope::Impl(impl_));
+                }
+                stmt => panic!("Unexpected statement: {:?}", stmt),
             },
             _ => panic!("Unexpected scope"),
         }
@@ -212,6 +223,7 @@ impl LoomParser {
             Rule::func_stmt => self.parse_func_stmt(first),
             Rule::query_stmt => self.parse_query_stmt(first),
             Rule::expr => Statement::Expr(self.parse_expr(first)),
+            Rule::impl_stmt => self.parse_impl_stmt(first),
             Rule::break_stmt => {
                 if let Some(expr) = inner.next() {
                     let expr = self.parse_expr(expr);
@@ -302,6 +314,30 @@ impl LoomParser {
             params: args,
             block,
         })
+    }
+
+    fn parse_impl_stmt(&mut self, pair: Pair<Rule>) -> Statement {
+        assert_eq!(pair.as_rule(), Rule::impl_stmt);
+        let mut inner = pair.into_inner();
+        let ty = inner.next().unwrap();
+        let block = inner.next().unwrap();
+
+        let ty = self.parse_ident(ty);
+        let block = self.parse_block(block);
+        let block = if let Expr::Block(block) = block {
+            block
+        } else {
+            panic!("Expected block statement");
+        };
+
+        let mut funcs = Vec::new();
+        for stmt in &block.statements {
+            if let Statement::Func(func) = stmt {
+                funcs.push(func.clone());
+            }
+        }
+
+        Statement::Impl(Impl { ty, funcs })
     }
 
     fn parse_query_stmt(&mut self, pair: Pair<Rule>) -> Statement {
@@ -522,6 +558,7 @@ impl LoomParser {
 
         let rhs = match rhs.as_rule() {
             Rule::ident => Expr::Ident(self.parse_ident(rhs)),
+            Rule::call_expr => self.parse_call_expr(rhs),
             _ => panic!("Unexpected rule: {:?}", rhs.as_rule()),
         };
 
@@ -701,7 +738,10 @@ impl LoomParser {
     }
 
     fn parse_ident(&mut self, pair: Pair<Rule>) -> String {
-        assert!(matches!(pair.as_rule(), Rule::ident));
+        assert!(matches!(
+            pair.as_rule(),
+            Rule::ident | Rule::capitalized_ident
+        ));
         pair.as_str().to_string()
     }
 

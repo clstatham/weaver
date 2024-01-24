@@ -632,29 +632,89 @@ impl InterpreterContext {
         rhs: &Expr,
     ) -> anyhow::Result<ValueHandle> {
         let lhs = self.interp_expr(env, lhs)?;
-        let rhs = match rhs {
-            Expr::Ident(ident) => ident,
-            _ => anyhow::bail!("Invalid member access"),
-        };
 
-        match lhs.value.as_ref() {
-            Value::Data(data) => {
-                let field = data.field_by_name(rhs).unwrap().to_owned();
-                let value = Value::Data(field);
-                let name = lhs
-                    .name
-                    .map(|s| format!("{}.{}", s, rhs))
-                    .or_else(|| Some(rhs.to_owned()));
-                Ok(self.alloc_value(name.as_deref(), Arc::new(value)))
-            }
-            Value::DataMut(data) => {
-                let field = data.field_by_name(rhs).unwrap().to_owned();
-                let value = Value::DataMut(field);
-                let name = lhs
-                    .name
-                    .map(|s| format!("{}.{}", s, rhs))
-                    .or_else(|| Some(rhs.to_owned()));
-                Ok(self.alloc_value(name.as_deref(), Arc::new(value)))
+        match rhs {
+            Expr::Ident(rhs) => match lhs.value.as_ref() {
+                Value::Data(data) => {
+                    let field = data.field_by_name(rhs).unwrap().to_owned();
+                    let value = Value::Data(field);
+                    let name = lhs
+                        .name
+                        .map(|s| format!("{}.{}", s, rhs))
+                        .or_else(|| Some(rhs.to_owned()));
+                    Ok(self.alloc_value(name.as_deref(), Arc::new(value)))
+                }
+                Value::DataMut(data) => {
+                    let field = data.field_by_name(rhs).unwrap().to_owned();
+                    let value = Value::DataMut(field);
+                    let name = lhs
+                        .name
+                        .map(|s| format!("{}.{}", s, rhs))
+                        .or_else(|| Some(rhs.to_owned()));
+                    Ok(self.alloc_value(name.as_deref(), Arc::new(value)))
+                }
+                _ => anyhow::bail!("Invalid member access"),
+            },
+            Expr::Call(rhs) => {
+                // look for an impl of the rhs call on the lhs type
+                let func = env
+                    .scopes
+                    .iter()
+                    .find_map(|scope| {
+                        if let Scope::Impl(impl_) = scope {
+                            Some(impl_.funcs.iter().find(|func| func.name == rhs.name))
+                        } else {
+                            None
+                        }
+                    })
+                    .flatten();
+
+                if let Some(func) = func {
+                    let mut args = Vec::new();
+                    for arg in &rhs.args {
+                        args.push(self.interp_expr(env, arg)?);
+                    }
+
+                    let scope = env.push_scope(Some(self));
+                    for (arg, param) in args.iter().zip(func.params.iter()) {
+                        let value = arg.value.to_owned();
+                        let value = match &*value {
+                            // pass by reference
+                            Value::Data(data) => Value::Data(data.to_owned()),
+                            Value::DataMut(data) => Value::DataMut(data.to_owned()),
+                            Value::Int(int) => {
+                                Value::Data(Data::new(*int, None, env.world.read().registry()))
+                            }
+                            Value::Float(float) => {
+                                Value::Data(Data::new(*float, None, env.world.read().registry()))
+                            }
+                            Value::Bool(b) => {
+                                Value::Data(Data::new(*b, None, env.world.read().registry()))
+                            }
+                            Value::Void => anyhow::bail!("Cannot assign void value"),
+                            Value::Entity(entity) => Value::Entity(*entity),
+                        };
+                        scope.alloc_value(Some(param.name.as_str()), Arc::new(value));
+                    }
+
+                    // alloc a "self" value
+                    let value = lhs.value.to_owned();
+                    scope.alloc_value(Some("self"), value);
+
+                    scope.interp_block(env, &func.block.statements)?;
+
+                    if let Some(should_break) = scope.should_break.take() {
+                        if let Some(value) = should_break {
+                            return Ok(value);
+                        } else {
+                            return Ok(self.alloc_value(None, Arc::new(Value::Void)));
+                        }
+                    }
+
+                    Ok(self.alloc_value(None, Arc::new(Value::Void)))
+                } else {
+                    anyhow::bail!("Invalid member access")
+                }
             }
             _ => anyhow::bail!("Invalid member access"),
         }
@@ -944,6 +1004,7 @@ impl BuildOnWorld for Script {
                     component.build(world.clone())?;
                 }
                 Scope::Func(_) => {}
+                Scope::Impl(_) => {}
                 Scope::Program(_) => unreachable!(),
             }
         }
