@@ -336,6 +336,130 @@ impl Data {
         Err(anyhow::anyhow!("Type mismatch"))
     }
 
+    pub fn lt(&self, rhs: &Data) -> anyhow::Result<Data> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+
+        let reg = self.registry.clone();
+
+        let lhs = self.borrow();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(reg, lhs, <, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn le(&self, rhs: &Data) -> anyhow::Result<Data> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+
+        let reg = self.registry.clone();
+
+        let lhs = self.borrow();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(reg, lhs, <=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn gt(&self, rhs: &Data) -> anyhow::Result<Data> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+
+        let reg = self.registry.clone();
+
+        let lhs = self.borrow();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(reg, lhs, >, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn ge(&self, rhs: &Data) -> anyhow::Result<Data> {
+        if self.type_id != rhs.type_id {
+            return Err(anyhow::anyhow!("Type mismatch"));
+        }
+
+        let reg = self.registry.clone();
+
+        let lhs = self.borrow();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(reg, lhs, >=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn eq(&self, rhs: &Data) -> anyhow::Result<Data> {
+        if self.type_id != rhs.type_id {
+            return Ok(Data::new(false, None, &self.registry));
+        }
+
+        let reg = self.registry.clone();
+
+        let lhs = self.borrow();
+        let rhs = rhs.borrow();
+
+        data_arithmetic!(reg, lhs, ==, rhs; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String);
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn and(&self, rhs: &Data) -> anyhow::Result<Data> {
+        let lhs = self.borrow();
+        let rhs = rhs.borrow();
+
+        if let Some(lhs) = (*lhs).as_any().downcast_ref::<bool>() {
+            if let Some(rhs) = (*rhs).as_any().downcast_ref::<bool>() {
+                return Ok(Data::new(*lhs && *rhs, None, &self.registry));
+            }
+        }
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn or(&self, rhs: &Data) -> anyhow::Result<Data> {
+        let lhs = self.borrow();
+        let rhs = rhs.borrow();
+
+        if let Some(lhs) = (*lhs).as_any().downcast_ref::<bool>() {
+            if let Some(rhs) = (*rhs).as_any().downcast_ref::<bool>() {
+                return Ok(Data::new(*lhs || *rhs, None, &self.registry));
+            }
+        }
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn not(&self) -> anyhow::Result<Data> {
+        let this = self.borrow();
+
+        if let Some(this) = (*this).as_any().downcast_ref::<bool>() {
+            return Ok(Data::new(!*this, None, &self.registry));
+        }
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
+    pub fn xor(&self, rhs: &Data) -> anyhow::Result<Data> {
+        let lhs = self.borrow();
+        let rhs = rhs.borrow();
+
+        if let Some(lhs) = (*lhs).as_any().downcast_ref::<bool>() {
+            if let Some(rhs) = (*rhs).as_any().downcast_ref::<bool>() {
+                return Ok(Data::new(*lhs ^ *rhs, None, &self.registry));
+            }
+        }
+
+        Err(anyhow::anyhow!("Type mismatch"))
+    }
+
     pub fn assign(&self, rhs: &Data) -> anyhow::Result<()> {
         if self.type_id != rhs.type_id {
             return Err(anyhow::anyhow!("Type mismatch"));

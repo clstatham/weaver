@@ -54,6 +54,12 @@ pub enum Expr {
         op: String,
         rhs: Box<Expr>,
     },
+    If {
+        condition: Box<Expr>,
+        then_block: Box<Expr>,
+        elif_blocks: Vec<(Box<Expr>, Box<Expr>)>,
+        else_block: Option<Box<Expr>>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -355,6 +361,17 @@ impl LoomParser {
         let pratt = PrattParser::new()
             .op(Op::infix(Rule::plus, Assoc::Left) | Op::infix(Rule::minus, Assoc::Left))
             .op(Op::infix(Rule::star, Assoc::Left) | Op::infix(Rule::slash, Assoc::Left))
+            .op(Op::prefix(Rule::minus))
+            .op(Op::infix(Rule::lt, Assoc::Left)
+                | Op::infix(Rule::gt, Assoc::Left)
+                | Op::infix(Rule::lte, Assoc::Left)
+                | Op::infix(Rule::gte, Assoc::Left)
+                | Op::infix(Rule::eqeq, Assoc::Left)
+                | Op::infix(Rule::neq, Assoc::Left))
+            .op(Op::prefix(Rule::not))
+            .op(Op::infix(Rule::and, Assoc::Left))
+            .op(Op::infix(Rule::or, Assoc::Left))
+            .op(Op::infix(Rule::xor, Assoc::Left))
             .op(Op::infix(Rule::eq, Assoc::Right));
 
         pratt
@@ -364,11 +381,20 @@ impl LoomParser {
                 Rule::float_literal => Expr::FloatLiteral(primary.as_str().parse().unwrap()),
                 Rule::call_expr => self.parse_call_expr(primary),
                 Rule::block => self.parse_block(primary),
+                Rule::statements => {
+                    let stmts = self.parse_statements(primary.clone());
+                    let scoped_idents = self.extract_scoped_idents(primary);
+                    Expr::Block(Block {
+                        statements: stmts,
+                        scoped_idents,
+                    })
+                }
                 Rule::expr => self.parse_expr(primary), // parenthesized expression
                 Rule::assign_expr => self.parse_assign_expr(primary),
                 Rule::member_expr => self.parse_member_expr(primary),
                 Rule::decl_expr => self.parse_decl_expr(primary),
                 Rule::constructor_expr => self.parse_constructor_expr(primary),
+                Rule::if_expr => self.parse_if_expr(primary),
                 _ => panic!("Unexpected rule: {:?}", primary.as_rule()),
             })
             .map_prefix(|op, rhs| {
@@ -389,6 +415,15 @@ impl LoomParser {
                     Rule::minus => "-".to_string(),
                     Rule::star => "*".to_string(),
                     Rule::slash => "/".to_string(),
+                    Rule::lt => "<".to_string(),
+                    Rule::gt => ">".to_string(),
+                    Rule::lte => "<=".to_string(),
+                    Rule::gte => ">=".to_string(),
+                    Rule::eqeq => "==".to_string(),
+                    Rule::neq => "!=".to_string(),
+                    Rule::and => "&&".to_string(),
+                    Rule::or => "||".to_string(),
+                    Rule::xor => "^".to_string(),
                     _ => panic!("Unexpected rule: {:?}", op.as_rule()),
                 };
 
@@ -517,6 +552,46 @@ impl LoomParser {
         Expr::Construct {
             name,
             args: args_vec,
+        }
+    }
+
+    fn parse_if_expr(&mut self, pair: Pair<Rule>) -> Expr {
+        assert_eq!(pair.as_rule(), Rule::if_expr);
+        let mut inner = pair.into_inner();
+        let condition = inner.next().unwrap();
+        let then_block = inner.next().unwrap();
+
+        let mut elif_blocks = Vec::new();
+        let mut else_block = None;
+
+        while let Some(block) = inner.next() {
+            match block.as_rule() {
+                Rule::elif => {
+                    let condition = inner.next().unwrap();
+                    let block = inner.next().unwrap();
+
+                    let condition = self.parse_expr(condition);
+                    let block = self.parse_expr(block);
+
+                    elif_blocks.push((Box::new(condition), Box::new(block)));
+                }
+                Rule::r#else => {
+                    let block = inner.next().unwrap();
+                    let block = self.parse_expr(block);
+                    else_block = Some(Box::new(block));
+                }
+                _ => panic!("Unexpected rule: {:?}", block.as_rule()),
+            }
+        }
+
+        let condition = self.parse_expr(condition);
+        let then_block = self.parse_expr(then_block);
+
+        Expr::If {
+            condition: Box::new(condition),
+            then_block: Box::new(then_block),
+            elif_blocks,
+            else_block,
         }
     }
 

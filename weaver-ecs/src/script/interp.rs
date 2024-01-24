@@ -25,6 +25,7 @@ pub enum Value {
     Void,
     Float(f32),
     Int(i64),
+    Bool(bool),
     Data(Data),
     DataMut(Data),
     Entity(Entity),
@@ -48,6 +49,7 @@ impl Display for Value {
             Value::Void => write!(f, "()"),
             Value::Float(float) => write!(f, "{}", float),
             Value::Int(int) => write!(f, "{}", int),
+            Value::Bool(bool) => write!(f, "{}", bool),
             Value::Data(data) => {
                 data.display(f);
                 Ok(())
@@ -67,6 +69,7 @@ impl Value {
             Value::Void => "()",
             Value::Float(_) => "f64",
             Value::Int(_) => "i64",
+            Value::Bool(_) => "bool",
             Value::Data(data) => data.type_name(),
             Value::DataMut(data) => data.type_name(),
             Value::Entity(_) => "Entity",
@@ -81,6 +84,11 @@ impl Value {
                 "*" => Ok(Value::Int(lhs * rhs)),
                 "/" => Ok(Value::Int(lhs / rhs)),
                 "%" => Ok(Value::Int(lhs % rhs)),
+                ">" => Ok(Value::Bool(lhs > rhs)),
+                "<" => Ok(Value::Bool(lhs < rhs)),
+                ">=" => Ok(Value::Bool(lhs >= rhs)),
+                "<=" => Ok(Value::Bool(lhs <= rhs)),
+                "==" => Ok(Value::Bool(lhs == rhs)),
                 "=" | "+=" | "-=" | "*=" | "/=" | "%=" => {
                     Err(anyhow::anyhow!("Invalid operator {} for integer types", op))
                 }
@@ -92,6 +100,11 @@ impl Value {
                 "*" => Ok(Value::Float(lhs * rhs)),
                 "/" => Ok(Value::Float(lhs / rhs)),
                 "%" => Ok(Value::Float(lhs % rhs)),
+                ">" => Ok(Value::Bool(lhs > rhs)),
+                "<" => Ok(Value::Bool(lhs < rhs)),
+                ">=" => Ok(Value::Bool(lhs >= rhs)),
+                "<=" => Ok(Value::Bool(lhs <= rhs)),
+                "==" => Ok(Value::Bool(lhs == rhs)),
                 "=" | "+=" | "-=" | "*=" | "/=" | "%=" => {
                     Err(anyhow::anyhow!("Invalid operator {} for float types", op))
                 }
@@ -104,6 +117,14 @@ impl Value {
                     "*" => Ok(Value::Data(lhs.mul(rhs)?)),
                     "/" => Ok(Value::Data(lhs.div(rhs)?)),
                     "%" => Ok(Value::Data(lhs.rem(rhs)?)),
+                    ">" => Ok(Value::Data(lhs.gt(rhs)?)),
+                    "<" => Ok(Value::Data(lhs.lt(rhs)?)),
+                    ">=" => Ok(Value::Data(lhs.ge(rhs)?)),
+                    "<=" => Ok(Value::Data(lhs.le(rhs)?)),
+                    "==" => Ok(Value::Data(lhs.eq(rhs)?)),
+                    "&&" => Ok(Value::Data(lhs.and(rhs)?)),
+                    "||" => Ok(Value::Data(lhs.or(rhs)?)),
+                    "^" => Ok(Value::Data(lhs.xor(rhs)?)),
                     "=" | "+=" | "-=" | "*=" | "/=" | "%=" => Err(anyhow::anyhow!(
                         "Invalid operator {}: cannot assign to immutable variable {}",
                         op,
@@ -120,6 +141,14 @@ impl Value {
                     "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
                     "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
                     "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
+                    ">" => Ok(Value::DataMut(lhs.gt(&rhs)?)),
+                    "<" => Ok(Value::DataMut(lhs.lt(&rhs)?)),
+                    ">=" => Ok(Value::DataMut(lhs.ge(&rhs)?)),
+                    "<=" => Ok(Value::DataMut(lhs.le(&rhs)?)),
+                    "==" => Ok(Value::DataMut(lhs.eq(&rhs)?)),
+                    "&&" => Ok(Value::DataMut(lhs.and(&rhs)?)),
+                    "||" => Ok(Value::DataMut(lhs.or(&rhs)?)),
+                    "^" => Ok(Value::DataMut(lhs.xor(&rhs)?)),
                     "=" | "+=" | "-=" | "*=" | "/=" | "%=" => Err(anyhow::anyhow!(
                         "Invalid operator {}: cannot assign to immutable variable {}",
                         op,
@@ -136,6 +165,14 @@ impl Value {
                     "*" => Ok(Value::DataMut(lhs.mul(rhs)?)),
                     "/" => Ok(Value::DataMut(lhs.div(rhs)?)),
                     "%" => Ok(Value::DataMut(lhs.rem(rhs)?)),
+                    ">" => Ok(Value::DataMut(lhs.gt(rhs)?)),
+                    "<" => Ok(Value::DataMut(lhs.lt(rhs)?)),
+                    ">=" => Ok(Value::DataMut(lhs.ge(rhs)?)),
+                    "<=" => Ok(Value::DataMut(lhs.le(rhs)?)),
+                    "==" => Ok(Value::DataMut(lhs.eq(rhs)?)),
+                    "&&" => Ok(Value::DataMut(lhs.and(rhs)?)),
+                    "||" => Ok(Value::DataMut(lhs.or(rhs)?)),
+                    "^" => Ok(Value::DataMut(lhs.xor(rhs)?)),
                     "=" | "+=" | "-=" | "*=" | "/=" | "%=" => {
                         Err(anyhow::anyhow!("Invalid operator {} for integer types", op,))
                     }
@@ -150,6 +187,14 @@ impl Value {
                     "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
                     "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
                     "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
+                    ">" => Ok(Value::DataMut(lhs.gt(&rhs)?)),
+                    "<" => Ok(Value::DataMut(lhs.lt(&rhs)?)),
+                    ">=" => Ok(Value::DataMut(lhs.ge(&rhs)?)),
+                    "<=" => Ok(Value::DataMut(lhs.le(&rhs)?)),
+                    "==" => Ok(Value::DataMut(lhs.eq(&rhs)?)),
+                    "&&" => Ok(Value::DataMut(lhs.and(&rhs)?)),
+                    "||" => Ok(Value::DataMut(lhs.or(&rhs)?)),
+                    "^" => Ok(Value::DataMut(lhs.xor(&rhs)?)),
                     "=" => {
                         lhs.assign(&rhs)?;
                         Ok(Value::Void)
@@ -185,6 +230,14 @@ impl Value {
                     "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
                     "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
                     "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
+                    ">" => Ok(Value::DataMut(lhs.gt(&rhs)?)),
+                    "<" => Ok(Value::DataMut(lhs.lt(&rhs)?)),
+                    ">=" => Ok(Value::DataMut(lhs.ge(&rhs)?)),
+                    "<=" => Ok(Value::DataMut(lhs.le(&rhs)?)),
+                    "==" => Ok(Value::DataMut(lhs.eq(&rhs)?)),
+                    "&&" => Ok(Value::DataMut(lhs.and(&rhs)?)),
+                    "||" => Ok(Value::DataMut(lhs.or(&rhs)?)),
+                    "^" => Ok(Value::DataMut(lhs.xor(&rhs)?)),
                     "=" | "+=" | "-=" | "*=" | "/=" | "%=" => Err(anyhow::anyhow!(
                         "Invalid operator {}: cannot assign to immutable variable {}",
                         op,
@@ -201,6 +254,14 @@ impl Value {
                     "*" => Ok(Value::DataMut(lhs.mul(rhs)?)),
                     "/" => Ok(Value::DataMut(lhs.div(rhs)?)),
                     "%" => Ok(Value::DataMut(lhs.rem(rhs)?)),
+                    ">" => Ok(Value::DataMut(lhs.gt(rhs)?)),
+                    "<" => Ok(Value::DataMut(lhs.lt(rhs)?)),
+                    ">=" => Ok(Value::DataMut(lhs.ge(rhs)?)),
+                    "<=" => Ok(Value::DataMut(lhs.le(rhs)?)),
+                    "==" => Ok(Value::DataMut(lhs.eq(rhs)?)),
+                    "&&" => Ok(Value::DataMut(lhs.and(rhs)?)),
+                    "||" => Ok(Value::DataMut(lhs.or(rhs)?)),
+                    "^" => Ok(Value::DataMut(lhs.xor(rhs)?)),
                     "=" | "+=" | "-=" | "*=" | "/=" | "%=" => {
                         Err(anyhow::anyhow!("Invalid operator {} for float types", op,))
                     }
@@ -215,6 +276,14 @@ impl Value {
                     "*" => Ok(Value::DataMut(lhs.mul(&rhs)?)),
                     "/" => Ok(Value::DataMut(lhs.div(&rhs)?)),
                     "%" => Ok(Value::DataMut(lhs.rem(&rhs)?)),
+                    ">" => Ok(Value::DataMut(lhs.gt(&rhs)?)),
+                    "<" => Ok(Value::DataMut(lhs.lt(&rhs)?)),
+                    ">=" => Ok(Value::DataMut(lhs.ge(&rhs)?)),
+                    "<=" => Ok(Value::DataMut(lhs.le(&rhs)?)),
+                    "==" => Ok(Value::DataMut(lhs.eq(&rhs)?)),
+                    "&&" => Ok(Value::DataMut(lhs.and(&rhs)?)),
+                    "||" => Ok(Value::DataMut(lhs.or(&rhs)?)),
+                    "^" => Ok(Value::DataMut(lhs.xor(&rhs)?)),
                     "=" => {
                         lhs.assign(&rhs)?;
                         Ok(Value::Void)
@@ -249,6 +318,14 @@ impl Value {
                 "*" => Ok(Value::DataMut(lhs.mul(rhs)?)),
                 "/" => Ok(Value::DataMut(lhs.div(rhs)?)),
                 "%" => Ok(Value::DataMut(lhs.rem(rhs)?)),
+                ">" => Ok(Value::DataMut(lhs.gt(rhs)?)),
+                "<" => Ok(Value::DataMut(lhs.lt(rhs)?)),
+                ">=" => Ok(Value::DataMut(lhs.ge(rhs)?)),
+                "<=" => Ok(Value::DataMut(lhs.le(rhs)?)),
+                "==" => Ok(Value::DataMut(lhs.eq(rhs)?)),
+                "&&" => Ok(Value::DataMut(lhs.and(rhs)?)),
+                "||" => Ok(Value::DataMut(lhs.or(rhs)?)),
+                "^" => Ok(Value::DataMut(lhs.xor(rhs)?)),
                 "=" => {
                     lhs.assign(rhs)?;
                     Ok(Value::Void)
@@ -390,7 +467,19 @@ impl InterpreterContext {
                 ident,
                 initial_value,
             } => self.interp_decl(env, *mutability, ident, initial_value),
-            _ => todo!("Implement other expressions"),
+            Expr::If {
+                condition,
+                then_block,
+                elif_blocks,
+                else_block,
+            } => self.interp_if(
+                env,
+                condition,
+                then_block,
+                elif_blocks,
+                else_block.as_deref(),
+            ),
+            _ => todo!("Implement other expressions: {:?}", expr),
         }
     }
 
@@ -519,6 +608,7 @@ impl InterpreterContext {
                 Value::Float(float) => {
                     Value::DataMut(Data::new(*float, None, env.world.read().registry()))
                 }
+                Value::Bool(b) => Value::DataMut(Data::new(*b, None, env.world.read().registry())),
                 Value::Void => anyhow::bail!("Cannot assign void value"),
                 Value::Entity(entity) => Value::Entity(*entity),
             }
@@ -530,6 +620,7 @@ impl InterpreterContext {
                 Value::Float(float) => {
                     Value::Data(Data::new(*float, None, env.world.read().registry()))
                 }
+                Value::Bool(b) => Value::Data(Data::new(*b, None, env.world.read().registry())),
                 Value::Void => anyhow::bail!("Cannot assign void value"),
                 Value::Entity(entity) => Value::Entity(*entity),
             }
@@ -586,6 +677,10 @@ impl InterpreterContext {
                     let data = Data::new(*float, field_name.as_deref(), world.registry());
                     fields.push(data);
                 }
+                Value::Bool(b) => {
+                    let data = Data::new(*b, field_name.as_deref(), world.registry());
+                    fields.push(data);
+                }
                 Value::Entity(_) => anyhow::bail!("Cannot assign entity value"),
                 Value::Void => anyhow::bail!("Cannot assign void value"),
             }
@@ -596,6 +691,53 @@ impl InterpreterContext {
         world.components.add_dynamic_component(&entity, component);
 
         Ok(self.alloc_value(None, Arc::new(Value::Entity(entity))))
+    }
+
+    pub fn interp_if(
+        &mut self,
+        env: &RuntimeEnv,
+        condition: &Expr,
+        then_block: &Expr,
+        elif_blocks: &[(Box<Expr>, Box<Expr>)],
+        else_block: Option<&Expr>,
+    ) -> anyhow::Result<ValueHandle> {
+        let condition = self.interp_expr(env, condition)?;
+        let condition = match condition.value.as_ref() {
+            Value::Int(int) => *int != 0,
+            Value::Float(float) => *float != 0.0,
+            Value::Bool(b) => *b,
+            Value::Data(data) => *data.get_as::<bool>(),
+            Value::DataMut(data) => *data.get_as::<bool>(),
+            Value::Void => anyhow::bail!("Cannot use void value as condition"),
+            Value::Entity(_) => anyhow::bail!("Cannot use entity value as condition"),
+        };
+
+        if condition {
+            self.interp_expr(env, then_block)
+        } else {
+            for (condition, block) in elif_blocks {
+                let condition = self.interp_expr(env, condition)?;
+                let condition = match condition.value.as_ref() {
+                    Value::Int(int) => *int != 0,
+                    Value::Float(float) => *float != 0.0,
+                    Value::Bool(b) => *b,
+                    Value::Data(data) => *data.get_as::<bool>(),
+                    Value::DataMut(data) => *data.get_as::<bool>(),
+                    Value::Void => anyhow::bail!("Cannot use void value as condition"),
+                    Value::Entity(_) => anyhow::bail!("Cannot use entity value as condition"),
+                };
+
+                if condition {
+                    return self.interp_expr(env, block);
+                }
+            }
+
+            if let Some(else_block) = else_block {
+                self.interp_expr(env, else_block)
+            } else {
+                Ok(self.alloc_value(None, Arc::new(Value::Void)))
+            }
+        }
     }
 
     pub fn interp_query(&mut self, env: &RuntimeEnv, query: &Query) -> anyhow::Result<ValueHandle> {

@@ -27,38 +27,50 @@ minus_eq   =  { "-=" }
 star_eq    =  { "*=" }
 slash_eq   =  { "/=" }
 percent_eq =  { "%=" }
+lt         =  { "<" }
+gt         =  { ">" }
+lte        =  { "<=" }
+gte        =  { ">=" }
+eqeq       =  { "==" }
+neq        =  { "!=" }
+and        =  { "&&" }
+or         =  { "||" }
+not        =  { "!" }
+xor        =  { "^" }
 
 // Literals
 
 // string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
-float_literal     = @{ ASCII_DIGIT+ ~ period ~ ASCII_DIGIT+ }
-int_literal       = @{ ASCII_DIGIT+ }
-literal           = _{ float_literal | int_literal }
-ident             = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
-capitalized_ident = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | ASCII_DIGIT | "_")* }
+float_literal = @{ ASCII_DIGIT+ ~ period ~ ASCII_DIGIT+ }
+int_literal   = @{ ASCII_DIGIT+ }
+literal       = _{ float_literal | int_literal }
 
 // Keywords
-component = _{ "component" }
-system    = _{ "system" }
-let       = _{ "let" }
-var       = _{ "var" }
-query     = _{ "query" }
-with      = _{ "with" }
-without   = _{ "without" }
-startup   = _{ "@startup" }
-update    = _{ "@update" }
-// keyword    = @{ component | system | let | var | query | with | without | startup | update }
+component  = _{ "component" }
+system     = _{ "system" }
+let        = _{ "let" }
+var        = _{ "var" }
+if         = _{ "if" }
+else       =  { "else" }
+elif       =  { "elif" }
+query      = _{ "query" }
+with       = _{ "with" }
+without    = _{ "without" }
+startup    = _{ "@startup" }
+update     = _{ "@update" }
 system_tag = @{ startup | update }
 
 // Types
-int             = { "int" }
-float           = { "float" }
-type            = { int | float | capitalized_ident }
-let_ident       = { let ~ ident }
-var_ident       = { var ~ ident }
-typed_ident     = { ident ~ colon ~ type }
-let_typed_ident = { let ~ ident ~ colon ~ type }
-var_typed_ident = { var ~ ident ~ colon ~ type }
+int               =  { "int" }
+float             =  { "float" }
+ident             = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
+capitalized_ident = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | ASCII_DIGIT | "_")* }
+type              =  { int | float | capitalized_ident }
+let_ident         =  { let ~ ident }
+var_ident         =  { var ~ ident }
+typed_ident       =  { ident ~ colon ~ type }
+let_typed_ident   =  { let ~ ident ~ colon ~ type }
+var_typed_ident   =  { var ~ ident ~ colon ~ type }
 
 // Top level
 program    = { SOI ~ statements ~ EOI }
@@ -75,12 +87,13 @@ with_clause    = { with ~ lbrack ~ (type ~ comma)* ~ type? ~ rbrack }
 without_clause = { without ~ lbrack ~ (type ~ comma)* ~ type? ~ rbrack }
 
 // Expressions
-prefix           = _{ minus }
-infix            = _{ plus | minus | star | slash | percent }
+prefix           = _{ minus | not }
+infix            = _{ plus | minus | star | slash | percent | lte | gte | eqeq | neq | and | or | xor | lt | gt }
 call_expr        =  { ident ~ lparen ~ (expr ~ comma)* ~ expr? ~ rparen }
 member_expr      =  { ident ~ period ~ ident }
 assign_expr      =  { (member_expr | ident) ~ (plus_eq | minus_eq | star_eq | slash_eq | percent_eq | eq) ~ expr }
 decl_expr        =  { (var_ident | let_ident) ~ eq ~ expr }
 constructor_expr =  { type ~ lbrace ~ expr* ~ rbrace }
-primary_expr     = _{ literal | constructor_expr | call_expr | decl_expr | assign_expr | member_expr | ident | block | (lparen ~ expr ~ rparen) }
+if_expr          =  { if ~ expr ~ block ~ (elif ~ expr ~ block)* ~ (else ~ block)? }
+primary_expr     = _{ literal | if_expr | constructor_expr | call_expr | decl_expr | assign_expr | member_expr | ident | block | (lparen ~ expr ~ rparen) }
 expr             =  { primary_expr ~ (infix ~ prefix? ~ primary_expr)* }
