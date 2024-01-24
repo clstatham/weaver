@@ -314,7 +314,7 @@ where
 {
     pub(crate) fn new(components: &'a Components) -> Self {
         let registry = components.registry();
-        let entries = components.components_matching_access(Q::access(registry));
+        let entries = components.components_matching_access(&Q::access(registry));
         Query {
             registry,
             entries,
@@ -420,6 +420,7 @@ impl Deref for DynamicQueryParams {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum DynamicQueryRef {
     Ref(Data),
     Mut(Data),
@@ -499,12 +500,11 @@ impl DynamicQuery {
             }
         }
 
-        let entries = components.components_matching_access(access);
-
+        let entries = components.components_matching_access(&access);
         Self {
             entries,
             params,
-            access: QueryAccess::default(),
+            access,
         }
     }
 

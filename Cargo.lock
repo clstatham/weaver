@@ -1278,6 +1278,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "impls"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a46645bbd70538861a90d0f26c31537cdf1e44aae99a794fb75a664b70951bc"
+
+[[package]]
 name = "indexmap"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3053,6 +3059,7 @@ dependencies = [
  "env_logger",
  "fixedbitset",
  "glam",
+ "impls",
  "itertools 0.12.0",
  "lazy_static",
  "log",

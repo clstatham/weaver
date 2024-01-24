@@ -167,7 +167,8 @@ impl InterpreterContext {
                 drop(world);
                 for arg in &call.args {
                     let component = self.interp_expr(env, arg)?;
-                    let component = match &component.value {
+                    let component = component.to_data(env)?;
+                    let component = match component {
                         Value::Data(data) => data.to_owned(),
                         Value::DataMut(data) => data.to_owned(),
                         _ => anyhow::bail!("Invalid argument: {:?}", component),
@@ -481,17 +482,18 @@ impl InterpreterContext {
         initial_value: &Expr,
     ) -> anyhow::Result<ValueHandle> {
         let value = self.interp_expr(env, initial_value)?;
+        self.heap.remove(&value.id); // move the value into the new variable
         let value = value.value.to_owned();
         let value = if mutability {
             match value {
-                Value::Data(data) => Value::DataMut(data.try_clone().unwrap()),
-                Value::DataMut(data) => Value::DataMut(data.try_clone().unwrap()),
+                Value::Data(data) => Value::DataMut(data.to_owned()),
+                Value::DataMut(data) => Value::DataMut(data.to_owned()),
                 _ => value,
             }
         } else {
             match value {
-                Value::Data(data) => Value::Data(data.try_clone().unwrap()),
-                Value::DataMut(data) => Value::Data(data.try_clone().unwrap()),
+                Value::Data(data) => Value::Data(data.to_owned()),
+                Value::DataMut(data) => Value::Data(data.to_owned()),
                 _ => value,
             }
         };
@@ -505,6 +507,8 @@ impl InterpreterContext {
         args: &[Expr],
     ) -> anyhow::Result<ValueHandle> {
         let world = env.world.read();
+
+        let mut is_clone = true; // todo?
 
         let mut fields = Vec::new();
 
@@ -523,18 +527,23 @@ impl InterpreterContext {
             } else {
                 anyhow::bail!("Invalid constructor argument");
             };
+            self.heap.remove(&value.id); // move the value into the new component
             let value = value.value.to_owned();
 
             match &value {
                 Value::Data(data) => {
-                    // fields.push(data.to_owned());
-                    let mut data = data.try_clone().unwrap();
+                    if !data.is_clone() {
+                        is_clone = false;
+                    }
+                    let mut data = data.to_owned();
                     data.field_name = field_name;
                     fields.push(data);
                 }
                 Value::DataMut(data) => {
-                    // fields.push(data.to_owned());
-                    let mut data = data.try_clone().unwrap();
+                    if !data.is_clone() {
+                        is_clone = false;
+                    }
+                    let mut data = data.to_owned();
                     data.field_name = field_name;
                     fields.push(data);
                 }
@@ -577,7 +586,7 @@ impl InterpreterContext {
             }
         }
 
-        let component = Data::new_dynamic(name, None, fields, world.registry());
+        let component = Data::new_dynamic(name, None, is_clone, fields, world.registry());
 
         Ok(self.alloc_value(None, Value::DataMut(component)))
     }
@@ -634,18 +643,61 @@ impl InterpreterContext {
         block: &Expr,
     ) -> anyhow::Result<ValueHandle> {
         if let Some(Expr::Ident(query_ident)) = condition {
+            // named query
             let query = self.interp_ident(query_ident)?;
             let (query, typed_idents) = match &query.value {
                 Value::Query {
                     query,
                     typed_idents,
                 } => (query, typed_idents),
-                _ => unreachable!(),
+                _ => panic!("Invalid query"),
             };
 
-            for mut entries in query.iter() {
+            for entries in query.iter() {
                 let scope = env.push_scope(Some(self));
-                for (entry, typed_ident) in entries.iter_mut().zip(typed_idents.iter()) {
+                for (entry, typed_ident) in entries.iter().zip(typed_idents.iter()) {
+                    let name = typed_ident.name.clone();
+
+                    match entry {
+                        DynamicQueryRef::Ref(data) => {
+                            let value = Value::Data(data.to_owned());
+                            scope.alloc_value(Some(name.as_str()), value);
+                        }
+                        DynamicQueryRef::Mut(data) => {
+                            let value = Value::DataMut(data.to_owned());
+                            scope.alloc_value(Some(name.as_str()), value);
+                        }
+                    }
+                }
+                scope.interp_expr(env, &block)?;
+
+                if let Some(should_break) = scope.should_break.take() {
+                    if let Some(value) = should_break {
+                        return Ok(value);
+                    } else {
+                        return Ok(self.alloc_value(None, Value::Void));
+                    }
+                }
+                if let Some(should_return) = scope.should_return.take() {
+                    return Ok(should_return.unwrap_or_else(|| self.alloc_value(None, Value::Void)));
+                }
+            }
+
+            Ok(self.alloc_value(None, Value::Void))
+        } else if let Some(Expr::Query(query)) = condition {
+            // inline query
+            let query = self.interp_query(env, query)?;
+            let (query, typed_idents) = match &query.value {
+                Value::Query {
+                    query,
+                    typed_idents,
+                } => (query, typed_idents),
+                _ => panic!("Invalid query"),
+            };
+
+            for entries in query.iter() {
+                let scope = env.push_scope(Some(self));
+                for (entry, typed_ident) in entries.iter().zip(typed_idents.iter()) {
                     let name = typed_ident.name.clone();
 
                     match entry {

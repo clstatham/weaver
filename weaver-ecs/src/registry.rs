@@ -184,6 +184,7 @@ impl std::hash::Hasher for TypeIdHasher {
     }
 }
 
+#[derive(Debug)]
 pub struct SortedMap<K: Ord + Copy, V>(Box<[(K, V)]>);
 
 impl<K: Ord + Copy, V> SortedMap<K, V> {

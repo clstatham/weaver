@@ -235,6 +235,19 @@ mod tests {
         env_logger::init();
         let mut world = World::new();
 
+        // #[derive(Debug, Default, Component, Clone)]
+        // struct Health {
+        //     pub health: i64,
+        // }
+
+        // #[derive(Debug, Default, Component, Clone)]
+        // struct Player {
+        //     pub pos: glam::Vec3,
+        //     pub vel: glam::Vec3,
+        // }
+
+        // world.spawn((Health::default(), Player::default()));
+
         let world = Arc::new(RwLock::new(world));
 
         World::add_script(

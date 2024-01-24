@@ -30,10 +30,7 @@ pub trait Component: Downcast + Send + Sync + 'static {
     }
 
     #[allow(unused)]
-    fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
-    where
-        Self: Sized,
-    {
+    fn fields(&self, registry: &Arc<Registry>) -> Vec<Data> {
         vec![]
     }
 }
@@ -135,6 +132,10 @@ impl MetaData {
     }
 }
 
+pub const fn impls_clone<T: ?Sized>() -> bool {
+    impls::impls!(T: Clone)
+}
+
 /// A shared pointer to a type-erased component.
 #[derive(Clone)]
 pub struct Data {
@@ -144,6 +145,7 @@ pub struct Data {
     data: Arc<AtomicRefCell<dyn Component>>,
     pub(crate) fields: Vec<Data>,
     registry: Arc<Registry>,
+    is_clone: bool,
 }
 
 impl Data {
@@ -158,12 +160,14 @@ impl Data {
             field_name: field_name.map(|s| s.to_string()),
             fields,
             registry: registry.clone(),
+            is_clone: impls_clone::<T>(),
         }
     }
 
     pub fn new_dynamic(
         type_name: &str,
         field_name: Option<&str>,
+        is_clone: bool,
         fields: Vec<Data>,
         registry: &Arc<Registry>,
     ) -> Self {
@@ -175,6 +179,7 @@ impl Data {
             field_name: field_name.map(|s| s.to_string()),
             fields,
             registry: registry.clone(),
+            is_clone,
         }
     }
 
@@ -216,6 +221,11 @@ impl Data {
     }
 
     #[inline]
+    pub const fn is_clone(&self) -> bool {
+        self.is_clone
+    }
+
+    #[inline]
     pub fn registry(&self) -> &Arc<Registry> {
         &self.registry
     }
@@ -231,7 +241,7 @@ impl Data {
     }
 
     #[inline]
-    pub fn fields(&mut self) -> &[Data] {
+    pub fn fields(&self) -> &[Data] {
         &self.fields
     }
 
@@ -266,6 +276,9 @@ impl Data {
     }
 
     pub fn try_clone(&self) -> Option<Self> {
+        if !self.is_clone {
+            return None;
+        }
         let this = self.borrow();
         try_all_types!(this; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String; {
             return Some(Self::new(this.clone(), self.field_name.as_deref(), &self.registry));
@@ -276,14 +289,28 @@ impl Data {
     }
 
     pub fn display(&self, f: &mut std::fmt::Formatter<'_>) {
-        let this = self.borrow();
+        let fields = self.fields();
+        let component = self.borrow();
         let type_name = self.type_name();
-        try_all_types!(this; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String, glam::Vec2, glam::Vec3, glam::Vec4, glam::Mat2, glam::Mat3, glam::Mat4, glam::Quat; {
-            write!(f, "{}", *this).unwrap();
+        try_all_types!(component; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String, glam::Vec2, glam::Vec3, glam::Vec4, glam::Mat2, glam::Mat3, glam::Mat4, glam::Quat; {
+            write!(f, "{}", *component).unwrap();
             return;
         } else {
             write!(f, "{}", type_name).unwrap();
-            return
+            if fields.is_empty() {
+                return;
+            }
+            write!(f, " {{ ").unwrap();
+            for field in &fields[..fields.len() - 1] {
+                write!(f, "{} = ", field.field_name().unwrap()).unwrap();
+                field.display(f);
+                write!(f, ", ").unwrap();
+            }
+            write!(f, "{} = ", fields[fields.len() - 1].field_name().unwrap()).unwrap();
+            fields[fields.len() - 1].display(f);
+            write!(f, " }}").unwrap();
+
+            return;
         });
     }
 

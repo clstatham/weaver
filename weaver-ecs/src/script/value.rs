@@ -104,18 +104,8 @@ impl Value {
             }
             Value::Bool(b) => Value::Data(Data::new(*b, None, env.world.read().registry())),
             Value::Void => anyhow::bail!("Cannot assign void value"),
-            Value::Query {
-                query,
-                typed_idents,
-            } => {
-                let query = query.to_owned();
-                let typed_idents = typed_idents.to_owned();
-                Value::Query {
-                    query,
-                    typed_idents,
-                }
-            }
-            Value::Entity(entity) => Value::Entity(*entity),
+            Value::Query { .. } => anyhow::bail!("Cannot assign query value"),
+            Value::Entity(_) => anyhow::bail!("Cannot assign entity value"),
             Value::Vec3(vec3) => Value::Data(Data::new(*vec3, None, env.world.read().registry())),
             Value::Vec4(vec4) => Value::Data(Data::new(*vec4, None, env.world.read().registry())),
             Value::Quat(quat) => Value::Data(Data::new(*quat, None, env.world.read().registry())),

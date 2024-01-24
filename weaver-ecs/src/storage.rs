@@ -54,6 +54,15 @@ impl<I: Index, V> Default for SparseSet<I, V> {
     }
 }
 
+impl<I: Index, V: Debug> Debug for SparseSet<I, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SparseSet")
+            .field("indices", &self.indices)
+            .field("dense", &self.dense)
+            .finish()
+    }
+}
+
 impl<I: Index, V> SparseSet<I, V> {
     pub fn new() -> Self {
         Self {
@@ -301,6 +310,7 @@ impl Column {
 }
 
 /// A unique combination of components. Also maintains a list of entities that have this combination.
+#[derive(Debug)]
 pub struct Archetype {
     pub(crate) id: usize,
     pub(crate) entities: SparseSet<DynamicId, ()>,
@@ -459,9 +469,6 @@ impl Components {
     ) {
         // the components of the entity are changing, therefore the archetype must change
         let components = if let Some(old_archetype) = self.entity_archetype_mut(entity.id()) {
-            // remove the entity from the old archetype
-            old_archetype.remove_entity(entity.id());
-
             // add the component to create the new archetype
             let mut components = old_archetype
                 .component_drain(entity.id())
@@ -480,9 +487,6 @@ impl Components {
     pub fn add_dynamic_component(&mut self, entity: &Entity, component: Data) {
         // the components of the entity are changing, therefore the archetype must change
         let components = if let Some(old_archetype) = self.entity_archetype_mut(entity.id()) {
-            // remove the entity from the old archetype
-            old_archetype.remove_entity(entity.id());
-
             // add the component to create the new archetype
             let mut components = old_archetype
                 .component_drain(entity.id())
@@ -698,7 +702,7 @@ impl Components {
 
     pub fn components_matching_access(
         &self,
-        access: QueryAccess,
+        access: &QueryAccess,
     ) -> SparseSet<Entity, ComponentMap<Data>> {
         self.archetypes
             .iter()

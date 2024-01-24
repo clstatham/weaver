@@ -100,7 +100,6 @@ return_stmt    = { return ~ expr? }
 func_stmt      = { func ~ ident ~ lparen ~ typed_args ~ rparen ~ (rarrow ~ type)? ~ block }
 impl_stmt      = { impl ~ capitalized_ident ~ block }
 typed_args     = { (typed_ident ~ comma)* ~ typed_ident? }
-typed_decls    = { ((var_typed_ident | let_typed_ident) ~ comma)* ~ (var_typed_ident | let_typed_ident)? }
 with_clause    = { with ~ lbrack ~ (type ~ comma)* ~ type? ~ rbrack }
 without_clause = { without ~ lbrack ~ (type ~ comma)* ~ type? ~ rbrack }
 
@@ -113,7 +112,8 @@ assign_expr      =  { (member_expr | ident) ~ (plus_eq | minus_eq | star_eq | sl
 decl_expr        =  { (var_ident | let_ident) ~ eq ~ expr }
 constructor_expr =  { type ~ lbrace ~ expr* ~ rbrace }
 if_expr          =  { if ~ expr ~ block ~ (elif ~ expr ~ block)* ~ (else ~ block)? }
-query_expr       =  { query ~ ident ~ lbrace ~ typed_decls ~ (with_clause | without_clause)* ~ rbrace }
+query_expr       =  { query ~ ident ~ lbrack ~ typed_decls ~ (with_clause | without_clause)* ~ rbrack }
+typed_decls      =  { (var_typed_ident | let_typed_ident)* }
 loop_expr        =  { loop ~ expr? ~ block }
 primary_expr     = _{ literal | query_expr | if_expr | loop_expr | constructor_expr | call_expr | decl_expr | assign_expr | member_expr | ident | block | (lparen ~ expr ~ rparen) }
 expr             =  { primary_expr ~ (infix ~ prefix? ~ primary_expr)* }
