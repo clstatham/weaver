@@ -4,8 +4,8 @@ use weaver_proc_macro::all_tuples;
 
 use crate::{
     component::Data,
-    id::{DynamicId, Registry},
     prelude::Entity,
+    registry::{DynamicId, Registry},
     storage::{Archetype, ComponentMap, ComponentSet, Components, SparseSet},
 };
 

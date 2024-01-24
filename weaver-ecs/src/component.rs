@@ -2,7 +2,7 @@ use std::{fmt::Debug, sync::Arc};
 
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 
-use crate::id::{DynamicId, Registry};
+use crate::registry::{DynamicId, Registry};
 
 pub trait Downcast: std::any::Any {
     fn as_any(&self) -> &dyn std::any::Any;

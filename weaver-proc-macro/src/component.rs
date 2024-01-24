@@ -25,7 +25,7 @@ pub fn derive_component(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
 
     let gen = quote! {
         impl weaver_ecs::component::Component for #name {
-            fn fields(&self, registry: &std::sync::Arc<weaver_ecs::id::Registry>) -> Vec<weaver_ecs::component::Data> {
+            fn fields(&self, registry: &std::sync::Arc<weaver_ecs::registry::Registry>) -> Vec<weaver_ecs::component::Data> {
                 vec![
                     #(weaver_ecs::component::Data::new(self.#field_names.clone(), Some(stringify!(#field_names)), registry)),*
                 ]

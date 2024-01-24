@@ -10,9 +10,9 @@ use typed_arena::Arena;
 
 use crate::{
     component::Data,
-    id::DynamicId,
     prelude::{Entity, SystemStage, World},
     query::{DynamicQueryParam, DynamicQueryParams, DynamicQueryRef},
+    registry::DynamicId,
     system::DynamicSystem,
 };
 
@@ -547,7 +547,7 @@ impl InterpreterContext {
 
         let entity = world.components.create_entity();
 
-        let mut fields = FxHashMap::default();
+        let mut fields = Vec::new();
 
         for arg in args {
             let (value, field_name) = if let Expr::Infix { op, lhs, rhs } = arg {
@@ -567,35 +567,33 @@ impl InterpreterContext {
             let value = value.value.to_owned();
 
             match &*value {
-                Value::Data(data) => {
-                    fields.insert(field_name.unwrap().to_owned(), data.to_owned());
+                // TODO: This clones the data as a reference, which could hurt us in the future
+                // if this data belongs to another entity. We should probably clone the data
+                // by value instead.
+                Value::Data(_data) => {
+                    // fields.push(data.to_owned());
+                    todo!("pass by value")
                 }
-                Value::DataMut(data) => {
-                    fields.insert(field_name.unwrap().to_owned(), data.to_owned());
+                Value::DataMut(_data) => {
+                    // fields.push(data.to_owned());
+                    todo!("pass by value")
                 }
                 Value::Int(int) => {
                     let data = Data::new(*int, field_name.as_deref(), world.registry());
-                    fields.insert(field_name.unwrap().to_owned(), data);
+                    fields.push(data);
                 }
                 Value::Float(float) => {
                     let data = Data::new(*float, field_name.as_deref(), world.registry());
-                    fields.insert(field_name.unwrap().to_owned(), data);
+                    fields.push(data);
                 }
                 Value::Entity(_) => anyhow::bail!("Cannot assign entity value"),
                 Value::Void => anyhow::bail!("Cannot assign void value"),
             }
         }
 
-        let component = Data::new_dynamic(
-            name,
-            None,
-            fields.values().cloned().collect(),
-            world.registry(),
-        );
+        let component = Data::new_dynamic(name, None, fields, world.registry());
 
-        world
-            .components
-            .add_dynamic_component(&entity, component, None);
+        world.components.add_dynamic_component(&entity, component);
 
         Ok(self.alloc_value(None, Arc::new(Value::Entity(entity))))
     }

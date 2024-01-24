@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{component::Data, id::Registry, prelude::*};
+use crate::{component::Data, prelude::*, registry::Registry};
 
 impl<T: Component> Component for Vec<T> {
     fn fields(&self, _registry: &Arc<Registry>) -> Vec<Data>

@@ -1,4 +1,4 @@
-use crate::{id::DynamicId, prelude::Component};
+use crate::{prelude::Component, registry::DynamicId};
 
 /// A unique identifier for a collection of components.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

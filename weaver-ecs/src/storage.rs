@@ -5,8 +5,8 @@ use crate::{
     component::Data,
     component::{Component, MetaData},
     entity::Entity,
-    id::{DynamicId, Registry, SortedMap},
     query::QueryAccess,
+    registry::{DynamicId, Registry, SortedMap},
 };
 
 pub type EntitySet = SparseSet<Entity, ()>;
@@ -477,12 +477,7 @@ impl Components {
         self.build_on_with_components(entity.id(), components, component_ids);
     }
 
-    pub fn add_dynamic_component(
-        &mut self,
-        entity: &Entity,
-        component: Data,
-        field_name: Option<&str>,
-    ) {
+    pub fn add_dynamic_component(&mut self, entity: &Entity, component: Data) {
         // the components of the entity are changing, therefore the archetype must change
         let components = if let Some(old_archetype) = self.entity_archetype_mut(entity.id()) {
             // remove the entity from the old archetype

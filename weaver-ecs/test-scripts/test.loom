@@ -1,13 +1,13 @@
 component Foo {
     a: int
-    b: float
+    b: int
 }
 
 @startup
 system Setup {
     spawn(Foo {
         a = 5
-        b = 2.0
+        b = 10
     })
 }
 

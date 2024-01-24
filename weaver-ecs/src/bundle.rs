@@ -4,7 +4,7 @@ use weaver_proc_macro::all_tuples;
 
 use crate::{
     component::{Component, Data},
-    id::{DynamicId, Registry},
+    registry::{DynamicId, Registry},
     storage::Components,
 };
 

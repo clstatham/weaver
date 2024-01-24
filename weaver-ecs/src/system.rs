@@ -1,8 +1,8 @@
 use std::{fmt::Debug, ops::Deref, sync::Arc};
 
 use crate::{
-    id::{DynamicId, Registry},
     query::{DynamicQuery, DynamicQueryParam, DynamicQueryParams},
+    registry::{DynamicId, Registry},
     resource::{DynRes, DynResMut},
     script::{interp::BuildOnWorld, Script},
 };

@@ -5,8 +5,8 @@ pub mod commands;
 pub mod component;
 pub mod component_impl;
 pub mod entity;
-pub mod id;
 pub mod query;
+pub mod registry;
 pub mod resource;
 pub mod script;
 pub mod storage;
@@ -43,17 +43,17 @@ mod tests {
     use crate::script::Script;
     use crate::system::DynamicSystem;
 
-    #[derive(Debug, Default, Component)]
+    #[derive(Debug, Default, Component, Clone)]
     struct A {
         a: u32,
     }
 
-    #[derive(Debug, Default, Component)]
+    #[derive(Debug, Default, Component, Clone)]
     struct B {
         b: u32,
     }
 
-    #[derive(Debug, Default, Component)]
+    #[derive(Debug, Default, Component, Clone)]
     struct C {
         c: u32,
     }

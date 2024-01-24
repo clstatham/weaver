@@ -7,9 +7,9 @@ use rustc_hash::FxHashMap;
 use crate::{
     bundle::Bundle,
     entity::Entity,
-    id::DynamicId,
     prelude::Component,
     query::{DynamicQueryBuilder, Query, QueryFilter, Queryable},
+    registry::DynamicId,
     resource::{Res, ResMut, Resource},
     storage::{Components, SparseSet},
     system::{DynamicSystem, System},
@@ -148,7 +148,7 @@ impl World {
         self.components.registry().get_named(name)
     }
 
-    pub fn registry(&self) -> &Arc<crate::id::Registry> {
+    pub fn registry(&self) -> &Arc<crate::registry::Registry> {
         self.components.registry()
     }
 }
