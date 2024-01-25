@@ -26,6 +26,7 @@ func create_player(pos: Vec3, hp: Int) -> Entity {
 @update
 system update {
     let res time: Time
+    time.update()
     let dt = time.delta_seconds
     print("dt =", dt)
     let dt = vec3(dt, dt, dt)

@@ -289,11 +289,6 @@ mod tests {
         World::run_stage(&world, SystemStage::Startup).unwrap();
 
         for _ in 0..10 {
-            {
-                let world = world.read();
-                let time = world.dynamic_resource(world.dynamic_id::<Time>()).unwrap();
-                time.call_method("update", &[time]).unwrap();
-            }
             World::run_stage(&world, SystemStage::Update).unwrap();
             std::thread::sleep(std::time::Duration::from_millis(100));
         }

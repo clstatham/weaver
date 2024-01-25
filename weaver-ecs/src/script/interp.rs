@@ -489,7 +489,29 @@ impl InterpreterContext {
 
                     Ok(self.alloc_value(None, Value::Void))
                 } else {
-                    anyhow::bail!("Invalid member access")
+                    // look for a method on the lhs
+                    let lhs = match lhs.value {
+                        Value::Data(data) => data,
+                        Value::DataMut(data) => data,
+                        _ => anyhow::bail!("Invalid member access"),
+                    };
+
+                    let mut args = Vec::new();
+                    // push a self arg
+                    args.push(lhs.to_owned());
+
+                    for arg in &rhs.args {
+                        let arg = self.interp_expr(env, arg)?.to_data(env)?;
+                        let arg = match arg {
+                            Value::Data(data) => data,
+                            Value::DataMut(data) => data,
+                            _ => anyhow::bail!("Invalid argument"),
+                        };
+                        args.push(arg);
+                    }
+
+                    let result = lhs.call_method(&rhs.name, &args.iter().collect::<Vec<_>>())?;
+                    Ok(self.alloc_value(None, Value::Data(result)))
                 }
             }
             _ => anyhow::bail!("Invalid member access"),
