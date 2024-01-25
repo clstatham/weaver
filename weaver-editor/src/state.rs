@@ -1,4 +1,4 @@
 use weaver::prelude::*;
 
-#[derive(Debug, Default, Resource)]
+#[derive(Debug, Default, Component)]
 pub struct EditorState {}

@@ -14,7 +14,6 @@ use std::{path::PathBuf, sync::Arc};
 
 use rustc_hash::FxHashMap;
 use weaver_ecs::prelude::*;
-use weaver_proc_macro::Resource;
 
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 
@@ -42,40 +41,7 @@ impl Default for AssetId {
     }
 }
 
-#[cfg(feature = "serde")]
-impl serde::Serialize for AssetId {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use path_slash::PathBufExt;
-        use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("AssetId", 2)?;
-        state.serialize_field("id", &self.id)?;
-        state.serialize_field("load_path", &self.load_path.to_slash().unwrap())?;
-        state.end()
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for AssetId {
-    fn deserialize<D>(deserializer: D) -> Result<AssetId, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(serde::Deserialize)]
-        struct AssetIdHelper {
-            id: u64,
-            load_path: String,
-        }
-
-        let helper = AssetIdHelper::deserialize(deserializer)?;
-
-        Ok(AssetId {
-            id: helper.id,
-            load_path: PathBuf::from(helper.load_path),
-        })
-    }
-}
-
-#[derive(Resource)]
+#[derive(Component)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssetServer {
     next_id: u64,

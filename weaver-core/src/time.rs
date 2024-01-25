@@ -1,6 +1,6 @@
-use weaver_proc_macro::Resource;
+use weaver_proc_macro::Component;
 
-#[derive(Resource)]
+#[derive(Component)]
 pub struct Time {
     start_time: std::time::Instant,
     last_update_time: std::time::Instant,

@@ -8,10 +8,9 @@ mod bindable_component;
 mod bundle;
 mod component;
 mod gpu_component;
-mod resource;
 mod system;
 
-#[proc_macro_derive(Component)]
+#[proc_macro_derive(Component, attributes(method))]
 pub fn derive_component(input: TokenStream) -> TokenStream {
     let ast = syn::parse_macro_input!(input as syn::DeriveInput);
     component::derive_component(&ast)
@@ -21,12 +20,6 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
 pub fn derive_bundle(input: TokenStream) -> TokenStream {
     let ast = syn::parse_macro_input!(input as syn::DeriveInput);
     bundle::derive_bundle(&ast)
-}
-
-#[proc_macro_derive(Resource)]
-pub fn derive_resource(input: TokenStream) -> TokenStream {
-    let ast = syn::parse_macro_input!(input as syn::DeriveInput);
-    resource::derive_resource(&ast)
 }
 
 #[proc_macro_derive(GpuComponent, attributes(gpu))]

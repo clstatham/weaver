@@ -7,7 +7,6 @@ pub mod component_impl;
 pub mod entity;
 pub mod query;
 pub mod registry;
-pub mod resource;
 pub mod script;
 pub mod storage;
 pub mod system;
@@ -20,12 +19,11 @@ pub mod prelude {
         component::Component,
         entity::Entity,
         query::{Query, Queryable, With, Without},
-        resource::{Res, ResMut, Resource},
         system::{System, SystemStage},
         world::World,
     };
     pub use rayon::prelude::*;
-    pub use weaver_proc_macro::{system, Bundle, Component, Resource};
+    pub use weaver_proc_macro::{system, Bundle, Component};
 }
 
 #[cfg(test)]
@@ -37,6 +35,7 @@ mod tests {
     use parking_lot::RwLock;
 
     use crate as weaver_ecs;
+    use crate::component::Data;
     use crate::prelude::*;
     use crate::query::DynamicQueryParams;
     use crate::script::interp::BuildOnWorld;
@@ -248,6 +247,36 @@ mod tests {
 
         // world.spawn((Health::default(), Player::default()));
 
+        #[derive(Debug, Component, Clone)]
+        #[method(update = "fn update(this: Time) {}")]
+        #[method(new = "fn new() {}")]
+        struct Time {
+            start_time: std::time::Instant,
+            last_update_time: std::time::Instant,
+            pub delta_seconds: f32,
+            pub total_seconds: f32,
+        }
+
+        impl Time {
+            pub fn new() -> Self {
+                Self {
+                    start_time: std::time::Instant::now(),
+                    last_update_time: std::time::Instant::now(),
+                    delta_seconds: 0.0,
+                    total_seconds: 0.0,
+                }
+            }
+
+            pub fn update(&mut self) {
+                let now = std::time::Instant::now();
+                self.delta_seconds = now.duration_since(self.last_update_time).as_secs_f32();
+                self.total_seconds = now.duration_since(self.start_time).as_secs_f32();
+                self.last_update_time = now;
+            }
+        }
+
+        world.add_dynamic_resource(Data::new(Time::new(), None, world.registry()));
+
         let world = Arc::new(RwLock::new(world));
 
         World::add_script(
@@ -260,7 +289,13 @@ mod tests {
         World::run_stage(&world, SystemStage::Startup).unwrap();
 
         for _ in 0..10 {
+            {
+                let world = world.read();
+                let time = world.dynamic_resource(world.dynamic_id::<Time>()).unwrap();
+                time.call_method("update", &[time]).unwrap();
+            }
             World::run_stage(&world, SystemStage::Update).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
     }
 }

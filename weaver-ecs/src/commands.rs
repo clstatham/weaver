@@ -3,9 +3,9 @@ use std::fmt::Debug;
 use crate as weaver_ecs;
 use crate::storage::TemporaryComponents;
 use crate::{bundle::Bundle, entity::Entity, world::World};
-use weaver_proc_macro::Resource;
+use weaver_proc_macro::Component;
 
-#[derive(Resource)]
+#[derive(Component)]
 pub struct Commands {
     created_components: TemporaryComponents,
     despawned_entities: Vec<Entity>,

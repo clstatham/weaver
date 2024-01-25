@@ -40,5 +40,5 @@ pub mod prelude {
         transform::Transform,
         ui::EguiContext,
     };
-    pub use weaver_proc_macro::{Bundle, Component, Resource};
+    pub use weaver_proc_macro::{Bundle, Component};
 }

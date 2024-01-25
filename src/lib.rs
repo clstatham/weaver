@@ -21,6 +21,6 @@ pub mod prelude {
         ui::{builtin::*, EguiContext},
     };
     pub use weaver_ecs::{self, prelude::*};
-    pub use weaver_proc_macro::{Bundle, Component, Resource};
+    pub use weaver_proc_macro::{Bundle, Component};
     pub use winit::event::MouseButton;
 }

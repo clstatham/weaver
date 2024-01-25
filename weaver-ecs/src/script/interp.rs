@@ -13,7 +13,7 @@ use crate::{
 };
 
 use super::{
-    parser::{Call, Component, Expr, Query, Scope, Statement, System, TypedIdent},
+    parser::{Call, Expr, Query, Scope, Statement, System, TypedIdent},
     value::{Value, ValueHandle},
     Script,
 };
@@ -147,6 +147,11 @@ impl InterpreterContext {
             ),
             Expr::Loop { condition, block } => self.interp_loop(env, condition.as_deref(), block),
             Expr::Query(query) => self.interp_query(env, query),
+            Expr::Res {
+                mutability,
+                ident,
+                res,
+            } => self.interp_res(env, *mutability, ident, res),
             _ => todo!("Implement other expressions: {:?}", expr),
         }
     }
@@ -192,18 +197,24 @@ impl InterpreterContext {
                 let x = match &x.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
+                    Value::Data(data) => *data.get_as::<f32>(),
+                    Value::DataMut(data) => *data.get_as::<f32>(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
                 let y = match &y.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
+                    Value::Data(data) => *data.get_as::<f32>(),
+                    Value::DataMut(data) => *data.get_as::<f32>(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
                 let z = match &z.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
+                    Value::Data(data) => *data.get_as::<f32>(),
+                    Value::DataMut(data) => *data.get_as::<f32>(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
@@ -224,24 +235,32 @@ impl InterpreterContext {
                 let x = match &x.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
+                    Value::Data(data) => *data.get_as::<f32>(),
+                    Value::DataMut(data) => *data.get_as::<f32>(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
                 let y = match &y.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
+                    Value::Data(data) => *data.get_as::<f32>(),
+                    Value::DataMut(data) => *data.get_as::<f32>(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
                 let z = match &z.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
+                    Value::Data(data) => *data.get_as::<f32>(),
+                    Value::DataMut(data) => *data.get_as::<f32>(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
                 let w = match &w.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
+                    Value::Data(data) => *data.get_as::<f32>(),
+                    Value::DataMut(data) => *data.get_as::<f32>(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
@@ -260,6 +279,8 @@ impl InterpreterContext {
                     let x = match &self.interp_expr(env, arg)?.value {
                         Value::Int(int) => *int as f32,
                         Value::Float(float) => *float,
+                        Value::Data(data) => *data.get_as::<f32>(),
+                        Value::DataMut(data) => *data.get_as::<f32>(),
                         _ => anyhow::bail!("Invalid argument"),
                     };
                     mat4.push(x);
@@ -282,14 +303,15 @@ impl InterpreterContext {
                     .ok_or(anyhow::anyhow!("Unknown function {}", name))?;
 
                 let mut args = Vec::new();
-                for arg in &call.args {
-                    args.push(self.interp_expr(env, arg)?);
+                for (arg, param) in call.args.iter().zip(func.params.iter()) {
+                    let mut value = self.interp_expr(env, arg)?;
+                    value.name = Some(param.name.as_str().to_owned());
+                    args.push(value);
                 }
 
                 let scope = env.push_scope(Some(self));
                 for (arg, param) in args.iter().zip(func.params.iter()) {
-                    let value = arg.value.to_owned();
-                    let value = value.to_data(env)?;
+                    let value = arg.value.to_data(env)?;
                     scope.alloc_value(Some(param.name.as_str()), value);
                 }
 
@@ -482,7 +504,6 @@ impl InterpreterContext {
         initial_value: &Expr,
     ) -> anyhow::Result<ValueHandle> {
         let value = self.interp_expr(env, initial_value)?;
-        self.heap.remove(&value.id); // move the value into the new variable
         let value = value.value.to_owned();
         let value = if mutability {
             match value {
@@ -527,7 +548,6 @@ impl InterpreterContext {
             } else {
                 anyhow::bail!("Invalid constructor argument");
             };
-            self.heap.remove(&value.id); // move the value into the new component
             let value = value.value.to_owned();
 
             match &value {
@@ -586,7 +606,7 @@ impl InterpreterContext {
             }
         }
 
-        let component = Data::new_dynamic(name, None, is_clone, fields, world.registry());
+        let component = Data::new_dynamic(name, None, is_clone, fields, vec![], world.registry());
 
         Ok(self.alloc_value(None, Value::DataMut(component)))
     }
@@ -785,6 +805,24 @@ impl InterpreterContext {
             },
         ))
     }
+
+    pub fn interp_res(
+        &mut self,
+        env: &RuntimeEnv,
+        mutability: bool,
+        ident: &str,
+        res: &str,
+    ) -> anyhow::Result<ValueHandle> {
+        let world = env.world.read();
+        let id = world.named_id(res);
+        let data = world.dynamic_resource(id)?.to_owned();
+        let value = if mutability {
+            Value::DataMut(data)
+        } else {
+            Value::Data(data)
+        };
+        Ok(self.alloc_value(Some(ident), value))
+    }
 }
 
 pub trait BuildOnWorld {
@@ -832,8 +870,8 @@ impl BuildOnWorld for Script {
                             .add_dynamic_system_to_stage(script, SystemStage::Update);
                     }
                 }
-                Scope::Component(ref component) => {
-                    component.build(world.clone())?;
+                Scope::Component(_component) => {
+                    todo!("Implement component registration")
                 }
                 Scope::Func(_) => {}
                 Scope::Impl(_) => {}
@@ -842,21 +880,6 @@ impl BuildOnWorld for Script {
         }
 
         Ok(())
-    }
-}
-
-impl BuildOnWorld for Component {
-    type Output = DynamicId;
-
-    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicId> {
-        let mut world = world.write();
-
-        let mut builder = world.components.create_component(&self.name);
-        for field in &self.fields {
-            builder = builder.dynamic_field(&field.name, &field.ty);
-        }
-
-        Ok(builder.build())
     }
 }
 

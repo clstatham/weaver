@@ -1,11 +1,11 @@
 use rustc_hash::FxHashSet;
-use weaver_proc_macro::Resource;
+use weaver_proc_macro::Component;
 
 pub use winit::{event::MouseButton, keyboard::KeyCode};
 
 use winit::keyboard::PhysicalKey;
 
-#[derive(Resource)]
+#[derive(Component)]
 pub struct Input {
     keys_pressed: FxHashSet<KeyCode>,
     keys_held: FxHashSet<KeyCode>,

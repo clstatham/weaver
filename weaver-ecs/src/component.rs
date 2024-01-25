@@ -1,4 +1,7 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{
+    fmt::{Debug, Display},
+    sync::Arc,
+};
 
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 
@@ -33,6 +36,26 @@ pub trait Component: Downcast + Send + Sync + 'static {
     fn fields(&self, registry: &Arc<Registry>) -> Vec<Data> {
         vec![]
     }
+
+    #[allow(unused)]
+    fn methods(&self, registry: &Arc<Registry>) -> Vec<MethodWrapper> {
+        vec![]
+    }
+
+    #[allow(unused)]
+    fn into_dynamic_data(self, field_name: Option<&str>, registry: &Arc<Registry>) -> Data
+    where
+        Self: Sized,
+    {
+        Data::new_dynamic(
+            registry.static_name::<Self>().as_str(),
+            field_name,
+            impls_clone::<Self>(),
+            self.fields(registry),
+            self.methods(registry),
+            registry,
+        )
+    }
 }
 
 impl Component for () {}
@@ -52,6 +75,59 @@ impl Component for isize {}
 impl Component for f32 {}
 impl Component for f64 {}
 impl Component for String {}
+
+pub trait Method: Send + Sync + 'static {
+    fn call(&self, args: &[&Data]) -> anyhow::Result<Data>;
+}
+
+impl<F> Method for F
+where
+    F: Fn(&[&Data]) -> anyhow::Result<Data> + Send + Sync + 'static,
+{
+    fn call(&self, args: &[&Data]) -> anyhow::Result<Data> {
+        self(args)
+    }
+}
+
+#[derive(Clone)]
+pub struct MethodWrapper {
+    name: String,
+    method: Arc<dyn Method>,
+    num_args: usize,
+}
+
+impl MethodWrapper {
+    pub fn new(name: &str, num_args: usize, method: Arc<dyn Method>) -> Self {
+        Self {
+            name: name.to_string(),
+            num_args,
+            method,
+        }
+    }
+
+    pub fn from_method<F: Method + Send + Sync + 'static>(
+        name: &str,
+        num_args: usize,
+        f: F,
+    ) -> Self {
+        Self::new(name, num_args, Arc::new(f))
+    }
+
+    pub fn num_args(&self) -> usize {
+        self.num_args
+    }
+
+    pub fn call(&self, args: &[&Data]) -> anyhow::Result<Data> {
+        if args.len() != self.num_args {
+            return Err(anyhow::anyhow!(
+                "Incorrect number of arguments: {} (expected {})",
+                args.len(),
+                self.num_args
+            ));
+        }
+        self.method.call(args)
+    }
+}
 
 macro_rules! data_arithmetic {
     ($registry:ident, $lhs:ident, $op:tt, $rhs:ident; $($ty:ty),*) => {
@@ -88,50 +164,6 @@ macro_rules! try_all_types {
         )*
     };
 }
-
-#[derive(Clone)]
-pub struct MetaData {
-    pub(crate) type_id: DynamicId,
-    pub(crate) type_name: String,
-    pub(crate) fields: Vec<DynamicId>,
-}
-
-impl MetaData {
-    pub fn new<T: Component>(registry: &Registry) -> Self {
-        let type_id = registry.get_static::<T>();
-        let fields = T::field_ids(registry);
-        Self {
-            type_id,
-            type_name: registry.static_name::<T>(),
-            fields,
-        }
-    }
-
-    pub fn new_meta(type_name: &str, fields: Vec<DynamicId>, registry: &Registry) -> Self {
-        let type_id = registry.get_named(type_name);
-        Self {
-            type_id,
-            type_name: type_name.to_string(),
-            fields,
-        }
-    }
-
-    #[inline]
-    pub const fn type_id(&self) -> DynamicId {
-        self.type_id
-    }
-
-    #[inline]
-    pub fn type_name(&self) -> &str {
-        &self.type_name
-    }
-
-    #[inline]
-    pub fn fields(&self) -> &[DynamicId] {
-        &self.fields
-    }
-}
-
 pub const fn impls_clone<T: ?Sized>() -> bool {
     impls::impls!(T: Clone)
 }
@@ -143,15 +175,18 @@ pub struct Data {
     pub(crate) type_name: String,
     pub(crate) field_name: Option<String>,
     data: Arc<AtomicRefCell<dyn Component>>,
-    pub(crate) fields: Vec<Data>,
+    fields: Vec<Data>,
+    methods: Vec<MethodWrapper>,
     registry: Arc<Registry>,
     is_clone: bool,
+    is_dynamic: bool,
 }
 
 impl Data {
     pub fn new<T: Component>(data: T, field_name: Option<&str>, registry: &Arc<Registry>) -> Self {
         let type_id = registry.get_static::<T>();
         let fields = data.fields(registry);
+        let methods = data.methods(registry);
         let data = Arc::new(AtomicRefCell::new(data));
         Self {
             data,
@@ -161,6 +196,8 @@ impl Data {
             fields,
             registry: registry.clone(),
             is_clone: impls_clone::<T>(),
+            methods,
+            is_dynamic: false,
         }
     }
 
@@ -169,6 +206,7 @@ impl Data {
         field_name: Option<&str>,
         is_clone: bool,
         fields: Vec<Data>,
+        methods: Vec<MethodWrapper>,
         registry: &Arc<Registry>,
     ) -> Self {
         let type_id = registry.get_named(type_name);
@@ -180,6 +218,8 @@ impl Data {
             fields,
             registry: registry.clone(),
             is_clone,
+            methods,
+            is_dynamic: true,
         }
     }
 
@@ -241,18 +281,26 @@ impl Data {
     }
 
     #[inline]
-    pub fn fields(&self) -> &[Data] {
-        &self.fields
+    pub fn fields(&self) -> Vec<Data> {
+        if self.is_dynamic {
+            return self.fields.to_owned();
+        }
+
+        let data = self.borrow();
+        data.fields(&self.registry)
     }
 
     #[inline]
-    pub fn field_by_id(&self, id: DynamicId) -> Option<&Data> {
-        self.fields.iter().find(|field| field.type_id == id)
+    pub fn field_by_id(&self, id: DynamicId) -> Option<Data> {
+        self.fields()
+            .iter()
+            .find(|field| field.type_id == id)
+            .cloned()
     }
 
     #[inline]
-    pub fn field_by_name<'a>(&'a self, name: &str) -> Option<&'a Data> {
-        self.fields
+    pub fn field_by_name(&self, name: &str) -> Option<Data> {
+        self.fields()
             .iter()
             .filter(|field| field.field_name().is_some())
             .find(|field| {
@@ -262,6 +310,26 @@ impl Data {
                     false
                 }
             })
+            .cloned()
+    }
+
+    #[inline]
+    pub fn method_by_name(&self, name: &str) -> Option<&Arc<dyn Method>> {
+        self.methods.iter().find_map(|method| {
+            if method.name == name {
+                Some(&method.method)
+            } else {
+                None
+            }
+        })
+    }
+
+    #[inline]
+    pub fn call_method(&self, name: &str, args: &[&Data]) -> anyhow::Result<Data> {
+        if let Some(method) = self.method_by_name(name) {
+            return method.call(args);
+        }
+        Err(anyhow::anyhow!("Method does not exist"))
     }
 
     #[inline]
@@ -596,7 +664,22 @@ impl Debug for Data {
             .field("id", &self.type_id)
             .field("type_name", &self.type_name)
             .field("field_name", &self.field_name)
-            .field("fields", &self.fields)
+            .field("fields", &self.fields())
+            .field(
+                "methods",
+                &self
+                    .methods
+                    .iter()
+                    .map(|method| method.name.clone())
+                    .collect::<Vec<_>>(),
+            )
             .finish()
+    }
+}
+
+impl Display for Data {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.display(f);
+        Ok(())
     }
 }

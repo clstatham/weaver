@@ -1,9 +1,7 @@
-use std::{fmt::Debug, ops::Deref, sync::Arc};
+use std::{fmt::Debug, sync::Arc};
 
 use crate::{
-    query::{DynamicQuery, DynamicQueryParam, DynamicQueryParams},
     registry::{DynamicId, Registry},
-    resource::{DynRes, DynResMut},
     script::{interp::BuildOnWorld, Script},
 };
 
@@ -186,110 +184,13 @@ impl DynamicSystemBuilder {
     }
 }
 
-pub enum ScriptBuilderParamType {
-    Query(DynamicQueryParams),
-    Res(DynamicId),
-    ResMut(DynamicId),
-    Commands,
-}
-
-pub struct ScriptBuilderParam {
-    pub name: String,
-    pub param: ScriptBuilderParamType,
-}
-
-#[derive(Clone)]
-pub enum ScriptParamType<'a> {
-    Query(Arc<DynamicQuery>),
-    Res(Arc<DynRes<'a>>),
-    ResMut(Arc<DynResMut<'a>>),
-    // Commands(Commands), // todo
-}
-
-#[derive(Clone)]
-pub struct ScriptParam<'a> {
-    pub name: String,
-    pub param: ScriptParamType<'a>,
-}
-
-impl<'a> Deref for ScriptParam<'a> {
-    type Target = ScriptParamType<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.param
-    }
-}
-
-impl<'a> ScriptParamType<'a> {
-    pub fn unwrap_query(&self) -> &DynamicQuery {
-        match self {
-            ScriptParamType::Query(query) => query,
-            _ => panic!("Expected ScriptParams::Query"),
-        }
-    }
-
-    pub fn unwrap_res(&self) -> &DynRes<'a> {
-        match self {
-            ScriptParamType::Res(res) => res,
-            _ => panic!("Expected ScriptParams::Res"),
-        }
-    }
-
-    pub fn unwrap_res_mut(&self) -> &DynResMut<'a> {
-        match self {
-            ScriptParamType::ResMut(res) => res,
-            _ => panic!("Expected ScriptParams::ResMut"),
-        }
-    }
-}
-
 pub struct ScriptSystemBuilder {
     name: String,
-    params: Vec<ScriptBuilderParam>,
 }
 
 impl ScriptSystemBuilder {
     pub fn new(name: &str) -> Self {
-        Self {
-            name: name.into(),
-            params: Vec::new(),
-        }
-    }
-
-    #[must_use]
-    pub fn query(mut self, name: &str, query: DynamicQueryParams) -> Self {
-        self.params.push(ScriptBuilderParam {
-            name: name.into(),
-            param: ScriptBuilderParamType::Query(query),
-        });
-        self
-    }
-
-    #[must_use]
-    pub fn res(mut self, name: &str, resource: DynamicId) -> Self {
-        self.params.push(ScriptBuilderParam {
-            name: name.into(),
-            param: ScriptBuilderParamType::Res(resource),
-        });
-        self
-    }
-
-    #[must_use]
-    pub fn res_mut(mut self, name: &str, resource: DynamicId) -> Self {
-        self.params.push(ScriptBuilderParam {
-            name: name.into(),
-            param: ScriptBuilderParamType::ResMut(resource),
-        });
-        self
-    }
-
-    #[must_use]
-    pub fn commands(mut self) -> Self {
-        self.params.push(ScriptBuilderParam {
-            name: "commands".into(),
-            param: ScriptBuilderParamType::Commands,
-        });
-        self
+        Self { name: name.into() }
     }
 
     #[must_use]
@@ -297,67 +198,13 @@ impl ScriptSystemBuilder {
     where
         F: Fn() -> anyhow::Result<()> + Send + Sync + 'static,
     {
-        let mut components_read = Vec::new();
-        let mut components_written = Vec::new();
-        let mut resources_read = Vec::new();
-        let mut resources_written = Vec::new();
+        let components_read = Vec::new();
+        let components_written = Vec::new();
+        let resources_read = Vec::new();
+        let resources_written = Vec::new();
 
-        for param in self.params.iter() {
-            match &param.param {
-                ScriptBuilderParamType::Query(query) => {
-                    for param in query.iter() {
-                        match param {
-                            DynamicQueryParam::Read(component) => {
-                                components_read.push(*component);
-                            }
-                            DynamicQueryParam::Write(component) => {
-                                components_written.push(*component);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                ScriptBuilderParamType::Res(res) => {
-                    resources_read.push(*res);
-                }
-                ScriptBuilderParamType::ResMut(res) => {
-                    resources_written.push(*res);
-                }
-                ScriptBuilderParamType::Commands => {}
-            }
-        }
-
-        for param in self.params.iter() {
-            match &param.param {
-                ScriptBuilderParamType::Query(query) => {
-                    // check it's compatible with all the other queries
-                    for other_param in self.params.iter() {
-                        if let ScriptBuilderParamType::Query(other_query) = &other_param.param {
-                            if query == other_query {
-                                continue;
-                            }
-                            if !query.access().check_compatibility(&other_query.access()) {
-                                panic!(
-                                    "Queries {:?} and {:?} are incompatible",
-                                    query, other_query
-                                );
-                            }
-                        }
-                    }
-                }
-                ScriptBuilderParamType::Res(res) => {
-                    if resources_written.contains(res) {
-                        panic!("Resource {:?} is both read and written", res);
-                    }
-                }
-                ScriptBuilderParamType::ResMut(res) => {
-                    if resources_read.contains(res) {
-                        panic!("Resource {:?} is both read and written", res);
-                    }
-                }
-                ScriptBuilderParamType::Commands => {}
-            }
-        }
+        // todo: add a way to specify which components and resources are read and written by the script
+        // this is necessary to run scripts in parallel
 
         DynamicSystem::new(
             self.name,

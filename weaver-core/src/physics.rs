@@ -1,24 +1,24 @@
 use std::fmt::Debug;
 
 use rapier3d::prelude::*;
-use weaver_proc_macro::{Component, Resource};
+use weaver_proc_macro::Component;
 
 use super::transform::Transform;
 
-#[derive(Resource)]
+#[derive(Component)]
 pub struct RapierContext {
-    pub gravity: Vector<f32>,
-    pub integration_parameters: IntegrationParameters,
-    pub physics_pipeline: PhysicsPipeline,
-    pub broad_phase: BroadPhase,
-    pub narrow_phase: NarrowPhase,
-    pub bodies: RigidBodySet,
-    pub colliders: ColliderSet,
-    pub ccd_solver: CCDSolver,
-    pub island_manager: IslandManager,
-    pub query_pipeline: QueryPipeline,
-    pub impulse_joint_set: ImpulseJointSet,
-    pub multibody_joint_set: MultibodyJointSet,
+    pub(crate) gravity: Vector<f32>,
+    pub(crate) integration_parameters: IntegrationParameters,
+    pub(crate) physics_pipeline: PhysicsPipeline,
+    pub(crate) broad_phase: BroadPhase,
+    pub(crate) narrow_phase: NarrowPhase,
+    pub(crate) bodies: RigidBodySet,
+    pub(crate) colliders: ColliderSet,
+    pub(crate) ccd_solver: CCDSolver,
+    pub(crate) island_manager: IslandManager,
+    pub(crate) query_pipeline: QueryPipeline,
+    pub(crate) impulse_joint_set: ImpulseJointSet,
+    pub(crate) multibody_joint_set: MultibodyJointSet,
 }
 
 impl RapierContext {

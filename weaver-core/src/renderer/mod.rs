@@ -3,7 +3,6 @@ use std::{borrow::Cow, io::Read, sync::Arc};
 use egui_wgpu::renderer::ScreenDescriptor;
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
 use parking_lot::RwLock;
-use weaver_proc_macro::Resource;
 use winit::window::Window;
 
 use weaver_ecs::prelude::*;
@@ -122,7 +121,7 @@ macro_rules! include_shader {
     };
 }
 
-#[derive(Resource)]
+#[derive(Component)]
 #[allow(dead_code)]
 pub struct Renderer {
     surface: wgpu::Surface,
@@ -139,12 +138,12 @@ pub struct Renderer {
     normal_texture: wgpu::Texture,
     normal_texture_view: wgpu::TextureView,
 
-    pub hdr_pass: HdrRenderPass,
-    pub pbr_pass: PbrRenderPass,
-    pub sky_pass: SkyRenderPass,
-    pub shadow_pass: OmniShadowRenderPass,
-    pub doodad_pass: DoodadRenderPass,
-    pub extra_passes: Vec<Box<dyn pass::Pass>>,
+    hdr_pass: HdrRenderPass,
+    pbr_pass: PbrRenderPass,
+    sky_pass: SkyRenderPass,
+    shadow_pass: OmniShadowRenderPass,
+    doodad_pass: DoodadRenderPass,
+    extra_passes: Vec<Box<dyn pass::Pass>>,
 
     resource_manager: Arc<GpuResourceManager>,
     bind_group_layout_cache: BindGroupLayoutCache,

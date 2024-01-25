@@ -2,8 +2,8 @@ use std::{fmt::Debug, sync::Arc};
 
 use crate::{
     bundle::Bundle,
+    component::Component,
     component::Data,
-    component::{Component, MetaData},
     entity::Entity,
     query::QueryAccess,
     registry::{DynamicId, Registry, SortedMap},
@@ -380,47 +380,6 @@ impl Archetype {
     }
 }
 
-pub struct ComponentBuilder<'a> {
-    components: &'a mut Components,
-    name: String,
-    pub(crate) fields: Vec<(String, String)>,
-}
-
-impl<'a> ComponentBuilder<'a> {
-    pub fn new(components: &'a mut Components, name: &str) -> Self {
-        Self {
-            components,
-            name: name.to_string(),
-            fields: Vec::new(),
-        }
-    }
-
-    #[must_use]
-    pub fn static_field<T: Component>(mut self, name: &str) -> Self {
-        let type_name = self.components.registry.static_name::<T>();
-        self.fields.push((name.to_string(), type_name));
-        self
-    }
-
-    #[must_use]
-    pub fn dynamic_field(mut self, name: &str, type_name: &str) -> Self {
-        self.fields.push((name.to_string(), type_name.to_string()));
-        self
-    }
-
-    #[must_use]
-    pub fn build(self) -> DynamicId {
-        let fields = self.fields.clone();
-        let mut field_ids = Vec::new();
-        for (_field_name, field_type_name) in fields {
-            let field_type_id = self.components.registry.get_named(&field_type_name);
-            field_ids.push(field_type_id);
-        }
-        let data = MetaData::new_meta(&self.name, field_ids, &self.components.registry);
-        data.type_id()
-    }
-}
-
 #[derive(Default)]
 pub struct Components {
     registry: Arc<Registry>,
@@ -444,10 +403,6 @@ impl Components {
         self.entity_generations.insert(id, entity.generation());
 
         entity
-    }
-
-    pub fn create_component(&mut self, type_name: &str) -> ComponentBuilder {
-        ComponentBuilder::new(self, type_name)
     }
 
     pub fn entity(&self, id: DynamicId) -> Option<Entity> {

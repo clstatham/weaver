@@ -1,12 +1,12 @@
-use weaver_proc_macro::Resource;
+use weaver_proc_macro::Component;
 
 use crate::color::Color;
 
 pub const MAX_DOODADS: usize = 100;
 
-#[derive(Default, Resource)]
+#[derive(Default, Component)]
 pub struct Doodads {
-    pub doodads: Vec<Doodad>,
+    pub(crate) doodads: Vec<Doodad>,
     pub locked: bool,
 }
 
@@ -40,7 +40,7 @@ pub enum Doodad {
     Cone(Cone),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Component)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Cube {
     pub position: glam::Vec3,
@@ -76,7 +76,7 @@ impl Default for Cube {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Component)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Cone {
     pub position: glam::Vec3,

@@ -1,26 +1,42 @@
 @startup
 system setup {
+    create_player(vec3(0, 0, 0), 100)
+    create_player(vec3(0, 0, 0), 100)
     spawn(
         Player {
-            pos = vec3(0, 0, 0)
+            pos = vec3(10, 10, 10)
+            vel = vec3(0, 0, 0)
+        },
+        Marker {},
+    )
+}
+
+func create_player(pos: Vec3, hp: Int) -> Entity {
+    spawn(
+        Player {
+            pos = pos
             vel = vec3(0, 0, 0)
         },
         Health {
-            hp = 100
+            hp = hp
         },
     )
 }
 
 @update
 system update {
-    let dt = 1.0 / 60.0
+    let res time: Time
+    let dt = time.delta_seconds
+    print("dt =", dt)
+    let dt = vec3(dt, dt, dt)
 
     loop query _ [
         var player: Player
-        let health: Health
+        
+        with[Marker]
     ] {
-        player.vel += vec3(0, -9.81, 0) * vec3(dt, dt, dt)
-        player.pos += player.vel * vec3(dt, dt, dt)
+        player.vel += vec3(0, -9.81, 0) * dt
+        player.pos += player.vel * dt
         print("player =", player)
     }
 }

@@ -1,7 +1,7 @@
 use egui::Context;
 use egui_wgpu::renderer::ScreenDescriptor;
 use egui_winit::State;
-use weaver_proc_macro::Resource;
+use weaver_proc_macro::Component;
 use winit::window::Window;
 
 use super::texture::{TextureFormat, WindowTexture};
@@ -13,7 +13,7 @@ pub mod builtin {
 
     use super::*;
 
-    #[derive(Resource)]
+    #[derive(Component)]
     pub struct FpsDisplay {
         last_frame: std::time::Instant,
         last_update: std::time::Instant,
@@ -88,7 +88,7 @@ pub mod builtin {
     }
 }
 
-#[derive(Resource)]
+#[derive(Component)]
 pub struct EguiContext {
     state: State,
     renderer: egui_wgpu::Renderer,

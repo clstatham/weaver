@@ -65,6 +65,11 @@ pub enum Expr {
         block: Box<Expr>,
     },
     Query(Query),
+    Res {
+        mutability: bool,
+        ident: String,
+        res: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -367,12 +372,12 @@ impl LoomParser {
         let mut without = Vec::new();
         for pair in pair {
             match pair.as_rule() {
-                Rule::with => {
+                Rule::with_clause => {
                     let mut inner = pair.into_inner();
                     let name = inner.next().unwrap();
                     with.push(name.as_str().to_string());
                 }
-                Rule::without => {
+                Rule::without_clause => {
                     let mut inner = pair.into_inner();
                     let name = inner.next().unwrap();
                     without.push(name.as_str().to_string());
@@ -425,6 +430,8 @@ impl LoomParser {
                 Rule::if_expr => self.parse_if_expr(primary),
                 Rule::loop_expr => self.parse_loop_expr(primary),
                 Rule::query_expr => self.parse_query_expr(primary),
+                Rule::var_res => self.parse_var_res(primary),
+                Rule::let_res => self.parse_let_res(primary),
                 _ => panic!("Unexpected rule: {:?}", primary.as_rule()),
             })
             .map_prefix(|op, rhs| {
@@ -678,16 +685,49 @@ impl LoomParser {
     }
 
     fn parse_ident(&mut self, pair: Pair<Rule>) -> String {
-        assert!(matches!(
-            pair.as_rule(),
-            Rule::ident | Rule::capitalized_ident
-        ));
+        assert!(
+            matches!(pair.as_rule(), Rule::ident | Rule::capitalized_ident,),
+            "{:?}",
+            pair.as_rule()
+        );
         pair.as_str().to_string()
     }
 
     fn parse_type(&mut self, pair: Pair<Rule>) -> String {
         assert_eq!(pair.as_rule(), Rule::r#type);
         pair.as_str().to_string()
+    }
+
+    fn parse_var_res(&mut self, pair: Pair<Rule>) -> Expr {
+        assert_eq!(pair.as_rule(), Rule::var_res);
+        let mut inner = pair.into_inner();
+        let ident = inner.next().unwrap();
+        let res = inner.next().unwrap();
+
+        let ident = self.parse_ident(ident);
+        let res = self.parse_type(res);
+
+        Expr::Res {
+            mutability: true,
+            ident,
+            res,
+        }
+    }
+
+    fn parse_let_res(&mut self, pair: Pair<Rule>) -> Expr {
+        assert_eq!(pair.as_rule(), Rule::let_res);
+        let mut inner = pair.into_inner();
+        let ident = inner.next().unwrap();
+        let res = inner.next().unwrap();
+
+        let ident = self.parse_ident(ident);
+        let res = self.parse_type(res);
+
+        Expr::Res {
+            mutability: false,
+            ident,
+            res,
+        }
     }
 
     fn parse_var_typed_ident(&mut self, pair: Pair<Rule>) -> TypedIdent {

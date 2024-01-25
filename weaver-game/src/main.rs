@@ -20,7 +20,7 @@ pub mod materials;
 pub mod npc;
 pub mod player;
 
-#[derive(Resource, Default)]
+#[derive(Component, Default)]
 pub struct State {
     pub lights: Vec<Entity>,
     pub light_intensity: f32,
@@ -39,7 +39,6 @@ fn update(
     mut asset_server: ResMut<AssetServer>,
     mut ctx: ResMut<EguiContext>,
     mut fps_display: ResMut<FpsDisplay>,
-    mut renderer: ResMut<Renderer>,
     mut state: ResMut<State>,
     mut point_lights: Query<&mut PointLight>,
     mut wood_tiles: Query<&mut Material, With<WoodTile>>,
@@ -69,7 +68,6 @@ fn update(
             .map(|x| (x.roughness, x.metallic))
             .unwrap_or((0.0, 0.0));
 
-        let mut shadow_pass_enabled = renderer.shadow_pass.is_enabled();
         let mut n_lights = state.lights.len();
         let mut light_intensity = state.light_intensity;
         let mut light_radius = state.light_radius;
@@ -77,9 +75,6 @@ fn update(
         egui::Window::new("Settings")
             .default_width(200.0)
             .show(ctx, |ui| {
-                ui.heading("Renderer");
-                ui.checkbox(&mut shadow_pass_enabled, "Shadows");
-
                 ui.heading("Lights");
                 ui.add(egui::Slider::new(&mut n_lights, 0..=MAX_LIGHTS).text("Count"));
                 ui.add(egui::Slider::new(&mut light_intensity, 0.0..=100.0).text("Intensity"));
@@ -102,14 +97,6 @@ fn update(
                 ui.heading("NPCs");
                 ui.add(egui::Slider::new(&mut n_npcs, 0..=MAX_MESHES - 2).text("Count"));
             });
-
-        if shadow_pass_enabled != renderer.shadow_pass.is_enabled() {
-            if shadow_pass_enabled {
-                renderer.shadow_pass.enable();
-            } else {
-                renderer.shadow_pass.disable();
-            }
-        }
 
         for mut material in woods.iter() {
             material.roughness = wood_roughness;
@@ -239,10 +226,9 @@ fn debug_lights(mut doodads: ResMut<Doodads>, mut point_lights: Query<&PointLigh
 fn setup(
     mut commands: Commands,
     mut asset_server: ResMut<AssetServer>,
-    mut renderer: ResMut<Renderer>,
     hdr_loader: Res<HdrLoader>,
 ) {
-    renderer.shadow_pass.disable();
+    // renderer.shadow_pass.disable();
     // renderer.sky_pass.disable();
 
     let skybox = asset_server.load_skybox("meadow_2k.hdr", &hdr_loader)?;
@@ -295,10 +281,9 @@ fn setup(
 fn setup_2(
     mut commands: Commands,
     mut asset_server: ResMut<AssetServer>,
-    mut renderer: ResMut<Renderer>,
     hdr_loader: Res<HdrLoader>,
 ) {
-    renderer.shadow_pass.disable();
+    // renderer.shadow_pass.disable();
     // renderer.sky_pass.disable();
 
     let skybox = asset_server.load_skybox("meadow_2k.hdr", &hdr_loader)?;

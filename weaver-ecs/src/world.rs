@@ -1,16 +1,17 @@
 use std::{path::Path, sync::Arc};
 
+use atomic_refcell::{AtomicRef, AtomicRefMut};
 use parking_lot::RwLock;
 use petgraph::prelude::NodeIndex;
 use rustc_hash::FxHashMap;
 
 use crate::{
     bundle::Bundle,
+    component::Data,
     entity::Entity,
     prelude::Component,
     query::{DynamicQueryBuilder, Query, QueryFilter, Queryable},
     registry::DynamicId,
-    resource::{Res, ResMut, Resource},
     storage::{Components, SparseSet},
     system::{DynamicSystem, System},
     system::{SystemGraph, SystemStage},
@@ -19,7 +20,7 @@ use crate::{
 pub struct World {
     pub(crate) components: Components,
     pub(crate) systems: FxHashMap<SystemStage, Arc<RwLock<SystemGraph>>>,
-    pub(crate) resources: SparseSet<DynamicId, Arc<RwLock<dyn Resource>>>,
+    pub(crate) resources: SparseSet<DynamicId, Data>,
 }
 
 impl World {
@@ -56,36 +57,59 @@ impl World {
         self.components.despawn(entity.id());
     }
 
-    pub fn add_resource<T: Resource>(&mut self, resource: T) -> anyhow::Result<()> {
+    pub fn add_resource<T: Component>(&mut self, resource: T) -> anyhow::Result<()> {
         if self.has_resource::<T>() {
             return Err(anyhow::anyhow!("Resource already exists"));
         }
-        let resource = Arc::new(RwLock::new(resource));
-        let id = self.components.registry().get_static::<T>();
-        self.resources.insert(id, resource);
+        let resource = resource.into_dynamic_data(None, self.registry());
+        self.resources.insert(resource.type_id(), resource);
         Ok(())
     }
 
-    pub fn read_resource<T: Resource>(&self) -> anyhow::Result<Res<T>> {
-        let id = self.components.registry().get_static::<T>();
+    pub fn add_dynamic_resource(&mut self, resource: Data) -> anyhow::Result<()> {
+        if self.resources.contains(&resource.type_id()) {
+            return Err(anyhow::anyhow!("Resource already exists"));
+        }
+        self.resources.insert(resource.type_id(), resource);
+        Ok(())
+    }
+
+    pub fn read_resource<T: Component>(&self) -> anyhow::Result<AtomicRef<'_, T>> {
+        let id = self.registry().get_static::<T>();
         let resource = self
             .resources
             .get(&id)
             .ok_or(anyhow::anyhow!("Resource does not exist"))?;
-        Ok(Res::new(resource.read()))
+        Ok(resource.get_as())
     }
 
-    pub fn write_resource<T: Resource>(&self) -> anyhow::Result<ResMut<T>> {
-        let id = self.components.registry().get_static::<T>();
+    pub fn write_resource<T: Component>(&self) -> anyhow::Result<AtomicRefMut<'_, T>> {
+        let id = self.registry().get_static::<T>();
         let resource = self
             .resources
             .get(&id)
             .ok_or(anyhow::anyhow!("Resource does not exist"))?;
 
-        Ok(ResMut::new(resource.write()))
+        Ok(resource.get_as_mut())
     }
 
-    pub fn has_resource<T: Resource>(&self) -> bool {
+    pub fn dynamic_resource(&self, id: DynamicId) -> anyhow::Result<&Data> {
+        let resource = self
+            .resources
+            .get(&id)
+            .ok_or(anyhow::anyhow!("Resource does not exist"))?;
+        Ok(resource)
+    }
+
+    pub fn dynamic_resource_mut(&mut self, id: DynamicId) -> anyhow::Result<&mut Data> {
+        let resource = self
+            .resources
+            .get_mut(&id)
+            .ok_or(anyhow::anyhow!("Resource does not exist"))?;
+        Ok(resource)
+    }
+
+    pub fn has_resource<T: Component>(&self) -> bool {
         let id = self.components.registry().get_static::<T>();
         self.resources.contains(&id)
     }

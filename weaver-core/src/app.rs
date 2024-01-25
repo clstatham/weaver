@@ -11,9 +11,9 @@ use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use crate::renderer::{compute::hdr_loader::HdrLoader, Renderer};
 
-#[derive(Resource)]
+#[derive(Component, Clone)]
 pub struct Window {
-    pub window: winit::window::Window,
+    window: Arc<winit::window::Window>,
     pub fps_mode: bool,
 }
 
@@ -72,7 +72,7 @@ impl App {
         world.write().add_resource(asset_server)?;
 
         world.write().add_resource(Window {
-            window,
+            window: Arc::new(window),
             fps_mode: false,
         })?;
 
@@ -83,7 +83,7 @@ impl App {
         Ok(Self { event_loop, world })
     }
 
-    pub fn add_resource<T: Resource>(&self, resource: T) -> anyhow::Result<()> {
+    pub fn add_resource<T: Component>(&self, resource: T) -> anyhow::Result<()> {
         self.world.write().add_resource(resource)
     }
 
