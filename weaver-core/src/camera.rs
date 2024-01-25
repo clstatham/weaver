@@ -41,6 +41,10 @@ impl From<&Camera> for CameraUniform {
 
 #[derive(Component, GpuComponent, BindableComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[method(default = "fn() -> Camera")]
+#[method(
+    perspective_lookat = "fn(glam::Vec3, glam::Vec3, glam::Vec3, f32, f32, f32, f32) -> Camera"
+)]
 #[gpu(update = "update")]
 pub struct Camera {
     pub view_matrix: glam::Mat4,
@@ -72,6 +76,21 @@ impl Camera {
         }
     }
 
+    pub fn perspective_lookat(
+        eye: glam::Vec3,
+        center: glam::Vec3,
+        up: glam::Vec3,
+        fov: f32,
+        aspect: f32,
+        near: f32,
+        far: f32,
+    ) -> Self {
+        Self::new(
+            glam::Mat4::look_at_rh(eye, center, up),
+            glam::Mat4::perspective_rh(fov, aspect, near, far),
+        )
+    }
+
     fn default_handle() -> LazyGpuHandle {
         LazyGpuHandle::new(
             GpuResourceType::Uniform {
@@ -99,6 +118,8 @@ impl Default for Camera {
 
 #[derive(Debug, Component, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[method(default = "fn() -> FlyCameraController")]
+#[method(update = "fn(&mut FlyCameraController, &Input, f32, &mut Camera)")]
 pub struct FlyCameraController {
     pub speed: f32,
     pub sensitivity: f32,
@@ -171,5 +192,20 @@ impl FlyCameraController {
 
     pub fn projection_matrix(&self) -> glam::Mat4 {
         glam::Mat4::perspective_rh(self.fov, self.aspect, self.near, self.far)
+    }
+}
+
+impl Default for FlyCameraController {
+    fn default() -> Self {
+        Self {
+            speed: 10.0,
+            sensitivity: 0.1,
+            translation: glam::Vec3::ZERO,
+            rotation: glam::Quat::IDENTITY,
+            fov: 60.0f32.to_radians(),
+            aspect: 1.0,
+            near: 0.1,
+            far: 100.0,
+        }
     }
 }

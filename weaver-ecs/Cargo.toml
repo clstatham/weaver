@@ -11,7 +11,7 @@ default = []
 
 [dependencies]
 anyhow = "1.0"
-parking_lot = { version = "0.12.1", features = [] }
+parking_lot = { version = "0.12.1", features = ["send_guard"] }
 rustc-hash = "1.1"
 petgraph = "0.6"
 rayon = "1.8"

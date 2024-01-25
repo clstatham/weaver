@@ -3,7 +3,9 @@ use std::{
     sync::Arc,
 };
 
-use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
+use parking_lot::{
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
+};
 
 use crate::registry::{DynamicId, Registry};
 
@@ -80,28 +82,62 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
+pub enum MethodArgType {
+    Mut(DynamicId),
+    Ref(DynamicId),
+    Owned(DynamicId),
+}
+
+impl MethodArgType {
+    pub fn type_id(&self) -> DynamicId {
+        match self {
+            Self::Mut(id) | Self::Ref(id) | Self::Owned(id) => *id,
+        }
+    }
+
+    pub fn is_mut(&self) -> bool {
+        matches!(self, Self::Mut(_))
+    }
+
+    pub fn is_ref(&self) -> bool {
+        matches!(self, Self::Ref(_))
+    }
+
+    pub fn is_owned(&self) -> bool {
+        matches!(self, Self::Owned(_))
+    }
+}
+
 pub struct MethodWrapper {
     name: String,
     method: Arc<dyn Method>,
-    num_args: usize,
+    arg_types: Vec<MethodArgType>,
+    return_type: Option<MethodArgType>,
 }
 
 impl MethodWrapper {
-    pub fn new(name: &str, num_args: usize, method: Arc<dyn Method>) -> Self {
+    pub fn new(
+        name: &str,
+        arg_types: impl IntoIterator<Item = MethodArgType>,
+        return_type: Option<MethodArgType>,
+        method: Arc<dyn Method>,
+    ) -> Self {
         Self {
             name: name.to_string(),
-            num_args,
             method,
+            arg_types: arg_types.into_iter().collect(),
+            return_type,
         }
     }
 
     pub fn from_method<F: Method + Send + Sync + 'static>(
         name: &str,
-        num_args: usize,
+        arg_types: impl IntoIterator<Item = MethodArgType>,
+        return_type: Option<MethodArgType>,
         f: F,
     ) -> Self {
-        Self::new(name, num_args, Arc::new(f))
+        Self::new(name, arg_types, return_type, Arc::new(f))
     }
 
     pub fn name(&self) -> &str {
@@ -109,18 +145,41 @@ impl MethodWrapper {
     }
 
     pub fn num_args(&self) -> usize {
-        self.num_args
+        self.arg_types.len()
+    }
+
+    pub fn arg_types(&self) -> &[MethodArgType] {
+        &self.arg_types
     }
 
     pub fn call(&self, args: &[&Data]) -> anyhow::Result<Data> {
-        if args.len() != self.num_args {
+        if args.len() != self.num_args() {
             return Err(anyhow::anyhow!(
                 "Incorrect number of arguments: {} (expected {})",
                 args.len(),
-                self.num_args
+                self.num_args()
             ));
         }
-        self.method.call(args)
+        for (arg, arg_type) in args.iter().zip(self.arg_types()) {
+            if arg.type_id() != arg_type.type_id() {
+                return Err(anyhow::anyhow!(
+                    "Incorrect argument type: {} (expected {})",
+                    arg.type_id(),
+                    arg_type.type_id()
+                ));
+            }
+        }
+        let result = self.method.call(args)?;
+        if let Some(return_type) = self.return_type {
+            if result.type_id() != return_type.type_id() {
+                return Err(anyhow::anyhow!(
+                    "Incorrect return type: {} (expected {})",
+                    result.type_id(),
+                    return_type.type_id()
+                ));
+            }
+        }
+        Ok(result)
     }
 }
 
@@ -169,7 +228,7 @@ pub struct Data {
     pub(crate) type_id: DynamicId,
     pub(crate) type_name: String,
     pub(crate) field_name: Option<String>,
-    data: Arc<AtomicRefCell<dyn Component>>,
+    data: Arc<RwLock<dyn Component>>,
     fields: Vec<Data>,
     registry: Arc<Registry>,
     is_clone: bool,
@@ -181,7 +240,7 @@ impl Data {
         let type_id = registry.get_static::<T>();
         let fields = data.fields(registry);
         T::register_methods(registry);
-        let data = Arc::new(AtomicRefCell::new(data));
+        let data = Arc::new(RwLock::new(data));
         Self {
             data,
             type_id,
@@ -203,7 +262,7 @@ impl Data {
     ) -> Self {
         let type_id = registry.get_named(type_name);
         Self {
-            data: Arc::new(AtomicRefCell::new(())),
+            data: Arc::new(RwLock::new(())),
             type_id,
             type_name: type_name.to_string(),
             field_name: field_name.map(|s| s.to_string()),
@@ -215,15 +274,21 @@ impl Data {
     }
 
     #[inline]
-    pub fn get_as<T: Component>(&self) -> AtomicRef<'_, T> {
-        AtomicRef::map(self.data.borrow(), |data| {
+    pub fn get_as<T: Component>(&self) -> MappedRwLockReadGuard<'_, T> {
+        if self.is_dynamic {
+            panic!("Cannot get dynamic component as immutable");
+        }
+        RwLockReadGuard::map(self.data.read(), |data| {
             data.as_any().downcast_ref::<T>().unwrap()
         })
     }
 
     #[inline]
-    pub fn get_as_mut<T: Component>(&self) -> AtomicRefMut<'_, T> {
-        AtomicRefMut::map(self.data.borrow_mut(), |data| {
+    pub fn get_as_mut<T: Component>(&self) -> MappedRwLockWriteGuard<'_, T> {
+        if self.is_dynamic {
+            panic!("Cannot get dynamic component as mutable");
+        }
+        RwLockWriteGuard::map(self.data.write(), |data| {
             data.as_any_mut().downcast_mut::<T>().unwrap()
         })
     }
@@ -262,13 +327,13 @@ impl Data {
     }
 
     #[inline]
-    pub fn borrow(&self) -> AtomicRef<'_, dyn Component> {
-        self.data.borrow()
+    pub fn borrow(&self) -> RwLockReadGuard<'_, dyn Component> {
+        self.data.read()
     }
 
     #[inline]
-    pub fn borrow_mut(&self) -> AtomicRefMut<'_, dyn Component> {
-        self.data.borrow_mut()
+    pub fn borrow_mut(&self) -> RwLockWriteGuard<'_, dyn Component> {
+        self.data.write()
     }
 
     #[inline]
@@ -305,7 +370,7 @@ impl Data {
     }
 
     #[inline]
-    pub fn method_by_name(&self, name: &str) -> Option<MethodWrapper> {
+    pub fn method_by_name(&self, name: &str) -> Option<Arc<MethodWrapper>> {
         self.registry.method_by_id(self.type_id, name)
     }
 
@@ -319,7 +384,7 @@ impl Data {
 
     #[inline]
     pub fn clone_as<T: Component + Clone>(&self) -> Option<Self> {
-        let data = self.data.borrow();
+        let data = self.data.read();
         let data = (*data).as_any().downcast_ref::<T>()?;
         Some(Self::new(
             data.clone(),

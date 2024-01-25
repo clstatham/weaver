@@ -6,6 +6,23 @@ use crate::renderer::internals::{LazyBindGroup, LazyGpuHandle};
 use super::mesh::MAX_MESHES;
 
 #[derive(Clone, Copy, Component, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[method(new = "fn() -> Transform")]
+#[method(
+    from_scale_rotation_translation = "fn(scale: glam::Vec3, rotation: glam::Quat, translation: glam::Vec3) -> Transform"
+)]
+#[method(from_translation = "fn(translation: glam::Vec3) -> Transform")]
+#[method(from_rotation = "fn(rotation: glam::Quat) -> Transform")]
+#[method(from_scale = "fn(scale: glam::Vec3) -> Transform")]
+#[method(translate = "fn(&mut Transform, x: f32, y: f32, z: f32)")]
+#[method(rotate = "fn(&mut Transform, angle: f32, axis: glam::Vec3)")]
+#[method(scale = "fn(&mut Transform, x: f32, y: f32, z: f32)")]
+#[method(look_at = "fn(&mut Transform, target: glam::Vec3, up: glam::Vec3)")]
+#[method(get_translation = "fn(&Transform) -> glam::Vec3")]
+#[method(get_rotation = "fn(&Transform) -> glam::Quat")]
+#[method(get_scale = "fn(&Transform) -> glam::Vec3")]
+#[method(set_translation = "fn(&mut Transform, translation: glam::Vec3)")]
+#[method(set_rotation = "fn(&mut Transform, rotation: glam::Quat)")]
+#[method(set_scale = "fn(&mut Transform, scale: glam::Vec3)")]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 pub struct Transform {

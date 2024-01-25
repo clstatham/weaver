@@ -42,6 +42,7 @@ impl App {
         };
         #[cfg(not(feature = "serde"))]
         let world = World::new();
+        crate::register_all(world.registry());
         let world = Arc::new(RwLock::new(world));
 
         let event_loop = EventLoop::new()?;
@@ -97,6 +98,10 @@ impl App {
         stage: SystemStage,
     ) -> NodeIndex {
         self.world.write().add_system_to_stage(system, stage)
+    }
+
+    pub fn add_script(&self, script_path: impl AsRef<std::path::Path>) {
+        World::add_script(&self.world, script_path);
     }
 
     pub fn run(self) -> anyhow::Result<()> {

@@ -1,7 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use atomic_refcell::{AtomicRef, AtomicRefMut};
-use parking_lot::RwLock;
+use parking_lot::{MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock};
 use petgraph::prelude::NodeIndex;
 use rustc_hash::FxHashMap;
 
@@ -42,7 +41,11 @@ impl World {
         component: T,
         field_name: Option<&str>,
     ) {
-        self.components.add_component(entity, component, field_name);
+        // self.components.add_component(entity, component, field_name);
+        self.add_dynamic_component(
+            entity,
+            component.into_dynamic_data(field_name, self.registry()),
+        )
     }
 
     pub fn add_dynamic_component(&mut self, entity: &Entity, component: crate::component::Data) {
@@ -61,7 +64,8 @@ impl World {
         if self.has_resource::<T>() {
             return Err(anyhow::anyhow!("Resource already exists"));
         }
-        let resource = resource.into_dynamic_data(None, self.registry());
+        // let resource = resource.into_dynamic_data(None, self.registry());
+        let resource = Data::new(resource, None, self.registry());
         self.resources.insert(resource.type_id(), resource);
         Ok(())
     }
@@ -74,7 +78,7 @@ impl World {
         Ok(())
     }
 
-    pub fn read_resource<T: Component>(&self) -> anyhow::Result<AtomicRef<'_, T>> {
+    pub fn read_resource<T: Component>(&self) -> anyhow::Result<MappedRwLockReadGuard<'_, T>> {
         let id = self.registry().get_static::<T>();
         let resource = self
             .resources
@@ -83,7 +87,7 @@ impl World {
         Ok(resource.get_as())
     }
 
-    pub fn write_resource<T: Component>(&self) -> anyhow::Result<AtomicRefMut<'_, T>> {
+    pub fn write_resource<T: Component>(&self) -> anyhow::Result<MappedRwLockWriteGuard<'_, T>> {
         let id = self.registry().get_static::<T>();
         let resource = self
             .resources

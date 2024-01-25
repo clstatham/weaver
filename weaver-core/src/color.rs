@@ -1,6 +1,7 @@
 use weaver_proc_macro::Component;
 
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Component)]
+#[method(new = "fn(f32, f32, f32) -> Color")]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 pub struct Color {

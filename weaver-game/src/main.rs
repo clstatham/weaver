@@ -163,10 +163,10 @@ fn update(
             for npc in state.npcs.drain(..) {
                 commands.despawn(npc);
             }
-            let npc_mesh = asset_server.load_mesh("meshes/monkey_2x.glb").unwrap();
+            let npc_mesh = asset_server.load_mesh("meshes/monkey_2x.glb");
             let npc_materials = [
                 // asset_server.load_material("materials/wood.glb").unwrap(),
-                asset_server.load_material("materials/metal.glb").unwrap(),
+                asset_server.load_material("materials/metal.glb"),
             ];
             let mut rng = rand::thread_rng();
             for _ in 0..n_npcs {
@@ -234,7 +234,7 @@ fn setup(
     let skybox = asset_server.load_skybox("meadow_2k.hdr", &hdr_loader)?;
     commands.spawn(skybox);
 
-    let mut material = asset_server.load_material("materials/wood_tiles.glb")?;
+    let mut material = asset_server.load_material("materials/wood_tiles.glb");
     material.texture_scaling = 100.0;
     material.metallic = 0.0;
     material.roughness = 0.5;
@@ -245,13 +245,13 @@ fn setup(
             Quat::IDENTITY,
             Vec3::new(0.0, -1.0, 0.0),
         ),
-        mesh: asset_server.load_mesh("meshes/cube.obj")?,
+        mesh: asset_server.load_mesh("meshes/cube.obj"),
         material,
         ground: maps::Ground,
     };
     commands.spawn((ground, WoodTile));
 
-    let material = asset_server.load_material("materials/wood.glb")?;
+    let material = asset_server.load_material("materials/wood.glb");
 
     let player = player::Player {
         speed: 14.0,
@@ -262,7 +262,7 @@ fn setup(
         player::PlayerBundle {
             player,
             transform: Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
-            mesh: asset_server.load_mesh("meshes/monkey_2x.glb")?,
+            mesh: asset_server.load_mesh("meshes/monkey_2x.glb"),
             material,
         },
         Wood,
@@ -289,8 +289,8 @@ fn setup_2(
     let skybox = asset_server.load_skybox("meadow_2k.hdr", &hdr_loader)?;
     commands.spawn(skybox);
 
-    let material = asset_server.load_material("materials/wood.glb").unwrap();
-    let mesh = asset_server.load_mesh("meshes/monkey_2x.glb").unwrap();
+    let material = asset_server.load_material("materials/wood.glb");
+    let mesh = asset_server.load_mesh("meshes/monkey_2x.glb");
 
     let range = 30.0;
     let count = 30000;

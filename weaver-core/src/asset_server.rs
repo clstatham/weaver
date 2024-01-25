@@ -42,6 +42,8 @@ impl Default for AssetId {
 }
 
 #[derive(Component)]
+#[method(load_mesh = "fn(&mut AssetServer, path: &String) -> Mesh")]
+#[method(load_material = "fn(&mut AssetServer, path: &String) -> Material")]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssetServer {
     next_id: u64,
@@ -131,8 +133,8 @@ impl AssetServer {
             .clone())
     }
 
-    pub fn load_mesh(&mut self, path: impl Into<PathBuf>) -> anyhow::Result<Mesh> {
-        let path = path.into();
+    pub fn load_mesh(&mut self, path: &str) -> Mesh {
+        let path: PathBuf = path.into();
         let path = if path.is_absolute() {
             path
         } else {
@@ -142,17 +144,20 @@ impl AssetServer {
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id(path.clone());
             if path.extension().unwrap() == "obj" {
-                return self.load_obj_mesh_with_id(path.clone(), id.clone());
+                return self
+                    .load_obj_mesh_with_id(path.clone(), id.clone())
+                    .unwrap();
             } else {
-                return self.load_gltf_mesh_with_id(path.clone(), id.clone());
+                return self
+                    .load_gltf_mesh_with_id(path.clone(), id.clone())
+                    .unwrap();
             }
         }
-        Ok(self
-            .ids
+        self.ids
             .get(&path)
             .and_then(|id| self.meshes.get(id))
             .unwrap()
-            .clone())
+            .clone()
     }
 
     fn load_material_with_id(
@@ -172,8 +177,8 @@ impl AssetServer {
             .clone())
     }
 
-    pub fn load_material(&mut self, path: impl Into<PathBuf>) -> anyhow::Result<Material> {
-        let path = path.into();
+    pub fn load_material(&mut self, path: &str) -> Material {
+        let path: PathBuf = path.into();
         let path = if path.is_absolute() {
             path
         } else {
@@ -181,14 +186,15 @@ impl AssetServer {
         };
         if !self.ids.contains_key(&path) {
             let id = self.alloc_id(path.clone());
-            return self.load_material_with_id(path.clone(), id.clone());
+            return self
+                .load_material_with_id(path.clone(), id.clone())
+                .unwrap();
         }
-        Ok(self
-            .ids
+        self.ids
             .get(&path)
             .and_then(|id| self.materials.get(id))
             .unwrap()
-            .clone())
+            .clone()
     }
 
     pub fn load_texture(&mut self, path: impl Into<PathBuf>) -> anyhow::Result<Texture> {

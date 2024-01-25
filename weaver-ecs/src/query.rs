@@ -1,4 +1,4 @@
-use atomic_refcell::{AtomicRef, AtomicRefMut};
+use parking_lot::{MappedRwLockReadGuard, MappedRwLockWriteGuard};
 use std::{fmt::Debug, ops::Deref};
 use weaver_proc_macro::all_tuples;
 
@@ -16,7 +16,7 @@ where
     T: Component,
 {
     entity: Entity,
-    component: AtomicRef<'a, T>,
+    component: MappedRwLockReadGuard<'a, T>,
 }
 
 impl<'a, T> Ref<'a, T>
@@ -44,7 +44,7 @@ where
     T: Component,
 {
     entity: Entity,
-    component: AtomicRefMut<'a, T>,
+    component: MappedRwLockWriteGuard<'a, T>,
 }
 
 impl<'a, T> Mut<'a, T>
@@ -427,14 +427,14 @@ pub enum DynamicQueryRef {
 }
 
 impl DynamicQueryRef {
-    pub fn get<T: Component>(&self) -> AtomicRef<'_, T> {
+    pub fn get<T: Component>(&self) -> MappedRwLockReadGuard<'_, T> {
         match self {
             DynamicQueryRef::Ref(data) => data.get_as(),
             DynamicQueryRef::Mut(data) => data.get_as(),
         }
     }
 
-    pub fn get_mut<T: Component>(&mut self) -> Option<AtomicRefMut<'_, T>> {
+    pub fn get_mut<T: Component>(&mut self) -> Option<MappedRwLockWriteGuard<'_, T>> {
         match self {
             DynamicQueryRef::Ref(_) => None,
             DynamicQueryRef::Mut(data) => Some(data.get_as_mut()),

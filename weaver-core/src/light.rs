@@ -12,6 +12,7 @@ pub const MAX_LIGHTS: usize = 32;
 
 #[derive(Component, GpuComponent, BindableComponent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[method(new = "fn(position: glam::Vec3, color: Color, intensity: f32, radius: f32) -> PointLight")]
 #[gpu(update = "update")]
 pub struct PointLight {
     pub position: glam::Vec3,

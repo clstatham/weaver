@@ -24,7 +24,7 @@ impl<T: Component> Bundle for T {
         vec![registry.get_static::<T>()]
     }
     fn components(self, registry: &Arc<Registry>) -> Vec<Data> {
-        vec![Data::new(self, None, registry)]
+        vec![self.into_dynamic_data(None, registry)]
     }
 }
 

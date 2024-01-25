@@ -1,5 +1,11 @@
 #![allow(clippy::too_many_arguments, clippy::from_over_into)]
 
+use std::sync::Arc;
+
+use weaver_ecs::{component::Component, registry::Registry};
+
+use crate::camera::FlyCameraController;
+
 pub mod aabb;
 pub mod app;
 pub mod asset_server;
@@ -41,4 +47,35 @@ pub mod prelude {
         ui::EguiContext,
     };
     pub use weaver_proc_macro::{Bundle, Component};
+}
+
+pub(crate) fn register_all(registry: &Arc<Registry>) {
+    use crate::prelude::*;
+    registry.get_static::<AssetServer>();
+    registry.get_static::<Camera>();
+    registry.get_static::<Color>();
+    registry.get_static::<Cone>();
+    registry.get_static::<Cube>();
+    registry.get_static::<Doodads>();
+    registry.get_static::<DirectionalLight>();
+    registry.get_static::<Input>();
+    registry.get_static::<Material>();
+    registry.get_static::<Mesh>();
+    registry.get_static::<ParticleEmitter>();
+    registry.get_static::<PointLight>();
+    registry.get_static::<RapierContext>();
+    registry.get_static::<RigidBody>();
+    registry.get_static::<Renderer>();
+    registry.get_static::<Texture>();
+    registry.get_static::<Time>();
+    registry.get_static::<Transform>();
+    registry.get_static::<EguiContext>();
+
+    Transform::register_methods(registry);
+    Camera::register_methods(registry);
+    FlyCameraController::register_methods(registry);
+    Time::register_methods(registry);
+    Input::register_methods(registry);
+    PointLight::register_methods(registry);
+    Color::register_methods(registry);
 }

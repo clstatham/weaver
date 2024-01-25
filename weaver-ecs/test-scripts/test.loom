@@ -1,30 +1,28 @@
 @startup
 system setup {
     create_player(100)
-    create_player(100)
 }
 
 impl Player {
-    func default() -> Player {
+    func new() -> Player {
         return Player {
-            pos: vec3(0, 0, 0),
+            transform: Transform.new(),
             vel: vec3(0, 0, 0),
-            rot: Quat.from_axis_angle(vec3(0, 1, 0), 0.0),
         }
     }
 
     func print(self: Player) {
         print("Player {")
-        print("    pos =", self.pos)
+        print("    pos =", self.transform.get_translation())
+        print("    rot =", self.transform.get_rotation())
         print("    vel =", self.vel)
-        print("    rot =", self.rot)
         print("}")
     }
 }
 
 func create_player(hp: Int) -> Entity {
     spawn(
-        Player.default(),
+        Player.new(),
         Health {
             hp: hp,
         },
@@ -43,7 +41,7 @@ system update {
         var player: Player,
     ] {
         player.vel += vec3(0, -9.81, 0) * dt
-        player.pos += player.vel * dt
+        player.transform.translate(player.vel * dt)
         player.print()
     }
 }

@@ -16,6 +16,8 @@ fn main() -> anyhow::Result<()> {
 
     app.add_system_to_stage(ui::UiMain, SystemStage::Update);
 
+    app.add_script("assets/scripts/editor/main.loom");
+
     app.run()?;
 
     Ok(())
