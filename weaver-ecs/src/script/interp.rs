@@ -509,28 +509,53 @@ impl InterpreterContext {
                 } else {
                     let mut args = Vec::new();
 
-                    // look for a method on the lhs
-                    let lhs = match lhs.value {
-                        Value::Data(data) => data,
-                        Value::DataMut(data) => data,
-                        _ => anyhow::bail!("Invalid member access"),
-                    };
+                    // check if lhs is a type
+                    if let Value::Type(lhs) = &lhs.value {
+                        // get the method from the registry
+                        let method = env
+                            .world
+                            .read()
+                            .registry()
+                            .method_by_name(lhs, &rhs.name)
+                            .ok_or(anyhow::anyhow!("Unknown method {}", rhs.name))?;
 
-                    // push a "self" value
-                    args.push(lhs.to_owned());
+                        for arg in &rhs.args {
+                            let arg = self.interp_expr(env, arg)?.to_data(env)?;
+                            let arg = match arg {
+                                Value::Data(data) => data,
+                                Value::DataMut(data) => data,
+                                _ => unreachable!(),
+                            };
+                            args.push(arg);
+                        }
 
-                    for arg in &rhs.args {
-                        let arg = self.interp_expr(env, arg)?.to_data(env)?;
-                        let arg = match arg {
+                        let args = args.iter().collect::<Vec<_>>();
+                        let result = method.call(&args)?;
+                        Ok(self.alloc_value(None, Value::Data(result)))
+                    } else {
+                        // look for a method on the lhs
+                        let lhs = match lhs.value {
                             Value::Data(data) => data,
                             Value::DataMut(data) => data,
-                            _ => unreachable!(),
+                            _ => anyhow::bail!("Invalid member access"),
                         };
-                        args.push(arg);
+
+                        // push a "self" value
+                        args.push(lhs.to_owned());
+
+                        for arg in &rhs.args {
+                            let arg = self.interp_expr(env, arg)?.to_data(env)?;
+                            let arg = match arg {
+                                Value::Data(data) => data,
+                                Value::DataMut(data) => data,
+                                _ => unreachable!(),
+                            };
+                            args.push(arg);
+                        }
+                        let args = args.iter().collect::<Vec<_>>();
+                        let result = lhs.call_method(&rhs.name, &args)?;
+                        Ok(self.alloc_value(None, Value::Data(result)))
                     }
-                    let args = args.iter().collect::<Vec<_>>();
-                    let result = lhs.call_method(&rhs.name, &args)?;
-                    Ok(self.alloc_value(None, Value::Data(result)))
                 }
             }
             _ => anyhow::bail!("Invalid member access"),

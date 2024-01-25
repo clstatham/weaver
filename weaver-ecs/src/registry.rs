@@ -1,9 +1,14 @@
-use std::{any::TypeId, collections::HashMap, hash::BuildHasherDefault, sync::atomic::AtomicU32};
+use std::{
+    any::TypeId,
+    collections::HashMap,
+    hash::BuildHasherDefault,
+    sync::{atomic::AtomicU32, Arc},
+};
 
 use atomic_refcell::AtomicRefCell;
 use rustc_hash::{FxHashMap, FxHasher};
 
-use crate::{component::MethodWrapper, prelude::Component};
+use crate::{component::MethodWrapper, component_impl::register_all, prelude::Component};
 
 pub type DynamicId = u32;
 
@@ -16,7 +21,7 @@ pub struct Registry {
 }
 
 impl Registry {
-    pub fn new() -> Self {
+    pub fn new() -> Arc<Self> {
         let registry = Self {
             next_id: AtomicU32::new(1),
             static_ids: AtomicRefCell::new(HashMap::default()),
@@ -25,24 +30,10 @@ impl Registry {
             methods: AtomicRefCell::new(FxHashMap::default()),
         };
 
+        let registry = Arc::new(registry);
+
         // register builtin types
-        registry.get_static::<()>();
-        registry.get_static::<bool>();
-        registry.get_static::<u8>();
-        registry.get_static::<u16>();
-        registry.get_static::<u32>();
-        registry.get_static::<u64>();
-        registry.get_static::<u128>();
-        registry.get_static::<usize>();
-        registry.get_static::<i8>();
-        registry.get_static::<i16>();
-        registry.get_static::<i32>();
-        registry.get_static::<i64>();
-        registry.get_static::<i128>();
-        registry.get_static::<isize>();
-        registry.get_static::<f32>();
-        registry.get_static::<f64>();
-        registry.get_static::<String>();
+        register_all(&registry);
 
         registry
     }
@@ -175,12 +166,6 @@ impl Registry {
 
     pub fn static_name<T: Component>(&self) -> &'static str {
         T::type_name()
-    }
-}
-
-impl Default for Registry {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

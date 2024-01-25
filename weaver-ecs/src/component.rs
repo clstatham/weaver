@@ -45,14 +45,18 @@ pub trait Component: Downcast + Send + Sync + 'static {
     }
 
     #[allow(unused)]
-    fn register_methods(&self, registry: &Arc<Registry>) {}
+    fn register_methods(registry: &Arc<Registry>)
+    where
+        Self: Sized,
+    {
+    }
 
     #[allow(unused)]
     fn into_dynamic_data(self, field_name: Option<&str>, registry: &Arc<Registry>) -> Data
     where
         Self: Sized,
     {
-        self.register_methods(registry);
+        Self::register_methods(registry);
         Data::new_dynamic(
             registry.static_name::<Self>(),
             field_name,
@@ -62,24 +66,6 @@ pub trait Component: Downcast + Send + Sync + 'static {
         )
     }
 }
-
-impl Component for () {}
-impl Component for bool {}
-impl Component for u8 {}
-impl Component for u16 {}
-impl Component for u32 {}
-impl Component for u64 {}
-impl Component for u128 {}
-impl Component for usize {}
-impl Component for i8 {}
-impl Component for i16 {}
-impl Component for i32 {}
-impl Component for i64 {}
-impl Component for i128 {}
-impl Component for isize {}
-impl Component for f32 {}
-impl Component for f64 {}
-impl Component for String {}
 
 pub trait Method: Send + Sync + 'static {
     fn call(&self, args: &[&Data]) -> anyhow::Result<Data>;
@@ -194,7 +180,7 @@ impl Data {
     pub fn new<T: Component>(data: T, field_name: Option<&str>, registry: &Arc<Registry>) -> Self {
         let type_id = registry.get_static::<T>();
         let fields = data.fields(registry);
-        data.register_methods(registry);
+        T::register_methods(registry);
         let data = Arc::new(AtomicRefCell::new(data));
         Self {
             data,

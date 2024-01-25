@@ -380,7 +380,6 @@ impl Archetype {
     }
 }
 
-#[derive(Default)]
 pub struct Components {
     registry: Arc<Registry>,
     living_entities: SparseSet<DynamicId, Entity>,
@@ -391,6 +390,17 @@ pub struct Components {
 }
 
 impl Components {
+    pub fn new() -> Self {
+        Self {
+            registry: Registry::new(),
+            living_entities: SparseSet::new(),
+            entity_generations: SparseSet::new(),
+            archetypes: Vec::new(),
+            entity_archetypes: SparseSet::new(),
+            component_archetypes: SparseSet::new(),
+        }
+    }
+
     pub fn registry(&self) -> &Arc<Registry> {
         &self.registry
     }
@@ -600,7 +610,9 @@ impl Components {
     }
 
     pub fn split(&self) -> TemporaryComponents {
-        let mut components = TemporaryComponents::default();
+        let mut components = TemporaryComponents {
+            components: Components::new(),
+        };
 
         let registry = self.registry.split();
 
@@ -694,7 +706,6 @@ impl Components {
     }
 }
 
-#[derive(Default)]
 pub struct TemporaryComponents {
     pub components: Components,
 }

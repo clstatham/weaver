@@ -6,6 +6,52 @@ use crate::{
     registry::Registry,
 };
 
+pub fn register_all(registry: &Arc<Registry>) {
+    registry.get_static::<()>();
+    registry.get_static::<bool>();
+    registry.get_static::<u8>();
+    registry.get_static::<u16>();
+    registry.get_static::<u32>();
+    registry.get_static::<u64>();
+    registry.get_static::<u128>();
+    registry.get_static::<usize>();
+    registry.get_static::<i8>();
+    registry.get_static::<i16>();
+    registry.get_static::<i32>();
+    registry.get_static::<i64>();
+    registry.get_static::<i128>();
+    registry.get_static::<isize>();
+    registry.get_static::<f32>();
+    registry.get_static::<f64>();
+    registry.get_static::<String>();
+
+    // register methods
+
+    glam::Vec3::register_methods(registry);
+    glam::Vec2::register_methods(registry);
+    glam::Vec4::register_methods(registry);
+    glam::Mat4::register_methods(registry);
+    glam::Quat::register_methods(registry);
+}
+
+impl Component for () {}
+impl Component for bool {}
+impl Component for u8 {}
+impl Component for u16 {}
+impl Component for u32 {}
+impl Component for u64 {}
+impl Component for u128 {}
+impl Component for usize {}
+impl Component for i8 {}
+impl Component for i16 {}
+impl Component for i32 {}
+impl Component for i64 {}
+impl Component for i128 {}
+impl Component for isize {}
+impl Component for f32 {}
+impl Component for f64 {}
+impl Component for String {}
+
 impl<T: Component> Component for Vec<T> {
     fn fields(&self, _registry: &Arc<Registry>) -> Vec<Data>
     where
@@ -14,7 +60,7 @@ impl<T: Component> Component for Vec<T> {
         vec![]
     }
 
-    fn register_methods(&self, registry: &Arc<Registry>) {
+    fn register_methods(registry: &Arc<Registry>) {
         let id = registry.get_static::<Self>();
         if registry.methods_registered(id) {
             return;
@@ -48,6 +94,13 @@ impl<T: Component> Component for Option<T> {
 }
 
 impl Component for glam::Vec3 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "Vec3"
+    }
+
     fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
@@ -59,7 +112,7 @@ impl Component for glam::Vec3 {
         ]
     }
 
-    fn register_methods(&self, registry: &Arc<Registry>) {
+    fn register_methods(registry: &Arc<Registry>) {
         let mut methods = vec![];
         let registry_clone = registry.clone();
         methods.push(MethodWrapper::from_method(
@@ -115,6 +168,13 @@ impl Component for glam::Vec3 {
 }
 
 impl Component for glam::Vec2 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "Vec2"
+    }
+
     fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
@@ -125,7 +185,7 @@ impl Component for glam::Vec2 {
         ]
     }
 
-    fn register_methods(&self, registry: &Arc<Registry>) {
+    fn register_methods(registry: &Arc<Registry>) {
         let id = registry.get_static::<Self>();
         if registry.methods_registered(id) {
             return;
@@ -185,6 +245,13 @@ impl Component for glam::Vec2 {
 }
 
 impl Component for glam::Vec4 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "Vec4"
+    }
+
     fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
@@ -197,7 +264,7 @@ impl Component for glam::Vec4 {
         ]
     }
 
-    fn register_methods(&self, registry: &Arc<Registry>) {
+    fn register_methods(registry: &Arc<Registry>) {
         let id = registry.get_static::<Self>();
         if registry.methods_registered(id) {
             return;
@@ -257,6 +324,13 @@ impl Component for glam::Vec4 {
 }
 
 impl Component for glam::Quat {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "Quat"
+    }
+
     fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
@@ -269,7 +343,7 @@ impl Component for glam::Quat {
         ]
     }
 
-    fn register_methods(&self, registry: &Arc<Registry>) {
+    fn register_methods(registry: &Arc<Registry>) {
         let id = registry.get_static::<Self>();
         if registry.methods_registered(id) {
             return;
@@ -330,6 +404,13 @@ impl Component for glam::Quat {
 }
 
 impl Component for glam::Mat4 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "Mat4"
+    }
+
     fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
@@ -342,7 +423,7 @@ impl Component for glam::Mat4 {
         ]
     }
 
-    fn register_methods(&self, registry: &Arc<Registry>) {
+    fn register_methods(registry: &Arc<Registry>) {
         let id = registry.get_static::<Self>();
         if registry.methods_registered(id) {
             return;

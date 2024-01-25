@@ -111,7 +111,7 @@ pub fn derive_component(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
                 ]
             }
 
-            fn register_methods(&self, registry: &std::sync::Arc<weaver_ecs::registry::Registry>) {
+            fn register_methods(registry: &std::sync::Arc<weaver_ecs::registry::Registry>) {
                 let mut methods = vec![];
                 #method_gen
                 let id = registry.get_static::<Self>();

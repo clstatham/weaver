@@ -26,7 +26,7 @@ pub struct World {
 impl World {
     pub fn new() -> Self {
         Self {
-            components: Components::default(),
+            components: Components::new(),
             systems: FxHashMap::default(),
             resources: SparseSet::default(),
         }

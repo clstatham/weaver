@@ -9,6 +9,7 @@ impl Player {
         return Player {
             pos: vec3(0, 0, 0),
             vel: vec3(0, 0, 0),
+            rot: Quat.from_axis_angle(vec3(0, 1, 0), 0.0),
         }
     }
 
@@ -16,6 +17,7 @@ impl Player {
         print("Player {")
         print("    pos =", self.pos)
         print("    vel =", self.vel)
+        print("    rot =", self.rot)
         print("}")
     }
 }
