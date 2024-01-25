@@ -152,6 +152,7 @@ impl InterpreterContext {
                 ident,
                 res,
             } => self.interp_res(env, *mutability, ident, res),
+            Expr::Type(typ) => Ok(self.alloc_value(None, Value::Type(typ.to_owned()))),
             _ => todo!("Implement other expressions: {:?}", expr),
         }
     }
@@ -461,16 +462,33 @@ impl InterpreterContext {
                         args.push(self.interp_expr(env, arg)?);
                     }
 
-                    let scope = env.push_scope(Some(self));
-                    for (arg, param) in args.iter().zip(func.params.iter()) {
-                        let value = arg.value.to_owned();
-                        let value = value.to_data(env)?;
-                        scope.alloc_value(Some(param.name.as_str()), value);
-                    }
+                    let mut params = func.params.clone();
 
-                    // alloc a "self" value
-                    let value = lhs.value.to_owned();
-                    scope.alloc_value(Some("self"), value);
+                    let scope = env.push_scope(None);
+                    let mut has_self = false;
+                    if let Some(first) = params.get(0) {
+                        if first.name.as_str() == "self" {
+                            if first.ty != lhs.value.type_name() {
+                                anyhow::bail!("Invalid self type");
+                            }
+                            let value = lhs.value.to_owned();
+                            let value = value.to_data(env)?;
+                            scope.alloc_value(Some(first.name.as_str()), value);
+                            has_self = true;
+                        }
+                    }
+                    if has_self {
+                        params.remove(0);
+                    }
+                    for (arg, param) in args.iter().zip(params.iter()) {
+                        if param.name.as_str() == "self" {
+                            anyhow::bail!("Cannot use self as argument beyond the first");
+                        } else {
+                            let value = arg.value.to_owned();
+                            let value = value.to_data(env)?;
+                            scope.alloc_value(Some(param.name.as_str()), value);
+                        }
+                    }
 
                     scope.interp_block(env, &func.block.statements)?;
 
@@ -489,6 +507,8 @@ impl InterpreterContext {
 
                     Ok(self.alloc_value(None, Value::Void))
                 } else {
+                    let mut args = Vec::new();
+
                     // look for a method on the lhs
                     let lhs = match lhs.value {
                         Value::Data(data) => data,
@@ -496,8 +516,7 @@ impl InterpreterContext {
                         _ => anyhow::bail!("Invalid member access"),
                     };
 
-                    let mut args = Vec::new();
-                    // push a self arg
+                    // push a "self" value
                     args.push(lhs.to_owned());
 
                     for arg in &rhs.args {
@@ -611,10 +630,11 @@ impl InterpreterContext {
                 Value::Entity(_) => anyhow::bail!("Cannot assign entity value"),
                 Value::Void => anyhow::bail!("Cannot assign void value"),
                 Value::Query { .. } => anyhow::bail!("Cannot assign query value"),
+                Value::Type(_) => anyhow::bail!("Cannot assign type value"),
             }
         }
 
-        let component = Data::new_dynamic(name, None, is_clone, fields, vec![], world.registry());
+        let component = Data::new_dynamic(name, None, is_clone, fields, world.registry());
 
         Ok(self.alloc_value(None, Value::DataMut(component)))
     }

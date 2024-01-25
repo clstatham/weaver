@@ -41,6 +41,7 @@ pub enum Expr {
     StringLiteral(String),
     Call(Call),
     Block(Block),
+    Type(String),
     Member {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
@@ -504,6 +505,7 @@ impl LoomParser {
         let lhs = match lhs.as_rule() {
             Rule::ident => Expr::Ident(self.parse_ident(lhs)),
             Rule::member_expr => self.parse_member_expr(lhs),
+            Rule::r#type => Expr::Type(self.parse_type(lhs)),
             _ => panic!("Unexpected rule: {:?}", lhs.as_rule()),
         };
 

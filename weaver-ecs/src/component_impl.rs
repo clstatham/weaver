@@ -14,18 +14,24 @@ impl<T: Component> Component for Vec<T> {
         vec![]
     }
 
-    fn methods(&self, registry: &Arc<Registry>) -> Vec<MethodWrapper> {
-        let registry = registry.clone();
-        vec![MethodWrapper::from_method(
+    fn register_methods(&self, registry: &Arc<Registry>) {
+        let id = registry.get_static::<Self>();
+        if registry.methods_registered(id) {
+            return;
+        }
+        let registry_clone = registry.clone();
+        let methods = vec![MethodWrapper::from_method(
             "len",
             1,
             move |data: &[&Data]| {
                 let this = &data[0];
                 let this = this.get_as::<Vec<T>>();
                 let result = this.len();
-                Ok(Data::new(result, None, &registry))
+                Ok(Data::new(result, None, &registry_clone))
             },
-        )]
+        )];
+
+        registry.register_methods(id, methods);
     }
 }
 
@@ -53,7 +59,7 @@ impl Component for glam::Vec3 {
         ]
     }
 
-    fn methods(&self, registry: &Arc<Registry>) -> Vec<MethodWrapper> {
+    fn register_methods(&self, registry: &Arc<Registry>) {
         let mut methods = vec![];
         let registry_clone = registry.clone();
         methods.push(MethodWrapper::from_method(
@@ -103,7 +109,8 @@ impl Component for glam::Vec3 {
             },
         ));
 
-        methods
+        let id = registry.get_static::<Self>();
+        registry.register_methods(id, methods);
     }
 }
 
@@ -118,7 +125,11 @@ impl Component for glam::Vec2 {
         ]
     }
 
-    fn methods(&self, registry: &Arc<Registry>) -> Vec<MethodWrapper> {
+    fn register_methods(&self, registry: &Arc<Registry>) {
+        let id = registry.get_static::<Self>();
+        if registry.methods_registered(id) {
+            return;
+        }
         let mut methods = vec![];
         let registry_clone = registry.clone();
         methods.push(MethodWrapper::from_method(
@@ -168,7 +179,8 @@ impl Component for glam::Vec2 {
             },
         ));
 
-        methods
+        let id = registry.get_static::<Self>();
+        registry.register_methods(id, methods);
     }
 }
 
@@ -185,7 +197,11 @@ impl Component for glam::Vec4 {
         ]
     }
 
-    fn methods(&self, registry: &Arc<Registry>) -> Vec<MethodWrapper> {
+    fn register_methods(&self, registry: &Arc<Registry>) {
+        let id = registry.get_static::<Self>();
+        if registry.methods_registered(id) {
+            return;
+        }
         let mut methods = vec![];
         let registry_clone = registry.clone();
         methods.push(MethodWrapper::from_method(
@@ -235,7 +251,8 @@ impl Component for glam::Vec4 {
             },
         ));
 
-        methods
+        let id = registry.get_static::<Self>();
+        registry.register_methods(id, methods);
     }
 }
 
@@ -252,7 +269,11 @@ impl Component for glam::Quat {
         ]
     }
 
-    fn methods(&self, registry: &Arc<Registry>) -> Vec<MethodWrapper> {
+    fn register_methods(&self, registry: &Arc<Registry>) {
+        let id = registry.get_static::<Self>();
+        if registry.methods_registered(id) {
+            return;
+        }
         let mut methods = vec![];
         let registry_clone = registry.clone();
         methods.push(MethodWrapper::from_method(
@@ -304,7 +325,7 @@ impl Component for glam::Quat {
             },
         ));
 
-        methods
+        registry.register_methods(id, methods);
     }
 }
 
@@ -321,7 +342,11 @@ impl Component for glam::Mat4 {
         ]
     }
 
-    fn methods(&self, registry: &Arc<Registry>) -> Vec<MethodWrapper> {
+    fn register_methods(&self, registry: &Arc<Registry>) {
+        let id = registry.get_static::<Self>();
+        if registry.methods_registered(id) {
+            return;
+        }
         let mut methods = vec![];
         let registry_clone = registry.clone();
         methods.push(MethodWrapper::from_method(
@@ -347,6 +372,6 @@ impl Component for glam::Mat4 {
             },
         ));
 
-        methods
+        registry.register_methods(id, methods);
     }
 }

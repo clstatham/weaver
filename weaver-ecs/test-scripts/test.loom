@@ -1,22 +1,28 @@
 @startup
 system setup {
-    create_player(vec3(0, 0, 0), 100)
-    create_player(vec3(0, 0, 0), 100)
-    spawn(
-        Player {
-            pos: vec3(10, 10, 10),
-            vel: vec3(0, 0, 0),
-        },
-        Marker {},
-    )
+    create_player(100)
+    create_player(100)
 }
 
-func create_player(pos: Vec3, hp: Int) -> Entity {
-    spawn(
-        Player {
-            pos: pos,
+impl Player {
+    func default() -> Player {
+        return Player {
+            pos: vec3(0, 0, 0),
             vel: vec3(0, 0, 0),
-        },
+        }
+    }
+
+    func print(self: Player) {
+        print("Player {")
+        print("    pos =", self.pos)
+        print("    vel =", self.vel)
+        print("}")
+    }
+}
+
+func create_player(hp: Int) -> Entity {
+    spawn(
+        Player.default(),
         Health {
             hp: hp,
         },
@@ -33,10 +39,9 @@ system update {
 
     loop query _ [
         var player: Player,
-        with[Marker],
     ] {
         player.vel += vec3(0, -9.81, 0) * dt
         player.pos += player.vel * dt
-        print("player =", player)
+        player.print()
     }
 }

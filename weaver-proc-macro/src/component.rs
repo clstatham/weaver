@@ -101,17 +101,21 @@ pub fn derive_component(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
 
     let gen = quote! {
         impl weaver_ecs::component::Component for #name {
+            fn type_name() -> &'static str {
+                stringify!(#name)
+            }
+
             fn fields(&self, registry: &std::sync::Arc<weaver_ecs::registry::Registry>) -> Vec<weaver_ecs::component::Data> {
                 vec![
                     #(weaver_ecs::component::Data::new(self.#field_names.clone(), Some(stringify!(#field_names)), registry)),*
                 ]
             }
 
-
-            fn methods(&self, registry: &std::sync::Arc<weaver_ecs::registry::Registry>) -> Vec<weaver_ecs::component::MethodWrapper> {
+            fn register_methods(&self, registry: &std::sync::Arc<weaver_ecs::registry::Registry>) {
                 let mut methods = vec![];
                 #method_gen
-                methods
+                let id = registry.get_static::<Self>();
+                registry.register_methods(id, methods);
             }
         }
     };

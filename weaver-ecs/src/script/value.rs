@@ -10,6 +10,7 @@ use super::{interp::RuntimeEnv, parser::TypedIdent};
 #[derive(Clone)]
 pub enum Value {
     Void,
+    Type(String),
     Float(f32),
     Int(i64),
     Bool(bool),
@@ -70,6 +71,7 @@ impl Display for Value {
             Value::Mat4(mat) => write!(f, "{}", mat),
             Value::Quat(quat) => write!(f, "{}", quat),
             Value::String(string) => write!(f, "{}", string),
+            Value::Type(string) => write!(f, "{}", string),
         }
     }
 }
@@ -90,6 +92,7 @@ impl Value {
             Value::Mat4(_) => "Mat4",
             Value::Quat(_) => "Quat",
             Value::String(_) => "String",
+            Value::Type(_) => "Type",
         }
     }
 
@@ -106,6 +109,7 @@ impl Value {
             Value::Void => anyhow::bail!("Cannot assign void value"),
             Value::Query { .. } => anyhow::bail!("Cannot assign query value"),
             Value::Entity(_) => anyhow::bail!("Cannot assign entity value"),
+            Value::Type(_) => anyhow::bail!("Cannot assign type value"),
             Value::Vec3(vec3) => Value::Data(Data::new(*vec3, None, env.world.read().registry())),
             Value::Vec4(vec4) => Value::Data(Data::new(*vec4, None, env.world.read().registry())),
             Value::Quat(quat) => Value::Data(Data::new(*quat, None, env.world.read().registry())),

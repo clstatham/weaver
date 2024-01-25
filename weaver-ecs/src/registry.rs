@@ -3,7 +3,7 @@ use std::{any::TypeId, collections::HashMap, hash::BuildHasherDefault, sync::ato
 use atomic_refcell::AtomicRefCell;
 use rustc_hash::{FxHashMap, FxHasher};
 
-use crate::prelude::Component;
+use crate::{component::MethodWrapper, prelude::Component};
 
 pub type DynamicId = u32;
 
@@ -12,6 +12,7 @@ pub struct Registry {
     static_ids: AtomicRefCell<TypeIdMap<DynamicId>>,
     named_ids: AtomicRefCell<FxHashMap<String, DynamicId>>,
     id_names: AtomicRefCell<FxHashMap<DynamicId, String>>,
+    methods: AtomicRefCell<FxHashMap<DynamicId, FxHashMap<String, MethodWrapper>>>,
 }
 
 impl Registry {
@@ -21,6 +22,7 @@ impl Registry {
             static_ids: AtomicRefCell::new(HashMap::default()),
             named_ids: AtomicRefCell::new(FxHashMap::default()),
             id_names: AtomicRefCell::new(FxHashMap::default()),
+            methods: AtomicRefCell::new(FxHashMap::default()),
         };
 
         // register builtin types
@@ -62,8 +64,8 @@ impl Registry {
         self.static_ids.borrow_mut().insert(static_id, id);
 
         let name = self.static_name::<T>();
-        self.named_ids.borrow_mut().insert(name.clone(), id);
-        self.id_names.borrow_mut().insert(id, name);
+        self.named_ids.borrow_mut().insert(name.to_string(), id);
+        self.id_names.borrow_mut().insert(id, name.to_string());
 
         id
     }
@@ -80,17 +82,75 @@ impl Registry {
         id
     }
 
+    pub fn method_by_id(&self, id: DynamicId, name: &str) -> Option<MethodWrapper> {
+        self.methods
+            .borrow()
+            .get(&id)
+            .and_then(|methods| methods.get(name))
+            .cloned()
+    }
+
+    pub fn method_by_name(&self, ty: &str, name: &str) -> Option<MethodWrapper> {
+        let id = self.get_named(ty);
+        self.methods
+            .borrow()
+            .get(&id)
+            .and_then(|methods| methods.get(name))
+            .cloned()
+    }
+
+    pub fn methods_registered(&self, id: DynamicId) -> bool {
+        self.methods.borrow().contains_key(&id)
+    }
+
+    pub fn register_methods(
+        &self,
+        id: DynamicId,
+        methods: impl IntoIterator<Item = MethodWrapper>,
+    ) {
+        if self.methods.borrow().contains_key(&id) {
+            #[cfg(debug_assertions)]
+            {
+                for method in methods.into_iter() {
+                    if !self
+                        .methods
+                        .borrow()
+                        .get(&id)
+                        .unwrap()
+                        .contains_key(method.name())
+                    {
+                        log::warn!(
+                            "Method {} will not be registered for id {}",
+                            method.name(),
+                            id
+                        );
+                    }
+                }
+            }
+            return;
+        }
+        for method in methods {
+            self.methods
+                .borrow_mut()
+                .entry(id)
+                .or_default()
+                .insert(method.name().to_string(), method);
+        }
+    }
+
     pub fn split(&self) -> Self {
         let next_id = self.next_id.load(std::sync::atomic::Ordering::Relaxed);
         let static_ids = self.static_ids.borrow().clone();
         let named_ids = self.named_ids.borrow().clone();
         let id_names = self.id_names.borrow().clone();
+        let methods = self.methods.borrow().clone();
 
         Self {
             next_id: AtomicU32::new(next_id),
             static_ids: AtomicRefCell::new(static_ids),
             named_ids: AtomicRefCell::new(named_ids),
             id_names: AtomicRefCell::new(id_names),
+            methods: AtomicRefCell::new(methods),
         }
     }
 
@@ -108,15 +168,13 @@ impl Registry {
         self.id_names
             .borrow_mut()
             .extend(other.id_names.borrow().clone());
+        self.methods
+            .borrow_mut()
+            .extend(other.methods.borrow().clone());
     }
 
-    pub fn static_name<T: 'static>(&self) -> String {
-        let name = std::any::type_name::<T>().split("::").last().unwrap();
-        if name.is_empty() {
-            std::any::type_name::<T>().to_string()
-        } else {
-            name.to_string()
-        }
+    pub fn static_name<T: Component>(&self) -> &'static str {
+        T::type_name()
     }
 }
 

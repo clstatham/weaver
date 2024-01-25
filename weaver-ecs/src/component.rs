@@ -24,6 +24,13 @@ impl<T: std::any::Any> Downcast for T {
 
 /// A component is a data structure that can be attached to an entity.
 pub trait Component: Downcast + Send + Sync + 'static {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        std::any::type_name::<Self>()
+    }
+
     #[allow(unused)]
     fn field_ids(registry: &Registry) -> Vec<DynamicId>
     where
@@ -38,21 +45,19 @@ pub trait Component: Downcast + Send + Sync + 'static {
     }
 
     #[allow(unused)]
-    fn methods(&self, registry: &Arc<Registry>) -> Vec<MethodWrapper> {
-        vec![]
-    }
+    fn register_methods(&self, registry: &Arc<Registry>) {}
 
     #[allow(unused)]
     fn into_dynamic_data(self, field_name: Option<&str>, registry: &Arc<Registry>) -> Data
     where
         Self: Sized,
     {
+        self.register_methods(registry);
         Data::new_dynamic(
-            registry.static_name::<Self>().as_str(),
+            registry.static_name::<Self>(),
             field_name,
             impls_clone::<Self>(),
             self.fields(registry),
-            self.methods(registry),
             registry,
         )
     }
@@ -111,6 +116,10 @@ impl MethodWrapper {
         f: F,
     ) -> Self {
         Self::new(name, num_args, Arc::new(f))
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn num_args(&self) -> usize {
@@ -176,7 +185,6 @@ pub struct Data {
     pub(crate) field_name: Option<String>,
     data: Arc<AtomicRefCell<dyn Component>>,
     fields: Vec<Data>,
-    methods: Vec<MethodWrapper>,
     registry: Arc<Registry>,
     is_clone: bool,
     is_dynamic: bool,
@@ -186,17 +194,16 @@ impl Data {
     pub fn new<T: Component>(data: T, field_name: Option<&str>, registry: &Arc<Registry>) -> Self {
         let type_id = registry.get_static::<T>();
         let fields = data.fields(registry);
-        let methods = data.methods(registry);
+        data.register_methods(registry);
         let data = Arc::new(AtomicRefCell::new(data));
         Self {
             data,
             type_id,
-            type_name: registry.static_name::<T>(),
+            type_name: registry.static_name::<T>().to_string(),
             field_name: field_name.map(|s| s.to_string()),
             fields,
             registry: registry.clone(),
             is_clone: impls_clone::<T>(),
-            methods,
             is_dynamic: false,
         }
     }
@@ -206,7 +213,6 @@ impl Data {
         field_name: Option<&str>,
         is_clone: bool,
         fields: Vec<Data>,
-        methods: Vec<MethodWrapper>,
         registry: &Arc<Registry>,
     ) -> Self {
         let type_id = registry.get_named(type_name);
@@ -218,7 +224,6 @@ impl Data {
             fields,
             registry: registry.clone(),
             is_clone,
-            methods,
             is_dynamic: true,
         }
     }
@@ -314,8 +319,8 @@ impl Data {
     }
 
     #[inline]
-    pub fn method_by_name(&self, name: &str) -> Option<&MethodWrapper> {
-        self.methods.iter().find(|method| method.name == name)
+    pub fn method_by_name(&self, name: &str) -> Option<MethodWrapper> {
+        self.registry.method_by_id(self.type_id, name)
     }
 
     #[inline]
@@ -659,14 +664,6 @@ impl Debug for Data {
             .field("type_name", &self.type_name)
             .field("field_name", &self.field_name)
             .field("fields", &self.fields())
-            .field(
-                "methods",
-                &self
-                    .methods
-                    .iter()
-                    .map(|method| method.name.clone())
-                    .collect::<Vec<_>>(),
-            )
             .finish()
     }
 }
