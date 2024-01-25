@@ -34,7 +34,7 @@ pub enum Expr {
     },
     Construct {
         name: String,
-        args: Vec<Expr>,
+        args: Vec<(String, Expr)>,
     },
     IntLiteral(i64),
     FloatLiteral(f64),
@@ -579,10 +579,14 @@ impl LoomParser {
 
         let mut args_vec = Vec::new();
 
-        for arg in inner {
+        while let Some(arg) = inner.next() {
             match arg.as_rule() {
-                Rule::expr => args_vec.push(self.parse_expr(arg)),
-                Rule::ident => args_vec.push(Expr::Ident(self.parse_ident(arg))),
+                Rule::ident => {
+                    let ident = arg.as_str().to_string();
+                    let expr = inner.next().unwrap();
+                    let expr = self.parse_expr(expr);
+                    args_vec.push((ident, expr));
+                }
                 _ => panic!("Unexpected rule: {:?} {}", arg.as_rule(), arg.as_str()),
             }
         }

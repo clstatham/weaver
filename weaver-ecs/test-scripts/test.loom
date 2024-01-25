@@ -4,8 +4,8 @@ system setup {
     create_player(vec3(0, 0, 0), 100)
     spawn(
         Player {
-            pos = vec3(10, 10, 10)
-            vel = vec3(0, 0, 0)
+            pos: vec3(10, 10, 10),
+            vel: vec3(0, 0, 0),
         },
         Marker {},
     )
@@ -14,11 +14,11 @@ system setup {
 func create_player(pos: Vec3, hp: Int) -> Entity {
     spawn(
         Player {
-            pos = pos
-            vel = vec3(0, 0, 0)
+            pos: pos,
+            vel: vec3(0, 0, 0),
         },
         Health {
-            hp = hp
+            hp: hp,
         },
     )
 }
@@ -32,9 +32,8 @@ system update {
     let dt = vec3(dt, dt, dt)
 
     loop query _ [
-        var player: Player
-        
-        with[Marker]
+        var player: Player,
+        with[Marker],
     ] {
         player.vel += vec3(0, -9.81, 0) * dt
         player.pos += player.vel * dt

@@ -505,12 +505,12 @@ impl InterpreterContext {
                         let arg = match arg {
                             Value::Data(data) => data,
                             Value::DataMut(data) => data,
-                            _ => anyhow::bail!("Invalid argument"),
+                            _ => unreachable!(),
                         };
                         args.push(arg);
                     }
-
-                    let result = lhs.call_method(&rhs.name, &args.iter().collect::<Vec<_>>())?;
+                    let args = args.iter().collect::<Vec<_>>();
+                    let result = lhs.call_method(&rhs.name, &args)?;
                     Ok(self.alloc_value(None, Value::Data(result)))
                 }
             }
@@ -547,7 +547,7 @@ impl InterpreterContext {
         &mut self,
         env: &RuntimeEnv,
         name: &str,
-        args: &[Expr],
+        args: &[(String, Expr)],
     ) -> anyhow::Result<ValueHandle> {
         let world = env.world.read();
 
@@ -555,21 +555,8 @@ impl InterpreterContext {
 
         let mut fields = Vec::new();
 
-        for arg in args {
-            let (value, field_name) = if let Expr::Infix { op, lhs, rhs } = arg {
-                if op != "=" {
-                    anyhow::bail!("Invalid constructor argument");
-                }
-                let field_name = match lhs.as_ref() {
-                    Expr::Ident(ident) => ident,
-                    _ => anyhow::bail!("Invalid constructor argument"),
-                }
-                .to_owned();
-                let value = self.interp_expr(env, rhs)?;
-                (value, Some(field_name))
-            } else {
-                anyhow::bail!("Invalid constructor argument");
-            };
+        for (field_name, arg) in args {
+            let value = self.interp_expr(env, arg)?;
             let value = value.value.to_owned();
 
             match &value {
@@ -578,7 +565,7 @@ impl InterpreterContext {
                         is_clone = false;
                     }
                     let mut data = data.to_owned();
-                    data.field_name = field_name;
+                    data.field_name = Some(field_name.to_owned());
                     fields.push(data);
                 }
                 Value::DataMut(data) => {
@@ -586,40 +573,39 @@ impl InterpreterContext {
                         is_clone = false;
                     }
                     let mut data = data.to_owned();
-                    data.field_name = field_name;
+                    data.field_name = Some(field_name.to_owned());
                     fields.push(data);
                 }
                 Value::Int(int) => {
-                    let data = Data::new(*int, field_name.as_deref(), world.registry());
+                    let data = Data::new(*int, Some(field_name), world.registry());
                     fields.push(data);
                 }
                 Value::Float(float) => {
-                    let data = Data::new(*float, field_name.as_deref(), world.registry());
+                    let data = Data::new(*float, Some(field_name), world.registry());
                     fields.push(data);
                 }
                 Value::Bool(b) => {
-                    let data = Data::new(*b, field_name.as_deref(), world.registry());
+                    let data = Data::new(*b, Some(field_name), world.registry());
                     fields.push(data);
                 }
                 Value::Vec3(vec3) => {
-                    let data = Data::new(*vec3, field_name.as_deref(), world.registry());
+                    let data = Data::new(*vec3, Some(field_name), world.registry());
                     fields.push(data);
                 }
                 Value::Vec4(vec4) => {
-                    let data = Data::new(*vec4, field_name.as_deref(), world.registry());
+                    let data = Data::new(*vec4, Some(field_name), world.registry());
                     fields.push(data);
                 }
                 Value::Quat(quat) => {
-                    let data = Data::new(*quat, field_name.as_deref(), world.registry());
+                    let data = Data::new(*quat, Some(field_name), world.registry());
                     fields.push(data);
                 }
                 Value::Mat4(mat4) => {
-                    let data = Data::new(*mat4, field_name.as_deref(), world.registry());
+                    let data = Data::new(*mat4, Some(field_name), world.registry());
                     fields.push(data);
                 }
                 Value::String(string) => {
-                    let data =
-                        Data::new(string.to_owned(), field_name.as_deref(), world.registry());
+                    let data = Data::new(string.to_owned(), Some(field_name), world.registry());
                     fields.push(data);
                 }
                 Value::Entity(_) => anyhow::bail!("Cannot assign entity value"),

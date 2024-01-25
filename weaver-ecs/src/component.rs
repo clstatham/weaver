@@ -314,14 +314,8 @@ impl Data {
     }
 
     #[inline]
-    pub fn method_by_name(&self, name: &str) -> Option<&Arc<dyn Method>> {
-        self.methods.iter().find_map(|method| {
-            if method.name == name {
-                Some(&method.method)
-            } else {
-                None
-            }
-        })
+    pub fn method_by_name(&self, name: &str) -> Option<&MethodWrapper> {
+        self.methods.iter().find(|method| method.name == name)
     }
 
     #[inline]
