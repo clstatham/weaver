@@ -96,18 +96,20 @@ pub fn derive_component(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
                 arg_ty_bindings
                     .push(quote! { weaver_ecs::component::MethodArgType::Mut(#arg_get_ty_id) });
                 arg_bindings.extend(
-                    quote! { let mut #arg = &mut *args.next().unwrap().get_as_mut::<#arg_ty>(); },
+                    quote! { let mut #arg = &mut *args.next().unwrap().get_as_mut::<#arg_ty>().unwrap(); },
                 );
             } else if *is_ref {
                 arg_ty_bindings
                     .push(quote! { weaver_ecs::component::MethodArgType::Ref(#arg_get_ty_id) });
-                arg_bindings
-                    .extend(quote! { let #arg = &args.next().unwrap().get_as::<#arg_ty>(); });
+                arg_bindings.extend(
+                    quote! { let #arg = &args.next().unwrap().get_as::<#arg_ty>().unwrap(); },
+                );
             } else {
                 arg_ty_bindings
                     .push(quote! { weaver_ecs::component::MethodArgType::Owned(#arg_get_ty_id) });
-                arg_bindings
-                    .extend(quote! { let #arg = *args.next().unwrap().get_as::<#arg_ty>(); });
+                arg_bindings.extend(
+                    quote! { let #arg = *args.next().unwrap().get_as::<#arg_ty>().unwrap(); },
+                );
             }
         }
 

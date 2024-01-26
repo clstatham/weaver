@@ -41,11 +41,7 @@ impl World {
         component: T,
         field_name: Option<&str>,
     ) {
-        // self.components.add_component(entity, component, field_name);
-        self.add_dynamic_component(
-            entity,
-            component.into_dynamic_data(field_name, self.registry()),
-        )
+        self.components.add_component(entity, component, field_name);
     }
 
     pub fn add_dynamic_component(&mut self, entity: &Entity, component: crate::component::Data) {
@@ -84,7 +80,10 @@ impl World {
             .resources
             .get(&id)
             .ok_or(anyhow::anyhow!("Resource does not exist"))?;
-        Ok(resource.get_as())
+        resource.get_as().ok_or(anyhow::anyhow!(
+            "Resource is not readable as a {}",
+            T::type_name()
+        ))
     }
 
     pub fn write_resource<T: Component>(&self) -> anyhow::Result<MappedRwLockWriteGuard<'_, T>> {
@@ -94,7 +93,10 @@ impl World {
             .get(&id)
             .ok_or(anyhow::anyhow!("Resource does not exist"))?;
 
-        Ok(resource.get_as_mut())
+        resource.get_as_mut().ok_or(anyhow::anyhow!(
+            "Resource is not writable as a {}",
+            T::type_name()
+        ))
     }
 
     pub fn dynamic_resource(&self, id: DynamicId) -> anyhow::Result<&Data> {

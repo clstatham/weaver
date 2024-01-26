@@ -6,6 +6,7 @@ use std::{
 use parking_lot::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
 };
+use rustc_hash::FxHashMap;
 
 use crate::registry::{DynamicId, Registry};
 
@@ -53,7 +54,14 @@ pub trait Component: Downcast + Send + Sync + 'static {
     {
     }
 
-    #[allow(unused)]
+    fn into_data(self, field_name: Option<&str>, registry: &Arc<Registry>) -> Data
+    where
+        Self: Sized,
+    {
+        Self::register_methods(registry);
+        Data::new(self, field_name, registry)
+    }
+
     fn into_dynamic_data(self, field_name: Option<&str>, registry: &Arc<Registry>) -> Data
     where
         Self: Sized,
@@ -222,34 +230,38 @@ pub const fn impls_clone<T: ?Sized>() -> bool {
     impls::impls!(T: Clone)
 }
 
+#[derive(Clone)]
+enum DataInner {
+    Static(Arc<RwLock<dyn Component>>),
+    Dynamic {
+        fields: Arc<Vec<Data>>,
+        vtable: Arc<FxHashMap<String, Arc<MethodWrapper>>>,
+    },
+}
+
 /// A shared pointer to a type-erased component.
 #[derive(Clone)]
 pub struct Data {
     pub(crate) type_id: DynamicId,
     pub(crate) type_name: String,
     pub(crate) field_name: Option<String>,
-    data: Arc<RwLock<dyn Component>>,
-    fields: Vec<Data>,
+    inner: DataInner,
     registry: Arc<Registry>,
     is_clone: bool,
-    is_dynamic: bool,
 }
 
 impl Data {
     pub fn new<T: Component>(data: T, field_name: Option<&str>, registry: &Arc<Registry>) -> Self {
         let type_id = registry.get_static::<T>();
-        let fields = data.fields(registry);
         T::register_methods(registry);
         let data = Arc::new(RwLock::new(data));
         Self {
-            data,
             type_id,
             type_name: registry.static_name::<T>().to_string(),
             field_name: field_name.map(|s| s.to_string()),
-            fields,
             registry: registry.clone(),
             is_clone: impls_clone::<T>(),
-            is_dynamic: false,
+            inner: DataInner::Static(data),
         }
     }
 
@@ -262,35 +274,48 @@ impl Data {
     ) -> Self {
         let type_id = registry.get_named(type_name);
         Self {
-            data: Arc::new(RwLock::new(())),
             type_id,
             type_name: type_name.to_string(),
             field_name: field_name.map(|s| s.to_string()),
-            fields,
             registry: registry.clone(),
             is_clone,
-            is_dynamic: true,
+            inner: DataInner::Dynamic {
+                fields: Arc::new(fields),
+                vtable: registry.methods(type_id).unwrap(),
+            },
         }
     }
 
     #[inline]
-    pub fn get_as<T: Component>(&self) -> MappedRwLockReadGuard<'_, T> {
-        if self.is_dynamic {
-            panic!("Cannot get dynamic component as immutable");
+    pub fn get_as<T: Component>(&self) -> Option<MappedRwLockReadGuard<'_, T>> {
+        match self.inner {
+            DataInner::Static(ref data) => {
+                let data = data.read();
+                if !(*data).as_any().is::<T>() {
+                    return None;
+                }
+                Some(RwLockReadGuard::map(data, |data| {
+                    data.as_any().downcast_ref::<T>().unwrap()
+                }))
+            }
+            DataInner::Dynamic { .. } => None,
         }
-        RwLockReadGuard::map(self.data.read(), |data| {
-            data.as_any().downcast_ref::<T>().unwrap()
-        })
     }
 
     #[inline]
-    pub fn get_as_mut<T: Component>(&self) -> MappedRwLockWriteGuard<'_, T> {
-        if self.is_dynamic {
-            panic!("Cannot get dynamic component as mutable");
+    pub fn get_as_mut<T: Component>(&self) -> Option<MappedRwLockWriteGuard<'_, T>> {
+        match self.inner {
+            DataInner::Static(ref data) => {
+                let data = data.write();
+                if !(*data).as_any().is::<T>() {
+                    return None;
+                }
+                Some(RwLockWriteGuard::map(data, |data| {
+                    data.as_any_mut().downcast_mut::<T>().unwrap()
+                }))
+            }
+            DataInner::Dynamic { .. } => None,
         }
-        RwLockWriteGuard::map(self.data.write(), |data| {
-            data.as_any_mut().downcast_mut::<T>().unwrap()
-        })
     }
 
     #[inline]
@@ -327,51 +352,55 @@ impl Data {
     }
 
     #[inline]
-    pub fn borrow(&self) -> RwLockReadGuard<'_, dyn Component> {
-        self.data.read()
-    }
-
-    #[inline]
-    pub fn borrow_mut(&self) -> RwLockWriteGuard<'_, dyn Component> {
-        self.data.write()
-    }
-
-    #[inline]
-    pub fn fields(&self) -> Vec<Data> {
-        if self.is_dynamic {
-            return self.fields.to_owned();
+    pub fn borrow(&self) -> Option<RwLockReadGuard<'_, dyn Component>> {
+        match self.inner {
+            DataInner::Static(ref data) => Some(data.read()),
+            DataInner::Dynamic { .. } => None,
         }
+    }
 
-        let data = self.borrow();
-        data.fields(&self.registry)
+    #[inline]
+    pub fn borrow_mut(&self) -> Option<RwLockWriteGuard<'_, dyn Component>> {
+        match self.inner {
+            DataInner::Static(ref data) => Some(data.write()),
+            DataInner::Dynamic { .. } => None,
+        }
+    }
+
+    #[inline]
+    pub fn fields(&self) -> Option<Arc<Vec<Data>>> {
+        match self.inner {
+            DataInner::Static(_) => None,
+            DataInner::Dynamic { ref fields, .. } => Some(fields.clone()),
+        }
     }
 
     #[inline]
     pub fn field_by_id(&self, id: DynamicId) -> Option<Data> {
-        self.fields()
-            .iter()
-            .find(|field| field.type_id == id)
-            .cloned()
+        match self.inner {
+            DataInner::Static(_) => None,
+            DataInner::Dynamic { ref fields, .. } => {
+                fields.iter().find(|field| field.type_id() == id).cloned()
+            }
+        }
     }
 
     #[inline]
     pub fn field_by_name(&self, name: &str) -> Option<Data> {
-        self.fields()
-            .iter()
-            .filter(|field| field.field_name().is_some())
-            .find(|field| {
-                if let Some(field_name) = field.field_name() {
-                    field_name == name
-                } else {
-                    false
-                }
-            })
-            .cloned()
+        match self.inner {
+            DataInner::Static(_) => None,
+            DataInner::Dynamic { ref fields, .. } => {
+                fields.iter().find(|field| field.name() == name).cloned()
+            }
+        }
     }
 
     #[inline]
     pub fn method_by_name(&self, name: &str) -> Option<Arc<MethodWrapper>> {
-        self.registry.method_by_id(self.type_id, name)
+        match self.inner {
+            DataInner::Static(_) => None,
+            DataInner::Dynamic { ref vtable, .. } => vtable.get(name).cloned(),
+        }
     }
 
     #[inline]
@@ -382,54 +411,34 @@ impl Data {
         Err(anyhow::anyhow!("Method does not exist"))
     }
 
-    #[inline]
-    pub fn clone_as<T: Component + Clone>(&self) -> Option<Self> {
-        let data = self.data.read();
-        let data = (*data).as_any().downcast_ref::<T>()?;
-        Some(Self::new(
-            data.clone(),
-            self.field_name.as_deref(),
-            &self.registry,
-        ))
-    }
-
-    pub fn try_clone(&self) -> Option<Self> {
-        if !self.is_clone {
-            return None;
-        }
-        let this = self.borrow();
-        try_all_types!(this; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String; {
-            return Some(Self::new(this.clone(), self.field_name.as_deref(), &self.registry));
-        } else {
-            return None;
-        });
-        None
-    }
-
     pub fn display(&self, f: &mut std::fmt::Formatter<'_>) {
         let fields = self.fields();
         let component = self.borrow();
         let type_name = self.type_name();
-        try_all_types!(component; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String, glam::Vec2, glam::Vec3, glam::Vec4, glam::Mat2, glam::Mat3, glam::Mat4, glam::Quat; {
-            write!(f, "{}", *component).unwrap();
-            return;
-        } else {
-            write!(f, "{}", type_name).unwrap();
-            if fields.is_empty() {
+        if let Some(component) = component {
+            try_all_types!(component; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String, glam::Vec2, glam::Vec3, glam::Vec4, glam::Mat2, glam::Mat3, glam::Mat4, glam::Quat; {
+                write!(f, "{}", *component).unwrap();
                 return;
-            }
-            write!(f, " {{ ").unwrap();
-            for field in &fields[..fields.len() - 1] {
-                write!(f, "{} = ", field.field_name().unwrap()).unwrap();
-                field.display(f);
-                write!(f, ", ").unwrap();
-            }
-            write!(f, "{} = ", fields[fields.len() - 1].field_name().unwrap()).unwrap();
-            fields[fields.len() - 1].display(f);
-            write!(f, " }}").unwrap();
+            } else {
+                write!(f, "{}", type_name).unwrap();
+                if let Some(fields) = fields {
+                    if fields.is_empty() {
+                        return;
+                    }
+                    write!(f, " {{ ").unwrap();
+                    for field in &fields[..fields.len() - 1] {
+                        write!(f, "{} = ", field.field_name().unwrap()).unwrap();
+                        field.display(f);
+                        write!(f, ", ").unwrap();
+                    }
+                    write!(f, "{} = ", fields[fields.len() - 1].field_name().unwrap()).unwrap();
+                    fields[fields.len() - 1].display(f);
+                    write!(f, " }}").unwrap();
+                }
 
-            return;
-        });
+                return;
+            });
+        }
     }
 
     pub fn add(&self, rhs: &Data) -> anyhow::Result<Data> {
@@ -439,8 +448,12 @@ impl Data {
 
         let reg = self.registry.clone();
 
-        let lhs = self.borrow();
-        let rhs = rhs.borrow();
+        let lhs = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(reg, lhs, +, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
 
@@ -454,8 +467,12 @@ impl Data {
 
         let reg = self.registry.clone();
 
-        let lhs = self.borrow();
-        let rhs = rhs.borrow();
+        let lhs = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(reg, lhs, -, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
 
@@ -469,8 +486,12 @@ impl Data {
 
         let reg = self.registry.clone();
 
-        let lhs = self.borrow();
-        let rhs = rhs.borrow();
+        let lhs = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(reg, lhs, *, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
 
@@ -484,8 +505,12 @@ impl Data {
 
         let reg = self.registry.clone();
 
-        let lhs = self.borrow();
-        let rhs = rhs.borrow();
+        let lhs = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(reg, lhs, /, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
 
@@ -499,8 +524,12 @@ impl Data {
 
         let reg = self.registry.clone();
 
-        let lhs = self.borrow();
-        let rhs = rhs.borrow();
+        let lhs = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(reg, lhs, %, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
 
@@ -514,8 +543,12 @@ impl Data {
 
         let reg = self.registry.clone();
 
-        let lhs = self.borrow();
-        let rhs = rhs.borrow();
+        let lhs = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(reg, lhs, <, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128);
 
@@ -529,8 +562,12 @@ impl Data {
 
         let reg = self.registry.clone();
 
-        let lhs = self.borrow();
-        let rhs = rhs.borrow();
+        let lhs = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(reg, lhs, <=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128);
 
@@ -544,8 +581,12 @@ impl Data {
 
         let reg = self.registry.clone();
 
-        let lhs = self.borrow();
-        let rhs = rhs.borrow();
+        let lhs = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(reg, lhs, >, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128);
 
@@ -559,8 +600,12 @@ impl Data {
 
         let reg = self.registry.clone();
 
-        let lhs = self.borrow();
-        let rhs = rhs.borrow();
+        let lhs = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(reg, lhs, >=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128);
 
@@ -574,8 +619,12 @@ impl Data {
 
         let reg = self.registry.clone();
 
-        let lhs = self.borrow();
-        let rhs = rhs.borrow();
+        let lhs = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(reg, lhs, ==, rhs; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String);
 
@@ -583,8 +632,12 @@ impl Data {
     }
 
     pub fn and(&self, rhs: &Data) -> anyhow::Result<Data> {
-        let lhs = self.borrow();
-        let rhs = rhs.borrow();
+        let lhs = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         if let Some(lhs) = (*lhs).as_any().downcast_ref::<bool>() {
             if let Some(rhs) = (*rhs).as_any().downcast_ref::<bool>() {
@@ -596,8 +649,12 @@ impl Data {
     }
 
     pub fn or(&self, rhs: &Data) -> anyhow::Result<Data> {
-        let lhs = self.borrow();
-        let rhs = rhs.borrow();
+        let lhs = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         if let Some(lhs) = (*lhs).as_any().downcast_ref::<bool>() {
             if let Some(rhs) = (*rhs).as_any().downcast_ref::<bool>() {
@@ -609,7 +666,9 @@ impl Data {
     }
 
     pub fn not(&self) -> anyhow::Result<Data> {
-        let this = self.borrow();
+        let this = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         if let Some(this) = (*this).as_any().downcast_ref::<bool>() {
             return Ok(Data::new(!*this, None, &self.registry));
@@ -619,8 +678,12 @@ impl Data {
     }
 
     pub fn xor(&self, rhs: &Data) -> anyhow::Result<Data> {
-        let lhs = self.borrow();
-        let rhs = rhs.borrow();
+        let lhs = self
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         if let Some(lhs) = (*lhs).as_any().downcast_ref::<bool>() {
             if let Some(rhs) = (*rhs).as_any().downcast_ref::<bool>() {
@@ -636,8 +699,12 @@ impl Data {
             return Err(anyhow::anyhow!("Type mismatch"));
         }
 
-        let mut lhs = self.borrow_mut();
-        let rhs = rhs.borrow();
+        let mut lhs = self
+            .borrow_mut()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(ref mut lhs, =, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
 
@@ -648,8 +715,12 @@ impl Data {
         if self.type_id != rhs.type_id {
             return Err(anyhow::anyhow!("Type mismatch"));
         }
-        let mut lhs = self.borrow_mut();
-        let rhs = rhs.borrow();
+        let mut lhs = self
+            .borrow_mut()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(ref mut lhs, +=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
 
@@ -660,8 +731,12 @@ impl Data {
         if self.type_id != rhs.type_id {
             return Err(anyhow::anyhow!("Type mismatch"));
         }
-        let mut lhs = self.borrow_mut();
-        let rhs = rhs.borrow();
+        let mut lhs = self
+            .borrow_mut()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(ref mut lhs, -=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
 
@@ -673,8 +748,12 @@ impl Data {
             return Err(anyhow::anyhow!("Type mismatch"));
         }
 
-        let mut lhs = self.borrow_mut();
-        let rhs = rhs.borrow();
+        let mut lhs = self
+            .borrow_mut()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(ref mut lhs, *=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
 
@@ -686,8 +765,12 @@ impl Data {
             return Err(anyhow::anyhow!("Type mismatch"));
         }
 
-        let mut lhs = self.borrow_mut();
-        let rhs = rhs.borrow();
+        let mut lhs = self
+            .borrow_mut()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(ref mut lhs, /=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
 
@@ -699,8 +782,12 @@ impl Data {
             return Err(anyhow::anyhow!("Type mismatch"));
         }
 
-        let mut lhs = self.borrow_mut();
-        let rhs = rhs.borrow();
+        let mut lhs = self
+            .borrow_mut()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
+        let rhs = rhs
+            .borrow()
+            .ok_or(anyhow::anyhow!("Cannot borrow component"))?;
 
         data_arithmetic!(ref mut lhs, %=, rhs; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
 

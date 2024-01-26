@@ -189,7 +189,7 @@ where
         registry: &Registry,
     ) -> Option<Self::ItemRef> {
         let data = data.get(&registry.get_static::<T>())?;
-        let component = data.get_as::<T>();
+        let component = data.get_as::<T>()?;
 
         Some(Ref { entity, component })
     }
@@ -218,7 +218,7 @@ where
         registry: &'a Registry,
     ) -> Option<Self::ItemRef> {
         let data = data.get(&registry.get_static::<T>())?;
-        let component = data.get_as_mut::<T>();
+        let component = data.get_as_mut::<T>()?;
 
         Some(Mut { entity, component })
     }
@@ -427,7 +427,7 @@ pub enum DynamicQueryRef {
 }
 
 impl DynamicQueryRef {
-    pub fn get<T: Component>(&self) -> MappedRwLockReadGuard<'_, T> {
+    pub fn get<T: Component>(&self) -> Option<MappedRwLockReadGuard<'_, T>> {
         match self {
             DynamicQueryRef::Ref(data) => data.get_as(),
             DynamicQueryRef::Mut(data) => data.get_as(),
@@ -437,7 +437,7 @@ impl DynamicQueryRef {
     pub fn get_mut<T: Component>(&mut self) -> Option<MappedRwLockWriteGuard<'_, T>> {
         match self {
             DynamicQueryRef::Ref(_) => None,
-            DynamicQueryRef::Mut(data) => Some(data.get_as_mut()),
+            DynamicQueryRef::Mut(data) => data.get_as_mut(),
         }
     }
 

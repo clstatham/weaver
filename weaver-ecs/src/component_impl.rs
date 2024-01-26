@@ -72,7 +72,7 @@ impl<T: Component> Component for Vec<T> {
             Some(MethodArgType::Ref(registry.get_static::<usize>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<Vec<T>>();
+                let this = this.get_as::<Vec<T>>().unwrap();
                 let result = this.len();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -122,7 +122,7 @@ impl Component for glam::Vec3 {
             Some(MethodArgType::Ref(registry.get_static::<f32>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Vec3>();
+                let this = this.get_as::<glam::Vec3>().unwrap();
                 let result = this.length();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -135,7 +135,7 @@ impl Component for glam::Vec3 {
             Some(MethodArgType::Ref(registry.get_static::<f32>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Vec3>();
+                let this = this.get_as::<glam::Vec3>().unwrap();
                 let result = this.length_squared();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -148,7 +148,7 @@ impl Component for glam::Vec3 {
             Some(MethodArgType::Owned(registry.get_static::<Self>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Vec3>();
+                let this = this.get_as::<glam::Vec3>().unwrap();
                 let result = this.normalize();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -161,7 +161,7 @@ impl Component for glam::Vec3 {
             Some(MethodArgType::Owned(registry.get_static::<Self>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Vec3>();
+                let this = this.get_as::<glam::Vec3>().unwrap();
                 let result = this.normalize_or_zero();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -203,7 +203,7 @@ impl Component for glam::Vec2 {
             Some(MethodArgType::Ref(registry.get_static::<f32>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Vec2>();
+                let this = this.get_as::<glam::Vec2>().unwrap();
                 let result = this.length();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -216,7 +216,7 @@ impl Component for glam::Vec2 {
             Some(MethodArgType::Ref(registry.get_static::<f32>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Vec2>();
+                let this = this.get_as::<glam::Vec2>().unwrap();
                 let result = this.length_squared();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -229,7 +229,7 @@ impl Component for glam::Vec2 {
             Some(MethodArgType::Ref(registry.get_static::<Self>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Vec2>();
+                let this = this.get_as::<glam::Vec2>().unwrap();
                 let result = this.normalize();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -242,7 +242,7 @@ impl Component for glam::Vec2 {
             Some(MethodArgType::Ref(registry.get_static::<Self>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Vec2>();
+                let this = this.get_as::<glam::Vec2>().unwrap();
                 let result = this.normalize_or_zero();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -286,7 +286,7 @@ impl Component for glam::Vec4 {
             Some(MethodArgType::Ref(registry.get_static::<f32>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Vec4>();
+                let this = this.get_as::<glam::Vec4>().unwrap();
                 let result = this.length();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -299,7 +299,7 @@ impl Component for glam::Vec4 {
             Some(MethodArgType::Ref(registry.get_static::<f32>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Vec4>();
+                let this = this.get_as::<glam::Vec4>().unwrap();
                 let result = this.length_squared();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -312,7 +312,7 @@ impl Component for glam::Vec4 {
             Some(MethodArgType::Ref(registry.get_static::<Self>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Vec4>();
+                let this = this.get_as::<glam::Vec4>().unwrap();
                 let result = this.normalize();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -325,7 +325,7 @@ impl Component for glam::Vec4 {
             Some(MethodArgType::Ref(registry.get_static::<Self>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Vec4>();
+                let this = this.get_as::<glam::Vec4>().unwrap();
                 let result = this.normalize_or_zero();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -369,7 +369,7 @@ impl Component for glam::Quat {
             Some(MethodArgType::Ref(registry.get_static::<f32>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Quat>();
+                let this = this.get_as::<glam::Quat>().unwrap();
                 let result = this.length();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -382,7 +382,7 @@ impl Component for glam::Quat {
             Some(MethodArgType::Ref(registry.get_static::<f32>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Quat>();
+                let this = this.get_as::<glam::Quat>().unwrap();
                 let result = this.length_squared();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -395,7 +395,7 @@ impl Component for glam::Quat {
             Some(MethodArgType::Ref(registry.get_static::<Self>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Quat>();
+                let this = this.get_as::<glam::Quat>().unwrap();
                 let result = this.normalize();
                 Ok(Data::new(result, None, &registry_clone))
             },
@@ -411,9 +411,9 @@ impl Component for glam::Quat {
             Some(MethodArgType::Ref(registry.get_static::<Self>())),
             move |data: &[&Data]| {
                 let axis = &data[0];
-                let axis = axis.get_as::<glam::Vec3>();
+                let axis = axis.get_as::<glam::Vec3>().unwrap();
                 let angle = &data[1];
-                let angle = angle.get_as::<f32>();
+                let angle = angle.get_as::<f32>().unwrap();
                 let data = glam::Quat::from_axis_angle(*axis, *angle);
                 Ok(Data::new(data, None, &registry_clone))
             },
@@ -456,7 +456,7 @@ impl Component for glam::Mat4 {
             Some(MethodArgType::Ref(registry.get_static::<f32>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Mat4>();
+                let this = this.get_as::<glam::Mat4>().unwrap();
                 let data = this.determinant();
                 Ok(Data::new(data, None, &registry_clone))
             },
@@ -469,7 +469,7 @@ impl Component for glam::Mat4 {
             Some(MethodArgType::Ref(registry.get_static::<Self>())),
             move |data: &[&Data]| {
                 let this = &data[0];
-                let this = this.get_as::<glam::Mat4>();
+                let this = this.get_as::<glam::Mat4>().unwrap();
                 let data = this.inverse();
                 Ok(Data::new(data, None, &registry_clone))
             },

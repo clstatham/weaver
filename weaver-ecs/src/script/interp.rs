@@ -198,24 +198,24 @@ impl InterpreterContext {
                 let x = match &x.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>(),
-                    Value::DataMut(data) => *data.get_as::<f32>(),
+                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
+                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
                 let y = match &y.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>(),
-                    Value::DataMut(data) => *data.get_as::<f32>(),
+                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
+                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
                 let z = match &z.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>(),
-                    Value::DataMut(data) => *data.get_as::<f32>(),
+                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
+                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
@@ -236,32 +236,32 @@ impl InterpreterContext {
                 let x = match &x.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>(),
-                    Value::DataMut(data) => *data.get_as::<f32>(),
+                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
+                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
                 let y = match &y.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>(),
-                    Value::DataMut(data) => *data.get_as::<f32>(),
+                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
+                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
                 let z = match &z.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>(),
-                    Value::DataMut(data) => *data.get_as::<f32>(),
+                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
+                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
                 let w = match &w.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>(),
-                    Value::DataMut(data) => *data.get_as::<f32>(),
+                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
+                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
                     _ => anyhow::bail!("Invalid argument"),
                 };
 
@@ -280,8 +280,8 @@ impl InterpreterContext {
                     let x = match &self.interp_expr(env, arg)?.value {
                         Value::Int(int) => *int as f32,
                         Value::Float(float) => *float,
-                        Value::Data(data) => *data.get_as::<f32>(),
-                        Value::DataMut(data) => *data.get_as::<f32>(),
+                        Value::Data(data) => *data.get_as::<f32>().unwrap(),
+                        Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
                         _ => anyhow::bail!("Invalid argument"),
                     };
                     mat4.push(x);
@@ -677,8 +677,8 @@ impl InterpreterContext {
             Value::Int(int) => *int != 0,
             Value::Float(float) => *float != 0.0,
             Value::Bool(b) => *b,
-            Value::Data(data) => *data.get_as::<bool>(),
-            Value::DataMut(data) => *data.get_as::<bool>(),
+            Value::Data(data) => *data.get_as::<bool>().unwrap(),
+            Value::DataMut(data) => *data.get_as::<bool>().unwrap(),
             value => anyhow::bail!("Cannot use {:?} as condition", value),
         };
 
@@ -691,8 +691,8 @@ impl InterpreterContext {
                     Value::Int(int) => *int != 0,
                     Value::Float(float) => *float != 0.0,
                     Value::Bool(b) => *b,
-                    Value::Data(data) => *data.get_as::<bool>(),
-                    Value::DataMut(data) => *data.get_as::<bool>(),
+                    Value::Data(data) => *data.get_as::<bool>().unwrap(),
+                    Value::DataMut(data) => *data.get_as::<bool>().unwrap(),
                     value => anyhow::bail!("Cannot use {:?} as condition", value),
                 };
 
@@ -807,8 +807,8 @@ impl InterpreterContext {
                         Value::Int(int) => *int != 0,
                         Value::Float(float) => *float != 0.0,
                         Value::Bool(b) => *b,
-                        Value::Data(data) => *data.get_as::<bool>(),
-                        Value::DataMut(data) => *data.get_as::<bool>(),
+                        Value::Data(data) => *data.get_as::<bool>().unwrap(),
+                        Value::DataMut(data) => *data.get_as::<bool>().unwrap(),
                         Value::Query { .. } => unreachable!(),
                         value => anyhow::bail!("Cannot use {:?} as condition", value),
                     };

@@ -604,7 +604,7 @@ impl Value {
                 _ => Err(anyhow::anyhow!("Invalid operator {} for Mat4 types", op)),
             },
             (Value::Data(lhs), Value::Vec3(rhs)) => {
-                let lhs = lhs.get_as_mut::<glam::Vec3>();
+                let lhs = lhs.get_as_mut::<glam::Vec3>().unwrap();
                 match op {
                     "+" => Ok(Value::Vec3(*lhs + *rhs)),
                     "-" => Ok(Value::Vec3(*lhs - *rhs)),
@@ -616,7 +616,7 @@ impl Value {
                 }
             }
             (Value::Data(lhs), Value::Vec4(rhs)) => {
-                let lhs = lhs.get_as_mut::<glam::Vec4>();
+                let lhs = lhs.get_as_mut::<glam::Vec4>().unwrap();
                 match op {
                     "+" => Ok(Value::Vec4(*lhs + *rhs)),
                     "-" => Ok(Value::Vec4(*lhs - *rhs)),
@@ -628,7 +628,7 @@ impl Value {
                 }
             }
             (Value::Data(lhs), Value::Mat4(rhs)) => {
-                let lhs = lhs.get_as_mut::<glam::Mat4>();
+                let lhs = lhs.get_as_mut::<glam::Mat4>().unwrap();
                 match op {
                     "*" => Ok(Value::Mat4(*lhs * *rhs)),
                     "==" => Ok(Value::Bool(*lhs == *rhs)),
@@ -636,7 +636,7 @@ impl Value {
                 }
             }
             (Value::Data(lhs), Value::Quat(rhs)) => {
-                let lhs = lhs.get_as_mut::<glam::Quat>();
+                let lhs = lhs.get_as_mut::<glam::Quat>().unwrap();
                 match op {
                     "*" => Ok(Value::Quat(*lhs * *rhs)),
                     "==" => Ok(Value::Bool(*lhs == *rhs)),
@@ -644,7 +644,7 @@ impl Value {
                 }
             }
             (Value::Vec3(lhs), Value::Data(rhs) | Value::DataMut(rhs)) => {
-                let rhs = rhs.get_as::<glam::Vec3>();
+                let rhs = rhs.get_as::<glam::Vec3>().unwrap();
                 match op {
                     "+" => Ok(Value::Vec3(*lhs + *rhs)),
                     "-" => Ok(Value::Vec3(*lhs - *rhs)),
@@ -656,7 +656,7 @@ impl Value {
                 }
             }
             (Value::Vec4(lhs), Value::Data(rhs) | Value::DataMut(rhs)) => {
-                let rhs = rhs.get_as::<glam::Vec4>();
+                let rhs = rhs.get_as::<glam::Vec4>().unwrap();
                 match op {
                     "+" => Ok(Value::Vec4(*lhs + *rhs)),
                     "-" => Ok(Value::Vec4(*lhs - *rhs)),
@@ -668,7 +668,7 @@ impl Value {
                 }
             }
             (Value::Mat4(lhs), Value::Data(rhs) | Value::DataMut(rhs)) => {
-                let rhs = rhs.get_as::<glam::Mat4>();
+                let rhs = rhs.get_as::<glam::Mat4>().unwrap();
                 match op {
                     "*" => Ok(Value::Mat4(*lhs * *rhs)),
                     "==" => Ok(Value::Bool(*lhs == *rhs)),
@@ -676,7 +676,7 @@ impl Value {
                 }
             }
             (Value::Quat(lhs), Value::Data(rhs) | Value::DataMut(rhs)) => {
-                let rhs = rhs.get_as::<glam::Quat>();
+                let rhs = rhs.get_as::<glam::Quat>().unwrap();
                 match op {
                     "*" => Ok(Value::Quat(*lhs * *rhs)),
                     "==" => Ok(Value::Bool(*lhs == *rhs)),
@@ -684,7 +684,7 @@ impl Value {
                 }
             }
             (Value::DataMut(lhs), Value::Vec3(rhs)) => {
-                let mut lhs = lhs.get_as_mut::<glam::Vec3>();
+                let mut lhs = lhs.get_as_mut::<glam::Vec3>().unwrap();
                 match op {
                     "+" => Ok(Value::Vec3(*lhs + *rhs)),
                     "-" => Ok(Value::Vec3(*lhs - *rhs)),
@@ -719,7 +719,7 @@ impl Value {
                 }
             }
             (Value::DataMut(lhs), Value::Vec4(rhs)) => {
-                let mut lhs = lhs.get_as_mut::<glam::Vec4>();
+                let mut lhs = lhs.get_as_mut::<glam::Vec4>().unwrap();
                 match op {
                     "+" => Ok(Value::Vec4(*lhs + *rhs)),
                     "-" => Ok(Value::Vec4(*lhs - *rhs)),
@@ -754,7 +754,7 @@ impl Value {
                 }
             }
             (Value::DataMut(lhs), Value::Mat4(rhs)) => {
-                let mut lhs = lhs.get_as_mut::<glam::Mat4>();
+                let mut lhs = lhs.get_as_mut::<glam::Mat4>().unwrap();
                 match op {
                     "*" => Ok(Value::Mat4(*lhs * *rhs)),
                     "=" => {
@@ -777,7 +777,7 @@ impl Value {
                 }
             }
             (Value::DataMut(lhs), Value::Quat(rhs)) => {
-                let mut lhs = lhs.get_as_mut::<glam::Quat>();
+                let mut lhs = lhs.get_as_mut::<glam::Quat>().unwrap();
                 match op {
                     "*" => Ok(Value::Quat(*lhs * *rhs)),
                     "=" => {

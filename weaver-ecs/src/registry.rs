@@ -17,7 +17,7 @@ pub struct Registry {
     static_ids: AtomicRefCell<TypeIdMap<DynamicId>>,
     named_ids: AtomicRefCell<FxHashMap<String, DynamicId>>,
     id_names: AtomicRefCell<FxHashMap<DynamicId, String>>,
-    methods: AtomicRefCell<FxHashMap<DynamicId, FxHashMap<String, Arc<MethodWrapper>>>>,
+    methods: AtomicRefCell<FxHashMap<DynamicId, Arc<FxHashMap<String, Arc<MethodWrapper>>>>>,
 }
 
 impl Registry {
@@ -90,6 +90,10 @@ impl Registry {
             .cloned()
     }
 
+    pub fn methods(&self, id: DynamicId) -> Option<Arc<FxHashMap<String, Arc<MethodWrapper>>>> {
+        self.methods.borrow().get(&id).cloned()
+    }
+
     pub fn methods_registered(&self, id: DynamicId) -> bool {
         self.methods.borrow().contains_key(&id)
     }
@@ -120,13 +124,12 @@ impl Registry {
             }
             return;
         }
-        for method in methods {
-            self.methods
-                .borrow_mut()
-                .entry(id)
-                .or_default()
-                .insert(method.name().to_string(), Arc::new(method));
-        }
+        let methods = methods
+            .into_iter()
+            .map(|method| (method.name().to_string(), Arc::new(method)));
+        self.methods
+            .borrow_mut()
+            .insert(id, Arc::new(methods.collect()));
     }
 
     pub fn split(&self) -> Self {
