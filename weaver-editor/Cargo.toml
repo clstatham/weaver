@@ -12,3 +12,4 @@ env_logger = "0.11.0"
 log = "0.4.20"
 syntect = "5"
 weaver = { path = "../" }
+bitflags = "2.4"

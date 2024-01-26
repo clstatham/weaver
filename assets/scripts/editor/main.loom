@@ -1,45 +1,23 @@
 @startup
 system setup {
     var res assets: AssetServer;
-    let res hdr_loader: HdrLoader;
 
-    spawn(
-        assets.load_skybox("meadow_2k.hdr", hdr_loader),
-    )
-
-    var camera = Camera.default()
-    var controller = FlyCameraController.default()
-    controller.set_translation(vec3(0.0, 0.0, 5.0))
-
-    spawn(camera, controller)
-    spawn(PointLight.new(
-        vec3(5.0, 5.0, 5.0),
-        Color.new(1.0, 1.0, 1.0),
-        100.0,
-        100.0,
-    ))
-
-    spawn(
-        assets.load_mesh("meshes/monkey_flat.glb"),
+    let parent = spawn(
+        assets.load_mesh("meshes/monkey_2x.glb"),
         assets.load_material("materials/wood.glb"),
         Transform.new(),
         Player {},
     )
-}
 
-@update
-system update_camera {
-    let res input: Input;
-    let res time: Time;
+    var local_transform = LocalTransform.from_translation(vec3(3.0, 3.0, 3.0));
 
-    query cameras [
-        var camera: Camera,
-        var controller: FlyCameraController,
-    ]
-
-    loop cameras {
-        controller.update(input, time.delta_seconds, camera)
-    }
+    let child = spawn(
+        assets.load_mesh("meshes/monkey_2x.glb"),
+        assets.load_material("materials/metal.glb"),
+        Transform.new(),
+        local_transform,
+        ParentRel.position_rotation_scale(parent),
+    )
 }
 
 @update

@@ -761,7 +761,10 @@ impl InterpreterContext {
                     let data = Data::new(string.to_owned(), Some(field_name), world.registry());
                     fields.push(data);
                 }
-                Value::Entity(_) => bail!(arg.span, "Cannot assign entity value"),
+                Value::Entity(entity) => {
+                    let data = Data::new(*entity, Some(field_name), world.registry());
+                    fields.push(data);
+                }
                 Value::Void => bail!(arg.span, "Cannot assign void value"),
                 Value::Query { .. } => bail!(arg.span, "Cannot assign query value"),
                 Value::Type(_) => bail!(arg.span, "Cannot assign type value"),

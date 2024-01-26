@@ -26,7 +26,7 @@ impl Window {
 
 pub struct App {
     event_loop: EventLoop<()>,
-    pub(crate) world: Arc<RwLock<World>>,
+    pub world: Arc<RwLock<World>>,
 }
 
 impl App {

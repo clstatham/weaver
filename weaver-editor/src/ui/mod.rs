@@ -1,17 +1,12 @@
 use egui::TextEdit;
 use weaver::prelude::{weaver_core::scripts::Scripts, *};
 
-use crate::state::EditorState;
 pub mod syntax_highlighting;
 
-#[system(UiMain)]
-pub fn ui_main(ctx: Res<EguiContext>, state: Res<EditorState>, fps_display: ResMut<FpsDisplay>) {
+#[system(FpsDisplayUi)]
+pub fn ui_main(ctx: Res<EguiContext>, fps_display: ResMut<FpsDisplay>) {
     ctx.draw_if_ready(|ctx| {
         fps_display.run_ui(ctx);
-        egui::Window::new("Hello world").show(ctx, |ui| {
-            ui.label("Hello world!");
-            ui.label(format!("Editor state: {:?}", &*state));
-        });
     });
 }
 
@@ -59,7 +54,6 @@ pub fn script_update(ctx: Res<EguiContext>, scripts: Res<Scripts>, input: Res<In
                             TextEdit::multiline(&mut script.content)
                                 .code_editor()
                                 .desired_width(f32::INFINITY)
-                                .desired_rows(20)
                                 .layouter(&mut layouter),
                         );
                         if editor.lost_focus() {

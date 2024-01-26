@@ -124,7 +124,7 @@ impl Default for Camera {
 pub struct FlyCameraController {
     pub speed: f32,
     pub sensitivity: f32,
-    translation: glam::Vec3,
+    pub translation: glam::Vec3,
     pub rotation: glam::Quat,
     pub fov: f32,
     pub aspect: f32,
