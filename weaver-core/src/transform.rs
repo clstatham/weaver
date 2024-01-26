@@ -5,31 +5,134 @@ use crate::renderer::internals::{LazyBindGroup, LazyGpuHandle};
 
 use super::mesh::MAX_MESHES;
 
-#[derive(Clone, Copy, Component, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-#[method(new = "fn() -> Transform")]
-#[method(
-    from_scale_rotation_translation = "fn(scale: glam::Vec3, rotation: glam::Quat, translation: glam::Vec3) -> Transform"
-)]
-#[method(from_translation = "fn(translation: glam::Vec3) -> Transform")]
-#[method(from_rotation = "fn(rotation: glam::Quat) -> Transform")]
-#[method(from_scale = "fn(scale: glam::Vec3) -> Transform")]
-#[method(translate = "fn(&mut Transform, x: f32, y: f32, z: f32)")]
-#[method(rotate = "fn(&mut Transform, angle: f32, axis: glam::Vec3)")]
-#[method(scale = "fn(&mut Transform, x: f32, y: f32, z: f32)")]
-#[method(look_at = "fn(&mut Transform, target: glam::Vec3, up: glam::Vec3)")]
-#[method(get_translation = "fn(&Transform) -> glam::Vec3")]
-#[method(get_rotation = "fn(&Transform) -> glam::Quat")]
-#[method(get_scale = "fn(&Transform) -> glam::Vec3")]
-#[method(set_translation = "fn(&mut Transform, translation: glam::Vec3)")]
-#[method(set_rotation = "fn(&mut Transform, rotation: glam::Quat)")]
-#[method(set_scale = "fn(&mut Transform, scale: glam::Vec3)")]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
+#[derive(Component)]
+#[method(new = "fn() -> Self")]
+#[method(from_translation = "fn(glam::Vec3) -> Self")]
+#[method(from_rotation = "fn(glam::Quat) -> Self")]
+#[method(from_scale = "fn(glam::Vec3) -> Self")]
+#[method(from_translation_rotation = "fn(glam::Vec3, glam::Quat) -> Self")]
+#[method(from_translation_scale = "fn(glam::Vec3, glam::Vec3) -> Self")]
+#[method(from_rotation_scale = "fn(glam::Quat, glam::Vec3) -> Self")]
+#[method(from_translation_rotation_scale = "fn(glam::Vec3, glam::Quat, glam::Vec3) -> Self")]
+#[method(translate = "fn(&mut Self, glam::Vec3)")]
+#[method(rotate = "fn(&mut Self, glam::Quat)")]
+#[method(scale = "fn(&mut Self, glam::Vec3)")]
 pub struct Transform {
-    pub matrix: glam::Mat4,
+    pub translation: glam::Vec3,
+    pub rotation: glam::Quat,
+    pub scale: glam::Vec3,
 }
 
 impl Transform {
+    pub fn new() -> Self {
+        Self {
+            translation: glam::Vec3::ZERO,
+            rotation: glam::Quat::IDENTITY,
+            scale: glam::Vec3::ONE,
+        }
+    }
+
+    pub fn from_translation(translation: glam::Vec3) -> Self {
+        Self {
+            translation,
+            ..Default::default()
+        }
+    }
+
+    pub fn from_rotation(rotation: glam::Quat) -> Self {
+        Self {
+            rotation,
+            ..Default::default()
+        }
+    }
+
+    pub fn from_scale(scale: glam::Vec3) -> Self {
+        Self {
+            scale,
+            ..Default::default()
+        }
+    }
+
+    pub fn from_translation_rotation(translation: glam::Vec3, rotation: glam::Quat) -> Self {
+        Self {
+            translation,
+            rotation,
+            ..Default::default()
+        }
+    }
+
+    pub fn from_translation_scale(translation: glam::Vec3, scale: glam::Vec3) -> Self {
+        Self {
+            translation,
+            scale,
+            ..Default::default()
+        }
+    }
+
+    pub fn from_rotation_scale(rotation: glam::Quat, scale: glam::Vec3) -> Self {
+        Self {
+            rotation,
+            scale,
+            ..Default::default()
+        }
+    }
+
+    pub fn from_translation_rotation_scale(
+        translation: glam::Vec3,
+        rotation: glam::Quat,
+        scale: glam::Vec3,
+    ) -> Self {
+        Self {
+            translation,
+            rotation,
+            scale,
+        }
+    }
+
+    pub fn translate(&mut self, delta: glam::Vec3) {
+        self.translation += delta;
+    }
+
+    pub fn rotate(&mut self, delta: glam::Quat) {
+        self.rotation = delta * self.rotation;
+    }
+
+    pub fn scale(&mut self, delta: glam::Vec3) {
+        self.scale *= delta;
+    }
+}
+
+impl Default for Transform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone, Copy, Component, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[method(new = "fn() -> Self")]
+#[method(
+    from_scale_rotation_translation = "fn(scale: glam::Vec3, rotation: glam::Quat, translation: glam::Vec3) -> Self"
+)]
+#[method(from_translation = "fn(translation: glam::Vec3) -> Self")]
+#[method(from_rotation = "fn(rotation: glam::Quat) -> Self")]
+#[method(from_scale = "fn(scale: glam::Vec3) -> Self")]
+#[method(translate = "fn(&mut Self, x: f32, y: f32, z: f32)")]
+#[method(rotate = "fn(&mut Self, angle: f32, axis: glam::Vec3)")]
+#[method(scale = "fn(&mut Self, x: f32, y: f32, z: f32)")]
+#[method(look_at = "fn(&mut Self, target: glam::Vec3, up: glam::Vec3)")]
+#[method(get_translation = "fn(&Self) -> glam::Vec3")]
+#[method(get_rotation = "fn(&Self) -> glam::Quat")]
+#[method(get_scale = "fn(&Self) -> glam::Vec3")]
+#[method(set_translation = "fn(&mut Self, translation: glam::Vec3)")]
+#[method(set_rotation = "fn(&mut Self, rotation: glam::Quat)")]
+#[method(set_scale = "fn(&mut Self, scale: glam::Vec3)")]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
+pub struct GlobalTransform {
+    pub matrix: glam::Mat4,
+}
+
+impl GlobalTransform {
     pub fn new() -> Self {
         Self {
             matrix: glam::Mat4::IDENTITY,
@@ -117,7 +220,7 @@ impl Transform {
     }
 }
 
-impl Default for Transform {
+impl Default for GlobalTransform {
     fn default() -> Self {
         Self::new()
     }
@@ -161,7 +264,7 @@ impl TransformArray {
         )
     }
 
-    pub fn push(&mut self, transform: &Transform) {
+    pub fn push(&mut self, transform: &GlobalTransform) {
         self.matrices.push(transform.matrix);
     }
 

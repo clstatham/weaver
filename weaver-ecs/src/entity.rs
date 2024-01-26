@@ -1,3 +1,6 @@
+use petgraph::prelude::*;
+use rustc_hash::FxHashMap;
+
 use crate::{prelude::Component, registry::DynamicId};
 
 /// A unique identifier for a collection of components.
@@ -49,3 +52,165 @@ impl Entity {
 }
 
 impl Component for Entity {}
+
+#[derive(Default)]
+pub struct RelationGraph {
+    pub graph: StableDiGraph<Entity, ()>,
+    indices_to_entities: FxHashMap<NodeIndex, Entity>,
+    entities_to_indices: FxHashMap<Entity, NodeIndex>,
+}
+
+impl RelationGraph {
+    pub fn add_relation(&mut self, parent: Entity, child: Entity) -> bool {
+        if let Some(parent_id) = self.entities_to_indices.get(&parent).copied() {
+            if let Some(child_id) = self.entities_to_indices.get(&child).copied() {
+                if self.graph.contains_edge(parent_id, child_id) {
+                    false
+                } else {
+                    self.graph.add_edge(parent_id, child_id, ());
+                    true
+                }
+            } else {
+                let child_id = self.graph.add_node(child);
+                self.entities_to_indices.insert(child, child_id);
+                self.indices_to_entities.insert(child_id, child);
+                if self.graph.contains_edge(parent_id, child_id) {
+                    false
+                } else {
+                    self.graph.add_edge(parent_id, child_id, ());
+                    true
+                }
+            }
+        } else {
+            let parent_id = self.graph.add_node(parent);
+            self.entities_to_indices.insert(parent, parent_id);
+            self.indices_to_entities.insert(parent_id, parent);
+
+            if let Some(child_id) = self.entities_to_indices.get(&child) {
+                if self.graph.contains_edge(parent_id, *child_id) {
+                    false
+                } else {
+                    self.graph.add_edge(parent_id, *child_id, ());
+                    true
+                }
+            } else {
+                let child_id = self.graph.add_node(child);
+                self.entities_to_indices.insert(child, child_id);
+                self.indices_to_entities.insert(child_id, child);
+                if self.graph.contains_edge(parent_id, child_id) {
+                    false
+                } else {
+                    self.graph.add_edge(parent_id, child_id, ());
+                    true
+                }
+            }
+        }
+    }
+
+    pub fn remove_relation(&mut self, parent: Entity, child: Entity) {
+        if let Some(parent_id) = self.entities_to_indices.get(&parent) {
+            if let Some(child_id) = self.entities_to_indices.get(&child) {
+                let edges = self
+                    .graph
+                    .edges_connecting(*parent_id, *child_id)
+                    .map(|edge| edge.id())
+                    .collect::<Vec<_>>();
+                for edge in edges {
+                    self.graph.remove_edge(edge);
+                }
+            }
+        }
+    }
+
+    pub fn get_children(&self, parent: Entity) -> Vec<Entity> {
+        if let Some(parent_id) = self.entities_to_indices.get(&parent) {
+            self.graph
+                .neighbors_directed(*parent_id, petgraph::Direction::Outgoing)
+                .map(|id| self.indices_to_entities.get(&id).copied().unwrap())
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn get_parent(&self, child: Entity) -> Option<Entity> {
+        if let Some(child_id) = self.entities_to_indices.get(&child) {
+            self.graph
+                .neighbors_directed(*child_id, petgraph::Direction::Incoming)
+                .map(|id| self.indices_to_entities.get(&id).copied().unwrap())
+                .next()
+        } else {
+            None
+        }
+    }
+
+    pub fn get_all_children(&self, parent: Entity) -> Vec<Entity> {
+        if let Some(parent_id) = self.entities_to_indices.get(&parent) {
+            let mut children = Vec::new();
+            let mut stack = vec![*parent_id];
+            while let Some(id) = stack.pop() {
+                for child_id in self
+                    .graph
+                    .neighbors_directed(id, petgraph::Direction::Outgoing)
+                {
+                    stack.push(child_id);
+                    children.push(self.indices_to_entities.get(&child_id).copied().unwrap());
+                }
+            }
+            children
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn get_all_parents(&self, child: Entity) -> Vec<Entity> {
+        if let Some(child_id) = self.entities_to_indices.get(&child) {
+            let mut parents = Vec::new();
+            let mut stack = vec![*child_id];
+            while let Some(id) = stack.pop() {
+                for parent_id in self
+                    .graph
+                    .neighbors_directed(id, petgraph::Direction::Incoming)
+                {
+                    stack.push(parent_id);
+                    parents.push(self.indices_to_entities.get(&parent_id).copied().unwrap());
+                }
+            }
+            parents
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn get_all_relations(&self, entity: Entity) -> Vec<Entity> {
+        if let Some(entity_id) = self.entities_to_indices.get(&entity) {
+            let mut relations = Vec::new();
+            let mut stack = vec![*entity_id];
+            while let Some(id) = stack.pop() {
+                for child_id in self
+                    .graph
+                    .neighbors_directed(id, petgraph::Direction::Outgoing)
+                {
+                    stack.push(child_id);
+                    relations.push(self.indices_to_entities.get(&child_id).copied().unwrap());
+                }
+                for parent_id in self
+                    .graph
+                    .neighbors_directed(id, petgraph::Direction::Incoming)
+                {
+                    stack.push(parent_id);
+                    relations.push(self.indices_to_entities.get(&parent_id).copied().unwrap());
+                }
+            }
+            relations
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+impl Component for RelationGraph {
+    fn type_name() -> &'static str {
+        "RelationGraph"
+    }
+}

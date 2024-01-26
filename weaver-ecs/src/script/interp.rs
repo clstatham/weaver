@@ -236,7 +236,29 @@ impl InterpreterContext {
                     world.add_dynamic_component(&entity, component);
                 }
 
-                Ok(self.alloc_value(None, Value::Entity(entity)))
+                Ok(self.alloc_value(None, Value::Entity(entity.to_owned())))
+            }
+            "add_child" => {
+                if call.args.len() != 2 {
+                    bail!(call.name.span, "Invalid argument count: expected 2");
+                }
+
+                let parent = self.interp_expr(env, &call.args[0])?;
+                let parent = match &parent.value {
+                    Value::Entity(entity) => entity.to_owned(),
+                    _ => bail!(call.args[0].span, "Invalid argument: expected entity"),
+                };
+
+                let child = self.interp_expr(env, &call.args[1])?;
+                let child = match &child.value {
+                    Value::Entity(entity) => entity.to_owned(),
+                    _ => bail!(call.args[1].span, "Invalid argument: expected entity"),
+                };
+
+                let mut world = env.world.write();
+                world.add_relation(&parent, &child);
+
+                Ok(self.alloc_value(None, Value::Void))
             }
             "vec3" => {
                 if call.args.len() != 3 {
@@ -762,7 +784,7 @@ impl InterpreterContext {
                     fields.push(data);
                 }
                 Value::Entity(entity) => {
-                    let data = Data::new(*entity, Some(field_name), world.registry());
+                    let data = Data::new(entity.to_owned(), Some(field_name), world.registry());
                     fields.push(data);
                 }
                 Value::Void => bail!(arg.span, "Cannot assign void value"),

@@ -478,3 +478,33 @@ impl Component for glam::Mat4 {
         registry.register_methods(id, methods);
     }
 }
+
+impl<
+        N: Send + Sync + 'static,
+        E: Send + Sync + 'static,
+        Ty: Send + Sync + 'static,
+        Ix: Send + Sync + 'static,
+    > Component for petgraph::Graph<N, E, Ty, Ix>
+{
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "Graph"
+    }
+}
+
+impl<
+        N: Send + Sync + 'static,
+        E: Send + Sync + 'static,
+        Ty: Send + Sync + 'static,
+        Ix: Send + Sync + 'static,
+    > Component for petgraph::stable_graph::StableGraph<N, E, Ty, Ix>
+{
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "StableGraph"
+    }
+}

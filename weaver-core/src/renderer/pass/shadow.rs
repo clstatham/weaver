@@ -21,7 +21,7 @@ use crate::{
         DepthCubeArrayTexture, DepthTexture, MonoCubeArrayTexture, MonoCubeTexture, MonoTexture,
         TextureFormat, WindowTexture,
     },
-    transform::{Transform, TransformArray},
+    transform::{GlobalTransform, TransformArray},
 };
 
 use super::Pass;
@@ -51,7 +51,7 @@ struct UniqueMeshes {
 
 impl UniqueMeshes {
     pub fn gather(&mut self, world: &World) {
-        let query = world.query::<(&Mesh, &Transform)>();
+        let query = world.query::<(&Mesh, &GlobalTransform)>();
 
         // clear the transforms
         for unique_mesh in self.unique_meshes.values_mut() {

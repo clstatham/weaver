@@ -1,4 +1,4 @@
-use super::transform::Transform;
+use super::transform::GlobalTransform;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -110,7 +110,7 @@ impl Aabb {
         (self.min + self.max) / 2.0
     }
 
-    pub fn transformed(&self, transform: Transform) -> Self {
+    pub fn transformed(&self, transform: GlobalTransform) -> Self {
         let transform = transform.matrix;
         let points = [
             transform.transform_point3(self.min),

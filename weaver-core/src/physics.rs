@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use rapier3d::prelude::*;
 use weaver_proc_macro::Component;
 
-use super::transform::Transform;
+use super::transform::GlobalTransform;
 
 #[derive(Component)]
 pub struct RapierContext {
@@ -212,13 +212,13 @@ impl RigidBody {
         }
     }
 
-    pub fn get_transform(&mut self, ctx: &mut RapierContext) -> Transform {
+    pub fn get_transform(&mut self, ctx: &mut RapierContext) -> GlobalTransform {
         let body = self.physics.lazy_init(ctx);
         let rb = ctx.bodies.get(body.rb).unwrap();
         let translation = rb.position().translation.vector.into();
         let rotation = rb.position().rotation.into();
         let scale = body.scale;
-        Transform::from_scale_rotation_translation(scale, rotation, translation)
+        GlobalTransform::from_scale_rotation_translation(scale, rotation, translation)
     }
 
     pub fn add_force(&mut self, force: glam::Vec3, ctx: &mut RapierContext) {

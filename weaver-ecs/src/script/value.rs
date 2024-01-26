@@ -108,9 +108,11 @@ impl Value {
             Value::Bool(b) => Value::Data(Data::new(*b, None, env.world.read().registry())),
             Value::Void => anyhow::bail!("Cannot assign void value"),
             Value::Query { .. } => anyhow::bail!("Cannot assign query value"),
-            Value::Entity(entity) => {
-                Value::Data(Data::new(*entity, None, env.world.read().registry()))
-            }
+            Value::Entity(entity) => Value::Data(Data::new(
+                entity.to_owned(),
+                None,
+                env.world.read().registry(),
+            )),
             Value::Type(_) => anyhow::bail!("Cannot assign type value"),
             Value::Vec3(vec3) => Value::Data(Data::new(*vec3, None, env.world.read().registry())),
             Value::Vec4(vec4) => Value::Data(Data::new(*vec4, None, env.world.read().registry())),

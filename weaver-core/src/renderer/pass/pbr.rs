@@ -20,7 +20,7 @@ use crate::{
         Renderer,
     },
     texture::{DepthTexture, HdrCubeTexture, HdrTexture, Skybox, Texture, TextureFormat},
-    transform::{Transform, TransformArray},
+    transform::{GlobalTransform, TransformArray},
 };
 
 use super::sky::{SKYBOX_CUBEMAP_SIZE, SKYBOX_IRRADIANCE_MAP_SIZE};
@@ -49,7 +49,7 @@ pub struct UniqueMeshes {
 
 impl UniqueMeshes {
     pub fn gather(&mut self, world: &World, renderer: &Renderer) {
-        let query = world.query::<(&Mesh, &Material, &Transform)>();
+        let query = world.query::<(&Mesh, &Material, &GlobalTransform)>();
 
         // clear the transforms
         for unique_mesh in self.unique_meshes.values_mut() {

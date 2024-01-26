@@ -17,7 +17,7 @@ pub mod prelude {
         bundle::Bundle,
         commands::Commands,
         component::Component,
-        entity::Entity,
+        entity::{Entity, RelationGraph},
         query::{Query, Queryable, With, Without},
         system::{System, SystemStage},
         world::World,

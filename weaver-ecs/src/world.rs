@@ -8,7 +8,7 @@ use crate::{
     bundle::Bundle,
     component::Data,
     entity::Entity,
-    prelude::Component,
+    prelude::{Component, RelationGraph},
     query::{DynamicQueryBuilder, Query, QueryFilter, Queryable},
     registry::DynamicId,
     script::Script,
@@ -34,7 +34,7 @@ impl Component for Arc<RwLock<World>> {
 
 impl World {
     pub fn new() -> Self {
-        Self {
+        let mut this = Self {
             components: Components::new(),
             systems: RwLock::new(FxHashMap::from_iter(vec![
                 (
@@ -65,7 +65,10 @@ impl World {
             resources: SparseSet::default(),
             script_systems: Arc::new(RwLock::new(FxHashMap::default())),
             system_errors: Arc::new(RwLock::new(FxHashMap::default())),
-        }
+        };
+
+        this.add_resource(RelationGraph::default()).unwrap();
+        this
     }
 
     pub fn create_entity(&mut self) -> Entity {
@@ -85,8 +88,26 @@ impl World {
         self.components.add_dynamic_component(entity, component);
     }
 
+    pub fn add_relation(&mut self, parent: &Entity, child: &Entity) -> bool {
+        let mut graph = self.write_resource::<RelationGraph>().unwrap();
+        graph.add_relation(*parent, *child)
+    }
+
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
         bundle.build(&mut self.components)
+    }
+
+    pub fn spawn_with_children<T: Bundle>(
+        &mut self,
+        bundle: T,
+        add_children: impl FnOnce(&mut Self) -> Vec<Entity>,
+    ) -> Entity {
+        let parent = self.spawn(bundle);
+        let children = add_children(self);
+        for child in children {
+            self.add_relation(&parent, &child);
+        }
+        parent
     }
 
     pub fn despawn(&mut self, entity: Entity) {

@@ -1,4 +1,10 @@
-use weaver::prelude::*;
+use weaver::prelude::{
+    weaver_core::{
+        camera::FlyCameraController, renderer::compute::hdr_loader::HdrLoader,
+        ui::builtin::FpsDisplay,
+    },
+    *,
+};
 
 use crate::state::EditorState;
 
@@ -12,14 +18,10 @@ fn main() -> anyhow::Result<()> {
 
     let app = App::new(1600, 900)?;
 
-    scene::register_all(app.world.read().registry());
-
     app.add_resource(EditorState::default())?;
     app.add_resource(FpsDisplay::new())?;
 
     app.add_system_to_stage(Setup, SystemStage::Startup);
-
-    app.add_system_to_stage(scene::UpdateParentRel, SystemStage::PreUpdate);
 
     app.add_system_to_stage(UpdateCamera, SystemStage::Update);
     app.add_system_to_stage(ui::FpsDisplayUi, SystemStage::Update);

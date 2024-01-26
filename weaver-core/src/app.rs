@@ -85,6 +85,10 @@ impl App {
 
         world
             .write()
+            .add_system_to_stage(crate::relations::UpdateTransforms, SystemStage::PreUpdate);
+
+        world
+            .write()
             .add_system_to_stage(Render, SystemStage::Render);
 
         Ok(Self { event_loop, world })

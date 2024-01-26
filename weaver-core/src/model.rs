@@ -1,10 +1,13 @@
 use weaver_ecs::prelude::*;
 
-use super::{material::Material, mesh::Mesh, physics::RigidBody, transform::Transform};
+use crate::transform::Transform;
+
+use super::{material::Material, mesh::Mesh, physics::RigidBody, transform::GlobalTransform};
 
 #[derive(Bundle)]
 pub struct ModelBundle {
     pub mesh: Mesh,
+    pub global_transform: GlobalTransform,
     pub transform: Transform,
     pub material: Material,
 }

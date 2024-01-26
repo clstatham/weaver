@@ -22,7 +22,7 @@ contexts:
             - match: \b(\-)?\d(\d)*\.\d(\d)*|(\-)?\d(\d)*\b
               scope: constant.numeric
       function:
-            - match: \bprint|spawn|vec3|vec4|mat4|quat\b
+            - match: \bprint|spawn|add_child|vec3|vec4|mat4|quat\b
               scope: entity.name.function
       attribute:
             - match: \b@startup|@update\b

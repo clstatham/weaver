@@ -1,5 +1,8 @@
 use egui::TextEdit;
-use weaver::prelude::{weaver_core::scripts::Scripts, *};
+use weaver::prelude::{
+    weaver_core::{scripts::Scripts, ui::builtin::FpsDisplay},
+    *,
+};
 
 pub mod syntax_highlighting;
 

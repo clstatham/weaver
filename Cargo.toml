@@ -10,7 +10,6 @@ members = [
     "weaver-proc-macro",
     "weaver-core",
     "weaver-ecs",
-    "weaver-game",
     "weaver-editor",
     "weaver-bench",
 ]

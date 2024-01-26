@@ -409,8 +409,8 @@ impl Components {
         let id = self.registry.create();
         let entity = Entity::new(id);
 
-        self.living_entities.insert(id, entity);
         self.entity_generations.insert(id, entity.generation());
+        self.living_entities.insert(id, entity);
 
         entity
     }
@@ -482,6 +482,7 @@ impl Components {
     ) -> Entity {
         let entity = self.create_entity();
         self.build_on_with_components(entity.id(), components, component_ids);
+
         entity
     }
 

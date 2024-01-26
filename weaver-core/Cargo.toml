@@ -48,5 +48,6 @@ naga = { version = "0.14.2", features = ["wgsl-in", "wgsl-out"] }
 naga_oil = "0.11.0"
 fixedbitset = "0.4.2"
 bit-vec = "0.6.3"
+bitflags = "2.4"
 
 weaver-ecs = { path = "../weaver-ecs" }
