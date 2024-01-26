@@ -989,7 +989,7 @@ impl InterpreterContext {
     }
 
     pub fn interp_query(&mut self, env: &RuntimeEnv, query: &Query) -> anyhow::Result<ValueHandle> {
-        let params = query.build(env.world.clone())?;
+        let params = query.build_on_world(env.world.clone())?;
         let world = env.world.read();
         let mut builder = world.query_dynamic();
         for param in params.params {
@@ -1044,13 +1044,16 @@ impl Default for InterpreterContext {
 pub trait BuildOnWorld {
     type Output;
 
-    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<Self::Output>;
+    fn build_on_world(&self, world: Arc<RwLock<World>>) -> anyhow::Result<Self::Output>;
 }
 
 impl BuildOnWorld for Script {
     type Output = Vec<(SystemStage, NodeIndex)>;
 
-    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<Vec<(SystemStage, NodeIndex)>> {
+    fn build_on_world(
+        &self,
+        world: Arc<RwLock<World>>,
+    ) -> anyhow::Result<Vec<(SystemStage, NodeIndex)>> {
         let mut nodes = Vec::new();
         for scope in &self.scopes {
             match scope {
@@ -1058,7 +1061,7 @@ impl BuildOnWorld for Script {
                     let system_clone = system.clone();
                     let scopes = self.scopes.clone();
                     let world_clone = world.clone();
-                    let run_fn = move || {
+                    let run_fn = move |_: &[&Data]| {
                         let env = RuntimeEnv::new(world_clone.clone(), scopes.clone());
                         let ctx = env.push_scope(None);
                         ctx.interp_system(&env, &system_clone)?;
@@ -1119,10 +1122,10 @@ impl BuildOnWorld for Script {
 impl BuildOnWorld for Query {
     type Output = DynamicQueryParams;
 
-    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicQueryParams> {
+    fn build_on_world(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicQueryParams> {
         let mut params = DynamicQueryParams::default();
         for component in &self.components {
-            let id = component.build(world.clone())?;
+            let id = component.build_on_world(world.clone())?;
             if component.mutability {
                 params = params.write(id);
             } else {
@@ -1130,11 +1133,11 @@ impl BuildOnWorld for Query {
             }
         }
         for with in &self.with {
-            let id = with.as_str().to_string().build(world.clone())?;
+            let id = with.as_str().to_string().build_on_world(world.clone())?;
             params = params.with(id);
         }
         for without in &self.without {
-            let id = without.as_str().to_string().build(world.clone())?;
+            let id = without.as_str().to_string().build_on_world(world.clone())?;
             params = params.without(id);
         }
         Ok(params)
@@ -1144,7 +1147,7 @@ impl BuildOnWorld for Query {
 impl BuildOnWorld for TypedIdent {
     type Output = DynamicId;
 
-    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicId> {
+    fn build_on_world(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicId> {
         Ok(world.read().named_id(self.ty.as_str()))
     }
 }
@@ -1152,7 +1155,7 @@ impl BuildOnWorld for TypedIdent {
 impl BuildOnWorld for String {
     type Output = DynamicId;
 
-    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicId> {
+    fn build_on_world(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicId> {
         Ok(world.read().named_id(self))
     }
 }

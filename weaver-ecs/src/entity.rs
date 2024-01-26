@@ -65,6 +65,27 @@ pub struct EntityGraph {
 }
 
 impl EntityGraph {
+    pub fn roots(&self) -> Vec<Entity> {
+        self.graph
+            .node_indices()
+            .filter(|id| {
+                self.graph
+                    .neighbors_directed(*id, petgraph::Direction::Incoming)
+                    .count()
+                    == 0
+            })
+            .map(|id| self.indices_to_entities.get(&id).copied().unwrap())
+            .collect::<Vec<_>>()
+    }
+
+    pub fn add_entity(&mut self, entity: Entity) {
+        if !self.entities_to_indices.contains_key(&entity) {
+            let id = self.graph.add_node(entity);
+            self.entities_to_indices.insert(entity, id);
+            self.indices_to_entities.insert(id, entity);
+        }
+    }
+
     pub fn add_relation(&mut self, parent: Entity, child: Entity) -> bool {
         if let Some(parent_id) = self.entities_to_indices.get(&parent).copied() {
             if let Some(child_id) = self.entities_to_indices.get(&child).copied() {
@@ -167,6 +188,21 @@ impl EntityGraph {
         }
     }
 
+    pub fn remove_entity(&mut self, entity: Entity) {
+        if let Some(entity_id) = self.entities_to_indices.remove(&entity) {
+            let edges = self
+                .graph
+                .edges(entity_id)
+                .map(|edge| edge.id())
+                .collect::<Vec<_>>();
+            for edge in edges {
+                self.graph.remove_edge(edge);
+            }
+            self.graph.remove_node(entity_id);
+            self.indices_to_entities.remove(&entity_id);
+        }
+    }
+
     pub fn get_all_parents(&self, child: Entity) -> Vec<Entity> {
         if let Some(child_id) = self.entities_to_indices.get(&child) {
             let mut parents = Vec::new();
@@ -215,6 +251,6 @@ impl EntityGraph {
 
 impl Component for EntityGraph {
     fn type_name() -> &'static str {
-        "RelationGraph"
+        "EntityGraph"
     }
 }

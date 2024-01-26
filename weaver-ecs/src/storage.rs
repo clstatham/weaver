@@ -426,6 +426,10 @@ impl Components {
         }
     }
 
+    pub fn living_entities(&self) -> impl Iterator<Item = &Entity> + '_ {
+        self.living_entities.dense_iter()
+    }
+
     pub fn add_component<T: Component>(
         &mut self,
         entity: &Entity,

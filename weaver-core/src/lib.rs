@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use weaver_ecs::registry::Registry;
+use weaver_ecs::{prelude::*, registry::Registry};
 
 pub mod aabb;
 pub mod app;
@@ -46,7 +46,7 @@ pub mod prelude {
         transform::{GlobalTransform, Transform},
         ui::EguiContext,
     };
-    pub use weaver_ecs::{self, prelude::*};
+    pub use weaver_ecs;
     pub use weaver_proc_macro::{Bundle, Component};
 }
 

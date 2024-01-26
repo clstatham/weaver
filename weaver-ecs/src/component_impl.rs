@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
+
+use parking_lot::RwLock;
+use petgraph::stable_graph::NodeIndex;
 
 use crate::{
     component::{Data, MethodArgType, MethodWrapper},
@@ -24,12 +27,16 @@ pub fn register_all(registry: &Arc<Registry>) {
     registry.get_static::<f32>();
     registry.get_static::<f64>();
     registry.get_static::<String>();
+    registry.get_static::<PathBuf>();
+    registry.get_static::<NodeIndex>();
 
     glam::Vec3::register_vtable(registry);
     glam::Vec2::register_vtable(registry);
     glam::Vec4::register_vtable(registry);
     glam::Mat4::register_vtable(registry);
     glam::Quat::register_vtable(registry);
+    PathBuf::register_vtable(registry);
+    NodeIndex::register_vtable(registry);
 }
 
 impl Component for () {
@@ -169,7 +176,50 @@ impl Component for String {
     }
 }
 
+impl Component for PathBuf {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "PathBuf"
+    }
+}
+
+impl<T: Component> Component for RwLock<T> {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "RwLock"
+    }
+}
+
+impl<T: Component> Component for Arc<T> {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "Arc"
+    }
+}
+
+impl Component for NodeIndex {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "NodeIndex"
+    }
+}
+
 impl<T: Component> Component for Vec<T> {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "Vec"
+    }
+
     fn fields(&self, _registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,
@@ -200,6 +250,13 @@ impl<T: Component> Component for Vec<T> {
 }
 
 impl<T: Component> Component for Option<T> {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "Option"
+    }
+
     fn fields(&self, registry: &Arc<Registry>) -> Vec<Data>
     where
         Self: Sized,

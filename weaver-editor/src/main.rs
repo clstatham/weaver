@@ -1,9 +1,6 @@
-use weaver::prelude::{
-    weaver_core::{
-        camera::FlyCameraController, renderer::compute::hdr_loader::HdrLoader,
-        ui::builtin::FpsDisplay,
-    },
-    *,
+use weaver::{
+    core::{renderer::compute::hdr_loader::HdrLoader, ui::builtin::FpsDisplay},
+    prelude::*,
 };
 
 use crate::state::EditorState;
@@ -14,26 +11,27 @@ pub mod ui;
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    log::info!("weaver editor starting up");
 
     let app = App::new(1600, 900)?;
 
-    app.add_resource(EditorState::default())?;
+    app.add_resource(EditorState::new())?;
     app.add_resource(FpsDisplay::new())?;
 
     app.add_system_to_stage(Setup, SystemStage::Startup);
 
     app.add_system_to_stage(UpdateCamera, SystemStage::Update);
+    app.add_system_to_stage(state::SelectedEntityDoodads, SystemStage::Update);
     app.add_system_to_stage(ui::FpsDisplayUi, SystemStage::Update);
+    app.add_system_to_stage(ui::SceneTreeUi, SystemStage::Update);
 
-    app.add_system_to_stage(ui::ScriptUpdate, SystemStage::PostUpdate);
+    app.add_system_to_stage(ui::ScriptUpdateUi, SystemStage::PostUpdate);
 
     app.add_script("assets/scripts/editor/main.loom");
 
     app.run()
 }
 
-#[system(Setup)]
+#[system(Setup())]
 fn setup(commands: Commands, assets: ResMut<AssetServer>, hdr_loader: Res<HdrLoader>) {
     commands.spawn(assets.load_skybox("sky_2k.hdr", &hdr_loader));
 
@@ -56,7 +54,7 @@ fn setup(commands: Commands, assets: ResMut<AssetServer>, hdr_loader: Res<HdrLoa
     // ));
 }
 
-#[system(UpdateCamera)]
+#[system(UpdateCamera())]
 fn update_camera(
     input: Res<Input>,
     time: Res<Time>,

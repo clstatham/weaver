@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use crate as weaver_ecs;
+use crate::prelude::EntityGraph;
 use crate::storage::TemporaryComponents;
 use crate::{bundle::Bundle, entity::Entity, world::World};
 use parking_lot::RwLock;
@@ -11,6 +12,7 @@ use weaver_proc_macro::Component;
 pub struct Commands {
     created_components: TemporaryComponents,
     despawned_entities: Vec<Entity>,
+    recursive_despawned_entities: Vec<Entity>,
 }
 
 impl Commands {
@@ -18,6 +20,7 @@ impl Commands {
         Self {
             created_components: world.read().components.split(),
             despawned_entities: Vec::new(),
+            recursive_despawned_entities: Vec::new(),
         }
     }
 
@@ -29,11 +32,25 @@ impl Commands {
         self.despawned_entities.push(entity);
     }
 
+    pub fn despawn_recursive(&mut self, entity: Entity) {
+        self.recursive_despawned_entities.push(entity);
+    }
+
     pub fn finalize(self, world: &mut World) {
+        for entity in self.created_components.components.living_entities() {
+            world
+                .write_resource::<EntityGraph>()
+                .unwrap()
+                .add_entity(*entity);
+        }
         world.components.merge(self.created_components);
 
         for entity in self.despawned_entities {
             world.despawn(entity);
+        }
+
+        for entity in self.recursive_despawned_entities {
+            world.despawn_recursive(entity);
         }
     }
 }

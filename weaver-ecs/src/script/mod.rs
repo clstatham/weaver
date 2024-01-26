@@ -1,12 +1,16 @@
 use std::path::{Path, PathBuf};
 
+use weaver_proc_macro::Component;
+
+use crate::prelude::*;
+
 use self::parser::{LoomParser, Scope};
 
 pub mod interp;
 pub mod parser;
 pub mod value;
 
-#[derive(Clone)]
+#[derive(Clone, Component)]
 pub struct Script {
     pub name: String,
     pub path: PathBuf,

@@ -1,6 +1,8 @@
 use std::{fmt::Debug, sync::Arc};
 
 use crate::{
+    component::Data,
+    prelude::*,
     registry::{DynamicId, Registry},
     script::{interp::BuildOnWorld, Script},
 };
@@ -9,6 +11,7 @@ use super::world::World;
 use parking_lot::RwLock;
 use petgraph::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
+use weaver_proc_macro::Component;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub enum SystemStage {
@@ -34,7 +37,7 @@ impl SystemStage {
 }
 
 pub trait System: Send + Sync {
-    fn run(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()>;
+    fn run(&self, world: Arc<RwLock<World>>, input: &[&Data]) -> anyhow::Result<()>;
     fn components_read(&self, registry: &Registry) -> Vec<DynamicId>;
     fn components_written(&self, registry: &Registry) -> Vec<DynamicId>;
     fn resources_read(&self, registry: &Registry) -> Vec<DynamicId>;
@@ -42,11 +45,14 @@ pub trait System: Send + Sync {
     fn is_exclusive(&self) -> bool;
 }
 
+#[derive(Clone, Component)]
+#[allow(clippy::type_complexity)]
 pub enum RunFn {
-    Static(Arc<dyn Fn(Arc<RwLock<World>>) -> anyhow::Result<()> + Send + Sync + 'static>),
-    Dynamic(Arc<dyn Fn() -> anyhow::Result<()> + Send + Sync>),
+    Static(Arc<dyn Fn(Arc<RwLock<World>>, &[&Data]) -> anyhow::Result<()> + Send + Sync + 'static>),
+    Dynamic(Arc<dyn Fn(&[&Data]) -> anyhow::Result<()> + Send + Sync>),
 }
 
+#[derive(Clone, Component)]
 pub struct DynamicSystem {
     pub run_fn: RunFn,
     pub script: Option<Script>,
@@ -56,11 +62,11 @@ pub struct DynamicSystem {
     pub components_written: Vec<DynamicId>,
     pub resources_read: Vec<DynamicId>,
     pub resources_written: Vec<DynamicId>,
-    pub error: RwLock<Option<String>>,
+    pub error: Arc<RwLock<Option<String>>>,
 }
 
 impl DynamicSystem {
-    pub fn new<F: Fn() -> anyhow::Result<()> + Send + Sync + 'static>(
+    pub fn new<F: Fn(&[&Data]) -> anyhow::Result<()> + Send + Sync + 'static>(
         name: impl Into<String>,
         components_read: impl IntoIterator<Item = DynamicId>,
         components_written: impl IntoIterator<Item = DynamicId>,
@@ -77,7 +83,7 @@ impl DynamicSystem {
             components_written: components_written.into_iter().collect(),
             resources_read: resources_read.into_iter().collect(),
             resources_written: resources_written.into_iter().collect(),
-            error: RwLock::new(None),
+            error: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -90,8 +96,8 @@ impl DynamicSystem {
             components_written: system.components_written(registry),
             resources_read: system.resources_read(registry),
             resources_written: system.resources_written(registry),
-            run_fn: RunFn::Static(Arc::new(move |world| system.run(world))),
-            error: RwLock::new(None),
+            run_fn: RunFn::Static(Arc::new(move |world, input| system.run(world, input))),
+            error: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -100,7 +106,7 @@ impl DynamicSystem {
         world: Arc<RwLock<World>>,
     ) -> anyhow::Result<(Script, Vec<(SystemStage, NodeIndex)>)> {
         let script = Script::load(path)?;
-        Ok((script.clone(), script.build(world)?))
+        Ok((script.clone(), script.build_on_world(world)?))
     }
 
     fn get_error(&self) -> Option<String> {
@@ -109,11 +115,11 @@ impl DynamicSystem {
 }
 
 impl System for DynamicSystem {
-    fn run(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()> {
+    fn run(&self, world: Arc<RwLock<World>>, input: &[&Data]) -> anyhow::Result<()> {
         match &self.run_fn {
-            RunFn::Static(run_fn) => (run_fn)(world),
+            RunFn::Static(run_fn) => (run_fn)(world, input),
             RunFn::Dynamic(run_fn) => {
-                if let Err(e) = (run_fn)() {
+                if let Err(e) = (run_fn)(input) {
                     *self.error.write() = Some(format!("{}", e));
                     Ok(())
                 } else {
@@ -351,7 +357,7 @@ impl SystemGraph {
 
         while let Some(node) = bfs.next(&self.graph) {
             let system = &self.graph[node].system;
-            system.run(world.clone())?;
+            system.run(world.clone(), &[])?;
             if let Some(error) = system.get_error() {
                 self.errors.insert(system.name.clone(), error);
             }

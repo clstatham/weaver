@@ -66,7 +66,11 @@ impl World {
     }
 
     pub fn create_entity(&mut self) -> Entity {
-        self.components.create_entity()
+        let entity = self.components.create_entity();
+        self.write_resource::<EntityGraph>()
+            .unwrap()
+            .add_entity(entity);
+        entity
     }
 
     pub fn add_component<T: Component>(
@@ -88,7 +92,11 @@ impl World {
     }
 
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
-        bundle.build(&mut self.components)
+        let entity = bundle.build(&mut self.components);
+        self.write_resource::<EntityGraph>()
+            .unwrap()
+            .add_entity(entity);
+        entity
     }
 
     pub fn spawn_with_children<T: Bundle>(
@@ -106,6 +114,23 @@ impl World {
 
     pub fn despawn(&mut self, entity: Entity) {
         self.components.despawn(entity.id());
+
+        let mut graph = self.write_resource::<EntityGraph>().unwrap();
+        graph.remove_entity(entity);
+    }
+
+    pub fn despawn_recursive(&mut self, entity: Entity) {
+        let graph = self.write_resource::<EntityGraph>().unwrap();
+        let mut children = graph.get_all_children(entity);
+        drop(graph);
+        children.push(entity);
+
+        for child in children {
+            self.despawn(child);
+            self.write_resource::<EntityGraph>()
+                .unwrap()
+                .remove_entity(child);
+        }
     }
 
     pub fn add_resource<T: Component>(&mut self, resource: T) -> anyhow::Result<()> {
@@ -317,6 +342,10 @@ impl World {
 
     pub fn registry(&self) -> &Arc<crate::registry::Registry> {
         self.components.registry()
+    }
+
+    pub fn components_iter(&self, entity: &Entity) -> impl Iterator<Item = &Data> {
+        self.components.entity_components_iter(entity.id()).unwrap()
     }
 }
 

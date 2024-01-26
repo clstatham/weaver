@@ -145,6 +145,7 @@ pub fn derive_component(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
             fields: syn::Fields::Unit,
             ..
         }) => Default::default(),
+        syn::Data::Enum(_) => Default::default(),
         _ => panic!("Component must be a struct with named fields"),
     };
 

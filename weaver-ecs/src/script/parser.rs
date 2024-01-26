@@ -4,6 +4,9 @@ use pest::{
     Parser,
 };
 use pest_derive::Parser;
+use weaver_proc_macro::Component;
+
+use crate::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct TypedIdent {
@@ -161,7 +164,7 @@ pub struct System {
     pub block: Block,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Component)]
 pub enum Scope {
     Program(Vec<Scope>),
     Component(Component),

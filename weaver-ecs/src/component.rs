@@ -31,6 +31,10 @@ pub trait Component: Downcast + Send + Sync {
     where
         Self: Sized,
     {
+        log::warn!(
+            "{}::type_name() not implemented manually; falling back to std::any::type_name",
+            std::any::type_name::<Self>()
+        );
         std::any::type_name::<Self>()
     }
 

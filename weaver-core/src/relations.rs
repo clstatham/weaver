@@ -2,7 +2,7 @@ use weaver_ecs::prelude::*;
 
 use crate::prelude::{GlobalTransform, Transform};
 
-#[system(UpdateTransforms)]
+#[system(UpdateTransforms())]
 pub fn update_transforms(
     graph: Res<EntityGraph>,
     mut transforms: Query<(Entity, &mut GlobalTransform, &Transform)>,

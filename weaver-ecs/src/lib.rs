@@ -12,6 +12,8 @@ pub mod storage;
 pub mod system;
 pub mod world;
 
+pub use crate as weaver_ecs;
+
 pub mod prelude {
     pub use crate::{
         bundle::Bundle,
@@ -20,6 +22,7 @@ pub mod prelude {
         entity::{Entity, EntityGraph},
         query::{Query, Queryable, With, Without},
         system::{System, SystemStage},
+        weaver_ecs,
         world::World,
     };
     pub use rayon::prelude::*;

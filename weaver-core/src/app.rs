@@ -231,7 +231,7 @@ impl App {
     }
 }
 
-#[system(Render)]
+#[system(Render())]
 fn render(renderer: ResMut<Renderer>, window: Res<Window>, ui: ResMut<EguiContext>) {
     if let Some(mut encoder) = renderer.begin_frame() {
         renderer.prepare_components();
