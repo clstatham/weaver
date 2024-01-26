@@ -22,6 +22,23 @@ pub fn script_update(ctx: Res<EguiContext>, scripts: Res<Scripts>, input: Res<In
             if ui.button("Reload Scripts").clicked() {
                 scripts.reload();
             }
+            if scripts.has_errors() {
+                ui.separator();
+                ui.label("!!! Some scripts had errors. Check the script windows for details.");
+                egui::ScrollArea::both().show(ui, |ui| {
+                    for script in scripts.script_iter() {
+                        if let Some(error) = scripts.script_errors(&script.name) {
+                            ui.separator();
+                            ui.label(&script.name);
+                            TextEdit::multiline(&mut error.to_string())
+                                .desired_width(f32::INFINITY)
+                                .interactive(false)
+                                .text_color(egui::Color32::LIGHT_RED)
+                                .show(ui);
+                        }
+                    }
+                });
+            }
         });
 
         for mut script in scripts.script_iter_mut() {
@@ -36,11 +53,17 @@ pub fn script_update(ctx: Res<EguiContext>, scripts: Res<Scripts>, input: Res<In
                         if ui.button("Save").clicked() {
                             script.save().unwrap();
                         }
-                        ui.separator();
+
                         if let Some(error) = scripts.script_errors(&script.name) {
-                            TextEdit::multiline(&mut error.to_string())
-                                .interactive(false)
-                                .show(ui);
+                            ui.separator();
+                            ui.label("Error:");
+                            egui::ScrollArea::both().show(ui, |ui| {
+                                TextEdit::multiline(&mut error.to_string())
+                                    .interactive(false)
+                                    .desired_width(f32::INFINITY)
+                                    .text_color(egui::Color32::LIGHT_RED)
+                                    .show(ui);
+                            });
                         }
                     });
                     ui.separator();

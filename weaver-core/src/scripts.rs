@@ -25,11 +25,19 @@ impl Scripts {
 
     pub fn reload(&self) -> bool {
         self.script_errors.write().clear();
-        World::reload_scripts(&self.world).unwrap_or_else(|e| {
-            log::error!("Failed to reload scripts: {:?}", &e);
-            self.script_errors.write().extend(e);
+        World::reload_scripts(&self.world).unwrap_or_else(|errors| {
+            log::error!("Failed to reload scripts:");
+            for (name, err) in errors.iter() {
+                log::error!("Script `{}`:", name);
+                log::error!("\n{}", err);
+            }
+            self.script_errors.write().extend(errors);
         });
         self.script_errors.read().is_empty()
+    }
+
+    pub fn has_errors(&self) -> bool {
+        !self.script_errors.read().is_empty()
     }
 
     pub fn script_errors(&self, name: &str) -> Option<String> {
