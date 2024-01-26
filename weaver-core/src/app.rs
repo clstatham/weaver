@@ -1,5 +1,6 @@
 use crate::{
-    asset_server::AssetServer, doodads::Doodads, input::Input, time::Time, ui::EguiContext,
+    asset_server::AssetServer, doodads::Doodads, input::Input, scripts::Scripts, time::Time,
+    ui::EguiContext,
 };
 
 use std::sync::Arc;
@@ -44,6 +45,11 @@ impl App {
         let world = World::new();
         crate::register_all(world.registry());
         let world = Arc::new(RwLock::new(world));
+        let world_sref = world.clone();
+        world.write().add_resource(world_sref)?;
+
+        let scripts = Scripts::new(world.clone());
+        world.write().add_resource(scripts)?;
 
         let event_loop = EventLoop::new()?;
         let window = WindowBuilder::new()
@@ -79,7 +85,7 @@ impl App {
 
         world
             .write()
-            .add_system_to_stage(Render, SystemStage::PostUpdate);
+            .add_system_to_stage(Render, SystemStage::Render);
 
         Ok(Self { event_loop, world })
     }
@@ -116,8 +122,6 @@ impl App {
             .name("Weaver ECS Update Loop".to_owned())
             .spawn(move || {
                 loop {
-                    World::run_stage(&update_world, SystemStage::PreUpdate).unwrap();
-
                     {
                         let world = update_world.read();
                         let mut input = world.write_resource::<Input>().unwrap();
@@ -145,7 +149,11 @@ impl App {
                         gui.begin_frame(&window.window);
                     }
 
+                    World::run_stage(&update_world, SystemStage::PreUpdate).unwrap();
+
                     World::run_stage(&update_world, SystemStage::Update).unwrap();
+
+                    World::run_stage(&update_world, SystemStage::PostUpdate).unwrap();
 
                     {
                         let world = update_world.read();
@@ -153,7 +161,7 @@ impl App {
                         gui.end_frame();
                     }
 
-                    World::run_stage(&update_world, SystemStage::PostUpdate).unwrap();
+                    World::run_stage(&update_world, SystemStage::Render).unwrap();
 
                     if killswitch_rx.try_recv().is_ok() {
                         break;

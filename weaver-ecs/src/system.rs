@@ -21,7 +21,16 @@ pub enum SystemStage {
 
     PostUpdate,
 
+    Render,
+
     Shutdown,
+}
+
+impl SystemStage {
+    pub fn iter() -> impl Iterator<Item = Self> {
+        use SystemStage::*;
+        vec![Startup, PreUpdate, Update, PostUpdate, Render, Shutdown].into_iter()
+    }
 }
 
 pub trait System: Send + Sync + 'static {
@@ -40,6 +49,8 @@ pub enum RunFn {
 
 pub struct DynamicSystem {
     pub run_fn: RunFn,
+    pub script: Option<Script>,
+    pub script_systems: Vec<NodeIndex>,
     pub name: String,
     pub components_read: Vec<DynamicId>,
     pub components_written: Vec<DynamicId>,
@@ -48,22 +59,18 @@ pub struct DynamicSystem {
 }
 
 impl DynamicSystem {
-    pub fn new<
-        F: Fn() -> anyhow::Result<()> + Send + Sync + 'static,
-        CR: IntoIterator<Item = DynamicId>,
-        CW: IntoIterator<Item = DynamicId>,
-        RR: IntoIterator<Item = DynamicId>,
-        RW: IntoIterator<Item = DynamicId>,
-    >(
+    pub fn new<F: Fn() -> anyhow::Result<()> + Send + Sync + 'static>(
         name: impl Into<String>,
-        components_read: CR,
-        components_written: CW,
-        resources_read: RR,
-        resources_written: RW,
+        components_read: impl IntoIterator<Item = DynamicId>,
+        components_written: impl IntoIterator<Item = DynamicId>,
+        resources_read: impl IntoIterator<Item = DynamicId>,
+        resources_written: impl IntoIterator<Item = DynamicId>,
         run_fn: F,
     ) -> Self {
         Self {
             name: name.into(),
+            script: None,
+            script_systems: Vec::new(),
             run_fn: RunFn::Dynamic(Box::new(run_fn)),
             components_read: components_read.into_iter().collect(),
             components_written: components_written.into_iter().collect(),
@@ -75,6 +82,8 @@ impl DynamicSystem {
     pub fn from_system<T: System>(system: T, registry: &Registry) -> Self {
         Self {
             name: std::any::type_name::<T>().to_string(),
+            script: None,
+            script_systems: Vec::new(),
             components_read: system.components_read(registry),
             components_written: system.components_written(registry),
             resources_read: system.resources_read(registry),
@@ -83,21 +92,12 @@ impl DynamicSystem {
         }
     }
 
-    pub fn builder(name: &str) -> DynamicSystemBuilder {
-        DynamicSystemBuilder::new(name)
-    }
-
-    pub fn script_builder(name: &str) -> ScriptSystemBuilder {
-        ScriptSystemBuilder::new(name)
-    }
-
     pub fn load_script(
         path: impl AsRef<std::path::Path>,
         world: Arc<RwLock<World>>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<(Script, Vec<(SystemStage, NodeIndex)>)> {
         let script = Script::load(path)?;
-        script.build(world)?;
-        Ok(())
+        Ok((script.clone(), script.build(world)?))
     }
 }
 
@@ -130,93 +130,6 @@ impl System for DynamicSystem {
     }
 }
 
-pub struct DynamicSystemBuilder {
-    name: String,
-    components_read: Vec<DynamicId>,
-    components_written: Vec<DynamicId>,
-    resources_read: Vec<DynamicId>,
-    resources_written: Vec<DynamicId>,
-}
-
-impl DynamicSystemBuilder {
-    pub fn new(name: &str) -> Self {
-        Self {
-            name: name.into(),
-            components_read: Vec::new(),
-            components_written: Vec::new(),
-            resources_read: Vec::new(),
-            resources_written: Vec::new(),
-        }
-    }
-
-    pub fn read_component(&mut self, components: &[DynamicId]) -> &mut Self {
-        self.components_read.extend_from_slice(components);
-        self
-    }
-
-    pub fn write_component(&mut self, components: &[DynamicId]) -> &mut Self {
-        self.components_written.extend_from_slice(components);
-        self
-    }
-
-    pub fn read_resource(&mut self, resources: &[DynamicId]) -> &mut Self {
-        self.resources_read.extend_from_slice(resources);
-        self
-    }
-
-    pub fn write_resource(&mut self, resources: &[DynamicId]) -> &mut Self {
-        self.resources_written.extend_from_slice(resources);
-        self
-    }
-
-    pub fn build<F>(self, run: F) -> DynamicSystem
-    where
-        F: Fn() -> anyhow::Result<()> + Send + Sync + 'static,
-    {
-        DynamicSystem::new(
-            self.name,
-            self.components_read,
-            self.components_written,
-            self.resources_read,
-            self.resources_written,
-            run,
-        )
-    }
-}
-
-pub struct ScriptSystemBuilder {
-    name: String,
-}
-
-impl ScriptSystemBuilder {
-    pub fn new(name: &str) -> Self {
-        Self { name: name.into() }
-    }
-
-    #[must_use]
-    pub fn build<F>(self, run_fn: F) -> DynamicSystem
-    where
-        F: Fn() -> anyhow::Result<()> + Send + Sync + 'static,
-    {
-        let components_read = Vec::new();
-        let components_written = Vec::new();
-        let resources_read = Vec::new();
-        let resources_written = Vec::new();
-
-        // todo: add a way to specify which components and resources are read and written by the script
-        // this is necessary to run scripts in parallel
-
-        DynamicSystem::new(
-            self.name,
-            components_read,
-            components_written,
-            resources_read,
-            resources_written,
-            run_fn,
-        )
-    }
-}
-
 pub struct SystemNode {
     pub id: NodeIndex,
     pub system: Arc<DynamicSystem>,
@@ -230,6 +143,10 @@ pub struct SystemGraph {
 impl SystemGraph {
     pub fn has_system(&self, id: NodeIndex) -> bool {
         self.graph.contains_node(id)
+    }
+
+    pub fn remove_system(&mut self, id: NodeIndex) {
+        self.graph.remove_node(id);
     }
 
     pub fn add_dynamic_system(&mut self, system: DynamicSystem) -> NodeIndex {

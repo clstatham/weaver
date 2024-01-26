@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
+use petgraph::stable_graph::NodeIndex;
 use rustc_hash::FxHashMap;
 use typed_arena::Arena;
 
@@ -885,42 +886,53 @@ pub trait BuildOnWorld {
 }
 
 impl BuildOnWorld for Script {
-    type Output = ();
+    type Output = Vec<(SystemStage, NodeIndex)>;
 
-    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()> {
+    fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<Vec<(SystemStage, NodeIndex)>> {
+        let mut nodes = Vec::new();
         for scope in &self.scopes {
             match scope {
                 Scope::System(ref system) => {
-                    let script = DynamicSystem::script_builder(&self.name);
-
                     let system_clone = system.clone();
                     let scopes = self.scopes.clone();
                     let world_clone = world.clone();
-                    let script = script.build(move || {
+                    let run_fn = move || {
                         let env = RuntimeEnv::new(world_clone.clone(), scopes.clone());
                         let ctx = env.push_scope(None);
                         ctx.interp_system(&env, &system_clone)?;
                         Ok(())
-                    });
+                    };
+
+                    let script =
+                        DynamicSystem::new(&system.name, vec![], vec![], vec![], vec![], run_fn);
 
                     if let Some(tag) = &system.tag {
                         match tag.as_str() {
                             "@startup" => {
-                                world
-                                    .write()
-                                    .add_dynamic_system_to_stage(script, SystemStage::Startup);
+                                nodes.push((
+                                    SystemStage::Startup,
+                                    world
+                                        .read()
+                                        .add_dynamic_system_to_stage(script, SystemStage::Startup),
+                                ));
                             }
                             "@update" => {
-                                world
-                                    .write()
-                                    .add_dynamic_system_to_stage(script, SystemStage::Update);
+                                nodes.push((
+                                    SystemStage::Update,
+                                    world
+                                        .read()
+                                        .add_dynamic_system_to_stage(script, SystemStage::Update),
+                                ));
                             }
                             _ => todo!("Implement other tags"),
                         }
                     } else {
-                        world
-                            .write()
-                            .add_dynamic_system_to_stage(script, SystemStage::Update);
+                        nodes.push((
+                            SystemStage::Update,
+                            world
+                                .read()
+                                .add_dynamic_system_to_stage(script, SystemStage::Update),
+                        ));
                     }
                 }
                 Scope::Component(_component) => {
@@ -932,7 +944,7 @@ impl BuildOnWorld for Script {
             }
         }
 
-        Ok(())
+        Ok(nodes)
     }
 }
 

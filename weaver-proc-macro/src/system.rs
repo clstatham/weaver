@@ -186,7 +186,7 @@ pub fn system(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_macro::T
 
     let commands = match commands_binding {
         Some(ref commands) => {
-            quote! { let mut #commands = weaver_ecs::commands::Commands::new(&world.read()); }
+            quote! { let mut #commands = weaver_ecs::commands::Commands::new(world.clone()); }
         }
         None => quote! {},
     };

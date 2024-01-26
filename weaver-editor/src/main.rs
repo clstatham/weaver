@@ -15,6 +15,7 @@ fn main() -> anyhow::Result<()> {
     app.add_resource(FpsDisplay::new())?;
 
     app.add_system_to_stage(ui::UiMain, SystemStage::Update);
+    app.add_system_to_stage(ui::ReloadScripts, SystemStage::PreUpdate);
 
     app.add_script("assets/scripts/editor/main.loom");
 

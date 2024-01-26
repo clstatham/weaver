@@ -1,26 +1,34 @@
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use crate as weaver_ecs;
 use crate::storage::TemporaryComponents;
 use crate::{bundle::Bundle, entity::Entity, world::World};
+use parking_lot::RwLock;
 use weaver_proc_macro::Component;
 
 #[derive(Component)]
 pub struct Commands {
+    world: Arc<RwLock<World>>,
     created_components: TemporaryComponents,
     despawned_entities: Vec<Entity>,
 }
 
 impl Commands {
-    pub fn new(world: &World) -> Self {
+    pub fn new(world: Arc<RwLock<World>>) -> Self {
         Self {
-            created_components: world.components.split(),
+            world: world.clone(),
+            created_components: world.read().components.split(),
             despawned_entities: Vec::new(),
         }
     }
 
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
         bundle.build(&mut self.created_components.components)
+    }
+
+    pub fn reload_scripts(&self) {
+        World::reload_scripts(&self.world);
     }
 
     pub fn despawn(&mut self, entity: Entity) {

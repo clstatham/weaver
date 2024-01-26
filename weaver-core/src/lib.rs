@@ -20,6 +20,7 @@ pub mod model;
 pub mod particles;
 pub mod physics;
 pub mod renderer;
+pub mod scripts;
 pub mod texture;
 pub mod time;
 pub mod transform;

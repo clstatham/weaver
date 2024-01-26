@@ -45,10 +45,9 @@ system update_camera {
 @update
 system update_player {
     let res time: Time;
-    let dt = time.delta_seconds;
     query player_transforms [var transform: Transform, with[Player]];
 
     loop player_transforms {
-        transform.rotate(dt, vec3(0.0, 1.0, 0.0))
+        transform.rotate(time.delta_seconds, vec3(1.0, 1.0, 1.0))
     }
 }

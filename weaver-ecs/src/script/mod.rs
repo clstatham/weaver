@@ -6,6 +6,7 @@ pub mod interp;
 pub mod parser;
 pub mod value;
 
+#[derive(Clone)]
 pub struct Script {
     pub name: String,
     pub path: PathBuf,
@@ -36,5 +37,10 @@ impl Script {
             content,
             scopes,
         })
+    }
+
+    pub fn save(&self) -> anyhow::Result<()> {
+        std::fs::write(&self.path, &self.content)?;
+        Ok(())
     }
 }

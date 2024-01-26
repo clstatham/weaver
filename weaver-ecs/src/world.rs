@@ -11,23 +11,57 @@ use crate::{
     prelude::Component,
     query::{DynamicQueryBuilder, Query, QueryFilter, Queryable},
     registry::DynamicId,
+    script::Script,
     storage::{Components, SparseSet},
     system::{DynamicSystem, System},
     system::{SystemGraph, SystemStage},
 };
 
 pub struct World {
-    pub(crate) components: Components,
-    pub(crate) systems: FxHashMap<SystemStage, Arc<RwLock<SystemGraph>>>,
-    pub(crate) resources: SparseSet<DynamicId, Data>,
+    pub components: Components,
+    pub systems: RwLock<FxHashMap<SystemStage, Arc<RwLock<SystemGraph>>>>,
+    pub resources: SparseSet<DynamicId, Data>,
+    pub script_systems: Arc<RwLock<FxHashMap<String, (Script, Vec<(SystemStage, NodeIndex)>)>>>,
+}
+
+impl Component for Arc<RwLock<World>> {
+    fn type_name() -> &'static str {
+        "World"
+    }
 }
 
 impl World {
     pub fn new() -> Self {
         Self {
             components: Components::new(),
-            systems: FxHashMap::default(),
+            systems: RwLock::new(FxHashMap::from_iter(vec![
+                (
+                    SystemStage::Startup,
+                    Arc::new(RwLock::new(SystemGraph::default())),
+                ),
+                (
+                    SystemStage::PreUpdate,
+                    Arc::new(RwLock::new(SystemGraph::default())),
+                ),
+                (
+                    SystemStage::Update,
+                    Arc::new(RwLock::new(SystemGraph::default())),
+                ),
+                (
+                    SystemStage::PostUpdate,
+                    Arc::new(RwLock::new(SystemGraph::default())),
+                ),
+                (
+                    SystemStage::Render,
+                    Arc::new(RwLock::new(SystemGraph::default())),
+                ),
+                (
+                    SystemStage::Shutdown,
+                    Arc::new(RwLock::new(SystemGraph::default())),
+                ),
+            ])),
             resources: SparseSet::default(),
+            script_systems: Arc::new(RwLock::new(FxHashMap::default())),
         }
     }
 
@@ -60,7 +94,6 @@ impl World {
         if self.has_resource::<T>() {
             return Err(anyhow::anyhow!("Resource already exists"));
         }
-        // let resource = resource.into_dynamic_data(None, self.registry());
         let resource = Data::new(resource, None, self.registry());
         self.resources.insert(resource.type_id(), resource);
         Ok(())
@@ -120,40 +153,76 @@ impl World {
         self.resources.contains(&id)
     }
 
-    pub fn add_system<T: System>(&mut self, system: T) -> NodeIndex {
+    pub fn add_system<T: System>(&self, system: T) -> NodeIndex {
         self.add_system_to_stage(system, SystemStage::default())
     }
 
-    pub fn add_system_to_stage<T: System>(&mut self, system: T, stage: SystemStage) -> NodeIndex {
+    pub fn add_system_to_stage<T: System>(&self, system: T, stage: SystemStage) -> NodeIndex {
         self.systems
+            .write()
             .entry(stage)
             .or_default()
             .write()
             .add_system(system, self.components.registry())
     }
 
+    pub fn remove_dynamic_system(&self, node: NodeIndex, stage: SystemStage) {
+        self.systems
+            .write()
+            .entry(stage)
+            .or_default()
+            .write()
+            .remove_system(node);
+    }
+
     pub fn add_dynamic_system_to_stage(
-        &mut self,
+        &self,
         system: DynamicSystem,
         stage: SystemStage,
     ) -> NodeIndex {
         self.systems
-            .entry(stage)
-            .or_default()
+            .read()
+            .get(&stage)
+            .unwrap()
             .write()
             .add_dynamic_system(system)
     }
 
     pub fn add_script(world: &Arc<RwLock<Self>>, script_path: impl AsRef<Path>) {
-        DynamicSystem::load_script(script_path, world.clone()).unwrap();
+        let (script, ids) = DynamicSystem::load_script(script_path, world.clone()).unwrap();
+        let world_lock = world.read();
+        world_lock
+            .script_systems
+            .write()
+            .insert(script.name.clone(), (script, ids));
+    }
+
+    pub fn reload_scripts(world: &Arc<RwLock<Self>>) {
+        let world_lock = world.read();
+        let mut scripts_lock = world_lock.script_systems.write();
+        let scripts = std::mem::take(&mut *scripts_lock);
+        drop(scripts_lock);
+        for (_, (script, ids)) in scripts {
+            {
+                let systems = world_lock.systems.read();
+                for (stage, node) in ids.iter() {
+                    systems.get(stage).unwrap().write().remove_system(*node);
+                }
+            }
+            let (script, ids) = DynamicSystem::load_script(&script.path, world.clone()).unwrap();
+            let mut scripts_lock = world_lock.script_systems.write();
+            scripts_lock.insert(script.name.clone(), (script, ids));
+        }
     }
 
     pub fn run_stage(world: &Arc<RwLock<Self>>, stage: SystemStage) -> anyhow::Result<()> {
         let world_lock = world.read();
-        if let Some(systems) = world_lock.systems.get(&stage).cloned() {
+        let systems_lock = world_lock.systems.read();
+        if let Some(systems) = systems_lock.get(&stage).cloned() {
             systems
                 .write()
                 .autodetect_dependencies(world_lock.components.registry())?;
+            drop(systems_lock);
             drop(world_lock);
             systems.read().run(world)?;
         }
