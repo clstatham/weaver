@@ -30,18 +30,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(
-        screen_width: usize,
-        screen_height: usize,
-        #[cfg(feature = "serde")] world_path: Option<std::path::PathBuf>,
-    ) -> anyhow::Result<Self> {
-        #[cfg(feature = "serde")]
-        let world = if let Some(ref world_path) = world_path {
-            World::from_json_file(world_path)?
-        } else {
-            World::new()
-        };
-        #[cfg(not(feature = "serde"))]
+    pub fn new(screen_width: usize, screen_height: usize) -> anyhow::Result<Self> {
         let world = World::new();
         crate::register_all(world.registry());
         let world = Arc::new(RwLock::new(world));
@@ -75,7 +64,6 @@ impl App {
         world.write().add_resource(Doodads::default())?;
 
         let asset_server = AssetServer::new(&world.read())?;
-
         world.write().add_resource(asset_server)?;
 
         world.write().add_resource(Window {

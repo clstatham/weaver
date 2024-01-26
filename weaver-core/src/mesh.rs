@@ -125,19 +125,15 @@ fn calculate_tangents(vertices: &mut [Vertex], indices: &[u32]) {
 }
 
 #[derive(Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct MeshInner {
     pub asset_id: AssetId,
-    #[cfg_attr(feature = "serde", serde(skip))]
     pub vertex_buffer: Option<wgpu::Buffer>,
-    #[cfg_attr(feature = "serde", serde(skip))]
     pub index_buffer: Option<wgpu::Buffer>,
     pub num_indices: usize,
     pub aabb: Aabb,
 }
 
 #[derive(Clone, Component)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Mesh {
     inner: Arc<MeshInner>,
 }

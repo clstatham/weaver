@@ -34,14 +34,12 @@ impl Doodads {
 }
 
 #[derive(Debug, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Doodad {
     Cube(Cube),
     Cone(Cone),
 }
 
 #[derive(Debug, Clone, Copy, Component)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Cube {
     pub position: glam::Vec3,
     pub rotation: glam::Quat,
@@ -77,7 +75,6 @@ impl Default for Cube {
 }
 
 #[derive(Debug, Clone, Copy, Component)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Cone {
     pub position: glam::Vec3,
     pub rotation: glam::Quat,

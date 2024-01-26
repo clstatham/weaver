@@ -128,7 +128,6 @@ impl RapierContext {
 }
 
 #[derive(Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct InitializedRigidBody {
     rb: RigidBodyHandle,
     collider: ColliderHandle,
@@ -136,7 +135,6 @@ struct InitializedRigidBody {
 }
 
 #[derive(Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 enum RigidBodyPhysics {
     Uninitialized {
         rb: Box<rapier3d::dynamics::RigidBody>,
@@ -172,7 +170,6 @@ impl RigidBodyPhysics {
 }
 
 #[derive(Component, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RigidBody {
     physics: RigidBodyPhysics,
 }

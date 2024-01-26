@@ -1,7 +1,6 @@
 use super::transform::GlobalTransform;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Aabb {
     pub min: glam::Vec3,
     pub max: glam::Vec3,

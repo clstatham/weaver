@@ -40,10 +40,9 @@ image = { version = "0.24.7", default-features = false, features = [
 ] }
 crossbeam-channel = "0.5.11"
 rayon = "1.8.0"
-serde = { version = "1.0", features = ["derive"], optional = true }
-serde_json = { version = "1.0", optional = true }
-typetag = { version = "0.2", optional = true }
-postcard = { version = "1.0.8", features = ["alloc"], optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+typetag = { version = "0.2" }
 naga = { version = "0.14.2", features = ["wgsl-in", "wgsl-out"] }
 naga_oil = "0.11.0"
 fixedbitset = "0.4.2"

@@ -126,7 +126,6 @@ impl Default for Transform {
 #[method(set_translation = "fn(&mut Self, translation: glam::Vec3)")]
 #[method(set_rotation = "fn(&mut Self, rotation: glam::Quat)")]
 #[method(set_scale = "fn(&mut Self, scale: glam::Vec3)")]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 pub struct GlobalTransform {
     pub matrix: glam::Mat4,
@@ -227,17 +226,12 @@ impl Default for GlobalTransform {
 }
 
 #[derive(Clone, Component, Debug, GpuComponent, BindableComponent)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[gpu(update = "update")]
 pub struct TransformArray {
     matrices: Vec<glam::Mat4>,
-    #[cfg_attr(
-        feature = "serde",
-        serde(skip, default = "TransformArray::default_handle")
-    )]
+
     #[storage]
     handle: LazyGpuHandle,
-    #[cfg_attr(feature = "serde", serde(skip))]
     bind_group: LazyBindGroup<Self>,
 }
 

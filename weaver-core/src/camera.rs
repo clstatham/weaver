@@ -40,7 +40,6 @@ impl From<&Camera> for CameraUniform {
 }
 
 #[derive(Component, GpuComponent, BindableComponent)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[method(default = "fn() -> Camera")]
 #[method(
     perspective_lookat = "fn(glam::Vec3, glam::Vec3, glam::Vec3, f32, f32, f32, f32) -> Camera"
@@ -50,10 +49,8 @@ pub struct Camera {
     pub view_matrix: glam::Mat4,
     pub projection_matrix: glam::Mat4,
 
-    #[cfg_attr(feature = "serde", serde(skip, default = "Camera::default_handle"))]
     #[uniform]
     pub(crate) handle: LazyGpuHandle,
-    #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
 
@@ -117,7 +114,6 @@ impl Default for Camera {
 }
 
 #[derive(Debug, Component, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[method(default = "fn() -> FlyCameraController")]
 #[method(update = "fn(&mut FlyCameraController, &Input, f32, &mut Camera)")]
 #[method(set_translation = "fn(&mut FlyCameraController, glam::Vec3)")]

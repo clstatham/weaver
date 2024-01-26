@@ -185,18 +185,13 @@ texture_format_impls!(
     NormalMapTexture,
     DepthTexture
 );
-
 texture_format_impls!(D2, Cube, 6; HdrCubeTexture, MonoCubeTexture, DepthCubeTexture);
-
 texture_format_impls!(D2, D2Array, 6; HdrD2ArrayTexture, MonoTexture);
-
 texture_format_impls!(D2, CubeArray, 6; MonoCubeArrayTexture, DepthCubeArrayTexture);
 
 #[derive(Clone, Component, GpuComponent)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[gpu(update = "update")]
 pub struct Texture {
-    #[cfg_attr(feature = "serde", serde(skip, default = "Texture::default_handle"))]
     pub(crate) handle: LazyGpuHandle,
 }
 
@@ -217,24 +212,6 @@ impl Texture {
 
     pub fn handle(&self) -> &LazyGpuHandle {
         &self.handle
-    }
-
-    #[doc(hidden)]
-    #[cfg(feature = "serde")]
-    fn default_handle() -> LazyGpuHandle {
-        LazyGpuHandle::new(
-            GpuResourceType::Texture {
-                width: 0,
-                height: 0,
-                usage: wgpu::TextureUsages::empty(),
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                dimension: wgpu::TextureDimension::D2,
-                view_dimension: wgpu::TextureViewDimension::D2,
-                depth_or_array_layers: 1,
-            },
-            None,
-            None,
-        )
     }
 
     pub fn load(
@@ -361,18 +338,16 @@ impl Texture {
 }
 
 #[derive(Clone, Component, GpuComponent, BindableComponent)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[gpu(update = "update")]
 pub struct Skybox {
-    #[cfg_attr(feature = "serde", serde(skip, default = "Skybox::default_texture"))]
     #[gpu(component)]
     #[texture(format = Rgba32Float, sample_type = float, view_dimension = Cube, layers = 6)]
     pub(crate) texture: HdrCubeTexture,
-    #[cfg_attr(feature = "serde", serde(skip, default = "Skybox::default_texture"))]
+
     #[gpu(component)]
     #[texture(format = Rgba32Float, sample_type = float, view_dimension = Cube, layers = 6)]
     pub(crate) irradiance: HdrCubeTexture,
-    #[cfg_attr(feature = "serde", serde(skip))]
+
     bind_group: LazyBindGroup<Self>,
 }
 
@@ -389,11 +364,6 @@ impl Skybox {
             irradiance,
             bind_group: LazyBindGroup::default(),
         }
-    }
-
-    #[cfg(feature = "serde")]
-    fn default_texture() -> HdrCubeTexture {
-        HdrCubeTexture::new(1, 1, None)
     }
 
     fn update(&self, world: &World) -> anyhow::Result<()> {

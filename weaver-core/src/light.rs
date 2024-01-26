@@ -11,7 +11,6 @@ use super::color::Color;
 pub const MAX_LIGHTS: usize = 32;
 
 #[derive(Component, GpuComponent, BindableComponent)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[method(new = "fn(position: glam::Vec3, color: Color, intensity: f32, radius: f32) -> PointLight")]
 #[gpu(update = "update")]
 pub struct PointLight {
@@ -20,11 +19,9 @@ pub struct PointLight {
     pub intensity: f32,
     pub radius: f32,
 
-    #[cfg_attr(feature = "serde", serde(skip, default = "PointLight::default_handle"))]
     #[gpu(handle)]
     #[uniform]
     pub(crate) handle: LazyGpuHandle,
-    #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
 
@@ -82,7 +79,6 @@ impl PointLight {
 }
 
 #[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable, Component)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 pub struct PointLightUniform {
     pub position: glam::Vec4,
@@ -90,7 +86,6 @@ pub struct PointLightUniform {
     pub projection_transform: glam::Mat4,
     pub intensity: f32,
     pub radius: f32,
-    #[cfg_attr(feature = "serde", serde(skip))]
     _pad: glam::Vec2,
 }
 
@@ -116,18 +111,13 @@ pub(crate) struct PointLightArrayUniform {
 }
 
 #[derive(GpuComponent, BindableComponent)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[gpu(update = "update")]
 pub(crate) struct PointLightArray {
     pub(crate) lights: Vec<PointLightUniform>,
-    #[cfg_attr(
-        feature = "serde",
-        serde(skip, default = "PointLightArray::default_handle")
-    )]
+
     #[gpu(handle)]
     #[storage]
     pub(crate) handle: LazyGpuHandle,
-    #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
 
@@ -184,7 +174,6 @@ impl Default for PointLightArray {
 }
 
 #[derive(Debug, Clone, Copy, Component)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DirectionalLight {
     pub direction: glam::Vec3,
     pub color: Color,

@@ -15,7 +15,6 @@ use super::{
 
 /// PBR material based on Bevy
 #[derive(Clone, Component, GpuComponent, BindableComponent)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[gpu(update = "update")]
 pub struct Material {
     asset_id: AssetId,
@@ -25,62 +24,37 @@ pub struct Material {
     pub roughness: f32,
     pub texture_scaling: f32,
 
-    #[cfg_attr(
-        feature = "serde",
-        serde(skip, default = "Material::new_properties_handle")
-    )]
     #[uniform]
     pub(crate) properties_handle: LazyGpuHandle,
 
-    #[cfg_attr(feature = "serde", serde(skip))]
     #[gpu(component)]
     #[texture(format = Rgba8UnormSrgb, sample_type = filterable_float, view_dimension = D2, default = SdrTexture::default)]
     pub(crate) diffuse_texture: Option<SdrTexture>,
 
-    #[cfg_attr(
-        feature = "serde",
-        serde(skip, default = "Material::new_sampler_handle")
-    )]
     #[sampler(filtering = true)]
     pub(crate) diffuse_sampler: LazyGpuHandle,
 
-    #[cfg_attr(feature = "serde", serde(skip))]
     #[gpu(component)]
     #[texture(format = Rgba8Unorm, sample_type = filterable_float, view_dimension = D2, default = NormalMapTexture::default)]
     pub(crate) normal_texture: Option<NormalMapTexture>,
 
-    #[cfg_attr(
-        feature = "serde",
-        serde(skip, default = "Material::new_sampler_handle")
-    )]
     #[sampler(filtering = true)]
     pub(crate) normal_sampler: LazyGpuHandle,
 
-    #[cfg_attr(feature = "serde", serde(skip))]
     #[gpu(component)]
     #[texture(format = Rgba8UnormSrgb, sample_type = filterable_float, view_dimension = D2, default = SdrTexture::default)]
     pub(crate) roughness_texture: Option<SdrTexture>,
 
-    #[cfg_attr(
-        feature = "serde",
-        serde(skip, default = "Material::new_sampler_handle")
-    )]
     #[sampler(filtering = true)]
     pub(crate) roughness_sampler: LazyGpuHandle,
 
-    #[cfg_attr(feature = "serde", serde(skip))]
     #[gpu(component)]
     #[texture(format = Rgba8UnormSrgb, sample_type = filterable_float, view_dimension = D2, default = SdrTexture::default)]
     pub(crate) ambient_occlusion_texture: Option<SdrTexture>,
 
-    #[cfg_attr(
-        feature = "serde",
-        serde(skip, default = "Material::new_sampler_handle")
-    )]
     #[sampler(filtering = true)]
     pub(crate) ambient_occlusion_sampler: LazyGpuHandle,
 
-    #[cfg_attr(feature = "serde", serde(skip))]
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
 
@@ -342,7 +316,6 @@ impl Material {
 }
 
 #[derive(Debug, Clone, Copy, Component, bytemuck::Pod, bytemuck::Zeroable)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 pub struct MaterialUniform {
     pub base_color: glam::Vec4,

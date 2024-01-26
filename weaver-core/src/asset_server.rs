@@ -45,18 +45,13 @@ impl Default for AssetId {
 #[method(load_mesh = "fn(&mut AssetServer, path: &String) -> Mesh")]
 #[method(load_material = "fn(&mut AssetServer, path: &String) -> Material")]
 #[method(load_skybox = "fn(&mut AssetServer, path: &String, hdr_loader: &HdrLoader) -> Skybox")]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssetServer {
     next_id: u64,
     path_prefix: PathBuf,
     ids: FxHashMap<PathBuf, AssetId>,
-    #[cfg_attr(feature = "serde", serde(skip))]
     resource_manager: Option<Arc<GpuResourceManager>>,
-    #[cfg_attr(feature = "serde", serde(skip))]
     meshes: FxHashMap<AssetId, Mesh>,
-    #[cfg_attr(feature = "serde", serde(skip))]
     textures: FxHashMap<AssetId, Texture>,
-    #[cfg_attr(feature = "serde", serde(skip))]
     materials: FxHashMap<AssetId, Material>,
 }
 
