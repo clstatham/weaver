@@ -8,7 +8,11 @@ use std::{
 use atomic_refcell::AtomicRefCell;
 use rustc_hash::{FxHashMap, FxHasher};
 
-use crate::{component::MethodWrapper, component_impl::register_all, prelude::Component};
+use crate::{
+    component::{MethodWrapper, Vtable},
+    component_impl::register_all,
+    prelude::Component,
+};
 
 pub type DynamicId = u32;
 
@@ -18,7 +22,7 @@ pub struct Registry {
     named_ids: AtomicRefCell<FxHashMap<String, DynamicId>>,
     id_names: AtomicRefCell<FxHashMap<DynamicId, String>>,
     #[allow(clippy::type_complexity)]
-    methods: AtomicRefCell<FxHashMap<DynamicId, Arc<FxHashMap<String, Arc<MethodWrapper>>>>>,
+    vtables: AtomicRefCell<FxHashMap<DynamicId, Arc<Vtable>>>,
 }
 
 impl Registry {
@@ -28,7 +32,7 @@ impl Registry {
             static_ids: AtomicRefCell::new(HashMap::default()),
             named_ids: AtomicRefCell::new(FxHashMap::default()),
             id_names: AtomicRefCell::new(FxHashMap::default()),
-            methods: AtomicRefCell::new(FxHashMap::default()),
+            vtables: AtomicRefCell::new(FxHashMap::default()),
         };
 
         let registry = Arc::new(registry);
@@ -75,7 +79,7 @@ impl Registry {
     }
 
     pub fn method_by_id(&self, id: DynamicId, name: &str) -> Option<Arc<MethodWrapper>> {
-        self.methods
+        self.vtables
             .borrow()
             .get(&id)
             .and_then(|methods| methods.get(name))
@@ -84,32 +88,28 @@ impl Registry {
 
     pub fn method_by_name(&self, ty: &str, name: &str) -> Option<Arc<MethodWrapper>> {
         let id = self.get_named(ty);
-        self.methods
+        self.vtables
             .borrow()
             .get(&id)
             .and_then(|methods| methods.get(name))
             .cloned()
     }
 
-    pub fn methods(&self, id: DynamicId) -> Option<Arc<FxHashMap<String, Arc<MethodWrapper>>>> {
-        self.methods.borrow().get(&id).cloned()
+    pub fn vtable(&self, id: DynamicId) -> Option<Arc<Vtable>> {
+        self.vtables.borrow().get(&id).cloned()
     }
 
-    pub fn methods_registered(&self, id: DynamicId) -> bool {
-        self.methods.borrow().contains_key(&id)
+    pub fn vtable_registered(&self, id: DynamicId) -> bool {
+        self.vtables.borrow().contains_key(&id)
     }
 
-    pub fn register_methods(
-        &self,
-        id: DynamicId,
-        methods: impl IntoIterator<Item = MethodWrapper>,
-    ) {
-        if self.methods.borrow().contains_key(&id) {
+    pub fn register_vtable(&self, id: DynamicId, methods: impl IntoIterator<Item = MethodWrapper>) {
+        if self.vtables.borrow().contains_key(&id) {
             #[cfg(debug_assertions)]
             {
                 for method in methods.into_iter() {
                     if !self
-                        .methods
+                        .vtables
                         .borrow()
                         .get(&id)
                         .unwrap()
@@ -128,7 +128,7 @@ impl Registry {
         let methods = methods
             .into_iter()
             .map(|method| (method.name().to_string(), Arc::new(method)));
-        self.methods
+        self.vtables
             .borrow_mut()
             .insert(id, Arc::new(methods.collect()));
     }
@@ -138,14 +138,14 @@ impl Registry {
         let static_ids = self.static_ids.borrow().clone();
         let named_ids = self.named_ids.borrow().clone();
         let id_names = self.id_names.borrow().clone();
-        let methods = self.methods.borrow().clone();
+        let methods = self.vtables.borrow().clone();
 
         Self {
             next_id: AtomicU32::new(next_id),
             static_ids: AtomicRefCell::new(static_ids),
             named_ids: AtomicRefCell::new(named_ids),
             id_names: AtomicRefCell::new(id_names),
-            methods: AtomicRefCell::new(methods),
+            vtables: AtomicRefCell::new(methods),
         }
     }
 
@@ -163,9 +163,9 @@ impl Registry {
         self.id_names
             .borrow_mut()
             .extend(other.id_names.borrow().clone());
-        self.methods
+        self.vtables
             .borrow_mut()
-            .extend(other.methods.borrow().clone());
+            .extend(other.vtables.borrow().clone());
     }
 
     pub fn static_name<T: Component>(&self) -> &'static str {

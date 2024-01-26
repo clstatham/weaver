@@ -1883,8 +1883,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f200d8d83c44a45b21764d1916299752ca035d15ecd46faca3e9a2a2bf6ad06"
 dependencies = [
  "memchr",
- "serde",
- "serde_json",
  "thiserror",
  "ucd-trie",
 ]
@@ -3111,6 +3109,7 @@ dependencies = [
  "petgraph",
  "rayon",
  "rustc-hash",
+ "serde",
  "static_assertions",
  "typed-arena",
  "weaver-proc-macro",

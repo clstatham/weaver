@@ -48,7 +48,7 @@ pub trait Component: Downcast + Send + Sync {
     }
 
     #[allow(unused)]
-    fn register_methods(registry: &Arc<Registry>)
+    fn register_vtable(registry: &Arc<Registry>)
     where
         Self: Sized,
     {
@@ -58,7 +58,7 @@ pub trait Component: Downcast + Send + Sync {
     where
         Self: Sized,
     {
-        Self::register_methods(registry);
+        Self::register_vtable(registry);
         Data::new(self, field_name, registry)
     }
 
@@ -66,7 +66,7 @@ pub trait Component: Downcast + Send + Sync {
     where
         Self: Sized,
     {
-        Self::register_methods(registry);
+        Self::register_vtable(registry);
         Data::new_dynamic(
             registry.static_name::<Self>(),
             field_name,
@@ -230,6 +230,8 @@ pub const fn impls_clone<T: ?Sized>() -> bool {
     impls::impls!(T: Clone)
 }
 
+pub type Vtable = FxHashMap<String, Arc<MethodWrapper>>;
+
 #[derive(Clone)]
 enum DataInner {
     Static(Arc<RwLock<dyn Component>>),
@@ -243,7 +245,7 @@ pub struct Data {
     pub(crate) type_name: String,
     pub(crate) field_name: Option<String>,
     inner: DataInner,
-    vtable: Arc<FxHashMap<String, Arc<MethodWrapper>>>,
+    vtable: Arc<Vtable>,
     registry: Arc<Registry>,
     is_clone: bool,
 }
@@ -251,7 +253,7 @@ pub struct Data {
 impl Data {
     pub fn new<T: Component>(data: T, field_name: Option<&str>, registry: &Arc<Registry>) -> Self {
         let type_id = registry.get_static::<T>();
-        T::register_methods(registry);
+        T::register_vtable(registry);
         let data = Arc::new(RwLock::new(data));
         Self {
             type_id,
@@ -260,7 +262,7 @@ impl Data {
             registry: registry.clone(),
             is_clone: impls_clone::<T>(),
             inner: DataInner::Static(data),
-            vtable: registry.methods(type_id).unwrap_or_default(),
+            vtable: registry.vtable(type_id).unwrap_or_default(),
         }
     }
 
@@ -281,7 +283,7 @@ impl Data {
             inner: DataInner::Dynamic {
                 fields: Arc::new(fields),
             },
-            vtable: registry.methods(type_id).unwrap_or_default(),
+            vtable: registry.vtable(type_id).unwrap_or_default(),
         }
     }
 

@@ -34,8 +34,6 @@ impl App {
         let world = World::new();
         crate::register_all(world.registry());
         let world = Arc::new(RwLock::new(world));
-        let world_sref = world.clone();
-        world.write().add_resource(world_sref)?;
 
         let scripts = Scripts::new(world.clone());
         world.write().add_resource(scripts)?;

@@ -8,7 +8,7 @@ use crate::{
     bundle::Bundle,
     component::Data,
     entity::Entity,
-    prelude::{Component, RelationGraph},
+    prelude::{Component, EntityGraph},
     query::{DynamicQueryBuilder, Query, QueryFilter, Queryable},
     registry::DynamicId,
     script::Script,
@@ -24,12 +24,6 @@ pub struct World {
     pub resources: SparseSet<DynamicId, Data>,
     pub script_systems: Arc<RwLock<FxHashMap<String, (Script, Vec<(SystemStage, NodeIndex)>)>>>,
     pub system_errors: Arc<RwLock<FxHashMap<String, String>>>,
-}
-
-impl Component for Arc<RwLock<World>> {
-    fn type_name() -> &'static str {
-        "World"
-    }
 }
 
 impl World {
@@ -67,7 +61,7 @@ impl World {
             system_errors: Arc::new(RwLock::new(FxHashMap::default())),
         };
 
-        this.add_resource(RelationGraph::default()).unwrap();
+        this.add_resource(EntityGraph::default()).unwrap();
         this
     }
 
@@ -89,7 +83,7 @@ impl World {
     }
 
     pub fn add_relation(&mut self, parent: &Entity, child: &Entity) -> bool {
-        let mut graph = self.write_resource::<RelationGraph>().unwrap();
+        let mut graph = self.write_resource::<EntityGraph>().unwrap();
         graph.add_relation(*parent, *child)
     }
 

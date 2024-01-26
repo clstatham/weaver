@@ -25,32 +25,149 @@ pub fn register_all(registry: &Arc<Registry>) {
     registry.get_static::<f64>();
     registry.get_static::<String>();
 
-    // register methods
-
-    glam::Vec3::register_methods(registry);
-    glam::Vec2::register_methods(registry);
-    glam::Vec4::register_methods(registry);
-    glam::Mat4::register_methods(registry);
-    glam::Quat::register_methods(registry);
+    glam::Vec3::register_vtable(registry);
+    glam::Vec2::register_vtable(registry);
+    glam::Vec4::register_vtable(registry);
+    glam::Mat4::register_vtable(registry);
+    glam::Quat::register_vtable(registry);
 }
 
-impl Component for () {}
-impl Component for bool {}
-impl Component for u8 {}
-impl Component for u16 {}
-impl Component for u32 {}
-impl Component for u64 {}
-impl Component for u128 {}
-impl Component for usize {}
-impl Component for i8 {}
-impl Component for i16 {}
-impl Component for i32 {}
-impl Component for i64 {}
-impl Component for i128 {}
-impl Component for isize {}
-impl Component for f32 {}
-impl Component for f64 {}
-impl Component for String {}
+impl Component for () {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "()"
+    }
+}
+impl Component for bool {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "bool"
+    }
+}
+impl Component for u8 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "u8"
+    }
+}
+impl Component for u16 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "u16"
+    }
+}
+impl Component for u32 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "u32"
+    }
+}
+impl Component for u64 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "u64"
+    }
+}
+impl Component for u128 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "u128"
+    }
+}
+impl Component for usize {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "usize"
+    }
+}
+impl Component for i8 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "i8"
+    }
+}
+impl Component for i16 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "i16"
+    }
+}
+impl Component for i32 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "i32"
+    }
+}
+impl Component for i64 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "i64"
+    }
+}
+impl Component for i128 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "i128"
+    }
+}
+impl Component for isize {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "isize"
+    }
+}
+impl Component for f32 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "f32"
+    }
+}
+impl Component for f64 {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "f64"
+    }
+}
+impl Component for String {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        "String"
+    }
+}
 
 impl<T: Component> Component for Vec<T> {
     fn fields(&self, _registry: &Arc<Registry>) -> Vec<Data>
@@ -60,9 +177,9 @@ impl<T: Component> Component for Vec<T> {
         vec![]
     }
 
-    fn register_methods(registry: &Arc<Registry>) {
+    fn register_vtable(registry: &Arc<Registry>) {
         let id = registry.get_static::<Self>();
-        if registry.methods_registered(id) {
+        if registry.vtable_registered(id) {
             return;
         }
         let registry_clone = registry.clone();
@@ -78,7 +195,7 @@ impl<T: Component> Component for Vec<T> {
             },
         )];
 
-        registry.register_methods(id, methods);
+        registry.register_vtable(id, methods);
     }
 }
 
@@ -113,7 +230,7 @@ impl Component for glam::Vec3 {
         ]
     }
 
-    fn register_methods(registry: &Arc<Registry>) {
+    fn register_vtable(registry: &Arc<Registry>) {
         let mut methods = vec![];
         let registry_clone = registry.clone();
         methods.push(MethodWrapper::from_method(
@@ -168,7 +285,7 @@ impl Component for glam::Vec3 {
         ));
 
         let id = registry.get_static::<Self>();
-        registry.register_methods(id, methods);
+        registry.register_vtable(id, methods);
     }
 }
 
@@ -190,9 +307,9 @@ impl Component for glam::Vec2 {
         ]
     }
 
-    fn register_methods(registry: &Arc<Registry>) {
+    fn register_vtable(registry: &Arc<Registry>) {
         let id = registry.get_static::<Self>();
-        if registry.methods_registered(id) {
+        if registry.vtable_registered(id) {
             return;
         }
         let mut methods = vec![];
@@ -249,7 +366,7 @@ impl Component for glam::Vec2 {
         ));
 
         let id = registry.get_static::<Self>();
-        registry.register_methods(id, methods);
+        registry.register_vtable(id, methods);
     }
 }
 
@@ -273,9 +390,9 @@ impl Component for glam::Vec4 {
         ]
     }
 
-    fn register_methods(registry: &Arc<Registry>) {
+    fn register_vtable(registry: &Arc<Registry>) {
         let id = registry.get_static::<Self>();
-        if registry.methods_registered(id) {
+        if registry.vtable_registered(id) {
             return;
         }
         let mut methods = vec![];
@@ -332,7 +449,7 @@ impl Component for glam::Vec4 {
         ));
 
         let id = registry.get_static::<Self>();
-        registry.register_methods(id, methods);
+        registry.register_vtable(id, methods);
     }
 }
 
@@ -356,9 +473,9 @@ impl Component for glam::Quat {
         ]
     }
 
-    fn register_methods(registry: &Arc<Registry>) {
+    fn register_vtable(registry: &Arc<Registry>) {
         let id = registry.get_static::<Self>();
-        if registry.methods_registered(id) {
+        if registry.vtable_registered(id) {
             return;
         }
         let mut methods = vec![];
@@ -419,7 +536,7 @@ impl Component for glam::Quat {
             },
         ));
 
-        registry.register_methods(id, methods);
+        registry.register_vtable(id, methods);
     }
 }
 
@@ -443,9 +560,9 @@ impl Component for glam::Mat4 {
         ]
     }
 
-    fn register_methods(registry: &Arc<Registry>) {
+    fn register_vtable(registry: &Arc<Registry>) {
         let id = registry.get_static::<Self>();
-        if registry.methods_registered(id) {
+        if registry.vtable_registered(id) {
             return;
         }
         let mut methods = vec![];
@@ -475,7 +592,7 @@ impl Component for glam::Mat4 {
             },
         ));
 
-        registry.register_methods(id, methods);
+        registry.register_vtable(id, methods);
     }
 }
 

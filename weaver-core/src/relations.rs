@@ -4,7 +4,7 @@ use crate::prelude::{GlobalTransform, Transform};
 
 #[system(UpdateTransforms)]
 pub fn update_transforms(
-    graph: Res<RelationGraph>,
+    graph: Res<EntityGraph>,
     mut transforms: Query<(Entity, &mut GlobalTransform, &Transform)>,
 ) {
     for (entity, mut global_transform, transform) in transforms.iter() {

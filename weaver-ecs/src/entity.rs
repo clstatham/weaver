@@ -51,16 +51,20 @@ impl Entity {
     }
 }
 
-impl Component for Entity {}
+impl Component for Entity {
+    fn type_name() -> &'static str {
+        "Entity"
+    }
+}
 
 #[derive(Default)]
-pub struct RelationGraph {
+pub struct EntityGraph {
     pub graph: StableDiGraph<Entity, ()>,
     indices_to_entities: FxHashMap<NodeIndex, Entity>,
     entities_to_indices: FxHashMap<Entity, NodeIndex>,
 }
 
-impl RelationGraph {
+impl EntityGraph {
     pub fn add_relation(&mut self, parent: Entity, child: Entity) -> bool {
         if let Some(parent_id) = self.entities_to_indices.get(&parent).copied() {
             if let Some(child_id) = self.entities_to_indices.get(&child).copied() {
@@ -209,7 +213,7 @@ impl RelationGraph {
     }
 }
 
-impl Component for RelationGraph {
+impl Component for EntityGraph {
     fn type_name() -> &'static str {
         "RelationGraph"
     }
