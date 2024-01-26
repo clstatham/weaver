@@ -102,7 +102,7 @@ fn calculate_ibl(
     let NdV = max(dot(N, V), 0.0);
     let R = reflect(-V, N);
 
-    let diffuse_irradiance = textureSample(irradiance_map, env_sampler, N).rgb;
+    let diffuse_irradiance = textureSample(env_map, env_sampler, N).rgb;
 
     let diffuse = diffuse_irradiance * albedo;
 

@@ -9,13 +9,11 @@ system setup {
         Player {},
     )
 
-    var local_transform = LocalTransform.from_translation(vec3(3.0, 3.0, 3.0));
-
     let child = spawn(
         assets.load_mesh("meshes/monkey_2x.glb"),
         assets.load_material("materials/metal.glb"),
         Transform.new(),
-        local_transform,
+        LocalTransform.from_translation(vec3(0.0, 0.0, 3.0)),
         ParentRel.position_rotation_scale(parent),
     )
 }

@@ -33,7 +33,7 @@ fn main() -> anyhow::Result<()> {
 
 #[system(Setup)]
 fn setup(commands: Commands, assets: ResMut<AssetServer>, hdr_loader: Res<HdrLoader>) {
-    commands.spawn(assets.load_skybox("meadow_2k.hdr", &hdr_loader));
+    commands.spawn(assets.load_skybox("sky_2k.hdr", &hdr_loader));
 
     let camera = Camera::default();
     let controller = FlyCameraController {
@@ -46,12 +46,12 @@ fn setup(commands: Commands, assets: ResMut<AssetServer>, hdr_loader: Res<HdrLoa
 
     commands.spawn((camera, controller));
 
-    commands.spawn(PointLight::new(
-        Vec3::new(10.0, 10.0, 10.0),
-        Color::WHITE,
-        100.0,
-        100.0,
-    ));
+    // commands.spawn(PointLight::new(
+    //     Vec3::new(10.0, 10.0, 10.0),
+    //     Color::WHITE,
+    //     100.0,
+    //     100.0,
+    // ));
 }
 
 #[system(UpdateCamera)]
