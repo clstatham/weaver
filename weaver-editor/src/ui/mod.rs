@@ -32,6 +32,7 @@ pub fn reload_scripts(ctx: Res<EguiContext>, scripts: Res<Scripts>) {
                         script.save().unwrap();
                     }
                     TextEdit::multiline(&mut script.content)
+                        .code_editor()
                         .desired_width(800.0)
                         .desired_rows(20)
                         .show(ui);
