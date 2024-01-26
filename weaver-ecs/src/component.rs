@@ -233,10 +233,7 @@ pub const fn impls_clone<T: ?Sized>() -> bool {
 #[derive(Clone)]
 enum DataInner {
     Static(Arc<RwLock<dyn Component>>),
-    Dynamic {
-        fields: Arc<Vec<Data>>,
-        vtable: Arc<FxHashMap<String, Arc<MethodWrapper>>>,
-    },
+    Dynamic { fields: Arc<Vec<Data>> },
 }
 
 /// A shared pointer to a type-erased component.
@@ -246,6 +243,7 @@ pub struct Data {
     pub(crate) type_name: String,
     pub(crate) field_name: Option<String>,
     inner: DataInner,
+    vtable: Arc<FxHashMap<String, Arc<MethodWrapper>>>,
     registry: Arc<Registry>,
     is_clone: bool,
 }
@@ -262,6 +260,7 @@ impl Data {
             registry: registry.clone(),
             is_clone: impls_clone::<T>(),
             inner: DataInner::Static(data),
+            vtable: registry.methods(type_id).unwrap_or_default(),
         }
     }
 
@@ -281,8 +280,8 @@ impl Data {
             is_clone,
             inner: DataInner::Dynamic {
                 fields: Arc::new(fields),
-                vtable: registry.methods(type_id).unwrap(),
             },
+            vtable: registry.methods(type_id).unwrap(),
         }
     }
 
@@ -397,10 +396,7 @@ impl Data {
 
     #[inline]
     pub fn method_by_name(&self, name: &str) -> Option<Arc<MethodWrapper>> {
-        match self.inner {
-            DataInner::Static(_) => None,
-            DataInner::Dynamic { ref vtable, .. } => vtable.get(name).cloned(),
-        }
+        self.vtable.get(name).cloned()
     }
 
     #[inline]
@@ -408,7 +404,7 @@ impl Data {
         if let Some(method) = self.method_by_name(name) {
             return method.call(args);
         }
-        Err(anyhow::anyhow!("Method does not exist"))
+        Err(anyhow::anyhow!("Method does not exist: {}", name))
     }
 
     pub fn display(&self, f: &mut std::fmt::Formatter<'_>) {
@@ -810,5 +806,39 @@ impl Display for Data {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.display(f);
         Ok(())
+    }
+}
+
+pub struct TypedData<T: Component> {
+    data: Data,
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T: Component> TypedData<T> {
+    pub fn new(data: T, registry: &Arc<Registry>) -> Self {
+        Self {
+            data: Data::new(data, None, registry),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    pub fn type_id(&self) -> DynamicId {
+        self.data.type_id()
+    }
+
+    pub fn type_name(&self) -> &str {
+        self.data.type_name()
+    }
+
+    pub fn field_name(&self) -> Option<&str> {
+        self.data.field_name()
+    }
+
+    pub fn get(&self) -> Option<MappedRwLockReadGuard<'_, T>> {
+        self.data.get_as()
+    }
+
+    pub fn get_mut(&self) -> Option<MappedRwLockWriteGuard<'_, T>> {
+        self.data.get_as_mut()
     }
 }

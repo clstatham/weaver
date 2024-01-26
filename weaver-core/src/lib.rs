@@ -78,4 +78,5 @@ pub(crate) fn register_all(registry: &Arc<Registry>) {
     Input::register_methods(registry);
     PointLight::register_methods(registry);
     Color::register_methods(registry);
+    AssetServer::register_methods(registry);
 }
