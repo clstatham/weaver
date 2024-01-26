@@ -24,6 +24,7 @@ impl Script {
         }
     }
 
+    #[allow(clippy::unwrap_used)]
     pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref().to_path_buf();
         let name = path.file_stem().unwrap().to_str().unwrap().to_string();

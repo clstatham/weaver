@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{error::Error, sync::Arc};
 
 use parking_lot::RwLock;
 use petgraph::stable_graph::NodeIndex;
@@ -14,10 +14,57 @@ use crate::{
 };
 
 use super::{
-    parser::{Call, Expr, Query, Scope, Statement, System, TypedIdent},
+    parser::{Call, Expr, Query, Scope, Span, SpanExpr, Statement, System, TypedIdent},
     value::{Value, ValueHandle},
     Script,
 };
+
+pub struct RuntimeError {
+    pub span: Span,
+    pub message: String,
+}
+
+impl RuntimeError {
+    pub fn new(span: Span, message: String) -> Self {
+        Self { span, message }
+    }
+}
+
+impl std::fmt::Display for RuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "{}:{}\n{}",
+            self.span.line_no,
+            self.span.col_no,
+            self.span.line.trim_end()
+        )?;
+        let spaces = " ".repeat(self.span.col_no - 1);
+        writeln!(f, "{}^", spaces)?;
+        writeln!(f, "{}", self.message)?;
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for RuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+impl Error for RuntimeError {}
+
+macro_rules! bail {
+    ($span:expr, $message:expr) => {
+        anyhow::bail!(runtime_error!($span, $message))
+    };
+}
+
+macro_rules! runtime_error {
+    ($span:expr, $message:expr) => {
+        anyhow::anyhow!(RuntimeError::new($span.to_owned(), $message.to_owned()))
+    };
+}
 
 pub struct RuntimeEnv {
     pub world: Arc<RwLock<World>>,
@@ -118,10 +165,14 @@ impl InterpreterContext {
         }
     }
 
-    pub fn interp_expr(&mut self, env: &RuntimeEnv, expr: &Expr) -> anyhow::Result<ValueHandle> {
-        match expr {
+    pub fn interp_expr(
+        &mut self,
+        env: &RuntimeEnv,
+        expr: &SpanExpr,
+    ) -> anyhow::Result<ValueHandle> {
+        match &expr.expr {
             Expr::Call(call) => self.interp_call(env, call),
-            Expr::Ident(ident) => self.interp_ident(ident),
+            Expr::Ident(_) => self.interp_ident(expr),
             Expr::IntLiteral(int) => self.interp_int_literal(*int),
             Expr::FloatLiteral(float) => self.interp_float_literal(*float as f32),
             Expr::StringLiteral(string) => self.interp_string_literal(string),
@@ -178,7 +229,7 @@ impl InterpreterContext {
                     let component = match component {
                         Value::Data(data) => data.to_owned(),
                         Value::DataMut(data) => data.to_owned(),
-                        _ => anyhow::bail!("Invalid argument: {:?}", component),
+                        _ => bail!(arg.span, "Invalid argument"),
                     };
 
                     let mut world = env.world.write();
@@ -189,7 +240,7 @@ impl InterpreterContext {
             }
             "vec3" => {
                 if call.args.len() != 3 {
-                    anyhow::bail!("Invalid argument count");
+                    bail!(call.name.span, "Invalid argument count: expected 3");
                 }
 
                 let x = self.interp_expr(env, &call.args[0])?;
@@ -199,25 +250,43 @@ impl InterpreterContext {
                 let x = match &x.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
-                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
-                    _ => anyhow::bail!("Invalid argument"),
+                    Value::Data(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[0].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    Value::DataMut(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[0].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    _ => bail!(call.args[0].span, "Invalid argument"),
                 };
 
                 let y = match &y.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
-                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
-                    _ => anyhow::bail!("Invalid argument"),
+                    Value::Data(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[1].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    Value::DataMut(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[1].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    _ => bail!(call.args[1].span, "Invalid argument"),
                 };
 
                 let z = match &z.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
-                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
-                    _ => anyhow::bail!("Invalid argument"),
+                    Value::Data(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[2].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    Value::DataMut(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[2].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    _ => bail!(call.args[2].span, "Invalid argument"),
                 };
 
                 let vec3 = glam::Vec3::new(x, y, z);
@@ -226,7 +295,7 @@ impl InterpreterContext {
             }
             "vec4" | "quat" => {
                 if call.args.len() != 4 {
-                    anyhow::bail!("Invalid argument count");
+                    anyhow::bail!("Invalid argument count: expected 4");
                 }
 
                 let x = self.interp_expr(env, &call.args[0])?;
@@ -237,33 +306,57 @@ impl InterpreterContext {
                 let x = match &x.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
-                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
-                    _ => anyhow::bail!("Invalid argument"),
+                    Value::Data(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[0].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    Value::DataMut(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[0].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    _ => bail!(call.args[0].span, "Invalid argument"),
                 };
 
                 let y = match &y.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
-                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
-                    _ => anyhow::bail!("Invalid argument"),
+                    Value::Data(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[1].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    Value::DataMut(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[1].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    _ => bail!(call.args[1].span, "Invalid argument"),
                 };
 
                 let z = match &z.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
-                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
-                    _ => anyhow::bail!("Invalid argument"),
+                    Value::Data(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[2].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    Value::DataMut(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[2].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    _ => bail!(call.args[2].span, "Invalid argument"),
                 };
 
                 let w = match &w.value {
                     Value::Int(int) => *int as f32,
                     Value::Float(float) => *float,
-                    Value::Data(data) => *data.get_as::<f32>().unwrap(),
-                    Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
-                    _ => anyhow::bail!("Invalid argument"),
+                    Value::Data(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[3].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    Value::DataMut(data) => *data.get_as::<f32>().ok_or(runtime_error!(
+                        call.args[3].span,
+                        "Invalid type: expected int or float"
+                    ))?,
+                    _ => bail!(call.args[3].span, "Invalid argument"),
                 };
 
                 let vec4 = glam::Vec4::new(x, y, z, w);
@@ -281,9 +374,13 @@ impl InterpreterContext {
                     let x = match &self.interp_expr(env, arg)?.value {
                         Value::Int(int) => *int as f32,
                         Value::Float(float) => *float,
-                        Value::Data(data) => *data.get_as::<f32>().unwrap(),
-                        Value::DataMut(data) => *data.get_as::<f32>().unwrap(),
-                        _ => anyhow::bail!("Invalid argument"),
+                        Value::Data(data) => *data
+                            .get_as::<f32>()
+                            .ok_or(runtime_error!(arg.span, "Invalid type: expected f32"))?,
+                        Value::DataMut(data) => *data
+                            .get_as::<f32>()
+                            .ok_or(runtime_error!(arg.span, "Invalid type: expected f32"))?,
+                        _ => bail!(arg.span, "Invalid argument"),
                     };
                     mat4.push(x);
                 }
@@ -298,11 +395,11 @@ impl InterpreterContext {
                     .iter()
                     .rev()
                     .filter_map(|scope| match scope {
-                        Scope::Func(func) if func.name == name => Some(func),
+                        Scope::Func(func) if func.name.as_str() == name => Some(func),
                         _ => None,
                     })
                     .next()
-                    .ok_or(anyhow::anyhow!("Unknown function {}", name))?;
+                    .ok_or(runtime_error!(call.name.span, "Unknown function"))?;
 
                 let mut args = Vec::new();
                 for (arg, param) in call.args.iter().zip(func.params.iter()) {
@@ -331,7 +428,7 @@ impl InterpreterContext {
                         return Ok(value);
                     } else {
                         if func.ret_type.is_some() {
-                            anyhow::bail!("Missing return value");
+                            bail!(call.name.span, "Missing return value");
                         }
                         return Ok(self.alloc_value(None, Value::Void));
                     }
@@ -342,8 +439,8 @@ impl InterpreterContext {
         }
     }
 
-    pub fn interp_ident(&mut self, ident: &str) -> anyhow::Result<ValueHandle> {
-        if let Some(value) = self.get_value_handle(ident) {
+    pub fn interp_ident(&mut self, ident: &SpanExpr) -> anyhow::Result<ValueHandle> {
+        if let Some(value) = self.get_value_handle(ident.as_str()) {
             return Ok(value);
         }
 
@@ -354,7 +451,7 @@ impl InterpreterContext {
                 .map(|k| k.name.as_ref())
                 .collect::<Vec<_>>()
         );
-        anyhow::bail!("Unknown identifier {}", ident)
+        bail!(ident.span, "Unknown identifier")
     }
 
     pub fn interp_int_literal(&mut self, int: i64) -> anyhow::Result<ValueHandle> {
@@ -403,8 +500,8 @@ impl InterpreterContext {
         &mut self,
         env: &RuntimeEnv,
         op: &str,
-        lhs: &Expr,
-        rhs: &Expr,
+        lhs: &SpanExpr,
+        rhs: &SpanExpr,
     ) -> anyhow::Result<ValueHandle> {
         let mut lhs = self.interp_expr(env, lhs)?;
         let rhs = self.interp_expr(env, rhs)?;
@@ -416,41 +513,47 @@ impl InterpreterContext {
     pub fn interp_member(
         &mut self,
         env: &RuntimeEnv,
-        lhs: &Expr,
-        rhs: &Expr,
+        lhs: &SpanExpr,
+        rhs: &SpanExpr,
     ) -> anyhow::Result<ValueHandle> {
-        let lhs = self.interp_expr(env, lhs)?;
+        let lhs_value = self.interp_expr(env, lhs)?;
 
-        match rhs {
-            Expr::Ident(rhs) => match &lhs.value {
+        match &rhs.expr {
+            Expr::Ident(rhs_ident) => match &lhs_value.value {
                 Value::Data(data) => {
-                    let field = data.field_by_name(rhs).unwrap().to_owned();
+                    let field = data
+                        .field_by_name(rhs_ident)
+                        .ok_or(runtime_error!(rhs.span, "No such field"))?
+                        .to_owned();
                     let value = Value::Data(field);
-                    let name = lhs
+                    let name = lhs_value
                         .name
-                        .map(|s| format!("{}.{}", s, rhs))
-                        .or_else(|| Some(rhs.to_owned()));
+                        .map(|s| format!("{}.{}", s, rhs_ident))
+                        .or_else(|| Some(rhs_ident.to_owned()));
                     Ok(self.alloc_value(name.as_deref(), value))
                 }
                 Value::DataMut(data) => {
-                    let field = data.field_by_name(rhs).unwrap().to_owned();
+                    let field = data
+                        .field_by_name(rhs_ident)
+                        .ok_or(runtime_error!(rhs.span, "No such field"))?
+                        .to_owned();
                     let value = Value::DataMut(field);
-                    let name = lhs
+                    let name = lhs_value
                         .name
-                        .map(|s| format!("{}.{}", s, rhs))
-                        .or_else(|| Some(rhs.to_owned()));
+                        .map(|s| format!("{}.{}", s, rhs_ident))
+                        .or_else(|| Some(rhs_ident.to_owned()));
                     Ok(self.alloc_value(name.as_deref(), value))
                 }
-                _ => anyhow::bail!("Invalid member access"),
+                _ => bail!(rhs.span, "Invalid member access"),
             },
-            Expr::Call(rhs) => {
+            Expr::Call(rhs_call) => {
                 // look for an impl of the rhs call on the lhs type
                 let func = env
                     .scopes
                     .iter()
                     .find_map(|scope| {
                         if let Scope::Impl(impl_) = scope {
-                            Some(impl_.funcs.iter().find(|func| func.name == rhs.name))
+                            Some(impl_.funcs.iter().find(|func| func.name == rhs_call.name))
                         } else {
                             None
                         }
@@ -459,7 +562,7 @@ impl InterpreterContext {
 
                 if let Some(func) = func {
                     let mut args = Vec::new();
-                    for arg in &rhs.args {
+                    for arg in &rhs_call.args {
                         args.push(self.interp_expr(env, arg)?);
                     }
 
@@ -467,12 +570,14 @@ impl InterpreterContext {
 
                     let scope = env.push_scope(None);
                     let mut has_self = false;
-                    if let Some(first) = params.get(0) {
+                    if let Some(first) = params.first() {
                         if first.name.as_str() == "self" {
-                            if first.ty != lhs.value.type_name() {
-                                anyhow::bail!("Invalid self type");
+                            if first.ty.as_str() != lhs_value.value.type_name()
+                                && first.ty.as_str() != "Self"
+                            {
+                                bail!(first.ty.span, "Invalid self type")
                             }
-                            let value = lhs.value.to_owned();
+                            let value = lhs_value.value.to_owned();
                             let value = value.to_data(env)?;
                             scope.alloc_value(Some(first.name.as_str()), value);
                             has_self = true;
@@ -483,7 +588,10 @@ impl InterpreterContext {
                     }
                     for (arg, param) in args.iter().zip(params.iter()) {
                         if param.name.as_str() == "self" {
-                            anyhow::bail!("Cannot use self as argument beyond the first");
+                            bail!(
+                                param.name.span,
+                                "Cannot use self as argument beyond the first"
+                            );
                         } else {
                             let value = arg.value.to_owned();
                             let value = value.to_data(env)?;
@@ -511,16 +619,16 @@ impl InterpreterContext {
                     let mut args = Vec::new();
 
                     // check if lhs is a type
-                    if let Value::Type(lhs) = &lhs.value {
+                    if let Value::Type(lhs) = &lhs_value.value {
                         // get the method from the registry
                         let method = env
                             .world
                             .read()
                             .registry()
-                            .method_by_name(lhs, &rhs.name)
-                            .ok_or(anyhow::anyhow!("Unknown method {}", rhs.name))?;
+                            .method_by_name(lhs, rhs_call.name.as_str())
+                            .ok_or(runtime_error!(rhs_call.name.span, "No such method"))?;
 
-                        for arg in &rhs.args {
+                        for arg in &rhs_call.args {
                             let arg = self.interp_expr(env, arg)?.to_data(env)?;
                             let arg = match arg {
                                 Value::Data(data) => data,
@@ -535,31 +643,31 @@ impl InterpreterContext {
                         Ok(self.alloc_value(None, Value::Data(result)))
                     } else {
                         // look for a method on the lhs
-                        let lhs = match lhs.value {
+                        let lhs_data = match lhs_value.value {
                             Value::Data(data) => data,
                             Value::DataMut(data) => data,
-                            _ => anyhow::bail!("Invalid member access"),
+                            _ => bail!(lhs.span, "Invalid member access"),
                         };
 
                         // push a "self" value
-                        args.push(lhs.to_owned());
+                        args.push(lhs_data.to_owned());
 
-                        for arg in &rhs.args {
+                        for arg in &rhs_call.args {
                             let arg = self.interp_expr(env, arg)?.to_data(env)?;
                             let arg = match arg {
                                 Value::Data(data) => data,
                                 Value::DataMut(data) => data,
-                                _ => unreachable!(),
+                                _ => unreachable!("to_data should only return Data or DataMut"),
                             };
                             args.push(arg);
                         }
                         let args = args.iter().collect::<Vec<_>>();
-                        let result = lhs.call_method(&rhs.name, &args)?;
+                        let result = lhs_data.call_method(rhs_call.name.as_str(), &args)?;
                         Ok(self.alloc_value(None, Value::Data(result)))
                     }
                 }
             }
-            _ => anyhow::bail!("Invalid member access"),
+            _ => bail!(lhs.span, "Invalid member access"),
         }
     }
 
@@ -567,8 +675,8 @@ impl InterpreterContext {
         &mut self,
         env: &RuntimeEnv,
         mutability: bool,
-        ident: &str,
-        initial_value: &Expr,
+        ident: &SpanExpr,
+        initial_value: &SpanExpr,
     ) -> anyhow::Result<ValueHandle> {
         let value = self.interp_expr(env, initial_value)?;
         let value = value.value.to_owned();
@@ -585,14 +693,14 @@ impl InterpreterContext {
                 _ => value,
             }
         };
-        Ok(self.alloc_value(Some(ident), value))
+        Ok(self.alloc_value(Some(ident.as_str()), value))
     }
 
     pub fn interp_construct(
         &mut self,
         env: &RuntimeEnv,
-        name: &str,
-        args: &[(String, Expr)],
+        name: &SpanExpr,
+        args: &[(String, SpanExpr)],
     ) -> anyhow::Result<ValueHandle> {
         let world = env.world.read();
 
@@ -653,14 +761,14 @@ impl InterpreterContext {
                     let data = Data::new(string.to_owned(), Some(field_name), world.registry());
                     fields.push(data);
                 }
-                Value::Entity(_) => anyhow::bail!("Cannot assign entity value"),
-                Value::Void => anyhow::bail!("Cannot assign void value"),
-                Value::Query { .. } => anyhow::bail!("Cannot assign query value"),
-                Value::Type(_) => anyhow::bail!("Cannot assign type value"),
+                Value::Entity(_) => bail!(arg.span, "Cannot assign entity value"),
+                Value::Void => bail!(arg.span, "Cannot assign void value"),
+                Value::Query { .. } => bail!(arg.span, "Cannot assign query value"),
+                Value::Type(_) => bail!(arg.span, "Cannot assign type value"),
             }
         }
 
-        let component = Data::new_dynamic(name, None, is_clone, fields, world.registry());
+        let component = Data::new_dynamic(name.as_str(), None, is_clone, fields, world.registry());
 
         Ok(self.alloc_value(None, Value::DataMut(component)))
     }
@@ -668,33 +776,41 @@ impl InterpreterContext {
     pub fn interp_if(
         &mut self,
         env: &RuntimeEnv,
-        condition: &Expr,
-        then_block: &Expr,
-        elif_blocks: &[(Box<Expr>, Box<Expr>)],
-        else_block: Option<&Expr>,
+        condition: &SpanExpr,
+        then_block: &SpanExpr,
+        elif_blocks: &[(Box<SpanExpr>, Box<SpanExpr>)],
+        else_block: Option<&SpanExpr>,
     ) -> anyhow::Result<ValueHandle> {
-        let condition = self.interp_expr(env, condition)?;
-        let condition = match &condition.value {
+        let condition_value = self.interp_expr(env, condition)?;
+        let condition = match &condition_value.value {
             Value::Int(int) => *int != 0,
             Value::Float(float) => *float != 0.0,
             Value::Bool(b) => *b,
-            Value::Data(data) => *data.get_as::<bool>().unwrap(),
-            Value::DataMut(data) => *data.get_as::<bool>().unwrap(),
-            value => anyhow::bail!("Cannot use {:?} as condition", value),
+            Value::Data(data) => *data
+                .get_as::<bool>()
+                .ok_or(runtime_error!(condition.span, "Invalid type for condition"))?,
+            Value::DataMut(data) => *data
+                .get_as::<bool>()
+                .ok_or(runtime_error!(condition.span, "Invalid type for condition"))?,
+            _ => bail!(condition.span, "Invalid type for condition"),
         };
 
         if condition {
             self.interp_expr(env, then_block)
         } else {
             for (condition, block) in elif_blocks {
-                let condition = self.interp_expr(env, condition)?;
-                let condition = match &condition.value {
+                let condition_value = self.interp_expr(env, condition)?;
+                let condition = match &condition_value.value {
                     Value::Int(int) => *int != 0,
                     Value::Float(float) => *float != 0.0,
                     Value::Bool(b) => *b,
-                    Value::Data(data) => *data.get_as::<bool>().unwrap(),
-                    Value::DataMut(data) => *data.get_as::<bool>().unwrap(),
-                    value => anyhow::bail!("Cannot use {:?} as condition", value),
+                    Value::Data(data) => *data
+                        .get_as::<bool>()
+                        .ok_or(runtime_error!(condition.span, "Invalid type for condition"))?,
+                    Value::DataMut(data) => *data
+                        .get_as::<bool>()
+                        .ok_or(runtime_error!(condition.span, "Invalid type for condition"))?,
+                    _ => bail!(condition.span, "Invalid type for condition"),
                 };
 
                 if condition {
@@ -713,18 +829,22 @@ impl InterpreterContext {
     pub fn interp_loop(
         &mut self,
         env: &RuntimeEnv,
-        condition: Option<&Expr>,
-        block: &Expr,
+        condition: Option<&SpanExpr>,
+        block: &SpanExpr,
     ) -> anyhow::Result<ValueHandle> {
-        if let Some(Expr::Ident(query_ident)) = condition {
+        if let Some(SpanExpr {
+            expr: Expr::Ident(_),
+            ..
+        }) = condition
+        {
             // named query
-            let query = self.interp_ident(query_ident)?;
+            let query = self.interp_ident(condition.as_ref().unwrap())?;
             let (query, typed_idents) = match &query.value {
                 Value::Query {
                     query,
                     typed_idents,
                 } => (query, typed_idents),
-                _ => panic!("Invalid query"),
+                _ => bail!(condition.unwrap().span, "Invalid query"),
             };
 
             for entries in query.iter() {
@@ -743,7 +863,7 @@ impl InterpreterContext {
                         }
                     }
                 }
-                scope.interp_expr(env, &block)?;
+                scope.interp_expr(env, block)?;
 
                 if let Some(should_break) = scope.should_break.take() {
                     if let Some(value) = should_break {
@@ -758,7 +878,11 @@ impl InterpreterContext {
             }
 
             Ok(self.alloc_value(None, Value::Void))
-        } else if let Some(Expr::Query(query)) = condition {
+        } else if let Some(SpanExpr {
+            expr: Expr::Query(query),
+            ..
+        }) = condition
+        {
             // inline query
             let query = self.interp_query(env, query)?;
             let (query, typed_idents) = match &query.value {
@@ -766,7 +890,7 @@ impl InterpreterContext {
                     query,
                     typed_idents,
                 } => (query, typed_idents),
-                _ => panic!("Invalid query"),
+                _ => bail!(condition.unwrap().span, "Invalid query"),
             };
 
             for entries in query.iter() {
@@ -785,7 +909,7 @@ impl InterpreterContext {
                         }
                     }
                 }
-                scope.interp_expr(env, &block)?;
+                scope.interp_expr(env, block)?;
 
                 if let Some(should_break) = scope.should_break.take() {
                     if let Some(value) = should_break {
@@ -803,15 +927,19 @@ impl InterpreterContext {
         } else {
             loop {
                 if let Some(condition) = condition {
-                    let condition = self.interp_expr(env, condition)?;
-                    let condition = match &condition.value {
+                    let condition_value = self.interp_expr(env, condition)?;
+                    let condition = match &condition_value.value {
                         Value::Int(int) => *int != 0,
                         Value::Float(float) => *float != 0.0,
                         Value::Bool(b) => *b,
-                        Value::Data(data) => *data.get_as::<bool>().unwrap(),
-                        Value::DataMut(data) => *data.get_as::<bool>().unwrap(),
+                        Value::Data(data) => *data
+                            .get_as::<bool>()
+                            .ok_or(runtime_error!(condition.span, "Invalid type for condition"))?,
+                        Value::DataMut(data) => *data
+                            .get_as::<bool>()
+                            .ok_or(runtime_error!(condition.span, "Invalid type for condition"))?,
                         Value::Query { .. } => unreachable!(),
-                        value => anyhow::bail!("Cannot use {:?} as condition", value),
+                        _ => bail!(condition.span, "Invalid type for condition"),
                     };
 
                     if !condition {
@@ -864,18 +992,27 @@ impl InterpreterContext {
         &mut self,
         env: &RuntimeEnv,
         mutability: bool,
-        ident: &str,
-        res: &str,
+        ident: &SpanExpr,
+        res: &SpanExpr,
     ) -> anyhow::Result<ValueHandle> {
         let world = env.world.read();
-        let id = world.named_id(res);
-        let data = world.dynamic_resource(id)?.to_owned();
+        let id = world.named_id(res.as_str());
+        let data = world
+            .dynamic_resource(id)
+            .map_err(|_| runtime_error!(res.span, "No such resource"))?
+            .to_owned();
         let value = if mutability {
             Value::DataMut(data)
         } else {
             Value::Data(data)
         };
-        Ok(self.alloc_value(Some(ident), value))
+        Ok(self.alloc_value(Some(ident.as_str()), value))
+    }
+}
+
+impl Default for InterpreterContext {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -903,8 +1040,14 @@ impl BuildOnWorld for Script {
                         Ok(())
                     };
 
-                    let script =
-                        DynamicSystem::new(&system.name, vec![], vec![], vec![], vec![], run_fn);
+                    let script = DynamicSystem::new(
+                        system.name.as_str(),
+                        vec![],
+                        vec![],
+                        vec![],
+                        vec![],
+                        run_fn,
+                    );
 
                     if let Some(tag) = &system.tag {
                         match tag.as_str() {
@@ -962,11 +1105,11 @@ impl BuildOnWorld for Query {
             }
         }
         for with in &self.with {
-            let id = with.build(world.clone())?;
+            let id = with.as_str().to_string().build(world.clone())?;
             params = params.with(id);
         }
         for without in &self.without {
-            let id = without.build(world.clone())?;
+            let id = without.as_str().to_string().build(world.clone())?;
             params = params.without(id);
         }
         Ok(params)
@@ -977,7 +1120,7 @@ impl BuildOnWorld for TypedIdent {
     type Output = DynamicId;
 
     fn build(&self, world: Arc<RwLock<World>>) -> anyhow::Result<DynamicId> {
-        Ok(world.read().named_id(&self.ty))
+        Ok(world.read().named_id(self.ty.as_str()))
     }
 }
 

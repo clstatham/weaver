@@ -17,6 +17,7 @@ pub struct Registry {
     static_ids: AtomicRefCell<TypeIdMap<DynamicId>>,
     named_ids: AtomicRefCell<FxHashMap<String, DynamicId>>,
     id_names: AtomicRefCell<FxHashMap<DynamicId, String>>,
+    #[allow(clippy::type_complexity)]
     methods: AtomicRefCell<FxHashMap<DynamicId, Arc<FxHashMap<String, Arc<MethodWrapper>>>>>,
 }
 

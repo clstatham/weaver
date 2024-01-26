@@ -706,6 +706,12 @@ impl Components {
     }
 }
 
+impl Default for Components {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct TemporaryComponents {
     pub components: Components,
 }

@@ -26,7 +26,7 @@ impl<T: std::any::Any> Downcast for T {
 }
 
 /// A component is a data structure that can be attached to an entity.
-pub trait Component: Downcast + Send + Sync + 'static {
+pub trait Component: Downcast + Send + Sync {
     fn type_name() -> &'static str
     where
         Self: Sized,
@@ -409,7 +409,6 @@ impl Data {
         if let Some(component) = component {
             try_all_types!(component; bool, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, String, glam::Vec2, glam::Vec3, glam::Vec4, glam::Mat2, glam::Mat3, glam::Mat4, glam::Quat; {
                 write!(f, "{}", *component).unwrap();
-                return;
             } else {
                 write!(f, "{}", type_name).unwrap();
                 if let Some(fields) = fields {

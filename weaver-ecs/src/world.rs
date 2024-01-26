@@ -17,11 +17,13 @@ use crate::{
     system::{SystemGraph, SystemStage},
 };
 
+#[allow(clippy::type_complexity)]
 pub struct World {
     pub components: Components,
     pub systems: RwLock<FxHashMap<SystemStage, Arc<RwLock<SystemGraph>>>>,
     pub resources: SparseSet<DynamicId, Data>,
     pub script_systems: Arc<RwLock<FxHashMap<String, (Script, Vec<(SystemStage, NodeIndex)>)>>>,
+    pub system_errors: Arc<RwLock<FxHashMap<String, String>>>,
 }
 
 impl Component for Arc<RwLock<World>> {
@@ -62,6 +64,7 @@ impl World {
             ])),
             resources: SparseSet::default(),
             script_systems: Arc::new(RwLock::new(FxHashMap::default())),
+            system_errors: Arc::new(RwLock::new(FxHashMap::default())),
         }
     }
 
@@ -153,11 +156,15 @@ impl World {
         self.resources.contains(&id)
     }
 
-    pub fn add_system<T: System>(&self, system: T) -> NodeIndex {
+    pub fn add_system<T: System + 'static>(&self, system: T) -> NodeIndex {
         self.add_system_to_stage(system, SystemStage::default())
     }
 
-    pub fn add_system_to_stage<T: System>(&self, system: T, stage: SystemStage) -> NodeIndex {
+    pub fn add_system_to_stage<T: System + 'static>(
+        &self,
+        system: T,
+        stage: SystemStage,
+    ) -> NodeIndex {
         self.systems
             .write()
             .entry(stage)
@@ -188,6 +195,10 @@ impl World {
             .add_dynamic_system(Arc::new(system))
     }
 
+    pub fn system_errors(&self) -> FxHashMap<String, String> {
+        self.system_errors.read().clone()
+    }
+
     pub fn add_script(world: &Arc<RwLock<Self>>, script_path: impl AsRef<Path>) {
         let (script, ids) = DynamicSystem::load_script(script_path, world.clone()).unwrap();
         let world_lock = world.read();
@@ -197,8 +208,11 @@ impl World {
             .insert(script.name.clone(), (script, ids));
     }
 
-    pub fn reload_scripts(world: &Arc<RwLock<Self>>) -> Result<(), FxHashMap<String, String>> {
+    pub fn reload_scripts(world: &Arc<RwLock<Self>>) {
         let world_lock = world.read();
+
+        world_lock.system_errors.write().clear();
+
         let mut scripts_lock = world_lock.script_systems.write();
         let scripts = std::mem::take(&mut *scripts_lock);
         drop(scripts_lock);
@@ -211,7 +225,7 @@ impl World {
                 let systems = world_lock.systems.read();
                 for (stage, node) in ids.iter() {
                     if let Some(system) = systems.get(stage).unwrap().write().remove_system(*node) {
-                        old_systems.push((stage.clone(), system));
+                        old_systems.push((*stage, system));
                     }
                 }
                 old_systems
@@ -236,10 +250,9 @@ impl World {
             }
         }
 
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
+        if !errors.is_empty() {
+            let world_lock = world.read();
+            world_lock.system_errors.write().extend(errors);
         }
     }
 
@@ -252,7 +265,15 @@ impl World {
                 .autodetect_dependencies(world_lock.components.registry())?;
             drop(systems_lock);
             drop(world_lock);
-            systems.read().run(world)?;
+            systems.write().run(world)?;
+
+            for (sys_name, error) in systems.read().errors() {
+                world
+                    .write()
+                    .system_errors
+                    .write()
+                    .insert(sys_name.to_owned(), error.to_owned());
+            }
         }
         Ok(())
     }

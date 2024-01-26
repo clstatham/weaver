@@ -18,24 +18,23 @@ pub fn ui_main(ctx: Res<EguiContext>, state: Res<EditorState>, fps_display: ResM
 #[system(ScriptUpdate)]
 pub fn script_update(ctx: Res<EguiContext>, scripts: Res<Scripts>, input: Res<Input>) {
     ctx.draw_if_ready(|ctx| {
-        egui::Window::new("Reload Scripts").show(ctx, |ui| {
+        egui::Window::new("Scripts").show(ctx, |ui| {
             if ui.button("Reload Scripts").clicked() {
                 scripts.reload();
             }
             if scripts.has_errors() {
                 ui.separator();
-                ui.label("!!! Some scripts had errors. Check the script windows for details.");
+                ui.label("!!! Some systems had errors. Check below for details. !!!");
                 egui::ScrollArea::both().show(ui, |ui| {
-                    for script in scripts.script_iter() {
-                        if let Some(error) = scripts.script_errors(&script.name) {
-                            ui.separator();
-                            ui.label(&script.name);
-                            TextEdit::multiline(&mut error.to_string())
-                                .desired_width(f32::INFINITY)
-                                .interactive(false)
-                                .text_color(egui::Color32::LIGHT_RED)
-                                .show(ui);
-                        }
+                    for (name, error) in scripts.script_errors() {
+                        ui.separator();
+                        ui.label(name);
+                        TextEdit::multiline(&mut error.to_string())
+                            .code_editor()
+                            .desired_width(f32::INFINITY)
+                            .interactive(false)
+                            .text_color(egui::Color32::LIGHT_RED)
+                            .show(ui);
                     }
                 });
             }
@@ -43,7 +42,7 @@ pub fn script_update(ctx: Res<EguiContext>, scripts: Res<Scripts>, input: Res<In
 
         for mut script in scripts.script_iter_mut() {
             let mut layouter = |ui: &egui::Ui, string: &str, wrap_width| {
-                let mut layout_job = syntax_highlighting::highlight(ui.ctx(), &string);
+                let mut layout_job = syntax_highlighting::highlight(ui.ctx(), string);
                 layout_job.wrap.max_width = wrap_width;
                 ui.fonts(|f| f.layout_job(layout_job))
             };
@@ -52,18 +51,6 @@ pub fn script_update(ctx: Res<EguiContext>, scripts: Res<Scripts>, input: Res<In
                     ui.vertical(|ui| {
                         if ui.button("Save").clicked() {
                             script.save().unwrap();
-                        }
-
-                        if let Some(error) = scripts.script_errors(&script.name) {
-                            ui.separator();
-                            ui.label("Error:");
-                            egui::ScrollArea::both().show(ui, |ui| {
-                                TextEdit::multiline(&mut error.to_string())
-                                    .interactive(false)
-                                    .desired_width(f32::INFINITY)
-                                    .text_color(egui::Color32::LIGHT_RED)
-                                    .show(ui);
-                            });
                         }
                     });
                     ui.separator();

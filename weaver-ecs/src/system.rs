@@ -33,7 +33,7 @@ impl SystemStage {
     }
 }
 
-pub trait System: Send + Sync + 'static {
+pub trait System: Send + Sync {
     fn run(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()>;
     fn components_read(&self, registry: &Registry) -> Vec<DynamicId>;
     fn components_written(&self, registry: &Registry) -> Vec<DynamicId>;
@@ -43,8 +43,8 @@ pub trait System: Send + Sync + 'static {
 }
 
 pub enum RunFn {
-    Static(Box<dyn Fn(Arc<RwLock<World>>) -> anyhow::Result<()> + Send + Sync>),
-    Dynamic(Box<dyn Fn() -> anyhow::Result<()> + Send + Sync>),
+    Static(Arc<dyn Fn(Arc<RwLock<World>>) -> anyhow::Result<()> + Send + Sync + 'static>),
+    Dynamic(Arc<dyn Fn() -> anyhow::Result<()> + Send + Sync>),
 }
 
 pub struct DynamicSystem {
@@ -56,6 +56,7 @@ pub struct DynamicSystem {
     pub components_written: Vec<DynamicId>,
     pub resources_read: Vec<DynamicId>,
     pub resources_written: Vec<DynamicId>,
+    pub error: RwLock<Option<String>>,
 }
 
 impl DynamicSystem {
@@ -71,15 +72,16 @@ impl DynamicSystem {
             name: name.into(),
             script: None,
             script_systems: Vec::new(),
-            run_fn: RunFn::Dynamic(Box::new(run_fn)),
+            run_fn: RunFn::Dynamic(Arc::new(run_fn)),
             components_read: components_read.into_iter().collect(),
             components_written: components_written.into_iter().collect(),
             resources_read: resources_read.into_iter().collect(),
             resources_written: resources_written.into_iter().collect(),
+            error: RwLock::new(None),
         }
     }
 
-    pub fn from_system<T: System>(system: T, registry: &Registry) -> Self {
+    pub fn from_system<T: System + 'static>(system: T, registry: &Registry) -> Self {
         Self {
             name: std::any::type_name::<T>().to_string(),
             script: None,
@@ -88,7 +90,8 @@ impl DynamicSystem {
             components_written: system.components_written(registry),
             resources_read: system.resources_read(registry),
             resources_written: system.resources_written(registry),
-            run_fn: RunFn::Static(Box::new(move |world| system.run(world))),
+            run_fn: RunFn::Static(Arc::new(move |world| system.run(world))),
+            error: RwLock::new(None),
         }
     }
 
@@ -99,13 +102,24 @@ impl DynamicSystem {
         let script = Script::load(path)?;
         Ok((script.clone(), script.build(world)?))
     }
+
+    fn get_error(&self) -> Option<String> {
+        self.error.read().clone()
+    }
 }
 
 impl System for DynamicSystem {
     fn run(&self, world: Arc<RwLock<World>>) -> anyhow::Result<()> {
         match &self.run_fn {
             RunFn::Static(run_fn) => (run_fn)(world),
-            RunFn::Dynamic(run_fn) => (run_fn)(),
+            RunFn::Dynamic(run_fn) => {
+                if let Err(e) = (run_fn)() {
+                    *self.error.write() = Some(format!("{}", e));
+                    Ok(())
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
 
@@ -138,9 +152,14 @@ pub struct SystemNode {
 #[derive(Default)]
 pub struct SystemGraph {
     graph: StableDiGraph<SystemNode, ()>,
+    errors: FxHashMap<String, String>,
 }
 
 impl SystemGraph {
+    pub fn errors(&self) -> &FxHashMap<String, String> {
+        &self.errors
+    }
+
     pub fn has_system(&self, id: NodeIndex) -> bool {
         self.graph.contains_node(id)
     }
@@ -158,7 +177,7 @@ impl SystemGraph {
         self.graph[index].id
     }
 
-    pub fn add_system<T: System>(&mut self, system: T, registry: &Registry) -> NodeIndex {
+    pub fn add_system<T: System + 'static>(&mut self, system: T, registry: &Registry) -> NodeIndex {
         let index = self.graph.add_node(SystemNode {
             id: NodeIndex::default(),
             system: Arc::new(DynamicSystem::from_system(system, registry)),
@@ -167,7 +186,7 @@ impl SystemGraph {
         self.graph[index].id
     }
 
-    pub fn add_system_after<T: System>(
+    pub fn add_system_after<T: System + 'static>(
         &mut self,
         system: T,
         after: NodeIndex,
@@ -182,7 +201,7 @@ impl SystemGraph {
         self.graph[index].id
     }
 
-    pub fn add_system_before<T: System>(
+    pub fn add_system_before<T: System + 'static>(
         &mut self,
         system: T,
         before: NodeIndex,
@@ -313,7 +332,7 @@ impl SystemGraph {
         false
     }
 
-    pub fn run(&self, world: &Arc<RwLock<World>>) -> anyhow::Result<()> {
+    pub fn run(&mut self, world: &Arc<RwLock<World>>) -> anyhow::Result<()> {
         if self.graph.node_count() == 0 {
             return Ok(());
         }
@@ -321,6 +340,8 @@ impl SystemGraph {
         if self.detect_cycles().is_some() {
             return Err(anyhow::anyhow!("System dependency cycle detected"));
         }
+
+        self.errors.clear();
 
         let starts: Vec<_> = self.graph.externals(Direction::Incoming).collect();
         let mut bfs = Bfs::new(&self.graph, starts[0]);
@@ -331,6 +352,9 @@ impl SystemGraph {
         while let Some(node) = bfs.next(&self.graph) {
             let system = &self.graph[node].system;
             system.run(world.clone())?;
+            if let Some(error) = system.get_error() {
+                self.errors.insert(system.name.clone(), error);
+            }
         }
 
         Ok(())

@@ -9,39 +9,27 @@ use weaver_ecs::{prelude::*, script::Script};
 #[derive(Component)]
 pub struct Scripts {
     world: Arc<RwLock<World>>,
+    #[allow(clippy::type_complexity)]
     pub(crate) scripts: Arc<RwLock<FxHashMap<String, (Script, Vec<(SystemStage, NodeIndex)>)>>>,
-    script_errors: Arc<RwLock<FxHashMap<String, String>>>,
 }
 
 impl Scripts {
     pub fn new(world: Arc<RwLock<World>>) -> Self {
         let scripts = world.read().script_systems.clone();
-        Self {
-            scripts,
-            world,
-            script_errors: Arc::new(RwLock::new(FxHashMap::default())),
-        }
+        Self { scripts, world }
     }
 
     pub fn reload(&self) -> bool {
-        self.script_errors.write().clear();
-        World::reload_scripts(&self.world).unwrap_or_else(|errors| {
-            log::error!("Failed to reload scripts:");
-            for (name, err) in errors.iter() {
-                log::error!("Script `{}`:", name);
-                log::error!("\n{}", err);
-            }
-            self.script_errors.write().extend(errors);
-        });
-        self.script_errors.read().is_empty()
+        World::reload_scripts(&self.world);
+        self.world.read().system_errors().is_empty()
     }
 
     pub fn has_errors(&self) -> bool {
-        !self.script_errors.read().is_empty()
+        !self.world.read().system_errors().is_empty()
     }
 
-    pub fn script_errors(&self, name: &str) -> Option<String> {
-        self.script_errors.read().get(name).cloned()
+    pub fn script_errors(&self) -> FxHashMap<String, String> {
+        self.world.read().system_errors()
     }
 
     pub fn script(&self, name: &str) -> MappedRwLockReadGuard<'_, Script> {

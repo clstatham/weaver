@@ -62,7 +62,7 @@ impl Display for Value {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", typed_ident.name)?;
+                    write!(f, "{}", typed_ident.name.as_str())?;
                 }
                 write!(f, ")")
             }
@@ -604,7 +604,10 @@ impl Value {
                 _ => Err(anyhow::anyhow!("Invalid operator {} for Mat4 types", op)),
             },
             (Value::Data(lhs), Value::Vec3(rhs)) => {
-                let lhs = lhs.get_as_mut::<glam::Vec3>().unwrap();
+                let lhs = lhs.get_as_mut::<glam::Vec3>().ok_or(anyhow::anyhow!(
+                    "Cannot convert {} to Vec3",
+                    lhs.type_name()
+                ))?;
                 match op {
                     "+" => Ok(Value::Vec3(*lhs + *rhs)),
                     "-" => Ok(Value::Vec3(*lhs - *rhs)),
@@ -616,7 +619,10 @@ impl Value {
                 }
             }
             (Value::Data(lhs), Value::Vec4(rhs)) => {
-                let lhs = lhs.get_as_mut::<glam::Vec4>().unwrap();
+                let lhs = lhs.get_as_mut::<glam::Vec4>().ok_or(anyhow::anyhow!(
+                    "Cannot convert {} to Vec4",
+                    lhs.type_name()
+                ))?;
                 match op {
                     "+" => Ok(Value::Vec4(*lhs + *rhs)),
                     "-" => Ok(Value::Vec4(*lhs - *rhs)),
@@ -628,7 +634,10 @@ impl Value {
                 }
             }
             (Value::Data(lhs), Value::Mat4(rhs)) => {
-                let lhs = lhs.get_as_mut::<glam::Mat4>().unwrap();
+                let lhs = lhs.get_as_mut::<glam::Mat4>().ok_or(anyhow::anyhow!(
+                    "Cannot convert {} to Mat4",
+                    lhs.type_name()
+                ))?;
                 match op {
                     "*" => Ok(Value::Mat4(*lhs * *rhs)),
                     "==" => Ok(Value::Bool(*lhs == *rhs)),
@@ -636,7 +645,10 @@ impl Value {
                 }
             }
             (Value::Data(lhs), Value::Quat(rhs)) => {
-                let lhs = lhs.get_as_mut::<glam::Quat>().unwrap();
+                let lhs = lhs.get_as_mut::<glam::Quat>().ok_or(anyhow::anyhow!(
+                    "Cannot convert {} to Quat",
+                    lhs.type_name()
+                ))?;
                 match op {
                     "*" => Ok(Value::Quat(*lhs * *rhs)),
                     "==" => Ok(Value::Bool(*lhs == *rhs)),
@@ -644,7 +656,10 @@ impl Value {
                 }
             }
             (Value::Vec3(lhs), Value::Data(rhs) | Value::DataMut(rhs)) => {
-                let rhs = rhs.get_as::<glam::Vec3>().unwrap();
+                let rhs = rhs.get_as::<glam::Vec3>().ok_or(anyhow::anyhow!(
+                    "Cannot convert {} to Vec3",
+                    rhs.type_name()
+                ))?;
                 match op {
                     "+" => Ok(Value::Vec3(*lhs + *rhs)),
                     "-" => Ok(Value::Vec3(*lhs - *rhs)),
@@ -656,7 +671,10 @@ impl Value {
                 }
             }
             (Value::Vec4(lhs), Value::Data(rhs) | Value::DataMut(rhs)) => {
-                let rhs = rhs.get_as::<glam::Vec4>().unwrap();
+                let rhs = rhs.get_as::<glam::Vec4>().ok_or(anyhow::anyhow!(
+                    "Cannot convert {} to Vec4",
+                    rhs.type_name()
+                ))?;
                 match op {
                     "+" => Ok(Value::Vec4(*lhs + *rhs)),
                     "-" => Ok(Value::Vec4(*lhs - *rhs)),
@@ -668,7 +686,10 @@ impl Value {
                 }
             }
             (Value::Mat4(lhs), Value::Data(rhs) | Value::DataMut(rhs)) => {
-                let rhs = rhs.get_as::<glam::Mat4>().unwrap();
+                let rhs = rhs.get_as::<glam::Mat4>().ok_or(anyhow::anyhow!(
+                    "Cannot convert {} to Mat4",
+                    rhs.type_name()
+                ))?;
                 match op {
                     "*" => Ok(Value::Mat4(*lhs * *rhs)),
                     "==" => Ok(Value::Bool(*lhs == *rhs)),
@@ -676,7 +697,10 @@ impl Value {
                 }
             }
             (Value::Quat(lhs), Value::Data(rhs) | Value::DataMut(rhs)) => {
-                let rhs = rhs.get_as::<glam::Quat>().unwrap();
+                let rhs = rhs.get_as::<glam::Quat>().ok_or(anyhow::anyhow!(
+                    "Cannot convert {} to Quat",
+                    rhs.type_name()
+                ))?;
                 match op {
                     "*" => Ok(Value::Quat(*lhs * *rhs)),
                     "==" => Ok(Value::Bool(*lhs == *rhs)),
@@ -684,7 +708,10 @@ impl Value {
                 }
             }
             (Value::DataMut(lhs), Value::Vec3(rhs)) => {
-                let mut lhs = lhs.get_as_mut::<glam::Vec3>().unwrap();
+                let mut lhs = lhs.get_as_mut::<glam::Vec3>().ok_or(anyhow::anyhow!(
+                    "Cannot convert {} to Vec3",
+                    lhs.type_name()
+                ))?;
                 match op {
                     "+" => Ok(Value::Vec3(*lhs + *rhs)),
                     "-" => Ok(Value::Vec3(*lhs - *rhs)),
@@ -719,7 +746,10 @@ impl Value {
                 }
             }
             (Value::DataMut(lhs), Value::Vec4(rhs)) => {
-                let mut lhs = lhs.get_as_mut::<glam::Vec4>().unwrap();
+                let mut lhs = lhs.get_as_mut::<glam::Vec4>().ok_or(anyhow::anyhow!(
+                    "Cannot convert {} to Vec4",
+                    lhs.type_name()
+                ))?;
                 match op {
                     "+" => Ok(Value::Vec4(*lhs + *rhs)),
                     "-" => Ok(Value::Vec4(*lhs - *rhs)),
@@ -754,7 +784,10 @@ impl Value {
                 }
             }
             (Value::DataMut(lhs), Value::Mat4(rhs)) => {
-                let mut lhs = lhs.get_as_mut::<glam::Mat4>().unwrap();
+                let mut lhs = lhs.get_as_mut::<glam::Mat4>().ok_or(anyhow::anyhow!(
+                    "Cannot convert {} to Mat4",
+                    lhs.type_name()
+                ))?;
                 match op {
                     "*" => Ok(Value::Mat4(*lhs * *rhs)),
                     "=" => {
@@ -777,7 +810,10 @@ impl Value {
                 }
             }
             (Value::DataMut(lhs), Value::Quat(rhs)) => {
-                let mut lhs = lhs.get_as_mut::<glam::Quat>().unwrap();
+                let mut lhs = lhs.get_as_mut::<glam::Quat>().ok_or(anyhow::anyhow!(
+                    "Cannot convert {} to Quat",
+                    lhs.type_name()
+                ))?;
                 match op {
                     "*" => Ok(Value::Quat(*lhs * *rhs)),
                     "=" => {

@@ -5,23 +5,23 @@ use pest::{
 };
 use pest_derive::Parser;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct TypedIdent {
     pub mutability: bool,
-    pub name: String,
-    pub ty: String,
+    pub name: SpanExpr,
+    pub ty: SpanExpr,
 }
 
 #[derive(Debug, Clone)]
 pub struct Component {
-    pub name: String,
+    pub name: SpanExpr,
     pub fields: Vec<TypedIdent>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Call {
-    pub name: String,
-    pub args: Vec<Expr>,
+    pub name: Box<SpanExpr>,
+    pub args: Vec<SpanExpr>,
 }
 
 #[derive(Debug, Clone)]
@@ -29,12 +29,12 @@ pub enum Expr {
     Ident(String),
     Decl {
         mutability: bool,
-        ident: String,
-        initial_value: Box<Expr>,
+        ident: Box<SpanExpr>,
+        initial_value: Box<SpanExpr>,
     },
     Construct {
-        name: String,
-        args: Vec<(String, Expr)>,
+        name: Box<SpanExpr>,
+        args: Vec<(String, SpanExpr)>,
     },
     IntLiteral(i64),
     FloatLiteral(f64),
@@ -43,47 +43,90 @@ pub enum Expr {
     Block(Block),
     Type(String),
     Member {
-        lhs: Box<Expr>,
-        rhs: Box<Expr>,
+        lhs: Box<SpanExpr>,
+        rhs: Box<SpanExpr>,
     },
     Infix {
         op: String,
-        lhs: Box<Expr>,
-        rhs: Box<Expr>,
+        lhs: Box<SpanExpr>,
+        rhs: Box<SpanExpr>,
     },
     Prefix {
         op: String,
-        rhs: Box<Expr>,
+        rhs: Box<SpanExpr>,
     },
     If {
-        condition: Box<Expr>,
-        then_block: Box<Expr>,
-        elif_blocks: Vec<(Box<Expr>, Box<Expr>)>,
-        else_block: Option<Box<Expr>>,
+        condition: Box<SpanExpr>,
+        then_block: Box<SpanExpr>,
+        elif_blocks: Vec<(Box<SpanExpr>, Box<SpanExpr>)>,
+        else_block: Option<Box<SpanExpr>>,
     },
     Loop {
-        condition: Option<Box<Expr>>,
-        block: Box<Expr>,
+        condition: Option<Box<SpanExpr>>,
+        block: Box<SpanExpr>,
     },
     Query(Query),
     Res {
         mutability: bool,
-        ident: String,
-        res: String,
+        ident: Box<SpanExpr>,
+        res: Box<SpanExpr>,
     },
 }
 
 #[derive(Debug, Clone)]
+pub struct Span {
+    pub line_no: usize,
+    pub col_no: usize,
+    pub line: String,
+    pub fragment: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SpanExpr {
+    pub expr: Expr,
+    pub span: Span,
+}
+
+impl SpanExpr {
+    pub fn new(pair: Pair<'_, Rule>, expr: Expr) -> Self {
+        let span = pair.as_span();
+        let line_no = span.start_pos().line_col().0;
+        let col_no = span.start_pos().line_col().1;
+        let span = span.lines_span().next().unwrap();
+
+        Self {
+            expr,
+            span: Span {
+                line_no,
+                col_no,
+                line: span.as_str().to_string(),
+                fragment: pair.as_str().to_string(),
+            },
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.span.fragment
+    }
+}
+
+impl PartialEq for SpanExpr {
+    fn eq(&self, other: &Self) -> bool {
+        self.span.line == other.span.line
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Func {
-    pub name: String,
+    pub name: Box<SpanExpr>,
     pub params: Vec<TypedIdent>,
-    pub ret_type: Option<String>,
+    pub ret_type: Option<Box<SpanExpr>>,
     pub block: Block,
 }
 
 #[derive(Debug, Clone)]
 pub struct Impl {
-    pub ty: String,
+    pub ty: Box<SpanExpr>,
     pub funcs: Vec<Func>,
 }
 
@@ -92,9 +135,9 @@ pub enum Statement {
     Component(Component),
     System(System),
     Func(Func),
-    Expr(Expr),
-    Break(Option<Expr>),
-    Return(Option<Expr>),
+    Expr(SpanExpr),
+    Break(Option<SpanExpr>),
+    Return(Option<SpanExpr>),
     Impl(Impl),
 }
 
@@ -105,16 +148,16 @@ pub struct Block {
 
 #[derive(Debug, Clone)]
 pub struct Query {
-    pub name: String,
+    pub name: Box<SpanExpr>,
     pub components: Vec<TypedIdent>,
-    pub with: Vec<String>,
-    pub without: Vec<String>,
+    pub with: Vec<SpanExpr>,
+    pub without: Vec<SpanExpr>,
 }
 
 #[derive(Debug, Clone)]
 pub struct System {
     pub tag: Option<String>,
-    pub name: String,
+    pub name: Box<SpanExpr>,
     pub block: Block,
 }
 
@@ -268,17 +311,19 @@ impl LoomParser {
             (tag, None)
         };
 
+        let name = self.parse_ident(name);
+
         let block = inner.next().unwrap();
 
         let block = self.parse_block(block);
-        let block = if let Expr::Block(block) = block {
+        let block = if let Expr::Block(block) = block.expr {
             block
         } else {
             panic!("Expected block statement");
         };
         Statement::System(System {
             tag,
-            name: name.as_str().to_string(),
+            name: Box::new(name),
             block,
         })
     }
@@ -290,7 +335,7 @@ impl LoomParser {
         let params = inner.next().unwrap();
         let ret_type = inner.next().unwrap();
         let (block, ret_type) = if ret_type.as_rule() == Rule::r#type {
-            (inner.next().unwrap(), Some(ret_type.as_str().to_string()))
+            (inner.next().unwrap(), Some(self.parse_type(ret_type)))
         } else {
             (ret_type, None)
         };
@@ -298,16 +343,16 @@ impl LoomParser {
         let name = self.parse_ident(name);
         let params = self.parse_typed_args(params.into_inner());
         let block = self.parse_block(block);
-        let block = if let Expr::Block(block) = block {
+        let block = if let Expr::Block(block) = block.expr {
             block
         } else {
             panic!("Expected block statement");
         };
 
         Statement::Func(Func {
-            name,
+            name: Box::new(name),
             params,
-            ret_type,
+            ret_type: ret_type.map(Box::new),
             block,
         })
     }
@@ -318,9 +363,9 @@ impl LoomParser {
         let ty = inner.next().unwrap();
         let block = inner.next().unwrap();
 
-        let ty = self.parse_ident(ty);
+        let ty = self.parse_type(ty);
         let block = self.parse_block(block);
-        let block = if let Expr::Block(block) = block {
+        let block = if let Expr::Block(block) = block.expr {
             block
         } else {
             panic!("Expected block statement");
@@ -333,12 +378,15 @@ impl LoomParser {
             }
         }
 
-        Statement::Impl(Impl { ty, funcs })
+        Statement::Impl(Impl {
+            ty: Box::new(ty),
+            funcs,
+        })
     }
 
-    fn parse_query_expr(&mut self, pair: Pair<Rule>) -> Expr {
+    fn parse_query_expr(&mut self, pair: Pair<Rule>) -> SpanExpr {
         assert_eq!(pair.as_rule(), Rule::query_expr);
-        let mut inner = pair.into_inner();
+        let mut inner = pair.clone().into_inner();
         let name = inner.next().unwrap();
         let components = inner.next().unwrap();
         let rest = inner;
@@ -347,12 +395,15 @@ impl LoomParser {
         let components = self.parse_typed_decls(components);
         let (with, without) = self.parse_with_without(rest);
 
-        Expr::Query(Query {
-            name,
-            components,
-            with,
-            without,
-        })
+        SpanExpr::new(
+            pair,
+            Expr::Query(Query {
+                name: Box::new(name),
+                components,
+                with,
+                without,
+            }),
+        )
     }
 
     fn parse_typed_decls(&mut self, pair: Pair<Rule>) -> Vec<TypedIdent> {
@@ -368,7 +419,7 @@ impl LoomParser {
         fields
     }
 
-    fn parse_with_without(&mut self, pair: Pairs<Rule>) -> (Vec<String>, Vec<String>) {
+    fn parse_with_without(&mut self, pair: Pairs<Rule>) -> (Vec<SpanExpr>, Vec<SpanExpr>) {
         let mut with = Vec::new();
         let mut without = Vec::new();
         for pair in pair {
@@ -376,12 +427,14 @@ impl LoomParser {
                 Rule::with_clause => {
                     let mut inner = pair.into_inner();
                     let name = inner.next().unwrap();
-                    with.push(name.as_str().to_string());
+                    let name = self.parse_type(name);
+                    with.push(name);
                 }
                 Rule::without_clause => {
                     let mut inner = pair.into_inner();
                     let name = inner.next().unwrap();
-                    without.push(name.as_str().to_string());
+                    let name = self.parse_type(name);
+                    without.push(name);
                 }
                 _ => panic!("Unexpected rule: {:?}", pair.as_rule()),
             }
@@ -389,7 +442,7 @@ impl LoomParser {
         (with, without)
     }
 
-    fn parse_expr(&mut self, pair: Pair<Rule>) -> Expr {
+    fn parse_expr(&mut self, pair: Pair<Rule>) -> SpanExpr {
         let inner = pair.into_inner();
 
         let pratt = PrattParser::new()
@@ -410,18 +463,27 @@ impl LoomParser {
 
         pratt
             .map_primary(|primary| match primary.as_rule() {
-                Rule::ident => Expr::Ident(self.parse_ident(primary)),
-                Rule::int_literal => Expr::IntLiteral(primary.as_str().parse().unwrap()),
-                Rule::float_literal => Expr::FloatLiteral(primary.as_str().parse().unwrap()),
+                Rule::ident => self.parse_ident(primary.clone()),
+                Rule::int_literal => SpanExpr::new(
+                    primary.clone(),
+                    Expr::IntLiteral(primary.as_str().parse().unwrap()),
+                ),
+                Rule::float_literal => SpanExpr::new(
+                    primary.clone(),
+                    Expr::FloatLiteral(primary.as_str().parse().unwrap()),
+                ),
                 Rule::string_literal => {
                     let string = primary.as_str();
-                    Expr::StringLiteral(string[1..string.len() - 1].to_string())
+                    SpanExpr::new(
+                        primary.clone(),
+                        Expr::StringLiteral(string[1..string.len() - 1].to_string()),
+                    )
                 }
                 Rule::call_expr => self.parse_call_expr(primary),
                 Rule::block => self.parse_block(primary),
                 Rule::statements => {
                     let statements = self.parse_statements(primary.clone());
-                    Expr::Block(Block { statements })
+                    SpanExpr::new(primary, Expr::Block(Block { statements }))
                 }
                 Rule::expr => self.parse_expr(primary), // parenthesized expression
                 Rule::assign_expr => self.parse_assign_expr(primary),
@@ -436,19 +498,22 @@ impl LoomParser {
                 _ => panic!("Unexpected rule: {:?}", primary.as_rule()),
             })
             .map_prefix(|op, rhs| {
-                let op = match op.as_rule() {
+                let op_str = match op.as_rule() {
                     Rule::plus => "+".to_string(),
                     Rule::minus => "-".to_string(),
                     _ => panic!("Unexpected rule: {:?}", op.as_rule()),
                 };
 
-                Expr::Prefix {
+                SpanExpr::new(
                     op,
-                    rhs: Box::new(rhs),
-                }
+                    Expr::Prefix {
+                        op: op_str,
+                        rhs: Box::new(rhs),
+                    },
+                )
             })
             .map_infix(|lhs, op, rhs| {
-                let op = match op.as_rule() {
+                let op_str = match op.as_rule() {
                     Rule::plus => "+".to_string(),
                     Rule::minus => "-".to_string(),
                     Rule::star => "*".to_string(),
@@ -465,65 +530,74 @@ impl LoomParser {
                     _ => panic!("Unexpected rule: {:?}", op.as_rule()),
                 };
 
-                Expr::Infix {
+                SpanExpr::new(
                     op,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                }
+                    Expr::Infix {
+                        op: op_str,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    },
+                )
             })
             .parse(inner)
     }
 
-    fn parse_assign_expr(&mut self, pair: Pair<Rule>) -> Expr {
+    fn parse_assign_expr(&mut self, pair: Pair<Rule>) -> SpanExpr {
         assert_eq!(pair.as_rule(), Rule::assign_expr);
-        let mut inner = pair.into_inner();
+        let mut inner = pair.clone().into_inner();
         let lhs = inner.next().unwrap();
         let op = inner.next().unwrap();
         let rhs = inner.next().unwrap();
 
         let lhs = match lhs.as_rule() {
-            Rule::ident => Expr::Ident(self.parse_ident(lhs)),
+            Rule::ident => self.parse_ident(lhs),
             Rule::member_expr => self.parse_member_expr(lhs),
             _ => panic!("Unexpected rule: {:?}", lhs.as_rule()),
         };
 
         let rhs = self.parse_expr(rhs);
 
-        Expr::Infix {
-            op: op.as_str().to_string(),
-            lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
-        }
+        SpanExpr::new(
+            pair,
+            Expr::Infix {
+                op: op.as_str().to_string(),
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            },
+        )
     }
 
-    fn parse_member_expr(&mut self, pair: Pair<Rule>) -> Expr {
+    fn parse_member_expr(&mut self, pair: Pair<Rule>) -> SpanExpr {
         assert_eq!(pair.as_rule(), Rule::member_expr);
-        let mut inner = pair.into_inner();
+        let mut inner = pair.clone().into_inner();
         let lhs = inner.next().unwrap();
         let rhs = inner.next().unwrap();
 
         let lhs = match lhs.as_rule() {
-            Rule::ident => Expr::Ident(self.parse_ident(lhs)),
+            Rule::ident => self.parse_ident(lhs),
             Rule::member_expr => self.parse_member_expr(lhs),
-            Rule::r#type => Expr::Type(self.parse_type(lhs)),
+            Rule::r#type => self.parse_type(lhs),
             _ => panic!("Unexpected rule: {:?}", lhs.as_rule()),
         };
 
         let rhs = match rhs.as_rule() {
-            Rule::ident => Expr::Ident(self.parse_ident(rhs)),
+            Rule::ident => self.parse_ident(rhs),
             Rule::call_expr => self.parse_call_expr(rhs),
             _ => panic!("Unexpected rule: {:?}", rhs.as_rule()),
         };
 
-        Expr::Member {
-            lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
-        }
+        SpanExpr::new(
+            pair,
+            Expr::Member {
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            },
+        )
     }
 
-    fn parse_decl_expr(&mut self, pair: Pair<Rule>) -> Expr {
+    fn parse_decl_expr(&mut self, pair: Pair<Rule>) -> SpanExpr {
         assert_eq!(pair.as_rule(), Rule::decl_expr);
-        let mut inner = pair.into_inner();
+        let mut inner = pair.clone().into_inner();
         let mutability = inner.next().unwrap();
         let _eq = inner.next().unwrap();
 
@@ -532,49 +606,61 @@ impl LoomParser {
                 let ident = self.parse_var_typed_ident(mutability.into_inner().next().unwrap());
                 let initial_value = inner.next().unwrap();
                 let initial_value = self.parse_expr(initial_value);
-                Expr::Decl {
-                    mutability: true,
-                    ident: ident.name,
-                    initial_value: Box::new(initial_value),
-                }
+                SpanExpr::new(
+                    pair,
+                    Expr::Decl {
+                        mutability: true,
+                        ident: Box::new(ident.name),
+                        initial_value: Box::new(initial_value),
+                    },
+                )
             }
             Rule::let_typed_ident => {
                 let ident = self.parse_typed_ident(mutability.into_inner().next().unwrap());
                 let initial_value = inner.next().unwrap();
                 let initial_value = self.parse_expr(initial_value);
-                Expr::Decl {
-                    mutability: false,
-                    ident: ident.name,
-                    initial_value: Box::new(initial_value),
-                }
+                SpanExpr::new(
+                    pair,
+                    Expr::Decl {
+                        mutability: false,
+                        ident: Box::new(ident.name),
+                        initial_value: Box::new(initial_value),
+                    },
+                )
             }
             Rule::var_ident => {
                 let ident = self.parse_ident(mutability.into_inner().next().unwrap());
                 let initial_value = inner.next().unwrap();
                 let initial_value = self.parse_expr(initial_value);
-                Expr::Decl {
-                    mutability: true,
-                    ident,
-                    initial_value: Box::new(initial_value),
-                }
+                SpanExpr::new(
+                    pair,
+                    Expr::Decl {
+                        mutability: true,
+                        ident: Box::new(ident),
+                        initial_value: Box::new(initial_value),
+                    },
+                )
             }
             Rule::let_ident => {
                 let ident = self.parse_ident(mutability.into_inner().next().unwrap());
                 let initial_value = inner.next().unwrap();
                 let initial_value = self.parse_expr(initial_value);
-                Expr::Decl {
-                    mutability: false,
-                    ident,
-                    initial_value: Box::new(initial_value),
-                }
+                SpanExpr::new(
+                    pair,
+                    Expr::Decl {
+                        mutability: false,
+                        ident: Box::new(ident),
+                        initial_value: Box::new(initial_value),
+                    },
+                )
             }
             _ => panic!("Unexpected rule: {:?}", mutability.as_rule()),
         }
     }
 
-    fn parse_constructor_expr(&mut self, pair: Pair<Rule>) -> Expr {
+    fn parse_constructor_expr(&mut self, pair: Pair<Rule>) -> SpanExpr {
         assert_eq!(pair.as_rule(), Rule::constructor_expr);
-        let mut inner = pair.into_inner();
+        let mut inner = pair.clone().into_inner();
         let name = inner.next().unwrap();
 
         let name = self.parse_type(name);
@@ -593,15 +679,18 @@ impl LoomParser {
             }
         }
 
-        Expr::Construct {
-            name,
-            args: args_vec,
-        }
+        SpanExpr::new(
+            pair,
+            Expr::Construct {
+                name: Box::new(name),
+                args: args_vec,
+            },
+        )
     }
 
-    fn parse_if_expr(&mut self, pair: Pair<Rule>) -> Expr {
+    fn parse_if_expr(&mut self, pair: Pair<Rule>) -> SpanExpr {
         assert_eq!(pair.as_rule(), Rule::if_expr);
-        let mut inner = pair.into_inner();
+        let mut inner = pair.clone().into_inner();
         let condition = inner.next().unwrap();
         let then_block = inner.next().unwrap();
 
@@ -631,17 +720,20 @@ impl LoomParser {
         let condition = self.parse_expr(condition);
         let then_block = self.parse_expr(then_block);
 
-        Expr::If {
-            condition: Box::new(condition),
-            then_block: Box::new(then_block),
-            elif_blocks,
-            else_block,
-        }
+        SpanExpr::new(
+            pair,
+            Expr::If {
+                condition: Box::new(condition),
+                then_block: Box::new(then_block),
+                elif_blocks,
+                else_block,
+            },
+        )
     }
 
-    fn parse_loop_expr(&mut self, pair: Pair<Rule>) -> Expr {
+    fn parse_loop_expr(&mut self, pair: Pair<Rule>) -> SpanExpr {
         assert_eq!(pair.as_rule(), Rule::loop_expr);
-        let mut inner = pair.into_inner();
+        let mut inner = pair.clone().into_inner();
         let condition = inner.next().unwrap();
 
         let (condition, block) = if condition.as_rule() == Rule::expr {
@@ -654,22 +746,22 @@ impl LoomParser {
             (None, Box::new(block))
         };
 
-        Expr::Loop { condition, block }
+        SpanExpr::new(pair, Expr::Loop { condition, block })
     }
 
-    fn parse_block(&mut self, pair: Pair<Rule>) -> Expr {
+    fn parse_block(&mut self, pair: Pair<Rule>) -> SpanExpr {
         assert_eq!(pair.as_rule(), Rule::block, "{:?}", pair.as_str());
-        let mut inner = pair.into_inner();
+        let mut inner = pair.clone().into_inner();
         let stmts = inner.next().unwrap();
 
         let statements = self.parse_statements(stmts);
 
-        Expr::Block(Block { statements })
+        SpanExpr::new(pair, Expr::Block(Block { statements }))
     }
 
-    fn parse_call_expr(&mut self, pair: Pair<Rule>) -> Expr {
+    fn parse_call_expr(&mut self, pair: Pair<Rule>) -> SpanExpr {
         assert_eq!(pair.as_rule(), Rule::call_expr);
-        let mut inner = pair.into_inner();
+        let mut inner = pair.clone().into_inner();
         let name = inner.next().unwrap();
 
         let name = self.parse_ident(name);
@@ -679,61 +771,68 @@ impl LoomParser {
         for arg in inner {
             match arg.as_rule() {
                 Rule::expr => args_vec.push(self.parse_expr(arg)),
-                Rule::ident => args_vec.push(Expr::Ident(self.parse_ident(arg))),
+                Rule::ident => args_vec.push(self.parse_ident(arg)),
                 _ => panic!("Unexpected rule: {:?} {}", arg.as_rule(), arg.as_str()),
             }
         }
 
-        Expr::Call(Call {
-            name,
-            args: args_vec,
-        })
+        SpanExpr::new(
+            pair,
+            Expr::Call(Call {
+                name: Box::new(name),
+                args: args_vec,
+            }),
+        )
     }
 
-    fn parse_ident(&mut self, pair: Pair<Rule>) -> String {
+    fn parse_ident(&mut self, pair: Pair<Rule>) -> SpanExpr {
         assert!(
             matches!(pair.as_rule(), Rule::ident | Rule::capitalized_ident,),
             "{:?}",
             pair.as_rule()
         );
-        pair.as_str().to_string()
+        SpanExpr::new(pair.clone(), Expr::Ident(pair.as_str().to_string()))
     }
 
-    fn parse_type(&mut self, pair: Pair<Rule>) -> String {
+    fn parse_type(&mut self, pair: Pair<Rule>) -> SpanExpr {
         assert_eq!(pair.as_rule(), Rule::r#type);
-        pair.as_str().to_string()
+        SpanExpr::new(pair.clone(), Expr::Type(pair.as_str().to_string()))
     }
 
-    fn parse_var_res(&mut self, pair: Pair<Rule>) -> Expr {
+    fn parse_var_res(&mut self, pair: Pair<Rule>) -> SpanExpr {
         assert_eq!(pair.as_rule(), Rule::var_res);
-        let mut inner = pair.into_inner();
+        let mut inner = pair.clone().into_inner();
         let ident = inner.next().unwrap();
         let res = inner.next().unwrap();
 
         let ident = self.parse_ident(ident);
         let res = self.parse_type(res);
 
-        Expr::Res {
+        let expr = Expr::Res {
             mutability: true,
-            ident,
-            res,
-        }
+            ident: Box::new(ident),
+            res: Box::new(res),
+        };
+        SpanExpr::new(pair, expr)
     }
 
-    fn parse_let_res(&mut self, pair: Pair<Rule>) -> Expr {
+    fn parse_let_res(&mut self, pair: Pair<Rule>) -> SpanExpr {
         assert_eq!(pair.as_rule(), Rule::let_res);
-        let mut inner = pair.into_inner();
+        let mut inner = pair.clone().into_inner();
         let ident = inner.next().unwrap();
         let res = inner.next().unwrap();
 
         let ident = self.parse_ident(ident);
         let res = self.parse_type(res);
 
-        Expr::Res {
-            mutability: false,
-            ident,
-            res,
-        }
+        SpanExpr::new(
+            pair,
+            Expr::Res {
+                mutability: false,
+                ident: Box::new(ident),
+                res: Box::new(res),
+            },
+        )
     }
 
     fn parse_var_typed_ident(&mut self, pair: Pair<Rule>) -> TypedIdent {
@@ -742,13 +841,13 @@ impl LoomParser {
         let ident = inner.next().unwrap();
         let ty = inner.next().unwrap();
 
-        let ident = self.parse_ident(ident);
+        let name = self.parse_ident(ident);
         let ty = self.parse_type(ty);
 
         TypedIdent {
             mutability: true,
-            name: ident.as_str().to_string(),
-            ty: ty.as_str().to_string(),
+            name,
+            ty,
         }
     }
 
@@ -761,13 +860,13 @@ impl LoomParser {
         let ident = inner.next().unwrap();
         let ty = inner.next().unwrap();
 
-        let ident = self.parse_ident(ident);
+        let name = self.parse_ident(ident);
         let ty = self.parse_type(ty);
 
         TypedIdent {
             mutability: false,
-            name: ident.as_str().to_string(),
-            ty: ty.as_str().to_string(),
+            name,
+            ty,
         }
     }
 
