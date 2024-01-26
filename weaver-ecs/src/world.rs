@@ -185,7 +185,7 @@ impl World {
             .get(&stage)
             .unwrap()
             .write()
-            .add_dynamic_system(system)
+            .add_dynamic_system(Arc::new(system))
     }
 
     pub fn add_script(world: &Arc<RwLock<Self>>, script_path: impl AsRef<Path>) {
@@ -197,21 +197,49 @@ impl World {
             .insert(script.name.clone(), (script, ids));
     }
 
-    pub fn reload_scripts(world: &Arc<RwLock<Self>>) {
+    pub fn reload_scripts(world: &Arc<RwLock<Self>>) -> Result<(), FxHashMap<String, String>> {
         let world_lock = world.read();
         let mut scripts_lock = world_lock.script_systems.write();
         let scripts = std::mem::take(&mut *scripts_lock);
         drop(scripts_lock);
+
+        let mut errors = FxHashMap::default();
+
         for (_, (script, ids)) in scripts {
-            {
+            let old_systems = {
+                let mut old_systems = Vec::new();
                 let systems = world_lock.systems.read();
                 for (stage, node) in ids.iter() {
-                    systems.get(stage).unwrap().write().remove_system(*node);
+                    if let Some(system) = systems.get(stage).unwrap().write().remove_system(*node) {
+                        old_systems.push((stage.clone(), system));
+                    }
                 }
+                old_systems
+            };
+            let load_result = DynamicSystem::load_script(&script.path, world.clone());
+            if let Ok((script, ids)) = load_result {
+                let mut scripts_lock = world_lock.script_systems.write();
+                scripts_lock.insert(script.name.clone(), (script, ids));
+            } else if let Err(err) = load_result {
+                errors.insert(script.name.clone(), err.to_string());
+                // reinsert the old version of the script so we don't lose it
+                let mut scripts_lock = world_lock.script_systems.write();
+                for (stage, system) in old_systems.iter() {
+                    let systems = world_lock.systems.read();
+                    systems
+                        .get(stage)
+                        .unwrap()
+                        .write()
+                        .add_dynamic_system(system.clone());
+                }
+                scripts_lock.insert(script.name.clone(), (script, ids));
             }
-            let (script, ids) = DynamicSystem::load_script(&script.path, world.clone()).unwrap();
-            let mut scripts_lock = world_lock.script_systems.write();
-            scripts_lock.insert(script.name.clone(), (script, ids));
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
         }
     }
 

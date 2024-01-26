@@ -16,10 +16,10 @@ pub fn ui_main(ctx: Res<EguiContext>, state: Res<EditorState>, fps_display: ResM
 }
 
 #[system(ScriptUpdate)]
-pub fn reload_scripts(ctx: Res<EguiContext>, scripts: Res<Scripts>) {
+pub fn script_update(ctx: Res<EguiContext>, scripts: Res<Scripts>, input: Res<Input>) {
     ctx.draw_if_ready(|ctx| {
-        egui::Window::new("Reload scripts").show(ctx, |ui| {
-            if ui.button("Reload scripts").clicked() {
+        egui::Window::new("Reload Scripts").show(ctx, |ui| {
+            if ui.button("Reload Scripts").clicked() {
                 scripts.reload();
             }
         });
@@ -30,22 +30,38 @@ pub fn reload_scripts(ctx: Res<EguiContext>, scripts: Res<Scripts>) {
                 layout_job.wrap.max_width = wrap_width;
                 ui.fonts(|f| f.layout_job(layout_job))
             };
-            egui::Window::new(&script.name)
-                .max_height(400.0)
-                .max_width(800.0)
-                .scroll2([true, true])
-                .show(ctx, |ui| {
-                    if ui.button("Save").clicked() {
-                        script.save().unwrap();
-                    }
-                    ui.add(
-                        TextEdit::multiline(&mut script.content)
-                            .code_editor()
-                            .desired_width(f32::INFINITY)
-                            .desired_rows(20)
-                            .layouter(&mut layouter),
-                    );
+            egui::Window::new(&script.name).show(ctx, |ui| {
+                ui.vertical(|ui| {
+                    ui.vertical(|ui| {
+                        if ui.button("Save").clicked() {
+                            script.save().unwrap();
+                        }
+                        ui.separator();
+                        if let Some(error) = scripts.script_errors(&script.name) {
+                            TextEdit::multiline(&mut error.to_string())
+                                .interactive(false)
+                                .show(ui);
+                        }
+                    });
+                    ui.separator();
+                    egui::ScrollArea::both().show(ui, |ui| {
+                        let mut editor = ui.add(
+                            TextEdit::multiline(&mut script.content)
+                                .code_editor()
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(20)
+                                .layouter(&mut layouter),
+                        );
+                        if editor.lost_focus() {
+                            script.save().unwrap();
+                            input.enable_input();
+                        }
+                        if editor.has_focus() {
+                            input.disable_input();
+                        }
+                    });
                 });
+            });
         }
     });
 }

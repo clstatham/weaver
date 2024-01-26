@@ -9,7 +9,6 @@ use weaver_proc_macro::Component;
 
 #[derive(Component)]
 pub struct Commands {
-    world: Arc<RwLock<World>>,
     created_components: TemporaryComponents,
     despawned_entities: Vec<Entity>,
 }
@@ -17,7 +16,6 @@ pub struct Commands {
 impl Commands {
     pub fn new(world: Arc<RwLock<World>>) -> Self {
         Self {
-            world: world.clone(),
             created_components: world.read().components.split(),
             despawned_entities: Vec::new(),
         }
@@ -25,10 +23,6 @@ impl Commands {
 
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
         bundle.build(&mut self.created_components.components)
-    }
-
-    pub fn reload_scripts(&self) {
-        World::reload_scripts(&self.world);
     }
 
     pub fn despawn(&mut self, entity: Entity) {

@@ -145,14 +145,14 @@ impl SystemGraph {
         self.graph.contains_node(id)
     }
 
-    pub fn remove_system(&mut self, id: NodeIndex) {
-        self.graph.remove_node(id);
+    pub fn remove_system(&mut self, id: NodeIndex) -> Option<Arc<DynamicSystem>> {
+        self.graph.remove_node(id).map(|node| node.system)
     }
 
-    pub fn add_dynamic_system(&mut self, system: DynamicSystem) -> NodeIndex {
+    pub fn add_dynamic_system(&mut self, system: Arc<DynamicSystem>) -> NodeIndex {
         let index = self.graph.add_node(SystemNode {
             id: NodeIndex::default(),
-            system: Arc::new(system),
+            system,
         });
         self.graph[index].id = index;
         self.graph[index].id

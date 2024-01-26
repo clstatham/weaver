@@ -29,7 +29,7 @@ impl Script {
         let name = path.file_stem().unwrap().to_str().unwrap().to_string();
         let content = std::fs::read_to_string(&path)?;
         let mut parser = LoomParser::new();
-        parser.parse_script(&content).unwrap();
+        parser.parse_script(&content)?;
         let scopes = parser.finish();
         Ok(Self {
             name,

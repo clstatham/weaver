@@ -1,4 +1,4 @@
-//! Syntax highlighting for Weaver files.
+//! Syntax highlighting for Loom files.
 //! Mostly copied from egui_extras::syntax_highlighting (Apache 2.0 | MIT licensed).
 
 use egui::text::LayoutJob;

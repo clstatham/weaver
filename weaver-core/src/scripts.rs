@@ -10,26 +10,30 @@ use weaver_ecs::{prelude::*, script::Script};
 pub struct Scripts {
     world: Arc<RwLock<World>>,
     pub(crate) scripts: Arc<RwLock<FxHashMap<String, (Script, Vec<(SystemStage, NodeIndex)>)>>>,
+    script_errors: Arc<RwLock<FxHashMap<String, String>>>,
 }
 
 impl Scripts {
     pub fn new(world: Arc<RwLock<World>>) -> Self {
         let scripts = world.read().script_systems.clone();
-        Self { scripts, world }
+        Self {
+            scripts,
+            world,
+            script_errors: Arc::new(RwLock::new(FxHashMap::default())),
+        }
     }
 
-    pub fn reload(&self) {
-        World::reload_scripts(&self.world);
+    pub fn reload(&self) -> bool {
+        self.script_errors.write().clear();
+        World::reload_scripts(&self.world).unwrap_or_else(|e| {
+            log::error!("Failed to reload scripts: {:?}", &e);
+            self.script_errors.write().extend(e);
+        });
+        self.script_errors.read().is_empty()
     }
 
-    pub fn script_text(&self) -> Vec<(String, String)> {
-        self.world
-            .read()
-            .script_systems
-            .read()
-            .values()
-            .map(|(script, _)| (script.name.clone(), script.content.clone()))
-            .collect()
+    pub fn script_errors(&self, name: &str) -> Option<String> {
+        self.script_errors.read().get(name).cloned()
     }
 
     pub fn script(&self, name: &str) -> MappedRwLockReadGuard<'_, Script> {

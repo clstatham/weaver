@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use rustc_hash::FxHashSet;
 use weaver_proc_macro::Component;
 
@@ -16,6 +18,7 @@ pub struct Input {
     mouse_wheel_delta: f32,
     last_update: std::time::Instant,
     update_delta: std::time::Duration,
+    enabled: AtomicBool,
 }
 
 impl Default for Input {
@@ -31,11 +34,26 @@ impl Default for Input {
 
             last_update: std::time::Instant::now(),
             update_delta: std::time::Duration::ZERO,
+            enabled: AtomicBool::new(true),
         }
     }
 }
 
 impl Input {
+    pub fn disable_input(&self) {
+        self.enabled
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn enable_input(&self) {
+        self.enabled
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn is_input_enabled(&self) -> bool {
+        self.enabled.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn key_just_pressed(&self, key: KeyCode) -> bool {
         self.keys_pressed.contains(&key)
     }
@@ -80,6 +98,9 @@ impl Input {
     }
 
     pub fn update_window(&mut self, event: &winit::event::WindowEvent) {
+        if !self.is_input_enabled() {
+            return;
+        }
         match event {
             winit::event::WindowEvent::MouseInput { state, button, .. } => match state {
                 winit::event::ElementState::Pressed => {
@@ -126,6 +147,9 @@ impl Input {
     }
 
     pub fn update_device(&mut self, event: &winit::event::DeviceEvent) {
+        if !self.is_input_enabled() {
+            return;
+        }
         if let winit::event::DeviceEvent::MouseMotion { delta } = event {
             self.mouse_delta += glam::Vec2::new(delta.0 as f32, delta.1 as f32);
         }
