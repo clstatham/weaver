@@ -281,7 +281,7 @@ impl Data {
             inner: DataInner::Dynamic {
                 fields: Arc::new(fields),
             },
-            vtable: registry.methods(type_id).unwrap(),
+            vtable: registry.methods(type_id).unwrap_or_default(),
         }
     }
 
@@ -369,29 +369,24 @@ impl Data {
     #[inline]
     pub fn fields(&self) -> Option<Arc<Vec<Data>>> {
         match self.inner {
-            DataInner::Static(_) => None,
+            DataInner::Static(ref data) => {
+                let data = data.read();
+                Some(Arc::new(data.fields(&self.registry)))
+            }
             DataInner::Dynamic { ref fields, .. } => Some(fields.clone()),
         }
     }
 
     #[inline]
     pub fn field_by_id(&self, id: DynamicId) -> Option<Data> {
-        match self.inner {
-            DataInner::Static(_) => None,
-            DataInner::Dynamic { ref fields, .. } => {
-                fields.iter().find(|field| field.type_id() == id).cloned()
-            }
-        }
+        self.fields()
+            .and_then(|fields| fields.iter().find(|field| field.type_id() == id).cloned())
     }
 
     #[inline]
     pub fn field_by_name(&self, name: &str) -> Option<Data> {
-        match self.inner {
-            DataInner::Static(_) => None,
-            DataInner::Dynamic { ref fields, .. } => {
-                fields.iter().find(|field| field.name() == name).cloned()
-            }
-        }
+        self.fields()
+            .and_then(|fields| fields.iter().find(|field| field.name() == name).cloned())
     }
 
     #[inline]

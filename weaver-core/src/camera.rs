@@ -120,10 +120,11 @@ impl Default for Camera {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[method(default = "fn() -> FlyCameraController")]
 #[method(update = "fn(&mut FlyCameraController, &Input, f32, &mut Camera)")]
+#[method(set_translation = "fn(&mut FlyCameraController, glam::Vec3)")]
 pub struct FlyCameraController {
     pub speed: f32,
     pub sensitivity: f32,
-    pub translation: glam::Vec3,
+    translation: glam::Vec3,
     pub rotation: glam::Quat,
     pub fov: f32,
     pub aspect: f32,
@@ -193,6 +194,10 @@ impl FlyCameraController {
     pub fn projection_matrix(&self) -> glam::Mat4 {
         glam::Mat4::perspective_rh(self.fov, self.aspect, self.near, self.far)
     }
+
+    pub fn set_translation(&mut self, translation: glam::Vec3) {
+        self.translation = translation;
+    }
 }
 
 impl Default for FlyCameraController {
@@ -203,7 +208,7 @@ impl Default for FlyCameraController {
             translation: glam::Vec3::ZERO,
             rotation: glam::Quat::IDENTITY,
             fov: 60.0f32.to_radians(),
-            aspect: 1.0,
+            aspect: 16.0 / 9.0,
             near: 0.1,
             far: 100.0,
         }

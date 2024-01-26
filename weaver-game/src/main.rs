@@ -231,7 +231,7 @@ fn setup(
     // renderer.shadow_pass.disable();
     // renderer.sky_pass.disable();
 
-    let skybox = asset_server.load_skybox("meadow_2k.hdr", &hdr_loader)?;
+    let skybox = asset_server.load_skybox("meadow_2k.hdr", &hdr_loader);
     commands.spawn(skybox);
 
     let mut material = asset_server.load_material("materials/wood_tiles.glb");
@@ -286,7 +286,7 @@ fn setup_2(
     // renderer.shadow_pass.disable();
     // renderer.sky_pass.disable();
 
-    let skybox = asset_server.load_skybox("meadow_2k.hdr", &hdr_loader)?;
+    let skybox = asset_server.load_skybox("meadow_2k.hdr", &hdr_loader);
     commands.spawn(skybox);
 
     let material = asset_server.load_material("materials/wood.glb");

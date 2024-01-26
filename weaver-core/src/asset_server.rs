@@ -44,6 +44,7 @@ impl Default for AssetId {
 #[derive(Component)]
 #[method(load_mesh = "fn(&mut AssetServer, path: &String) -> Mesh")]
 #[method(load_material = "fn(&mut AssetServer, path: &String) -> Material")]
+#[method(load_skybox = "fn(&mut AssetServer, path: &String, hdr_loader: &HdrLoader) -> Skybox")]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssetServer {
     next_id: u64,
@@ -241,28 +242,28 @@ impl AssetServer {
             .clone())
     }
 
-    pub fn load_skybox(
-        &mut self,
-        path: impl Into<PathBuf>,
-        hdr_loader: &HdrLoader,
-    ) -> anyhow::Result<Skybox> {
-        let path = path.into();
+    pub fn load_skybox(&mut self, path: &str, hdr_loader: &HdrLoader) -> Skybox {
+        let path: PathBuf = path.into();
         let path = if path.is_absolute() {
             path
         } else {
             self.path_prefix.join(path)
         };
-        let texture = hdr_loader.load(
-            self.resource_manager.as_ref().unwrap(),
-            SKYBOX_CUBEMAP_SIZE,
-            path,
-        )?;
-        let irradiance = hdr_loader.generate_irradiance_map(
-            self.resource_manager.as_ref().unwrap(),
-            &texture,
-            SKYBOX_IRRADIANCE_MAP_SIZE,
-        )?;
-        Ok(Skybox::new(texture, irradiance))
+        let texture = hdr_loader
+            .load(
+                self.resource_manager.as_ref().unwrap(),
+                SKYBOX_CUBEMAP_SIZE,
+                path,
+            )
+            .unwrap();
+        let irradiance = hdr_loader
+            .generate_irradiance_map(
+                self.resource_manager.as_ref().unwrap(),
+                &texture,
+                SKYBOX_IRRADIANCE_MAP_SIZE,
+            )
+            .unwrap();
+        Skybox::new(texture, irradiance)
     }
 
     // pub fn load_all_assets(&mut self, world: &World) -> anyhow::Result<()> {
