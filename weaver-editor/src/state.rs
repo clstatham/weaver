@@ -69,6 +69,7 @@ impl EditorAction for RenameEntity {
 pub struct SelectEntity {
     pub(crate) entity: Entity,
     pub(crate) previous_entity: Option<Entity>,
+    pub(crate) previous_component: Option<DynamicId>,
 }
 
 impl SelectEntity {
@@ -76,6 +77,7 @@ impl SelectEntity {
         Self {
             entity,
             previous_entity: None,
+            previous_component: None,
         }
     }
 }
@@ -83,15 +85,18 @@ impl SelectEntity {
 impl EditorAction for SelectEntity {
     fn begin(&mut self, state: &mut EditorState, _world: &World) -> anyhow::Result<()> {
         self.previous_entity = state.selected_entity;
+        self.previous_component = state.selected_component;
         Ok(())
     }
 
     fn end(&mut self, state: &mut EditorState, _world: &World) -> anyhow::Result<()> {
+        state.selected_component = None;
         state.selected_entity = Some(self.entity);
         Ok(())
     }
 
     fn undo(&mut self, state: &mut EditorState, _world: &World) -> anyhow::Result<()> {
+        state.selected_component = self.previous_component;
         state.selected_entity = self.previous_entity;
         Ok(())
     }
