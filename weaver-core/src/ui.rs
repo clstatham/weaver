@@ -122,6 +122,10 @@ impl EguiContext {
         let _ = self.state.on_window_event(window, event);
     }
 
+    pub fn wants_focus(&self) -> bool {
+        self.state.egui_ctx().wants_keyboard_input()
+    }
+
     pub fn begin_frame(&mut self, window: &Window) {
         if self.full_output.is_none() {
             let raw_input = self.state.take_egui_input(window);

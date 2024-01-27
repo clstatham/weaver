@@ -27,6 +27,7 @@ pub mod prelude {
         world::World,
     };
     pub use anyhow;
+    pub use parking_lot::*;
     pub use rayon::prelude::*;
     pub use weaver_proc_macro::{system, Bundle, Component};
 }

@@ -5,10 +5,10 @@ use weaver::{
     core::{scripts::Scripts, ui::builtin::FpsDisplay},
     ecs::component::Data,
     ecs::registry::{DynamicId, Registry},
-    prelude::{parking_lot::RwLock, *},
+    prelude::*,
 };
 
-use crate::state::EditorState;
+use crate::state::{EditorState, SelectComponent, SelectEntity};
 
 pub mod syntax_highlighting;
 
@@ -27,7 +27,7 @@ pub fn traverse_tree(
     state: &mut EditorState,
     ui: &mut egui::Ui,
 ) {
-    let selection = if let Some(selected) = state.selected_entity {
+    let selection = if let Some(selected) = state.selected_entity() {
         entity == selected
     } else {
         false
@@ -37,14 +37,20 @@ pub fn traverse_tree(
     } else {
         ui.visuals_mut().override_text_color = None;
     }
-    let entity_name = format!("Entity {}", entity.id());
+    let entity_name = match state.entity_name(entity) {
+        Some(name) => format!("{} ({})", name, entity.id()),
+        None => {
+            format!("({})", entity.id())
+        }
+    };
     let children = graph.get_children(entity);
     ui.vertical(|ui| {
         let collapsing = egui::CollapsingHeader::new(&entity_name).show(ui, |ui| {
             ui.visuals_mut().override_text_color = None;
             for component in world.components_iter(&entity) {
-                if let Some(selected) = state.selected_component {
-                    if selected == component.type_id() && entity == state.selected_entity.unwrap() {
+                if let Some(selected) = state.selected_component() {
+                    if selected == component.type_id() && entity == state.selected_entity().unwrap()
+                    {
                         ui.visuals_mut().override_text_color = Some(egui::Color32::LIGHT_BLUE);
                     }
                 }
@@ -57,8 +63,7 @@ pub fn traverse_tree(
                         }
                     });
                 if component_header.header_response.secondary_clicked() {
-                    state.selected_entity = Some(entity);
-                    state.selected_component = Some(component.type_id());
+                    state.push_action(Box::new(SelectComponent::new(component.type_id())));
                 }
 
                 ui.visuals_mut().override_text_color = None;
@@ -68,7 +73,13 @@ pub fn traverse_tree(
             }
         });
         if collapsing.header_response.secondary_clicked() {
-            state.selected_entity = Some(entity);
+            state.push_action(Box::new(SelectEntity::new(entity)));
+        }
+        if collapsing
+            .header_response
+            .double_clicked_by(egui::PointerButton::Secondary)
+        {
+            state.show_rename_entity(entity);
         }
         if collapsing.header_response.middle_clicked() && entity != Entity::PLACEHOLDER {
             commands.despawn_recursive(entity);
@@ -142,8 +153,8 @@ pub fn scene_tree_ui(
 pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut EditorState) {
     ctx.draw_if_ready(|ctx| {
         egui::Window::new("Component Inspector").show(ctx, |ui| {
-            if let Some(entity) = state.selected_entity {
-                if let Some(component) = state.selected_component {
+            if let Some(entity) = state.selected_entity() {
+                if let Some(component) = state.selected_component() {
                     let component = world
                         .components
                         .entity_components_iter(entity.id())
@@ -401,7 +412,7 @@ pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut Edit
 }
 
 #[system(ScriptUpdateUi())]
-pub fn script_update_ui(ctx: Res<EguiContext>, scripts: Res<Scripts>, input: Res<Input>) {
+pub fn script_update_ui(ctx: Res<EguiContext>, scripts: Res<Scripts>) {
     ctx.draw_if_ready(|ctx| {
         egui::Window::new("Scripts").show(ctx, |ui| {
             if ui.button("Reload Scripts").clicked() {
@@ -440,19 +451,12 @@ pub fn script_update_ui(ctx: Res<EguiContext>, scripts: Res<Scripts>, input: Res
                     });
                     ui.separator();
                     egui::ScrollArea::both().show(ui, |ui| {
-                        let mut editor = ui.add(
+                        ui.add(
                             TextEdit::multiline(&mut script.content)
                                 .code_editor()
                                 .desired_width(f32::INFINITY)
                                 .layouter(&mut layouter),
                         );
-                        if editor.lost_focus() {
-                            script.save().unwrap();
-                            input.enable_input();
-                        }
-                        if editor.has_focus() {
-                            input.disable_input();
-                        }
                     });
                 });
             });

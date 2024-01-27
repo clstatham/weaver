@@ -130,54 +130,54 @@ pub struct FlyCameraController {
 
 impl FlyCameraController {
     pub fn update(&mut self, input: &Input, delta_time: f32, camera: &mut Camera) {
-        let mouse_delta = input.mouse_delta();
-        let (mut yaw, mut pitch, _roll) = self.rotation.to_euler(glam::EulerRot::YXZ);
-
-        let forward = self.rotation * glam::Vec3::NEG_Z;
-        let right = self.rotation * glam::Vec3::X;
-
-        let mut velocity = glam::Vec3::ZERO;
-
-        if input.key_pressed(KeyCode::KeyW) {
-            velocity += forward;
-        }
-        if input.key_pressed(KeyCode::KeyS) {
-            velocity -= forward;
-        }
-        if input.key_pressed(KeyCode::KeyD) {
-            velocity += right;
-        }
-        if input.key_pressed(KeyCode::KeyA) {
-            velocity -= right;
-        }
-        if input.key_pressed(KeyCode::Space) {
-            velocity += glam::Vec3::Y;
-        }
-        if input.key_pressed(KeyCode::ControlLeft) {
-            velocity -= glam::Vec3::Y;
-        }
-
-        velocity = velocity.normalize_or_zero() * self.speed * delta_time;
-
-        if input.key_pressed(KeyCode::ShiftLeft) {
-            velocity *= 2.0;
-        }
-
-        self.translation += velocity;
-
         if input.mouse_button_pressed(MouseButton::Right) {
+            let mouse_delta = input.mouse_delta();
+            let (mut yaw, mut pitch, _roll) = self.rotation.to_euler(glam::EulerRot::YXZ);
+
+            let forward = self.rotation * glam::Vec3::NEG_Z;
+            let right = self.rotation * glam::Vec3::X;
+
+            let mut velocity = glam::Vec3::ZERO;
+
+            if input.key_pressed(KeyCode::KeyW) {
+                velocity += forward;
+            }
+            if input.key_pressed(KeyCode::KeyS) {
+                velocity -= forward;
+            }
+            if input.key_pressed(KeyCode::KeyD) {
+                velocity += right;
+            }
+            if input.key_pressed(KeyCode::KeyA) {
+                velocity -= right;
+            }
+            if input.key_pressed(KeyCode::Space) {
+                velocity += glam::Vec3::Y;
+            }
+            if input.key_pressed(KeyCode::ControlLeft) {
+                velocity -= glam::Vec3::Y;
+            }
+
+            velocity = velocity.normalize_or_zero() * self.speed * delta_time;
+
+            if input.key_pressed(KeyCode::ShiftLeft) {
+                velocity *= 2.0;
+            }
+
+            self.translation += velocity;
+
             yaw += -(mouse_delta.x * self.sensitivity).to_radians();
             pitch += -(mouse_delta.y * self.sensitivity).to_radians();
+
+            pitch = pitch.clamp(
+                -std::f32::consts::FRAC_PI_2 + 0.001,
+                std::f32::consts::FRAC_PI_2 - 0.001,
+            );
+
+            self.rotation = glam::Quat::from_axis_angle(glam::Vec3::Y, yaw)
+                * glam::Quat::from_axis_angle(glam::Vec3::X, pitch);
+            self.rotation = self.rotation.normalize();
         }
-
-        pitch = pitch.clamp(
-            -std::f32::consts::FRAC_PI_2 + 0.001,
-            std::f32::consts::FRAC_PI_2 - 0.001,
-        );
-
-        self.rotation = glam::Quat::from_axis_angle(glam::Vec3::Y, yaw)
-            * glam::Quat::from_axis_angle(glam::Vec3::X, pitch);
-        self.rotation = self.rotation.normalize();
 
         camera.view_matrix = self.view_matrix();
         camera.projection_matrix = self.projection_matrix();

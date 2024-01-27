@@ -117,6 +117,15 @@ impl App {
                         let mut input = world.write_resource::<Input>().unwrap();
                         input.prepare_for_update();
 
+                        {
+                            let ctx = world.read_resource::<EguiContext>().unwrap();
+                            if ctx.wants_focus() {
+                                input.disable_input();
+                            } else {
+                                input.enable_input();
+                            }
+                        }
+
                         while let Ok(event) = window_event_rx.try_recv() {
                             input.update_window(&event);
 

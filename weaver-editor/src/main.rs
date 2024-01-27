@@ -19,12 +19,15 @@ fn main() -> anyhow::Result<()> {
 
     app.add_system_to_stage(Setup, SystemStage::Startup);
 
+    app.add_system_to_stage(state::EditorActions, SystemStage::PreUpdate);
+
     app.add_system_to_stage(UpdateCamera, SystemStage::Update);
     app.add_system_to_stage(state::SelectedEntityDoodads, SystemStage::Update);
     app.add_system_to_stage(ui::FpsDisplayUi, SystemStage::Update);
 
     app.add_system_to_stage(ui::SceneTreeUi, SystemStage::PostUpdate);
     app.add_system_to_stage(ui::ScriptUpdateUi, SystemStage::PostUpdate);
+    app.add_system_to_stage(state::EditorStateUi, SystemStage::PostUpdate);
 
     app.add_script("assets/scripts/editor/main.loom");
 

@@ -249,7 +249,7 @@ pub fn system(attr: proc_macro::TokenStream, ast: &syn::ItemFn) -> proc_macro::T
     }
 
     let run_fn = quote! {
-        fn run(&self, world: std::sync::Arc<parking_lot::RwLock<weaver_ecs::world::World>>, input: &[&weaver_ecs::component::Data]) -> anyhow::Result<()> {
+        fn run(&self, world: std::sync::Arc<weaver_ecs::prelude::RwLock<weaver_ecs::world::World>>, input: &[&weaver_ecs::component::Data]) -> anyhow::Result<()> {
             #(#inputs_bindings)*
             #commands
             {
