@@ -363,7 +363,7 @@ pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut Edit
                                 let (r, g, b) = (
                                     value.r.clamp(0.0, 1.0),
                                     value.g.clamp(0.0, 1.0),
-                                    value.clamp(0.0, 1.0),
+                                    value.b.clamp(0.0, 1.0),
                                 );
                                 drop(value);
                                 if any_changed {
