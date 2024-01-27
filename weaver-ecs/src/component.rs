@@ -248,7 +248,7 @@ pub type Vtable = FxHashMap<String, Arc<MethodWrapper>>;
 #[derive(Clone)]
 enum DataInner {
     Static(Arc<RwLock<dyn Component>>),
-    Dynamic { fields: Arc<Vec<Data>> },
+    Dynamic { fields: Vec<Data> },
 }
 
 /// A shared pointer to a type-erased component.
@@ -293,9 +293,7 @@ impl Data {
             field_name: field_name.map(|s| s.to_string()),
             registry: registry.clone(),
             is_clone,
-            inner: DataInner::Dynamic {
-                fields: Arc::new(fields),
-            },
+            inner: DataInner::Dynamic { fields },
             vtable: registry.vtable(type_id).unwrap_or_default(),
         }
     }
@@ -382,11 +380,11 @@ impl Data {
     }
 
     #[inline]
-    pub fn fields(&self) -> Option<Arc<Vec<Data>>> {
+    pub fn fields(&self) -> Option<Vec<Data>> {
         match self.inner {
             DataInner::Static(ref data) => {
                 let data = data.read();
-                Some(Arc::new(data.fields(&self.registry)))
+                Some(data.fields(&self.registry))
             }
             DataInner::Dynamic { ref fields, .. } => Some(fields.clone()),
         }
@@ -413,7 +411,7 @@ impl Data {
                 Ok(())
             }
             DataInner::Dynamic { fields } => {
-                let mut fields = fields.as_ref().clone();
+                let mut fields = fields.clone();
                 for field in &mut fields {
                     if field.name() == field_name {
                         field.assign(&value)?;

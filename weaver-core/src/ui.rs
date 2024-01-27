@@ -139,7 +139,7 @@ impl EguiContext {
         }
     }
 
-    pub fn draw_if_ready<F: FnOnce(&Context)>(&self, f: F) {
+    pub fn draw_if_ready<F: FnOnce(&Context) -> R, R>(&self, f: F) {
         if self.full_output.is_none() && !self.locked {
             f(self.state.egui_ctx());
         }
