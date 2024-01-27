@@ -1,7 +1,7 @@
 use weaver_ecs::prelude::*;
 
 use crate::{
-    include_shader,
+    load_shader,
     renderer::{internals::BindableComponent, BindGroupLayoutCache, Renderer},
     texture::{HdrTexture, TextureFormat, WindowTexture},
 };
@@ -59,7 +59,7 @@ impl HdrRenderPass {
             label: Some("HDR Texture Bind Group"),
         });
 
-        let shader = device.create_shader_module(include_shader!("hdr.wgsl"));
+        let shader = device.create_shader_module(load_shader!("hdr.wgsl"));
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("HDR Render Pipeline Layout"),
             bind_group_layouts: &[

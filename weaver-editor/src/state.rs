@@ -8,19 +8,13 @@ use weaver::{
     prelude::*,
 };
 
-pub trait EditorAction: Send + Sync + Debug + Downcast + 'static {
-    #[allow(unused_variables)]
-    fn begin(&mut self, state: &mut EditorState, world: &World) -> anyhow::Result<()> {
-        Ok(())
-    }
+pub trait EditorAction: Send + Sync + Downcast + 'static {
+    fn begin(&mut self, state: &mut EditorState, world: &World) -> anyhow::Result<()>;
     #[allow(unused_variables)]
     fn update(&mut self, state: &mut EditorState, world: &World) -> anyhow::Result<()> {
         Ok(())
     }
-    #[allow(unused_variables)]
-    fn end(&mut self, state: &mut EditorState, world: &World) -> anyhow::Result<()> {
-        Ok(())
-    }
+    fn end(&mut self, state: &mut EditorState, world: &World) -> anyhow::Result<()>;
     fn undo(&mut self, state: &mut EditorState, world: &World) -> anyhow::Result<()>;
     fn redo(&mut self, state: &mut EditorState, world: &World) -> anyhow::Result<()> {
         self.begin(state, world)?;
@@ -268,8 +262,12 @@ impl EditorState {
     pub fn begin_action(&mut self, mut action: Box<dyn EditorAction>) -> anyhow::Result<()> {
         let world = self.world.clone();
         action.begin(self, &world.read())?;
-        if let Some(action) = self.actions_in_progress.insert((*action).type_id(), action) {
-            log::warn!("Action already in progress: {:?}", action);
+        if self
+            .actions_in_progress
+            .insert((*action).type_id(), action)
+            .is_some()
+        {
+            log::warn!("Action already in progress");
         }
         Ok(())
     }
@@ -419,6 +417,56 @@ pub fn selected_entity_doodads(
 
                 doodads.push(doodad);
             }
+        }
+    }
+}
+
+#[system(PickEntity())]
+pub fn pick_entity(
+    mut state: ResMut<EditorState>,
+    renderer: Res<Renderer>,
+    input: Res<Input>,
+    mut doodads: ResMut<Doodads>,
+    camera: Query<&Camera>,
+    meshes_transforms: Query<(Entity, &Mesh, &GlobalTransform)>,
+) {
+    let camera = camera.iter().next().unwrap();
+    if input.mouse_button_pressed(MouseButton::Left) {
+        let mouse_pos = input.mouse_position().unwrap();
+        let screen_size = renderer.screen_size();
+        let ray = camera.screen_to_ray(
+            mouse_pos,
+            Vec2::new(screen_size.0 as f32, screen_size.1 as f32),
+        );
+
+        let ray_rotation = Quat::from_rotation_arc(Vec3::Z, ray.direction);
+
+        doodads.push(Doodad::WireCube(Cube::new(
+            ray.origin,
+            ray_rotation,
+            Vec3::new(0.1, 0.1, 10.0),
+            Color::BLUE,
+        )));
+
+        // check for intersection with entity
+        let mut closest_entity = None;
+        let mut closest_distance = std::f32::MAX;
+        for (entity, mesh, transform) in meshes_transforms.iter() {
+            let inter = mesh
+                .bounding_sphere()
+                .transformed(*transform)
+                .intersect_ray(ray.origin, ray.direction);
+            if let Some(inter) = inter {
+                let distance = (inter - ray.origin).length();
+                if distance < closest_distance {
+                    closest_distance = distance;
+                    closest_entity = Some(entity);
+                }
+            }
+        }
+
+        if let Some(entity) = closest_entity {
+            state.perform_action(SelectEntity::new(entity)).unwrap();
         }
     }
 }

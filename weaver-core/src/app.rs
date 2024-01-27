@@ -162,6 +162,8 @@ impl App {
 
                     World::run_stage(&update_world, SystemStage::Render).unwrap();
 
+                    World::run_stage(&update_world, SystemStage::PostRender).unwrap();
+
                     if killswitch_rx.try_recv().is_ok() {
                         break;
                     }

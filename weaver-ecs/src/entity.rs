@@ -4,7 +4,9 @@ use rustc_hash::FxHashMap;
 use crate::{prelude::Component, registry::DynamicId};
 
 /// A unique identifier for a collection of components.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, bytemuck::Pod, bytemuck::Zeroable,
+)]
 #[repr(C)]
 pub struct Entity {
     id: DynamicId,

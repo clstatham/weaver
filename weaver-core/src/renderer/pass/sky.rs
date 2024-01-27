@@ -2,7 +2,7 @@ use weaver_ecs::prelude::*;
 
 use crate::{
     camera::Camera,
-    include_shader,
+    load_shader,
     renderer::{internals::BindableComponent, BindGroupLayoutCache, Renderer},
     texture::{DepthTexture, HdrTexture, Skybox, TextureFormat},
 };
@@ -20,7 +20,7 @@ pub struct SkyRenderPass {
 
 impl SkyRenderPass {
     pub fn new(device: &wgpu::Device, bind_group_layout_cache: &BindGroupLayoutCache) -> Self {
-        let shader = device.create_shader_module(include_shader!("sky.wgsl"));
+        let shader = device.create_shader_module(load_shader!("sky.wgsl"));
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Skybox Sampler"),

@@ -5,7 +5,7 @@ use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
 
 use crate::{
-    include_shader,
+    load_shader,
     renderer::internals::{GpuResource, GpuResourceManager, LazyGpuHandle},
     texture::{HdrCubeTexture, HdrD2ArrayTexture, Texture, TextureFormat},
 };
@@ -25,7 +25,7 @@ pub struct HdrLoader {
 
 impl HdrLoader {
     pub fn new(device: &wgpu::Device) -> Self {
-        let load_shader = device.create_shader_module(include_shader!("hdr_loader.wgsl"));
+        let load_shader = device.create_shader_module(load_shader!("hdr_loader.wgsl"));
 
         let load_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("HDR Loader Bind Group Layout"),
@@ -172,7 +172,7 @@ impl HdrLoader {
                 ],
             });
 
-        let irradiance_shader = device.create_shader_module(include_shader!("hdr_irradiance.wgsl"));
+        let irradiance_shader = device.create_shader_module(load_shader!("hdr_irradiance.wgsl"));
 
         let irradiance_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

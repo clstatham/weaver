@@ -8,7 +8,7 @@ use crate::{
     camera::{Camera, CameraUniform},
     color::Color,
     doodads::{Doodad, Doodads, MAX_DOODADS},
-    include_shader,
+    load_shader,
     renderer::{
         internals::{
             BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceType, LazyBindGroup,
@@ -319,7 +319,7 @@ impl DoodadRenderPass {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let shader = device.create_shader_module(include_shader!("doodads.wgsl"));
+        let shader = device.create_shader_module(load_shader!("doodads.wgsl"));
 
         let camera_buffer = LazyGpuHandle::new(
             GpuResourceType::Uniform {

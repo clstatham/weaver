@@ -1,6 +1,9 @@
 use std::fmt::Debug;
 
-use crate::renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle};
+use crate::{
+    geom::Ray,
+    renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle},
+};
 
 use weaver_ecs::prelude::*;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
@@ -70,6 +73,28 @@ impl Camera {
             projection_matrix,
             handle: Self::default_handle(),
             bind_group: LazyBindGroup::default(),
+        }
+    }
+
+    pub fn screen_to_ray(&self, screen_position: glam::Vec2, screen_size: glam::Vec2) -> Ray {
+        let ndc = glam::Vec2::new(
+            (screen_position.x / screen_size.x) * 2.0 - 1.0,
+            -((screen_position.y / screen_size.y) * 2.0 - 1.0),
+        );
+
+        let inv_proj = self.projection_matrix.inverse();
+        let inv_view = self.view_matrix.inverse();
+
+        let clip = glam::Vec4::new(ndc.x, ndc.y, -1.0, 1.0);
+        let eye = inv_proj * clip;
+        let eye = glam::Vec4::new(eye.x, eye.y, -1.0, 0.0);
+        let world = inv_view * eye;
+
+        let world = world.truncate().normalize();
+
+        Ray {
+            origin: inv_view.col(3).truncate(),
+            direction: world,
         }
     }
 

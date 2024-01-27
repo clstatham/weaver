@@ -3095,6 +3095,7 @@ dependencies = [
  "anyhow",
  "atomic_refcell",
  "bit-set",
+ "bytemuck",
  "crossbeam-channel",
  "env_logger",
  "fixedbitset",

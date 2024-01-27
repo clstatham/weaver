@@ -112,7 +112,7 @@ pub fn preprocess_shader(
 }
 
 #[macro_export]
-macro_rules! include_shader {
+macro_rules! load_shader {
     ($file_path:literal) => {
         $crate::renderer::preprocess_shader(
             concat!("assets/shaders/", $file_path),
@@ -174,7 +174,9 @@ impl Renderer {
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: None,
-                features: wgpu::Features::all_webgpu_mask() | wgpu::Features::MULTIVIEW,
+                features: wgpu::Features::all_webgpu_mask()
+                    | wgpu::Features::MULTIVIEW
+                    | wgpu::Features::VERTEX_WRITABLE_STORAGE,
                 limits: wgpu::Limits::downlevel_defaults(),
             },
             None,
@@ -349,6 +351,10 @@ impl Renderer {
             world,
             output: None,
         }
+    }
+
+    pub fn screen_size(&self) -> (u32, u32) {
+        (self.config.width, self.config.height)
     }
 
     pub fn device(&self) -> &Arc<wgpu::Device> {

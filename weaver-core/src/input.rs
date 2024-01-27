@@ -113,6 +113,9 @@ impl Input {
                     self.mouse_buttons_held.remove(button);
                 }
             },
+            winit::event::WindowEvent::CursorMoved { position, .. } => {
+                self.mouse_position = Some(glam::Vec2::new(position.x as f32, position.y as f32));
+            }
             winit::event::WindowEvent::KeyboardInput {
                 event,
                 is_synthetic,

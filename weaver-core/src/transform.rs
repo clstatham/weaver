@@ -227,6 +227,38 @@ impl Default for GlobalTransform {
 
 #[derive(Clone, Component, Debug, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
+pub struct TransformGpuComponent {
+    pub matrix: glam::Mat4,
+
+    #[uniform]
+    handle: LazyGpuHandle,
+    bind_group: LazyBindGroup<Self>,
+}
+
+impl TransformGpuComponent {
+    pub fn new(matrix: glam::Mat4) -> Self {
+        Self {
+            matrix,
+            handle: LazyGpuHandle::new(
+                crate::renderer::internals::GpuResourceType::Uniform {
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    size: std::mem::size_of::<glam::Mat4>(),
+                },
+                Some("TransformGpuComponent"),
+                None,
+            ),
+            bind_group: LazyBindGroup::default(),
+        }
+    }
+
+    pub fn update(&self, _world: &World) -> anyhow::Result<()> {
+        self.handle.update(&[self.matrix]);
+        Ok(())
+    }
+}
+
+#[derive(Clone, Component, Debug, GpuComponent, BindableComponent)]
+#[gpu(update = "update")]
 pub struct TransformArray {
     matrices: Vec<glam::Mat4>,
 

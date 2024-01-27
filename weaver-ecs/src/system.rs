@@ -26,13 +26,18 @@ pub enum SystemStage {
 
     Render,
 
+    PostRender,
+
     Shutdown,
 }
 
 impl SystemStage {
     pub fn iter() -> impl Iterator<Item = Self> {
         use SystemStage::*;
-        vec![Startup, PreUpdate, Update, PostUpdate, Render, Shutdown].into_iter()
+        vec![
+            Startup, PreUpdate, Update, PostUpdate, Render, PostRender, Shutdown,
+        ]
+        .into_iter()
     }
 }
 

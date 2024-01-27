@@ -8,8 +8,8 @@ use weaver_ecs::prelude::*;
 
 use crate::{
     camera::{Camera, CameraUniform},
-    include_shader,
     light::PointLightArray,
+    load_shader,
     material::Material,
     mesh::{Mesh, Vertex},
     renderer::{
@@ -169,7 +169,7 @@ pub struct PbrRenderPass {
 
 impl PbrRenderPass {
     pub fn new(device: &wgpu::Device, bind_group_layout_cache: &BindGroupLayoutCache) -> Self {
-        let shader = device.create_shader_module(include_shader!("pbr.wgsl"));
+        let shader = device.create_shader_module(load_shader!("pbr.wgsl"));
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("PBR Pipeline Layout"),

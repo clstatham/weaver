@@ -3,9 +3,6 @@ use weaver::{
     prelude::*,
 };
 
-use crate::state::EditorState;
-
-pub mod scene;
 pub mod state;
 pub mod ui;
 
@@ -14,7 +11,7 @@ fn main() -> anyhow::Result<()> {
 
     let app = App::new(1600, 900)?;
 
-    app.add_resource(EditorState::new(&app.world))?;
+    app.add_resource(state::EditorState::new(&app.world))?;
     app.add_resource(FpsDisplay::new())?;
 
     app.add_system_to_stage(Setup, SystemStage::Startup);
@@ -23,11 +20,13 @@ fn main() -> anyhow::Result<()> {
 
     app.add_system_to_stage(UpdateCamera, SystemStage::Update);
     app.add_system_to_stage(state::SelectedEntityDoodads, SystemStage::Update);
-    app.add_system_to_stage(ui::FpsDisplayUi, SystemStage::Update);
 
+    app.add_system_to_stage(ui::FpsDisplayUi, SystemStage::PostUpdate);
     app.add_system_to_stage(ui::SceneTreeUi, SystemStage::PostUpdate);
     app.add_system_to_stage(ui::ScriptUpdateUi, SystemStage::PostUpdate);
     app.add_system_to_stage(state::EditorStateUi, SystemStage::PostUpdate);
+
+    app.add_system_to_stage(state::PickEntity, SystemStage::PostRender);
 
     app.add_script("assets/scripts/editor/main.loom");
 

@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use weaver_ecs::{prelude::*, registry::Registry};
 
-pub mod aabb;
 pub mod app;
 pub mod asset_server;
 pub mod camera;
 pub mod color;
 pub mod doodads;
+pub mod geom;
 pub mod input;
 pub mod light;
 pub mod material;
@@ -27,12 +27,12 @@ pub mod ui;
 
 pub mod prelude {
     pub use crate::{
-        aabb::Aabb,
         app::App,
         asset_server::AssetServer,
         camera::{Camera, FlyCameraController},
         color::Color,
         doodads::{Cone, Cube, Doodad, Doodads},
+        geom::Aabb,
         input::{Input, KeyCode, MouseButton},
         light::{DirectionalLight, PointLight},
         material::Material,

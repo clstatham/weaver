@@ -7,8 +7,8 @@ use weaver_proc_macro::{BindableComponent, GpuComponent};
 
 use crate::{
     camera::Camera,
-    include_shader,
     light::{PointLight, PointLightArray, MAX_LIGHTS},
+    load_shader,
     mesh::{Mesh, Vertex},
     renderer::{
         internals::{
@@ -226,7 +226,7 @@ pub struct OmniShadowRenderPass {
 
 impl OmniShadowRenderPass {
     pub fn new(device: &wgpu::Device, layout_cache: &BindGroupLayoutCache) -> Self {
-        let cubemap_shader = device.create_shader_module(include_shader!("shadow_cubemap.wgsl"));
+        let cubemap_shader = device.create_shader_module(load_shader!("shadow_cubemap.wgsl"));
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("shadow_cubemap"),
@@ -308,7 +308,7 @@ impl OmniShadowRenderPass {
         );
 
         let overlay_shader =
-            device.create_shader_module(include_shader!("shadow_cubemap_overlay.wgsl"));
+            device.create_shader_module(load_shader!("shadow_cubemap_overlay.wgsl"));
 
         let overlay_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

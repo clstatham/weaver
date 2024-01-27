@@ -3,7 +3,10 @@ use std::{fmt::Debug, path::Path, sync::Arc};
 use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
 
-use crate::{aabb::Aabb, asset_server::AssetId};
+use crate::{
+    asset_server::AssetId,
+    geom::{Aabb, BoundingSphere},
+};
 
 pub const MAX_MESHES: usize = 4096 * 8;
 
@@ -131,6 +134,7 @@ struct MeshInner {
     pub index_buffer: Option<wgpu::Buffer>,
     pub num_indices: usize,
     pub aabb: Aabb,
+    pub bounding_sphere: BoundingSphere,
 }
 
 #[derive(Clone, Component)]
@@ -185,6 +189,8 @@ impl Mesh {
         calculate_tangents(&mut vertices, &indices);
 
         let aabb = Aabb::from_points(&vertices.iter().map(|v| v.position).collect::<Vec<_>>());
+        let bounding_sphere =
+            BoundingSphere::from_points(&vertices.iter().map(|v| v.position).collect::<Vec<_>>());
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -211,6 +217,7 @@ impl Mesh {
                 index_buffer: Some(index_buffer),
                 num_indices: indices.len(),
                 aabb,
+                bounding_sphere,
             }),
         })
     }
@@ -265,6 +272,8 @@ impl Mesh {
         calculate_tangents(&mut vertices, &indices);
 
         let aabb = Aabb::from_points(&vertices.iter().map(|v| v.position).collect::<Vec<_>>());
+        let bounding_sphere =
+            BoundingSphere::from_points(&vertices.iter().map(|v| v.position).collect::<Vec<_>>());
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -291,6 +300,7 @@ impl Mesh {
                 index_buffer: Some(index_buffer),
                 num_indices: indices.len(),
                 aabb,
+                bounding_sphere,
             }),
         })
     }
@@ -313,5 +323,9 @@ impl Mesh {
 
     pub fn aabb(&self) -> Aabb {
         self.inner.aabb
+    }
+
+    pub fn bounding_sphere(&self) -> BoundingSphere {
+        self.inner.bounding_sphere
     }
 }

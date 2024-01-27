@@ -1,5 +1,113 @@
 use super::transform::GlobalTransform;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Ray {
+    pub origin: glam::Vec3,
+    pub direction: glam::Vec3,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct BoundingSphere {
+    pub center: glam::Vec3,
+    pub radius: f32,
+}
+
+impl BoundingSphere {
+    pub fn new(center: glam::Vec3, radius: f32) -> Self {
+        Self { center, radius }
+    }
+
+    pub fn from_points(points: &[glam::Vec3]) -> Self {
+        let center = points.iter().fold(glam::Vec3::ZERO, |acc, p| acc + *p) / points.len() as f32;
+        let radius = points
+            .iter()
+            .map(|p| (*p - center).length())
+            .fold(0.0f32, |acc, r| acc.max(r));
+
+        Self { center, radius }
+    }
+
+    pub fn union(&self, other: &Self) -> Self {
+        let center = (self.center + other.center) / 2.0;
+        let radius = (self.center - other.center).length() + self.radius + other.radius;
+
+        Self { center, radius }
+    }
+
+    pub fn contains(&self, point: &glam::Vec3) -> bool {
+        (*point - self.center).length_squared() <= self.radius * self.radius
+    }
+
+    pub fn intersects(&self, other: &Self) -> bool {
+        (self.center - other.center).length_squared()
+            <= (self.radius + other.radius) * (self.radius + other.radius)
+    }
+
+    pub fn intersect_ray(&self, origin: glam::Vec3, direction: glam::Vec3) -> Option<f32> {
+        let l = self.center - origin;
+        let tca = l.dot(direction);
+        let d2 = l.dot(l) - tca * tca;
+
+        if d2 > self.radius * self.radius {
+            return None;
+        }
+
+        let thc = (self.radius * self.radius - d2).sqrt();
+
+        let t0 = tca - thc;
+        let t1 = tca + thc;
+
+        if t0 < 0.0 && t1 < 0.0 {
+            return None;
+        }
+
+        if t0 < 0.0 {
+            return Some(t1);
+        }
+
+        Some(t0)
+    }
+
+    pub fn transformed(&self, transform: GlobalTransform) -> Self {
+        let transform = transform.matrix;
+        let points = [
+            transform.transform_point3(self.center),
+            transform.transform_point3(glam::Vec3::new(
+                self.center.x,
+                self.center.y,
+                self.center.z + self.radius,
+            )),
+            transform.transform_point3(glam::Vec3::new(
+                self.center.x,
+                self.center.y,
+                self.center.z - self.radius,
+            )),
+            transform.transform_point3(glam::Vec3::new(
+                self.center.x,
+                self.center.y + self.radius,
+                self.center.z,
+            )),
+            transform.transform_point3(glam::Vec3::new(
+                self.center.x,
+                self.center.y - self.radius,
+                self.center.z,
+            )),
+            transform.transform_point3(glam::Vec3::new(
+                self.center.x + self.radius,
+                self.center.y,
+                self.center.z,
+            )),
+            transform.transform_point3(glam::Vec3::new(
+                self.center.x - self.radius,
+                self.center.y,
+                self.center.z,
+            )),
+        ];
+
+        Self::from_points(&points)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Aabb {
     pub min: glam::Vec3,

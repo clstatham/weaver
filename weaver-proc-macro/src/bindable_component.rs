@@ -116,7 +116,10 @@ pub fn derive_bindable_component(ast: &syn::DeriveInput) -> proc_macro::TokenStr
                                                 "depth" => {
                                                     sample_type = Some(quote! { wgpu::TextureSampleType::Depth })
                                                 }
-                                                _ => panic!("Invalid attribute"),
+                                                "uint" => {
+                                                    sample_type = Some(quote! { wgpu::TextureSampleType::Uint })
+                                                }
+                                                _ => panic!("Invalid attribute: {} (expected `filterable_float`, `float`, `uint`, or `depth`)", ident),
                                             }
                                         }
                                         // #[texture(view_dimension = ...)]
@@ -290,10 +293,10 @@ pub fn derive_bindable_component(ast: &syn::DeriveInput) -> proc_macro::TokenStr
         let name = &binding.name;
         let visibility = match &binding.binding_type {
             BindingType::Uniform => {
-                quote! { wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT }
+                quote! { wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE }
             }
             BindingType::Storage { .. } => {
-                quote! { wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT }
+                quote! { wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE }
             }
             BindingType::Texture { .. } => {
                 quote! { wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE }

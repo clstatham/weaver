@@ -52,6 +52,10 @@ impl World {
                     Arc::new(RwLock::new(SystemGraph::default())),
                 ),
                 (
+                    SystemStage::PostRender,
+                    Arc::new(RwLock::new(SystemGraph::default())),
+                ),
+                (
                     SystemStage::Shutdown,
                     Arc::new(RwLock::new(SystemGraph::default())),
                 ),
