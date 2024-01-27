@@ -233,7 +233,19 @@ pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut Edit
                                     any_changed |=
                                         ui.add(egui::DragValue::new(&mut value.z)).changed();
                                 });
-                                let (x, y, z) = (value.x, value.y, value.z);
+                                let (mut x, mut y, mut z) = (value.x, value.y, value.z);
+                                // todo: there's a better way to check if the values are valid
+                                if field_name == "scale" {
+                                    if x <= 0.0 {
+                                        x = 0.0001;
+                                    }
+                                    if y <= 0.0 {
+                                        y = 0.0001;
+                                    }
+                                    if z <= 0.0 {
+                                        z = 0.0001;
+                                    }
+                                }
                                 drop(value);
                                 if any_changed {
                                     field
@@ -303,7 +315,7 @@ pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut Edit
                                     any_changed |=
                                         ui.add(egui::DragValue::new(&mut value.w)).changed();
                                 });
-                                let quat = *value;
+                                let quat = value.normalize();
                                 drop(value);
                                 if any_changed {
                                     field
@@ -348,7 +360,11 @@ pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut Edit
                                     any_changed |=
                                         ui.add(egui::DragValue::new(&mut value.b)).changed();
                                 });
-                                let (r, g, b) = (value.r, value.g, value.b);
+                                let (r, g, b) = (
+                                    value.r.clamp(0.0, 1.0),
+                                    value.g.clamp(0.0, 1.0),
+                                    value.clamp(0.0, 1.0),
+                                );
                                 drop(value);
                                 if any_changed {
                                     field

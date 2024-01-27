@@ -151,7 +151,7 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     let uv = material.texture_scale.xy * vertex.uv;
 
-    let tex_color = textureSample(diffuse_tex, diffuse_sampler, uv).rgb;
+    let tex_color = textureSample(diffuse_tex, diffuse_sampler, uv).rgb * material.base_color.rgb;
     let albedo = pow(tex_color, vec3(2.2));
 
     var tex_normal = textureSample(normal_tex, normal_sampler, uv).rgb * 2.0 - 1.0;
