@@ -2,6 +2,7 @@
 
 pub mod bundle;
 pub mod commands;
+#[macro_use]
 pub mod component;
 pub mod component_impl;
 pub mod entity;
@@ -25,6 +26,7 @@ pub mod prelude {
         weaver_ecs,
         world::World,
     };
+    pub use anyhow;
     pub use rayon::prelude::*;
     pub use weaver_proc_macro::{system, Bundle, Component};
 }

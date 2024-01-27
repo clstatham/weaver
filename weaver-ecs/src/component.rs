@@ -52,6 +52,14 @@ pub trait Component: Downcast + Send + Sync {
     }
 
     #[allow(unused)]
+    fn set_field_by_name(&mut self, field_name: &str, value: Data) -> anyhow::Result<()> {
+        Err(anyhow::anyhow!(
+            "Field {} is not registered for component",
+            field_name,
+        ))
+    }
+
+    #[allow(unused)]
     fn register_vtable(registry: &Arc<Registry>)
     where
         Self: Sized,
@@ -218,6 +226,7 @@ macro_rules! data_arithmetic {
     };
 }
 
+#[macro_export]
 macro_rules! try_all_types {
     ($this:ident; $($ty:ty),*; $main:block else $els:block) => {
         if true $( && (&*$this).as_any().downcast_ref::<$ty>().is_none())* {
@@ -393,6 +402,30 @@ impl Data {
     pub fn field_by_name(&self, name: &str) -> Option<Data> {
         self.fields()
             .and_then(|fields| fields.iter().find(|field| field.name() == name).cloned())
+    }
+
+    #[inline]
+    pub fn set_field_by_name(&self, field_name: &str, value: Data) -> anyhow::Result<()> {
+        match &self.inner {
+            DataInner::Static(data) => {
+                let mut data = data.write();
+                data.set_field_by_name(field_name, value)?;
+                Ok(())
+            }
+            DataInner::Dynamic { fields } => {
+                let mut fields = fields.as_ref().clone();
+                for field in &mut fields {
+                    if field.name() == field_name {
+                        field.assign(&value)?;
+                        return Ok(());
+                    }
+                }
+                Err(anyhow::anyhow!(
+                    "Field {} is not registered for component",
+                    field_name,
+                ))
+            }
+        }
     }
 
     #[inline]

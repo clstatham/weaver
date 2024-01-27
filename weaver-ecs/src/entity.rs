@@ -78,6 +78,7 @@ impl EntityGraph {
             .collect::<Vec<_>>()
     }
 
+    #[allow(clippy::map_entry)]
     pub fn add_entity(&mut self, entity: Entity) {
         if !self.entities_to_indices.contains_key(&entity) {
             let id = self.graph.add_node(entity);

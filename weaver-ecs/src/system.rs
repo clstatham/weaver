@@ -52,7 +52,6 @@ pub enum RunFn {
     Dynamic(Arc<dyn Fn(&[&Data]) -> anyhow::Result<()> + Send + Sync>),
 }
 
-#[derive(Clone, Component)]
 pub struct DynamicSystem {
     pub run_fn: RunFn,
     pub script: Option<Script>,

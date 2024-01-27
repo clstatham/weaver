@@ -15,7 +15,7 @@ pub struct Script {
     pub name: String,
     pub path: PathBuf,
     pub content: String,
-    pub scopes: Vec<Scope>,
+    scopes: Vec<Scope>,
 }
 
 impl Script {

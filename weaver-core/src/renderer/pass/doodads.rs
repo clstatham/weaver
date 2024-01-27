@@ -105,6 +105,22 @@ const CUBE_INDICES: &[u32] = &[
     20, 21, 22, 22, 23, 20,
 ];
 
+#[rustfmt::skip]
+const CUBE_WIREFRAME_INDICES: &[u32] = &[
+    // front
+    0, 1, 1, 2, 2, 3, 3, 0,
+    // back
+    4, 5, 5, 6, 6, 7, 7, 4,
+    // top
+    8, 9, 9, 10, 10, 11, 11, 8,
+    // bottom
+    12, 13, 13, 14, 14, 15, 15, 12,
+    // left
+    16, 17, 17, 18, 18, 19, 19, 16,
+    // right
+    20, 21, 21, 22, 22, 23, 23, 20,
+];
+
 fn cube_vertices() -> Vec<DoodadVertex> {
     let mut vertices = Vec::new();
 
@@ -245,7 +261,9 @@ impl DoodadBuffers {
 pub struct DoodadRenderPass {
     enabled: bool,
     pipeline: wgpu::RenderPipeline,
+    wireframe_pipeline: wgpu::RenderPipeline,
     cubes: DoodadBuffers,
+    wire_cubes: DoodadBuffers,
     cones: DoodadBuffers,
     depth_texture: DepthTexture,
     camera_buffer: LazyGpuHandle,
@@ -259,6 +277,7 @@ impl DoodadRenderPass {
     ) -> Self {
         let cube_vertices = cube_vertices();
         let cube_indices = CUBE_INDICES;
+        let cube_wireframe_indices = CUBE_WIREFRAME_INDICES;
 
         let cube_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Cube Vertex Buffer"),
@@ -269,6 +288,19 @@ impl DoodadRenderPass {
         let cube_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Cube Index Buffer"),
             contents: bytemuck::cast_slice(cube_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let wire_cube_vertex_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Wire Cube Vertex Buffer"),
+                contents: bytemuck::cast_slice(&cube_vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+        let wire_cube_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Wire Cube Index Buffer"),
+            contents: bytemuck::cast_slice(cube_wireframe_indices),
             usage: wgpu::BufferUsages::INDEX,
         });
 
@@ -326,6 +358,40 @@ impl DoodadRenderPass {
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DepthTexture::FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        let wireframe_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Doodad Wireframe Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[DoodadVertex::desc()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: WindowTexture::FORMAT,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineList,
+                cull_mode: None,
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -355,9 +421,15 @@ impl DoodadRenderPass {
         Self {
             enabled: true,
             pipeline,
+            wireframe_pipeline,
             depth_texture,
             camera_buffer,
             cubes: DoodadBuffers::new(cube_vertex_buffer, cube_index_buffer, cube_indices.len()),
+            wire_cubes: DoodadBuffers::new(
+                wire_cube_vertex_buffer,
+                wire_cube_index_buffer,
+                cube_indices.len(),
+            ),
             cones: DoodadBuffers::new(cone_vertex_buffer, cone_index_buffer, cone_indices.len()),
         }
     }
@@ -380,12 +452,16 @@ impl Pass for DoodadRenderPass {
         let manager = &renderer.resource_manager;
         self.depth_texture.lazy_init(manager)?;
         self.cubes.lazy_init(manager)?;
+        self.wire_cubes.lazy_init(manager)?;
         self.cones.lazy_init(manager)?;
 
         let mut cube_colors_handle = self.cubes.color_buffer.lazy_init(manager)?;
+        let mut wire_cube_colors_handle = self.wire_cubes.color_buffer.lazy_init(manager)?;
         let mut cone_colors_handle = self.cones.color_buffer.lazy_init(manager)?;
 
         let mut cube_transforms_handle = self.cubes.transform_buffer.lazy_init(manager)?;
+        let mut wire_cube_transforms_handle =
+            self.wire_cubes.transform_buffer.lazy_init(manager)?;
         let mut cone_transforms_handle = self.cones.transform_buffer.lazy_init(manager)?;
 
         let mut camera_handle = self.camera_buffer.lazy_init(manager)?;
@@ -399,6 +475,9 @@ impl Pass for DoodadRenderPass {
 
         let mut cube_transforms = Vec::new();
         let mut cube_colors = Vec::new();
+
+        let mut wire_cube_transforms = Vec::new();
+        let mut wire_cube_colors = Vec::new();
 
         let mut cone_transforms = Vec::new();
         let mut cone_colors = Vec::new();
@@ -414,6 +493,14 @@ impl Pass for DoodadRenderPass {
                     ));
                     cube_colors.push(cube.color);
                 }
+                Doodad::WireCube(cube) => {
+                    wire_cube_transforms.push(glam::Mat4::from_scale_rotation_translation(
+                        cube.scale,
+                        cube.rotation,
+                        cube.position,
+                    ));
+                    wire_cube_colors.push(cube.color);
+                }
                 Doodad::Cone(cone) => {
                     cone_transforms.push(glam::Mat4::from_scale_rotation_translation(
                         cone.scale,
@@ -428,10 +515,14 @@ impl Pass for DoodadRenderPass {
         cube_transforms_handle.update(&cube_transforms);
         cube_colors_handle.update(&cube_colors);
 
+        wire_cube_transforms_handle.update(&wire_cube_transforms);
+        wire_cube_colors_handle.update(&wire_cube_colors);
+
         cone_transforms_handle.update(&cone_transforms);
         cone_colors_handle.update(&cone_colors);
 
         *self.cubes.count.write() = cube_transforms.len();
+        *self.wire_cubes.count.write() = wire_cube_transforms.len();
         *self.cones.count.write() = cone_transforms.len();
 
         Ok(())
@@ -452,6 +543,9 @@ impl Pass for DoodadRenderPass {
 
         let cube_bind_group = self
             .cubes
+            .lazy_init_bind_group(manager, &renderer.bind_group_layout_cache)?;
+        let wire_cube_bind_group = self
+            .wire_cubes
             .lazy_init_bind_group(manager, &renderer.bind_group_layout_cache)?;
         let cone_bind_group = self
             .cones
@@ -518,6 +612,45 @@ impl Pass for DoodadRenderPass {
                 0..self.cubes.index_count as u32,
                 0,
                 0..*self.cubes.count.read() as u32,
+            );
+        }
+
+        // render wireframe cubes
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Doodad Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_target,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            render_pass.set_pipeline(&self.wireframe_pipeline);
+            render_pass.set_bind_group(0, &wire_cube_bind_group, &[]);
+            render_pass.set_bind_group(1, &camera_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.wire_cubes.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(
+                self.wire_cubes.index_buffer.slice(..),
+                wgpu::IndexFormat::Uint32,
+            );
+            render_pass.draw_indexed(
+                0..self.wire_cubes.index_count as u32,
+                0,
+                0..*self.wire_cubes.count.read() as u32,
             );
         }
 

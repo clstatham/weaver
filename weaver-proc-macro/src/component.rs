@@ -151,10 +151,27 @@ pub fn derive_component(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
 
     let field_names = fields
         .iter()
-        .map(|field| field.ident.as_ref().unwrap())
+        .map(|field| field.ident.as_ref().unwrap().to_owned())
+        .collect::<Vec<_>>();
+
+    let field_tys = fields
+        .iter()
+        .map(|field| match &field.ty {
+            syn::Type::Reference(syn::TypeReference { elem, .. }) => match &**elem {
+                syn::Type::Path(syn::TypePath { path, .. }) => {
+                    quote! { &#path }
+                }
+                _ => panic!("Component fields must be references to types"),
+            },
+            syn::Type::Path(syn::TypePath { path, .. }) => {
+                quote! { #path }
+            }
+            _ => panic!("Component fields must be references to types"),
+        })
         .collect::<Vec<_>>();
 
     let gen = quote! {
+        #[allow(unused)]
         impl weaver_ecs::component::Component for #name {
             fn type_name() -> &'static str {
                 stringify!(#name)
@@ -164,6 +181,20 @@ pub fn derive_component(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
                 vec![
                     #(weaver_ecs::component::Data::new(self.#field_names.clone(), Some(stringify!(#field_names)), registry)),*
                 ]
+            }
+
+            fn set_field_by_name(
+                &mut self,
+                name: &str,
+                data: weaver_ecs::component::Data,
+            ) -> anyhow::Result<()> {
+                match name {
+                    #(stringify!(#field_names) => {
+                        self.#field_names = data.get_as::<#field_tys>().ok_or_else(|| weaver_ecs::prelude::anyhow::anyhow!("Field {} is not of type {}", name, stringify!(#field_tys)))?.clone();
+                        Ok(())
+                    })*
+                    _ => Err(weaver_ecs::prelude::anyhow::anyhow!("Field {} does not exist on component {}", name, Self::type_name())),
+                }
             }
 
             fn register_vtable(registry: &std::sync::Arc<weaver_ecs::registry::Registry>) {

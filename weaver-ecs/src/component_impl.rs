@@ -266,6 +266,13 @@ impl<T: Component> Component for Option<T> {
             None => vec![],
         }
     }
+
+    fn set_field_by_name(&mut self, field_name: &str, value: Data) -> anyhow::Result<()> {
+        match self {
+            Some(t) => t.set_field_by_name(field_name, value),
+            None => Ok(()),
+        }
+    }
 }
 
 impl Component for glam::Vec3 {
@@ -285,6 +292,33 @@ impl Component for glam::Vec3 {
             Data::new(self.y, Some("y"), registry),
             Data::new(self.z, Some("z"), registry),
         ]
+    }
+
+    fn set_field_by_name(&mut self, field_name: &str, value: Data) -> anyhow::Result<()> {
+        match field_name {
+            "x" => {
+                let x = value
+                    .get_as::<f32>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.x = *x;
+                Ok(())
+            }
+            "y" => {
+                let y = value
+                    .get_as::<f32>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.y = *y;
+                Ok(())
+            }
+            "z" => {
+                let z = value
+                    .get_as::<f32>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.z = *z;
+                Ok(())
+            }
+            _ => Err(anyhow::anyhow!("Invalid field name")),
+        }
     }
 
     fn register_vtable(registry: &Arc<Registry>) {
@@ -362,6 +396,26 @@ impl Component for glam::Vec2 {
             Data::new(self.x, Some("x"), registry),
             Data::new(self.y, Some("y"), registry),
         ]
+    }
+
+    fn set_field_by_name(&mut self, field_name: &str, value: Data) -> anyhow::Result<()> {
+        match field_name {
+            "x" => {
+                let x = value
+                    .get_as::<f32>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.x = *x;
+                Ok(())
+            }
+            "y" => {
+                let y = value
+                    .get_as::<f32>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.y = *y;
+                Ok(())
+            }
+            _ => Err(anyhow::anyhow!("Invalid field name")),
+        }
     }
 
     fn register_vtable(registry: &Arc<Registry>) {
@@ -447,6 +501,40 @@ impl Component for glam::Vec4 {
         ]
     }
 
+    fn set_field_by_name(&mut self, field_name: &str, value: Data) -> anyhow::Result<()> {
+        match field_name {
+            "x" => {
+                let x = value
+                    .get_as::<f32>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.x = *x;
+                Ok(())
+            }
+            "y" => {
+                let y = value
+                    .get_as::<f32>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.y = *y;
+                Ok(())
+            }
+            "z" => {
+                let z = value
+                    .get_as::<f32>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.z = *z;
+                Ok(())
+            }
+            "w" => {
+                let w = value
+                    .get_as::<f32>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.w = *w;
+                Ok(())
+            }
+            _ => Err(anyhow::anyhow!("Invalid field name")),
+        }
+    }
+
     fn register_vtable(registry: &Arc<Registry>) {
         let id = registry.get_static::<Self>();
         if registry.vtable_registered(id) {
@@ -528,6 +616,40 @@ impl Component for glam::Quat {
             Data::new(self.z, Some("z"), registry),
             Data::new(self.w, Some("w"), registry),
         ]
+    }
+
+    fn set_field_by_name(&mut self, field_name: &str, value: Data) -> anyhow::Result<()> {
+        match field_name {
+            "x" => {
+                let x = value
+                    .get_as::<f32>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.x = *x;
+                Ok(())
+            }
+            "y" => {
+                let y = value
+                    .get_as::<f32>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.y = *y;
+                Ok(())
+            }
+            "z" => {
+                let z = value
+                    .get_as::<f32>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.z = *z;
+                Ok(())
+            }
+            "w" => {
+                let w = value
+                    .get_as::<f32>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.w = *w;
+                Ok(())
+            }
+            _ => Err(anyhow::anyhow!("Invalid field name")),
+        }
     }
 
     fn register_vtable(registry: &Arc<Registry>) {
@@ -615,6 +737,40 @@ impl Component for glam::Mat4 {
             Data::new(self.z_axis, Some("z_axis"), registry),
             Data::new(self.w_axis, Some("w_axis"), registry),
         ]
+    }
+
+    fn set_field_by_name(&mut self, field_name: &str, value: Data) -> anyhow::Result<()> {
+        match field_name {
+            "x_axis" => {
+                let x_axis = value
+                    .get_as::<glam::Vec4>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.x_axis = *x_axis;
+                Ok(())
+            }
+            "y_axis" => {
+                let y_axis = value
+                    .get_as::<glam::Vec4>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.y_axis = *y_axis;
+                Ok(())
+            }
+            "z_axis" => {
+                let z_axis = value
+                    .get_as::<glam::Vec4>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.z_axis = *z_axis;
+                Ok(())
+            }
+            "w_axis" => {
+                let w_axis = value
+                    .get_as::<glam::Vec4>()
+                    .ok_or(anyhow::anyhow!("Invalid field type"))?;
+                self.w_axis = *w_axis;
+                Ok(())
+            }
+            _ => Err(anyhow::anyhow!("Invalid field name")),
+        }
     }
 
     fn register_vtable(registry: &Arc<Registry>) {

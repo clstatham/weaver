@@ -41,12 +41,30 @@ pub fn traverse_tree(
     let children = graph.get_children(entity);
     ui.vertical(|ui| {
         let collapsing = egui::CollapsingHeader::new(&entity_name).show(ui, |ui| {
-            for child in children {
-                traverse_tree(world, commands, child, graph, state, ui);
-            }
             ui.visuals_mut().override_text_color = None;
             for component in world.components_iter(&entity) {
-                ui.label(component.name());
+                if let Some(selected) = state.selected_component {
+                    if selected == component.type_id() && entity == state.selected_entity.unwrap() {
+                        ui.visuals_mut().override_text_color = Some(egui::Color32::LIGHT_BLUE);
+                    }
+                }
+                let component_header =
+                    egui::CollapsingHeader::new(component.name()).show(ui, |ui| {
+                        if let Some(fields) = component.fields() {
+                            for field in fields.iter() {
+                                ui.label(field.name());
+                            }
+                        }
+                    });
+                if component_header.header_response.secondary_clicked() {
+                    state.selected_entity = Some(entity);
+                    state.selected_component = Some(component.type_id());
+                }
+
+                ui.visuals_mut().override_text_color = None;
+            }
+            for child in children {
+                traverse_tree(world, commands, child, graph, state, ui);
             }
         });
         if collapsing.header_response.secondary_clicked() {
@@ -69,6 +87,7 @@ impl System for SceneTreeUi {
             let mut state = world_lock.write_resource::<EditorState>()?;
             let scene_tree = world_lock.read_resource::<EntityGraph>()?;
             scene_tree_ui(&world_lock, &ctx, &mut state, &scene_tree, &mut commands);
+            component_inspector_ui(&world_lock, &ctx, &mut state);
         }
 
         drop(world_lock);
@@ -116,6 +135,246 @@ pub fn scene_tree_ui(
                     }
                 });
             });
+        });
+    });
+}
+
+pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut EditorState) {
+    ctx.draw_if_ready(|ctx| {
+        egui::Window::new("Component Inspector").show(ctx, |ui| {
+            if let Some(entity) = state.selected_entity {
+                if let Some(component) = state.selected_component {
+                    let component = world
+                        .components
+                        .entity_components_iter(entity.id())
+                        .unwrap()
+                        .find(|c| c.type_id() == component)
+                        .unwrap();
+                    ui.label(component.name());
+                    if let Some(fields) = component.fields() {
+                        for field in fields.iter() {
+                            let field_name = field.name();
+                            ui.label(field_name);
+                            if let Some(mut value) = field.get_as_mut::<f32>() {
+                                let mut any_changed = false;
+                                ui.horizontal(|ui| {
+                                    ui.label("value");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut *value)).changed();
+                                });
+                                if any_changed {
+                                    component
+                                        .set_field_by_name(field_name, field.to_owned())
+                                        .unwrap();
+                                }
+                            } else if let Some(mut value) = field.get_as_mut::<i64>() {
+                                let mut any_changed = false;
+                                ui.horizontal(|ui| {
+                                    ui.label("value");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut *value)).changed();
+                                });
+                                if any_changed {
+                                    component
+                                        .set_field_by_name(field_name, field.to_owned())
+                                        .unwrap();
+                                }
+                            } else if let Some(mut value) = field.get_as_mut::<u64>() {
+                                let mut any_changed = false;
+                                ui.horizontal(|ui| {
+                                    ui.label("value");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut *value)).changed();
+                                });
+                                if any_changed {
+                                    component
+                                        .set_field_by_name(field_name, field.to_owned())
+                                        .unwrap();
+                                }
+                            } else if let Some(mut value) = field.get_as_mut::<bool>() {
+                                let mut any_changed = false;
+                                ui.horizontal(|ui| {
+                                    ui.label("value");
+                                    any_changed |=
+                                        ui.add(egui::Checkbox::new(&mut value, "")).changed();
+                                });
+                                if any_changed {
+                                    component
+                                        .set_field_by_name(field_name, field.to_owned())
+                                        .unwrap();
+                                }
+                            } else if let Some(mut value) = field.get_as_mut::<String>() {
+                                let mut any_changed = false;
+                                ui.horizontal(|ui| {
+                                    ui.label("value");
+                                    any_changed |=
+                                        ui.add(egui::TextEdit::singleline(&mut *value)).changed();
+                                });
+                                if any_changed {
+                                    component
+                                        .set_field_by_name(field_name, field.to_owned())
+                                        .unwrap();
+                                }
+                            } else if let Some(mut value) = field.get_as_mut::<Vec3>() {
+                                let mut any_changed = false;
+                                ui.horizontal(|ui| {
+                                    ui.label("x");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut value.x)).changed();
+                                    ui.label("y");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut value.y)).changed();
+                                    ui.label("z");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut value.z)).changed();
+                                });
+                                let (x, y, z) = (value.x, value.y, value.z);
+                                drop(value);
+                                if any_changed {
+                                    field
+                                        .set_field_by_name(
+                                            "x",
+                                            x.into_data(Some("x"), world.registry()),
+                                        )
+                                        .unwrap();
+                                    field
+                                        .set_field_by_name(
+                                            "y",
+                                            y.into_data(Some("y"), world.registry()),
+                                        )
+                                        .unwrap();
+                                    field
+                                        .set_field_by_name(
+                                            "z",
+                                            z.into_data(Some("z"), world.registry()),
+                                        )
+                                        .unwrap();
+                                    component
+                                        .set_field_by_name(field_name, field.to_owned())
+                                        .unwrap();
+                                }
+                            } else if let Some(mut value) = field.get_as_mut::<Vec2>() {
+                                let mut any_changed = false;
+                                ui.horizontal(|ui| {
+                                    ui.label("x");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut value.x)).changed();
+                                    ui.label("y");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut value.y)).changed();
+                                });
+                                let (x, y) = (value.x, value.y);
+                                drop(value);
+                                if any_changed {
+                                    field
+                                        .set_field_by_name(
+                                            "x",
+                                            x.into_data(Some("x"), world.registry()),
+                                        )
+                                        .unwrap();
+                                    field
+                                        .set_field_by_name(
+                                            "y",
+                                            y.into_data(Some("y"), world.registry()),
+                                        )
+                                        .unwrap();
+                                    component
+                                        .set_field_by_name(field_name, field.to_owned())
+                                        .unwrap();
+                                }
+                            } else if let Some(mut value) = field.get_as_mut::<Quat>() {
+                                let mut any_changed = false;
+                                ui.horizontal(|ui| {
+                                    ui.label("x");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut value.x)).changed();
+                                    ui.label("y");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut value.y)).changed();
+                                    ui.label("z");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut value.z)).changed();
+                                    ui.label("w");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut value.w)).changed();
+                                });
+                                let quat = *value;
+                                drop(value);
+                                if any_changed {
+                                    field
+                                        .set_field_by_name(
+                                            "x",
+                                            quat.x.into_data(Some("x"), world.registry()),
+                                        )
+                                        .unwrap();
+                                    field
+                                        .set_field_by_name(
+                                            "y",
+                                            quat.y.into_data(Some("y"), world.registry()),
+                                        )
+                                        .unwrap();
+                                    field
+                                        .set_field_by_name(
+                                            "z",
+                                            quat.z.into_data(Some("z"), world.registry()),
+                                        )
+                                        .unwrap();
+                                    field
+                                        .set_field_by_name(
+                                            "w",
+                                            quat.w.into_data(Some("w"), world.registry()),
+                                        )
+                                        .unwrap();
+                                    component
+                                        .set_field_by_name(field_name, field.to_owned())
+                                        .unwrap();
+                                }
+                            } else if let Some(mut value) = field.get_as_mut::<Color>() {
+                                let mut any_changed = false;
+                                ui.horizontal(|ui| {
+                                    ui.label(field_name);
+                                    ui.label("r");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut value.r)).changed();
+                                    ui.label("g");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut value.g)).changed();
+                                    ui.label("b");
+                                    any_changed |=
+                                        ui.add(egui::DragValue::new(&mut value.b)).changed();
+                                });
+                                let (r, g, b) = (value.r, value.g, value.b);
+                                drop(value);
+                                if any_changed {
+                                    field
+                                        .set_field_by_name(
+                                            "r",
+                                            r.into_data(Some("r"), world.registry()),
+                                        )
+                                        .unwrap();
+                                    field
+                                        .set_field_by_name(
+                                            "g",
+                                            g.into_data(Some("g"), world.registry()),
+                                        )
+                                        .unwrap();
+                                    field
+                                        .set_field_by_name(
+                                            "b",
+                                            b.into_data(Some("b"), world.registry()),
+                                        )
+                                        .unwrap();
+                                    component
+                                        .set_field_by_name(field_name, field.to_owned())
+                                        .unwrap();
+                                }
+                            } else {
+                                ui.label("Unsupported type");
+                            }
+                        }
+                    }
+                }
+            }
         });
     });
 }

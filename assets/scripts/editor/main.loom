@@ -1,6 +1,6 @@
 @startup
 system setup {
-    var res assets: AssetServer;
+    var res assets: AssetServer
 
     let parent = spawn(
         assets.load_mesh("meshes/monkey_2x.glb"),
@@ -17,15 +17,10 @@ system setup {
         Transform.from_translation(vec3(0.0, 0.0, 3.0)),
     )
 
-    add_child(parent, child);
+    add_child(parent, child)
 }
 
 @update
 system update_player {
-    let res time: Time;
-    query player_transforms [var transform: Transform, with[Player]];
-
-    loop player_transforms {
-        transform.rotate(Quat.from_axis_angle(vec3(0.0, 1.0, 0.0), time.delta_seconds * 0.5))
-    }
+    
 }

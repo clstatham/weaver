@@ -36,6 +36,7 @@ impl Doodads {
 #[derive(Debug, Clone, Copy)]
 pub enum Doodad {
     Cube(Cube),
+    WireCube(Cube),
     Cone(Cone),
 }
 
