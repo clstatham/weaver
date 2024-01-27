@@ -162,6 +162,7 @@ pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut Edit
                                     any_changed |=
                                         ui.add(egui::DragValue::new(&mut *value)).changed();
                                 });
+                                drop(value);
                                 if any_changed {
                                     component
                                         .set_field_by_name(field_name, field.to_owned())
@@ -174,6 +175,7 @@ pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut Edit
                                     any_changed |=
                                         ui.add(egui::DragValue::new(&mut *value)).changed();
                                 });
+                                drop(value);
                                 if any_changed {
                                     component
                                         .set_field_by_name(field_name, field.to_owned())
@@ -186,6 +188,7 @@ pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut Edit
                                     any_changed |=
                                         ui.add(egui::DragValue::new(&mut *value)).changed();
                                 });
+                                drop(value);
                                 if any_changed {
                                     component
                                         .set_field_by_name(field_name, field.to_owned())
@@ -198,6 +201,7 @@ pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut Edit
                                     any_changed |=
                                         ui.add(egui::Checkbox::new(&mut value, "")).changed();
                                 });
+                                drop(value);
                                 if any_changed {
                                     component
                                         .set_field_by_name(field_name, field.to_owned())
@@ -210,6 +214,7 @@ pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut Edit
                                     any_changed |=
                                         ui.add(egui::TextEdit::singleline(&mut *value)).changed();
                                 });
+                                drop(value);
                                 if any_changed {
                                     component
                                         .set_field_by_name(field_name, field.to_owned())

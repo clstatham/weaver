@@ -22,5 +22,9 @@ system setup {
 
 @update
 system update_player {
-    
+    let res time: Time
+
+    loop query _ [var t: Transform, with[Player]] {
+        t.rotate(Quat.from_axis_angle(vec3(0.0, 1.0, 0.0), time.delta_seconds))
+    }
 }
