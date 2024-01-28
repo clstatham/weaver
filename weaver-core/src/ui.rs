@@ -123,7 +123,7 @@ impl EguiContext {
     }
 
     pub fn wants_focus(&self) -> bool {
-        self.state.egui_ctx().wants_keyboard_input()
+        self.state.egui_ctx().wants_keyboard_input() || self.state.egui_ctx().wants_pointer_input()
     }
 
     pub fn begin_frame(&mut self, window: &Window) {

@@ -9,16 +9,41 @@ use weaver::{
 };
 
 pub trait EditorAction: Send + Sync + Downcast + 'static {
-    fn begin(&mut self, state: &mut EditorState, world: &World) -> anyhow::Result<()>;
+    fn begin(
+        &mut self,
+        state: &mut EditorState,
+        world: &World,
+        commands: &mut Commands,
+    ) -> anyhow::Result<()>;
     #[allow(unused_variables)]
-    fn update(&mut self, state: &mut EditorState, world: &World) -> anyhow::Result<()> {
+    fn update(
+        &mut self,
+        state: &mut EditorState,
+        world: &World,
+        commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
-    fn end(&mut self, state: &mut EditorState, world: &World) -> anyhow::Result<()>;
-    fn undo(&mut self, state: &mut EditorState, world: &World) -> anyhow::Result<()>;
-    fn redo(&mut self, state: &mut EditorState, world: &World) -> anyhow::Result<()> {
-        self.begin(state, world)?;
-        self.end(state, world)?;
+    fn end(
+        &mut self,
+        state: &mut EditorState,
+        world: &World,
+        commands: &mut Commands,
+    ) -> anyhow::Result<()>;
+    fn undo(
+        &mut self,
+        state: &mut EditorState,
+        world: &World,
+        commands: &mut Commands,
+    ) -> anyhow::Result<()>;
+    fn redo(
+        &mut self,
+        state: &mut EditorState,
+        world: &World,
+        commands: &mut Commands,
+    ) -> anyhow::Result<()> {
+        self.begin(state, world, commands)?;
+        self.end(state, world, commands)?;
         Ok(())
     }
 }
@@ -38,18 +63,33 @@ impl RenameEntity {
 }
 
 impl EditorAction for RenameEntity {
-    fn begin(&mut self, state: &mut EditorState, _world: &World) -> anyhow::Result<()> {
+    fn begin(
+        &mut self,
+        state: &mut EditorState,
+        _world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         self.old_name = state.entity_names.get(&self.entity).cloned();
         Ok(())
     }
 
-    fn end(&mut self, state: &mut EditorState, _world: &World) -> anyhow::Result<()> {
+    fn end(
+        &mut self,
+        state: &mut EditorState,
+        _world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         let new_name = std::mem::take(&mut state.entity_rename_buffer);
         state.entity_names.insert(self.entity, new_name);
         Ok(())
     }
 
-    fn undo(&mut self, state: &mut EditorState, _world: &World) -> anyhow::Result<()> {
+    fn undo(
+        &mut self,
+        state: &mut EditorState,
+        _world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         if let Some(old_name) = &self.old_name {
             state.entity_names.insert(self.entity, old_name.clone());
         } else {
@@ -77,19 +117,34 @@ impl SelectEntity {
 }
 
 impl EditorAction for SelectEntity {
-    fn begin(&mut self, state: &mut EditorState, _world: &World) -> anyhow::Result<()> {
+    fn begin(
+        &mut self,
+        state: &mut EditorState,
+        _world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         self.previous_entity = state.selected_entity;
         self.previous_component = state.selected_component;
         Ok(())
     }
 
-    fn end(&mut self, state: &mut EditorState, _world: &World) -> anyhow::Result<()> {
+    fn end(
+        &mut self,
+        state: &mut EditorState,
+        _world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         state.selected_component = None;
         state.selected_entity = Some(self.entity);
         Ok(())
     }
 
-    fn undo(&mut self, state: &mut EditorState, _world: &World) -> anyhow::Result<()> {
+    fn undo(
+        &mut self,
+        state: &mut EditorState,
+        _world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         state.selected_component = self.previous_component;
         state.selected_entity = self.previous_entity;
         Ok(())
@@ -116,7 +171,12 @@ impl UpdateComponent {
 }
 
 impl EditorAction for UpdateComponent {
-    fn begin(&mut self, _state: &mut EditorState, world: &World) -> anyhow::Result<()> {
+    fn begin(
+        &mut self,
+        _state: &mut EditorState,
+        world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         let query = world.query_dynamic().read_id(self.component).build();
         let data = query.get(self.entity).ok_or(anyhow::anyhow!(
             "Entity {:?} does not have component {:?}",
@@ -128,7 +188,12 @@ impl EditorAction for UpdateComponent {
         Ok(())
     }
 
-    fn end(&mut self, _state: &mut EditorState, world: &World) -> anyhow::Result<()> {
+    fn end(
+        &mut self,
+        _state: &mut EditorState,
+        world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         let query = world.query_dynamic().read_id(self.component).build();
         let data = query.get(self.entity).ok_or(anyhow::anyhow!(
             "Entity {:?} does not have component {:?}",
@@ -140,7 +205,12 @@ impl EditorAction for UpdateComponent {
         Ok(())
     }
 
-    fn undo(&mut self, _state: &mut EditorState, world: &World) -> anyhow::Result<()> {
+    fn undo(
+        &mut self,
+        _state: &mut EditorState,
+        world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         let query = world.query_dynamic().write_id(self.component).build();
         let mut data = query.get(self.entity).ok_or(anyhow::anyhow!(
             "Entity {:?} does not have component {:?}",
@@ -159,7 +229,12 @@ impl EditorAction for UpdateComponent {
         Ok(())
     }
 
-    fn redo(&mut self, _state: &mut EditorState, world: &World) -> anyhow::Result<()> {
+    fn redo(
+        &mut self,
+        _state: &mut EditorState,
+        world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         let query = world.query_dynamic().write_id(self.component).build();
         let mut data = query.get(self.entity).ok_or(anyhow::anyhow!(
             "Entity {:?} does not have component {:?}",
@@ -199,21 +274,166 @@ impl SelectComponent {
 }
 
 impl EditorAction for SelectComponent {
-    fn begin(&mut self, state: &mut EditorState, _world: &World) -> anyhow::Result<()> {
+    fn begin(
+        &mut self,
+        state: &mut EditorState,
+        _world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         self.previous_entity = state.selected_entity;
         self.previous_component = state.selected_component;
         Ok(())
     }
 
-    fn end(&mut self, state: &mut EditorState, _world: &World) -> anyhow::Result<()> {
+    fn end(
+        &mut self,
+        state: &mut EditorState,
+        _world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         state.selected_entity = Some(self.entity);
         state.selected_component = Some(self.component);
         Ok(())
     }
 
-    fn undo(&mut self, state: &mut EditorState, _world: &World) -> anyhow::Result<()> {
+    fn undo(
+        &mut self,
+        state: &mut EditorState,
+        _world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         state.selected_entity = self.previous_entity;
         state.selected_component = self.previous_component;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct Spawn<B: Bundle + Component> {
+    pub(crate) bundle: Option<B>,
+    pub(crate) parent: Option<Entity>,
+    pub(crate) entity: Option<Entity>,
+}
+
+impl<B: Bundle + Component> Spawn<B> {
+    pub fn new(parent: Option<Entity>, bundle: Option<B>) -> Self {
+        Self {
+            parent,
+            bundle,
+            entity: None,
+        }
+    }
+}
+
+impl<B: Bundle + Component> EditorAction for Spawn<B> {
+    fn begin(
+        &mut self,
+        _state: &mut EditorState,
+        _world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn end(
+        &mut self,
+        _state: &mut EditorState,
+        _world: &World,
+        commands: &mut Commands,
+    ) -> anyhow::Result<()> {
+        let entity = if let Some(bundle) = self.bundle.take() {
+            commands.spawn(bundle)
+        } else {
+            commands.spawn(())
+        };
+        if let Some(parent) = self.parent {
+            commands.add_child(parent, entity);
+        }
+        self.entity = Some(entity);
+        Ok(())
+    }
+
+    fn undo(
+        &mut self,
+        _state: &mut EditorState,
+        _world: &World,
+        commands: &mut Commands,
+    ) -> anyhow::Result<()> {
+        if let Some(entity) = self.entity {
+            commands.despawn(entity);
+        }
+        Ok(())
+    }
+
+    fn redo(
+        &mut self,
+        _state: &mut EditorState,
+        _world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
+        todo!("redo spawn")
+    }
+}
+
+#[derive(Debug)]
+pub struct Despawn {
+    pub(crate) entity: Entity,
+    pub(crate) parent: Option<Entity>,
+    pub(crate) components: Option<Vec<Data>>,
+}
+
+impl Despawn {
+    pub fn new(entity: Entity) -> Self {
+        Self {
+            entity,
+            parent: None,
+            components: None,
+        }
+    }
+}
+
+impl EditorAction for Despawn {
+    fn begin(
+        &mut self,
+        _state: &mut EditorState,
+        _world: &World,
+        _commands: &mut Commands,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn end(
+        &mut self,
+        _state: &mut EditorState,
+        world: &World,
+        commands: &mut Commands,
+    ) -> anyhow::Result<()> {
+        let entity_graph = world.read_resource::<EntityGraph>()?;
+        self.parent = entity_graph.get_parent(self.entity);
+        let components = world
+            .components_iter(&self.entity)
+            .cloned()
+            .collect::<Vec<_>>();
+        self.components = Some(components);
+        commands.despawn(self.entity);
+        Ok(())
+    }
+
+    fn undo(
+        &mut self,
+        _state: &mut EditorState,
+        _world: &World,
+        commands: &mut Commands,
+    ) -> anyhow::Result<()> {
+        let entity = commands.spawn(());
+        if let Some(parent) = self.parent {
+            commands.add_child(parent, entity);
+        }
+        if let Some(components) = self.components.take() {
+            for component in components {
+                commands.add_dynamic_component(entity, component.to_owned());
+            }
+        }
         Ok(())
     }
 }
@@ -252,16 +472,24 @@ impl EditorState {
         }
     }
 
-    pub fn perform_action<T: EditorAction>(&mut self, action: T) -> anyhow::Result<()> {
+    pub fn perform_action<T: EditorAction>(
+        &mut self,
+        action: T,
+        commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         let action = Box::new(action);
-        self.begin_action(action)?;
-        self.end_action::<T>()?;
+        self.begin_action(action, commands)?;
+        self.end_action::<T>(commands)?;
         Ok(())
     }
 
-    pub fn begin_action(&mut self, mut action: Box<dyn EditorAction>) -> anyhow::Result<()> {
+    pub fn begin_action(
+        &mut self,
+        mut action: Box<dyn EditorAction>,
+        commands: &mut Commands,
+    ) -> anyhow::Result<()> {
         let world = self.world.clone();
-        action.begin(self, &world.read())?;
+        action.begin(self, &world.read(), commands)?;
         if self
             .actions_in_progress
             .insert((*action).type_id(), action)
@@ -276,35 +504,35 @@ impl EditorState {
         self.actions_in_progress.get(&TypeId::of::<T>()).is_some()
     }
 
-    pub fn end_action<T: EditorAction>(&mut self) -> anyhow::Result<()> {
+    pub fn end_action<T: EditorAction>(&mut self, commands: &mut Commands) -> anyhow::Result<()> {
         let world = self.world.clone();
         if let Some(mut action) = self.actions_in_progress.remove(&TypeId::of::<T>()) {
-            action.end(self, &world.read())?;
+            action.end(self, &world.read(), commands)?;
             self.action_history.push(action);
         }
         Ok(())
     }
 
-    fn update_actions(&mut self, world: &World) -> anyhow::Result<()> {
+    fn update_actions(&mut self, world: &World, commands: &mut Commands) -> anyhow::Result<()> {
         let mut actions = std::mem::take(&mut self.actions_in_progress);
         for (type_id, mut action) in actions.drain() {
-            action.update(self, world)?;
+            action.update(self, world, commands)?;
             self.actions_in_progress.insert(type_id, action);
         }
         Ok(())
     }
 
-    pub fn undo(&mut self, world: &World) -> anyhow::Result<()> {
+    pub fn undo(&mut self, world: &World, commands: &mut Commands) -> anyhow::Result<()> {
         if let Some(mut action) = self.action_history.pop() {
-            action.undo(self, world)?;
+            action.undo(self, world, commands)?;
             self.undo_history.push(action);
         }
         Ok(())
     }
 
-    pub fn redo(&mut self, world: &World) -> anyhow::Result<()> {
+    pub fn redo(&mut self, world: &World, commands: &mut Commands) -> anyhow::Result<()> {
         if let Some(mut action) = self.undo_history.pop() {
-            action.redo(self, world)?;
+            action.redo(self, world, commands)?;
             self.action_history.push(action);
         }
         Ok(())
@@ -322,10 +550,10 @@ impl EditorState {
         self.entity_names.get(&entity)
     }
 
-    pub fn begin_rename_entity(&mut self, entity: Entity) {
+    pub fn begin_rename_entity(&mut self, entity: Entity, commands: &mut Commands) {
         self.show_rename_entity = true;
         self.entity_rename_buffer = self.entity_name(entity).cloned().unwrap_or_default();
-        self.begin_action(Box::new(RenameEntity::new(entity)))
+        self.begin_action(Box::new(RenameEntity::new(entity)), commands)
             .unwrap();
     }
 }
@@ -334,16 +562,23 @@ pub struct EditorActions;
 
 impl System for EditorActions {
     fn run(&self, world: std::sync::Arc<RwLock<World>>, _input: &[&Data]) -> anyhow::Result<()> {
-        let world = world.read();
-        let mut state = world.write_resource::<EditorState>()?;
-        let input = world.read_resource::<Input>()?;
-        if input.key_just_pressed(KeyCode::KeyZ) && input.key_pressed(KeyCode::ControlLeft) {
-            state.undo(&world)?;
+        let mut commands = Commands::new(world.clone());
+        let world_lock = world.read();
+        {
+            let mut state = world_lock.write_resource::<EditorState>()?;
+            let input = world_lock.read_resource::<Input>()?;
+            if input.key_just_pressed(KeyCode::KeyZ) && input.key_pressed(KeyCode::ControlLeft) {
+                state.undo(&world_lock, &mut commands)?;
+            }
+            if input.key_just_pressed(KeyCode::KeyY) && input.key_pressed(KeyCode::ControlLeft) {
+                state.redo(&world_lock, &mut commands)?;
+            }
+            state.update_actions(&world_lock, &mut commands)?;
         }
-        if input.key_just_pressed(KeyCode::KeyY) && input.key_pressed(KeyCode::ControlLeft) {
-            state.redo(&world)?;
-        }
-        state.update_actions(&world)?;
+        drop(world_lock);
+        let mut world = world.write();
+        commands.finalize(&mut world);
+
         Ok(())
     }
 
@@ -369,7 +604,11 @@ impl System for EditorActions {
 }
 
 #[system(EditorStateUi())]
-pub fn editor_state_ui(mut state: ResMut<EditorState>, ctx: Res<EguiContext>) {
+pub fn editor_state_ui(
+    mut state: ResMut<EditorState>,
+    ctx: Res<EguiContext>,
+    mut commands: Commands,
+) {
     ctx.draw_if_ready(|ctx| {
         if state.show_rename_entity {
             egui::Window::new("Rename Entity")
@@ -382,7 +621,7 @@ pub fn editor_state_ui(mut state: ResMut<EditorState>, ctx: Res<EguiContext>) {
                         let response = ui.text_edit_singleline(&mut state.entity_rename_buffer);
                         if response.lost_focus() {
                             state.show_rename_entity = false;
-                            state.end_action::<RenameEntity>().unwrap();
+                            state.end_action::<RenameEntity>(&mut commands).unwrap();
                         }
                     });
                 });
@@ -423,30 +662,17 @@ pub fn selected_entity_doodads(
 
 #[system(PickEntity())]
 pub fn pick_entity(
+    mut commands: Commands,
     mut state: ResMut<EditorState>,
     renderer: Res<Renderer>,
     input: Res<Input>,
-    mut doodads: ResMut<Doodads>,
     camera: Query<&Camera>,
     meshes_transforms: Query<(Entity, &Mesh, &GlobalTransform)>,
 ) {
     let camera = camera.iter().next().unwrap();
-    if input.mouse_button_pressed(MouseButton::Left) {
+    if input.mouse_button_just_pressed(MouseButton::Left) {
         let mouse_pos = input.mouse_position().unwrap();
-        let screen_size = renderer.screen_size();
-        let ray = camera.screen_to_ray(
-            mouse_pos,
-            Vec2::new(screen_size.0 as f32, screen_size.1 as f32),
-        );
-
-        let ray_rotation = Quat::from_rotation_arc(Vec3::Z, ray.direction);
-
-        doodads.push(Doodad::WireCube(Cube::new(
-            ray.origin,
-            ray_rotation,
-            Vec3::new(0.1, 0.1, 10.0),
-            Color::BLUE,
-        )));
+        let ray = camera.screen_to_ray(mouse_pos, renderer.screen_size());
 
         // check for intersection with entity
         let mut closest_entity = None;
@@ -455,7 +681,7 @@ pub fn pick_entity(
             let inter = mesh
                 .bounding_sphere()
                 .transformed(*transform)
-                .intersect_ray(ray.origin, ray.direction);
+                .intersect_ray(ray);
             if let Some(inter) = inter {
                 let distance = (inter - ray.origin).length();
                 if distance < closest_distance {
@@ -466,7 +692,9 @@ pub fn pick_entity(
         }
 
         if let Some(entity) = closest_entity {
-            state.perform_action(SelectEntity::new(entity)).unwrap();
+            state
+                .perform_action(SelectEntity::new(entity), &mut commands)
+                .unwrap();
         }
     }
 }

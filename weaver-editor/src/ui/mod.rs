@@ -8,7 +8,7 @@ use weaver::{
     prelude::*,
 };
 
-use crate::state::{EditorState, SelectComponent, SelectEntity, UpdateComponent};
+use crate::state::{Despawn, EditorState, SelectComponent, SelectEntity, Spawn, UpdateComponent};
 
 pub mod syntax_highlighting;
 
@@ -44,10 +44,64 @@ pub fn traverse_tree(
         }
     };
     let children = graph.get_children(entity);
+    let mut parents_to_selected = vec![];
+    if let Some(selected) = state.selected_entity() {
+        parents_to_selected.extend(graph.get_all_parents(selected));
+        parents_to_selected.push(selected);
+    }
     ui.vertical(|ui| {
-        let collapsing = egui::CollapsingHeader::new(&entity_name).show(ui, |ui| {
+        let id = ui.make_persistent_id(entity_name.clone());
+        let collapsing = egui::collapsing_header::CollapsingState::load_with_default_open(
+            ui.ctx(),
+            id,
+            parents_to_selected.contains(&entity),
+        )
+        .show_header(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(entity_name);
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let despawn_button = egui::Button::new(
+                        egui::RichText::new("despawn").color(ui.visuals().extreme_bg_color),
+                    )
+                    .fill(ui.visuals().warn_fg_color);
+                    if ui.add(despawn_button).clicked() {
+                        state
+                            .perform_action(Despawn::new(entity), commands)
+                            .unwrap();
+                    }
+
+                    ui.add(egui::Separator::default().vertical());
+
+                    if ui.button("+sibling").clicked() {
+                        state
+                            .perform_action(
+                                Spawn::<()>::new(graph.get_parent(entity), None),
+                                commands,
+                            )
+                            .unwrap();
+                    }
+
+                    if ui.button("+child").clicked() {
+                        state
+                            .perform_action(Spawn::<()>::new(Some(entity), None), commands)
+                            .unwrap();
+                    }
+
+                    ui.add(egui::Separator::default().vertical());
+
+                    if ui.button("rename").clicked() {
+                        state.begin_rename_entity(entity, commands);
+                    }
+                });
+            });
+        })
+        .body(|ui| {
             ui.visuals_mut().override_text_color = None;
             for component in world.components_iter(&entity) {
+                if component.type_id() == world.registry().get_static::<()>() {
+                    continue;
+                }
                 if let Some(selected) = state.selected_component() {
                     if selected == component.type_id() && entity == state.selected_entity().unwrap()
                     {
@@ -64,7 +118,7 @@ pub fn traverse_tree(
                     });
                 if component_header.header_response.secondary_clicked() {
                     state
-                        .perform_action(SelectComponent::new(entity, component.type_id()))
+                        .perform_action(SelectComponent::new(entity, component.type_id()), commands)
                         .unwrap();
                 }
 
@@ -74,16 +128,18 @@ pub fn traverse_tree(
                 traverse_tree(world, commands, child, graph, state, ui);
             }
         });
-        if collapsing.header_response.secondary_clicked() {
-            state.perform_action(SelectEntity::new(entity)).unwrap();
+        if collapsing.0.secondary_clicked() {
+            state
+                .perform_action(SelectEntity::new(entity), commands)
+                .unwrap();
         }
         if collapsing
-            .header_response
+            .0
             .double_clicked_by(egui::PointerButton::Secondary)
         {
-            state.begin_rename_entity(entity);
+            state.begin_rename_entity(entity, commands);
         }
-        if collapsing.header_response.middle_clicked() && entity != Entity::PLACEHOLDER {
+        if collapsing.0.middle_clicked() && entity != Entity::PLACEHOLDER {
             commands.despawn_recursive(entity);
         }
     });
@@ -100,7 +156,7 @@ impl System for SceneTreeUi {
             let mut state = world_lock.write_resource::<EditorState>()?;
             let scene_tree = world_lock.read_resource::<EntityGraph>()?;
             scene_tree_ui(&world_lock, &ctx, &mut state, &scene_tree, &mut commands);
-            component_inspector_ui(&world_lock, &ctx, &mut state);
+            component_inspector_ui(&world_lock, &ctx, &mut state, &mut commands);
         }
 
         drop(world_lock);
@@ -142,33 +198,46 @@ pub fn scene_tree_ui(
     ctx.draw_if_ready(|ctx| {
         egui::Window::new("Scene Tree").show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
-                egui::CollapsingHeader::new("Root").show(ui, |ui| {
-                    for root in scene_tree.roots() {
-                        traverse_tree(world, commands, root, scene_tree, state, ui);
-                    }
-                });
+                egui::CollapsingHeader::new("Root")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        for root in scene_tree.roots() {
+                            traverse_tree(world, commands, root, scene_tree, state, ui);
+                        }
+                    });
             });
         });
     });
 }
 
-pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut EditorState) {
+pub fn component_inspector_ui(
+    world: &World,
+    ctx: &EguiContext,
+    state: &mut EditorState,
+    commands: &mut Commands,
+) {
     ctx.draw_if_ready(|ctx| {
         egui::Window::new("Component Inspector").show(ctx, |ui| {
             if let Some(entity) = state.selected_entity() {
                 if let Some(component) = state.selected_component() {
-                    let component = world
-                        .components
-                        .entity_components_iter(entity.id())
-                        .unwrap()
-                        .find(|c| c.type_id() == component)
-                        .unwrap();
+                    let components = world.components.entity_components_iter(entity.id());
+                    if components.is_none() {
+                        return;
+                    }
+                    let component = components.unwrap().find(|c| c.type_id() == component);
+                    if component.is_none() {
+                        return;
+                    }
+                    let component = component.unwrap();
                     ui.label(component.name());
                     if let Some(fields) = component.fields() {
                         let mut any_clicked = false;
                         let mut any_released = false;
                         let mut any_changed = false;
                         for field in fields.iter() {
+                            if field.type_id() == world.registry().get_static::<()>() {
+                                continue;
+                            }
                             let field_name = field.name();
                             ui.horizontal(|ui| {
                                 ui.label(format!("{}:", field_name));
@@ -330,18 +399,21 @@ pub fn component_inspector_ui(world: &World, ctx: &EguiContext, state: &mut Edit
 
                         if any_clicked {
                             state
-                                .begin_action(Box::new(UpdateComponent::new(
-                                    entity,
-                                    component.type_id(),
-                                )))
+                                .begin_action(
+                                    Box::new(UpdateComponent::new(entity, component.type_id())),
+                                    commands,
+                                )
                                 .unwrap();
                         }
                         if any_released {
-                            state.end_action::<UpdateComponent>().unwrap();
+                            state.end_action::<UpdateComponent>(commands).unwrap();
                         }
                         if any_changed && !state.action_in_progress::<UpdateComponent>() {
                             state
-                                .perform_action(UpdateComponent::new(entity, component.type_id()))
+                                .perform_action(
+                                    UpdateComponent::new(entity, component.type_id()),
+                                    commands,
+                                )
                                 .unwrap();
                         }
                     }

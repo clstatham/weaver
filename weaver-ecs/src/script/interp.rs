@@ -255,7 +255,7 @@ impl InterpreterContext {
                     _ => bail!(call.args[1].span, "Invalid argument: expected entity"),
                 };
 
-                let mut world = env.world.write();
+                let world = env.world.read();
                 world.add_relation(&parent, &child);
 
                 Ok(self.alloc_value(None, Value::Void))

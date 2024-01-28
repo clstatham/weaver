@@ -43,9 +43,9 @@ impl BoundingSphere {
             <= (self.radius + other.radius) * (self.radius + other.radius)
     }
 
-    pub fn intersect_ray(&self, origin: glam::Vec3, direction: glam::Vec3) -> Option<f32> {
-        let l = self.center - origin;
-        let tca = l.dot(direction);
+    pub fn intersect_ray(&self, ray: Ray) -> Option<f32> {
+        let l = self.center - ray.origin;
+        let tca = l.dot(ray.direction);
         let d2 = l.dot(l) - tca * tca;
 
         if d2 > self.radius * self.radius {

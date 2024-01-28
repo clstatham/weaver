@@ -542,12 +542,17 @@ impl Components {
         self.archetypes.push(archetype);
     }
 
-    pub fn despawn(&mut self, entity: DynamicId) {
-        let archetype = self.entity_archetype_mut(entity).unwrap();
+    pub fn despawn(&mut self, entity: DynamicId) -> bool {
+        let archetype = self.entity_archetype_mut(entity);
+        if archetype.is_none() {
+            return false;
+        }
+        let archetype = archetype.unwrap();
         archetype.remove_entity(entity);
         self.living_entities.remove(&entity);
         *self.entity_generations.get_mut(&entity).unwrap() += 1;
         self.entity_archetypes.remove(&entity);
+        true
     }
 
     pub fn respawn(&mut self, entity: DynamicId) -> Entity {
@@ -614,23 +619,19 @@ impl Components {
         })
     }
 
-    pub fn split(&self) -> TemporaryComponents {
-        let mut components = TemporaryComponents {
-            components: Components::new(),
-        };
-
+    pub fn split(&self) -> Components {
+        let mut components = Components::new();
         let registry = self.registry.split();
 
-        components.components.registry = Arc::new(registry);
+        components.registry = Arc::new(registry);
 
         components
     }
 
-    pub fn merge(&mut self, mut other: TemporaryComponents) {
-        self.registry.merge(&other.components.registry);
+    pub fn merge(&mut self, mut other: Components) {
+        self.registry.merge(&other.registry);
 
         for (id, entity) in other
-            .components
             .living_entities
             .iter()
             .map(|(id, entity)| (*id, *entity))
@@ -640,7 +641,7 @@ impl Components {
                 self.living_entities.insert(id, entity);
                 self.entity_generations.insert(id, entity.generation());
 
-                let archetype = other.components.entity_archetype_mut(id).unwrap();
+                let archetype = other.entity_archetype_mut(id).unwrap();
 
                 let components = archetype.component_drain(id).collect::<Vec<_>>();
 

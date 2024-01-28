@@ -25,8 +25,7 @@ fn main() -> anyhow::Result<()> {
     app.add_system_to_stage(ui::SceneTreeUi, SystemStage::PostUpdate);
     app.add_system_to_stage(ui::ScriptUpdateUi, SystemStage::PostUpdate);
     app.add_system_to_stage(state::EditorStateUi, SystemStage::PostUpdate);
-
-    app.add_system_to_stage(state::PickEntity, SystemStage::PostRender);
+    app.add_system_to_stage(state::PickEntity, SystemStage::PostUpdate);
 
     app.add_script("assets/scripts/editor/main.loom");
 

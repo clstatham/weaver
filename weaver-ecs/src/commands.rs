@@ -1,56 +1,139 @@
-use std::fmt::Debug;
-use std::sync::Arc;
+use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 
 use crate as weaver_ecs;
-use crate::prelude::EntityGraph;
-use crate::storage::TemporaryComponents;
-use crate::{bundle::Bundle, entity::Entity, world::World};
+use crate::component::Data;
+use crate::prelude::Component;
+
+use crate::storage::Components;
+use crate::{bundle::Bundle, entity::Entity, prelude::EntityGraph, world::World};
 use parking_lot::RwLock;
-use weaver_proc_macro::Component;
+
+pub enum Command {
+    Despawn(Entity),
+    DespawnRecursive(Entity),
+    AddChild(Entity, Entity),
+    RemoveChild(Entity, Entity),
+    AddSibling(Entity, Entity),
+    RemoveSibling(Entity, Entity),
+}
 
 #[derive(Component)]
 pub struct Commands {
-    created_components: TemporaryComponents,
-    despawned_entities: Vec<Entity>,
-    recursive_despawned_entities: Vec<Entity>,
+    components: Components,
+    entity_graph: EntityGraph,
+    tape: VecDeque<Command>,
 }
 
 impl Commands {
     pub fn new(world: Arc<RwLock<World>>) -> Self {
+        let components = world.read().components.split();
+        let entity_graph = world.read().read_resource::<EntityGraph>().unwrap().clone();
         Self {
-            created_components: world.read().components.split(),
-            despawned_entities: Vec::new(),
-            recursive_despawned_entities: Vec::new(),
+            components,
+            entity_graph,
+            tape: VecDeque::new(),
         }
     }
 
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
-        bundle.build(&mut self.created_components.components)
+        let entity = self.components.build(bundle);
+        self.entity_graph.add_entity(entity);
+        entity
+    }
+
+    pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
+        self.components.add_component(&entity, component, None);
+    }
+
+    pub fn add_dynamic_component(&mut self, entity: Entity, component: Data) {
+        self.components.add_dynamic_component(&entity, component);
     }
 
     pub fn despawn(&mut self, entity: Entity) {
-        self.despawned_entities.push(entity);
+        if !self.components.despawn(entity.id()) {
+            self.tape.push_back(Command::Despawn(entity));
+        } else {
+            self.entity_graph.remove_entity(entity);
+        }
+    }
+
+    fn despawn_recursive_inner(&mut self, entity: Entity) -> bool {
+        if !self.components.despawn(entity.id()) {
+            self.tape.push_back(Command::DespawnRecursive(entity));
+            return false;
+        }
+        for child in self.entity_graph.get_children(entity) {
+            self.despawn_recursive_inner(child);
+        }
+        true
     }
 
     pub fn despawn_recursive(&mut self, entity: Entity) {
-        self.recursive_despawned_entities.push(entity);
+        if !self.despawn_recursive_inner(entity) {
+            self.tape.push_back(Command::DespawnRecursive(entity));
+        } else {
+            self.entity_graph.remove_entity(entity);
+        }
     }
 
-    pub fn finalize(self, world: &mut World) {
-        for entity in self.created_components.components.living_entities() {
+    pub fn add_child(&mut self, parent: Entity, child: Entity) {
+        self.tape.push_back(Command::AddChild(parent, child));
+    }
+
+    pub fn remove_child(&mut self, parent: Entity, child: Entity) {
+        self.tape.push_back(Command::RemoveChild(parent, child));
+    }
+
+    pub fn add_sibling(&mut self, sibling: Entity, entity: Entity) {
+        self.tape.push_back(Command::AddSibling(sibling, entity));
+    }
+
+    pub fn remove_sibling(&mut self, sibling: Entity, entity: Entity) {
+        self.tape.push_back(Command::RemoveSibling(sibling, entity));
+    }
+
+    pub fn finalize(mut self, world: &mut World) {
+        world.components.merge(self.components);
+        for entity in self.entity_graph.graph.node_weights() {
             world
                 .write_resource::<EntityGraph>()
                 .unwrap()
                 .add_entity(*entity);
         }
-        world.components.merge(self.created_components);
 
-        for entity in self.despawned_entities {
-            world.despawn(entity);
-        }
-
-        for entity in self.recursive_despawned_entities {
-            world.despawn_recursive(entity);
+        while let Some(command) = self.tape.pop_front() {
+            match command {
+                Command::Despawn(entity) => {
+                    world.despawn(entity);
+                }
+                Command::DespawnRecursive(entity) => {
+                    world.despawn_recursive(entity);
+                }
+                Command::AddChild(parent, child) => {
+                    world
+                        .write_resource::<EntityGraph>()
+                        .unwrap()
+                        .add_child(parent, child);
+                }
+                Command::RemoveChild(parent, child) => {
+                    world
+                        .write_resource::<EntityGraph>()
+                        .unwrap()
+                        .remove_child(parent, child);
+                }
+                Command::AddSibling(sibling, entity) => {
+                    world
+                        .write_resource::<EntityGraph>()
+                        .unwrap()
+                        .add_sibling(sibling, entity);
+                }
+                Command::RemoveSibling(sibling, entity) => {
+                    world
+                        .write_resource::<EntityGraph>()
+                        .unwrap()
+                        .remove_sibling(sibling, entity);
+                }
+            }
         }
     }
 }

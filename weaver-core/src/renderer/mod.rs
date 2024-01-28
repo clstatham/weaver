@@ -353,8 +353,8 @@ impl Renderer {
         }
     }
 
-    pub fn screen_size(&self) -> (u32, u32) {
-        (self.config.width, self.config.height)
+    pub fn screen_size(&self) -> glam::Vec2 {
+        glam::Vec2::new(self.config.width as f32, self.config.height as f32)
     }
 
     pub fn device(&self) -> &Arc<wgpu::Device> {

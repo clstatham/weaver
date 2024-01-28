@@ -123,9 +123,9 @@ impl Default for Transform {
 #[method(get_translation = "fn(&Self) -> glam::Vec3")]
 #[method(get_rotation = "fn(&Self) -> glam::Quat")]
 #[method(get_scale = "fn(&Self) -> glam::Vec3")]
-#[method(set_translation = "fn(&mut Self, translation: glam::Vec3)")]
-#[method(set_rotation = "fn(&mut Self, rotation: glam::Quat)")]
-#[method(set_scale = "fn(&mut Self, scale: glam::Vec3)")]
+#[method(set_translation = "fn(&mut Self, translation: glam::Vec3) -> Self")]
+#[method(set_rotation = "fn(&mut Self, rotation: glam::Quat) -> Self")]
+#[method(set_scale = "fn(&mut Self, scale: glam::Vec3) -> Self")]
 #[repr(C)]
 pub struct GlobalTransform {
     pub matrix: glam::Mat4,

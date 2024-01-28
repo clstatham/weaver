@@ -59,7 +59,7 @@ impl Component for Entity {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct EntityGraph {
     pub graph: StableDiGraph<Entity, ()>,
     indices_to_entities: FxHashMap<NodeIndex, Entity>,
@@ -89,7 +89,21 @@ impl EntityGraph {
         }
     }
 
-    pub fn add_relation(&mut self, parent: Entity, child: Entity) -> bool {
+    pub fn add_sibling(&mut self, sibling: Entity, child: Entity) -> bool {
+        if let Some(parent) = self.get_parent(child) {
+            self.add_child(parent, sibling)
+        } else {
+            false
+        }
+    }
+
+    pub fn remove_sibling(&mut self, sibling: Entity, child: Entity) {
+        if let Some(parent) = self.get_parent(child) {
+            self.remove_child(parent, sibling);
+        }
+    }
+
+    pub fn add_child(&mut self, parent: Entity, child: Entity) -> bool {
         if let Some(parent_id) = self.entities_to_indices.get(&parent).copied() {
             if let Some(child_id) = self.entities_to_indices.get(&child).copied() {
                 if self.graph.contains_edge(parent_id, child_id) {
@@ -135,7 +149,7 @@ impl EntityGraph {
         }
     }
 
-    pub fn remove_relation(&mut self, parent: Entity, child: Entity) {
+    pub fn remove_child(&mut self, parent: Entity, child: Entity) {
         if let Some(parent_id) = self.entities_to_indices.get(&parent) {
             if let Some(child_id) = self.entities_to_indices.get(&child) {
                 let edges = self
@@ -191,6 +205,15 @@ impl EntityGraph {
         }
     }
 
+    pub fn get_all_parents(&self, mut child: Entity) -> Vec<Entity> {
+        let mut parents = Vec::new();
+        while let Some(parent) = self.get_parent(child) {
+            child = parent;
+            parents.push(parent);
+        }
+        parents
+    }
+
     pub fn remove_entity(&mut self, entity: Entity) {
         if let Some(entity_id) = self.entities_to_indices.remove(&entity) {
             let edges = self
@@ -203,25 +226,6 @@ impl EntityGraph {
             }
             self.graph.remove_node(entity_id);
             self.indices_to_entities.remove(&entity_id);
-        }
-    }
-
-    pub fn get_all_parents(&self, child: Entity) -> Vec<Entity> {
-        if let Some(child_id) = self.entities_to_indices.get(&child) {
-            let mut parents = Vec::new();
-            let mut stack = vec![*child_id];
-            while let Some(id) = stack.pop() {
-                for parent_id in self
-                    .graph
-                    .neighbors_directed(id, petgraph::Direction::Incoming)
-                {
-                    stack.push(parent_id);
-                    parents.push(self.indices_to_entities.get(&parent_id).copied().unwrap());
-                }
-            }
-            parents
-        } else {
-            Vec::new()
         }
     }
 

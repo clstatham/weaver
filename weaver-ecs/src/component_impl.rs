@@ -47,6 +47,7 @@ impl Component for () {
         "()"
     }
 }
+
 impl Component for bool {
     fn type_name() -> &'static str
     where

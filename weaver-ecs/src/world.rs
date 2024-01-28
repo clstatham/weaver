@@ -90,9 +90,9 @@ impl World {
         self.components.add_dynamic_component(entity, component);
     }
 
-    pub fn add_relation(&mut self, parent: &Entity, child: &Entity) -> bool {
+    pub fn add_relation(&self, parent: &Entity, child: &Entity) -> bool {
         let mut graph = self.write_resource::<EntityGraph>().unwrap();
-        graph.add_relation(*parent, *child)
+        graph.add_child(*parent, *child)
     }
 
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
@@ -348,7 +348,7 @@ impl World {
         self.components.registry()
     }
 
-    pub fn components_iter(&self, entity: &Entity) -> impl Iterator<Item = &Data> {
+    pub fn components_iter(&self, entity: &Entity) -> impl Iterator<Item = &Data> + '_ {
         self.components.entity_components_iter(entity.id()).unwrap()
     }
 }
