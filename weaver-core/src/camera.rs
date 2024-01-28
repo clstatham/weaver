@@ -140,7 +140,7 @@ impl Default for Camera {
 
 #[derive(Debug, Component, Clone, Copy)]
 #[method(default = "fn() -> FlyCameraController")]
-#[method(update = "fn(&mut FlyCameraController, &Input, f32, &mut Camera)")]
+#[method(update = "fn(&mut FlyCameraController, &Input, f32, f32, &mut Camera)")]
 #[method(set_translation = "fn(&mut FlyCameraController, glam::Vec3)")]
 pub struct FlyCameraController {
     pub speed: f32,
@@ -154,7 +154,7 @@ pub struct FlyCameraController {
 }
 
 impl FlyCameraController {
-    pub fn update(&mut self, input: &Input, delta_time: f32, camera: &mut Camera) {
+    pub fn update(&mut self, input: &Input, delta_time: f32, aspect: f32, camera: &mut Camera) {
         if input.mouse_button_pressed(MouseButton::Right) {
             let mouse_delta = input.mouse_delta();
             let (mut yaw, mut pitch, _roll) = self.rotation.to_euler(glam::EulerRot::YXZ);
@@ -204,6 +204,7 @@ impl FlyCameraController {
             self.rotation = self.rotation.normalize();
         }
 
+        self.aspect = aspect;
         camera.view_matrix = self.view_matrix();
         camera.projection_matrix = self.projection_matrix();
     }

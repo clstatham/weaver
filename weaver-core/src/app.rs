@@ -1,6 +1,6 @@
 use crate::{
-    asset_server::AssetServer, camera::FlyCameraController, doodads::Doodads, input::Input,
-    scripts::Scripts, time::Time, ui::EguiContext,
+    asset_server::AssetServer, doodads::Doodads, input::Input, scripts::Scripts, time::Time,
+    ui::EguiContext,
 };
 
 use std::sync::Arc;
@@ -14,13 +14,17 @@ use crate::renderer::{compute::hdr_loader::HdrLoader, Renderer};
 
 #[derive(Component, Clone)]
 pub struct Window {
-    window: Arc<winit::window::Window>,
+    pub(crate) window: Arc<winit::window::Window>,
     pub fps_mode: bool,
 }
 
 impl Window {
     pub fn set_fps_mode(&mut self, fps_mode: bool) {
         self.fps_mode = fps_mode;
+    }
+
+    pub fn request_redraw(&self) {
+        self.window.request_redraw();
     }
 }
 
@@ -73,10 +77,6 @@ impl App {
             .write()
             .add_system_to_stage(crate::relations::UpdateTransforms, SystemStage::PreUpdate);
 
-        world
-            .write()
-            .add_system_to_stage(Render, SystemStage::Render);
-
         Ok(Self { event_loop, world })
     }
 
@@ -117,15 +117,6 @@ impl App {
                         let mut input = world.write_resource::<Input>().unwrap();
                         input.prepare_for_update();
 
-                        {
-                            let ctx = world.read_resource::<EguiContext>().unwrap();
-                            if ctx.wants_focus() {
-                                input.disable_input();
-                            } else {
-                                input.enable_input();
-                            }
-                        }
-
                         while let Ok(event) = window_event_rx.try_recv() {
                             input.update_window(&event);
 
@@ -164,22 +155,24 @@ impl App {
 
                     World::run_stage(&update_world, SystemStage::PostRender).unwrap();
 
+                    {
+                        let world = update_world.read();
+                        let window = world.read_resource::<Window>().unwrap();
+                        window.request_redraw();
+                    }
+
                     if killswitch_rx.try_recv().is_ok() {
                         break;
                     }
 
-                    {
-                        let world = update_world.read();
-                        let window = world.read_resource::<Window>().unwrap();
-                        window.window.request_redraw();
-                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
                 }
 
                 World::run_stage(&update_world, SystemStage::Shutdown).unwrap();
             })?;
 
         self.event_loop.run(move |event, target| {
-            // target.set_control_flow(winit::event_loop::ControlFlow::Poll);
+            target.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
             match event {
                 winit::event::Event::LoopExiting => {
@@ -197,12 +190,7 @@ impl App {
                         winit::event::WindowEvent::Resized(size) => {
                             let world = self.world.read();
                             let renderer = world.read_resource::<Renderer>().unwrap();
-                            renderer.resize(size.width, size.height);
-                            let aspect = size.width as f32 / size.height as f32;
-                            let camera_query = world.query::<&mut FlyCameraController>();
-                            for mut camera in camera_query.iter() {
-                                camera.aspect = aspect;
-                            }
+                            renderer.resize_surface(size.width, size.height);
                         }
                         winit::event::WindowEvent::CursorMoved { .. } => {
                             // center the cursor
@@ -244,16 +232,5 @@ impl App {
         })?;
 
         Ok(())
-    }
-}
-
-#[system(Render())]
-fn render(renderer: ResMut<Renderer>, window: Res<Window>, ui: ResMut<EguiContext>) {
-    if let Some(mut encoder) = renderer.begin_frame() {
-        renderer.prepare_components();
-        renderer.prepare_passes();
-        renderer.render(&mut encoder).unwrap();
-        renderer.render_ui(&mut ui, &window.window, &mut encoder);
-        renderer.end_frame(encoder);
     }
 }

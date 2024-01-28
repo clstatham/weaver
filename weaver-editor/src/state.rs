@@ -440,7 +440,7 @@ impl EditorAction for Despawn {
 
 #[derive(Component)]
 pub struct EditorState {
-    world: Arc<RwLock<World>>,
+    pub(crate) world: Arc<RwLock<World>>,
 
     selected_entity: Option<Entity>,
     entity_names: HashMap<Entity, String>,
@@ -450,8 +450,8 @@ pub struct EditorState {
     action_history: Vec<Box<dyn EditorAction>>,
     undo_history: Vec<Box<dyn EditorAction>>,
 
-    show_rename_entity: bool,
-    entity_rename_buffer: String,
+    pub(crate) show_rename_entity: bool,
+    pub(crate) entity_rename_buffer: String,
 }
 
 impl EditorState {
@@ -603,32 +603,6 @@ impl System for EditorActions {
     }
 }
 
-#[system(EditorStateUi())]
-pub fn editor_state_ui(
-    mut state: ResMut<EditorState>,
-    ctx: Res<EguiContext>,
-    mut commands: Commands,
-) {
-    ctx.draw_if_ready(|ctx| {
-        if state.show_rename_entity {
-            egui::Window::new("Rename Entity")
-                .default_pos(ctx.available_rect().center())
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Name:");
-                        let response = ui.text_edit_singleline(&mut state.entity_rename_buffer);
-                        if response.lost_focus() {
-                            state.show_rename_entity = false;
-                            state.end_action::<RenameEntity>(&mut commands).unwrap();
-                        }
-                    });
-                });
-        }
-    });
-}
-
 #[system(SelectedEntityDoodads())]
 pub fn selected_entity_doodads(
     state: Res<EditorState>,
@@ -672,7 +646,10 @@ pub fn pick_entity(
     let camera = camera.iter().next().unwrap();
     if input.mouse_button_just_pressed(MouseButton::Left) {
         let mouse_pos = input.mouse_position().unwrap();
-        let ray = camera.screen_to_ray(mouse_pos, renderer.screen_size());
+        let viewport_rect = renderer.viewport_rect();
+        let viewport_mouse_pos = mouse_pos - viewport_rect.top_left();
+        let viewport_size = Vec2::new(viewport_rect.width, viewport_rect.height);
+        let ray = camera.screen_to_ray(viewport_mouse_pos, viewport_size);
 
         // check for intersection with entity
         let mut closest_entity = None;

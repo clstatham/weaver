@@ -247,6 +247,7 @@ impl PbrRenderPass {
         &self,
         renderer: &Renderer,
         hdr_pass_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
         world: &World,
         encoder: &mut wgpu::CommandEncoder,
     ) -> anyhow::Result<()> {
@@ -334,7 +335,7 @@ impl PbrRenderPass {
                 &renderer.bind_group_layout_cache,
             )?;
 
-            let depth_texture_view = renderer.depth_texture_view.read();
+            // let depth_texture_view = renderer.depth_texture_view.read();
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("PBR Render Pass"),
@@ -350,7 +351,7 @@ impl PbrRenderPass {
                     }),
                 ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_texture_view,
+                    view: depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,

@@ -16,7 +16,7 @@ use crate::{
         },
         Renderer,
     },
-    texture::{DepthTexture, Texture, TextureFormat, WindowTexture},
+    texture::{DepthTexture, HdrTexture, Texture, TextureFormat},
 };
 
 use super::Pass;
@@ -351,7 +351,7 @@ impl DoodadRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: WindowTexture::FORMAT,
+                    format: HdrTexture::FORMAT,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -384,7 +384,7 @@ impl DoodadRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: WindowTexture::FORMAT,
+                    format: HdrTexture::FORMAT,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],

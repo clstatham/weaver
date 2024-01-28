@@ -3,12 +3,13 @@ use std::{borrow::Cow, io::Read, sync::Arc};
 use egui_wgpu::renderer::ScreenDescriptor;
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
 use parking_lot::RwLock;
-use winit::window::Window;
 
 use weaver_ecs::prelude::*;
 
 use crate::{
+    app::Window,
     camera::Camera,
+    geom::Rect,
     light::{PointLight, PointLightArray},
     material::Material,
     renderer::internals::GpuComponent,
@@ -22,11 +23,13 @@ use self::{
         doodads::DoodadRenderPass, hdr::HdrRenderPass, pbr::PbrRenderPass,
         shadow::OmniShadowRenderPass, sky::SkyRenderPass, Pass,
     },
+    viewport::Viewport,
 };
 
 pub mod compute;
 pub mod internals;
 pub mod pass;
+pub mod viewport;
 
 fn try_every_shader_file(
     composer: &mut Composer,
@@ -126,10 +129,7 @@ pub struct Renderer {
     queue: Arc<wgpu::Queue>,
     config: Arc<RwLock<wgpu::SurfaceConfiguration>>,
 
-    color_texture: Arc<RwLock<wgpu::Texture>>,
-    color_texture_view: Arc<RwLock<wgpu::TextureView>>,
-    depth_texture: Arc<RwLock<wgpu::Texture>>,
-    depth_texture_view: Arc<RwLock<wgpu::TextureView>>,
+    main_viewport: Arc<RwLock<Viewport>>,
 
     hdr_pass: HdrRenderPass,
     pbr_pass: PbrRenderPass,
@@ -147,7 +147,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(window: &Window, world: Arc<RwLock<World>>) -> Self {
+    pub fn new(window: &winit::window::Window, world: Arc<RwLock<World>>) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -192,58 +192,6 @@ impl Renderer {
         };
         surface.configure(&device, &config);
 
-        let color_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Color Texture"),
-            size: wgpu::Extent3d {
-                width: config.width,
-                height: config.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: WindowTexture::FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-
-        let color_texture_view = color_texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("Color Texture View"),
-            format: Some(WindowTexture::FORMAT),
-            dimension: Some(wgpu::TextureViewDimension::D2),
-            aspect: wgpu::TextureAspect::All,
-            base_mip_level: 0,
-            base_array_layer: 0,
-            array_layer_count: None,
-            mip_level_count: None,
-        });
-
-        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Depth Texture"),
-            size: wgpu::Extent3d {
-                width: config.width,
-                height: config.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: DepthTexture::FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-
-        let depth_texture_view = depth_texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("Depth Texture View"),
-            format: Some(DepthTexture::FORMAT),
-            dimension: Some(wgpu::TextureViewDimension::D2),
-            aspect: wgpu::TextureAspect::All,
-            base_mip_level: 0,
-            base_array_layer: 0,
-            array_layer_count: None,
-            mip_level_count: None,
-        });
-
         let resource_manager = GpuResourceManager::new(device.clone(), queue.clone());
 
         let bind_group_layout_cache = BindGroupLayoutCache::default();
@@ -267,15 +215,17 @@ impl Renderer {
 
         let point_lights = PointLightArray::new();
 
+        let main_viewport = Viewport::new(
+            Rect::new(0.0, 0.0, config.width as f32, config.height as f32),
+            &device,
+            &bind_group_layout_cache,
+        );
+
         Self {
             surface,
             device,
             queue,
             config: Arc::new(RwLock::new(config)),
-            color_texture: Arc::new(RwLock::new(color_texture)),
-            color_texture_view: Arc::new(RwLock::new(color_texture_view)),
-            depth_texture: Arc::new(RwLock::new(depth_texture)),
-            depth_texture_view: Arc::new(RwLock::new(depth_texture_view)),
             hdr_pass,
             pbr_pass,
             shadow_pass,
@@ -287,6 +237,7 @@ impl Renderer {
             point_lights,
             world,
             output: Arc::new(RwLock::new(None)),
+            main_viewport: Arc::new(RwLock::new(main_viewport)),
         }
     }
 
@@ -295,6 +246,10 @@ impl Renderer {
             self.config.read().width as f32,
             self.config.read().height as f32,
         )
+    }
+
+    pub fn viewport_rect(&self) -> Rect {
+        self.main_viewport.read().rect
     }
 
     pub fn device(&self) -> &Arc<wgpu::Device> {
@@ -309,7 +264,62 @@ impl Renderer {
         &self.resource_manager
     }
 
-    pub fn resize(&self, width: u32, height: u32) {
+    pub fn set_viewport_rect(&self, rect: Rect) {
+        if rect == self.main_viewport.read().rect {
+            return;
+        }
+        self.move_viewport(rect.x, rect.y);
+        self.resize_viewport(rect.width as u32, rect.height as u32);
+    }
+
+    pub fn set_viewport_enabled(&self, enabled: bool) {
+        self.main_viewport.write().enabled = enabled;
+    }
+
+    pub fn viewport_enabled(&self) -> bool {
+        self.main_viewport.read().enabled
+    }
+
+    pub fn resize_viewport(&self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        if width == self.main_viewport.read().rect.width as u32
+            && height == self.main_viewport.read().rect.height as u32
+        {
+            return;
+        }
+
+        log::debug!("Resizing viewport to {}x{}", width, height);
+
+        self.main_viewport.write().resize(self, width, height);
+
+        self.pbr_pass.resize(self, width, height);
+        self.sky_pass.resize(self, width, height);
+        self.hdr_pass.resize(self, width, height);
+        self.shadow_pass.resize(self, width, height);
+        self.doodad_pass.resize(self, width, height);
+
+        for pass in self.extra_passes.iter() {
+            pass.resize(self, width, height);
+        }
+
+        self.resource_manager().update_all_resources();
+        self.force_flush();
+    }
+
+    pub fn move_viewport(&self, x: f32, y: f32) {
+        self.main_viewport.write().move_to(x, y);
+    }
+
+    pub fn resize_surface(&self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        if width == self.config.read().width && height == self.config.read().height {
+            return;
+        }
+
         // discard the current output texture
         self.output.write().take();
 
@@ -320,74 +330,6 @@ impl Renderer {
         let config = &*self.config.read();
 
         self.surface.configure(&self.device, config);
-
-        *self.color_texture.write() = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Color Texture"),
-            size: wgpu::Extent3d {
-                width: config.width,
-                height: config.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: WindowTexture::FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-
-        *self.color_texture_view.write() =
-            self.color_texture
-                .read()
-                .create_view(&wgpu::TextureViewDescriptor {
-                    label: Some("Color Texture View"),
-                    format: Some(WindowTexture::FORMAT),
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    aspect: wgpu::TextureAspect::All,
-                    base_mip_level: 0,
-                    base_array_layer: 0,
-                    array_layer_count: None,
-                    mip_level_count: None,
-                });
-
-        *self.depth_texture.write() = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Depth Texture"),
-            size: wgpu::Extent3d {
-                width: config.width,
-                height: config.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: DepthTexture::FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-
-        *self.depth_texture_view.write() =
-            self.depth_texture
-                .read()
-                .create_view(&wgpu::TextureViewDescriptor {
-                    label: Some("Depth Texture View"),
-                    format: Some(DepthTexture::FORMAT),
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    aspect: wgpu::TextureAspect::All,
-                    base_mip_level: 0,
-                    base_array_layer: 0,
-                    array_layer_count: None,
-                    mip_level_count: None,
-                });
-
-        self.hdr_pass.resize(self, width, height);
-        self.pbr_pass.resize(self, width, height);
-        self.sky_pass.resize(self, width, height);
-        self.shadow_pass.resize(self, width, height);
-        self.doodad_pass.resize(self, width, height);
-
-        for pass in self.extra_passes.iter() {
-            pass.resize(self, width, height);
-        }
 
         self.resource_manager.update_all_resources();
         self.force_flush();
@@ -483,141 +425,151 @@ impl Renderer {
                 &self.device,
                 &self.queue,
                 encoder,
-                window,
+                &window.window,
                 &view,
                 &ScreenDescriptor {
                     size_in_pixels: [self.config.read().width, self.config.read().height],
-                    pixels_per_point: window.scale_factor() as f32,
+                    pixels_per_point: window.window.scale_factor() as f32,
                 },
             );
+
+            // self.set_viewport_rect(ui.state().read().egui_ctx().available_rect().into());
         }
     }
 
-    pub fn render(&mut self, encoder: &mut wgpu::CommandEncoder) -> anyhow::Result<()> {
-        if let Some(output) = self.output.read().as_ref() {
-            let world = &self.world.read();
-            let hdr_pass_view = {
-                let hdr_pass_handle = &self
-                    .hdr_pass
-                    .texture
-                    .handle()
-                    .lazy_init(&self.resource_manager)?;
-                let hdr_pass_texture = hdr_pass_handle.get_texture().unwrap();
-                hdr_pass_texture.create_view(&wgpu::TextureViewDescriptor {
-                    label: Some("HDR Pass Texture View"),
-                    format: Some(HdrTexture::FORMAT),
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    aspect: wgpu::TextureAspect::All,
-                    base_mip_level: 0,
-                    base_array_layer: 0,
-                    array_layer_count: None,
-                    mip_level_count: None,
-                })
-            };
+    pub fn render_to_viewport(&mut self, encoder: &mut wgpu::CommandEncoder) -> anyhow::Result<()> {
+        let world = &self.world.read();
 
-            // clear the screen
-            {
-                let depth_view = self.depth_texture_view.read();
-                let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Clear Screen"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &hdr_pass_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &depth_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
+        let viewport_view = {
+            let viewport_handle = &self
+                .main_viewport
+                .read()
+                .hdr_pass
+                .texture
+                .handle()
+                .lazy_init(&self.resource_manager)?;
+            let viewport_texture = viewport_handle.get_texture().unwrap();
+            viewport_texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("Viewport Texture View"),
+                format: Some(HdrTexture::FORMAT),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                aspect: wgpu::TextureAspect::All,
+                base_mip_level: 0,
+                base_array_layer: 0,
+                array_layer_count: None,
+                mip_level_count: None,
+            })
+        };
+
+        let viewport_depth_view = {
+            let viewport_handle = &self
+                .main_viewport
+                .read()
+                .depth_texture
+                .handle()
+                .lazy_init(&self.resource_manager)?;
+            let viewport_texture = viewport_handle.get_texture().unwrap();
+            viewport_texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("Viewport Depth Texture View"),
+                format: Some(DepthTexture::FORMAT),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                aspect: wgpu::TextureAspect::All,
+                base_mip_level: 0,
+                base_array_layer: 0,
+                array_layer_count: None,
+                mip_level_count: None,
+            })
+        };
+
+        // clear the viewports
+        {
+            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Clear Screen"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &viewport_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &viewport_depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
                     }),
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
-            }
-
-            self.pbr_pass.render(self, &hdr_pass_view, world, encoder)?;
-
-            for pass in self.extra_passes.iter() {
-                pass.render_if_enabled(
-                    encoder,
-                    &hdr_pass_view,
-                    &self.depth_texture_view.read(),
-                    self,
-                    world,
-                )?;
-            }
-
-            self.sky_pass.render_if_enabled(
-                encoder,
-                &hdr_pass_view,
-                &self.depth_texture_view.read(),
-                self,
-                world,
-            )?;
-
-            // we always want to render the HDR pass, otherwise we won't see anything!
-            self.hdr_pass.render(
-                encoder,
-                &self.color_texture_view.read(),
-                &self.depth_texture_view.read(),
-                self,
-                world,
-            )?;
-
-            self.shadow_pass.render_if_enabled(
-                encoder,
-                &self.color_texture_view.read(),
-                &self.depth_texture_view.read(),
-                self,
-                world,
-            )?;
-
-            self.doodad_pass.render_if_enabled(
-                encoder,
-                &self.color_texture_view.read(),
-                &self.depth_texture_view.read(),
-                self,
-                world,
-            )?;
-
-            // self.particle_pass.render_if_enabled(
-            //     &self.device,
-            //     &self.queue,
-            //     &self.color_texture_view,
-            //     &self.depth_texture_view,
-            //     self,
-            //     world,
-            // )?;
-
-            // copy color texture to the output
-            encoder.copy_texture_to_texture(
-                self.color_texture.read().as_image_copy(),
-                output.texture.as_image_copy(),
-                wgpu::Extent3d {
-                    width: self.config.read().width,
-                    height: self.config.read().height,
-                    depth_or_array_layers: 1,
-                },
-            );
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
         }
+
+        self.pbr_pass
+            .render(self, &viewport_view, &viewport_depth_view, world, encoder)?;
+
+        for pass in self.extra_passes.iter() {
+            pass.render_if_enabled(encoder, &viewport_view, &viewport_depth_view, self, world)?;
+        }
+
+        self.sky_pass.render_if_enabled(
+            encoder,
+            &viewport_view,
+            &viewport_depth_view,
+            self,
+            world,
+        )?;
+
+        self.doodad_pass.render_if_enabled(
+            encoder,
+            &viewport_view,
+            &viewport_depth_view,
+            self,
+            world,
+        )?;
+
+        // self.shadow_pass.render_if_enabled(
+        //     encoder,
+        //     &self.color_texture_view.read(),
+        //     &self.depth_texture_view.read(),
+        //     self,
+        //     world,
+        // )?;
+
+        // self.particle_pass.render_if_enabled(
+        //     &self.device,
+        //     &self.queue,
+        //     &self.color_texture_view,
+        //     &self.depth_texture_view,
+        //     self,
+        //     world,
+        // )?;
 
         Ok(())
     }
 
-    pub fn begin_frame(&mut self) -> Option<wgpu::CommandEncoder> {
-        if self.output.read().is_some() {
-            return None;
+    pub fn render_viewport_to_screen(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> anyhow::Result<()> {
+        if let Some(output) = self.output.read().as_ref() {
+            let world = &self.world.read();
+            self.main_viewport
+                .read()
+                .render(encoder, self, &output.texture, world)?;
         }
+        Ok(())
+    }
+
+    pub fn begin_render(&mut self) -> Option<wgpu::CommandEncoder> {
         log::trace!("Begin frame");
 
-        // return early if we can't render for whatever reason
-        let output = self.surface.get_current_texture().ok()?;
+        let output = self
+            .output
+            .write()
+            .take()
+            .unwrap_or_else(|| self.surface.get_current_texture().unwrap());
 
         let encoder = self
             .device
@@ -647,7 +599,7 @@ impl Renderer {
         self.resource_manager.update_all_resources();
     }
 
-    pub fn end_frame(&self, encoder: wgpu::CommandEncoder) {
+    pub fn end_render(&self, encoder: wgpu::CommandEncoder) {
         self.flush(encoder);
         self.resource_manager.gc_destroyed_resources();
     }

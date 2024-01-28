@@ -121,6 +121,10 @@ impl EguiContext {
         self.locked = false;
     }
 
+    pub fn available_rect(&self) -> egui::Rect {
+        self.state.read().egui_ctx().available_rect()
+    }
+
     pub fn handle_input(&self, window: &Window, event: &winit::event::WindowEvent) {
         let _ = self.state.write().on_window_event(window, event);
     }

@@ -1,6 +1,84 @@
 use super::transform::GlobalTransform;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl Rect {
+    pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    pub fn contains(&self, x: f32, y: f32) -> bool {
+        x >= self.x && x <= self.x + self.width && y >= self.y && y <= self.y + self.height
+    }
+
+    pub fn intersects(&self, other: &Self) -> bool {
+        self.x < other.x + other.width
+            && self.x + self.width > other.x
+            && self.y < other.y + other.height
+            && self.y + self.height > other.y
+    }
+
+    pub fn center(&self) -> glam::Vec2 {
+        glam::Vec2::new(self.x + self.width / 2.0, self.y + self.height / 2.0)
+    }
+
+    pub fn top_left(&self) -> glam::Vec2 {
+        glam::Vec2::new(self.x, self.y)
+    }
+
+    pub fn top_right(&self) -> glam::Vec2 {
+        glam::Vec2::new(self.x + self.width, self.y)
+    }
+
+    pub fn bottom_left(&self) -> glam::Vec2 {
+        glam::Vec2::new(self.x, self.y + self.height)
+    }
+
+    pub fn bottom_right(&self) -> glam::Vec2 {
+        glam::Vec2::new(self.x + self.width, self.y + self.height)
+    }
+
+    pub fn from_points(points: &[glam::Vec2]) -> Self {
+        let mut min = glam::Vec2::new(f32::MAX, f32::MAX);
+        let mut max = glam::Vec2::new(f32::MIN, f32::MIN);
+
+        for point in points {
+            min = min.min(*point);
+            max = max.max(*point);
+        }
+
+        Self {
+            x: min.x,
+            y: min.y,
+            width: max.x - min.x,
+            height: max.y - min.y,
+        }
+    }
+}
+
+impl From<egui::Rect> for Rect {
+    fn from(rect: egui::Rect) -> Self {
+        Self {
+            x: rect.min.x,
+            y: rect.min.y,
+            width: rect.width(),
+            height: rect.height(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ray {
     pub origin: glam::Vec3,
     pub direction: glam::Vec3,

@@ -1,5 +1,6 @@
+use ui::{fps_counter::FpsDisplay, EditorStateUi, Tabs};
 use weaver::{
-    core::{renderer::compute::hdr_loader::HdrLoader, ui::builtin::FpsDisplay},
+    core::{app::Window, renderer::compute::hdr_loader::HdrLoader},
     prelude::*,
 };
 
@@ -11,21 +12,22 @@ fn main() -> anyhow::Result<()> {
 
     let app = App::new(1600, 900)?;
 
-    app.add_resource(state::EditorState::new(&app.world))?;
     app.add_resource(FpsDisplay::new())?;
+    app.add_resource(state::EditorState::new(&app.world))?;
+    app.add_resource(Tabs::default())?;
 
     app.add_system_to_stage(Setup, SystemStage::Startup);
 
     app.add_system_to_stage(state::EditorActions, SystemStage::PreUpdate);
 
-    app.add_system_to_stage(UpdateCamera, SystemStage::Update);
     app.add_system_to_stage(state::SelectedEntityDoodads, SystemStage::Update);
 
-    app.add_system_to_stage(ui::FpsDisplayUi, SystemStage::PostUpdate);
-    app.add_system_to_stage(ui::SceneTreeUi, SystemStage::PostUpdate);
-    app.add_system_to_stage(ui::ScriptUpdateUi, SystemStage::PostUpdate);
-    app.add_system_to_stage(state::EditorStateUi, SystemStage::PostUpdate);
     app.add_system_to_stage(state::PickEntity, SystemStage::PostUpdate);
+
+    app.add_system_to_stage(EditorRenderUi, SystemStage::Render);
+    app.add_system_to_stage(EditorStateUi, SystemStage::PostRender);
+
+    app.add_system_to_stage(UpdateCamera, SystemStage::PostRender);
 
     app.add_script("assets/scripts/editor/main.loom");
 
@@ -62,6 +64,21 @@ fn update_camera(
     mut query: Query<(&mut Camera, &mut FlyCameraController)>,
 ) {
     for (mut camera, mut controller) in query.iter() {
-        controller.update(&input, time.delta_seconds, &mut camera);
+        let aspect = controller.aspect;
+        controller.update(&input, time.delta_seconds, aspect, &mut camera);
+    }
+}
+
+#[system(EditorRenderUi())]
+fn editor_render_ui(renderer: ResMut<Renderer>, ui: ResMut<EguiContext>, window: Res<Window>) {
+    if let Some(mut encoder) = renderer.begin_render() {
+        renderer.render_ui(&mut ui, &window, &mut encoder);
+        if renderer.viewport_enabled() {
+            renderer.prepare_components();
+            renderer.prepare_passes();
+            renderer.render_to_viewport(&mut encoder).unwrap();
+            renderer.render_viewport_to_screen(&mut encoder).unwrap();
+        }
+        renderer.end_render(encoder);
     }
 }
