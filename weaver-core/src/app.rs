@@ -1,6 +1,6 @@
 use crate::{
-    asset_server::AssetServer, doodads::Doodads, input::Input, scripts::Scripts, time::Time,
-    ui::EguiContext,
+    asset_server::AssetServer, camera::FlyCameraController, doodads::Doodads, input::Input,
+    scripts::Scripts, time::Time, ui::EguiContext,
 };
 
 use std::sync::Arc;
@@ -45,7 +45,7 @@ impl App {
                 screen_width as f64,
                 screen_height as f64,
             ))
-            .with_resizable(false)
+            .with_resizable(true)
             .build(&event_loop)?;
 
         let renderer = Renderer::new(&window, world.clone());
@@ -196,8 +196,15 @@ impl App {
                         winit::event::WindowEvent::CloseRequested => {
                             target.exit();
                         }
-                        winit::event::WindowEvent::Resized(_size) => {
-                            // todo
+                        winit::event::WindowEvent::Resized(size) => {
+                            let world = self.world.read();
+                            let renderer = world.read_resource::<Renderer>().unwrap();
+                            renderer.resize(size.width, size.height);
+                            let aspect = size.width as f32 / size.height as f32;
+                            let camera_query = world.query::<&mut FlyCameraController>();
+                            for mut camera in camera_query.iter() {
+                                camera.aspect = aspect;
+                            }
                         }
                         winit::event::WindowEvent::CursorMoved { .. } => {
                             // center the cursor
@@ -227,7 +234,7 @@ impl App {
                         winit::event::WindowEvent::RedrawRequested => {
                             let world = self.world.read();
                             let window = world.read_resource::<Window>().unwrap();
-                            let mut renderer = world.write_resource::<Renderer>().unwrap();
+                            let renderer = world.read_resource::<Renderer>().unwrap();
                             window.window.pre_present_notify();
                             renderer.present();
                         }

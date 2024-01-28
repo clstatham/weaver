@@ -120,6 +120,8 @@ impl Pass for SkyRenderPass {
         Ok(())
     }
 
+    fn resize(&self, _renderer: &Renderer, _width: u32, _height: u32) {}
+
     fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,

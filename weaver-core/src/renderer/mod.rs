@@ -12,10 +12,7 @@ use crate::{
     light::{PointLight, PointLightArray},
     material::Material,
     renderer::internals::GpuComponent,
-    texture::{
-        DepthTexture, HdrTexture, NormalMapTexture, PositionMapTexture, TextureFormat,
-        WindowTexture,
-    },
+    texture::{DepthTexture, HdrTexture, TextureFormat, WindowTexture},
     ui::EguiContext,
 };
 
@@ -127,16 +124,12 @@ pub struct Renderer {
     surface: wgpu::Surface,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
-    config: wgpu::SurfaceConfiguration,
+    config: Arc<RwLock<wgpu::SurfaceConfiguration>>,
 
-    color_texture: wgpu::Texture,
-    color_texture_view: wgpu::TextureView,
-    depth_texture: wgpu::Texture,
-    depth_texture_view: wgpu::TextureView,
-    position_texture: wgpu::Texture,
-    position_texture_view: wgpu::TextureView,
-    normal_texture: wgpu::Texture,
-    normal_texture_view: wgpu::TextureView,
+    color_texture: Arc<RwLock<wgpu::Texture>>,
+    color_texture_view: Arc<RwLock<wgpu::TextureView>>,
+    depth_texture: Arc<RwLock<wgpu::Texture>>,
+    depth_texture_view: Arc<RwLock<wgpu::TextureView>>,
 
     hdr_pass: HdrRenderPass,
     pbr_pass: PbrRenderPass,
@@ -150,7 +143,7 @@ pub struct Renderer {
 
     point_lights: PointLightArray,
     world: Arc<RwLock<World>>,
-    output: Option<wgpu::SurfaceTexture>,
+    output: Arc<RwLock<Option<wgpu::SurfaceTexture>>>,
 }
 
 impl Renderer {
@@ -251,58 +244,6 @@ impl Renderer {
             mip_level_count: None,
         });
 
-        let position_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Position Texture"),
-            size: wgpu::Extent3d {
-                width: config.width,
-                height: config.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: PositionMapTexture::FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-
-        let position_texture_view = position_texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("Position Texture View"),
-            format: Some(PositionMapTexture::FORMAT),
-            dimension: Some(wgpu::TextureViewDimension::D2),
-            aspect: wgpu::TextureAspect::All,
-            base_mip_level: 0,
-            base_array_layer: 0,
-            array_layer_count: None,
-            mip_level_count: None,
-        });
-
-        let normal_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Normal Texture"),
-            size: wgpu::Extent3d {
-                width: config.width,
-                height: config.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: NormalMapTexture::FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-
-        let normal_texture_view = normal_texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("Normal Texture View"),
-            format: Some(NormalMapTexture::FORMAT),
-            dimension: Some(wgpu::TextureViewDimension::D2),
-            aspect: wgpu::TextureAspect::All,
-            base_mip_level: 0,
-            base_array_layer: 0,
-            array_layer_count: None,
-            mip_level_count: None,
-        });
-
         let resource_manager = GpuResourceManager::new(device.clone(), queue.clone());
 
         let bind_group_layout_cache = BindGroupLayoutCache::default();
@@ -330,15 +271,11 @@ impl Renderer {
             surface,
             device,
             queue,
-            config,
-            color_texture,
-            color_texture_view,
-            depth_texture,
-            depth_texture_view,
-            position_texture,
-            position_texture_view,
-            normal_texture,
-            normal_texture_view,
+            config: Arc::new(RwLock::new(config)),
+            color_texture: Arc::new(RwLock::new(color_texture)),
+            color_texture_view: Arc::new(RwLock::new(color_texture_view)),
+            depth_texture: Arc::new(RwLock::new(depth_texture)),
+            depth_texture_view: Arc::new(RwLock::new(depth_texture_view)),
             hdr_pass,
             pbr_pass,
             shadow_pass,
@@ -349,12 +286,15 @@ impl Renderer {
             bind_group_layout_cache,
             point_lights,
             world,
-            output: None,
+            output: Arc::new(RwLock::new(None)),
         }
     }
 
     pub fn screen_size(&self) -> glam::Vec2 {
-        glam::Vec2::new(self.config.width as f32, self.config.height as f32)
+        glam::Vec2::new(
+            self.config.read().width as f32,
+            self.config.read().height as f32,
+        )
     }
 
     pub fn device(&self) -> &Arc<wgpu::Device> {
@@ -367,6 +307,90 @@ impl Renderer {
 
     pub fn resource_manager(&self) -> &Arc<GpuResourceManager> {
         &self.resource_manager
+    }
+
+    pub fn resize(&self, width: u32, height: u32) {
+        // discard the current output texture
+        self.output.write().take();
+
+        log::debug!("Resizing renderer to {}x{}", width, height);
+        self.config.write().width = width;
+        self.config.write().height = height;
+
+        let config = &*self.config.read();
+
+        self.surface.configure(&self.device, config);
+
+        *self.color_texture.write() = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Color Texture"),
+            size: wgpu::Extent3d {
+                width: config.width,
+                height: config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: WindowTexture::FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+
+        *self.color_texture_view.write() =
+            self.color_texture
+                .read()
+                .create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("Color Texture View"),
+                    format: Some(WindowTexture::FORMAT),
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    aspect: wgpu::TextureAspect::All,
+                    base_mip_level: 0,
+                    base_array_layer: 0,
+                    array_layer_count: None,
+                    mip_level_count: None,
+                });
+
+        *self.depth_texture.write() = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Depth Texture"),
+            size: wgpu::Extent3d {
+                width: config.width,
+                height: config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DepthTexture::FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+
+        *self.depth_texture_view.write() =
+            self.depth_texture
+                .read()
+                .create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("Depth Texture View"),
+                    format: Some(DepthTexture::FORMAT),
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    aspect: wgpu::TextureAspect::All,
+                    base_mip_level: 0,
+                    base_array_layer: 0,
+                    array_layer_count: None,
+                    mip_level_count: None,
+                });
+
+        self.hdr_pass.resize(self, width, height);
+        self.pbr_pass.resize(self, width, height);
+        self.sky_pass.resize(self, width, height);
+        self.shadow_pass.resize(self, width, height);
+        self.doodad_pass.resize(self, width, height);
+
+        for pass in self.extra_passes.iter() {
+            pass.resize(self, width, height);
+        }
+
+        self.resource_manager.update_all_resources();
+        self.force_flush();
     }
 
     /// Forces the render queue to flush, submitting an empty encoder.
@@ -443,7 +467,7 @@ impl Renderer {
         window: &Window,
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        if let Some(output) = self.output.as_ref() {
+        if let Some(output) = self.output.read().as_ref() {
             let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
                 label: Some("UI Texture View"),
                 format: Some(WindowTexture::FORMAT),
@@ -462,7 +486,7 @@ impl Renderer {
                 window,
                 &view,
                 &ScreenDescriptor {
-                    size_in_pixels: [self.config.width, self.config.height],
+                    size_in_pixels: [self.config.read().width, self.config.read().height],
                     pixels_per_point: window.scale_factor() as f32,
                 },
             );
@@ -470,7 +494,7 @@ impl Renderer {
     }
 
     pub fn render(&mut self, encoder: &mut wgpu::CommandEncoder) -> anyhow::Result<()> {
-        if let Some(output) = self.output.as_ref() {
+        if let Some(output) = self.output.read().as_ref() {
             let world = &self.world.read();
             let hdr_pass_view = {
                 let hdr_pass_handle = &self
@@ -493,36 +517,19 @@ impl Renderer {
 
             // clear the screen
             {
+                let depth_view = self.depth_texture_view.read();
                 let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Clear Screen"),
-                    color_attachments: &[
-                        Some(wgpu::RenderPassColorAttachment {
-                            view: &hdr_pass_view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        }),
-                        Some(wgpu::RenderPassColorAttachment {
-                            view: &self.normal_texture_view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        }),
-                        Some(wgpu::RenderPassColorAttachment {
-                            view: &self.position_texture_view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        }),
-                    ],
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &hdr_pass_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.depth_texture_view,
+                        view: &depth_view,
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Clear(1.0),
                             store: wgpu::StoreOp::Store,
@@ -540,7 +547,7 @@ impl Renderer {
                 pass.render_if_enabled(
                     encoder,
                     &hdr_pass_view,
-                    &self.depth_texture_view,
+                    &self.depth_texture_view.read(),
                     self,
                     world,
                 )?;
@@ -549,7 +556,7 @@ impl Renderer {
             self.sky_pass.render_if_enabled(
                 encoder,
                 &hdr_pass_view,
-                &self.depth_texture_view,
+                &self.depth_texture_view.read(),
                 self,
                 world,
             )?;
@@ -557,24 +564,24 @@ impl Renderer {
             // we always want to render the HDR pass, otherwise we won't see anything!
             self.hdr_pass.render(
                 encoder,
-                &self.color_texture_view,
-                &self.depth_texture_view,
+                &self.color_texture_view.read(),
+                &self.depth_texture_view.read(),
                 self,
                 world,
             )?;
 
             self.shadow_pass.render_if_enabled(
                 encoder,
-                &self.color_texture_view,
-                &self.depth_texture_view,
+                &self.color_texture_view.read(),
+                &self.depth_texture_view.read(),
                 self,
                 world,
             )?;
 
             self.doodad_pass.render_if_enabled(
                 encoder,
-                &self.color_texture_view,
-                &self.depth_texture_view,
+                &self.color_texture_view.read(),
+                &self.depth_texture_view.read(),
                 self,
                 world,
             )?;
@@ -590,11 +597,11 @@ impl Renderer {
 
             // copy color texture to the output
             encoder.copy_texture_to_texture(
-                self.color_texture.as_image_copy(),
+                self.color_texture.read().as_image_copy(),
                 output.texture.as_image_copy(),
                 wgpu::Extent3d {
-                    width: self.config.width,
-                    height: self.config.height,
+                    width: self.config.read().width,
+                    height: self.config.read().height,
                     depth_or_array_layers: 1,
                 },
             );
@@ -604,10 +611,13 @@ impl Renderer {
     }
 
     pub fn begin_frame(&mut self) -> Option<wgpu::CommandEncoder> {
-        if self.output.is_some() {
+        if self.output.read().is_some() {
             return None;
         }
         log::trace!("Begin frame");
+
+        // return early if we can't render for whatever reason
+        let output = self.surface.get_current_texture().ok()?;
 
         let encoder = self
             .device
@@ -615,9 +625,7 @@ impl Renderer {
                 label: Some("Main Render Encoder"),
             });
 
-        let output = self.surface.get_current_texture().unwrap();
-
-        self.output = Some(output);
+        *self.output.write() = Some(output);
 
         Some(encoder)
     }
@@ -644,8 +652,8 @@ impl Renderer {
         self.resource_manager.gc_destroyed_resources();
     }
 
-    pub fn present(&mut self) {
-        if let Some(output) = self.output.take() {
+    pub fn present(&self) {
+        if let Some(Some(output)) = self.output.try_write().map(|mut o| o.take()) {
             output.present();
         }
     }

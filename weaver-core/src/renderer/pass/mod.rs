@@ -24,6 +24,8 @@ pub trait Pass: Send + Sync + 'static {
         Ok(())
     }
 
+    fn resize(&self, renderer: &Renderer, width: u32, height: u32);
+
     fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,

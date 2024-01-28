@@ -123,6 +123,10 @@ impl Pass for HdrRenderPass {
         Ok(())
     }
 
+    fn resize(&self, renderer: &Renderer, width: u32, height: u32) {
+        self.texture.resize(renderer, width, height);
+    }
+
     fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,

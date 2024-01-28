@@ -239,6 +239,10 @@ impl PbrRenderPass {
         self.buffers.lazy_init(&renderer.resource_manager).unwrap();
     }
 
+    pub fn resize(&self, _renderer: &Renderer, _width: u32, _height: u32) {
+        self.buffers.bind_group.reset();
+    }
+
     pub fn render(
         &self,
         renderer: &Renderer,
@@ -330,6 +334,8 @@ impl PbrRenderPass {
                 &renderer.bind_group_layout_cache,
             )?;
 
+            let depth_texture_view = renderer.depth_texture_view.read();
+
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("PBR Render Pass"),
                 color_attachments: &[
@@ -344,7 +350,7 @@ impl PbrRenderPass {
                     }),
                 ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &renderer.depth_texture_view,
+                    view: &depth_texture_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,

@@ -5,6 +5,7 @@ use weaver_proc_macro::{BindableComponent, GpuComponent};
 
 use weaver_ecs::prelude::*;
 
+use crate::prelude::Renderer;
 use crate::renderer::internals::{
     BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager, GpuResourceType,
     LazyBindGroup, LazyGpuHandle,
@@ -107,6 +108,23 @@ macro_rules! texture_format_impls {
 
                 fn update(&self, world: &World) -> anyhow::Result<()> {
                     self.texture.update_resources(world)
+                }
+
+                pub fn resize(
+                    &self,
+                    renderer: &Renderer,
+                    width: u32,
+                    height: u32,
+                ) {
+                    self.texture.resize(
+                        renderer,
+                        width,
+                        height,
+                        wgpu::TextureViewDimension::$view_dim,
+                        $layers,
+                    );
+
+                    self.bind_group.reset();
                 }
             }
 
@@ -212,6 +230,35 @@ impl Texture {
 
     pub fn handle(&self) -> &LazyGpuHandle {
         &self.handle
+    }
+
+    pub fn resize(
+        &self,
+        renderer: &Renderer,
+        width: u32,
+        height: u32,
+        view_dimension: wgpu::TextureViewDimension,
+        depth_or_array_layers: u32,
+    ) {
+        let current = self.handle.lazy_init(renderer.resource_manager()).unwrap();
+        let current = current.get_texture().unwrap();
+        if current.size().width == width && current.size().height == height {
+            return;
+        }
+
+        let new = Texture::new_lazy(
+            width,
+            height,
+            self.handle.label(),
+            current.usage(),
+            current.format(),
+            current.dimension(),
+            view_dimension,
+            depth_or_array_layers,
+        );
+
+        let new_handle = new.handle.lazy_init(renderer.resource_manager()).unwrap();
+        self.handle.reinit(new_handle);
     }
 
     pub fn load(

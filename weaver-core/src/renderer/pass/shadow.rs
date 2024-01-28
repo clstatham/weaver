@@ -594,6 +594,8 @@ impl Pass for OmniShadowRenderPass {
         self.enabled = false;
     }
 
+    fn resize(&self, _renderer: &Renderer, _width: u32, _height: u32) {}
+
     fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
         self.shadow_buffers
             .read()

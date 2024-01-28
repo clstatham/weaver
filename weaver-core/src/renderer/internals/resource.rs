@@ -384,6 +384,7 @@ impl Debug for LazyInitStatus {
 #[derive(Clone, Debug)]
 pub struct LazyGpuHandle {
     status: Arc<RwLock<LazyInitStatus>>,
+    label: Option<&'static str>,
 }
 
 impl LazyGpuHandle {
@@ -399,14 +400,25 @@ impl LazyGpuHandle {
                 label,
                 pending_data,
             })),
+            label,
         }
+    }
+
+    pub(crate) fn label(&self) -> Option<&'static str> {
+        self.label
     }
 
     /// Creates a new `LazyGpuHandle` that is already initialized with the given handle.
     pub(crate) fn new_ready(handle: GpuHandle) -> Self {
         Self {
             status: Arc::new(RwLock::new(LazyInitStatus::Initialized { handle })),
+            label: None,
         }
+    }
+
+    pub fn reinit(&self, handle: GpuHandle) {
+        let mut status = self.status.write();
+        *status = LazyInitStatus::Initialized { handle };
     }
 
     /// Initializes the underlying GPU resource if it is not already initialized and returns a handle to it.
@@ -603,6 +615,15 @@ where
     /// Returns true if the bind group has been initialized.
     pub fn is_initialized(&self) -> bool {
         self.layout.read().is_some() && self.bind_group.read().is_some()
+    }
+
+    /// Resets the bind group and bind group layout for the component.
+    /// This is useful for when the component is destroyed and recreated, such as when the window is resized.
+    pub fn reset(&self) {
+        let mut layout = self.layout.write();
+        let mut bind_group = self.bind_group.write();
+        *layout = None;
+        *bind_group = None;
     }
 
     /// Returns the bind group for the component, if it has been created.

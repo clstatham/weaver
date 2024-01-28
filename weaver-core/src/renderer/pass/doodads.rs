@@ -448,6 +448,27 @@ impl Pass for DoodadRenderPass {
         self.enabled = false;
     }
 
+    fn resize(&self, renderer: &Renderer, width: u32, height: u32) {
+        let manager = &renderer.resource_manager;
+        let handle = LazyGpuHandle::new(
+            GpuResourceType::Texture {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::COPY_SRC
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                format: DepthTexture::FORMAT,
+                dimension: wgpu::TextureDimension::D2,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            Some("Doodad Depth Texture"),
+            None,
+        );
+        let handle = handle.lazy_init(manager).unwrap();
+        self.depth_texture.handle().reinit(handle);
+    }
+
     fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
         let manager = &renderer.resource_manager;
         self.depth_texture.lazy_init(manager)?;
