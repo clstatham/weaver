@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use egui::Context;
 use egui_wgpu::renderer::ScreenDescriptor;
 use egui_winit::State;
+use parking_lot::RwLock;
 use weaver_proc_macro::Component;
 use winit::window::Window;
 
@@ -90,9 +93,9 @@ pub mod builtin {
 
 #[derive(Component)]
 pub struct EguiContext {
-    state: State,
+    state: Arc<RwLock<State>>,
     renderer: egui_wgpu::Renderer,
-    full_output: Option<egui::FullOutput>,
+    full_output: Arc<RwLock<Option<egui::FullOutput>>>,
     locked: bool,
 }
 
@@ -103,9 +106,9 @@ impl EguiContext {
         let state = State::new(ctx, viewport_id, window, None, None);
         let renderer = egui_wgpu::Renderer::new(device, WindowTexture::FORMAT, None, msaa_samples);
         Self {
-            state,
+            state: Arc::new(RwLock::new(state)),
             renderer,
-            full_output: None,
+            full_output: Arc::new(RwLock::new(None)),
             locked: false,
         }
     }
@@ -118,30 +121,31 @@ impl EguiContext {
         self.locked = false;
     }
 
-    pub fn handle_input(&mut self, window: &Window, event: &winit::event::WindowEvent) {
-        let _ = self.state.on_window_event(window, event);
+    pub fn handle_input(&self, window: &Window, event: &winit::event::WindowEvent) {
+        let _ = self.state.write().on_window_event(window, event);
     }
 
     pub fn wants_focus(&self) -> bool {
-        self.state.egui_ctx().wants_keyboard_input() || self.state.egui_ctx().wants_pointer_input()
+        self.state.read().egui_ctx().wants_keyboard_input()
+            || self.state.read().egui_ctx().wants_pointer_input()
     }
 
-    pub fn begin_frame(&mut self, window: &Window) {
-        if self.full_output.is_none() {
-            let raw_input = self.state.take_egui_input(window);
-            self.state.egui_ctx().begin_frame(raw_input);
+    pub fn begin_frame(&self, window: &Window) {
+        if self.full_output.read().is_none() {
+            let raw_input = self.state.write().take_egui_input(window);
+            self.state.read().egui_ctx().begin_frame(raw_input);
         }
     }
 
-    pub fn end_frame(&mut self) {
-        if self.full_output.is_none() {
-            self.full_output = Some(self.state.egui_ctx().end_frame());
+    pub fn end_frame(&self) {
+        if self.full_output.read().is_none() {
+            *self.full_output.write() = Some(self.state.read().egui_ctx().end_frame());
         }
     }
 
     pub fn draw_if_ready<F: FnOnce(&Context) -> R, R>(&self, f: F) {
-        if self.full_output.is_none() && !self.locked {
-            f(self.state.egui_ctx());
+        if self.full_output.read().is_none() && !self.locked {
+            f(self.state.read().egui_ctx());
         }
     }
 
@@ -154,17 +158,19 @@ impl EguiContext {
         window_surface_view: &wgpu::TextureView,
         screen_descriptor: &ScreenDescriptor,
     ) {
-        if self.full_output.is_none() {
+        if self.full_output.read().is_none() {
             return;
         }
-        let full_output = self.full_output.take().unwrap();
+        let full_output = self.full_output.write().take().unwrap();
         let pixels_per_point = screen_descriptor.pixels_per_point;
 
         self.state
+            .write()
             .handle_platform_output(window, full_output.platform_output);
 
         let tris = self
             .state
+            .read()
             .egui_ctx()
             .tessellate(full_output.shapes, pixels_per_point);
         for (id, image_delta) in &full_output.textures_delta.set {

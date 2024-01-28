@@ -130,7 +130,7 @@ impl App {
                             input.update_window(&event);
 
                             let window = world.read_resource::<Window>().unwrap();
-                            let mut ui = world.write_resource::<EguiContext>().unwrap();
+                            let ui = world.read_resource::<EguiContext>().unwrap();
                             ui.handle_input(&window.window, &event);
                         }
                         while let Ok(event) = device_event_rx.try_recv() {
@@ -144,7 +144,7 @@ impl App {
                         time.update();
 
                         let window = world.read_resource::<Window>().unwrap();
-                        let mut gui = world.write_resource::<EguiContext>().unwrap();
+                        let gui = world.read_resource::<EguiContext>().unwrap();
                         gui.begin_frame(&window.window);
                     }
 
@@ -156,7 +156,7 @@ impl App {
 
                     {
                         let world = update_world.read();
-                        let mut gui = world.write_resource::<EguiContext>().unwrap();
+                        let gui = world.read_resource::<EguiContext>().unwrap();
                         gui.end_frame();
                     }
 
