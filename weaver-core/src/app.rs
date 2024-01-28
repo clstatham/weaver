@@ -173,8 +173,6 @@ impl App {
                         let window = world.read_resource::<Window>().unwrap();
                         window.window.request_redraw();
                     }
-
-                    std::thread::sleep(std::time::Duration::from_millis(1));
                 }
 
                 World::run_stage(&update_world, SystemStage::Shutdown).unwrap();
