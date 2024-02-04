@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use weaver::prelude::*;
 
 pub struct FpsCounter {
@@ -36,7 +34,6 @@ pub struct FpsDisplay {
     update_interval: std::time::Duration,
     last_print: std::time::Instant,
     print_interval: std::time::Duration,
-    history: VecDeque<f32>,
     fps_buffer: Vec<f32>,
     fps: f32,
 }
@@ -50,7 +47,6 @@ impl FpsDisplay {
             last_print: std::time::Instant::now(),
             update_interval: std::time::Duration::from_millis(50),
             print_interval: std::time::Duration::from_secs(2),
-            history: VecDeque::new(),
             fps_buffer: Vec::new(),
             fps: 0.0,
         }
@@ -70,10 +66,6 @@ impl FpsDisplay {
             self.last_update = now;
             self.fps = self.fps_buffer.iter().sum::<f32>() / self.fps_buffer.len() as f32;
             self.fps_buffer.clear();
-            self.history.push_back(self.fps);
-            if self.history.len() > 500 {
-                self.history.pop_front();
-            }
         }
 
         if now - self.last_print > self.print_interval {

@@ -18,7 +18,7 @@ harness = false
 [dependencies]
 weaver-ecs = { path = "../weaver-ecs", features = [] }
 weaver-proc-macro = { path = "../weaver-proc-macro", features = [] }
-
+fabricate = { path = "../../fabricate" }
 criterion = "0.5.1"
 hecs = "0.10.4"
 rand = "0.8.4"

@@ -165,7 +165,7 @@ impl App {
                         break;
                     }
 
-                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    // std::thread::sleep(std::time::Duration::from_millis(1));
                 }
 
                 World::run_stage(&update_world, SystemStage::Shutdown).unwrap();
