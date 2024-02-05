@@ -20,6 +20,7 @@ pub trait EditorAction: Send + Sync + Any + 'static {
     }
 }
 
+#[derive(Atom)]
 pub struct EditorState {
     pub(crate) world: LockedWorldHandle,
 

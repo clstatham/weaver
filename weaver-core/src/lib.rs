@@ -38,7 +38,7 @@ pub mod prelude {
         physics::{RapierContext, RigidBody},
         renderer::Renderer,
         texture::{Texture, TextureFormat},
-        time::Time,
+        time::{RenderTime, UpdateTime},
         transform::{GlobalTransform, Transform},
         ui::EguiContext,
     };

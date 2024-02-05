@@ -2998,6 +2998,7 @@ dependencies = [
  "egui",
  "egui_dock",
  "env_logger",
+ "fabricate",
  "log",
  "syntect",
  "weaver",

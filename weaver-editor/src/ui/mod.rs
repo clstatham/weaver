@@ -1,9 +1,8 @@
-use std::sync::Arc;
-
 use egui_dock::{DockArea, DockState, NodeIndex, Style, TabViewer};
-use weaver::{core::scripts::Scripts, prelude::*};
+use fabricate::registry::StaticId;
+use weaver::prelude::*;
 
-use crate::state::{EditorState, RenameEntity};
+use crate::state::EditorState;
 
 use self::fps_counter::FpsDisplay;
 
@@ -15,7 +14,7 @@ pub mod syntax_highlighting;
 
 pub type Tab = String;
 
-#[derive(Component)]
+#[derive(Atom)]
 pub struct Tabs {
     pub(crate) tree: DockState<Tab>,
 }
@@ -47,8 +46,7 @@ impl Default for Tabs {
 }
 
 pub struct EditorTabViewer<'a> {
-    world: LockedWorldHandle,
-    commands: &'a mut Commands,
+    world: &'a World,
     state: &'a mut EditorState,
 }
 
@@ -59,57 +57,26 @@ impl<'a> TabViewer for EditorTabViewer<'a> {
         tab.as_str().into()
     }
 
-    fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
-        if tab.as_str() == "Viewport" {
-            let world = self.world.read();
-            let renderer = world.read_resource::<Renderer>().unwrap();
-            renderer.set_viewport_enabled(false);
-        }
-        true
-    }
-
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
-        let world_lock = self.world.read();
         {
-            let renderer = world_lock.read_resource::<Renderer>().unwrap();
-            let scene_tree = world_lock.read_resource::<EntityGraph>().unwrap();
+            let renderer = self.world.read_resource::<Renderer>().unwrap();
             match tab.as_str() {
                 "Viewport" => {
-                    // render to the viewport
-
-                    ui.label("Viewport");
-
-                    let camera = world_lock.query::<&mut FlyCameraController>();
+                    let camera = self
+                        .world
+                        .query()
+                        .write::<FlyCameraController>()
+                        .unwrap()
+                        .build();
                     let mut camera = camera.iter().next().unwrap();
                     let rect = ui.min_rect().into();
                     renderer.set_viewport_rect(rect);
-                    camera.aspect = rect.width / rect.height;
+                    camera.get_mut::<FlyCameraController>().unwrap().aspect =
+                        rect.width / rect.height;
                 }
                 "Scene Tree" => {
-                    scene_tree::scene_tree_ui(
-                        &world_lock,
-                        ui,
-                        self.state,
-                        &scene_tree,
-                        self.commands,
-                    );
+                    scene_tree::scene_tree_ui(self.world, ui);
                 }
-                "Component Inspector" => {
-                    component_inspector::component_inspector_ui(
-                        &world_lock,
-                        ui,
-                        self.state,
-                        self.commands,
-                    );
-                }
-                "Console" => {
-                    let mut scripts = world_lock.write_resource::<Scripts>().unwrap();
-                    script::script_console_ui(ui, &mut scripts);
-                }
-                // "Script" => {
-                //     let mut scripts = world_lock.write_resource::<Scripts>().unwrap();
-                //     script::script_edit_ui(ui, &mut scripts);
-                // }
                 tab => {
                     ui.label(tab);
                 }
@@ -118,45 +85,45 @@ impl<'a> TabViewer for EditorTabViewer<'a> {
     }
 }
 
-#[system(EditorStateUi())]
-pub fn editor_state_ui(
-    state: ResMut<EditorState>,
-    ctx: Res<EguiContext>,
-    tree: ResMut<Tabs>,
-    mut commands: Commands,
-    fps: ResMut<FpsDisplay>,
-) {
-    let world = state.world.clone();
+pub struct EditorStateUi;
 
-    ctx.draw_if_ready(|ctx| {
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            fps.run_ui(ui);
-        });
+impl System for EditorStateUi {
+    fn reads(&self) -> Vec<TypeUid> {
+        vec![EguiContext::static_type_uid()]
+    }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            DockArea::new(&mut tree.tree)
-                .style(Style::from_egui(ctx.style().as_ref()))
-                .show_inside(
-                    ui,
-                    &mut EditorTabViewer {
-                        world,
-                        commands: &mut commands,
-                        state: &mut state,
-                    },
-                );
-        });
+    fn writes(&self) -> Vec<TypeUid> {
+        vec![
+            EditorState::static_type_uid(),
+            Tabs::static_type_uid(),
+            FpsDisplay::static_type_uid(),
+        ]
+    }
 
-        if state.show_rename_entity {
-            egui::Window::new("Rename Entity").show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Name:");
-                    let response = ui.text_edit_singleline(&mut state.entity_rename_buffer);
-                    if response.lost_focus() {
-                        state.show_rename_entity = false;
-                        state.end_action::<RenameEntity>(&mut commands).unwrap();
-                    }
-                });
+    fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
+        let world = world.read();
+        let mut state = world.write_resource::<EditorState>().unwrap();
+        let mut tree = world.write_resource::<Tabs>().unwrap();
+        let mut fps = world.write_resource::<FpsDisplay>().unwrap();
+        let ctx = world.read_resource::<EguiContext>().unwrap();
+        ctx.draw_if_ready(|ctx| {
+            egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+                fps.run_ui(ui);
             });
-        }
-    })
+
+            egui::CentralPanel::default().show(ctx, |ui| {
+                DockArea::new(&mut tree.tree)
+                    .style(Style::from_egui(ctx.style().as_ref()))
+                    .show_inside(
+                        ui,
+                        &mut EditorTabViewer {
+                            world: &world,
+                            state: &mut state,
+                        },
+                    );
+            });
+        });
+
+        Ok(vec![])
+    }
 }

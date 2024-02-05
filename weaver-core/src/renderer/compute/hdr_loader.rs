@@ -1,5 +1,6 @@
 use std::{io::Read, num::NonZeroU32, path::Path};
 
+use fabricate::prelude::Atom;
 use image::codecs::hdr::HdrDecoder;
 use wgpu::util::DeviceExt;
 
@@ -9,6 +10,7 @@ use crate::{
     texture::{HdrCubeTexture, HdrD2ArrayTexture, Texture, TextureFormat},
 };
 
+#[derive(Atom)]
 #[allow(dead_code)]
 pub struct HdrLoader {
     pub(crate) load_pipeline: wgpu::ComputePipeline,

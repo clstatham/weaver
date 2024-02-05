@@ -1,23 +1,28 @@
+use fabricate::registry::StaticId;
 use weaver::{
     core::{app::Window, renderer::compute::hdr_loader::HdrLoader},
     prelude::*,
 };
 
 pub mod state;
-// pub mod ui;
+pub mod ui;
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let app = App::new(1600, 900)?;
+    let app = App::new("Weaver Editor", 1600, 900, true)?;
 
+    app.add_resource(ui::Tabs::default())?;
     app.add_resource(state::EditorState::new(&app.world))?;
+    app.add_resource(ui::fps_counter::FpsDisplay::new())?;
 
     app.add_system_to_stage(Setup, SystemStage::Startup);
 
-    app.add_system_to_stage(EditorRender, SystemStage::Render);
+    app.add_system_to_stage(UpdateCamera, SystemStage::Update);
 
-    app.add_system_to_stage(UpdateCamera, SystemStage::PostRender);
+    app.add_system_to_stage(ui::EditorStateUi, SystemStage::Ui);
+
+    app.add_system_to_stage(EditorRender, SystemStage::Render);
 
     // app.add_script("assets/scripts/editor/main.loom");
 
@@ -40,16 +45,23 @@ impl System for Setup {
         let controller = FlyCameraController {
             speed: 10.0,
             sensitivity: 0.1,
-            aspect: 1600.0 / 900.0,
             translation: Vec3::new(0.0, 0.0, 5.0),
             ..Default::default()
         };
+        world.write().spawn((camera, controller)).unwrap();
 
-        {
-            let mut world = world.write();
-            let e = world.spawn(camera).unwrap();
-            world.add_component(e, controller).unwrap();
-        }
+        let (mesh, material) = {
+            let world = world.read();
+            let mut assets = world.write_resource::<AssetServer>().unwrap();
+            let mesh = assets.load_mesh("meshes/monkey_2x.glb");
+            let material = assets.load_material("materials/wood.glb");
+            (mesh, material)
+        };
+        let transform = Transform::default();
+        world
+            .write()
+            .spawn((mesh, material, transform, GlobalTransform::default()))
+            .unwrap();
 
         Ok(vec![])
     }
@@ -69,7 +81,7 @@ impl System for UpdateCamera {
     fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
         let world = world.read();
         let input = world.read_resource::<Input>().unwrap();
-        let time = world.read_resource::<Time>().unwrap();
+        let time = world.read_resource::<UpdateTime>().unwrap();
         let query = world
             .query()
             .write::<Camera>()?
@@ -104,7 +116,8 @@ impl System for EditorRender {
         let mut renderer = world.write_resource::<Renderer>().unwrap();
         let mut ui = world.write_resource::<EguiContext>().unwrap();
         let window = world.read_resource::<Window>().unwrap();
-        if let Some(mut encoder) = renderer.begin_render() {
+        {
+            let mut encoder = renderer.begin_render();
             renderer.render_ui(&mut ui, &window, &mut encoder);
             if renderer.viewport_enabled() {
                 renderer.prepare_components();
@@ -118,10 +131,10 @@ impl System for EditorRender {
     }
 
     fn reads(&self) -> Vec<TypeUid> {
-        vec![]
+        vec![Window::static_type_uid()]
     }
 
     fn writes(&self) -> Vec<TypeUid> {
-        vec![]
+        vec![Renderer::static_type_uid(), EguiContext::static_type_uid()]
     }
 }

@@ -1,16 +1,20 @@
 use crate::{
-    asset_server::AssetServer, doodads::Doodads, input::Input, time::Time, ui::EguiContext,
+    asset_server::AssetServer,
+    doodads::Doodads,
+    input::Input,
+    time::{RenderTime, UpdateTime},
+    ui::EguiContext,
 };
 
 use std::sync::Arc;
 
-use fabricate::{prelude::*, registry::StaticId};
+use fabricate::prelude::*;
 
 use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use crate::renderer::{compute::hdr_loader::HdrLoader, Renderer};
 
-#[derive(Clone)]
+#[derive(Clone, Atom)]
 pub struct Window {
     pub(crate) window: Arc<winit::window::Window>,
     pub fps_mode: bool,
@@ -32,12 +36,17 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(screen_width: usize, screen_height: usize) -> anyhow::Result<Self> {
+    pub fn new(
+        title: impl Into<String>,
+        screen_width: usize,
+        screen_height: usize,
+        vsync: bool,
+    ) -> anyhow::Result<Self> {
         let world = World::new_handle();
 
         let event_loop = EventLoop::new()?;
         let window = WindowBuilder::new()
-            .with_title("Weaver")
+            .with_title(title)
             .with_inner_size(winit::dpi::LogicalSize::new(
                 screen_width as f64,
                 screen_height as f64,
@@ -45,7 +54,7 @@ impl App {
             .with_resizable(true)
             .build(&event_loop)?;
 
-        let renderer = Renderer::new(&window, world.clone());
+        let renderer = Renderer::new(vsync, &window, world.clone());
 
         let ui = EguiContext::new(renderer.device(), &window, 1);
 
@@ -53,7 +62,8 @@ impl App {
 
         world.write().add_resource(renderer)?;
         world.write().add_resource(hdr_loader)?;
-        world.write().add_resource(Time::new())?;
+        world.write().add_resource(UpdateTime::new())?;
+        world.write().add_resource(RenderTime::new())?;
         world.write().add_resource(Input::default())?;
         world.write().add_resource(ui)?;
         world.write().add_resource(Doodads::default())?;
@@ -69,7 +79,7 @@ impl App {
         Ok(Self { event_loop, world })
     }
 
-    pub fn add_resource<T: StaticId + Send + Sync>(&self, resource: T) -> anyhow::Result<()> {
+    pub fn add_resource<T: Atom>(&self, resource: T) -> anyhow::Result<()> {
         self.world.write().add_resource(resource)
     }
 
@@ -119,12 +129,8 @@ impl App {
 
                     {
                         let world = update_world.read();
-                        let mut time = world.write_resource::<Time>().unwrap();
+                        let mut time = world.write_resource::<UpdateTime>().unwrap();
                         time.update();
-
-                        let window = world.read_resource::<Window>().unwrap();
-                        let gui = world.read_resource::<EguiContext>().unwrap();
-                        gui.begin_frame(&window.window);
                     }
 
                     update_world.run_systems(SystemStage::PreUpdate);
@@ -132,22 +138,6 @@ impl App {
                     update_world.run_systems(SystemStage::Update);
 
                     update_world.run_systems(SystemStage::PostUpdate);
-
-                    {
-                        let world = update_world.read();
-                        let gui = world.read_resource::<EguiContext>().unwrap();
-                        gui.end_frame();
-                    }
-
-                    update_world.run_systems(SystemStage::Render);
-
-                    update_world.run_systems(SystemStage::PostRender);
-
-                    {
-                        let world = update_world.read();
-                        let window = world.read_resource::<Window>().unwrap();
-                        window.request_redraw();
-                    }
 
                     if killswitch_rx.try_recv().is_ok() {
                         break;
@@ -206,11 +196,41 @@ impl App {
                             }
                         }
                         winit::event::WindowEvent::RedrawRequested => {
+                            {
+                                let world = self.world.read();
+                                let mut time = world.write_resource::<RenderTime>().unwrap();
+                                time.update();
+                            }
+
+                            {
+                                let world = self.world.read();
+                                let window = world.read_resource::<Window>().unwrap();
+                                let gui = world.read_resource::<EguiContext>().unwrap();
+                                gui.begin_frame(&window.window);
+                            }
+
+                            self.world.run_systems(SystemStage::Ui);
+
+                            {
+                                let world = self.world.read();
+                                let gui = world.read_resource::<EguiContext>().unwrap();
+                                gui.end_frame();
+                            }
+
+                            self.world.run_systems(SystemStage::PreRender);
+
+                            self.world.run_systems(SystemStage::Render);
+
+                            self.world.run_systems(SystemStage::PostRender);
+
                             let world = self.world.read();
-                            let window = world.read_resource::<Window>().unwrap();
-                            let renderer = world.read_resource::<Renderer>().unwrap();
-                            window.window.pre_present_notify();
-                            renderer.present();
+                            let window = world.try_read_resource::<Window>();
+                            let renderer = world.try_read_resource::<Renderer>();
+                            if let (Some(window), Some(renderer)) = (window, renderer) {
+                                window.window.pre_present_notify();
+                                renderer.present();
+                                window.request_redraw();
+                            };
                         }
                         _ => {}
                     }

@@ -122,6 +122,7 @@ macro_rules! load_shader {
 }
 
 #[allow(dead_code)]
+#[derive(Atom)]
 pub struct Renderer {
     surface: wgpu::Surface,
     device: Arc<wgpu::Device>,
@@ -146,7 +147,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(window: &winit::window::Window, world: LockedWorldHandle) -> Self {
+    pub fn new(vsync: bool, window: &winit::window::Window, world: LockedWorldHandle) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -185,7 +186,11 @@ impl Renderer {
             format: WindowTexture::FORMAT,
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::AutoNoVsync,
+            present_mode: if vsync {
+                wgpu::PresentMode::AutoVsync
+            } else {
+                wgpu::PresentMode::AutoNoVsync
+            },
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
         };
@@ -564,7 +569,7 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn begin_render(&mut self) -> Option<wgpu::CommandEncoder> {
+    pub fn begin_render(&mut self) -> wgpu::CommandEncoder {
         log::trace!("Begin frame");
 
         let output = self
@@ -581,7 +586,7 @@ impl Renderer {
 
         *self.output.write() = Some(output);
 
-        Some(encoder)
+        encoder
     }
 
     pub fn prepare_passes(&mut self) {

@@ -1,3 +1,4 @@
+pub use fabricate;
 pub use weaver_core as core;
 
 pub mod prelude {

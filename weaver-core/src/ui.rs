@@ -3,6 +3,7 @@ use std::sync::Arc;
 use egui::Context;
 use egui_wgpu::renderer::ScreenDescriptor;
 use egui_winit::State;
+use fabricate::prelude::Atom;
 use parking_lot::RwLock;
 use winit::window::Window;
 
@@ -89,6 +90,7 @@ pub mod builtin {
     }
 }
 
+#[derive(Atom)]
 pub struct EguiContext {
     state: Arc<RwLock<State>>,
     renderer: egui_wgpu::Renderer,
