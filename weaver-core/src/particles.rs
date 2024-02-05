@@ -16,6 +16,8 @@ pub struct Particle {
     pub color: Vec4,
 }
 
+impl_atom_simple!(Particle);
+
 #[derive(Component)]
 pub struct ParticleEmitter {
     pub(crate) particles: Vec<Particle>,

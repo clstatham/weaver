@@ -1,5 +1,6 @@
 use std::{fmt::Debug, path::Path, sync::Arc};
 
+use fabricate::impl_atom_simple;
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -140,6 +141,8 @@ struct MeshInner {
 pub struct Mesh {
     inner: Arc<MeshInner>,
 }
+
+impl_atom_simple!(Mesh);
 
 impl Debug for Mesh {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

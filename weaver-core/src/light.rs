@@ -24,6 +24,8 @@ pub struct PointLight {
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
 
+impl_atom_simple!(PointLight);
+
 impl Debug for PointLight {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PointLight")

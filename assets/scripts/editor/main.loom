@@ -1,30 +1,10 @@
 @startup
 system setup {
-    var res assets: AssetServer
-
-    let parent = spawn(
-        assets.load_mesh("meshes/monkey_2x.glb"),
-        assets.load_material("materials/wood.glb"),
-        GlobalTransform.new(),
-        Transform.new(),
-        Player {},
-    )
-
-    let child = spawn(
-        assets.load_mesh("meshes/monkey_2x.glb"),
-        assets.load_material("materials/metal.glb"),
-        GlobalTransform.new(),
-        Transform.from_translation(vec3(0.0, 0.0, 3.0)),
-    )
-
-    add_child(parent, child)
 }
 
 @update
 system update_player {
-    let res time: Time
-
-    loop query _ [var t: Transform, with[Player]] {
-        t.rotate(Quat.from_axis_angle(vec3(0.0, 1.0, 0.0), time.delta_seconds))
+    loop query _ [var t: Transform] {
+        t.rotation = quat(vec3(0.0, 1.0, 0.0), 0.00001) * t.rotation;
     }
 }

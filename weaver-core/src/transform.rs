@@ -103,6 +103,8 @@ pub struct GlobalTransform {
     pub matrix: glam::Mat4,
 }
 
+impl_atom_simple!(GlobalTransform);
+
 impl GlobalTransform {
     pub fn new() -> Self {
         Self {

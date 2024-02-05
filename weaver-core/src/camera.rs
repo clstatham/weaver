@@ -53,6 +53,8 @@ pub struct Camera {
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
 
+impl_atom_simple!(Camera);
+
 impl Debug for Camera {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Camera")
@@ -145,6 +147,8 @@ pub struct FlyCameraController {
     pub near: f32,
     pub far: f32,
 }
+
+impl_atom_simple!(FlyCameraController);
 
 impl FlyCameraController {
     pub fn update(&mut self, input: &Input, delta_time: f32, aspect: f32, camera: &mut Camera) {

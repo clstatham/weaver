@@ -18,13 +18,15 @@ fn main() -> anyhow::Result<()> {
 
     app.add_system_to_stage(Setup, SystemStage::Startup);
 
+    app.add_system_to_stage(UpdateTransforms, SystemStage::PreUpdate);
+
     app.add_system_to_stage(UpdateCamera, SystemStage::Update);
 
     app.add_system_to_stage(ui::EditorStateUi, SystemStage::Ui);
 
     app.add_system_to_stage(EditorRender, SystemStage::Render);
 
-    // app.add_script("assets/scripts/editor/main.loom");
+    app.add_script("assets/scripts/editor/main.loom");
 
     app.run()
 }
@@ -58,10 +60,25 @@ impl System for Setup {
             (mesh, material)
         };
         let transform = Transform::default();
-        world
+        let e1 = world
             .write()
-            .spawn((mesh, material, transform, GlobalTransform::default()))
+            .spawn((
+                mesh.clone(),
+                material.clone(),
+                transform,
+                GlobalTransform::default(),
+            ))
             .unwrap();
+        let e2 = world
+            .write()
+            .spawn((
+                mesh.clone(),
+                material.clone(),
+                Transform::from_translation(Vec3::new(2.0, 0.0, 0.0)),
+                GlobalTransform::default(),
+            ))
+            .unwrap();
+        world.write().add_child(e1, e2, Some("Bobby"));
 
         Ok(vec![])
     }
@@ -136,5 +153,98 @@ impl System for EditorRender {
 
     fn writes(&self) -> Vec<TypeUid> {
         vec![Renderer::static_type_uid(), EguiContext::static_type_uid()]
+    }
+}
+
+struct UpdateTransforms;
+
+impl System for UpdateTransforms {
+    fn reads(&self) -> Vec<TypeUid> {
+        vec![Transform::static_type_uid()]
+    }
+
+    fn writes(&self) -> Vec<TypeUid> {
+        vec![GlobalTransform::static_type_uid()]
+    }
+
+    fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
+        let world = world.read();
+        let orphans = world.graph().orphans();
+        for entity in orphans {
+            // find the transform component for the entity
+            let local = {
+                let transform = world.get(entity, Transform::type_uid());
+                if transform.is_none() {
+                    continue;
+                }
+                let transform = transform.unwrap().value_uid();
+
+                let translation = transform.field("translation", &world).unwrap();
+                let rotation = transform.field("rotation", &world).unwrap();
+                let scale = transform.field("scale", &world).unwrap();
+
+                let translation = world.get_component::<Vec3>(translation).unwrap();
+                let rotation = world.get_component::<Quat>(rotation).unwrap();
+                let scale = world.get_component::<Vec3>(scale).unwrap();
+
+                let translation = translation.as_ref::<Vec3>().unwrap();
+                let rotation = rotation.as_ref::<Quat>().unwrap();
+                let scale = scale.as_ref::<Vec3>().unwrap();
+
+                Mat4::from_scale_rotation_translation(*scale, *rotation, *translation)
+            };
+
+            let global = {
+                let mut global = world.get_component_mut::<GlobalTransform>(entity).unwrap();
+                let global = global.as_mut::<GlobalTransform>().unwrap();
+                global.matrix = local;
+                *global
+            };
+
+            if let Some(children) = world.graph().get_children(entity) {
+                for child in children {
+                    update_transforms_recurse(&world, child, global);
+                }
+            }
+        }
+        Ok(vec![])
+    }
+}
+
+fn update_transforms_recurse(world: &World, entity: ValueUid, parent_global: GlobalTransform) {
+    let local = {
+        let transform = world.get(entity, Transform::type_uid());
+        if transform.is_none() {
+            return;
+        }
+        let transform = transform.unwrap().value_uid();
+
+        let translation = transform.field("translation", world).unwrap();
+        let rotation = transform.field("rotation", world).unwrap();
+        let scale = transform.field("scale", world).unwrap();
+
+        let translation = world.get_component::<Vec3>(translation).unwrap();
+        let rotation = world.get_component::<Quat>(rotation).unwrap();
+        let scale = world.get_component::<Vec3>(scale).unwrap();
+
+        let translation = translation.as_ref::<Vec3>().unwrap();
+        let rotation = rotation.as_ref::<Quat>().unwrap();
+        let scale = scale.as_ref::<Vec3>().unwrap();
+
+        Mat4::from_scale_rotation_translation(*scale, *rotation, *translation)
+    };
+
+    let global = {
+        let mut global = world.get_component_mut::<GlobalTransform>(entity).unwrap();
+        let global = global.as_mut::<GlobalTransform>().unwrap();
+
+        global.matrix = parent_global.matrix * local;
+        *global
+    };
+
+    if let Some(children) = world.graph().get_children(entity) {
+        for child in children {
+            update_transforms_recurse(world, child, global);
+        }
     }
 }
