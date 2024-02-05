@@ -4,7 +4,6 @@ use egui::Context;
 use egui_wgpu::renderer::ScreenDescriptor;
 use egui_winit::State;
 use parking_lot::RwLock;
-use weaver_proc_macro::Component;
 use winit::window::Window;
 
 use super::texture::{TextureFormat, WindowTexture};
@@ -13,10 +12,9 @@ pub mod builtin {
     use std::collections::VecDeque;
 
     use egui_plot::Line;
+    use fabricate::prelude::Atom;
 
-    use super::*;
-
-    #[derive(Component)]
+    #[derive(Atom)]
     pub struct FpsDisplay {
         last_frame: std::time::Instant,
         last_update: std::time::Instant,
@@ -43,7 +41,7 @@ pub mod builtin {
             }
         }
 
-        pub fn run_ui(&mut self, ctx: &Context) {
+        pub fn run_ui(&mut self, ctx: &egui::Context) {
             let now = std::time::Instant::now();
 
             let delta = now - self.last_frame;
@@ -91,7 +89,6 @@ pub mod builtin {
     }
 }
 
-#[derive(Component)]
 pub struct EguiContext {
     state: Arc<RwLock<State>>,
     renderer: egui_wgpu::Renderer,

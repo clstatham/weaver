@@ -6,13 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = [
-    "weaver-proc-macro",
-    "weaver-core",
-    "weaver-ecs",
-    "weaver-editor",
-    "weaver-bench",
-]
+members = ["weaver-proc-macro", "weaver-core", "weaver-editor"]
 
 [features]
 default = []
@@ -28,9 +22,8 @@ parking_lot = "0.12"
 winit = "0.29"
 egui = "0.25"
 weaver-core = { path = "weaver-core" }
-weaver-ecs = { path = "weaver-ecs" }
 weaver-proc-macro = { path = "weaver-proc-macro" }
-
+fabricate = { path = "../fabricate" }
 
 [profile.release]
 debug = true

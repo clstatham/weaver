@@ -1,4 +1,4 @@
-use weaver_ecs::prelude::*;
+use fabricate::prelude::*;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
 use crate::renderer::internals::{LazyBindGroup, LazyGpuHandle};
@@ -6,17 +6,6 @@ use crate::renderer::internals::{LazyBindGroup, LazyGpuHandle};
 use super::mesh::MAX_MESHES;
 
 #[derive(Component)]
-#[method(new = "fn() -> Self")]
-#[method(from_translation = "fn(glam::Vec3) -> Self")]
-#[method(from_rotation = "fn(glam::Quat) -> Self")]
-#[method(from_scale = "fn(glam::Vec3) -> Self")]
-#[method(from_translation_rotation = "fn(glam::Vec3, glam::Quat) -> Self")]
-#[method(from_translation_scale = "fn(glam::Vec3, glam::Vec3) -> Self")]
-#[method(from_rotation_scale = "fn(glam::Quat, glam::Vec3) -> Self")]
-#[method(from_translation_rotation_scale = "fn(glam::Vec3, glam::Quat, glam::Vec3) -> Self")]
-#[method(translate = "fn(&mut Self, glam::Vec3)")]
-#[method(rotate = "fn(&mut Self, glam::Quat)")]
-#[method(scale = "fn(&mut Self, glam::Vec3)")]
 pub struct Transform {
     pub translation: glam::Vec3,
     pub rotation: glam::Quat,
@@ -108,24 +97,7 @@ impl Default for Transform {
     }
 }
 
-#[derive(Clone, Copy, Component, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-#[method(new = "fn() -> Self")]
-#[method(
-    from_scale_rotation_translation = "fn(scale: glam::Vec3, rotation: glam::Quat, translation: glam::Vec3) -> Self"
-)]
-#[method(from_translation = "fn(translation: glam::Vec3) -> Self")]
-#[method(from_rotation = "fn(rotation: glam::Quat) -> Self")]
-#[method(from_scale = "fn(scale: glam::Vec3) -> Self")]
-#[method(translate = "fn(&mut Self, x: f32, y: f32, z: f32)")]
-#[method(rotate = "fn(&mut Self, angle: f32, axis: glam::Vec3)")]
-#[method(scale = "fn(&mut Self, x: f32, y: f32, z: f32)")]
-#[method(look_at = "fn(&mut Self, target: glam::Vec3, up: glam::Vec3)")]
-#[method(get_translation = "fn(&Self) -> glam::Vec3")]
-#[method(get_rotation = "fn(&Self) -> glam::Quat")]
-#[method(get_scale = "fn(&Self) -> glam::Vec3")]
-#[method(set_translation = "fn(&mut Self, translation: glam::Vec3) -> Self")]
-#[method(set_rotation = "fn(&mut Self, rotation: glam::Quat) -> Self")]
-#[method(set_scale = "fn(&mut Self, scale: glam::Vec3) -> Self")]
+#[derive(Clone, Copy, Debug, Atom, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct GlobalTransform {
     pub matrix: glam::Mat4,

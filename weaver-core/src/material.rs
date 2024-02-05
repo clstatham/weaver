@@ -1,7 +1,7 @@
 use std::{fmt::Debug, path::Path};
 
-use weaver_ecs::prelude::*;
-use weaver_proc_macro::{BindableComponent, Component, GpuComponent};
+use fabricate::prelude::*;
+use weaver_proc_macro::{BindableComponent, GpuComponent};
 
 use crate::{
     asset_server::AssetId,
@@ -14,7 +14,7 @@ use super::{
 };
 
 /// PBR material based on Bevy
-#[derive(Clone, Component, GpuComponent, BindableComponent)]
+#[derive(Clone, Atom, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Material {
     asset_id: AssetId,

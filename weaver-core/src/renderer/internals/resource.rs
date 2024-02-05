@@ -1,5 +1,6 @@
 use std::{fmt::Debug, sync::Arc};
 
+use fabricate::prelude::*;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 
 use super::{BindGroupLayoutCache, BindableComponent, GpuResourceManager};
@@ -381,7 +382,7 @@ impl Debug for LazyInitStatus {
 
 /// A handle to a GPU resource that is lazily initialized.
 /// This is useful for resources that are not used by the GPU until the first frame.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Atom)]
 pub struct LazyGpuHandle {
     status: Arc<RwLock<LazyInitStatus>>,
     label: Option<&'static str>,
@@ -585,7 +586,7 @@ impl LazyGpuHandle {
 }
 
 /// A lazily initialized bind group.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Atom)]
 pub struct LazyBindGroup<T: BindableComponent> {
     /// The bind group layout for the component.
     pub layout: Arc<RwLock<Option<Arc<wgpu::BindGroupLayout>>>>,

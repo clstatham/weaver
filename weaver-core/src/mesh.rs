@@ -1,6 +1,6 @@
 use std::{fmt::Debug, path::Path, sync::Arc};
 
-use weaver_proc_macro::Component;
+use fabricate::prelude::*;
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -137,7 +137,7 @@ struct MeshInner {
     pub bounding_sphere: BoundingSphere,
 }
 
-#[derive(Clone, Component)]
+#[derive(Clone, Atom)]
 pub struct Mesh {
     inner: Arc<MeshInner>,
 }

@@ -1,7 +1,6 @@
-use weaver_proc_macro::Component;
+use fabricate::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Component)]
-#[method(new = "fn(f32, f32, f32) -> Color")]
+#[derive(Debug, Clone, Copy, PartialEq, Component, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Color {
     pub r: f32,
@@ -268,7 +267,7 @@ impl std::ops::DivAssign<f32> for Color {
     }
 }
 
-#[derive(Debug, Clone, Component)]
+#[derive(Debug, Clone)]
 pub struct ColorArray {
     pub colors: Vec<Color>,
 }

@@ -1,4 +1,4 @@
-use weaver_ecs::world::World;
+use fabricate::prelude::*;
 
 use crate::{
     geom::Rect,

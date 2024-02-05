@@ -1,17 +1,16 @@
 use std::fmt::Debug;
 
-use weaver_proc_macro::{BindableComponent, Component, GpuComponent};
+use weaver_proc_macro::{BindableComponent, GpuComponent};
 
 use crate::renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle};
 
-use weaver_ecs::prelude::*;
+use fabricate::prelude::*;
 
 use super::color::Color;
 
 pub const MAX_LIGHTS: usize = 32;
 
-#[derive(Component, GpuComponent, BindableComponent)]
-#[method(new = "fn(position: glam::Vec3, color: Color, intensity: f32, radius: f32) -> PointLight")]
+#[derive(Atom, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct PointLight {
     pub position: glam::Vec3,
@@ -78,7 +77,7 @@ impl PointLight {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable, Component)]
+#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct PointLightUniform {
     pub position: glam::Vec4,
@@ -173,7 +172,7 @@ impl Default for PointLightArray {
     }
 }
 
-#[derive(Debug, Clone, Copy, Component)]
+#[derive(Debug, Clone, Copy)]
 pub struct DirectionalLight {
     pub direction: glam::Vec3,
     pub color: Color,

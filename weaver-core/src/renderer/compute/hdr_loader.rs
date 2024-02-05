@@ -1,7 +1,6 @@
 use std::{io::Read, num::NonZeroU32, path::Path};
 
 use image::codecs::hdr::HdrDecoder;
-use weaver_proc_macro::Component;
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -10,7 +9,6 @@ use crate::{
     texture::{HdrCubeTexture, HdrD2ArrayTexture, Texture, TextureFormat},
 };
 
-#[derive(Component)]
 #[allow(dead_code)]
 pub struct HdrLoader {
     pub(crate) load_pipeline: wgpu::ComputePipeline,

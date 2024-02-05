@@ -293,7 +293,7 @@ pub fn derive_gpu_component(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
                 Ok(())
             }
 
-            fn update_resources(&self, world: &weaver_ecs::world::World) -> anyhow::Result<()> {
+            fn update_resources(&self, world: &fabricate::world::World) -> anyhow::Result<()> {
                 self.#gpu_update(world)?;
                 #(
                     #update_resources

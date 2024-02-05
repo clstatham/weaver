@@ -47,7 +47,7 @@ impl Default for Tabs {
 }
 
 pub struct EditorTabViewer<'a> {
-    world: Arc<RwLock<World>>,
+    world: LockedWorldHandle,
     commands: &'a mut Commands,
     state: &'a mut EditorState,
 }

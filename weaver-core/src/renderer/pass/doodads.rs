@@ -2,7 +2,7 @@ use parking_lot::RwLock;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 use wgpu::util::DeviceExt;
 
-use weaver_ecs::prelude::*;
+use fabricate::prelude::*;
 
 use crate::{
     camera::{Camera, CameraUniform},
@@ -486,13 +486,14 @@ impl Pass for DoodadRenderPass {
         let mut cone_transforms_handle = self.cones.transform_buffer.lazy_init(manager)?;
 
         let mut camera_handle = self.camera_buffer.lazy_init(manager)?;
-        let camera = world.query::<&Camera>();
+        let camera = world.query().read::<Camera>().unwrap().build();
         let camera = camera.iter().next();
         if camera.is_none() {
             return Ok(());
         }
         let camera = camera.unwrap();
-        camera_handle.update(&[CameraUniform::from(&*camera)]);
+        let camera = camera.get::<Camera>().unwrap();
+        camera_handle.update(&[CameraUniform::from(camera)]);
 
         let mut cube_transforms = Vec::new();
         let mut cube_colors = Vec::new();
@@ -503,7 +504,7 @@ impl Pass for DoodadRenderPass {
         let mut cone_transforms = Vec::new();
         let mut cone_colors = Vec::new();
 
-        let mut doodads = world.write_resource::<Doodads>()?;
+        let mut doodads = world.write_resource::<Doodads>().unwrap();
         for doodad in doodads.doodads.drain(..) {
             match doodad {
                 Doodad::Cube(cube) => {
@@ -572,12 +573,13 @@ impl Pass for DoodadRenderPass {
             .cones
             .lazy_init_bind_group(manager, &renderer.bind_group_layout_cache)?;
 
-        let camera = world.query::<&Camera>();
+        let camera = world.query().read::<Camera>().unwrap().build();
         let camera = camera.iter().next();
         if camera.is_none() {
             return Ok(());
         }
         let camera = camera.unwrap();
+        let camera = camera.get::<Camera>().unwrap();
         let camera_bind_group =
             camera.lazy_init_bind_group(manager, &renderer.bind_group_layout_cache)?;
 

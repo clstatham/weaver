@@ -4,7 +4,7 @@ use egui_wgpu::renderer::ScreenDescriptor;
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
 use parking_lot::RwLock;
 
-use weaver_ecs::prelude::*;
+use fabricate::prelude::*;
 
 use crate::{
     app::Window,
@@ -121,7 +121,6 @@ macro_rules! load_shader {
     };
 }
 
-#[derive(Component)]
 #[allow(dead_code)]
 pub struct Renderer {
     surface: wgpu::Surface,
@@ -142,12 +141,12 @@ pub struct Renderer {
     bind_group_layout_cache: BindGroupLayoutCache,
 
     point_lights: PointLightArray,
-    world: Arc<RwLock<World>>,
+    world: LockedWorldHandle,
     output: Arc<RwLock<Option<wgpu::SurfaceTexture>>>,
 }
 
 impl Renderer {
-    pub fn new(window: &winit::window::Window, world: Arc<RwLock<World>>) -> Self {
+    pub fn new(window: &winit::window::Window, world: LockedWorldHandle) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -372,8 +371,9 @@ impl Renderer {
         // - Camera
 
         {
-            let query = world.query::<&Material>();
+            let query = world.query().read::<Material>().unwrap().build();
             for material in query.iter() {
+                let material = material.get::<Material>().unwrap();
                 material.lazy_init(resource_manager).unwrap();
                 material.update_resources(world).unwrap();
             }
@@ -382,19 +382,21 @@ impl Renderer {
         {
             self.point_lights.clear();
 
-            let query = world.query::<&PointLight>();
+            let query = world.query().read::<PointLight>().unwrap().build();
             for light in query.iter() {
+                let light = light.get::<PointLight>().unwrap();
                 light.lazy_init(resource_manager).unwrap();
                 light.update_resources(world).unwrap();
-                self.point_lights.add_light(&light);
+                self.point_lights.add_light(light);
             }
 
             self.point_lights.update_resources(world).unwrap();
         }
 
         {
-            let query = world.query::<&Camera>();
+            let query = world.query().read::<Camera>().unwrap().build();
             for camera in query.iter() {
+                let camera = camera.get::<Camera>().unwrap();
                 camera.lazy_init(resource_manager).unwrap();
                 camera.update_resources(world).unwrap();
             }

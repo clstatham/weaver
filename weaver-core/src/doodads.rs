@@ -1,10 +1,10 @@
-use weaver_proc_macro::Component;
+use fabricate::prelude::*;
 
 use crate::color::Color;
 
 pub const MAX_DOODADS: usize = 100;
 
-#[derive(Default, Component)]
+#[derive(Default, Atom)]
 pub struct Doodads {
     pub(crate) doodads: Vec<Doodad>,
     pub locked: bool,
@@ -33,14 +33,14 @@ impl Doodads {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Atom)]
 pub enum Doodad {
     Cube(Cube),
     WireCube(Cube),
     Cone(Cone),
 }
 
-#[derive(Debug, Clone, Copy, Component)]
+#[derive(Debug, Clone, Copy)]
 pub struct Cube {
     pub position: glam::Vec3,
     pub rotation: glam::Quat,
@@ -75,7 +75,7 @@ impl Default for Cube {
     }
 }
 
-#[derive(Debug, Clone, Copy, Component)]
+#[derive(Debug, Clone, Copy)]
 pub struct Cone {
     pub position: glam::Vec3,
     pub rotation: glam::Quat,

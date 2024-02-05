@@ -1,11 +1,10 @@
 use std::fmt::Debug;
 
+use fabricate::prelude::*;
 use rapier3d::prelude::*;
-use weaver_proc_macro::Component;
 
 use super::transform::GlobalTransform;
 
-#[derive(Component)]
 pub struct RapierContext {
     pub(crate) gravity: Vector<f32>,
     pub(crate) integration_parameters: IntegrationParameters,
@@ -169,7 +168,7 @@ impl RigidBodyPhysics {
     }
 }
 
-#[derive(Component, Clone)]
+#[derive(Atom, Clone)]
 pub struct RigidBody {
     physics: RigidBodyPhysics,
 }

@@ -1,18 +1,16 @@
 use crate::{
-    asset_server::AssetServer, doodads::Doodads, input::Input, scripts::Scripts, time::Time,
-    ui::EguiContext,
+    asset_server::AssetServer, doodads::Doodads, input::Input, time::Time, ui::EguiContext,
 };
 
 use std::sync::Arc;
 
-use parking_lot::RwLock;
-use petgraph::prelude::NodeIndex;
-use weaver_ecs::prelude::*;
+use fabricate::{prelude::*, registry::StaticId};
+
 use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use crate::renderer::{compute::hdr_loader::HdrLoader, Renderer};
 
-#[derive(Component, Clone)]
+#[derive(Clone)]
 pub struct Window {
     pub(crate) window: Arc<winit::window::Window>,
     pub fps_mode: bool,
@@ -30,17 +28,12 @@ impl Window {
 
 pub struct App {
     event_loop: EventLoop<()>,
-    pub world: Arc<RwLock<World>>,
+    pub world: LockedWorldHandle,
 }
 
 impl App {
     pub fn new(screen_width: usize, screen_height: usize) -> anyhow::Result<Self> {
-        let world = World::new();
-        crate::register_all(world.registry());
-        let world = Arc::new(RwLock::new(world));
-
-        let scripts = Scripts::new(world.clone());
-        world.write().add_resource(scripts)?;
+        let world = World::new_handle();
 
         let event_loop = EventLoop::new()?;
         let window = WindowBuilder::new()
@@ -73,35 +66,30 @@ impl App {
             fps_mode: false,
         })?;
 
-        world
-            .write()
-            .add_system_to_stage(crate::relations::UpdateTransforms, SystemStage::PreUpdate);
-
         Ok(Self { event_loop, world })
     }
 
-    pub fn add_resource<T: Component>(&self, resource: T) -> anyhow::Result<()> {
+    pub fn add_resource<T: StaticId + Send + Sync>(&self, resource: T) -> anyhow::Result<()> {
         self.world.write().add_resource(resource)
     }
 
-    pub fn add_system<T: System + 'static>(&self, system: T) -> NodeIndex {
-        self.world.write().add_system(system)
-    }
-
-    pub fn add_system_to_stage<T: System + 'static>(
+    pub fn add_system_to_stage<T: System + 'static + Send + Sync>(
         &self,
         system: T,
         stage: SystemStage,
-    ) -> NodeIndex {
-        self.world.write().add_system_to_stage(system, stage)
+    ) {
+        self.world.write().add_system(stage, move |world| {
+            system.run(world, &[]).unwrap();
+        });
     }
 
     pub fn add_script(&self, script_path: impl AsRef<std::path::Path>) {
-        World::add_script(&self.world, script_path);
+        self.world
+            .add_script(Script::load(script_path.as_ref()).unwrap());
     }
 
     pub fn run(self) -> anyhow::Result<()> {
-        World::run_stage(&self.world, SystemStage::Startup)?;
+        self.world.run_systems(SystemStage::Startup);
 
         // ECS update task
         let (killswitch, killswitch_rx) = crossbeam_channel::bounded(1);
@@ -139,11 +127,11 @@ impl App {
                         gui.begin_frame(&window.window);
                     }
 
-                    World::run_stage(&update_world, SystemStage::PreUpdate).unwrap();
+                    update_world.run_systems(SystemStage::PreUpdate);
 
-                    World::run_stage(&update_world, SystemStage::Update).unwrap();
+                    update_world.run_systems(SystemStage::Update);
 
-                    World::run_stage(&update_world, SystemStage::PostUpdate).unwrap();
+                    update_world.run_systems(SystemStage::PostUpdate);
 
                     {
                         let world = update_world.read();
@@ -151,9 +139,9 @@ impl App {
                         gui.end_frame();
                     }
 
-                    World::run_stage(&update_world, SystemStage::Render).unwrap();
+                    update_world.run_systems(SystemStage::Render);
 
-                    World::run_stage(&update_world, SystemStage::PostRender).unwrap();
+                    update_world.run_systems(SystemStage::PostRender);
 
                     {
                         let world = update_world.read();
@@ -168,7 +156,7 @@ impl App {
                     // std::thread::sleep(std::time::Duration::from_millis(1));
                 }
 
-                World::run_stage(&update_world, SystemStage::Shutdown).unwrap();
+                update_world.run_systems(SystemStage::Shutdown);
             })?;
 
         self.event_loop.run(move |event, target| {

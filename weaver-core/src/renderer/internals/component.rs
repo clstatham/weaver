@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use weaver_ecs::prelude::*;
+use fabricate::prelude::*;
 
 use super::{BindGroupLayoutCache, GpuResourceManager};
 
@@ -16,7 +16,7 @@ pub trait GpuComponent: 'static {
 }
 
 /// A component that holds a GPU bind group.
-pub trait BindableComponent: 'static {
+pub trait BindableComponent: Send + Sync + 'static {
     /// Creates a bind group layout for the component.
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
     where

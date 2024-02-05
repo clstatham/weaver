@@ -1,4 +1,4 @@
-use weaver_ecs::prelude::*;
+use fabricate::prelude::*;
 
 use crate::{
     load_shader,

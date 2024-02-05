@@ -1,14 +1,14 @@
 use std::fmt::Debug;
 
+use fabricate::prelude::*;
 use glam::{Vec3, Vec4};
 use rand::Rng;
-use weaver_proc_macro::Component;
 
 use super::texture::Texture;
 
 pub const TOTAL_MAX_PARTICLES: usize = 10000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Component)]
+#[derive(Debug, Clone, Copy, PartialEq, Atom)]
 pub struct Particle {
     pub position: Vec3,
     pub velocity: Vec3,

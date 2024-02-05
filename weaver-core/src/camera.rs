@@ -5,7 +5,7 @@ use crate::{
     renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle},
 };
 
-use weaver_ecs::prelude::*;
+use fabricate::prelude::*;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 use winit::event::MouseButton;
 pub use winit::keyboard::KeyCode;
@@ -42,11 +42,7 @@ impl From<&Camera> for CameraUniform {
     }
 }
 
-#[derive(Component, GpuComponent, BindableComponent)]
-#[method(default = "fn() -> Camera")]
-#[method(
-    perspective_lookat = "fn(glam::Vec3, glam::Vec3, glam::Vec3, f32, f32, f32, f32) -> Camera"
-)]
+#[derive(Atom, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Camera {
     pub view_matrix: glam::Mat4,
@@ -138,10 +134,7 @@ impl Default for Camera {
     }
 }
 
-#[derive(Debug, Component, Clone, Copy)]
-#[method(default = "fn() -> FlyCameraController")]
-#[method(update = "fn(&mut FlyCameraController, &Input, f32, f32, &mut Camera)")]
-#[method(set_translation = "fn(&mut FlyCameraController, glam::Vec3)")]
+#[derive(Debug, Clone, Copy, Atom)]
 pub struct FlyCameraController {
     pub speed: f32,
     pub sensitivity: f32,

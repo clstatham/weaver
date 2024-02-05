@@ -12,10 +12,10 @@ use crate::{
 
 use std::{path::PathBuf, sync::Arc};
 
+use fabricate::prelude::*;
 use rustc_hash::FxHashMap;
-use weaver_ecs::prelude::*;
 
-#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Atom, PartialOrd, Ord, PartialEq, Eq, Hash)]
 
 pub struct AssetId {
     id: u64,
@@ -41,10 +41,6 @@ impl Default for AssetId {
     }
 }
 
-#[derive(Component)]
-#[method(load_mesh = "fn(&mut AssetServer, path: &String) -> Mesh")]
-#[method(load_material = "fn(&mut AssetServer, path: &String) -> Material")]
-#[method(load_skybox = "fn(&mut AssetServer, path: &String, hdr_loader: &HdrLoader) -> Skybox")]
 pub struct AssetServer {
     next_id: u64,
     path_prefix: PathBuf,
@@ -57,7 +53,7 @@ pub struct AssetServer {
 
 impl AssetServer {
     pub fn new(world: &World) -> anyhow::Result<Self> {
-        let renderer = world.read_resource::<Renderer>()?;
+        let renderer = world.read_resource::<Renderer>().unwrap();
         let resource_manager = renderer.resource_manager().clone();
         Ok(Self {
             next_id: 0,

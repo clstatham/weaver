@@ -3,7 +3,7 @@ use std::{fmt::Debug, path::Path};
 
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
-use weaver_ecs::prelude::*;
+use fabricate::prelude::*;
 
 use crate::prelude::Renderer;
 use crate::renderer::internals::{
@@ -23,7 +23,7 @@ pub trait TextureFormat: 'static {
 macro_rules! texture_formats {
     ($($name:ident: $format:ident, $sample_type:expr;)*) => {
         $(
-            #[derive(Clone, weaver_proc_macro::GpuComponent)]
+            #[derive(Clone, weaver_proc_macro::GpuComponent, fabricate::prelude::Atom)]
             #[gpu(update = "update")]
             pub struct $name {
                 #[gpu(component)]
@@ -207,7 +207,7 @@ texture_format_impls!(D2, Cube, 6; HdrCubeTexture, MonoCubeTexture, DepthCubeTex
 texture_format_impls!(D2, D2Array, 6; HdrD2ArrayTexture, MonoTexture);
 texture_format_impls!(D2, CubeArray, 6; MonoCubeArrayTexture, DepthCubeArrayTexture);
 
-#[derive(Clone, Component, GpuComponent)]
+#[derive(Clone, Atom, GpuComponent)]
 #[gpu(update = "update")]
 pub struct Texture {
     pub(crate) handle: LazyGpuHandle,
@@ -384,7 +384,7 @@ impl Texture {
     }
 }
 
-#[derive(Clone, Component, GpuComponent, BindableComponent)]
+#[derive(Clone, Atom, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Skybox {
     #[gpu(component)]

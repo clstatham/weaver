@@ -4,7 +4,7 @@ use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
-use weaver_ecs::prelude::*;
+use fabricate::prelude::*;
 
 use crate::{
     camera::{Camera, CameraUniform},
@@ -49,14 +49,25 @@ pub struct UniqueMeshes {
 
 impl UniqueMeshes {
     pub fn gather(&mut self, world: &World, renderer: &Renderer) {
-        let query = world.query::<(&Mesh, &Material, &GlobalTransform)>();
+        let query = world
+            .query()
+            .read::<Mesh>()
+            .unwrap()
+            .read::<Material>()
+            .unwrap()
+            .read::<GlobalTransform>()
+            .unwrap()
+            .build();
 
         // clear the transforms
         for unique_mesh in self.unique_meshes.values_mut() {
             unique_mesh.transforms.clear();
         }
 
-        for (mesh, material, transform) in query.iter() {
+        for result in query.iter() {
+            let mesh = result.get::<Mesh>().unwrap();
+            let material = result.get::<Material>().unwrap();
+            let transform = result.get::<GlobalTransform>().unwrap();
             let unique_mesh = self
                 .unique_meshes
                 .entry((mesh.asset_id().id(), material.asset_id().id()))
@@ -71,7 +82,7 @@ impl UniqueMeshes {
                     transforms: TransformArray::new(),
                 });
 
-            unique_mesh.transforms.push(&transform);
+            unique_mesh.transforms.push(transform);
         }
     }
 
@@ -251,12 +262,13 @@ impl PbrRenderPass {
         world: &World,
         encoder: &mut wgpu::CommandEncoder,
     ) -> anyhow::Result<()> {
-        let skybox = world.query::<&Skybox>();
+        let skybox = world.query().read::<Skybox>().unwrap().build();
         let skybox = skybox.iter().next();
         if skybox.is_none() {
             return Ok(());
         }
         let skybox = skybox.unwrap();
+        let skybox = skybox.get::<Skybox>().unwrap();
 
         let skybox_handle = &skybox
             .texture
@@ -269,12 +281,13 @@ impl PbrRenderPass {
         let skybox_texture = skybox_handle.get_texture().unwrap();
         let irradiance_texture = irradiance_handle.get_texture().unwrap();
 
-        let camera = world.query::<&Camera>();
+        let camera = world.query().read::<Camera>().unwrap().build();
         let camera = camera.iter().next();
         if camera.is_none() {
             return Ok(());
         }
         let camera = camera.unwrap();
+        let camera = camera.get::<Camera>().unwrap();
 
         let camera_handle = camera.handle.lazy_init(&renderer.resource_manager)?;
 
