@@ -1,10 +1,8 @@
-use fabricate::prelude::*;
-
 use crate::color::Color;
 
 pub const MAX_DOODADS: usize = 100;
 
-#[derive(Default, Atom)]
+#[derive(Default, Clone)]
 pub struct Doodads {
     pub(crate) doodads: Vec<Doodad>,
     pub locked: bool,
@@ -33,7 +31,7 @@ impl Doodads {
     }
 }
 
-#[derive(Debug, Clone, Copy, Atom)]
+#[derive(Debug, Clone, Copy)]
 pub enum Doodad {
     Cube(Cube),
     WireCube(Cube),

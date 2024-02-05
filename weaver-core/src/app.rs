@@ -6,7 +6,7 @@ use crate::{
     ui::EguiContext,
 };
 
-use std::sync::Arc;
+use std::{any::Any, sync::Arc};
 
 use fabricate::prelude::*;
 
@@ -14,7 +14,7 @@ use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use crate::renderer::{compute::hdr_loader::HdrLoader, Renderer};
 
-#[derive(Clone, Atom)]
+#[derive(Clone)]
 pub struct Window {
     pub(crate) window: Arc<winit::window::Window>,
     pub fps_mode: bool,
@@ -79,7 +79,7 @@ impl App {
         Ok(Self { event_loop, world })
     }
 
-    pub fn add_resource<T: Atom>(&self, resource: T) -> anyhow::Result<()> {
+    pub fn add_resource<T: Any + Send + Sync>(&self, resource: T) -> anyhow::Result<()> {
         self.world.write().add_resource(resource)
     }
 

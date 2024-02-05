@@ -1,13 +1,12 @@
-use std::sync::atomic::AtomicBool;
+use std::sync::{atomic::AtomicBool, Arc};
 
-use fabricate::prelude::Atom;
 use rustc_hash::FxHashSet;
 
 pub use winit::{event::MouseButton, keyboard::KeyCode};
 
 use winit::keyboard::PhysicalKey;
 
-#[derive(Atom)]
+#[derive(Clone)]
 pub struct Input {
     keys_pressed: FxHashSet<KeyCode>,
     keys_held: FxHashSet<KeyCode>,
@@ -18,7 +17,7 @@ pub struct Input {
     mouse_wheel_delta: f32,
     last_update: std::time::Instant,
     update_delta: std::time::Duration,
-    enabled: AtomicBool,
+    enabled: Arc<AtomicBool>,
 }
 
 impl Default for Input {
@@ -34,7 +33,7 @@ impl Default for Input {
 
             last_update: std::time::Instant::now(),
             update_delta: std::time::Duration::ZERO,
-            enabled: AtomicBool::new(true),
+            enabled: Arc::new(AtomicBool::new(true)),
         }
     }
 }

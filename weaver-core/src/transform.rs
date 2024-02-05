@@ -97,7 +97,7 @@ impl Default for Transform {
     }
 }
 
-#[derive(Clone, Copy, Debug, Atom, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct GlobalTransform {
     pub matrix: glam::Mat4,
@@ -197,7 +197,7 @@ impl Default for GlobalTransform {
     }
 }
 
-#[derive(Clone, Component, Debug, GpuComponent, BindableComponent)]
+#[derive(Clone, Debug, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct TransformGpuComponent {
     pub matrix: glam::Mat4,
@@ -229,7 +229,7 @@ impl TransformGpuComponent {
     }
 }
 
-#[derive(Clone, Component, Debug, GpuComponent, BindableComponent)]
+#[derive(Clone, Debug, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct TransformArray {
     matrices: Vec<glam::Mat4>,

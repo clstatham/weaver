@@ -1,6 +1,6 @@
-use fabricate::prelude::Atom;
+use fabricate::prelude::Component;
 
-#[derive(Atom)]
+#[derive(Component)]
 pub struct UpdateTime {
     start_time: std::time::Instant,
     last_update_time: std::time::Instant,
@@ -27,7 +27,7 @@ impl UpdateTime {
     }
 }
 
-#[derive(Atom)]
+#[derive(Component)]
 pub struct RenderTime {
     start_time: std::time::Instant,
     last_update_time: std::time::Instant,

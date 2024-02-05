@@ -10,7 +10,7 @@ use super::color::Color;
 
 pub const MAX_LIGHTS: usize = 32;
 
-#[derive(Atom, GpuComponent, BindableComponent)]
+#[derive(Clone, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct PointLight {
     pub position: glam::Vec3,

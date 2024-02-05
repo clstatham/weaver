@@ -15,7 +15,7 @@ use std::{path::PathBuf, sync::Arc};
 use fabricate::prelude::*;
 use rustc_hash::FxHashMap;
 
-#[derive(Debug, Clone, Atom, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 
 pub struct AssetId {
     id: u64,
@@ -41,7 +41,7 @@ impl Default for AssetId {
     }
 }
 
-#[derive(Atom)]
+#[derive(Clone)]
 pub struct AssetServer {
     next_id: u64,
     path_prefix: PathBuf,

@@ -8,7 +8,7 @@ use super::texture::Texture;
 
 pub const TOTAL_MAX_PARTICLES: usize = 10000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Atom)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Particle {
     pub position: Vec3,
     pub velocity: Vec3,
@@ -16,7 +16,7 @@ pub struct Particle {
     pub color: Vec4,
 }
 
-#[derive(Component, Clone)]
+#[derive(Component)]
 pub struct ParticleEmitter {
     pub(crate) particles: Vec<Particle>,
     pub origin: Vec3,

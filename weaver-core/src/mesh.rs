@@ -1,6 +1,5 @@
 use std::{fmt::Debug, path::Path, sync::Arc};
 
-use fabricate::prelude::*;
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -137,7 +136,7 @@ struct MeshInner {
     pub bounding_sphere: BoundingSphere,
 }
 
-#[derive(Clone, Atom)]
+#[derive(Clone)]
 pub struct Mesh {
     inner: Arc<MeshInner>,
 }

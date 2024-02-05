@@ -14,7 +14,7 @@ use super::{
 };
 
 /// PBR material based on Bevy
-#[derive(Clone, Atom, GpuComponent, BindableComponent)]
+#[derive(Clone, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Material {
     asset_id: AssetId,
@@ -315,7 +315,7 @@ impl Material {
     }
 }
 
-#[derive(Debug, Clone, Copy, Component, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct MaterialUniform {
     pub base_color: glam::Vec4,

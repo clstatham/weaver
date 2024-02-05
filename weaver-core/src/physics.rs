@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-use fabricate::prelude::*;
 use rapier3d::prelude::*;
 
 use super::transform::GlobalTransform;
@@ -168,7 +167,7 @@ impl RigidBodyPhysics {
     }
 }
 
-#[derive(Atom, Clone)]
+#[derive(Clone)]
 pub struct RigidBody {
     physics: RigidBodyPhysics,
 }

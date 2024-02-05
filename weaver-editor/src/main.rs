@@ -39,7 +39,7 @@ impl System for Setup {
             let hdr_loader = world.read_resource::<HdrLoader>().unwrap();
             assets.load_skybox("sky_2k.hdr", &hdr_loader)
         };
-        world.write().spawn(skybox).unwrap();
+        world.write().spawn((skybox,)).unwrap();
 
         let camera = Camera::default();
         let controller = FlyCameraController {

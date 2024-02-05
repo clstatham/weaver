@@ -122,7 +122,6 @@ macro_rules! load_shader {
 }
 
 #[allow(dead_code)]
-#[derive(Atom)]
 pub struct Renderer {
     surface: wgpu::Surface,
     device: Arc<wgpu::Device>,

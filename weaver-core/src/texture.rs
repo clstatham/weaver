@@ -23,7 +23,7 @@ pub trait TextureFormat: 'static {
 macro_rules! texture_formats {
     ($($name:ident: $format:ident, $sample_type:expr;)*) => {
         $(
-            #[derive(Clone, weaver_proc_macro::GpuComponent, fabricate::prelude::Atom)]
+            #[derive(Clone, weaver_proc_macro::GpuComponent)]
             #[gpu(update = "update")]
             pub struct $name {
                 #[gpu(component)]
@@ -207,7 +207,7 @@ texture_format_impls!(D2, Cube, 6; HdrCubeTexture, MonoCubeTexture, DepthCubeTex
 texture_format_impls!(D2, D2Array, 6; HdrD2ArrayTexture, MonoTexture);
 texture_format_impls!(D2, CubeArray, 6; MonoCubeArrayTexture, DepthCubeArrayTexture);
 
-#[derive(Clone, Atom, GpuComponent)]
+#[derive(Clone, GpuComponent)]
 #[gpu(update = "update")]
 pub struct Texture {
     pub(crate) handle: LazyGpuHandle,
@@ -384,7 +384,7 @@ impl Texture {
     }
 }
 
-#[derive(Clone, Atom, GpuComponent, BindableComponent)]
+#[derive(Clone, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Skybox {
     #[gpu(component)]
