@@ -2,7 +2,8 @@ use fabricate::{prelude::Atom, script_vtable};
 
 #[derive(Clone, Atom)]
 #[script_vtable(
-    delta_seconds() -> f32,
+    delta_seconds(&Self) -> f32,
+    total_seconds(&Self) -> f32,
 )]
 pub struct Time {
     start_time: std::time::Instant,
@@ -31,5 +32,9 @@ impl Time {
 
     pub fn delta_seconds(&self) -> f32 {
         self.delta_seconds
+    }
+
+    pub fn total_seconds(&self) -> f32 {
+        self.total_seconds
     }
 }
