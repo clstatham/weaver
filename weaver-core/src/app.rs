@@ -1,12 +1,8 @@
 use crate::{
-    asset_server::AssetServer,
-    doodads::Doodads,
-    input::Input,
-    time::{RenderTime, UpdateTime},
-    ui::EguiContext,
+    asset_server::AssetServer, doodads::Doodads, input::Input, time::Time, ui::EguiContext,
 };
 
-use std::{any::Any, sync::Arc};
+use std::sync::Arc;
 
 use fabricate::prelude::*;
 
@@ -14,7 +10,7 @@ use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use crate::renderer::{compute::hdr_loader::HdrLoader, Renderer};
 
-#[derive(Clone)]
+#[derive(Clone, Atom)]
 pub struct Window {
     pub(crate) window: Arc<winit::window::Window>,
     pub fps_mode: bool,
@@ -42,6 +38,8 @@ impl App {
         screen_height: usize,
         vsync: bool,
     ) -> anyhow::Result<Self> {
+        crate::register_names();
+
         let world = World::new_handle();
 
         let event_loop = EventLoop::new()?;
@@ -62,8 +60,7 @@ impl App {
 
         world.write().add_resource(renderer)?;
         world.write().add_resource(hdr_loader)?;
-        world.write().add_resource(UpdateTime::new())?;
-        world.write().add_resource(RenderTime::new())?;
+        world.write().add_resource(Time::new())?;
         world.write().add_resource(Input::default())?;
         world.write().add_resource(ui)?;
         world.write().add_resource(Doodads::default())?;
@@ -79,7 +76,7 @@ impl App {
         Ok(Self { event_loop, world })
     }
 
-    pub fn add_resource<T: Any + Send + Sync>(&self, resource: T) -> anyhow::Result<()> {
+    pub fn add_resource<T: Atom>(&self, resource: T) -> anyhow::Result<()> {
         self.world.write().add_resource(resource)
     }
 
@@ -101,60 +98,14 @@ impl App {
     pub fn run(self) -> anyhow::Result<()> {
         self.world.run_systems(SystemStage::Startup);
 
-        // ECS update task
-        let (killswitch, killswitch_rx) = crossbeam_channel::bounded(1);
         let (window_event_tx, window_event_rx) = crossbeam_channel::unbounded();
         let (device_event_tx, device_event_rx) = crossbeam_channel::unbounded();
-        let update_world = self.world.clone();
-        std::thread::Builder::new()
-            .name("Weaver ECS Update Loop".to_owned())
-            .spawn(move || {
-                loop {
-                    {
-                        let world = update_world.read();
-                        let mut input = world.write_resource::<Input>().unwrap();
-                        input.prepare_for_update();
-
-                        while let Ok(event) = window_event_rx.try_recv() {
-                            input.update_window(&event);
-
-                            let window = world.read_resource::<Window>().unwrap();
-                            let ui = world.read_resource::<EguiContext>().unwrap();
-                            ui.handle_input(&window.window, &event);
-                        }
-                        while let Ok(event) = device_event_rx.try_recv() {
-                            input.update_device(&event);
-                        }
-                    }
-
-                    {
-                        let world = update_world.read();
-                        let mut time = world.write_resource::<UpdateTime>().unwrap();
-                        time.update();
-                    }
-
-                    update_world.run_systems(SystemStage::PreUpdate);
-
-                    update_world.run_systems(SystemStage::Update);
-
-                    update_world.run_systems(SystemStage::PostUpdate);
-
-                    if killswitch_rx.try_recv().is_ok() {
-                        break;
-                    }
-
-                    // std::thread::sleep(std::time::Duration::from_millis(1));
-                }
-
-                update_world.run_systems(SystemStage::Shutdown);
-            })?;
-
         self.event_loop.run(move |event, target| {
             target.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
             match event {
                 winit::event::Event::LoopExiting => {
-                    killswitch.send(()).unwrap();
+                    self.world.run_systems(SystemStage::Shutdown);
                 }
                 winit::event::Event::DeviceEvent { event, .. } => {
                     device_event_tx.send(event.clone()).unwrap();
@@ -198,9 +149,32 @@ impl App {
                         winit::event::WindowEvent::RedrawRequested => {
                             {
                                 let world = self.world.read();
-                                let mut time = world.write_resource::<RenderTime>().unwrap();
+                                let mut input = world.write_resource::<Input>().unwrap();
+                                input.prepare_for_update();
+
+                                while let Ok(event) = window_event_rx.try_recv() {
+                                    input.update_window(&event);
+
+                                    let window = world.read_resource::<Window>().unwrap();
+                                    let ui = world.read_resource::<EguiContext>().unwrap();
+                                    ui.handle_input(&window.window, &event);
+                                }
+                                while let Ok(event) = device_event_rx.try_recv() {
+                                    input.update_device(&event);
+                                }
+                            }
+
+                            {
+                                let world = self.world.read();
+                                let mut time = world.write_resource::<Time>().unwrap();
                                 time.update();
                             }
+
+                            self.world.run_systems(SystemStage::PreUpdate);
+
+                            self.world.run_systems(SystemStage::Update);
+
+                            self.world.run_systems(SystemStage::PostUpdate);
 
                             {
                                 let world = self.world.read();
@@ -224,8 +198,8 @@ impl App {
                             self.world.run_systems(SystemStage::PostRender);
 
                             let world = self.world.read();
-                            let window = world.try_read_resource::<Window>();
-                            let renderer = world.try_read_resource::<Renderer>();
+                            let window = world.read_resource::<Window>();
+                            let renderer = world.read_resource::<Renderer>();
                             if let (Some(window), Some(renderer)) = (window, renderer) {
                                 window.window.pre_present_notify();
                                 renderer.present();

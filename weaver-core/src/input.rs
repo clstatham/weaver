@@ -1,12 +1,13 @@
 use std::sync::{atomic::AtomicBool, Arc};
 
+use fabricate::prelude::Atom;
 use rustc_hash::FxHashSet;
 
 pub use winit::{event::MouseButton, keyboard::KeyCode};
 
 use winit::keyboard::PhysicalKey;
 
-#[derive(Clone)]
+#[derive(Clone, Atom)]
 pub struct Input {
     keys_pressed: FxHashSet<KeyCode>,
     keys_held: FxHashSet<KeyCode>,

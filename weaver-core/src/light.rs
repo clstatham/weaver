@@ -10,7 +10,7 @@ use super::color::Color;
 
 pub const MAX_LIGHTS: usize = 32;
 
-#[derive(Clone, GpuComponent, BindableComponent)]
+#[derive(Clone, Atom, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct PointLight {
     pub position: glam::Vec3,
@@ -23,8 +23,6 @@ pub struct PointLight {
     pub(crate) handle: LazyGpuHandle,
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
-
-impl_atom_simple!(PointLight);
 
 impl Debug for PointLight {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

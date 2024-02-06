@@ -20,6 +20,7 @@ pub trait EditorAction: Send + Sync + Any + 'static {
     }
 }
 
+#[derive(Atom)]
 pub struct EditorState {
     pub(crate) world: LockedWorldHandle,
 
@@ -33,6 +34,12 @@ pub struct EditorState {
 
     pub(crate) show_rename_entity: bool,
     pub(crate) entity_rename_buffer: String,
+}
+
+impl Clone for EditorState {
+    fn clone(&self) -> Self {
+        unimplemented!("Clone not implemented for EditorState")
+    }
 }
 
 impl EditorState {

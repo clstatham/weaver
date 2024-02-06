@@ -213,8 +213,6 @@ pub struct Texture {
     pub(crate) handle: LazyGpuHandle,
 }
 
-impl_atom_simple!(Texture);
-
 impl Debug for Texture {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Texture").finish()
@@ -386,7 +384,7 @@ impl Texture {
     }
 }
 
-#[derive(Clone, GpuComponent, BindableComponent)]
+#[derive(Clone, Atom, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Skybox {
     #[gpu(component)]
@@ -399,8 +397,6 @@ pub struct Skybox {
 
     bind_group: LazyBindGroup<Self>,
 }
-
-impl_atom_simple!(Skybox);
 
 impl Debug for Skybox {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

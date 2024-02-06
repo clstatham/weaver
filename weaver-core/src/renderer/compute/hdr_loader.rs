@@ -1,5 +1,6 @@
 use std::{io::Read, num::NonZeroU32, path::Path};
 
+use fabricate::prelude::Atom;
 use image::codecs::hdr::HdrDecoder;
 use wgpu::util::DeviceExt;
 
@@ -9,6 +10,7 @@ use crate::{
     texture::{HdrCubeTexture, HdrD2ArrayTexture, Texture, TextureFormat},
 };
 
+#[derive(Atom)]
 #[allow(dead_code)]
 pub struct HdrLoader {
     pub(crate) load_pipeline: wgpu::ComputePipeline,
@@ -19,6 +21,12 @@ pub struct HdrLoader {
     irradiance_views: wgpu::Buffer,
     irradiance_projection: wgpu::Buffer,
     irradiance_transforms_bind_group: wgpu::BindGroup,
+}
+
+impl Clone for HdrLoader {
+    fn clone(&self) -> Self {
+        unimplemented!("Clone is not implemented for HdrLoader")
+    }
 }
 
 impl HdrLoader {

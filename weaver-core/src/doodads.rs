@@ -1,17 +1,19 @@
+use fabricate::{lock::SharedLock, prelude::Atom};
+
 use crate::color::Color;
 
 pub const MAX_DOODADS: usize = 100;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Atom)]
 pub struct Doodads {
-    pub(crate) doodads: Vec<Doodad>,
+    pub(crate) doodads: SharedLock<Vec<Doodad>>,
     pub locked: bool,
 }
 
 impl Doodads {
     pub fn new() -> Self {
         Self {
-            doodads: Vec::new(),
+            doodads: SharedLock::new(Vec::new()),
             locked: false,
         }
     }
@@ -25,8 +27,9 @@ impl Doodads {
     }
 
     pub fn push(&mut self, doodad: Doodad) {
-        if !self.locked && self.doodads.len() < MAX_DOODADS {
-            self.doodads.push(doodad);
+        let mut doodads = self.doodads.write();
+        if !self.locked && doodads.len() < MAX_DOODADS {
+            doodads.push(doodad);
         }
     }
 }

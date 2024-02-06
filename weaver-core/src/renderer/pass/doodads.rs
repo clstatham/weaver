@@ -504,8 +504,8 @@ impl Pass for DoodadRenderPass {
         let mut cone_transforms = Vec::new();
         let mut cone_colors = Vec::new();
 
-        let mut doodads = world.write_resource::<Doodads>().unwrap();
-        for doodad in doodads.doodads.drain(..) {
+        let doodads = world.read_resource::<Doodads>().unwrap();
+        for doodad in doodads.doodads.write().drain(..) {
             match doodad {
                 Doodad::Cube(cube) => {
                     cube_transforms.push(glam::Mat4::from_scale_rotation_translation(

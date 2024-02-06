@@ -3,6 +3,7 @@ use std::sync::Arc;
 use egui::Context;
 use egui_wgpu::renderer::ScreenDescriptor;
 use egui_winit::State;
+use fabricate::prelude::Atom;
 use parking_lot::RwLock;
 use winit::window::Window;
 
@@ -12,9 +13,9 @@ pub mod builtin {
     use std::collections::VecDeque;
 
     use egui_plot::Line;
-    use fabricate::prelude::Component;
+    use fabricate::prelude::Atom;
 
-    #[derive(Component)]
+    #[derive(Clone, Atom)]
     pub struct FpsDisplay {
         last_frame: std::time::Instant,
         last_update: std::time::Instant,
@@ -89,11 +90,18 @@ pub mod builtin {
     }
 }
 
+#[derive(Atom)]
 pub struct EguiContext {
     state: Arc<RwLock<State>>,
     renderer: egui_wgpu::Renderer,
     full_output: Arc<RwLock<Option<egui::FullOutput>>>,
     locked: bool,
+}
+
+impl Clone for EguiContext {
+    fn clone(&self) -> Self {
+        unimplemented!("EguiContext is not cloneable")
+    }
 }
 
 impl EguiContext {

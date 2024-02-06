@@ -98,7 +98,7 @@ impl System for UpdateCamera {
     fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
         let world = world.read();
         let input = world.read_resource::<Input>().unwrap();
-        let time = world.read_resource::<UpdateTime>().unwrap();
+        let time = world.read_resource::<Time>().unwrap();
         let query = world
             .query()
             .write::<Camera>()?
@@ -136,12 +136,10 @@ impl System for EditorRender {
         {
             let mut encoder = renderer.begin_render();
             renderer.render_ui(&mut ui, &window, &mut encoder);
-            if renderer.viewport_enabled() {
-                renderer.prepare_components();
-                renderer.prepare_passes();
-                renderer.render_to_viewport(&mut encoder).unwrap();
-                renderer.render_viewport_to_screen(&mut encoder).unwrap();
-            }
+            renderer.prepare_components();
+            renderer.prepare_passes();
+            renderer.render_to_viewport(&mut encoder).unwrap();
+            renderer.render_viewport_to_screen(&mut encoder).unwrap();
             renderer.end_render(encoder);
         }
         Ok(vec![])
@@ -169,7 +167,7 @@ impl System for UpdateTransforms {
 
     fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
         let world = world.read();
-        let orphans = world.graph().orphans();
+        let orphans = world.graph().get_children(world.root()).unwrap();
         for entity in orphans {
             // find the transform component for the entity
             let local = {

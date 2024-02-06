@@ -122,6 +122,7 @@ macro_rules! load_shader {
 }
 
 #[allow(dead_code)]
+#[derive(Atom)]
 pub struct Renderer {
     surface: wgpu::Surface,
     device: Arc<wgpu::Device>,
@@ -143,6 +144,12 @@ pub struct Renderer {
     point_lights: PointLightArray,
     world: LockedWorldHandle,
     output: Arc<RwLock<Option<wgpu::SurfaceTexture>>>,
+}
+
+impl Clone for Renderer {
+    fn clone(&self) -> Self {
+        unimplemented!("Renderer is not cloneable")
+    }
 }
 
 impl Renderer {

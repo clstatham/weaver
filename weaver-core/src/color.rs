@@ -1,5 +1,3 @@
-use fabricate::prelude::*;
-
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Color {
@@ -8,8 +6,6 @@ pub struct Color {
     pub b: f32,
     _padding: u32,
 }
-
-impl_atom_simple!(Color);
 
 impl Color {
     pub const BLACK: Color = Color {

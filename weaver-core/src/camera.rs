@@ -42,7 +42,7 @@ impl From<&Camera> for CameraUniform {
     }
 }
 
-#[derive(Clone, GpuComponent, BindableComponent)]
+#[derive(Clone, Atom, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Camera {
     pub view_matrix: glam::Mat4,
@@ -52,8 +52,6 @@ pub struct Camera {
     pub(crate) handle: LazyGpuHandle,
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
-
-impl_atom_simple!(Camera);
 
 impl Debug for Camera {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -136,7 +134,7 @@ impl Default for Camera {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Atom)]
 pub struct FlyCameraController {
     pub speed: f32,
     pub sensitivity: f32,
@@ -147,8 +145,6 @@ pub struct FlyCameraController {
     pub near: f32,
     pub far: f32,
 }
-
-impl_atom_simple!(FlyCameraController);
 
 impl FlyCameraController {
     pub fn update(&mut self, input: &Input, delta_time: f32, aspect: f32, camera: &mut Camera) {

@@ -14,7 +14,7 @@ use super::{
 };
 
 /// PBR material based on Bevy
-#[derive(Clone, GpuComponent, BindableComponent)]
+#[derive(Clone, Atom, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Material {
     asset_id: AssetId,
@@ -57,16 +57,6 @@ pub struct Material {
 
     pub(crate) bind_group: LazyBindGroup<Self>,
 }
-
-impl_atom_with_vtable!(
-    Material,
-    script_vtable!(this: Material;
-        set_diffuse => |color: Color| -> () { this.diffuse = *color; }
-        set_metallic => |metallic: f32| -> () { this.metallic = *metallic; }
-        set_roughness => |roughness: f32| -> () { this.roughness = *roughness; }
-        set_texture_scaling => |texture_scaling: f32| -> () { this.texture_scaling = *texture_scaling; }
-    );
-);
 
 impl Debug for Material {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

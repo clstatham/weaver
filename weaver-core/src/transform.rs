@@ -97,13 +97,11 @@ impl Default for Transform {
     }
 }
 
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, Debug, Atom, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct GlobalTransform {
     pub matrix: glam::Mat4,
 }
-
-impl_atom_simple!(GlobalTransform);
 
 impl GlobalTransform {
     pub fn new() -> Self {
