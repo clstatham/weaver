@@ -197,14 +197,20 @@ impl App {
 
                             self.world.run_systems(SystemStage::PostRender);
 
-                            let world = self.world.read();
-                            let window = world.read_resource::<Window>();
-                            let renderer = world.read_resource::<Renderer>();
-                            if let (Some(window), Some(renderer)) = (window, renderer) {
-                                window.window.pre_present_notify();
-                                renderer.present();
-                                window.request_redraw();
-                            };
+                            {
+                                let world = self.world.read();
+                                let window = world.read_resource::<Window>();
+                                let renderer = world.read_resource::<Renderer>();
+                                if let (Some(window), Some(renderer)) = (window, renderer) {
+                                    window.window.pre_present_notify();
+                                    renderer.present();
+                                    window.request_redraw();
+                                };
+                            }
+
+                            {
+                                self.world.write().garbage_collect();
+                            }
                         }
                         _ => {}
                     }

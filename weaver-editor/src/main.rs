@@ -78,7 +78,7 @@ impl System for Setup {
                 GlobalTransform::default(),
             ))
             .unwrap();
-        world.write().add_child(e1, e2, Some("Bobby"));
+        world.write().add_child(&e1, &e2, Some("Bobby"));
 
         Ok(vec![])
     }
@@ -175,15 +175,16 @@ impl System for UpdateTransforms {
                 if transform.is_none() {
                     continue;
                 }
-                let transform = transform.unwrap().value_uid();
+                let transform = transform.unwrap();
+                let transform = transform.value_uid();
 
                 let translation = transform.field("translation", &world).unwrap();
                 let rotation = transform.field("rotation", &world).unwrap();
                 let scale = transform.field("scale", &world).unwrap();
 
-                let translation = world.get_component::<Vec3>(translation).unwrap();
-                let rotation = world.get_component::<Quat>(rotation).unwrap();
-                let scale = world.get_component::<Vec3>(scale).unwrap();
+                let translation = world.get_component::<Vec3>(&translation).unwrap();
+                let rotation = world.get_component::<Quat>(&rotation).unwrap();
+                let scale = world.get_component::<Vec3>(&scale).unwrap();
 
                 let translation = translation.as_ref::<Vec3>().unwrap();
                 let rotation = rotation.as_ref::<Quat>().unwrap();
@@ -209,21 +210,22 @@ impl System for UpdateTransforms {
     }
 }
 
-fn update_transforms_recurse(world: &World, entity: ValueUid, parent_global: GlobalTransform) {
+fn update_transforms_recurse(world: &World, entity: &ValueUid, parent_global: GlobalTransform) {
     let local = {
         let transform = world.get(entity, Transform::type_uid());
         if transform.is_none() {
             return;
         }
-        let transform = transform.unwrap().value_uid();
+        let transform = transform.unwrap();
+        let transform = transform.value_uid();
 
         let translation = transform.field("translation", world).unwrap();
         let rotation = transform.field("rotation", world).unwrap();
         let scale = transform.field("scale", world).unwrap();
 
-        let translation = world.get_component::<Vec3>(translation).unwrap();
-        let rotation = world.get_component::<Quat>(rotation).unwrap();
-        let scale = world.get_component::<Vec3>(scale).unwrap();
+        let translation = world.get_component::<Vec3>(&translation).unwrap();
+        let rotation = world.get_component::<Quat>(&rotation).unwrap();
+        let scale = world.get_component::<Vec3>(&scale).unwrap();
 
         let translation = translation.as_ref::<Vec3>().unwrap();
         let rotation = rotation.as_ref::<Quat>().unwrap();
