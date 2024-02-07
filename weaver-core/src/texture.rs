@@ -324,18 +324,18 @@ impl Texture {
         format: wgpu::TextureFormat,
         label: Option<&'static str>,
     ) -> Self {
-        let (r, g, b) = color.rgb_int();
+        let (r, g, b, a) = color.rgba_int();
         let mut data = Vec::with_capacity((width * height * 4) as usize);
         for _ in 0..width * height {
-            data.extend_from_slice(&[r, g, b, 255]);
+            data.extend_from_slice(&[r, g, b, a]);
         }
 
         Self::from_data_rgba8(width, height, &data, format, label)
     }
 
     pub fn default_texture() -> Self {
-        let width = 128;
-        let height = 128;
+        let width = 4;
+        let height = 4;
         let mut data = Vec::with_capacity((width * height * 4) as usize);
         for x in 0..width {
             for y in 0..height {

@@ -5,7 +5,6 @@ use crate::InheritTransform;
 
 pub fn scene_tree_ui(world: &World, ui: &mut egui::Ui) {
     egui::CollapsingHeader::new("World").show(ui, |ui| {
-        // scene_tree_ui_recurse(world, ui, root, "World");
         let q = world
             .query()
             .entity()

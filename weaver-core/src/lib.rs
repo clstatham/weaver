@@ -1,7 +1,5 @@
 #![allow(clippy::too_many_arguments, clippy::from_over_into)]
 
-use fabricate::registry::StaticId;
-
 pub mod app;
 pub mod asset_server;
 pub mod camera;
@@ -30,7 +28,7 @@ pub mod prelude {
         camera::{Camera, FlyCameraController},
         color::Color,
         doodads::{Cone, Cube, Doodad, Doodads},
-        geom::Aabb,
+        geom::{Aabb, BoundingSphere, Ray, Rect},
         input::{Input, KeyCode, MouseButton},
         light::{DirectionalLight, PointLight},
         material::Material,
@@ -44,12 +42,11 @@ pub mod prelude {
         transform::{GlobalTransform, Transform},
         ui::EguiContext,
     };
-    pub use fabricate;
-    pub use weaver_proc_macro::Bundle;
 }
 
 pub(crate) fn register_names() {
     use crate::prelude::*;
+    use fabricate::registry::StaticId;
 
     App::register_static_name("App");
     AssetServer::register_static_name("AssetServer");
