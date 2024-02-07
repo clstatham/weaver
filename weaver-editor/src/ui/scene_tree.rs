@@ -1,28 +1,51 @@
+use fabricate::world::BelongsToWorld;
 use weaver::prelude::*;
 
-pub fn scene_tree_ui(world: &World, ui: &mut egui::Ui) {
-    // for node in graph.orphans() {
-    //     let name = node.to_string();
+use crate::InheritTransform;
 
-    //     scene_tree_ui_recurse(world, ui, &node, &name);
-    // }
+pub fn scene_tree_ui(world: &World, ui: &mut egui::Ui) {
+    egui::CollapsingHeader::new("World").show(ui, |ui| {
+        // scene_tree_ui_recurse(world, ui, root, "World");
+        let q = world
+            .query()
+            .entity()
+            .with_dynamic(Entity::new_wildcard(BelongsToWorld::type_uid().id()))
+            .unwrap()
+            .build();
+        for result in q.iter() {
+            let entity = result.get_entity().unwrap();
+            let name = entity
+                .type_name()
+                .unwrap_or_else(|| format!("{}", entity.id()));
+            scene_tree_ui_recurse(world, ui, &entity, &name);
+        }
+    });
 }
 
-// fn scene_tree_ui_recurse(world: &World, ui: &mut egui::Ui, node: &ValueUid, name: &str) {
-//     let graph = world.graph();
-//     let children: Vec<_> = graph
-//         .get_child_edges(node)
-//         .map(|i| i.collect())
-//         .unwrap_or_default();
+fn scene_tree_ui_recurse(world: &World, ui: &mut egui::Ui, node: &Entity, name: &str) {
+    egui::CollapsingHeader::new(name)
+        .id_source(node)
+        .show(ui, |ui| {
+            let rels = world.get_relatives(node, &InheritTransform::type_uid());
+            if let Some(rels) = rels {
+                for child in rels {
+                    let name = child
+                        .type_name()
+                        .unwrap_or_else(|| format!("{}", child.id()));
+                    scene_tree_ui_recurse(world, ui, &child, &name);
+                }
+            }
 
-//     egui::CollapsingHeader::new(name).show(ui, |ui| {
-//         for child in children {
-//             let child_name = child
-//                 .payload
-//                 .as_deref()
-//                 .map(|s| s.to_string())
-//                 .unwrap_or(child.child.to_string());
-//             scene_tree_ui_recurse(world, ui, &child.child, &child_name);
-//         }
-//     });
-// }
+            let arch = world.storage().entity_archetype(node).unwrap();
+            let components = arch
+                .row_type_filtered(node, |ty| !ty.is_relative())
+                .unwrap();
+            for component in components {
+                let ty = component.type_uid();
+                let name = ty
+                    .type_name()
+                    .unwrap_or_else(|| format!("[type {}]", ty.id()));
+                ui.label(name);
+            }
+        });
+}
