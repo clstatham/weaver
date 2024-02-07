@@ -1,0 +1,5 @@
+@startup
+system test {
+    let x = 9 + 10
+    print(x)
+}
