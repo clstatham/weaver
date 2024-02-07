@@ -7,6 +7,6 @@ system update_player {
     var res time: Time;
 
     loop query _ [var t: Transform] {
-        t.rotation = quat(vec3(0.0, 1.0, 0.0), time.delta_seconds()) * t.rotation;
+        t.set_rotation(quat(vec3(0.0, 1.0, 0.0), time.delta_seconds()) * t.rotation());
     }
 }

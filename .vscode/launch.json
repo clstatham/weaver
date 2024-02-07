@@ -7,41 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'weaver-game'",
-            "env": {
-                "RUST_BACKTRACE": "1",
-                "RUST_LOG": "weaver=debug"
-            },
-            "cargo": {
-                "env": {
-                    "RUST_BACKTRACE": "1",
-                    "RUST_LOG": "weaver=debug"
-                },
-                "args": [
-                    "build",
-                    "--bin=weaver-game",
-                    "--package=weaver-game",
-                ],
-                "filter": {
-                    "name": "weaver-game",
-                    "kind": "bin",
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
             "name": "Debug executable 'weaver-editor'",
             "env": {
                 "RUST_BACKTRACE": "1",
-                "RUST_LOG": "weaver=debug"
+                "RUST_LOG": "fabricate=trace"
             },
             "cargo": {
                 "env": {
                     "RUST_BACKTRACE": "1",
-                    "RUST_LOG": "weaver=debug"
+                    "RUST_LOG": "fabricate=trace"
                 },
                 "args": [
                     "build",
@@ -51,34 +25,6 @@
                 "filter": {
                     "name": "weaver-editor",
                     "kind": "bin",
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in executable 'weaver-game'",
-            "env": {
-                "RUST_BACKTRACE": "1",
-                "RUST_LOG": "weaver=debug"
-            },
-            "cargo": {
-                "env": {
-                    "RUST_BACKTRACE": "1",
-                    "RUST_LOG": "weaver=debug"
-                },
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=weaver-game",
-                    "--package=weaver-game",
-                    // "--release",
-                ],
-                "filter": {
-                    "name": "weaver-game",
-                    "kind": "bin"
                 }
             },
             "args": [],

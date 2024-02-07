@@ -55,6 +55,7 @@ pub struct AssetServer {
 impl AssetServer {
     pub fn new(world: &World) -> anyhow::Result<Self> {
         let renderer = world.read_resource::<Renderer>().unwrap();
+        let renderer = renderer.as_ref::<Renderer>().unwrap();
         let resource_manager = renderer.resource_manager().clone();
         Ok(Self {
             next_id: 0,

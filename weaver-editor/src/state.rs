@@ -24,9 +24,9 @@ pub trait EditorAction: Send + Sync + Any + 'static {
 pub struct EditorState {
     pub(crate) world: LockedWorldHandle,
 
-    selected_entity: Option<ValueUid>,
-    entity_names: HashMap<ValueUid, String>,
-    selected_component: Option<ValueUid>,
+    selected_entity: Option<Entity>,
+    entity_names: HashMap<Entity, String>,
+    selected_component: Option<Entity>,
 
     actions_in_progress: HashMap<TypeId, Box<dyn EditorAction>>,
     action_history: Vec<Box<dyn EditorAction>>,

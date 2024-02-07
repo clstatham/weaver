@@ -5,11 +5,153 @@ use crate::renderer::internals::{LazyBindGroup, LazyGpuHandle};
 
 use super::mesh::MAX_MESHES;
 
-#[derive(Component)]
+// #[derive(Atom, Clone, Copy)]
+// #[script_vtable(
+//     translation(Self) -> glam::Vec3,
+//     rotation(Self) -> glam::Quat,
+//     scale(Self) -> glam::Vec3,
+//     set_translation(&mut Self, &glam::Vec3) -> (),
+//     set_rotation(&mut Self, &glam::Quat) -> (),
+//     set_scale(&mut Self, &glam::Vec3) -> ()
+// )]
+#[derive(Clone, Copy)]
 pub struct Transform {
     pub translation: glam::Vec3,
     pub rotation: glam::Quat,
     pub scale: glam::Vec3,
+}
+
+impl fabricate::component::Atom for Transform {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn fabricate::component::Atom> {
+        Box::new(self.clone())
+    }
+    fn script_vtable(&self) -> fabricate::component::ScriptVtable {
+        let mut map = std::collections::HashMap::default();
+        map.insert(
+            stringify!(translation).to_string(),
+            fabricate::component::ScriptMethod {
+                name: stringify!(translation).to_string(),
+                args: vec![<Self as fabricate::registry::StaticId>::static_type_uid()],
+                ret: <glam::Vec3 as fabricate::registry::StaticId>::static_type_uid(),
+                takes_self: fabricate::component::TakesSelf::Ref,
+                run: |mut args| {
+                    let [arg0] = &mut args[..] else {
+                        fabricate::prelude::bail!("Wrong number of args")
+                    };
+                    let arg0 = arg0.as_ref::<Self>().unwrap();
+                    let ret = Self::translation(arg0);
+                    Ok(vec![fabricate::storage::Data::new_dynamic(ret)])
+                },
+            },
+        );
+        map.insert(
+            stringify!(rotation).to_string(),
+            fabricate::component::ScriptMethod {
+                name: stringify!(rotation).to_string(),
+                args: vec![<Self as fabricate::registry::StaticId>::static_type_uid()],
+                ret: <glam::Quat as fabricate::registry::StaticId>::static_type_uid(),
+                takes_self: fabricate::component::TakesSelf::Ref,
+                run: |mut args| {
+                    let [arg0] = &mut args[..] else {
+                        fabricate::prelude::bail!("Wrong number of args")
+                    };
+                    let arg0 = arg0.as_ref::<Self>().unwrap();
+                    let ret = Self::rotation(arg0);
+                    Ok(vec![fabricate::storage::Data::new_dynamic(ret)])
+                },
+            },
+        );
+        map.insert(
+            stringify!(scale).to_string(),
+            fabricate::component::ScriptMethod {
+                name: stringify!(scale).to_string(),
+                args: vec![<Self as fabricate::registry::StaticId>::static_type_uid()],
+                ret: <glam::Vec3 as fabricate::registry::StaticId>::static_type_uid(),
+                takes_self: fabricate::component::TakesSelf::Ref,
+                run: |mut args| {
+                    let [arg0] = &mut args[..] else {
+                        fabricate::prelude::bail!("Wrong number of args")
+                    };
+                    let arg0 = arg0.as_ref::<Self>().unwrap();
+                    let ret = Self::scale(arg0);
+                    Ok(vec![fabricate::storage::Data::new_dynamic(ret)])
+                },
+            },
+        );
+        map.insert(
+            stringify!(set_translation).to_string(),
+            fabricate::component::ScriptMethod {
+                name: stringify!(set_translation).to_string(),
+                args: vec![
+                    <&mut Self as fabricate::registry::StaticId>::static_type_uid(),
+                    <&glam::Vec3 as fabricate::registry::StaticId>::static_type_uid(),
+                ],
+                ret: <() as fabricate::registry::StaticId>::static_type_uid(),
+                takes_self: fabricate::component::TakesSelf::RefMut,
+                run: |mut args| {
+                    let [arg0, arg1] = &mut args[..] else {
+                        fabricate::prelude::bail!("Wrong number of args")
+                    };
+                    let mut arg0 = arg0.as_mut::<Self>().unwrap();
+                    let arg1 = arg1.as_ref::<glam::Vec3>().unwrap();
+                    let ret = Self::set_translation(arg0, arg1);
+                    Ok(vec![fabricate::storage::Data::new_dynamic(ret)])
+                },
+            },
+        );
+        map.insert(
+            stringify!(set_rotation).to_string(),
+            fabricate::component::ScriptMethod {
+                name: stringify!(set_rotation).to_string(),
+                args: vec![
+                    <&mut Self as fabricate::registry::StaticId>::static_type_uid(),
+                    <&glam::Quat as fabricate::registry::StaticId>::static_type_uid(),
+                ],
+                ret: <() as fabricate::registry::StaticId>::static_type_uid(),
+                takes_self: fabricate::component::TakesSelf::RefMut,
+                run: |mut args| {
+                    let [arg0, arg1] = &mut args[..] else {
+                        fabricate::prelude::bail!("Wrong number of args")
+                    };
+                    let mut arg0 = arg0.as_mut::<Self>().unwrap();
+                    let arg1 = arg1.as_ref::<glam::Quat>().unwrap();
+                    let ret = Self::set_rotation(arg0, arg1);
+                    Ok(vec![fabricate::storage::Data::new_dynamic(ret)])
+                },
+            },
+        );
+        map.insert(
+            stringify!(set_scale).to_string(),
+            fabricate::component::ScriptMethod {
+                name: stringify!(set_scale).to_string(),
+                args: vec![
+                    <&mut Self as fabricate::registry::StaticId>::static_type_uid(),
+                    <&glam::Vec3 as fabricate::registry::StaticId>::static_type_uid(),
+                ],
+                ret: <() as fabricate::registry::StaticId>::static_type_uid(),
+                takes_self: fabricate::component::TakesSelf::RefMut,
+                run: |mut args| {
+                    let [arg0, arg1] = &mut args[..] else {
+                        fabricate::prelude::bail!("Wrong number of args")
+                    };
+                    let mut arg0 = arg0.as_mut::<Self>().unwrap();
+                    let arg1 = arg1.as_ref::<glam::Vec3>().unwrap();
+                    let ret = Self::set_scale(arg0, arg1);
+                    Ok(vec![fabricate::storage::Data::new_dynamic(ret)])
+                },
+            },
+        );
+        fabricate::component::ScriptVtable { methods: map }
+    }
 }
 
 impl Transform {
@@ -78,16 +220,28 @@ impl Transform {
         }
     }
 
-    pub fn translate(&mut self, delta: glam::Vec3) {
-        self.translation += delta;
+    pub fn translation(&self) -> glam::Vec3 {
+        self.translation
     }
 
-    pub fn rotate(&mut self, delta: glam::Quat) {
-        self.rotation = delta * self.rotation;
+    pub fn rotation(&self) -> glam::Quat {
+        self.rotation
     }
 
-    pub fn scale(&mut self, delta: glam::Vec3) {
-        self.scale *= delta;
+    pub fn scale(&self) -> glam::Vec3 {
+        self.scale
+    }
+
+    pub fn set_translation(&mut self, translation: &glam::Vec3) {
+        self.translation = *translation;
+    }
+
+    pub fn set_rotation(&mut self, rotation: &glam::Quat) {
+        self.rotation = *rotation;
+    }
+
+    pub fn set_scale(&mut self, scale: &glam::Vec3) {
+        self.scale = *scale;
     }
 }
 

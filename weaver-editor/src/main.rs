@@ -1,4 +1,4 @@
-use fabricate::registry::StaticId;
+use fabricate::{registry::StaticId, relationship::Relationship};
 use weaver::{
     core::{app::Window, renderer::compute::hdr_loader::HdrLoader},
     prelude::*,
@@ -6,6 +6,11 @@ use weaver::{
 
 pub mod state;
 pub mod ui;
+
+#[derive(Atom, Clone, Copy)]
+pub struct InheritTransform;
+
+impl Relationship for InheritTransform {}
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -38,8 +43,10 @@ impl System for Setup {
         let skybox = {
             let world = world.read();
             let mut assets = world.write_resource::<AssetServer>().unwrap();
+            let assets = assets.as_mut::<AssetServer>().unwrap();
             let hdr_loader = world.read_resource::<HdrLoader>().unwrap();
-            assets.load_skybox("sky_2k.hdr", &hdr_loader)
+            let hdr_loader = hdr_loader.as_ref::<HdrLoader>().unwrap();
+            assets.load_skybox("sky_2k.hdr", hdr_loader)
         };
         world.write().spawn((skybox,)).unwrap();
 
@@ -55,6 +62,7 @@ impl System for Setup {
         let (mesh, material) = {
             let world = world.read();
             let mut assets = world.write_resource::<AssetServer>().unwrap();
+            let assets = assets.as_mut::<AssetServer>().unwrap();
             let mesh = assets.load_mesh("meshes/monkey_2x.glb");
             let material = assets.load_material("materials/wood.glb");
             (mesh, material)
@@ -78,16 +86,19 @@ impl System for Setup {
                 GlobalTransform::default(),
             ))
             .unwrap();
-        world.write().add_child(&e1, &e2, Some("Bobby"));
+        world
+            .write()
+            .add_relative(&e1, InheritTransform, &e2)
+            .unwrap();
 
         Ok(vec![])
     }
 
-    fn reads(&self) -> Vec<TypeUid> {
+    fn reads(&self) -> Vec<Entity> {
         vec![]
     }
 
-    fn writes(&self) -> Vec<TypeUid> {
+    fn writes(&self) -> Vec<Entity> {
         vec![]
     }
 }
@@ -98,7 +109,9 @@ impl System for UpdateCamera {
     fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
         let world = world.read();
         let input = world.read_resource::<Input>().unwrap();
+        let input = input.as_ref::<Input>().unwrap();
         let time = world.read_resource::<Time>().unwrap();
+        let time = time.as_ref::<Time>().unwrap();
         let query = world
             .query()
             .write::<Camera>()?
@@ -111,16 +124,16 @@ impl System for UpdateCamera {
             let camera = camera.get_mut::<Camera>().unwrap();
             let controller = controller.get_mut::<FlyCameraController>().unwrap();
             let aspect = controller.aspect;
-            controller.update(&input, time.delta_seconds, aspect, camera);
+            controller.update(input, time.delta_seconds, aspect, camera);
         }
         Ok(vec![])
     }
 
-    fn reads(&self) -> Vec<TypeUid> {
+    fn reads(&self) -> Vec<Entity> {
         vec![]
     }
 
-    fn writes(&self) -> Vec<TypeUid> {
+    fn writes(&self) -> Vec<Entity> {
         vec![]
     }
 }
@@ -131,11 +144,14 @@ impl System for EditorRender {
     fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
         let world = world.read();
         let mut renderer = world.write_resource::<Renderer>().unwrap();
+        let renderer = renderer.as_mut::<Renderer>().unwrap();
         let mut ui = world.write_resource::<EguiContext>().unwrap();
+        let ui = ui.as_mut::<EguiContext>().unwrap();
         let window = world.read_resource::<Window>().unwrap();
+        let window = window.as_ref::<Window>().unwrap();
         {
             let mut encoder = renderer.begin_render();
-            renderer.render_ui(&mut ui, &window, &mut encoder);
+            renderer.render_ui(ui, window, &mut encoder);
             renderer.prepare_components();
             renderer.prepare_passes();
             renderer.render_to_viewport(&mut encoder).unwrap();
@@ -145,11 +161,11 @@ impl System for EditorRender {
         Ok(vec![])
     }
 
-    fn reads(&self) -> Vec<TypeUid> {
+    fn reads(&self) -> Vec<Entity> {
         vec![Window::static_type_uid()]
     }
 
-    fn writes(&self) -> Vec<TypeUid> {
+    fn writes(&self) -> Vec<Entity> {
         vec![Renderer::static_type_uid(), EguiContext::static_type_uid()]
     }
 }
@@ -157,52 +173,47 @@ impl System for EditorRender {
 struct UpdateTransforms;
 
 impl System for UpdateTransforms {
-    fn reads(&self) -> Vec<TypeUid> {
+    fn reads(&self) -> Vec<Entity> {
         vec![Transform::static_type_uid()]
     }
 
-    fn writes(&self) -> Vec<TypeUid> {
+    fn writes(&self) -> Vec<Entity> {
         vec![GlobalTransform::static_type_uid()]
     }
 
     fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
         let world = world.read();
-        let orphans = world.graph().get_children(world.root()).unwrap();
-        for entity in orphans {
-            // find the transform component for the entity
+        let query = world
+            .query()
+            .entity()
+            .read::<Transform>()?
+            .write::<GlobalTransform>()?
+            .build();
+
+        for result in query.iter() {
+            let [entity, ref transform, ref mut global] = &mut result.into_vec()[..] else {
+                unreachable!()
+            };
+            let entity = entity.get_entity().unwrap();
+            let transform = transform.get::<Transform>().unwrap();
+            let global = global.get_mut::<GlobalTransform>().unwrap();
+
             let local = {
-                let transform = world.get(entity, Transform::type_uid());
-                if transform.is_none() {
-                    continue;
-                }
-                let transform = transform.unwrap();
-                let transform = transform.value_uid();
-
-                let translation = transform.field("translation", &world).unwrap();
-                let rotation = transform.field("rotation", &world).unwrap();
-                let scale = transform.field("scale", &world).unwrap();
-
-                let translation = world.get_component::<Vec3>(&translation).unwrap();
-                let rotation = world.get_component::<Quat>(&rotation).unwrap();
-                let scale = world.get_component::<Vec3>(&scale).unwrap();
-
-                let translation = translation.as_ref::<Vec3>().unwrap();
-                let rotation = rotation.as_ref::<Quat>().unwrap();
-                let scale = scale.as_ref::<Vec3>().unwrap();
-
-                Mat4::from_scale_rotation_translation(*scale, *rotation, *translation)
+                Mat4::from_scale_rotation_translation(
+                    transform.scale,
+                    transform.rotation,
+                    transform.translation,
+                )
             };
 
             let global = {
-                let mut global = world.get_component_mut::<GlobalTransform>(entity).unwrap();
-                let global = global.as_mut::<GlobalTransform>().unwrap();
                 global.matrix = local;
                 *global
             };
 
-            if let Some(children) = world.graph().get_children(entity) {
+            if let Some(children) = world.get_relatives(&entity, &InheritTransform::type_uid()) {
                 for child in children {
-                    update_transforms_recurse(&world, child, global);
+                    update_transforms_recurse(&world, &child, global);
                 }
             }
         }
@@ -210,28 +221,20 @@ impl System for UpdateTransforms {
     }
 }
 
-fn update_transforms_recurse(world: &World, entity: &ValueUid, parent_global: GlobalTransform) {
+fn update_transforms_recurse(world: &World, entity: &Entity, parent_global: GlobalTransform) {
     let local = {
         let transform = world.get(entity, Transform::type_uid());
         if transform.is_none() {
             return;
         }
         let transform = transform.unwrap();
-        let transform = transform.value_uid();
+        let transform = transform.as_ref::<Transform>().unwrap();
 
-        let translation = transform.field("translation", world).unwrap();
-        let rotation = transform.field("rotation", world).unwrap();
-        let scale = transform.field("scale", world).unwrap();
-
-        let translation = world.get_component::<Vec3>(&translation).unwrap();
-        let rotation = world.get_component::<Quat>(&rotation).unwrap();
-        let scale = world.get_component::<Vec3>(&scale).unwrap();
-
-        let translation = translation.as_ref::<Vec3>().unwrap();
-        let rotation = rotation.as_ref::<Quat>().unwrap();
-        let scale = scale.as_ref::<Vec3>().unwrap();
-
-        Mat4::from_scale_rotation_translation(*scale, *rotation, *translation)
+        Mat4::from_scale_rotation_translation(
+            transform.scale,
+            transform.rotation,
+            transform.translation,
+        )
     };
 
     let global = {
@@ -242,9 +245,9 @@ fn update_transforms_recurse(world: &World, entity: &ValueUid, parent_global: Gl
         *global
     };
 
-    if let Some(children) = world.graph().get_children(entity) {
+    if let Some(children) = world.get_relatives(entity, &InheritTransform::type_uid()) {
         for child in children {
-            update_transforms_recurse(world, child, global);
+            update_transforms_recurse(world, &child, global);
         }
     }
 }
