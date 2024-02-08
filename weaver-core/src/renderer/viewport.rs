@@ -2,11 +2,11 @@ use fabricate::prelude::*;
 
 use crate::{
     geom::Rect,
-    texture::{DepthTexture, WindowTexture},
+    texture::{DepthTexture, SdrTexture, TextureFormat},
 };
 
 use super::{
-    internals::BindGroupLayoutCache,
+    internals::{BindGroupLayoutCache, GpuResourceManager},
     pass::{hdr::HdrRenderPass, Pass},
     Renderer,
 };
@@ -17,14 +17,14 @@ pub struct Viewport {
     pub rect: Rect,
 
     pub hdr_pass: HdrRenderPass,
-    pub color_texture: WindowTexture,
+    pub color_texture: SdrTexture,
     pub depth_texture: DepthTexture,
 }
 
 impl Viewport {
     pub fn new(rect: Rect, device: &wgpu::Device, cache: &BindGroupLayoutCache) -> Self {
         let hdr_pass = HdrRenderPass::new(device, rect.width as u32, rect.height as u32, cache);
-        let color_texture = WindowTexture::new(
+        let color_texture = SdrTexture::new(
             rect.width as u32,
             rect.height as u32,
             Some("Viewport Color Texture"),
@@ -63,11 +63,26 @@ impl Viewport {
         self.resize(renderer, rect.width as u32, rect.height as u32);
     }
 
+    pub fn color_view(&self, manager: &GpuResourceManager) -> wgpu::TextureView {
+        self.color_texture
+            .handle()
+            .lazy_init(manager)
+            .unwrap()
+            .get_texture()
+            .unwrap()
+            .create_view(&wgpu::TextureViewDescriptor {
+                label: Some("Viewport Color View"),
+                format: Some(SdrTexture::FORMAT),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                aspect: wgpu::TextureAspect::All,
+                ..Default::default()
+            })
+    }
+
     pub fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         renderer: &Renderer,
-        output: &wgpu::Texture,
         world: &World,
     ) -> anyhow::Result<()> {
         if !self.enabled {
@@ -95,25 +110,6 @@ impl Viewport {
 
         self.hdr_pass
             .render(encoder, &color_view, &depth_view, renderer, world)?;
-
-        encoder.copy_texture_to_texture(
-            color_texture.get_texture().unwrap().as_image_copy(),
-            wgpu::ImageCopyTextureBase {
-                texture: output,
-                mip_level: 0,
-                origin: wgpu::Origin3d {
-                    x: self.rect.x as u32,
-                    y: self.rect.y as u32,
-                    z: 0,
-                },
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::Extent3d {
-                width: (self.rect.width as u32).min(output.size().width - self.rect.x as u32),
-                height: (self.rect.height as u32).min(output.size().height - self.rect.y as u32),
-                depth_or_array_layers: 1,
-            },
-        );
 
         Ok(())
     }

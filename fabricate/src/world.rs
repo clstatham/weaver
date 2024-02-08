@@ -7,7 +7,7 @@ use crate::{
     self as fabricate,
     commands::Commands,
     component::Atom,
-    lock::{DeferredRead, Read, ReadWrite, SharedLock, Write},
+    lock::{DeferredRead, DeferredWrite, Read, SharedLock, Write},
     prelude::{Bundle, Mut},
     query::{Query, QueryBuilder},
     registry::Entity,
@@ -258,8 +258,17 @@ impl LockedWorldHandle {
     }
 
     /// Requests a write lock on the [`World`].
-    pub fn write(&self) -> Write<'_, World> {
-        self.0.write()
+    pub fn write(&self) -> DeferredWrite<'_, World> {
+        let commands = self.1.clone();
+        self.0.write_defer(move |world| {
+            if let Some(mut world) = world.try_write() {
+                if let Some(mut commands) = commands.try_write() {
+                    commands
+                        .finalize(&mut world)
+                        .expect("Failed to finalize commands");
+                }
+            }
+        })
     }
 
     pub fn try_read(&self) -> Option<Read<'_, World>> {
@@ -268,11 +277,6 @@ impl LockedWorldHandle {
 
     pub fn try_write(&self) -> Option<Write<'_, World>> {
         self.0.try_write()
-    }
-
-    /// Requests a read lock on the [`World`] that can later be upgraded to a [`Write`] lock.
-    pub fn read_write(&self) -> ReadWrite<'_, World> {
-        self.0.read_write()
     }
 
     pub fn defer<F, R>(&self, f: F) -> Result<R>

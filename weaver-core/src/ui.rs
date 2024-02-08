@@ -93,7 +93,7 @@ pub mod builtin {
 #[derive(Atom)]
 pub struct EguiContext {
     state: Arc<RwLock<State>>,
-    renderer: egui_wgpu::Renderer,
+    renderer: Arc<RwLock<egui_wgpu::Renderer>>,
     full_output: Arc<RwLock<Option<egui::FullOutput>>>,
     locked: bool,
 }
@@ -112,7 +112,7 @@ impl EguiContext {
         let renderer = egui_wgpu::Renderer::new(device, WindowTexture::FORMAT, None, msaa_samples);
         Self {
             state: Arc::new(RwLock::new(state)),
-            renderer,
+            renderer: Arc::new(RwLock::new(renderer)),
             full_output: Arc::new(RwLock::new(None)),
             locked: false,
         }
@@ -158,6 +158,30 @@ impl EguiContext {
         }
     }
 
+    pub fn convert_texture(
+        &self,
+        device: &wgpu::Device,
+        texture: &wgpu::TextureView,
+    ) -> egui::epaint::TextureId {
+        self.renderer
+            .write()
+            .register_native_texture(device, texture, wgpu::FilterMode::Nearest)
+    }
+
+    pub fn update_texture(
+        &self,
+        device: &wgpu::Device,
+        texture: &wgpu::TextureView,
+        id: egui::epaint::TextureId,
+    ) {
+        self.renderer.write().update_egui_texture_from_wgpu_texture(
+            device,
+            texture,
+            wgpu::FilterMode::Nearest,
+            id,
+        );
+    }
+
     pub fn render(
         &mut self,
         device: &wgpu::Device,
@@ -184,11 +208,14 @@ impl EguiContext {
             .tessellate(full_output.shapes, pixels_per_point);
         for (id, image_delta) in &full_output.textures_delta.set {
             self.renderer
+                .write()
                 .update_texture(device, queue, *id, image_delta);
         }
         self.renderer
+            .write()
             .update_buffers(device, queue, encoder, &tris, screen_descriptor);
 
+        let renderer = self.renderer.read();
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("egui render pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -203,11 +230,12 @@ impl EguiContext {
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-        self.renderer
-            .render(&mut render_pass, &tris, screen_descriptor);
+
+        renderer.render(&mut render_pass, &tris, screen_descriptor);
         drop(render_pass);
+        drop(renderer);
         for x in &full_output.textures_delta.free {
-            self.renderer.free_texture(x);
+            self.renderer.write().free_texture(x);
         }
     }
 }

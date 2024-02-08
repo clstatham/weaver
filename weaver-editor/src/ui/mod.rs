@@ -70,10 +70,23 @@ impl<'a> TabViewer for EditorTabViewer<'a> {
                         .unwrap()
                         .build();
                     let mut camera = camera.iter().next().unwrap();
-                    let rect = ui.min_rect().into();
-                    renderer.set_viewport_rect(rect);
-                    camera.get_mut::<FlyCameraController>().unwrap().aspect =
-                        rect.width / rect.height;
+                    let rect = ui.min_rect();
+                    renderer.set_viewport_rect(rect.into());
+                    camera.get_mut::<FlyCameraController>().unwrap().aspect = rect.aspect_ratio();
+
+                    if let Some(id) = self.state.viewport_id {
+                        let ctx = self.world.read_resource::<EguiContext>().unwrap();
+                        let ctx = ctx.as_ref::<EguiContext>().unwrap();
+
+                        let view = renderer
+                            .main_viewport()
+                            .read()
+                            .color_view(renderer.resource_manager());
+
+                        ctx.update_texture(renderer.device(), &view, id);
+
+                        ui.image((id, rect.size()));
+                    }
                 }
                 "Scene Tree" => {
                     scene_tree::scene_tree_ui(self.world, self.state, ui);

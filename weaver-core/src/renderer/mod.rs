@@ -274,6 +274,10 @@ impl Renderer {
         &self.resource_manager
     }
 
+    pub fn main_viewport(&self) -> &Arc<RwLock<Viewport>> {
+        &self.main_viewport
+    }
+
     pub fn set_viewport_rect(&self, rect: Rect) {
         if rect == self.main_viewport.read().rect {
             return;
@@ -559,19 +563,8 @@ impl Renderer {
         //     world,
         // )?;
 
-        Ok(())
-    }
+        self.main_viewport.read().render(encoder, self, world)?;
 
-    pub fn render_viewport_to_screen(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-    ) -> anyhow::Result<()> {
-        if let Some(output) = self.output.read().as_ref() {
-            let world = &self.world.read();
-            self.main_viewport
-                .read()
-                .render(encoder, self, &output.texture, world)?;
-        }
         Ok(())
     }
 

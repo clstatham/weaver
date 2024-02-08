@@ -1,4 +1,5 @@
 use fabricate::{registry::StaticId, relationship::Relationship};
+use state::EditorState;
 use weaver::{
     core::{app::Window, renderer::compute::hdr_loader::HdrLoader},
     prelude::*,
@@ -28,7 +29,7 @@ fn main() -> anyhow::Result<()> {
     let app = App::new("Weaver Editor", 1600, 900, vsync)?;
 
     app.add_resource(ui::Tabs::default())?;
-    app.add_resource(state::EditorState::new())?;
+    app.add_resource(EditorState::new())?;
     app.add_resource(ui::fps_counter::FpsDisplay::new())?;
 
     app.add_system_to_stage(Setup, SystemStage::Startup);
@@ -50,6 +51,25 @@ pub struct Setup;
 
 impl System for Setup {
     fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
+        {
+            let world = world.read();
+            let ctx = world.read_resource::<EguiContext>().unwrap();
+            let ctx = ctx.as_ref::<EguiContext>().unwrap();
+            let renderer = world.read_resource::<Renderer>().unwrap();
+            let renderer = renderer.as_ref::<Renderer>().unwrap();
+
+            let viewport = renderer.main_viewport();
+            let viewport = viewport.read();
+            let view = viewport.color_view(renderer.resource_manager());
+
+            let id = ctx.convert_texture(renderer.device(), &view);
+
+            let mut state = world.write_resource::<EditorState>().unwrap();
+            let state = state.as_mut::<EditorState>().unwrap();
+
+            state.viewport_id = Some(id);
+        }
+
         let skybox = {
             let world = world.read();
             let mut assets = world.write_resource::<AssetServer>().unwrap();
@@ -158,11 +178,12 @@ impl System for EditorRender {
         let window = window.as_ref::<Window>().unwrap();
         {
             let mut encoder = renderer.begin_render();
-            renderer.render_ui(ui, window, &mut encoder);
             renderer.prepare_components();
             renderer.prepare_passes();
             renderer.render_to_viewport(&mut encoder).unwrap();
-            renderer.render_viewport_to_screen(&mut encoder).unwrap();
+            renderer.render_ui(ui, window, &mut encoder);
+
+            // renderer.render_viewport_to_screen(&mut encoder).unwrap();
             renderer.end_render(encoder);
         }
         Ok(vec![])

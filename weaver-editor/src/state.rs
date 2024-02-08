@@ -76,6 +76,8 @@ pub struct EditorState {
 
     pub(crate) entity_being_renamed: Option<Entity>,
     pub(crate) entity_rename_buffer: String,
+
+    pub(crate) viewport_id: Option<egui::epaint::TextureId>,
 }
 
 impl Clone for EditorState {
@@ -96,6 +98,8 @@ impl EditorState {
 
             entity_being_renamed: None,
             entity_rename_buffer: String::new(),
+
+            viewport_id: None,
         }
     }
 
@@ -148,29 +152,31 @@ impl EditorState {
 
     pub fn rename_entity_window(&mut self, ctx: &egui::Context) -> anyhow::Result<()> {
         if self.entity_being_renamed.is_some() {
-            egui::Window::new("Rename Entity").show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Name");
-                    ui.text_edit_singleline(&mut self.entity_rename_buffer);
-                });
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.entity_being_renamed = None;
-                    }
-                    if ui.button("Rename").clicked() {
-                        if let Some(entity) = self.entity_being_renamed.take() {
-                            self.perform_action(RenameEntity {
-                                entity,
-                                old_name: String::new(),
-                                new_name: self.entity_rename_buffer.clone(),
-                            })
-                            .unwrap();
-
-                            self.entity_rename_buffer.clear();
+            egui::Window::new("Rename Entity")
+                .default_pos(ctx.screen_rect().center())
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Name");
+                        ui.text_edit_singleline(&mut self.entity_rename_buffer);
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancel").clicked() {
+                            self.entity_being_renamed = None;
                         }
-                    }
+                        if ui.button("Rename").clicked() {
+                            if let Some(entity) = self.entity_being_renamed.take() {
+                                self.perform_action(RenameEntity {
+                                    entity,
+                                    old_name: String::new(),
+                                    new_name: self.entity_rename_buffer.clone(),
+                                })
+                                .unwrap();
+
+                                self.entity_rename_buffer.clear();
+                            }
+                        }
+                    });
                 });
-            });
         }
         Ok(())
     }

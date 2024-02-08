@@ -1,5 +1,7 @@
 #![allow(clippy::too_many_arguments, clippy::from_over_into)]
 
+pub use wgpu;
+
 pub mod app;
 pub mod asset_server;
 pub mod camera;

@@ -70,7 +70,9 @@ fn scene_tree_ui_recurse(
 
             let arch = world.storage().entity_archetype(node).unwrap();
             let components = arch
-                .row_type_filtered(node, |ty| !ty.is_relative())
+                .row_type_filtered(node, |ty| {
+                    !ty.is_relative() && ty.id() != NameTag::type_uid().id()
+                })
                 .unwrap();
             for component in components {
                 let ty = component.type_uid();

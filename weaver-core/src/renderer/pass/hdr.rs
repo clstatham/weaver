@@ -3,7 +3,7 @@ use fabricate::prelude::*;
 use crate::{
     load_shader,
     renderer::{internals::BindableComponent, BindGroupLayoutCache, Renderer},
-    texture::{HdrTexture, TextureFormat, WindowTexture},
+    texture::{HdrTexture, SdrTexture, TextureFormat},
 };
 
 use super::Pass;
@@ -81,7 +81,7 @@ impl HdrRenderPass {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: WindowTexture::FORMAT,
+                    format: SdrTexture::FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],

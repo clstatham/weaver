@@ -123,6 +123,27 @@ impl GpuResource {
             resource: self.as_binding_resource(),
         }
     }
+
+    pub fn as_buffer(&self) -> Option<&wgpu::Buffer> {
+        match self {
+            GpuResource::Buffer { buffer } => Some(buffer),
+            _ => None,
+        }
+    }
+
+    pub fn as_texture(&self) -> Option<&wgpu::Texture> {
+        match self {
+            GpuResource::Texture { texture, .. } => Some(texture),
+            _ => None,
+        }
+    }
+
+    pub fn as_sampler(&self) -> Option<&wgpu::Sampler> {
+        match self {
+            GpuResource::Sampler { sampler } => Some(sampler),
+            _ => None,
+        }
+    }
 }
 
 /// The status of a GPU handle (Ready, Pending, or Destroyed).
