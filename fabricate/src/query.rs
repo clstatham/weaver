@@ -353,11 +353,11 @@ pub enum QueryItem<'a> {
 
 impl<'a> QueryItem<'a> {
     /// Returns the entity for the query item.
-    /// Returns [`None`] if the query item does not contain an entity.
-    pub fn get_entity(&self) -> Option<&Entity> {
+    pub fn entity(&self) -> &Entity {
         match self {
-            QueryItem::Entity(entity) => Some(entity),
-            _ => None,
+            QueryItem::Entity(entity) => entity,
+            QueryItem::Proxy(data) => &data.entity,
+            QueryItem::ProxyMut(data) => &data.entity,
         }
     }
 
@@ -380,7 +380,7 @@ impl<'a> QueryItem<'a> {
         }
     }
 
-    /// Returns a reference to the [`DataRef`] for the query item.
+    /// Returns a [`Ref`] allowing access to the component for the query item.
     /// Returns [`None`] if the query item does not contain a component.
     pub fn get_data(&self) -> Option<&Ref<'a>> {
         match self {
@@ -389,7 +389,7 @@ impl<'a> QueryItem<'a> {
         }
     }
 
-    /// Returns a mutable reference to the [`DataMut`] for the query item.
+    /// Returns a [`Mut`] allowing mutable access to the component for the query item.
     /// Returns [`None`] if the query item does not contain a mutable component.
     pub fn get_data_mut(&mut self) -> Option<&mut Mut<'a>> {
         match self {
@@ -398,7 +398,7 @@ impl<'a> QueryItem<'a> {
         }
     }
 
-    /// Returns the [`Entity`] for the query item's type.
+    /// Returns the [`Entity`] representing the type of the component in the query item.
     /// Returns [`None`] if the query item does not contain a component.
     pub fn get_type(&self) -> Option<&Entity> {
         match self {
@@ -422,8 +422,8 @@ impl<'a> Debug for QueryItem<'a> {
 pub struct QueryResults<'a>(Vec<QueryItem<'a>>);
 
 impl<'a> QueryResults<'a> {
-    pub fn get_entity(&self) -> Option<&Entity> {
-        self.0.iter().find_map(|item| item.get_entity())
+    pub fn entity(&self) -> Option<&Entity> {
+        self.0.first().map(|item| item.entity())
     }
 
     pub fn get<T: Atom>(&self) -> Option<&T> {
@@ -442,7 +442,7 @@ impl<'a> QueryResults<'a> {
         self.0.iter_mut().find_map(|item| item.get_data_mut())
     }
 
-    pub fn into_vec(self) -> Vec<QueryItem<'a>> {
+    pub fn into_inner(self) -> Vec<QueryItem<'a>> {
         self.0
     }
 }
@@ -534,9 +534,7 @@ mod tests {
         let mut world = world_handle.write();
 
         let entity1 = world.spawn((Position { x: 0.0, y: 0.0 },)).unwrap();
-        world
-            .add_component(&entity1, Velocity { x: 1.0, y: 1.0 })
-            .unwrap();
+        world.add(&entity1, Velocity { x: 1.0, y: 1.0 }).unwrap();
 
         let entity2 = world.spawn((Position { x: 0.0, y: 0.0 },)).unwrap();
 
@@ -546,8 +544,8 @@ mod tests {
 
         assert_eq!(iter.count(), 2);
 
-        let e1 = query.get(&entity1).unwrap().into_vec();
-        let e2 = query.get(&entity2).unwrap().into_vec();
+        let e1 = query.get(&entity1).unwrap().into_inner();
+        let e2 = query.get(&entity2).unwrap().into_inner();
 
         assert_eq!(e1.len(), 1);
         assert_eq!(e2.len(), 1);
@@ -569,9 +567,7 @@ mod tests {
         let mut world = world_handle.write();
 
         let entity1 = world.spawn((Position { x: 0.0, y: 0.0 },)).unwrap();
-        world
-            .add_component(&entity1, Velocity { x: 1.0, y: 1.0 })
-            .unwrap();
+        world.add(&entity1, Velocity { x: 1.0, y: 1.0 }).unwrap();
 
         let entity2 = world.spawn((Position { x: 0.0, y: 0.0 },)).unwrap();
 
@@ -581,8 +577,8 @@ mod tests {
 
         assert_eq!(iter.count(), 2);
 
-        let mut e1 = query.get(&entity1).unwrap().into_vec();
-        let mut e2 = query.get(&entity2).unwrap().into_vec();
+        let mut e1 = query.get(&entity1).unwrap().into_inner();
+        let mut e2 = query.get(&entity2).unwrap().into_inner();
 
         assert_eq!(e1.len(), 1);
         assert_eq!(e2.len(), 1);

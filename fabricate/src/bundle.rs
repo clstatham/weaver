@@ -10,6 +10,16 @@ pub trait Bundle: Sized + 'static {
     fn into_data_vec(self) -> Vec<Data>;
 }
 
+impl<T: Atom> Bundle for T {
+    fn type_ids() -> Vec<Entity> {
+        vec![T::static_type_uid()]
+    }
+
+    fn into_data_vec(self) -> Vec<Data> {
+        vec![T::into_data(self)]
+    }
+}
+
 macro_rules! impl_bundle_for_tuple {
     ($($name:ident),*) => {
         #[allow(non_snake_case)]

@@ -24,11 +24,11 @@ pub fn inherit_transform(parent: &Entity, child: &Entity) {
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-
-    let app = App::new("Weaver Editor", 1600, 900, false)?;
+    let vsync = std::env::var("WEAVER_VSYNC") == Ok("1".to_string());
+    let app = App::new("Weaver Editor", 1600, 900, vsync)?;
 
     app.add_resource(ui::Tabs::default())?;
-    app.add_resource(state::EditorState::new(&app.world))?;
+    app.add_resource(state::EditorState::new())?;
     app.add_resource(ui::fps_counter::FpsDisplay::new())?;
 
     app.add_system_to_stage(Setup, SystemStage::Startup);
@@ -125,7 +125,7 @@ impl System for UpdateCamera {
             .write::<FlyCameraController>()?
             .build();
         for results in query.iter() {
-            let [ref mut camera, ref mut controller] = &mut results.into_vec()[..] else {
+            let [ref mut camera, ref mut controller] = &mut results.into_inner()[..] else {
                 unreachable!()
             };
             let camera = camera.get_mut::<Camera>().unwrap();
@@ -195,13 +195,15 @@ impl System for UpdateTransforms {
             .entity()
             .read::<Transform>()?
             .write::<GlobalTransform>()?
+            .without_dynamic(&Entity::new_wildcard::<TransformChild>())
+            .unwrap()
             .build();
 
         for result in query.iter() {
-            let [entity, ref transform, ref mut global] = &mut result.into_vec()[..] else {
+            let [entity, ref transform, ref mut global] = &mut result.into_inner()[..] else {
                 unreachable!()
             };
-            let entity = entity.get_entity().unwrap();
+            let entity = entity.entity();
             let transform = transform.get::<Transform>().unwrap();
             let global = global.get_mut::<GlobalTransform>().unwrap();
 
@@ -218,7 +220,8 @@ impl System for UpdateTransforms {
                 *global
             };
 
-            if let Some(children) = world.get_relatives(entity, TransformParent::type_uid().id()) {
+            if let Some(children) = world.get_relatives_id(entity, TransformParent::type_uid().id())
+            {
                 for child in children {
                     update_transforms_recurse(&world, &child, global);
                 }
@@ -252,7 +255,7 @@ fn update_transforms_recurse(world: &World, entity: &Entity, parent_global: Glob
         *global
     };
 
-    if let Some(children) = world.get_relatives(entity, TransformParent::type_uid().id()) {
+    if let Some(children) = world.get_relatives_id(entity, TransformParent::type_uid().id()) {
         for child in children {
             update_transforms_recurse(world, &child, global);
         }

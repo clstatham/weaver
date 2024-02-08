@@ -130,6 +130,8 @@ impl System for EditorStateUi {
                         },
                     );
             });
+
+            state.rename_entity_window(ctx).unwrap();
         });
 
         Ok(vec![])

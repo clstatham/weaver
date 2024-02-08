@@ -5,8 +5,9 @@ use fabricate_macro::Atom;
 
 use crate::{
     self as fabricate,
+    commands::Commands,
     component::Atom,
-    lock::{Read, ReadWrite, SharedLock, Write},
+    lock::{DeferredRead, Read, ReadWrite, SharedLock, Write},
     prelude::{Bundle, Mut},
     query::{Query, QueryBuilder},
     registry::Entity,
@@ -66,7 +67,7 @@ impl World {
     }
 
     pub fn add_resource<T: Atom>(&mut self, resource: T) -> Result<()> {
-        self.add_component(&self.root.clone(), resource)
+        self.add(&self.root.clone(), resource)
     }
 
     pub fn get_resource(&self, id: &Entity) -> Option<Ref<'_>> {
@@ -85,11 +86,17 @@ impl World {
         self.get_component_mut::<T>(&self.root)
     }
 
+    pub fn insert_entity(&mut self, entity: Entity) -> Result<()> {
+        self.storage.insert_entity(entity.clone())?;
+        self.add_relative(&entity, BelongsToWorld, &self.root.clone())?;
+        Ok(())
+    }
+
     pub fn create_data<T: Atom>(&mut self, data: T) -> Result<Entity> {
         let d = Data::new_dynamic(data);
         let e = self.create_entity()?;
         let v = d.value_uid().clone();
-        self.add_to_entity(&e, vec![d])?;
+        self.add_data(&e, vec![d])?;
         Ok(v)
     }
 
@@ -107,7 +114,7 @@ impl World {
         relative: &Entity,
     ) -> Result<()> {
         let relationship_data = relationship.into_relationship_data(relative)?;
-        self.add_to_entity(add_to, vec![relationship_data])?;
+        self.add_data(add_to, vec![relationship_data])?;
         Ok(())
     }
 
@@ -120,11 +127,11 @@ impl World {
     pub fn spawn<B: Bundle>(&mut self, components: B) -> Result<Entity> {
         let entity = self.create_entity()?;
         let data = components.into_data_vec();
-        self.add_to_entity(&entity, data)?;
+        self.add_data(&entity, data)?;
         Ok(entity)
     }
 
-    pub fn get_relatives(&self, entity: &Entity, relationship_type: u32) -> Option<Vec<Entity>> {
+    pub fn get_relatives_id(&self, entity: &Entity, relationship_type: u32) -> Option<Vec<Entity>> {
         let archetype = self.storage().entity_archetype(entity)?;
         let relationships =
             archetype.row_type_filtered(entity, |ty| ty.id() == relationship_type)?;
@@ -135,6 +142,11 @@ impl World {
             out.push(Entity::with_current_generation(relative_id).unwrap());
         }
         Some(out)
+    }
+
+    pub fn get_relatives<R: Relationship>(&self, entity: &Entity) -> Option<Vec<Entity>> {
+        let relationship_type = R::type_uid();
+        self.get_relatives_id(entity, relationship_type.id())
     }
 
     pub fn all_relatives(&self, entity: &Entity) -> Option<Vec<(u32, Entity)>> {
@@ -160,7 +172,7 @@ impl World {
         self.storage.get_component_mut::<T>(entity)
     }
 
-    pub fn add_to_entity(
+    pub fn add_data(
         &mut self,
         entity: &Entity,
         data: impl IntoIterator<Item = Data>,
@@ -170,10 +182,14 @@ impl World {
         Ok(())
     }
 
-    pub fn add_component<T: Atom>(&mut self, entity: &Entity, component: T) -> Result<()> {
-        let data = component.into_data();
-        self.add_to_entity(entity, [data])?;
+    pub fn add<T: Bundle>(&mut self, entity: &Entity, component: T) -> Result<()> {
+        let data = component.into_data_vec();
+        self.add_data(entity, data)?;
         Ok(())
+    }
+
+    pub fn has<T: Atom>(&self, entity: &Entity) -> bool {
+        self.storage.has::<T>(entity)
     }
 
     pub fn get(&self, entity: &Entity, component_type: &Entity) -> Option<Ref<'_>> {
@@ -220,17 +236,25 @@ impl World {
 
 /// A shared handle to a [`World`] that can be locked for reading or writing.
 #[derive(Clone)]
-#[repr(transparent)]
-pub struct LockedWorldHandle(SharedLock<World>);
+pub struct LockedWorldHandle(SharedLock<World>, SharedLock<Commands>);
 
 impl LockedWorldHandle {
     pub fn new(world: World) -> Self {
-        Self(SharedLock::new(world))
+        Self(SharedLock::new(world), SharedLock::new(Commands::new()))
     }
 
     /// Requests a read lock on the [`World`].
-    pub fn read(&self) -> Read<'_, World> {
-        self.0.read()
+    pub fn read(&self) -> DeferredRead<'_, World> {
+        let commands = self.1.clone();
+        self.0.read_defer(move |world| {
+            if let Some(mut world) = world.try_write() {
+                if let Some(mut commands) = commands.try_write() {
+                    commands
+                        .finalize(&mut world)
+                        .expect("Failed to finalize commands");
+                }
+            }
+        })
     }
 
     /// Requests a write lock on the [`World`].
@@ -249,6 +273,22 @@ impl LockedWorldHandle {
     /// Requests a read lock on the [`World`] that can later be upgraded to a [`Write`] lock.
     pub fn read_write(&self) -> ReadWrite<'_, World> {
         self.0.read_write()
+    }
+
+    pub fn defer<F, R>(&self, f: F) -> Result<R>
+    where
+        F: FnOnce(&World, &mut Commands) -> R,
+    {
+        let world = self.read();
+        let mut commands = self.1.write();
+        let result = f(&world, &mut commands);
+        drop(world);
+        if let Some(mut world) = self.try_write() {
+            if let Some(mut commands) = self.1.try_write() {
+                commands.finalize(&mut world)?;
+            }
+        }
+        Ok(result)
     }
 
     pub fn run_systems(&self, stage: SystemStage) {
@@ -333,9 +373,14 @@ impl LockedWorldHandle {
         world.spawn(components)
     }
 
-    pub fn get_relatives(&self, entity: &Entity, relationship_type: u32) -> Option<Vec<Entity>> {
+    pub fn get_relatives_id(&self, entity: &Entity, relationship_type: u32) -> Option<Vec<Entity>> {
         let world = self.read();
-        world.get_relatives(entity, relationship_type)
+        world.get_relatives_id(entity, relationship_type)
+    }
+
+    pub fn get_relatives<R: Relationship>(&self, entity: &Entity) -> Option<Vec<Entity>> {
+        let world = self.read();
+        world.get_relatives::<R>(entity)
     }
 
     pub fn with_component<T: Atom, F, R>(&self, entity: &Entity, f: F) -> Option<R>
@@ -384,18 +429,14 @@ impl LockedWorldHandle {
         Some(f(c))
     }
 
-    pub fn add_to_entity(
-        &self,
-        entity: &Entity,
-        data: impl IntoIterator<Item = Data>,
-    ) -> Result<()> {
+    pub fn add_data(&self, entity: &Entity, data: impl IntoIterator<Item = Data>) -> Result<()> {
         let mut world = self.write();
-        world.add_to_entity(entity, data)
+        world.add_data(entity, data)
     }
 
-    pub fn add_component<T: Atom>(&self, entity: &Entity, component: T) -> Result<()> {
+    pub fn add<T: Bundle>(&self, entity: &Entity, component: T) -> Result<()> {
         let mut world = self.write();
-        world.add_component(entity, component)
+        world.add(entity, component)
     }
 
     pub fn query<F, G, R>(&self, build_query: F, with_query: G) -> R

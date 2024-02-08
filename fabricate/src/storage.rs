@@ -1551,6 +1551,12 @@ impl Storage {
         self.archetypes.clear();
     }
 
+    pub fn has<T: Atom>(&self, entity: &Entity) -> bool {
+        self.entity_archetype(entity)
+            .map(|a| a.contains_type(&T::static_type_uid()))
+            .unwrap_or(false)
+    }
+
     pub fn get(&self, type_id: &Entity, entity: &Entity) -> Option<Ref<'_>> {
         let archetype = self.entity_archetype(entity)?;
         archetype.get(type_id, entity)
@@ -1661,6 +1667,14 @@ impl Storage {
             .filter(|a| a.contains_type(pointer.target_type_uid()))
             .find(|a| a.contains_entity(pointer.target_value_uid()))?;
         archetype.get_mut(pointer.target_type_uid(), pointer.target_value_uid())
+    }
+
+    pub fn insert_entity(&mut self, entity: Entity) -> Result<()> {
+        if self.entity_archetypes.contains(&entity) {
+            bail!("entity already exists in storage: {:?}", entity);
+        }
+        self.entity_archetypes.insert(entity, Uid::default());
+        Ok(())
     }
 
     pub fn create_entity(&mut self) -> Entity {

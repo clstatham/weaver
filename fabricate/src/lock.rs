@@ -21,6 +21,13 @@ impl<T> Lock<T> {
         Read::try_new(self)
     }
 
+    pub fn read_defer<F>(&self, on_drop: F) -> DeferredRead<'_, T>
+    where
+        F: FnOnce(&Lock<T>) + 'static,
+    {
+        DeferredRead::new(self, on_drop)
+    }
+
     pub fn write(&self) -> Write<'_, T> {
         Write::new(self)
     }
@@ -164,6 +171,47 @@ impl<'a, T> Deref for ReadWrite<'a, T> {
 impl<'a, T> DerefMut for Write<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+/// A read guard that runs a closure when dropped.
+/// Useful for deferring work until after the lock is released, especially work that requires write access to the lock.
+/// Warning: The lock is not guaranteed to be available for writing when the closure runs, since this uses a RwLock and not a Mutex.
+pub struct DeferredRead<'a, T> {
+    lock: &'a Lock<T>,
+    guard: Option<RwLockReadGuard<'a, T>>,
+    on_drop: Option<Box<dyn FnOnce(&'a Lock<T>) + 'static>>,
+}
+
+impl<'a, T> DeferredRead<'a, T> {
+    pub fn new<F>(lock: &'a Lock<T>, on_drop: F) -> Self
+    where
+        F: FnOnce(&'a Lock<T>) + 'static,
+    {
+        Self {
+            lock,
+            guard: Some(lock.0.read()),
+            on_drop: Some(Box::new(on_drop)),
+        }
+    }
+}
+
+impl<'a, T> Deref for DeferredRead<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.guard.as_ref().unwrap()
+    }
+}
+
+impl<'a, T> Drop for DeferredRead<'a, T> {
+    fn drop(&mut self) {
+        if let Some(guard) = self.guard.take() {
+            drop(guard);
+            if let Some(on_drop) = self.on_drop.take() {
+                on_drop(self.lock);
+            }
+        }
     }
 }
 

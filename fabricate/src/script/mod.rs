@@ -54,7 +54,7 @@ impl Script {
 
 #[cfg(test)]
 mod tests {
-    use crate::{prelude::World, system::SystemStage, world::get_world};
+    use crate::{system::SystemStage, world::get_world};
 
     use super::*;
     #[test]

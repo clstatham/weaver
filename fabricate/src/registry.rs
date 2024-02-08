@@ -13,6 +13,9 @@ use anyhow::Result;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
+    bundle::Bundle,
+    commands::Commands,
+    component::Atom,
     lock::Lock,
     relationship::Relationship,
     storage::{Mut, Ref, SortedMap},
@@ -220,8 +223,12 @@ impl Entity {
         Self(uid, EntityMeta::new_type(uid))
     }
 
-    pub fn new_wildcard(uid: u32) -> Self {
+    pub fn new_wildcard_id(uid: u32) -> Self {
         Self(uid, EntityMeta::WILDCARD)
+    }
+
+    pub fn new_wildcard<T: StaticId + ?Sized>() -> Self {
+        Self::new_wildcard_id(T::static_type_uid().id())
     }
 
     pub fn allocate(ty: Option<&Entity>) -> Self {
@@ -342,12 +349,19 @@ impl Entity {
         }
     }
 
-    pub fn with_world<F, R>(&self, f: F) -> Option<R>
+    pub fn with_world<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&World) -> R,
     {
         let world = get_world().read();
-        Some(f(&world))
+        f(&world)
+    }
+
+    pub fn defer<F, R>(&self, f: F) -> Result<R>
+    where
+        F: FnOnce(&World, &mut Commands) -> R,
+    {
+        get_world().defer(f)
     }
 
     pub fn with_ref<F, R>(&self, f: F) -> Option<R>
@@ -355,10 +369,10 @@ impl Entity {
         F: FnOnce(Ref<'_>) -> R,
     {
         self.with_world(|world| {
-            let r = world.storage().find(&self.type_id()?, self)?;
+            let storage = world.storage();
+            let r = storage.find(&self.type_id()?, self)?;
             Some(f(r))
         })
-        .flatten()
     }
 
     pub fn with_mut<F, R>(&self, f: F) -> Option<R>
@@ -366,36 +380,62 @@ impl Entity {
         F: FnOnce(Mut<'_>) -> R,
     {
         self.with_world(|world| {
-            let r = world.storage().find_mut(&self.type_id()?, self)?;
+            let storage = world.storage();
+            let r = storage.find_mut(&self.type_id()?, self)?;
             Some(f(r))
         })
-        .flatten()
+    }
+
+    pub fn has<T: Atom>(&self) -> bool {
+        self.with_world(|world| world.has::<T>(self))
+    }
+
+    pub fn with_component_ref<T: Atom, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        self.with_world(|world| {
+            let r = world.get(self, &T::type_uid())?;
+            let r = r.as_ref::<T>()?;
+            Some(f(r))
+        })
+    }
+
+    pub fn with_component_mut<T: Atom, R>(&self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+        self.with_world(|world| {
+            let mut r = world.get_mut(self, &T::type_uid())?;
+            let r = r.as_mut::<T>()?;
+            Some(f(r))
+        })
     }
 
     pub fn with_relatives<F, R>(&self, relationship_type: u32, f: F) -> Option<R>
     where
         F: FnOnce(&[Entity]) -> R,
     {
-        self.with_world(|world| {
-            let relatives = world.get_relatives(self, relationship_type)?;
-            Some(f(&relatives))
-        })
-        .flatten()
+        let rels = self.with_world(|world| world.get_relatives_id(self, relationship_type))?;
+        Some(f(&rels))
     }
 
     pub fn with_all_relatives<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&[(u32, Entity)]) -> R,
     {
-        self.with_world(|world| {
-            let relatives = world.all_relatives(self)?;
-            Some(f(&relatives))
-        })
-        .flatten()
+        let rels = self.with_world(|world| world.all_relatives(self))?;
+        Some(f(&rels))
     }
 
     pub fn add_relative<R: Relationship>(&self, relationship: R, relative: &Entity) -> Result<()> {
-        get_world().add_relative(self, relationship, relative)?;
+        self.defer(|_, commands| {
+            commands.add_components(self, vec![relationship.into_relationship_data(relative)?]);
+            Ok::<(), anyhow::Error>(())
+        })??;
+        Ok(())
+    }
+
+    pub fn add<T: Bundle>(&self, bundle: T) -> Result<()> {
+        let data = bundle.into_data_vec();
+        self.defer(|_, commands| {
+            commands.add_components(self, data);
+            Ok::<(), anyhow::Error>(())
+        })??;
         Ok(())
     }
 }

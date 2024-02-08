@@ -302,7 +302,7 @@ impl InterpreterContext {
                     for results in query.iter() {
                         let scope = env.push_scope(Some(self));
 
-                        for ((name, _), result) in qs.iter().zip(results.into_vec()) {
+                        for ((name, _), result) in qs.iter().zip(results.into_inner()) {
                             let value = match result {
                                 QueryItem::Proxy(p) => ValueHandle::Ref(SharedLock::new(
                                     Value::Data(Data::new_pointer(
@@ -383,28 +383,28 @@ impl InterpreterContext {
 
     pub fn interp_construct(
         &mut self,
-        env: &RuntimeEnv,
-        name: &SpanExpr,
-        args: &[(String, SpanExpr)],
+        _env: &RuntimeEnv,
+        _name: &SpanExpr,
+        _args: &[(String, SpanExpr)],
     ) -> anyhow::Result<ValueHandle> {
-        let name = name.as_str();
-        let ty = Entity::allocate_type(Some(name));
-        let e = env.world.write().create_entity()?;
-        for (arg_name, arg) in args {
-            let value = self.interp_expr(env, arg)?;
-            let value_uid = value.read().value_uid(env).map_err(|_| {
-                runtime_error!(
-                    arg.span,
-                    format!("Invalid argument for constructing {}: {}", name, arg_name)
-                )
-            })?;
-            let mut world = env.world.write();
-            let value_ty = value_uid.type_id().unwrap();
+        // let name = name.as_str();
+        // let ty = Entity::allocate_type(Some(name));
+        // let e = env.world.write().create_entity()?;
+        // for (arg_name, arg) in args {
+        //     // let value = self.interp_expr(env, arg)?;
+        //     // let value_uid = value.read().value_uid(env).map_err(|_| {
+        //     //     runtime_error!(
+        //     //         arg.span,
+        //     //         format!("Invalid argument for constructing {}: {}", name, arg_name)
+        //     //     )
+        //     // })?;
+        //     // let mut world = env.world.write();
+        //     // let value_ty = value_uid.type_id().unwrap();
+        // }
 
-            todo!("Implement constructing entities")
-        }
+        todo!("Implement constructing entities");
 
-        Ok(Value::Data(Data::new_pointer(&ty, &e)).into())
+        // Ok(Value::Data(Data::new_pointer(&ty, &e)).into())
     }
 
     pub fn interp_call(&mut self, env: &RuntimeEnv, call: &Call) -> anyhow::Result<ValueHandle> {
