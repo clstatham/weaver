@@ -116,10 +116,10 @@ pub trait InspectExt: Atom {
 impl<T: Atom + ?Sized> InspectExt for T {}
 
 pub fn component_inspector_ui(world: &World, state: &mut EditorState, ui: &mut egui::Ui) {
-    if let Some(component) = state.selected_component {
+    if let Some(ref component) = state.selected_component {
         let mut component = world
             .storage()
-            .find_mut(component.type_id().unwrap(), &component)
+            .find_mut(&component.type_id().unwrap(), component)
             .unwrap();
         component
             .as_dynamic_mut()

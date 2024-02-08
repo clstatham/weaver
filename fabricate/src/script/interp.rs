@@ -291,12 +291,10 @@ impl InterpreterContext {
                     for (_, q) in qs.iter() {
                         match q {
                             QueryBuilderAccess::Entity => query = query.entity(),
-                            QueryBuilderAccess::Read(id) => query = query.read_dynamic(*id)?,
-                            QueryBuilderAccess::Write(id) => query = query.write_dynamic(*id)?,
-                            QueryBuilderAccess::With(id) => query = query.with_dynamic(*id)?,
-                            QueryBuilderAccess::Without(id) => {
-                                query = query.without_dynamic(*id)?
-                            }
+                            QueryBuilderAccess::Read(id) => query = query.read_dynamic(id)?,
+                            QueryBuilderAccess::Write(id) => query = query.write_dynamic(id)?,
+                            QueryBuilderAccess::With(id) => query = query.with_dynamic(id)?,
+                            QueryBuilderAccess::Without(id) => query = query.without_dynamic(id)?,
                         }
                     }
                     let query = query.build();
@@ -309,13 +307,13 @@ impl InterpreterContext {
                                 QueryItem::Proxy(p) => ValueHandle::Ref(SharedLock::new(
                                     Value::Data(Data::new_pointer(
                                         p.component.type_uid(),
-                                        *p.component.value_uid(),
+                                        p.component.value_uid(),
                                     )),
                                 )),
                                 QueryItem::ProxyMut(p) => ValueHandle::Mut(SharedLock::new(
                                     Value::Data(Data::new_pointer(
                                         p.component.type_uid(),
-                                        *p.component.value_uid(),
+                                        p.component.value_uid(),
                                     )),
                                 )),
                                 _ => todo!(),
@@ -406,7 +404,7 @@ impl InterpreterContext {
             todo!("Implement constructing entities")
         }
 
-        Ok(Value::Data(Data::new_pointer(ty, e)).into())
+        Ok(Value::Data(Data::new_pointer(&ty, &e)).into())
     }
 
     pub fn interp_call(&mut self, env: &RuntimeEnv, call: &Call) -> anyhow::Result<ValueHandle> {
@@ -503,7 +501,7 @@ impl InterpreterContext {
                         let lhs_data = lhs_data.read();
                         let data = match &*lhs_data {
                             Value::Resource(res) => {
-                                let res = world.get_resource(*res).ok_or_else(|| {
+                                let res = world.get_resource(res).ok_or_else(|| {
                                     runtime_error!(
                                         lhs.span,
                                         format!("Invalid resource: {}", lhs_val.display(env))
@@ -574,7 +572,7 @@ impl InterpreterContext {
                         let lhs_data = lhs_data.write();
                         let data = match &*lhs_data {
                             Value::Resource(res) => {
-                                let res = world.get_resource(*res).ok_or_else(|| {
+                                let res = world.get_resource(res).ok_or_else(|| {
                                     runtime_error!(
                                         lhs.span,
                                         format!("Invalid resource: {}", lhs_val.display(env))
@@ -804,7 +802,7 @@ mod tests {
 
     #[test]
     fn test_interp_literals() {
-        let world_handle = World::new_handle();
+        let world_handle = get_world();
         let env = RuntimeEnv::new(world_handle.clone(), Vec::new());
         let ctx = env.push_scope(None);
         {
@@ -838,7 +836,7 @@ mod tests {
 
     #[test]
     fn test_interp_infix() {
-        let world_handle = World::new_handle();
+        let world_handle = get_world();
         let env = RuntimeEnv::new(world_handle.clone(), Vec::new());
         let ctx = env.push_scope(None);
         {
@@ -892,7 +890,7 @@ mod tests {
 
     #[test]
     fn test_interp_infix_assign() {
-        let world_handle = World::new_handle();
+        let world_handle = get_world();
         let env = RuntimeEnv::new(world_handle.clone(), Vec::new());
         let ctx = env.push_scope(None);
         {
@@ -944,7 +942,7 @@ mod tests {
 
     #[test]
     fn test_interp_decl() {
-        let world_handle = World::new_handle();
+        let world_handle = get_world();
         let env = RuntimeEnv::new(world_handle.clone(), Vec::new());
         let ctx = env.push_scope(None);
         {

@@ -8,9 +8,19 @@ pub mod state;
 pub mod ui;
 
 #[derive(Atom, Clone, Copy)]
-pub struct InheritTransform;
+pub struct TransformParent;
 
-impl Relationship for InheritTransform {}
+impl Relationship for TransformParent {}
+
+#[derive(Atom, Clone, Copy)]
+pub struct TransformChild;
+
+impl Relationship for TransformChild {}
+
+pub fn inherit_transform(parent: &Entity, child: &Entity) {
+    parent.add_relative(TransformParent, child).unwrap();
+    child.add_relative(TransformChild, parent).unwrap();
+}
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -86,14 +96,7 @@ impl System for Setup {
                 GlobalTransform::default(),
             ))
             .unwrap();
-        world
-            .write()
-            .add_relative(&e1, InheritTransform, &e2)
-            .unwrap();
-
-        for _ in 0..50_000 {
-            world.write().spawn((42,)).unwrap();
-        }
+        inherit_transform(&e1, &e2);
 
         Ok(vec![])
     }
@@ -215,7 +218,7 @@ impl System for UpdateTransforms {
                 *global
             };
 
-            if let Some(children) = world.get_relatives(&entity, &InheritTransform::type_uid()) {
+            if let Some(children) = world.get_relatives(entity, TransformParent::type_uid().id()) {
                 for child in children {
                     update_transforms_recurse(&world, &child, global);
                 }
@@ -227,7 +230,7 @@ impl System for UpdateTransforms {
 
 fn update_transforms_recurse(world: &World, entity: &Entity, parent_global: GlobalTransform) {
     let local = {
-        let transform = world.get(entity, Transform::type_uid());
+        let transform = world.get(entity, &Transform::type_uid());
         if transform.is_none() {
             return;
         }
@@ -249,7 +252,7 @@ fn update_transforms_recurse(world: &World, entity: &Entity, parent_global: Glob
         *global
     };
 
-    if let Some(children) = world.get_relatives(entity, &InheritTransform::type_uid()) {
+    if let Some(children) = world.get_relatives(entity, TransformParent::type_uid().id()) {
         for child in children {
             update_transforms_recurse(world, &child, global);
         }

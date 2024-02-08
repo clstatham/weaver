@@ -40,7 +40,7 @@ impl App {
     ) -> anyhow::Result<Self> {
         crate::register_names();
 
-        let world = World::new_handle();
+        let world = get_world();
 
         let event_loop = EventLoop::new()?;
         let window = WindowBuilder::new()
@@ -73,7 +73,10 @@ impl App {
             fps_mode: false,
         })?;
 
-        Ok(Self { event_loop, world })
+        Ok(Self {
+            event_loop,
+            world: world.clone(),
+        })
     }
 
     pub fn add_resource<T: Atom>(&self, resource: T) -> anyhow::Result<()> {

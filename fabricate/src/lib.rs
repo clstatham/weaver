@@ -26,7 +26,7 @@ pub mod prelude {
         script_vtable,
         storage::{Data, DynamicData, DynamicDataMut, DynamicDataRef, Mut, Ref, Storage},
         system::{DynamicSystem, System, SystemGraph, SystemStage},
-        world::{LockedWorldHandle, World},
+        world::{get_world, LockedWorldHandle, World},
     };
     pub use anyhow::{anyhow, bail, ensure, Result};
     pub use fabricate_macro::Atom;

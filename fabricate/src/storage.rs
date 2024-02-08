@@ -214,7 +214,7 @@ pub struct DynamicData {
 impl DynamicData {
     pub fn new<T: Atom>(data: T) -> Self {
         let type_uid = T::static_type_uid();
-        let value_uid = Entity::allocate(Some(type_uid));
+        let value_uid = Entity::allocate(Some(&type_uid));
         let data = Box::new(data);
         Self {
             type_uid,
@@ -225,7 +225,7 @@ impl DynamicData {
 
     pub fn new_relation<R: Relationship>(relation: R, relative: &Entity) -> Self {
         let type_uid = Entity::new_relationship(&R::static_type_uid(), relative);
-        let value_uid = Entity::allocate(Some(type_uid));
+        let value_uid = Entity::allocate(Some(&type_uid));
         let data = Box::new(relation);
         Self {
             type_uid,
@@ -234,8 +234,8 @@ impl DynamicData {
         }
     }
 
-    pub fn type_uid(&self) -> Entity {
-        self.type_uid
+    pub fn type_uid(&self) -> &Entity {
+        &self.type_uid
     }
 
     pub fn value_uid(&self) -> &Entity {
@@ -301,8 +301,8 @@ impl PartialEq for DynamicData {
 impl Clone for DynamicData {
     fn clone(&self) -> Self {
         Self {
-            type_uid: self.type_uid,
-            value_uid: self.value_uid,
+            type_uid: self.type_uid.clone(),
+            value_uid: self.value_uid.clone(),
             data: self.data.clone_box(),
         }
     }
@@ -319,7 +319,7 @@ impl Data {
         Self::Dynamic(DynamicData::new(data))
     }
 
-    pub fn new_pointer(target_type_uid: Entity, target_value_uid: Entity) -> Self {
+    pub fn new_pointer(target_type_uid: &Entity, target_value_uid: &Entity) -> Self {
         Self::Pointer(Pointer::new(target_type_uid, target_value_uid))
     }
 
@@ -327,7 +327,7 @@ impl Data {
         Self::Dynamic(DynamicData::new_relation(relation, relative))
     }
 
-    pub fn type_uid(&self) -> Entity {
+    pub fn type_uid(&self) -> &Entity {
         match self {
             Self::Dynamic(data) => data.type_uid(),
             Self::Pointer(pointer) => pointer.target_type_uid(),
@@ -404,27 +404,27 @@ impl Data {
     pub fn to_owned(&self) -> Self {
         match self {
             Self::Dynamic(data) => Self::Dynamic(data.clone()),
-            Self::Pointer(pointer) => Self::Pointer(*pointer),
+            Self::Pointer(pointer) => Self::Pointer(pointer.clone()),
         }
     }
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug)]
 pub struct Pointer {
     target_type_uid: Entity,
     target_value_uid: Entity,
 }
 
 impl Pointer {
-    pub fn new(target_type_uid: Entity, target_value_uid: Entity) -> Self {
+    pub fn new(target_type_uid: &Entity, target_value_uid: &Entity) -> Self {
         Self {
-            target_type_uid,
-            target_value_uid,
+            target_type_uid: target_type_uid.clone(),
+            target_value_uid: target_value_uid.clone(),
         }
     }
 
-    pub fn target_type_uid(&self) -> Entity {
-        self.target_type_uid
+    pub fn target_type_uid(&self) -> &Entity {
+        &self.target_type_uid
     }
 
     pub fn target_value_uid(&self) -> &Entity {
@@ -458,19 +458,19 @@ impl PartialEq for PointerRef<'_> {
 
 impl<'a> PointerRef<'a> {
     pub fn new(
-        target_type_uid: Entity,
-        target_value_uid: Entity,
+        target_type_uid: &Entity,
+        target_value_uid: &Entity,
         _column: Read<'a, Column>,
     ) -> Self {
         Self {
-            target_type_uid,
-            target_value_uid,
+            target_type_uid: target_type_uid.clone(),
+            target_value_uid: target_value_uid.clone(),
             _column,
         }
     }
 
-    pub fn target_type_uid(&self) -> Entity {
-        self.target_type_uid
+    pub fn target_type_uid(&self) -> &Entity {
+        &self.target_type_uid
     }
 
     pub fn target_value_uid(&self) -> &Entity {
@@ -482,7 +482,7 @@ impl<'a> PointerRef<'a> {
     }
 
     pub fn to_owned(&self) -> Pointer {
-        Pointer::new(self.target_type_uid, self.target_value_uid)
+        Pointer::new(&self.target_type_uid, &self.target_value_uid)
     }
 }
 
@@ -517,19 +517,19 @@ impl PartialEq for PointerMut<'_> {
 
 impl<'a> PointerMut<'a> {
     pub fn new(
-        target_type_uid: Entity,
-        target_value_uid: Entity,
+        target_type_uid: &Entity,
+        target_value_uid: &Entity,
         _column: Write<'a, Column>,
     ) -> Self {
         Self {
-            target_type_uid,
-            target_value_uid,
+            target_type_uid: target_type_uid.clone(),
+            target_value_uid: target_value_uid.clone(),
             _column,
         }
     }
 
-    pub fn target_type_uid(&self) -> Entity {
-        self.target_type_uid
+    pub fn target_type_uid(&self) -> &Entity {
+        &self.target_type_uid
     }
 
     pub fn target_value_uid(&self) -> &Entity {
@@ -541,7 +541,7 @@ impl<'a> PointerMut<'a> {
     }
 
     pub fn to_owned(&self) -> Pointer {
-        Pointer::new(self.target_type_uid, self.target_value_uid)
+        Pointer::new(&self.target_type_uid, &self.target_value_uid)
     }
 }
 
@@ -558,16 +558,16 @@ impl PartialEq for DynamicDataRef<'_> {
 }
 
 impl<'a> DynamicDataRef<'a> {
-    pub fn new(type_uid: Entity, value_uid: Entity, column: Read<'a, Column>) -> Self {
+    pub fn new(type_uid: &Entity, value_uid: &Entity, column: Read<'a, Column>) -> Self {
         Self {
-            type_uid,
-            value_uid,
+            type_uid: type_uid.clone(),
+            value_uid: value_uid.clone(),
             column,
         }
     }
 
-    pub fn type_uid(&self) -> Entity {
-        self.type_uid
+    pub fn type_uid(&self) -> &Entity {
+        &self.type_uid
     }
 
     pub fn value_uid(&self) -> &Entity {
@@ -619,16 +619,16 @@ impl PartialEq for DynamicDataMut<'_> {
 }
 
 impl<'a> DynamicDataMut<'a> {
-    pub fn new(type_uid: Entity, value_uid: Entity, column: Write<'a, Column>) -> Self {
+    pub fn new(type_uid: &Entity, value_uid: &Entity, column: Write<'a, Column>) -> Self {
         Self {
-            type_uid,
-            value_uid,
+            type_uid: type_uid.clone(),
+            value_uid: value_uid.clone(),
             column,
         }
     }
 
-    pub fn type_uid(&self) -> Entity {
-        self.type_uid
+    pub fn type_uid(&self) -> &Entity {
+        &self.type_uid
     }
 
     pub fn value_uid(&self) -> &Entity {
@@ -685,7 +685,7 @@ pub enum Ref<'a> {
 }
 
 impl<'a> Ref<'a> {
-    pub fn type_uid(&self) -> Entity {
+    pub fn type_uid(&self) -> &Entity {
         match self {
             Self::Pointer(pointer) => pointer.target_type_uid(),
             Self::Dynamic(data) => data.type_uid(),
@@ -735,7 +735,7 @@ pub enum Mut<'a> {
 }
 
 impl<'a> Mut<'a> {
-    pub fn type_uid(&self) -> Entity {
+    pub fn type_uid(&self) -> &Entity {
         match self {
             Self::Pointer(pointer) => pointer.target_type_uid(),
             Self::Dynamic(data) => data.type_uid(),
@@ -809,8 +809,8 @@ impl DynamicColumn {
         }
     }
 
-    pub fn type_uid(&self) -> Entity {
-        self.type_uid
+    pub fn type_uid(&self) -> &Entity {
+        &self.type_uid
     }
 
     pub fn data_uids(&self) -> Vec<&Entity> {
@@ -825,15 +825,15 @@ impl DynamicColumn {
         self.sparse[entity.as_usize()]
     }
 
-    pub fn insert(&mut self, entity: Entity, data: DynamicData) -> Result<()> {
-        if data.type_uid() != self.type_uid {
+    pub fn insert(&mut self, entity: &Entity, data: DynamicData) -> Result<()> {
+        if data.type_uid() != &self.type_uid {
             bail!(
                 "attempted to insert data of type {:?} into column of type {:?}",
                 data.type_uid(),
                 self.type_uid
             );
         }
-        match self.dense_index_of(&entity) {
+        match self.dense_index_of(entity) {
             Some(_) => {
                 bail!("attempted to insert data into column that already contains data for entity {:?}", entity);
             }
@@ -844,7 +844,7 @@ impl DynamicColumn {
                     self.sparse.resize(entity.as_usize() + 1, None);
                 }
                 self.sparse[entity.as_usize()] = Some(dense_index);
-                self.entity_ids.push(entity);
+                self.entity_ids.push(entity.clone());
                 self.dense.push(data);
             }
         }
@@ -957,8 +957,8 @@ impl PointerColumn {
         }
     }
 
-    pub fn target_type_uid(&self) -> Entity {
-        self.target_type_uid
+    pub fn target_type_uid(&self) -> &Entity {
+        &self.target_type_uid
     }
 
     pub fn dense_index_of(&self, entity: &Entity) -> Option<usize> {
@@ -969,15 +969,15 @@ impl PointerColumn {
         self.sparse[entity.as_usize()]
     }
 
-    pub fn insert(&mut self, entity: Entity, pointer: Pointer) -> Result<()> {
-        if pointer.target_type_uid() != self.target_type_uid {
+    pub fn insert(&mut self, entity: &Entity, pointer: Pointer) -> Result<()> {
+        if pointer.target_type_uid() != &self.target_type_uid {
             bail!(
                 "attempted to insert pointer to type {:?} into column of type {:?}",
                 pointer.target_type_uid(),
                 self.target_type_uid
             );
         }
-        match self.dense_index_of(&entity) {
+        match self.dense_index_of(entity) {
             Some(_) => {
                 bail!("attempted to insert data into column that already contains data for entity {:?}", entity);
             }
@@ -988,7 +988,7 @@ impl PointerColumn {
                     self.sparse.resize(entity.as_usize() + 1, None);
                 }
                 self.sparse[entity.as_usize()] = Some(dense_index);
-                self.entity_ids.push(entity);
+                self.entity_ids.push(entity.clone());
                 self.dense.push(pointer);
             }
         }
@@ -1079,7 +1079,7 @@ pub enum Column {
 }
 
 impl Column {
-    pub fn type_uid(&self) -> Entity {
+    pub fn type_uid(&self) -> &Entity {
         match self {
             Self::Dynamic(col) => col.type_uid(),
             Self::Pointer(col) => col.target_type_uid(),
@@ -1177,7 +1177,7 @@ impl LockedColumn {
         }
 
         let component_id = T::static_type_uid();
-        if col.type_uid() != component_id {
+        if col.type_uid() != &component_id {
             return None;
         }
 
@@ -1205,7 +1205,7 @@ impl LockedColumn {
         }
 
         let component_id = T::static_type_uid();
-        if col.type_uid() != component_id {
+        if col.type_uid() != &component_id {
             return None;
         }
 
@@ -1227,7 +1227,7 @@ impl LockedColumn {
             return None;
         }
 
-        let data = DynamicDataRef::new(col.type_uid(), *entity, col_lock);
+        let data = DynamicDataRef::new(&col.type_uid().clone(), entity, col_lock);
         Some(data)
     }
 
@@ -1240,7 +1240,7 @@ impl LockedColumn {
 
         drop(col_lock);
         let col_lock = self.0.write();
-        let data = DynamicDataMut::new(col_lock.type_uid(), *entity, col_lock);
+        let data = DynamicDataMut::new(&col_lock.type_uid().clone(), entity, col_lock);
         Some(data)
     }
 
@@ -1257,9 +1257,9 @@ impl LockedColumn {
         let dense_index = col.sparse.get(index).copied().flatten()?;
 
         let pointer = col.dense.get(dense_index)?;
-        let target_type_uid = pointer.target_type_uid();
-        let target_value_uid = *pointer.target_value_uid();
-        let pointer = PointerRef::new(target_type_uid, target_value_uid, col_lock);
+        let target_type_uid = pointer.target_type_uid().clone();
+        let target_value_uid = pointer.target_value_uid().clone();
+        let pointer = PointerRef::new(&target_type_uid, &target_value_uid, col_lock);
         Some(pointer)
     }
 
@@ -1276,11 +1276,11 @@ impl LockedColumn {
         let dense_index = col.sparse.get(index).copied().flatten()?;
 
         let pointer = col.dense.get(dense_index)?;
-        let target_type_uid = pointer.target_type_uid();
-        let target_value_uid = *pointer.target_value_uid();
+        let target_type_uid = pointer.target_type_uid().clone();
+        let target_value_uid = pointer.target_value_uid().clone();
         drop(col_lock);
         let col_lock = self.0.write();
-        let pointer = PointerMut::new(target_type_uid, target_value_uid, col_lock);
+        let pointer = PointerMut::new(&target_type_uid, &target_value_uid, col_lock);
         Some(pointer)
     }
 }
@@ -1386,8 +1386,8 @@ impl Archetype {
         self.type_columns.clear();
     }
 
-    pub fn get(&self, type_id: Entity, entity: &Entity) -> Option<Ref<'_>> {
-        let column = self.type_columns.get(&type_id)?;
+    pub fn get(&self, type_id: &Entity, entity: &Entity) -> Option<Ref<'_>> {
+        let column = self.type_columns.get(type_id)?;
         let is_dynamic = matches!(&*column.read(), Column::Dynamic(_));
         if is_dynamic {
             let data = column.get_dynamic(entity)?;
@@ -1398,8 +1398,8 @@ impl Archetype {
         }
     }
 
-    pub fn get_mut(&self, type_id: Entity, entity: &Entity) -> Option<Mut<'_>> {
-        let column = self.type_columns.get(&type_id)?;
+    pub fn get_mut(&self, type_id: &Entity, entity: &Entity) -> Option<Mut<'_>> {
+        let column = self.type_columns.get(type_id)?;
         let is_dynamic = matches!(&*column.read(), Column::Dynamic(_));
         if is_dynamic {
             let data = column.get_dynamic_mut(entity)?;
@@ -1410,49 +1410,53 @@ impl Archetype {
         }
     }
 
-    pub fn find(&self, type_id: Entity, value_id: &Entity) -> Option<Ref<'_>> {
-        let column = self.type_columns.get(&type_id)?;
+    pub fn find(&self, type_id: &Entity, value_id: &Entity) -> Option<Ref<'_>> {
+        let column = self.type_columns.get(type_id)?;
 
         let is_dynamic = matches!(&*column.read(), Column::Dynamic(_));
 
         if is_dynamic {
-            let entity = *column
+            let entity = column
                 .read()
                 .as_dynamic()
                 .unwrap()
-                .find_entity_with(value_id)?;
+                .find_entity_with(value_id)?
+                .clone();
             let data = column.get_dynamic(&entity)?;
             Some(Ref::Dynamic(data))
         } else {
-            let entity = *column
+            let entity = column
                 .read()
                 .as_pointer()
                 .unwrap()
-                .find_entity_with_pointer_to(value_id)?;
+                .find_entity_with_pointer_to(value_id)?
+                .clone();
             let pointer = column.get_pointer(&entity)?;
             Some(Ref::Pointer(pointer))
         }
     }
 
-    pub fn find_mut(&self, type_id: Entity, value_id: &Entity) -> Option<Mut<'_>> {
-        let column = self.type_columns.get(&type_id)?;
+    pub fn find_mut(&self, type_id: &Entity, value_id: &Entity) -> Option<Mut<'_>> {
+        let column = self.type_columns.get(type_id)?;
 
         let is_dynamic = matches!(&*column.read(), Column::Dynamic(_));
 
         if is_dynamic {
-            let entity = *column
+            let entity = column
                 .read()
                 .as_dynamic()
                 .unwrap()
-                .find_entity_with(value_id)?;
+                .find_entity_with(value_id)?
+                .clone();
             let data = column.get_dynamic_mut(&entity)?;
             Some(Mut::Dynamic(data))
         } else {
-            let entity = *column
+            let entity = column
                 .read()
                 .as_pointer()
                 .unwrap()
-                .find_entity_with_pointer_to(value_id)?;
+                .find_entity_with_pointer_to(value_id)?
+                .clone();
             let pointer = column.get_pointer_mut(&entity)?;
             Some(Mut::Pointer(pointer))
         }
@@ -1547,35 +1551,35 @@ impl Storage {
         self.archetypes.clear();
     }
 
-    pub fn get(&self, type_id: Entity, entity: &Entity) -> Option<Ref<'_>> {
+    pub fn get(&self, type_id: &Entity, entity: &Entity) -> Option<Ref<'_>> {
         let archetype = self.entity_archetype(entity)?;
         archetype.get(type_id, entity)
     }
 
-    pub fn get_mut(&self, type_id: Entity, entity: &Entity) -> Option<Mut<'_>> {
+    pub fn get_mut(&self, type_id: &Entity, entity: &Entity) -> Option<Mut<'_>> {
         let archetype = self.entity_archetype(entity)?;
         archetype.get_mut(type_id, entity)
     }
 
     pub fn get_component<T: Atom>(&self, entity: &Entity) -> Option<Ref<'_>> {
-        self.get(T::static_type_uid(), entity)
+        self.get(&T::static_type_uid(), entity)
     }
 
     pub fn get_component_mut<T: Atom>(&self, entity: &Entity) -> Option<Mut<'_>> {
-        self.get_mut(T::static_type_uid(), entity)
+        self.get_mut(&T::static_type_uid(), entity)
     }
 
-    pub fn find(&self, type_id: Entity, value_id: &Entity) -> Option<Ref<'_>> {
+    pub fn find(&self, type_id: &Entity, value_id: &Entity) -> Option<Ref<'_>> {
         self.archetypes
             .iter()
-            .filter(|(_, a)| a.contains_type(&type_id))
+            .filter(|(_, a)| a.contains_type(type_id))
             .find_map(|(_, a)| a.find(type_id, value_id))
     }
 
     pub fn find_untyped(&self, value_id: &Entity) -> Option<Ref<'_>> {
         if let Some(type_id) = value_id.type_id() {
             // short path
-            self.find(type_id, value_id)
+            self.find(&type_id, value_id)
         } else {
             // give it our best effort
             self.archetypes().find_map(|a| {
@@ -1611,17 +1615,17 @@ impl Storage {
         }
     }
 
-    pub fn find_mut(&self, type_id: Entity, value_id: &Entity) -> Option<Mut<'_>> {
+    pub fn find_mut(&self, type_id: &Entity, value_id: &Entity) -> Option<Mut<'_>> {
         self.archetypes
             .iter()
-            .filter(|(_, a)| a.contains_type(&type_id))
+            .filter(|(_, a)| a.contains_type(type_id))
             .find_map(|(_, a)| a.find_mut(type_id, value_id))
     }
 
     pub fn find_untyped_mut(&self, value_id: &Entity) -> Option<Mut<'_>> {
         if let Some(type_id) = value_id.type_id() {
             // short path
-            self.find_mut(type_id, value_id)
+            self.find_mut(&type_id, value_id)
         } else {
             // give it our best effort
             self.archetypes().find_map(|a| {
@@ -1654,14 +1658,15 @@ impl Storage {
     pub fn deref_pointer_mut(&self, pointer: &PointerMut<'_>) -> Option<Mut<'_>> {
         let archetype = self
             .archetypes()
-            .filter(|a| a.contains_type(&pointer.target_type_uid()))
+            .filter(|a| a.contains_type(pointer.target_type_uid()))
             .find(|a| a.contains_entity(pointer.target_value_uid()))?;
         archetype.get_mut(pointer.target_type_uid(), pointer.target_value_uid())
     }
 
     pub fn create_entity(&mut self) -> Entity {
         let entity = Entity::allocate(None);
-        self.entity_archetypes.insert(entity, Uid::default());
+        self.entity_archetypes
+            .insert(entity.clone(), Uid::default());
         entity
     }
 
@@ -1733,8 +1738,12 @@ impl Storage {
 
         // check if we already have an archetype with the same types
         let existing_archetype = self.archetypes.iter_mut().find_map(|(_, a)| {
-            if a.exclusively_contains_types(&data.iter().map(|d| d.type_uid()).collect::<Vec<_>>())
-            {
+            if a.exclusively_contains_types(
+                &data
+                    .iter()
+                    .map(|d| d.type_uid().clone())
+                    .collect::<Vec<_>>(),
+            ) {
                 Some(a)
             } else {
                 None
@@ -1749,15 +1758,15 @@ impl Storage {
                 let type_id = d.type_uid();
                 let column = match d {
                     Data::Dynamic(d) => {
-                        let column = DynamicColumn::new(d.type_uid());
+                        let column = DynamicColumn::new(d.type_uid().clone());
                         LockedColumn(Lock::new(Column::Dynamic(column)))
                     }
                     Data::Pointer(d) => {
-                        let column = PointerColumn::new(d.target_type_uid());
+                        let column = PointerColumn::new(d.target_type_uid().clone());
                         LockedColumn(Lock::new(Column::Pointer(column)))
                     }
                 };
-                type_columns.insert(type_id, column);
+                type_columns.insert(type_id.clone(), column);
             }
 
             let archetype_id = Uid::allocate();
@@ -1771,24 +1780,24 @@ impl Storage {
         };
 
         // insert entity into archetype
-        archetype.entity_ids.insert(*entity);
+        archetype.entity_ids.insert(entity.clone());
         for d in data {
             let type_id = d.type_uid();
-            let col = archetype.column(&type_id).unwrap();
+            let col = archetype.column(type_id).unwrap();
             // col.write().insert(entity, d);
             match &mut *col.write() {
                 Column::Dynamic(col) => {
-                    col.insert(*entity, d.into_dynamic_data().unwrap())?;
+                    col.insert(entity, d.into_dynamic_data().unwrap())?;
                 }
                 Column::Pointer(col) => {
-                    col.insert(*entity, d.into_pointer().unwrap())?;
+                    col.insert(entity, d.into_pointer().unwrap())?;
                 }
             }
         }
 
         // insert entity into entity_archetypes
         self.entity_archetypes
-            .insert(*entity, archetype.archetype_id);
+            .insert(entity.clone(), archetype.archetype_id);
 
         Ok(())
     }

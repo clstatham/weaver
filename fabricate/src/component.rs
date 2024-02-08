@@ -381,11 +381,11 @@ impl Atom for glam::Quat {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::world::get_world;
 
     #[test]
     fn test_component_primitive() {
-        let world = World::new_handle();
+        let world = get_world();
         let mut world = world.write();
         let e = world.spawn((0u32,)).unwrap();
         assert_eq!(

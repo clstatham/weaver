@@ -1,22 +1,26 @@
 use fabricate::world::BelongsToWorld;
 use weaver::prelude::*;
 
-use crate::{state::EditorState, InheritTransform};
+use crate::{state::EditorState, TransformChild, TransformParent};
 
 pub fn scene_tree_ui(world: &World, state: &mut EditorState, ui: &mut egui::Ui) {
     egui::CollapsingHeader::new("World").show(ui, |ui| {
         let q = world
             .query()
             .entity()
-            .with_dynamic(Entity::new_wildcard(BelongsToWorld::type_uid().id()))
+            .with_dynamic(&Entity::new_wildcard(BelongsToWorld::type_uid().id()))
+            .unwrap()
+            .without_dynamic(&Entity::new_wildcard(TransformChild::type_uid().id()))
             .unwrap()
             .build();
         for result in q.iter() {
             let entity = result.get_entity().unwrap();
-            let name = entity
-                .type_name()
-                .unwrap_or_else(|| format!("{}", entity.id()));
-            scene_tree_ui_recurse(world, state, ui, &entity, &name);
+            {
+                let name = entity
+                    .type_name()
+                    .unwrap_or_else(|| format!("{}", entity.id()));
+                scene_tree_ui_recurse(world, state, ui, entity, &name);
+            }
         }
     });
 }
@@ -28,7 +32,7 @@ fn scene_tree_ui_recurse(
     node: &Entity,
     name: &str,
 ) {
-    let text = if Some(*node) == state.selected_entity {
+    let text = if state.selected_entity == Some(node.clone()) {
         egui::RichText::new(name).strong()
     } else {
         egui::RichText::new(name)
@@ -36,7 +40,7 @@ fn scene_tree_ui_recurse(
     egui::CollapsingHeader::new(text)
         .id_source(node)
         .show(ui, |ui| {
-            let rels = world.get_relatives(node, &InheritTransform::type_uid());
+            let rels = world.get_relatives(node, TransformParent::type_uid().id());
             if let Some(rels) = rels {
                 for child in rels {
                     let name = child
@@ -56,17 +60,17 @@ fn scene_tree_ui_recurse(
                     .type_name()
                     .unwrap_or_else(|| format!("[type {}]", ty.id()));
 
-                let name = if state.selected_component == Some(*component.value_uid()) {
+                let name = if state.selected_component == Some(component.value_uid().clone()) {
                     egui::RichText::new(name).strong()
                 } else {
                     egui::RichText::new(name)
                 };
-                let selected = state.selected_component == Some(*component.value_uid());
+                let selected = state.selected_component == Some(component.value_uid().clone());
                 let header = egui::SelectableLabel::new(selected, name);
                 let response = ui.add(header);
                 if response.clicked() {
-                    state.selected_entity = Some(*node);
-                    state.selected_component = Some(*component.value_uid());
+                    state.selected_entity = Some(node.clone());
+                    state.selected_component = Some(component.value_uid().clone());
                 }
             }
         });

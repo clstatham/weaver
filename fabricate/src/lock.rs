@@ -254,6 +254,7 @@ impl<'a, T: PartialEq> PartialEq for MapWrite<'a, T> {
 }
 
 #[derive(Debug, Default)]
+#[repr(transparent)]
 pub struct SharedLock<T: ?Sized>(Arc<Lock<T>>);
 
 impl<T> SharedLock<T> {

@@ -9,9 +9,15 @@ use std::{
     },
 };
 
+use anyhow::Result;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{lock::Lock, storage::SortedMap, world::World};
+use crate::{
+    lock::Lock,
+    relationship::Relationship,
+    storage::{Mut, Ref, SortedMap},
+    world::{get_world, World},
+};
 
 /// A unique identifier.
 /// This is a wrapper around a [`u32`] that is used to uniquely identify entities, components, and other resources.
@@ -184,7 +190,7 @@ impl Display for EntityMeta {
 
 /// A unique identifier for a value.
 /// This can be either a primitive value (e.g. `42`), or a dynamic/composite value (e.g. a struct instance).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(C)]
 pub struct Entity(u32, EntityMeta);
 
@@ -218,7 +224,7 @@ impl Entity {
         Self(uid, EntityMeta::WILDCARD)
     }
 
-    pub fn allocate(ty: Option<Entity>) -> Self {
+    pub fn allocate(ty: Option<&Entity>) -> Self {
         let this = if let Some(ty) = ty {
             global_registry().allocate_entity_with_type(ty)
         } else {
@@ -313,16 +319,16 @@ impl Entity {
 
     pub fn type_id(&self) -> Option<Entity> {
         if self.is_type() {
-            Some(*self)
+            Some(self.clone())
         } else {
             global_registry().get_value_type(self)
         }
     }
 
-    pub fn register_as_type(&self, typ: Entity) {
+    pub fn register_as_type(&self, typ: &Entity) {
         debug_assert!(!self.is_type());
         debug_assert!(typ.is_type());
-        global_registry().register_value_as_type(*self, typ);
+        global_registry().register_value_as_type(self, typ);
     }
 
     pub fn type_name(&self) -> Option<String> {
@@ -332,8 +338,65 @@ impl Entity {
 
     pub fn register_type_name(&self, name: &str) {
         if let Some(ty) = self.type_id() {
-            global_registry().register_type_name(ty, name);
+            global_registry().register_type_name(&ty, name);
         }
+    }
+
+    pub fn with_world<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&World) -> R,
+    {
+        let world = get_world().read();
+        Some(f(&world))
+    }
+
+    pub fn with_ref<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(Ref<'_>) -> R,
+    {
+        self.with_world(|world| {
+            let r = world.storage().find(&self.type_id()?, self)?;
+            Some(f(r))
+        })
+        .flatten()
+    }
+
+    pub fn with_mut<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(Mut<'_>) -> R,
+    {
+        self.with_world(|world| {
+            let r = world.storage().find_mut(&self.type_id()?, self)?;
+            Some(f(r))
+        })
+        .flatten()
+    }
+
+    pub fn with_relatives<F, R>(&self, relationship_type: u32, f: F) -> Option<R>
+    where
+        F: FnOnce(&[Entity]) -> R,
+    {
+        self.with_world(|world| {
+            let relatives = world.get_relatives(self, relationship_type)?;
+            Some(f(&relatives))
+        })
+        .flatten()
+    }
+
+    pub fn with_all_relatives<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&[(u32, Entity)]) -> R,
+    {
+        self.with_world(|world| {
+            let relatives = world.all_relatives(self)?;
+            Some(f(&relatives))
+        })
+        .flatten()
+    }
+
+    pub fn add_relative<R: Relationship>(&self, relationship: R, relative: &Entity) -> Result<()> {
+        get_world().add_relative(self, relationship, relative)?;
+        Ok(())
     }
 }
 
@@ -470,7 +533,7 @@ impl Registry {
 
     /// Gets the unique identifier based on the given name, if it exists.
     fn get_named_type(&self, name: &str) -> Option<Entity> {
-        self.named_types.read().get(name).copied()
+        self.named_types.read().get(name).cloned()
     }
 
     /// Gets the name of the type with the given unique identifier, if it exists.
@@ -481,52 +544,56 @@ impl Registry {
     /// Allocates a new unique identifier for a type, and optionally associates it with the given name.
     fn allocate_type(&self, name: Option<&str>) -> Entity {
         if let Some(name) = name {
-            if let Some(uid) = self.named_types.read().get(name).copied() {
+            if let Some(uid) = self.named_types.read().get(name).cloned() {
                 return uid;
             }
         }
         let uid = self.next_id.fetch_add(1, Ordering::Relaxed);
         let uid = Entity::new_type(uid);
         if let Some(name) = name {
-            self.register_type_name(uid, name);
+            self.register_type_name(&uid, name);
         }
         uid
     }
 
     /// Registers the given value as the given type.
-    fn register_value_as_type(&self, value: Entity, value_type: Entity) {
-        self.value_types.write().insert(value, value_type);
+    fn register_value_as_type(&self, value: &Entity, value_type: &Entity) {
+        self.value_types
+            .write()
+            .insert(value.clone(), value_type.clone());
     }
 
     /// Associates the given unique identifier with the given name.
     ///
     /// WARNING: This will overwrite any existing unique identifier for the given name, and vice versa.
-    fn register_type_name(&self, typ: Entity, name: &str) {
-        self.named_types.write().insert(name.to_owned(), typ);
-        self.type_names.write().insert(typ, name.to_owned());
+    fn register_type_name(&self, typ: &Entity, name: &str) {
+        self.named_types
+            .write()
+            .insert(name.to_owned(), typ.clone());
+        self.type_names.write().insert(typ.clone(), name.to_owned());
     }
 
     /// Registers the given type as a static type with the given name.
     fn register_static_name<T: StaticId + ?Sized>(&self, name: &str) -> Entity {
         let id = T::static_id();
-        if let Some(uid) = self.static_types.read().get(&id).copied() {
+        if let Some(uid) = self.static_types.read().get(&id).cloned() {
             return uid;
         }
-        if let Some(uid) = self.named_types.read().get(name).copied() {
+        if let Some(uid) = self.named_types.read().get(name).cloned() {
             return uid;
         }
         let uid = self.allocate_type(Some(name));
-        self.static_types.write().insert(id, uid);
+        self.static_types.write().insert(id, uid.clone());
         uid
     }
 
     fn get_or_register_static_type<T: StaticId + ?Sized>(&self) -> Entity {
         let id = T::static_id();
-        if let Some(uid) = self.static_types.read().get(&id).copied() {
+        if let Some(uid) = self.static_types.read().get(&id).cloned() {
             return uid;
         }
         let uid = self.allocate_type(None);
-        self.static_types.write().insert(id, uid);
+        self.static_types.write().insert(id, uid.clone());
         uid
     }
 
@@ -562,9 +629,9 @@ impl Registry {
         Entity::with_generation(uid, 0)
     }
 
-    fn allocate_entity_with_type(&self, value_type: Entity) -> Entity {
+    fn allocate_entity_with_type(&self, value_type: &Entity) -> Entity {
         let uid = self.allocate_generative_entity();
-        self.register_value_as_type(uid, value_type);
+        self.register_value_as_type(&uid, value_type);
         uid
     }
 
@@ -582,7 +649,7 @@ impl Registry {
 
     /// Returns the [`Entity`] of the type that the given [`ValueUid`] is associated with, if it exists.
     fn get_value_type(&self, uid: &Entity) -> Option<Entity> {
-        self.value_types.read().get(uid).copied()
+        self.value_types.read().get(uid).cloned()
     }
 
     fn allocate(&self) -> Uid {
@@ -658,9 +725,9 @@ mod tests {
         let bar = registry.get_or_register_static_type::<u64>();
         let baz = registry.get_or_register_static_type::<u128>();
 
-        let foo_value = registry.allocate_entity_with_type(foo);
-        let bar_value = registry.allocate_entity_with_type(bar);
-        let baz_value = registry.allocate_entity_with_type(baz);
+        let foo_value = registry.allocate_entity_with_type(&foo);
+        let bar_value = registry.allocate_entity_with_type(&bar);
+        let baz_value = registry.allocate_entity_with_type(&baz);
 
         assert_eq!(registry.get_value_type(&foo_value), Some(foo));
         assert_eq!(registry.get_value_type(&bar_value), Some(bar));
