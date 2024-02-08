@@ -19,9 +19,13 @@ use super::{
 pub struct Material {
     asset_id: AssetId,
 
+    #[inspect]
     pub diffuse: Color,
+    #[inspect]
     pub metallic: f32,
+    #[inspect]
     pub roughness: f32,
+    #[inspect]
     pub texture_scaling: f32,
 
     #[uniform]

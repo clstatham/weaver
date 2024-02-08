@@ -563,7 +563,7 @@ impl<'a> DynamicDataRef<'a> {
     }
 
     pub fn value_uid(&self) -> &Entity {
-        &self.value_uid
+        &self.data().value_uid
     }
 
     pub fn data(&self) -> &DynamicData {
@@ -624,11 +624,27 @@ impl<'a> DynamicDataMut<'a> {
     }
 
     pub fn value_uid(&self) -> &Entity {
-        &self.value_uid
+        &self.data().value_uid
     }
 
     pub fn as_ref<T: Atom>(&self) -> Option<&T> {
         self.column.as_dynamic()?.get(&self.value_uid)?.as_ref()
+    }
+
+    pub fn data(&self) -> &DynamicData {
+        self.column
+            .as_dynamic()
+            .unwrap()
+            .get(&self.value_uid)
+            .unwrap()
+    }
+
+    pub fn data_mut(&mut self) -> &mut DynamicData {
+        self.column
+            .as_dynamic_mut()
+            .unwrap()
+            .get_mut(&self.value_uid)
+            .unwrap()
     }
 
     pub fn as_mut<T: Atom>(&mut self) -> Option<&mut T> {
@@ -1393,19 +1409,48 @@ impl Archetype {
     pub fn find(&self, type_id: Entity, value_id: &Entity) -> Option<Ref<'_>> {
         let column = self.type_columns.get(&type_id)?;
 
-        let col = column.read();
+        let is_dynamic = matches!(&*column.read(), Column::Dynamic(_));
 
-        match &*col {
-            Column::Dynamic(col) => {
-                let entity = col.find_entity_with(value_id)?;
-                let data = column.get_dynamic(entity)?;
-                Some(Ref::Dynamic(data))
-            }
-            Column::Pointer(col) => {
-                let entity = col.find_entity_with_pointer_to(value_id)?;
-                let pointer = column.get_pointer(entity)?;
-                Some(Ref::Pointer(pointer))
-            }
+        if is_dynamic {
+            let entity = *column
+                .read()
+                .as_dynamic()
+                .unwrap()
+                .find_entity_with(value_id)?;
+            let data = column.get_dynamic(&entity)?;
+            Some(Ref::Dynamic(data))
+        } else {
+            let entity = *column
+                .read()
+                .as_pointer()
+                .unwrap()
+                .find_entity_with_pointer_to(value_id)?;
+            let pointer = column.get_pointer(&entity)?;
+            Some(Ref::Pointer(pointer))
+        }
+    }
+
+    pub fn find_mut(&self, type_id: Entity, value_id: &Entity) -> Option<Mut<'_>> {
+        let column = self.type_columns.get(&type_id)?;
+
+        let is_dynamic = matches!(&*column.read(), Column::Dynamic(_));
+
+        if is_dynamic {
+            let entity = *column
+                .read()
+                .as_dynamic()
+                .unwrap()
+                .find_entity_with(value_id)?;
+            let data = column.get_dynamic_mut(&entity)?;
+            Some(Mut::Dynamic(data))
+        } else {
+            let entity = *column
+                .read()
+                .as_pointer()
+                .unwrap()
+                .find_entity_with_pointer_to(value_id)?;
+            let pointer = column.get_pointer_mut(&entity)?;
+            Some(Mut::Pointer(pointer))
         }
     }
 
@@ -1564,7 +1609,7 @@ impl Storage {
         self.archetypes
             .iter()
             .filter(|(_, a)| a.contains_type(&type_id))
-            .find_map(|(_, a)| a.get_mut(type_id, value_id))
+            .find_map(|(_, a)| a.find_mut(type_id, value_id))
     }
 
     pub fn find_untyped_mut(&self, value_id: &Entity) -> Option<Mut<'_>> {

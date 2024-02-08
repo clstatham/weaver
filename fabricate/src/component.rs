@@ -107,6 +107,12 @@ macro_rules! script_vtable {
     };
 }
 
+pub struct ValueRef<'a> {
+    pub name: &'static str,
+    pub typ: Entity,
+    pub value: &'a mut dyn Atom,
+}
+
 pub trait Atom: Send + Sync + 'static {
     fn type_uid() -> Entity
     where
@@ -134,6 +140,21 @@ pub trait Atom: Send + Sync + 'static {
         ScriptVtable {
             methods: HashMap::default(),
         }
+    }
+
+    fn as_value_ref(&mut self, name: &'static str) -> ValueRef<'_>
+    where
+        Self: Sized,
+    {
+        ValueRef {
+            name,
+            typ: Self::type_uid(),
+            value: self,
+        }
+    }
+
+    fn inspect(&mut self) -> Vec<ValueRef<'_>> {
+        vec![]
     }
 }
 

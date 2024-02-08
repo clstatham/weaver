@@ -592,7 +592,7 @@ impl InterpreterContext {
                             },
                             Data::Pointer(p) => {
                                 // deref one level
-                                let data_ref = world.get(p.target_value_uid(), p.target_type_uid()).unwrap();
+                                let data_ref = world.storage().find(p.target_type_uid(), p.target_value_uid()).unwrap();
                                 let vtable = if let Some(data_ref) = data_ref.as_dynamic() {
                                     data_ref.data().data().script_vtable()
                                 } else {
@@ -613,7 +613,7 @@ impl InterpreterContext {
                                             args.insert(0, MethodArg::Mut(d));
                                         }
                                         Data::Pointer(p) => {
-                                            let d = world.get_mut(p.target_value_uid(), p.target_type_uid()).unwrap();
+                                            let d = world.storage().find_mut(p.target_type_uid(), p.target_value_uid()).unwrap();
                                             args.insert(0, MethodArg::Mut(d));
                                         }
                                     }
@@ -625,7 +625,7 @@ impl InterpreterContext {
                                             args.insert(0, MethodArg::Ref(d));
                                         }
                                         Data::Pointer(p) => {
-                                            let d = world.get(p.target_value_uid(), p.target_type_uid()).unwrap();
+                                            let d = world.storage().find(p.target_type_uid(), p.target_value_uid()).unwrap();
                                             args.insert(0, MethodArg::Ref(d));
                                         }
                                     }

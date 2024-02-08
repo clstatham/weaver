@@ -15,8 +15,11 @@ use super::mesh::MAX_MESHES;
     set_scale(&mut Self, glam::Vec3) -> (),
 )]
 pub struct Transform {
+    #[inspect]
     pub translation: glam::Vec3,
+    #[inspect]
     pub rotation: glam::Quat,
+    #[inspect]
     pub scale: glam::Vec3,
 }
 

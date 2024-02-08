@@ -29,11 +29,11 @@ impl Default for Tabs {
         );
 
         tree.main_surface_mut()
-            .split_below(right, 0.5, vec!["Assets".to_string()]);
+            .split_below(right, 0.5, vec!["Component Inspector".to_string()]);
 
         let [top, _bottom] =
             tree.main_surface_mut()
-                .split_above(left, 0.3, vec!["Component Inspector".to_string()]);
+                .split_above(left, 0.3, vec!["Assets".to_string()]);
 
         tree.main_surface_mut()
             .split_above(right, 0.3, vec!["Console".to_string()]);
@@ -76,7 +76,10 @@ impl<'a> TabViewer for EditorTabViewer<'a> {
                         rect.width / rect.height;
                 }
                 "Scene Tree" => {
-                    scene_tree::scene_tree_ui(self.world, ui);
+                    scene_tree::scene_tree_ui(self.world, self.state, ui);
+                }
+                "Component Inspector" => {
+                    component_inspector::component_inspector_ui(self.world, self.state, ui);
                 }
                 tab => {
                     ui.label(tab);

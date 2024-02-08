@@ -64,7 +64,7 @@ impl syn::parse::Parse for Method {
     }
 }
 
-#[proc_macro_derive(Atom, attributes(script_vtable))]
+#[proc_macro_derive(Atom, attributes(script_vtable, inspect))]
 pub fn derive_atom(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
@@ -150,6 +150,33 @@ pub fn derive_atom(input: TokenStream) -> TokenStream {
         });
     }
 
+    let mut inspect = quote! { vec![] };
+
+    if let syn::Data::Struct(data) = &input.data {
+        if let syn::Fields::Named(fields) = &data.fields {
+            let fields = fields
+                .named
+                .iter()
+                .filter(|field| {
+                    field
+                        .attrs
+                        .iter()
+                        .any(|attr| attr.path().is_ident("inspect"))
+                })
+                .collect::<Vec<_>>();
+            let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
+            let field_names = fields.iter().map(|field| &field.ident).collect::<Vec<_>>();
+
+            inspect = quote! {
+                vec![
+                    #(
+                        <#field_types as fabricate::component::Atom>::as_value_ref(&mut self.#field_names, stringify!(#field_names)),
+                    )*
+                ]
+            };
+        }
+    }
+
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     quote! {
         impl #impl_generics fabricate::component::Atom for #name #ty_generics #where_clause {
@@ -170,6 +197,10 @@ pub fn derive_atom(input: TokenStream) -> TokenStream {
                 let mut map = std::collections::HashMap::default();
                 #(#method_gen)*
                 fabricate::component::ScriptVtable { methods: map }
+            }
+
+            fn inspect(&mut self) -> Vec<fabricate::component::ValueRef> {
+                #inspect
             }
         }
     }

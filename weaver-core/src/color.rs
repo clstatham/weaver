@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+use fabricate::prelude::Atom;
+
+#[derive(Debug, Clone, Copy, PartialEq, Atom, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Color {
     pub r: f32,
@@ -83,6 +85,15 @@ impl Color {
             (self.g * 255.0) as u8,
             (self.b * 255.0) as u8,
             (self.a * 255.0) as u8,
+        )
+    }
+
+    pub fn from_rgba_int(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self::new(
+            r as f32 / 255.0,
+            g as f32 / 255.0,
+            b as f32 / 255.0,
+            a as f32 / 255.0,
         )
     }
 
