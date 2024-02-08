@@ -208,7 +208,7 @@ impl<'a> QueryBuilder<'a> {
                 matches = false;
             }
             if matches {
-                entities.extend(archetype.entity_ids().iter().cloned());
+                entities.extend(archetype.entity_iter().cloned());
             }
         }
         Query {

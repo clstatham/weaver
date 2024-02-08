@@ -15,7 +15,7 @@ impl Relationship for InheritTransform {}
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let app = App::new("Weaver Editor", 1600, 900, true)?;
+    let app = App::new("Weaver Editor", 1600, 900, false)?;
 
     app.add_resource(ui::Tabs::default())?;
     app.add_resource(state::EditorState::new(&app.world))?;
@@ -90,6 +90,10 @@ impl System for Setup {
             .write()
             .add_relative(&e1, InheritTransform, &e2)
             .unwrap();
+
+        for _ in 0..50_000 {
+            world.write().spawn((42,)).unwrap();
+        }
 
         Ok(vec![])
     }

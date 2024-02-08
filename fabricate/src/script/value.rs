@@ -185,38 +185,39 @@ impl Value {
         }
     }
 
-    pub fn try_downcast_data(&mut self) {
+    pub fn try_downcast_data(&self) -> Option<Self> {
         if let Value::Data(d) = self {
             if let Some(b) = d.as_ref::<bool>() {
-                *self = Value::Bool(*b);
+                return Some(Value::Bool(*b));
             } else if let Some(i) = d.as_ref::<isize>() {
-                *self = Value::Int(*i as i64);
+                return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<i64>() {
-                *self = Value::Int(*i);
+                return Some(Value::Int(*i));
             } else if let Some(i) = d.as_ref::<i32>() {
-                *self = Value::Int(*i as i64);
+                return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<i16>() {
-                *self = Value::Int(*i as i64);
+                return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<i8>() {
-                *self = Value::Int(*i as i64);
+                return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<usize>() {
-                *self = Value::Int(*i as i64);
+                return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<u64>() {
-                *self = Value::Int(*i as i64);
+                return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<u32>() {
-                *self = Value::Int(*i as i64);
+                return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<u16>() {
-                *self = Value::Int(*i as i64);
+                return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<u8>() {
-                *self = Value::Int(*i as i64);
+                return Some(Value::Int(*i as i64));
             } else if let Some(f) = d.as_ref::<f32>() {
-                *self = Value::Float(*f);
+                return Some(Value::Float(*f));
             } else if let Some(f) = d.as_ref::<f64>() {
-                *self = Value::Float(*f as f32);
+                return Some(Value::Float(*f as f32));
             } else if let Some(s) = d.as_ref::<String>() {
-                *self = Value::String(s.clone());
+                return Some(Value::String(s.clone()));
             }
         }
+        None
     }
 
     pub fn prefix(&self, op: &str) -> Result<Value> {
@@ -316,6 +317,12 @@ impl Value {
                     let a = a.to_owned().unwrap();
                     let a = Value::Data(a);
                     return a.infix(op, other, env);
+                }
+                if let Some(a) = self.try_downcast_data() {
+                    return a.infix(op, other, env);
+                }
+                if let Some(b) = other.try_downcast_data() {
+                    return self.infix(op, &b, env);
                 }
                 match op {
                     "+" => {
@@ -485,6 +492,9 @@ impl Value {
                         let b = b.to_owned().unwrap();
                         Value::Data(b)
                     };
+                    return a.infix_mut(op, &b, env);
+                }
+                if let Some(b) = other.try_downcast_data() {
                     return a.infix_mut(op, &b, env);
                 }
                 if let Some(a) = a.as_data().and_then(|a| a.as_pointer()) {

@@ -9,13 +9,9 @@ use std::{
     },
 };
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{
-    lock::Lock,
-    storage::{SortedMap, SortedVec},
-    world::World,
-};
+use crate::{lock::Lock, storage::SortedMap, world::World};
 
 /// A unique identifier.
 /// This is a wrapper around a [`u32`] that is used to uniquely identify entities, components, and other resources.
@@ -414,13 +410,13 @@ pub struct Registry {
     next_id: AtomicU32,
 
     static_types: Lock<HashMap<u64, Entity, BuildHasherDefault<TypeIdHasher>>>,
-    storable_types: Lock<SortedVec<Entity>>,
+    storable_types: Lock<FxHashSet<Entity>>,
     named_types: Lock<FxHashMap<String, Entity>>,
-    type_names: Lock<SortedMap<Entity, String>>,
+    type_names: Lock<FxHashMap<Entity, String>>,
 
-    value_types: Lock<SortedMap<Entity, Entity>>,
-    living_values: Lock<SortedMap<u32, bool>>,
-    value_generations: Lock<SortedMap<u32, u32>>,
+    value_types: Lock<FxHashMap<Entity, Entity>>,
+    dead: Lock<SortedMap<u32, ()>>,
+    value_generations: Lock<FxHashMap<u32, u32>>,
 }
 
 impl Debug for Registry {
@@ -436,13 +432,13 @@ impl Registry {
         let this = Self {
             next_id: AtomicU32::new(0),
             static_types: Lock::new(HashMap::default()),
-            storable_types: Lock::new(SortedVec::default()),
+            storable_types: Lock::new(FxHashSet::default()),
             named_types: Lock::new(FxHashMap::default()),
-            type_names: Lock::new(SortedMap::default()),
+            type_names: Lock::new(FxHashMap::default()),
 
-            value_types: Lock::new(SortedMap::default()),
-            living_values: Lock::new(SortedMap::default()),
-            value_generations: Lock::new(SortedMap::default()),
+            value_types: Lock::new(FxHashMap::default()),
+            dead: Lock::new(SortedMap::default()),
+            value_generations: Lock::new(FxHashMap::default()),
         };
 
         let storable_types = vec![
@@ -467,7 +463,7 @@ impl Registry {
             this.register_static_name::<String>("String"),
         ];
 
-        *this.storable_types.write() = SortedVec::from(storable_types);
+        *this.storable_types.write() = FxHashSet::from_iter(storable_types);
 
         this
     }
@@ -543,20 +539,26 @@ impl Registry {
 
     fn allocate_generative_entity(&self) -> Entity {
         // try to find a vacancy in living_values
-        for (uid, is_living) in self.living_values.write().iter_mut() {
-            if !*is_living {
-                // if a vacancy is found, return the uid with the next generation
-                *is_living = true;
-                return Entity::with_generation(
-                    *uid,
-                    *self.value_generations.read().get(uid).unwrap(),
-                );
-            }
+        if let Some((uid, ())) = self.dead.write().drain().next() {
+            // if a vacancy is found, return the uid with the next generation
+            let gen = *self.value_generations.read().get(&uid).unwrap();
+            return Entity::with_generation(uid, gen);
         }
         // if no vacancy is found, allocate a new value
         let uid = self.next_id.fetch_add(1, Ordering::Relaxed);
+        if uid == u32::MAX {
+            // we panic here to prevent weird bugs from happening where the entity id rolls over or equals Entity::PLACEHOLDER (which is u32::MAX)
+            panic!("Entity allocation overflow");
+        }
+        if uid % 10000 == 0 && uid != 0 {
+            log::warn!(
+                "Entity allocation: {}/{} ({:.4}%)",
+                uid,
+                u32::MAX,
+                uid as f64 / u32::MAX as f64 * 100.0
+            );
+        }
         self.value_generations.write().insert(uid, 0);
-        self.living_values.write().insert(uid, true);
         Entity::with_generation(uid, 0)
     }
 
@@ -567,12 +569,13 @@ impl Registry {
     }
 
     fn delete_value(&self, uid: &Entity) {
-        if let Some(alive) = self.living_values.write().get_mut(&uid.id()) {
-            if *alive {
-                if let Some(gen) = self.value_generations.write().get_mut(&uid.id()) {
-                    *gen += 1;
+        if !self.dead.write().contains(&uid.id()) {
+            self.dead.write().insert(uid.id(), ());
+            if let Some(gen) = self.value_generations.write().get_mut(&uid.id()) {
+                if gen.checked_add(1).is_none() {
+                    log::warn!("Generation overflow for value: {}", uid);
                 }
-                *alive = false;
+                *gen = gen.wrapping_add(1);
             }
         }
     }

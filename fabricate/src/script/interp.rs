@@ -667,10 +667,12 @@ impl InterpreterContext {
     ) -> anyhow::Result<ValueHandle> {
         let lhs_val = self.interp_expr(env, lhs)?;
         let rhs_val = self.interp_expr(env, rhs)?;
-        lhs_val
-            .infix(op, &rhs_val, env)
-            // .map_err(|e| runtime_error!(lhs.span, format!("{}", e)))
-            .map(|v| v.into())
+        let out = lhs_val.infix(op, &rhs_val, env)?;
+        let out = ValueHandle::Mut(SharedLock::new(out));
+        if matches!(&*out.read(), Value::Data(_)) {
+            self.alloc_value(out.to_owned());
+        }
+        Ok(out)
     }
 
     pub fn interp_decl(

@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use anyhow::{bail, Result};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     component::Atom,
@@ -32,9 +33,8 @@ impl<K: Ord> SortedVec<K> {
     }
 
     pub fn pop(&mut self) -> Option<K> {
-        let v = self.0.pop();
-        self.sort(); // shouldn't be necessary, but just in case
-        v
+        // we shouldn't need to re-sort since the elements should have been sorted to begin with
+        self.0.pop()
     }
 
     pub fn remove(&mut self, index: usize) -> Option<K> {
@@ -75,6 +75,10 @@ impl<K: Ord> SortedVec<K> {
 
     pub fn clear(&mut self) {
         self.0.clear();
+    }
+
+    pub fn into_inner(self) -> Vec<K> {
+        self.0
     }
 }
 
@@ -177,6 +181,10 @@ impl<K: Ord + Clone, V> SortedMap<K, V> {
 
     pub fn contains(&self, key: &K) -> bool {
         self.binary_search(key).is_ok()
+    }
+
+    pub fn into_inner(self) -> Vec<(K, V)> {
+        self.0
     }
 }
 
@@ -1281,8 +1289,8 @@ impl LockedColumn {
 #[derive(Debug, Default)]
 pub struct Archetype {
     archetype_id: Uid,
-    entity_ids: SortedVec<Entity>,
-    type_columns: SortedMap<Entity, LockedColumn>,
+    entity_ids: FxHashSet<Entity>,
+    type_columns: FxHashMap<Entity, LockedColumn>,
 }
 
 impl Archetype {
@@ -1292,7 +1300,7 @@ impl Archetype {
 
     #[allow(clippy::map_identity)] // false positive
     pub fn type_columns(&self) -> impl Iterator<Item = (&Entity, &LockedColumn)> {
-        self.type_columns.0.iter().map(|(k, v)| (k, v))
+        self.type_columns.iter().map(|(k, v)| (k, v))
     }
 
     pub fn column(&self, type_id: &Entity) -> Option<&LockedColumn> {
@@ -1331,10 +1339,6 @@ impl Archetype {
         Some(row)
     }
 
-    pub fn entity_ids(&self) -> &[Entity] {
-        &self.entity_ids.0
-    }
-
     pub fn entity_iter(&self) -> impl Iterator<Item = &Entity> + '_ {
         self.entity_ids.iter()
     }
@@ -1348,7 +1352,7 @@ impl Archetype {
     }
 
     pub fn contains_type(&self, type_id: &Entity) -> bool {
-        self.type_columns.contains(type_id)
+        self.type_columns.contains_key(type_id)
             || if type_id.is_wildcard() {
                 self.type_columns
                     .iter()
@@ -1371,7 +1375,7 @@ impl Archetype {
     }
 
     pub fn has_no_entities(&self) -> bool {
-        self.entity_ids().is_empty()
+        self.entity_ids.is_empty()
     }
 
     pub fn has_no_types(&self) -> bool {
@@ -1455,7 +1459,9 @@ impl Archetype {
     }
 
     pub fn remove_entity(&mut self, entity: &Entity) -> Option<Vec<Data>> {
-        self.entity_ids.remove(self.entity_ids.index_of(entity)?)?;
+        if !self.entity_ids.remove(entity) {
+            return None;
+        }
         let mut data = Vec::new();
         for column in self.type_columns.values_mut() {
             match &mut *column.write() {
@@ -1475,7 +1481,7 @@ impl Archetype {
     }
 
     pub fn garbage_collect(&mut self) {
-        let mut entities = self.entity_ids.clone();
+        let mut entities = self.entity_ids.clone().into_iter().collect::<Vec<_>>();
         while let Some(entity) = entities.pop() {
             if entity.is_dead() {
                 self.remove_entity(&entity);
@@ -1683,10 +1689,7 @@ impl Storage {
                 self.destroy_entity(&entity);
             }
         }
-        // shouldn't be necessary, but just in case, since we're already explicitly garbage collecting
-        for archetype in self.archetypes.values_mut() {
-            archetype.garbage_collect();
-        }
+
         // remove empty archetypes
         let archetypes = self.archetypes.keys().copied().collect::<Vec<_>>();
         for archetype in archetypes {
@@ -1741,7 +1744,7 @@ impl Storage {
         let archetype = if let Some(existing_archetype) = existing_archetype {
             existing_archetype
         } else {
-            let mut type_columns = SortedMap::default();
+            let mut type_columns = FxHashMap::default();
             for d in &data {
                 let type_id = d.type_uid();
                 let column = match d {
@@ -1761,14 +1764,14 @@ impl Storage {
             let archetype = Archetype {
                 archetype_id,
                 type_columns,
-                entity_ids: SortedVec::default(),
+                entity_ids: FxHashSet::default(),
             };
             self.archetypes.insert(archetype_id, archetype);
             self.archetypes.get_mut(&archetype_id).unwrap()
         };
 
         // insert entity into archetype
-        archetype.entity_ids.push(*entity);
+        archetype.entity_ids.insert(*entity);
         for d in data {
             let type_id = d.type_uid();
             let col = archetype.column(&type_id).unwrap();
