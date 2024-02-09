@@ -36,11 +36,13 @@ fn main() -> anyhow::Result<()> {
 
     app.add_system_to_stage(UpdateTransforms, SystemStage::PreUpdate);
 
+    app.add_system_to_stage(PickEntity, SystemStage::Update);
     app.add_system_to_stage(UpdateCamera, SystemStage::Update);
 
     app.add_system_to_stage(ui::EditorStateUi, SystemStage::Ui);
 
     app.add_system_to_stage(DrawEditorDoodads, SystemStage::PreRender);
+
     app.add_system_to_stage(EditorRender, SystemStage::Render);
 
     app.add_script("assets/scripts/editor/main.loom");
@@ -333,10 +335,80 @@ impl System for DrawEditorDoodads {
     }
 
     fn reads(&self) -> Vec<Entity> {
-        vec![]
+        vec![EditorState::static_type_uid()]
     }
 
     fn writes(&self) -> Vec<Entity> {
-        vec![Renderer::static_type_uid(), Doodads::static_type_uid()]
+        vec![Doodads::static_type_uid()]
+    }
+}
+
+pub struct PickEntity;
+
+impl System for PickEntity {
+    fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
+        let world = world.read();
+        let input = world.read_resource::<Input>().unwrap();
+        let input = input.as_ref::<Input>().unwrap();
+        let renderer = world.read_resource::<Renderer>().unwrap();
+        let renderer = renderer.as_ref::<Renderer>().unwrap();
+
+        let q = world
+            .query()
+            .read::<Camera>()?
+            .read::<FlyCameraController>()?
+            .build();
+        let q = q.iter().next().unwrap();
+        let camera = q.get::<Camera>().unwrap();
+
+        if input.mouse_button_just_pressed(MouseButton::Left) {
+            let (x, y) = input.mouse_position().unwrap().into();
+            let viewport_rect = renderer.viewport_rect();
+            let x = x - viewport_rect.x;
+            let y = y - viewport_rect.y;
+            let screen_position = Vec2::new(x, y);
+            let ray = camera.screen_to_ray(
+                screen_position,
+                Vec2::new(viewport_rect.width, viewport_rect.height),
+            );
+            let query = world
+                .query()
+                .entity()
+                .read::<GlobalTransform>()?
+                .read::<Mesh>()?
+                .build();
+            let mut closest = None;
+            let mut closest_distance = f32::MAX;
+            for result in query.iter() {
+                let entity = result.entity().unwrap().clone();
+                let global = result.get::<GlobalTransform>().unwrap();
+                let mesh = result.get::<Mesh>().unwrap();
+                let bounding = mesh.bounding_sphere().transformed(*global);
+                if let Some(distance) = bounding.intersect_ray(ray) {
+                    if distance < closest_distance {
+                        closest = Some(entity);
+                        closest_distance = distance;
+                    }
+                }
+            }
+            if let Some(closest) = closest {
+                let mut state = world.write_resource::<EditorState>().unwrap();
+                let state = state.as_mut::<EditorState>().unwrap();
+                if state.selected_entity != Some(closest.to_owned()) {
+                    state.selected_entity = Some(closest);
+                    state.selected_component = None;
+                }
+            }
+        }
+
+        Ok(vec![])
+    }
+
+    fn reads(&self) -> Vec<Entity> {
+        vec![Input::static_type_uid(), Window::static_type_uid()]
+    }
+
+    fn writes(&self) -> Vec<Entity> {
+        vec![EditorState::static_type_uid()]
     }
 }

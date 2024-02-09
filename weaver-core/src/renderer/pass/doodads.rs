@@ -614,7 +614,7 @@ impl Pass for DoodadRenderPass {
         world: &World,
     ) -> anyhow::Result<()> {
         let manager = &renderer.resource_manager;
-        let depth_texture = &self.depth_texture.handle().lazy_init(manager)?;
+        // let depth_texture = &self.depth_texture.handle().lazy_init(manager)?;
         // let depth_texture = depth_texture.get_texture().unwrap();
         // let depth_texture_view = depth_texture.create_view(&Default::default());
 
@@ -672,7 +672,7 @@ impl Pass for DoodadRenderPass {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_target,
+                    view: depth_target,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -705,7 +705,7 @@ impl Pass for DoodadRenderPass {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_target,
+                    view: depth_target,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -742,7 +742,7 @@ impl Pass for DoodadRenderPass {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_target,
+                    view: depth_target,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -781,7 +781,7 @@ impl Pass for DoodadRenderPass {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_target,
+                    view: depth_target,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
