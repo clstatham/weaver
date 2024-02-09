@@ -206,44 +206,44 @@ impl<K: Ord + Copy, V> From<Vec<(K, V)>> for SortedMap<K, V> {
 }
 
 pub struct DynamicData {
-    type_uid: Entity,
-    value_uid: Entity,
+    type_id: Entity,
+    entity: Entity,
     data: Box<dyn Atom>,
 }
 
 impl DynamicData {
     pub fn new<T: Atom>(data: T) -> Self {
-        let type_uid = T::static_type_uid();
-        let value_uid = Entity::allocate(Some(type_uid));
+        let type_id = T::static_type_id();
+        let entity = Entity::allocate(Some(type_id));
         let data = Box::new(data);
         Self {
-            type_uid,
-            value_uid,
+            type_id,
+            entity,
             data,
         }
     }
 
     pub fn new_relation<R: Relationship>(relation: R, relative: Entity) -> Self {
-        let type_uid = Entity::new_relationship(R::static_type_uid(), relative);
-        let value_uid = Entity::allocate(Some(type_uid));
+        let type_id = Entity::new_relationship(R::static_type_id(), relative);
+        let entity = Entity::allocate(Some(type_id));
         let data = Box::new(relation);
         Self {
-            type_uid,
-            value_uid,
+            type_id,
+            entity,
             data,
         }
     }
 
-    pub fn type_uid(&self) -> Entity {
-        self.type_uid
+    pub fn type_id(&self) -> Entity {
+        self.type_id
     }
 
-    pub fn value_uid(&self) -> Entity {
-        self.value_uid
+    pub fn entity(&self) -> Entity {
+        self.entity
     }
 
     pub fn as_ref<T: Atom>(&self) -> Option<&T> {
-        if self.type_uid == T::static_type_uid() {
+        if self.type_id == T::static_type_id() {
             Some((*self.data).as_any().downcast_ref().unwrap())
         } else {
             None
@@ -251,7 +251,7 @@ impl DynamicData {
     }
 
     pub fn as_mut<T: Atom>(&mut self) -> Option<&mut T> {
-        if self.type_uid == T::static_type_uid() {
+        if self.type_id == T::static_type_id() {
             Some((*self.data).as_any_mut().downcast_mut().unwrap())
         } else {
             None
@@ -259,7 +259,7 @@ impl DynamicData {
     }
 
     pub fn into<T: Atom>(self) -> Result<Box<T>, Self> {
-        if self.type_uid == T::static_type_uid() {
+        if self.type_id == T::static_type_id() {
             Ok(self.data.as_any_box().downcast().unwrap())
         } else {
             Err(self)
@@ -286,23 +286,23 @@ impl DynamicData {
 impl Debug for DynamicData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DynamicData")
-            .field("type_uid", &self.type_uid)
-            .field("value_uid", &self.value_uid)
+            .field("type_id", &self.type_id)
+            .field("entity", &self.entity)
             .finish()
     }
 }
 
 impl PartialEq for DynamicData {
     fn eq(&self, other: &Self) -> bool {
-        self.type_uid == other.type_uid && self.value_uid == other.value_uid
+        self.type_id == other.type_id && self.entity == other.entity
     }
 }
 
 impl Clone for DynamicData {
     fn clone(&self) -> Self {
         Self {
-            type_uid: self.type_uid,
-            value_uid: self.value_uid,
+            type_id: self.type_id,
+            entity: self.entity,
             data: self.data.clone_box(),
         }
     }
@@ -319,25 +319,25 @@ impl Data {
         Self::Dynamic(DynamicData::new(data))
     }
 
-    pub fn new_pointer(target_type_uid: Entity, target_value_uid: Entity) -> Self {
-        Self::Pointer(Pointer::new(target_type_uid, target_value_uid))
+    pub fn new_pointer(target_type_id: Entity, target_entity: Entity) -> Self {
+        Self::Pointer(Pointer::new(target_type_id, target_entity))
     }
 
     pub fn new_relation<R: Relationship>(relation: R, relative: Entity) -> Self {
         Self::Dynamic(DynamicData::new_relation(relation, relative))
     }
 
-    pub fn type_uid(&self) -> Entity {
+    pub fn type_id(&self) -> Entity {
         match self {
-            Self::Dynamic(data) => data.type_uid(),
-            Self::Pointer(pointer) => pointer.target_type_uid(),
+            Self::Dynamic(data) => data.type_id(),
+            Self::Pointer(pointer) => pointer.target_type_id(),
         }
     }
 
-    pub fn value_uid(&self) -> Entity {
+    pub fn entity(&self) -> Entity {
         match self {
-            Self::Dynamic(data) => data.value_uid(),
-            Self::Pointer(pointer) => pointer.target_value_uid(),
+            Self::Dynamic(data) => data.entity(),
+            Self::Pointer(pointer) => pointer.target_entity(),
         }
     }
 
@@ -395,8 +395,8 @@ impl Data {
             Self::Dynamic(data) => data.display(),
             Self::Pointer(pointer) => format!(
                 "<pointer to {:?} ({:?})>",
-                pointer.target_value_uid(),
-                pointer.target_type_uid()
+                pointer.target_entity(),
+                pointer.target_type_id()
             ),
         }
     }
@@ -411,24 +411,24 @@ impl Data {
 
 #[derive(Clone, Debug)]
 pub struct Pointer {
-    target_type_uid: Entity,
-    target_value_uid: Entity,
+    target_type_id: Entity,
+    target_entity: Entity,
 }
 
 impl Pointer {
-    pub fn new(target_type_uid: Entity, target_value_uid: Entity) -> Self {
+    pub fn new(target_type_id: Entity, target_entity: Entity) -> Self {
         Self {
-            target_type_uid,
-            target_value_uid,
+            target_type_id,
+            target_entity,
         }
     }
 
-    pub fn target_type_uid(&self) -> Entity {
-        self.target_type_uid
+    pub fn target_type_id(&self) -> Entity {
+        self.target_type_id
     }
 
-    pub fn target_value_uid(&self) -> Entity {
-        self.target_value_uid
+    pub fn target_entity(&self) -> Entity {
+        self.target_entity
     }
 
     pub fn into_data(self) -> Data {
@@ -438,43 +438,37 @@ impl Pointer {
 
 impl PartialEq for Pointer {
     fn eq(&self, other: &Self) -> bool {
-        self.target_type_uid == other.target_type_uid
-            && self.target_value_uid == other.target_value_uid
+        self.target_type_id == other.target_type_id && self.target_entity == other.target_entity
     }
 }
 
 pub struct PointerRef<'a> {
-    target_type_uid: Entity,
-    target_value_uid: Entity,
+    target_type_id: Entity,
+    target_entity: Entity,
     _column: Read<'a, Column>,
 }
 
 impl PartialEq for PointerRef<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.target_type_uid == other.target_type_uid
-            && self.target_value_uid == other.target_value_uid
+        self.target_type_id == other.target_type_id && self.target_entity == other.target_entity
     }
 }
 
 impl<'a> PointerRef<'a> {
-    pub fn new(
-        target_type_uid: Entity,
-        target_value_uid: Entity,
-        _column: Read<'a, Column>,
-    ) -> Self {
+    pub fn new(target_type_id: Entity, target_entity: Entity, _column: Read<'a, Column>) -> Self {
         Self {
-            target_type_uid,
-            target_value_uid,
+            target_type_id,
+            target_entity,
             _column,
         }
     }
 
-    pub fn target_type_uid(&self) -> Entity {
-        self.target_type_uid
+    pub fn target_type_id(&self) -> Entity {
+        self.target_type_id
     }
 
-    pub fn target_value_uid(&self) -> Entity {
-        self.target_value_uid
+    pub fn target_entity(&self) -> Entity {
+        self.target_entity
     }
 
     pub fn deref(&self, storage: &'a Storage) -> Option<Ref<'_>> {
@@ -482,15 +476,15 @@ impl<'a> PointerRef<'a> {
     }
 
     pub fn to_owned(&self) -> Pointer {
-        Pointer::new(self.target_type_uid, self.target_value_uid)
+        Pointer::new(self.target_type_id, self.target_entity)
     }
 }
 
 impl<'a> std::fmt::Debug for PointerRef<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PointerRef")
-            .field("target_type_uid", &self.target_type_uid)
-            .field("target_value_uid", &self.target_value_uid)
+            .field("target_type_id", &self.target_type_id)
+            .field("target_entity", &self.target_entity)
             .finish()
     }
 }
@@ -503,37 +497,32 @@ impl<'a> std::fmt::Display for PointerRef<'a> {
 
 #[derive(Debug)]
 pub struct PointerMut<'a> {
-    target_type_uid: Entity,
-    target_value_uid: Entity,
+    target_type_id: Entity,
+    target_entity: Entity,
     _column: Write<'a, Column>,
 }
 
 impl PartialEq for PointerMut<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.target_type_uid == other.target_type_uid
-            && self.target_value_uid == other.target_value_uid
+        self.target_type_id == other.target_type_id && self.target_entity == other.target_entity
     }
 }
 
 impl<'a> PointerMut<'a> {
-    pub fn new(
-        target_type_uid: Entity,
-        target_value_uid: Entity,
-        _column: Write<'a, Column>,
-    ) -> Self {
+    pub fn new(target_type_id: Entity, target_entity: Entity, _column: Write<'a, Column>) -> Self {
         Self {
-            target_type_uid,
-            target_value_uid,
+            target_type_id,
+            target_entity,
             _column,
         }
     }
 
-    pub fn target_type_uid(&self) -> Entity {
-        self.target_type_uid
+    pub fn target_type_id(&self) -> Entity {
+        self.target_type_id
     }
 
-    pub fn target_value_uid(&self) -> Entity {
-        self.target_value_uid
+    pub fn target_entity(&self) -> Entity {
+        self.target_entity
     }
 
     pub fn deref_mut(&mut self, storage: &'a mut Storage) -> Option<Mut<'_>> {
@@ -541,61 +530,57 @@ impl<'a> PointerMut<'a> {
     }
 
     pub fn to_owned(&self) -> Pointer {
-        Pointer::new(self.target_type_uid, self.target_value_uid)
+        Pointer::new(self.target_type_id, self.target_entity)
     }
 }
 
 pub struct DynamicDataRef<'a> {
-    type_uid: Entity,
-    value_uid: Entity,
+    type_id: Entity,
+    entity: Entity,
     column: Read<'a, Column>,
 }
 
 impl PartialEq for DynamicDataRef<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.type_uid == other.type_uid && self.value_uid == other.value_uid
+        self.type_id == other.type_id && self.entity == other.entity
     }
 }
 
 impl<'a> DynamicDataRef<'a> {
-    pub fn new(type_uid: Entity, value_uid: Entity, column: Read<'a, Column>) -> Self {
+    pub fn new(type_id: Entity, entity: Entity, column: Read<'a, Column>) -> Self {
         Self {
-            type_uid,
-            value_uid,
+            type_id,
+            entity,
             column,
         }
     }
 
-    pub fn type_uid(&self) -> Entity {
-        self.type_uid
+    pub fn type_id(&self) -> Entity {
+        self.type_id
     }
 
-    pub fn value_uid(&self) -> Entity {
-        self.data().value_uid
+    pub fn entity(&self) -> Entity {
+        self.data().entity
     }
 
     pub fn data(&self) -> &DynamicData {
-        self.column
-            .as_dynamic()
-            .unwrap()
-            .get(self.value_uid)
-            .unwrap()
+        self.column.as_dynamic().unwrap().get(self.entity).unwrap()
     }
 
     pub fn as_ref<T: Atom>(&self) -> Option<&T> {
-        self.column.as_dynamic()?.get(self.value_uid)?.as_ref()
+        self.column.as_dynamic()?.get(self.entity)?.as_ref()
     }
 
     pub fn to_owned(&self) -> Option<DynamicData> {
-        Some(self.column.as_dynamic()?.get(self.value_uid)?.to_owned())
+        Some(self.column.as_dynamic()?.get(self.entity)?.to_owned())
     }
 }
 
 impl<'a> Debug for DynamicDataRef<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DynamicDataRef")
-            .field("type_uid", &self.type_uid)
-            .field("value_uid", &self.value_uid)
+            .field("type_id", &self.type_id)
+            .field("entity", &self.entity)
             .finish()
     }
 }
@@ -607,67 +592,60 @@ impl<'a> std::fmt::Display for DynamicDataRef<'a> {
 }
 
 pub struct DynamicDataMut<'a> {
-    type_uid: Entity,
-    value_uid: Entity,
+    type_id: Entity,
+    entity: Entity,
     column: Write<'a, Column>,
 }
 
 impl PartialEq for DynamicDataMut<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.type_uid == other.type_uid && self.value_uid == other.value_uid
+        self.type_id == other.type_id && self.entity == other.entity
     }
 }
 
 impl<'a> DynamicDataMut<'a> {
-    pub fn new(type_uid: Entity, value_uid: Entity, column: Write<'a, Column>) -> Self {
+    pub fn new(type_id: Entity, entity: Entity, column: Write<'a, Column>) -> Self {
         Self {
-            type_uid,
-            value_uid,
+            type_id,
+            entity,
             column,
         }
     }
 
-    pub fn type_uid(&self) -> Entity {
-        self.type_uid
+    pub fn type_id(&self) -> Entity {
+        self.type_id
     }
 
-    pub fn value_uid(&self) -> Entity {
-        self.data().value_uid
+    pub fn entity(&self) -> Entity {
+        self.data().entity
     }
 
     pub fn as_ref<T: Atom>(&self) -> Option<&T> {
-        self.column.as_dynamic()?.get(self.value_uid)?.as_ref()
+        self.column.as_dynamic()?.get(self.entity)?.as_ref()
     }
 
     pub fn data(&self) -> &DynamicData {
-        self.column
-            .as_dynamic()
-            .unwrap()
-            .get(self.value_uid)
-            .unwrap()
+        self.column.as_dynamic().unwrap().get(self.entity).unwrap()
     }
 
     pub fn data_mut(&mut self) -> &mut DynamicData {
         self.column
             .as_dynamic_mut()
             .unwrap()
-            .get_mut(self.value_uid)
+            .get_mut(self.entity)
             .unwrap()
     }
 
     pub fn as_mut<T: Atom>(&mut self) -> Option<&mut T> {
-        self.column
-            .as_dynamic_mut()?
-            .get_mut(self.value_uid)?
-            .as_mut()
+        self.column.as_dynamic_mut()?.get_mut(self.entity)?.as_mut()
     }
 }
 
 impl<'a> Debug for DynamicDataMut<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DynamicDataMut")
-            .field("type_uid", &self.type_uid)
-            .field("value_uid", &self.value_uid)
+            .field("type_id", &self.type_id)
+            .field("entity", &self.entity)
             .finish()
     }
 }
@@ -685,17 +663,17 @@ pub enum Ref<'a> {
 }
 
 impl<'a> Ref<'a> {
-    pub fn type_uid(&self) -> Entity {
+    pub fn type_id(&self) -> Entity {
         match self {
-            Self::Pointer(pointer) => pointer.target_type_uid(),
-            Self::Dynamic(data) => data.type_uid(),
+            Self::Pointer(pointer) => pointer.target_type_id(),
+            Self::Dynamic(data) => data.type_id(),
         }
     }
 
-    pub fn value_uid(&self) -> Entity {
+    pub fn entity(&self) -> Entity {
         match self {
-            Self::Pointer(pointer) => pointer.target_value_uid(),
-            Self::Dynamic(data) => data.value_uid(),
+            Self::Pointer(pointer) => pointer.target_entity(),
+            Self::Dynamic(data) => data.entity(),
         }
     }
 
@@ -735,17 +713,17 @@ pub enum Mut<'a> {
 }
 
 impl<'a> Mut<'a> {
-    pub fn type_uid(&self) -> Entity {
+    pub fn type_id(&self) -> Entity {
         match self {
-            Self::Pointer(pointer) => pointer.target_type_uid(),
-            Self::Dynamic(data) => data.type_uid(),
+            Self::Pointer(pointer) => pointer.target_type_id(),
+            Self::Dynamic(data) => data.type_id(),
         }
     }
 
-    pub fn value_uid(&self) -> Entity {
+    pub fn entity(&self) -> Entity {
         match self {
-            Self::Pointer(pointer) => pointer.target_value_uid(),
-            Self::Dynamic(data) => data.value_uid(),
+            Self::Pointer(pointer) => pointer.target_entity(),
+            Self::Dynamic(data) => data.entity(),
         }
     }
 
@@ -793,28 +771,28 @@ impl<'a> Mut<'a> {
 }
 
 pub struct DynamicColumn {
-    type_uid: Entity,
+    type_id: Entity,
     entity_ids: Vec<Entity>,
     dense: Vec<DynamicData>,
     sparse: Vec<Option<usize>>,
 }
 
 impl DynamicColumn {
-    pub fn new(type_uid: Entity) -> Self {
+    pub fn new(type_id: Entity) -> Self {
         Self {
-            type_uid,
+            type_id,
             entity_ids: vec![],
             dense: Vec::new(),
             sparse: Vec::new(),
         }
     }
 
-    pub fn type_uid(&self) -> Entity {
-        self.type_uid
+    pub fn type_id(&self) -> Entity {
+        self.type_id
     }
 
-    pub fn data_uids(&self) -> Vec<Entity> {
-        self.dense.iter().map(|data| data.value_uid).collect()
+    pub fn entities(&self) -> Vec<Entity> {
+        self.dense.iter().map(|data| data.entity).collect()
     }
 
     pub fn dense_index_of(&self, entity: Entity) -> Option<usize> {
@@ -826,11 +804,11 @@ impl DynamicColumn {
     }
 
     pub fn insert(&mut self, entity: Entity, data: DynamicData) -> Result<()> {
-        if data.type_uid() != self.type_uid {
+        if data.type_id() != self.type_id {
             bail!(
                 "attempted to insert data of type {:?} into column of type {:?}",
-                data.type_uid(),
-                self.type_uid
+                data.type_id(),
+                self.type_id
             );
         }
         match self.dense_index_of(entity) {
@@ -917,13 +895,13 @@ impl DynamicColumn {
         self.entity_ids
             .iter()
             .copied()
-            .find(|entity| self.get(*entity).unwrap().value_uid() == value_id)
+            .find(|entity| self.get(*entity).unwrap().entity() == value_id)
     }
 
     pub fn garbage_collect(&mut self) {
         let mut i = 0;
         while i < self.dense.len() {
-            if self.dense[i].value_uid.is_dead() {
+            if self.dense[i].entity.is_dead() {
                 self.remove(self.entity_ids[i]);
             } else {
                 i += 1;
@@ -935,7 +913,7 @@ impl DynamicColumn {
 impl Debug for DynamicColumn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DynamicColumn")
-            .field("type_uid", &self.type_uid)
+            .field("type_id", &self.type_id)
             .field("len", &self.len())
             .finish()
     }
@@ -943,24 +921,24 @@ impl Debug for DynamicColumn {
 
 #[derive(Clone)]
 pub struct PointerColumn {
-    target_type_uid: Entity,
+    target_type_id: Entity,
     entity_ids: Vec<Entity>,
     dense: Vec<Pointer>,
     sparse: Vec<Option<usize>>,
 }
 
 impl PointerColumn {
-    pub fn new(target_type_uid: Entity) -> Self {
+    pub fn new(target_type_id: Entity) -> Self {
         Self {
-            target_type_uid,
+            target_type_id,
             entity_ids: vec![],
             dense: Vec::new(),
             sparse: Vec::new(),
         }
     }
 
-    pub fn target_type_uid(&self) -> Entity {
-        self.target_type_uid
+    pub fn target_type_id(&self) -> Entity {
+        self.target_type_id
     }
 
     pub fn dense_index_of(&self, entity: Entity) -> Option<usize> {
@@ -972,11 +950,11 @@ impl PointerColumn {
     }
 
     pub fn insert(&mut self, entity: Entity, pointer: Pointer) -> Result<()> {
-        if pointer.target_type_uid() != self.target_type_uid {
+        if pointer.target_type_id() != self.target_type_id {
             bail!(
                 "attempted to insert pointer to type {:?} into column of type {:?}",
-                pointer.target_type_uid(),
-                self.target_type_uid
+                pointer.target_type_id(),
+                self.target_type_id
             );
         }
         match self.dense_index_of(entity) {
@@ -1047,17 +1025,17 @@ impl PointerColumn {
         self.dense.iter()
     }
 
-    pub fn find_entity_with_pointer_to(&self, target_value_uid: Entity) -> Option<Entity> {
+    pub fn find_entity_with_pointer_to(&self, target_entity: Entity) -> Option<Entity> {
         self.entity_ids
             .iter()
             .copied()
-            .find(|entity| self.get(*entity).unwrap().target_value_uid() == target_value_uid)
+            .find(|entity| self.get(*entity).unwrap().target_entity() == target_entity)
     }
 
     pub fn garbage_collect(&mut self) {
         let mut i = 0;
         while i < self.dense.len() {
-            if self.dense[i].target_value_uid.is_dead() {
+            if self.dense[i].target_entity.is_dead() {
                 self.remove(self.entity_ids[i]);
             } else {
                 i += 1;
@@ -1069,7 +1047,7 @@ impl PointerColumn {
 impl Debug for PointerColumn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PointerColumn")
-            .field("target_type_uid", &self.target_type_uid)
+            .field("target_type_id", &self.target_type_id)
             .field("len", &self.len())
             .finish()
     }
@@ -1082,10 +1060,10 @@ pub enum Column {
 }
 
 impl Column {
-    pub fn type_uid(&self) -> Entity {
+    pub fn type_id(&self) -> Entity {
         match self {
-            Self::Dynamic(col) => col.type_uid(),
-            Self::Pointer(col) => col.target_type_uid(),
+            Self::Dynamic(col) => col.type_id(),
+            Self::Pointer(col) => col.target_type_id(),
         }
     }
 
@@ -1179,8 +1157,8 @@ impl LockedColumn {
             return None;
         }
 
-        let component_id = T::static_type_uid();
-        if col.type_uid() != component_id {
+        let component_id = T::static_type_id();
+        if col.type_id() != component_id {
             return None;
         }
 
@@ -1207,8 +1185,8 @@ impl LockedColumn {
             return None;
         }
 
-        let component_id = T::static_type_uid();
-        if col.type_uid() != component_id {
+        let component_id = T::static_type_id();
+        if col.type_id() != component_id {
             return None;
         }
 
@@ -1230,7 +1208,7 @@ impl LockedColumn {
             return None;
         }
 
-        let data = DynamicDataRef::new(col.type_uid(), entity, col_lock);
+        let data = DynamicDataRef::new(col.type_id(), entity, col_lock);
         Some(data)
     }
 
@@ -1243,7 +1221,7 @@ impl LockedColumn {
 
         drop(col_lock);
         let col_lock = self.0.write();
-        let data = DynamicDataMut::new(col_lock.type_uid(), entity, col_lock);
+        let data = DynamicDataMut::new(col_lock.type_id(), entity, col_lock);
         Some(data)
     }
 
@@ -1260,9 +1238,9 @@ impl LockedColumn {
         let dense_index = col.sparse.get(index).copied().flatten()?;
 
         let pointer = col.dense.get(dense_index)?;
-        let target_type_uid = pointer.target_type_uid();
-        let target_value_uid = pointer.target_value_uid();
-        let pointer = PointerRef::new(target_type_uid, target_value_uid, col_lock);
+        let target_type_id = pointer.target_type_id();
+        let target_entity = pointer.target_entity();
+        let pointer = PointerRef::new(target_type_id, target_entity, col_lock);
         Some(pointer)
     }
 
@@ -1279,11 +1257,11 @@ impl LockedColumn {
         let dense_index = col.sparse.get(index).copied().flatten()?;
 
         let pointer = col.dense.get(dense_index)?;
-        let target_type_uid = pointer.target_type_uid();
-        let target_value_uid = pointer.target_value_uid();
+        let target_type_id = pointer.target_type_id();
+        let target_entity = pointer.target_entity();
         drop(col_lock);
         let col_lock = self.0.write();
-        let pointer = PointerMut::new(target_type_uid, target_value_uid, col_lock);
+        let pointer = PointerMut::new(target_type_id, target_entity, col_lock);
         Some(pointer)
     }
 }
@@ -1552,7 +1530,7 @@ impl Storage {
 
     pub fn has<T: Atom>(&self, entity: Entity) -> bool {
         self.entity_archetype(entity)
-            .map(|a| a.contains_type(T::type_uid()))
+            .map(|a| a.contains_type(T::type_id()))
             .unwrap_or(false)
     }
 
@@ -1567,11 +1545,11 @@ impl Storage {
     }
 
     pub fn get_component<T: Atom>(&self, entity: Entity) -> Option<Ref<'_>> {
-        self.get(T::type_uid(), entity)
+        self.get(T::type_id(), entity)
     }
 
     pub fn get_component_mut<T: Atom>(&self, entity: Entity) -> Option<Mut<'_>> {
-        self.get_mut(T::type_uid(), entity)
+        self.get_mut(T::type_id(), entity)
     }
 
     pub fn find(&self, type_id: Entity, value_id: Entity) -> Option<Ref<'_>> {
@@ -1591,7 +1569,7 @@ impl Storage {
                 a.type_columns().find_map(|(_, c)| {
                     let c_lock = c.read();
                     if let Some(c_lock) = c_lock.as_dynamic() {
-                        if c_lock.data_uids().contains(&value_id) {
+                        if c_lock.entities().contains(&value_id) {
                             let e = c_lock.find_entity_with(value_id)?;
 
                             let d = c.get_dynamic(e)?;
@@ -1600,11 +1578,7 @@ impl Storage {
                             None
                         }
                     } else if let Some(c_lock) = c_lock.as_pointer() {
-                        if c_lock
-                            .dense
-                            .iter()
-                            .any(|p| p.target_value_uid() == value_id)
-                        {
+                        if c_lock.dense.iter().any(|p| p.target_entity() == value_id) {
                             let e = c_lock.find_entity_with_pointer_to(value_id)?;
 
                             let p = c.get_pointer(e)?;
@@ -1637,7 +1611,7 @@ impl Storage {
                 a.type_columns().find_map(|(_, c)| {
                     let c_lock = c.read();
                     if let Some(c_lock) = c_lock.as_dynamic() {
-                        if c_lock.data_uids().contains(&value_id) {
+                        if c_lock.entities().contains(&value_id) {
                             let e = c_lock.find_entity_with(value_id)?;
 
                             let d = c.get_dynamic_mut(e)?;
@@ -1656,16 +1630,16 @@ impl Storage {
     pub fn deref_pointer_ref(&self, pointer: &PointerRef<'_>) -> Option<Ref<'_>> {
         let archetype = self
             .archetypes()
-            .find(|a| a.contains_entity(pointer.target_value_uid()))?;
-        archetype.get(pointer.target_type_uid(), pointer.target_value_uid())
+            .find(|a| a.contains_entity(pointer.target_entity()))?;
+        archetype.get(pointer.target_type_id(), pointer.target_entity())
     }
 
     pub fn deref_pointer_mut(&self, pointer: &PointerMut<'_>) -> Option<Mut<'_>> {
         let archetype = self
             .archetypes()
-            .filter(|a| a.contains_type(pointer.target_type_uid()))
-            .find(|a| a.contains_entity(pointer.target_value_uid()))?;
-        archetype.get_mut(pointer.target_type_uid(), pointer.target_value_uid())
+            .filter(|a| a.contains_type(pointer.target_type_id()))
+            .find(|a| a.contains_entity(pointer.target_entity()))?;
+        archetype.get_mut(pointer.target_type_id(), pointer.target_entity())
     }
 
     pub fn insert_entity(&mut self, entity: Entity) -> Result<()> {
@@ -1733,11 +1707,11 @@ impl Storage {
             for new in &new_data {
                 if data
                     .iter()
-                    .any(|d| d.type_uid() == new.type_uid() && !d.type_uid().is_wildcard())
+                    .any(|d| d.type_id() == new.type_id() && !d.type_id().is_wildcard())
                 {
                     bail!(
                         "attempted to insert duplicate type into entity: {:?}",
-                        new.type_uid()
+                        new.type_id()
                     );
                 }
             }
@@ -1750,8 +1724,7 @@ impl Storage {
 
         // check if we already have an archetype with the same types
         let existing_archetype = self.archetypes.iter_mut().find_map(|(_, a)| {
-            if a.exclusively_contains_types(&data.iter().map(|d| d.type_uid()).collect::<Vec<_>>())
-            {
+            if a.exclusively_contains_types(&data.iter().map(|d| d.type_id()).collect::<Vec<_>>()) {
                 Some(a)
             } else {
                 None
@@ -1763,14 +1736,14 @@ impl Storage {
         } else {
             let mut type_columns = FxHashMap::default();
             for d in &data {
-                let type_id = d.type_uid();
+                let type_id = d.type_id();
                 let column = match d {
                     Data::Dynamic(d) => {
-                        let column = DynamicColumn::new(d.type_uid());
+                        let column = DynamicColumn::new(d.type_id());
                         LockedColumn(Lock::new(Column::Dynamic(column)))
                     }
                     Data::Pointer(d) => {
-                        let column = PointerColumn::new(d.target_type_uid());
+                        let column = PointerColumn::new(d.target_type_id());
                         LockedColumn(Lock::new(Column::Pointer(column)))
                     }
                 };
@@ -1790,7 +1763,7 @@ impl Storage {
         // insert entity into archetype
         archetype.entity_ids.insert(entity);
         for d in data {
-            let type_id = d.type_uid();
+            let type_id = d.type_id();
             let col = archetype.column(type_id).unwrap();
             // col.write().insert(entity, d);
             match &mut *col.write() {

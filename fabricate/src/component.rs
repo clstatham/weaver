@@ -87,8 +87,8 @@ macro_rules! script_vtable {
                     $(
                         map.insert(stringify!($method).to_string(), fabricate::component::ScriptMethod {
                             name: stringify!($method).to_string(),
-                            args: vec![$(<$arg_tys as fabricate::registry::StaticId>::static_type_uid()),*],
-                            ret: <$ret as fabricate::registry::StaticId>::static_type_uid(),
+                            args: vec![$(<$arg_tys as fabricate::registry::StaticId>::static_type_id()),*],
+                            ret: <$ret as fabricate::registry::StaticId>::static_type_id(),
                             takes_self: TakesSelf::$takes_self,
                             run: |mut args| {
                                 let [$($arg_names),*] = &mut args[..] else { anyhow::bail!("Wrong number of args") };
@@ -114,11 +114,11 @@ pub struct ValueRef<'a> {
 }
 
 pub trait Atom: Send + Sync + 'static {
-    fn type_uid() -> Entity
+    fn type_id() -> Entity
     where
         Self: Sized,
     {
-        <Self as StaticId>::static_type_uid()
+        <Self as StaticId>::static_type_id()
     }
 
     fn as_any(&self) -> &dyn Any;
@@ -148,7 +148,7 @@ pub trait Atom: Send + Sync + 'static {
     {
         ValueRef {
             name,
-            typ: Self::type_uid(),
+            typ: Self::type_id(),
             value: self,
         }
     }

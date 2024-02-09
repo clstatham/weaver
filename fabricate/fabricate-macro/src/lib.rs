@@ -127,7 +127,7 @@ pub fn derive_atom(input: TokenStream) -> TokenStream {
             .iter()
             .map(|ty| {
                 quote! {
-                    <#ty as fabricate::registry::StaticId>::static_type_uid()
+                    <#ty as fabricate::registry::StaticId>::static_type_id()
                 }
             })
             .collect::<Vec<_>>();
@@ -138,7 +138,7 @@ pub fn derive_atom(input: TokenStream) -> TokenStream {
             map.insert(stringify!(#method_name).to_string(), fabricate::component::ScriptMethod {
                 name: stringify!(#method_name).to_string(),
                 args: vec![#(#arg_tys_id),*],
-                ret: <#ret as fabricate::registry::StaticId>::static_type_uid(),
+                ret: <#ret as fabricate::registry::StaticId>::static_type_id(),
                 takes_self: #takes_self,
                 run: |mut args| {
                     let [#(#arg_names),*] = &mut args[..] else { fabricate::prelude::bail!("Wrong number of args") };

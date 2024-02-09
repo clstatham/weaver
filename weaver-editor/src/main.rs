@@ -204,11 +204,11 @@ impl System for EditorRender {
     }
 
     fn reads(&self) -> Vec<Entity> {
-        vec![Window::static_type_uid()]
+        vec![Window::static_type_id()]
     }
 
     fn writes(&self) -> Vec<Entity> {
-        vec![Renderer::static_type_uid(), EguiContext::static_type_uid()]
+        vec![Renderer::static_type_id(), EguiContext::static_type_id()]
     }
 }
 
@@ -216,11 +216,11 @@ struct UpdateTransforms;
 
 impl System for UpdateTransforms {
     fn reads(&self) -> Vec<Entity> {
-        vec![Transform::static_type_uid()]
+        vec![Transform::static_type_id()]
     }
 
     fn writes(&self) -> Vec<Entity> {
-        vec![GlobalTransform::static_type_uid()]
+        vec![GlobalTransform::static_type_id()]
     }
 
     fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
@@ -255,7 +255,7 @@ impl System for UpdateTransforms {
                 *global
             };
 
-            if let Some(children) = world.get_relatives_id(entity, TransformParent::type_uid().id())
+            if let Some(children) = world.get_relatives_id(entity, TransformParent::type_id().id())
             {
                 for child in children {
                     update_transforms_recurse(&world, child, global);
@@ -268,7 +268,7 @@ impl System for UpdateTransforms {
 
 fn update_transforms_recurse(world: &World, entity: Entity, parent_global: GlobalTransform) {
     let local = {
-        let transform = world.get(entity, Transform::type_uid());
+        let transform = world.get(entity, Transform::type_id());
         if transform.is_none() {
             return;
         }
@@ -290,7 +290,7 @@ fn update_transforms_recurse(world: &World, entity: Entity, parent_global: Globa
         *global
     };
 
-    if let Some(children) = world.get_relatives_id(entity, TransformParent::type_uid().id()) {
+    if let Some(children) = world.get_relatives_id(entity, TransformParent::type_id().id()) {
         for child in children {
             update_transforms_recurse(world, child, global);
         }
@@ -346,11 +346,11 @@ impl System for DrawEditorDoodads {
     }
 
     fn reads(&self) -> Vec<Entity> {
-        vec![EditorState::static_type_uid()]
+        vec![EditorState::static_type_id()]
     }
 
     fn writes(&self) -> Vec<Entity> {
-        vec![Doodads::static_type_uid()]
+        vec![Doodads::static_type_id()]
     }
 }
 
@@ -416,10 +416,10 @@ impl System for PickEntity {
     }
 
     fn reads(&self) -> Vec<Entity> {
-        vec![Input::static_type_uid(), Window::static_type_uid()]
+        vec![Input::static_type_id(), Window::static_type_id()]
     }
 
     fn writes(&self) -> Vec<Entity> {
-        vec![EditorState::static_type_uid()]
+        vec![EditorState::static_type_id()]
     }
 }

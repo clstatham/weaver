@@ -67,7 +67,7 @@ fn scene_tree_ui_recurse(
             });
         })
         .body(|ui| {
-            let rels = world.get_relatives_id(node, TransformParent::type_uid().id());
+            let rels = world.get_relatives_id(node, TransformParent::type_id().id());
             if let Some(rels) = rels {
                 for child in rels {
                     let name = child
@@ -81,26 +81,26 @@ fn scene_tree_ui_recurse(
             let arch = world.storage().entity_archetype(node).unwrap();
             let components = arch
                 .row_type_filtered(node, |ty| {
-                    !ty.is_relative() && ty.id() != NameTag::type_uid().id()
+                    !ty.is_relative() && ty.id() != NameTag::type_id().id()
                 })
                 .unwrap();
             for component in components {
-                let ty = component.type_uid();
+                let ty = component.type_id();
                 let name = ty
                     .type_name()
                     .unwrap_or_else(|| format!("[type {}]", ty.id()));
 
-                let name = if state.selected_component == Some(component.value_uid()) {
+                let name = if state.selected_component == Some(component.entity()) {
                     egui::RichText::new(name).strong().underline()
                 } else {
                     egui::RichText::new(name)
                 };
-                let selected = state.selected_component == Some(component.value_uid());
+                let selected = state.selected_component == Some(component.entity());
                 let header = egui::SelectableLabel::new(selected, name);
                 let response = ui.add(header);
                 if response.clicked() {
                     state.selected_entity = Some(node);
-                    state.selected_component = Some(component.value_uid());
+                    state.selected_component = Some(component.entity());
                 }
             }
         });

@@ -202,16 +202,16 @@ impl Entity {
         Self(Uid::PLACEHOLDER.as_u32(), EntityMeta::PLACEHOLDER)
     }
 
-    pub const fn new(uid: Uid) -> Self {
-        Self(uid.as_u32(), EntityMeta::new_generation(0))
+    pub const fn new(entity: Uid) -> Self {
+        Self(entity.as_u32(), EntityMeta::new_generation(0))
     }
 
-    pub const fn with_generation(uid: u32, generation: u32) -> Self {
-        Self(uid, EntityMeta::new_generation(generation))
+    pub const fn with_generation(entity: u32, generation: u32) -> Self {
+        Self(entity, EntityMeta::new_generation(generation))
     }
 
-    pub fn with_current_generation(uid: u32) -> Option<Self> {
-        global_registry().current_generation(uid)
+    pub fn with_current_generation(entity: u32) -> Option<Self> {
+        global_registry().current_generation(entity)
     }
 
     pub fn new_relationship(relation: Entity, relative: Entity) -> Self {
@@ -219,16 +219,16 @@ impl Entity {
         Self(relation.id(), EntityMeta::new_relative(relative.id()))
     }
 
-    pub fn new_type(uid: u32) -> Self {
-        Self(uid, EntityMeta::new_type(uid))
+    pub fn new_type(entity: u32) -> Self {
+        Self(entity, EntityMeta::new_type(entity))
     }
 
-    pub fn new_wildcard_id(uid: u32) -> Self {
-        Self(uid, EntityMeta::WILDCARD)
+    pub fn new_wildcard_id(entity: u32) -> Self {
+        Self(entity, EntityMeta::WILDCARD)
     }
 
     pub fn new_wildcard<T: StaticId + ?Sized>() -> Self {
-        Self::new_wildcard_id(T::static_type_uid().id())
+        Self::new_wildcard_id(T::static_type_id().id())
     }
 
     pub fn allocate(ty: Option<Entity>) -> Self {
@@ -340,7 +340,7 @@ impl Entity {
 
     pub fn type_name(self) -> Option<String> {
         self.type_id()
-            .and_then(|uid| global_registry().get_type_name(uid))
+            .and_then(|entity| global_registry().get_type_name(entity))
     }
 
     pub fn register_type_name(self, name: &str) {
@@ -392,7 +392,7 @@ impl Entity {
 
     pub fn with_component_ref<T: Atom, R>(self, f: impl FnOnce(&T) -> R) -> Option<R> {
         self.with_world(|world| {
-            let r = world.get(self, T::type_uid())?;
+            let r = world.get(self, T::type_id())?;
             let r = r.as_ref::<T>()?;
             Some(f(r))
         })
@@ -400,7 +400,7 @@ impl Entity {
 
     pub fn with_component_mut<T: Atom, R>(self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
         self.with_world(|world| {
-            let mut r = world.get_mut(self, T::type_uid())?;
+            let mut r = world.get_mut(self, T::type_id())?;
             let r = r.as_mut::<T>()?;
             Some(f(r))
         })
@@ -493,16 +493,16 @@ pub trait StaticId: 'static {
         hasher.0
     }
 
-    fn static_type_uid() -> Entity {
+    fn static_type_id() -> Entity {
         global_registry().get_or_register_static_type::<Self>()
     }
 
     fn register_static_name(name: &str) {
-        Self::static_type_uid().register_type_name(name);
+        Self::static_type_id().register_type_name(name);
     }
 
     fn static_type_name() -> Option<String> {
-        Self::static_type_uid().type_name()
+        Self::static_type_id().type_name()
     }
 }
 
@@ -577,23 +577,23 @@ impl Registry {
     }
 
     /// Gets the name of the type with the given unique identifier, if it exists.
-    fn get_type_name(&self, uid: Entity) -> Option<String> {
-        self.type_names.read().get(&uid).map(|x| x.to_owned())
+    fn get_type_name(&self, entity: Entity) -> Option<String> {
+        self.type_names.read().get(&entity).map(|x| x.to_owned())
     }
 
     /// Allocates a new unique identifier for a type, and optionally associates it with the given name.
     fn allocate_type(&self, name: Option<&str>) -> Entity {
         if let Some(name) = name {
-            if let Some(uid) = self.named_types.read().get(name).cloned() {
-                return uid;
+            if let Some(entity) = self.named_types.read().get(name).cloned() {
+                return entity;
             }
         }
-        let uid = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let uid = Entity::new_type(uid);
+        let entity = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let entity = Entity::new_type(entity);
         if let Some(name) = name {
-            self.register_type_name(uid, name);
+            self.register_type_name(entity, name);
         }
-        uid
+        entity
     }
 
     /// Registers the given value as the given type.
@@ -612,71 +612,71 @@ impl Registry {
     /// Registers the given type as a static type with the given name.
     fn register_static_name<T: StaticId + ?Sized>(&self, name: &str) -> Entity {
         let id = T::static_id();
-        if let Some(uid) = self.static_types.read().get(&id).cloned() {
-            return uid;
+        if let Some(entity) = self.static_types.read().get(&id).cloned() {
+            return entity;
         }
-        if let Some(uid) = self.named_types.read().get(name).cloned() {
-            return uid;
+        if let Some(entity) = self.named_types.read().get(name).cloned() {
+            return entity;
         }
-        let uid = self.allocate_type(Some(name));
-        self.static_types.write().insert(id, uid);
-        uid
+        let entity = self.allocate_type(Some(name));
+        self.static_types.write().insert(id, entity);
+        entity
     }
 
     fn get_or_register_static_type<T: StaticId + ?Sized>(&self) -> Entity {
         let id = T::static_id();
-        if let Some(uid) = self.static_types.read().get(&id).cloned() {
-            return uid;
+        if let Some(entity) = self.static_types.read().get(&id).cloned() {
+            return entity;
         }
-        let uid = self.allocate_type(None);
-        self.static_types.write().insert(id, uid);
-        uid
+        let entity = self.allocate_type(None);
+        self.static_types.write().insert(id, entity);
+        entity
     }
 
-    fn current_generation(&self, uid: u32) -> Option<Entity> {
-        if let Some(gen) = self.value_generations.read().get(&uid) {
-            return Some(Entity::with_generation(uid, *gen));
+    fn current_generation(&self, entity: u32) -> Option<Entity> {
+        if let Some(gen) = self.value_generations.read().get(&entity) {
+            return Some(Entity::with_generation(entity, *gen));
         }
         None
     }
 
     fn allocate_generative_entity(&self) -> Entity {
         // try to find a vacancy in living_values
-        if let Some((uid, ())) = self.dead.write().drain().next() {
-            // if a vacancy is found, return the uid with the next generation
-            let gen = *self.value_generations.read().get(&uid).unwrap();
-            return Entity::with_generation(uid, gen);
+        if let Some((entity, ())) = self.dead.write().drain().next() {
+            // if a vacancy is found, return the entity with the next generation
+            let gen = *self.value_generations.read().get(&entity).unwrap();
+            return Entity::with_generation(entity, gen);
         }
         // if no vacancy is found, allocate a new value
-        let uid = self.next_id.fetch_add(1, Ordering::Relaxed);
-        if uid == u32::MAX {
+        let entity = self.next_id.fetch_add(1, Ordering::Relaxed);
+        if entity == u32::MAX {
             // we panic here to prevent weird bugs from happening where the entity id rolls over or equals Entity::PLACEHOLDER (which is u32::MAX)
             panic!("Entity allocation overflow");
         }
-        if uid % 10000 == 0 && uid != 0 {
+        if entity % 10000 == 0 && entity != 0 {
             log::warn!(
                 "Entity allocation: {}/{} ({:.4}%)",
-                uid,
+                entity,
                 u32::MAX,
-                uid as f64 / u32::MAX as f64 * 100.0
+                entity as f64 / u32::MAX as f64 * 100.0
             );
         }
-        self.value_generations.write().insert(uid, 0);
-        Entity::with_generation(uid, 0)
+        self.value_generations.write().insert(entity, 0);
+        Entity::with_generation(entity, 0)
     }
 
     fn allocate_entity_with_type(&self, value_type: Entity) -> Entity {
-        let uid = self.allocate_generative_entity();
-        self.register_value_as_type(uid, value_type);
-        uid
+        let entity = self.allocate_generative_entity();
+        self.register_value_as_type(entity, value_type);
+        entity
     }
 
-    fn delete_value(&self, uid: Entity) {
-        if !self.dead.write().contains(&uid.id()) {
-            self.dead.write().insert(uid.id(), ());
-            if let Some(gen) = self.value_generations.write().get_mut(&uid.id()) {
+    fn delete_value(&self, entity: Entity) {
+        if !self.dead.write().contains(&entity.id()) {
+            self.dead.write().insert(entity.id(), ());
+            if let Some(gen) = self.value_generations.write().get_mut(&entity.id()) {
                 if gen.checked_add(1).is_none() {
-                    log::warn!("Generation overflow for value: {}", uid);
+                    log::warn!("Generation overflow for value: {}", entity);
                 }
                 *gen = gen.wrapping_add(1);
             }
@@ -684,13 +684,13 @@ impl Registry {
     }
 
     /// Returns the [`Entity`] of the type that the given [`ValueUid`] is associated with, if it exists.
-    fn get_value_type(&self, uid: Entity) -> Option<Entity> {
-        self.value_types.read().get(&uid).cloned()
+    fn get_value_type(&self, entity: Entity) -> Option<Entity> {
+        self.value_types.read().get(&entity).cloned()
     }
 
     fn allocate(&self) -> Uid {
-        let uid = self.next_id.fetch_add(1, Ordering::Relaxed);
-        Uid::new(uid)
+        let entity = self.next_id.fetch_add(1, Ordering::Relaxed);
+        Uid::new(entity)
     }
 }
 

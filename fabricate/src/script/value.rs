@@ -126,9 +126,9 @@ impl Value {
         }
     }
 
-    pub fn value_uid(&self, env: &RuntimeEnv) -> Result<Entity> {
+    pub fn entity(&self, env: &RuntimeEnv) -> Result<Entity> {
         match self {
-            Value::Data(d) => Ok(d.value_uid()),
+            Value::Data(d) => Ok(d.entity()),
             Value::Bool(b) => {
                 let data = env.world.write().create_data(*b)?;
                 Ok(data)
@@ -180,7 +180,7 @@ impl Value {
     pub fn despawn(&self) {
         if let Value::Data(d) = self {
             if d.as_dynamic().is_some() {
-                d.value_uid().kill();
+                d.entity().kill();
             }
         }
     }
@@ -239,7 +239,7 @@ impl Value {
                     try_all_types!(a; i8, i16, i32, i64, i128, isize, f32, f64; |data| {
                         return Ok(Value::Data(Data::new_dynamic(-data)));
                     } else {
-                        bail!("Invalid data type for operator `-`: {:?}", a.type_uid().type_name());
+                        bail!("Invalid data type for operator `-`: {:?}", a.type_id().type_name());
                     })
                 }
                 _ => bail!("Invalid prefix operator for data: {}", op),
@@ -295,9 +295,9 @@ impl Value {
                     let world = env.world.read();
                     let b = world
                         .storage()
-                        .find(b.target_type_uid(), b.target_value_uid())
+                        .find(b.target_type_id(), b.target_entity())
                         .ok_or_else(|| {
-                            anyhow::anyhow!("Could not find data: {}", b.target_value_uid())
+                            anyhow::anyhow!("Could not find data: {}", b.target_entity())
                         })?;
 
                     let b = b.to_owned().unwrap();
@@ -309,9 +309,9 @@ impl Value {
                     let world = env.world.read();
                     let a = world
                         .storage()
-                        .find(a.target_type_uid(), a.target_value_uid())
+                        .find(a.target_type_id(), a.target_entity())
                         .ok_or_else(|| {
-                            anyhow::anyhow!("Could not find data: {}", a.target_value_uid())
+                            anyhow::anyhow!("Could not find data: {}", a.target_entity())
                         })?;
 
                     let a = a.to_owned().unwrap();
@@ -333,10 +333,10 @@ impl Value {
                             try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
                                 return Ok(Value::Data(Data::new_dynamic(*a + *b)));
                             } else {
-                                return Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                return Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                             });
                             #[cfg(not(feature = "glam"))]
-                            Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                            Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                         })
                     }
                     "-" => {
@@ -347,10 +347,10 @@ impl Value {
                             try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
                                 return Ok(Value::Data(Data::new_dynamic(*a - *b)));
                             } else {
-                                return Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                return Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                             });
                             #[cfg(not(feature = "glam"))]
-                            Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                            Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                         })
                     }
                     "*" => {
@@ -361,10 +361,10 @@ impl Value {
                             try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
                                 return Ok(Value::Data(Data::new_dynamic(*a * *b)));
                             } else {
-                                return Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                return Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                             });
                             #[cfg(not(feature = "glam"))]
-                            Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                            Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                         })
                     }
                     "/" => {
@@ -375,17 +375,17 @@ impl Value {
                             try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4; |a, b| {
                                 return Ok(Value::Data(Data::new_dynamic(*a / *b)));
                             } else {
-                                return Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                return Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                             });
                             #[cfg(not(feature = "glam"))]
-                            Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                            Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                         })
                     }
                     "%" => {
                         try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
                             return Ok(Value::Data(Data::new_dynamic(a % b)));
                         } else {
-                            Err(anyhow::anyhow!("Invalid data types for operator `%`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                            Err(anyhow::anyhow!("Invalid data types for operator `%`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                         })
                     }
                     _ => bail!("Invalid infix operator for data: {}", op),
@@ -485,10 +485,8 @@ impl Value {
                         let world = env.world.read();
                         // let b = world
                         //     .storage()
-                        //     .find(b.target_type_uid(), b.target_value_uid())?;
-                        let b = world
-                            .get(b.target_value_uid(), b.target_type_uid())
-                            .unwrap();
+                        //     .find(b.target_type_id(), b.target_entity())?;
+                        let b = world.get(b.target_entity(), b.target_type_id()).unwrap();
                         let b = b.to_owned().unwrap();
                         Value::Data(b)
                     };
@@ -501,7 +499,7 @@ impl Value {
                     // deref mut
                     let world = env.world.read();
                     let mut a = world
-                        .get_mut(a.target_value_uid(), a.target_type_uid())
+                        .get_mut(a.target_entity(), a.target_type_id())
                         .unwrap();
 
                     if let Value::Data(b) = b {
@@ -514,10 +512,10 @@ impl Value {
                                     try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
                                         return Ok(Value::Data(Data::new_dynamic(*a + *b)));
                                     } else {
-                                        return Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                        return Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                     });
                                     #[cfg(not(feature = "glam"))]
-                                    Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                    Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                                 })
                             }
                             "-" => {
@@ -528,10 +526,10 @@ impl Value {
                                     try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
                                         return Ok(Value::Data(Data::new_dynamic(*a - *b)));
                                     } else {
-                                        return Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                        return Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                     });
                                     #[cfg(not(feature = "glam"))]
-                                    Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                    Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                                 })
                             }
                             "*" => {
@@ -542,10 +540,10 @@ impl Value {
                                     try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
                                         return Ok(Value::Data(Data::new_dynamic(*a * *b)));
                                     } else {
-                                        return Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                        return Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                     });
                                     #[cfg(not(feature = "glam"))]
-                                    Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                    Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                                 })
                             }
                             "/" => {
@@ -556,17 +554,17 @@ impl Value {
                                     try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4; |a, b| {
                                         return Ok(Value::Data(Data::new_dynamic(*a / *b)));
                                     } else {
-                                        return Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                        return Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                     });
                                     #[cfg(not(feature = "glam"))]
-                                    Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                    Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                                 })
                             }
                             "%" => {
                                 try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
                                     return Ok(Value::Data(Data::new_dynamic(*a % *b)));
                                 } else {
-                                    Err(anyhow::anyhow!("Invalid data types for operator `%`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                    Err(anyhow::anyhow!("Invalid data types for operator `%`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                                 })
                             }
                             "=" => {
@@ -579,10 +577,10 @@ impl Value {
                                         *a = *b;
                                         return Ok(Value::Void);
                                     } else {
-                                        return Err(anyhow::anyhow!("Invalid data types for operator `=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                        return Err(anyhow::anyhow!("Invalid data types for operator `=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                     });
                                     #[cfg(not(feature = "glam"))]
-                                    Err(anyhow::anyhow!("Invalid data types for operator `=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                    Err(anyhow::anyhow!("Invalid data types for operator `=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                                 })
                             }
                             "+=" => {
@@ -595,10 +593,10 @@ impl Value {
                                         *a += *b;
                                         return Ok(Value::Void);
                                     } else {
-                                        return Err(anyhow::anyhow!("Invalid data types for operator `+=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                        return Err(anyhow::anyhow!("Invalid data types for operator `+=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                     });
                                     #[cfg(not(feature = "glam"))]
-                                    Err(anyhow::anyhow!("Invalid data types for operator `+=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                    Err(anyhow::anyhow!("Invalid data types for operator `+=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                                 })
                             }
                             "-=" => {
@@ -611,10 +609,10 @@ impl Value {
                                         *a -= *b;
                                         return Ok(Value::Void);
                                     } else {
-                                        return Err(anyhow::anyhow!("Invalid data types for operator `-=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                        return Err(anyhow::anyhow!("Invalid data types for operator `-=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                     });
                                     #[cfg(not(feature = "glam"))]
-                                    Err(anyhow::anyhow!("Invalid data types for operator `-=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                    Err(anyhow::anyhow!("Invalid data types for operator `-=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                                 })
                             }
                             "*=" => {
@@ -627,10 +625,10 @@ impl Value {
                                         *a *= *b;
                                         return Ok(Value::Void);
                                     } else {
-                                        return Err(anyhow::anyhow!("Invalid data types for operator `*=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                        return Err(anyhow::anyhow!("Invalid data types for operator `*=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                     });
                                     #[cfg(not(feature = "glam"))]
-                                    Err(anyhow::anyhow!("Invalid data types for operator `*=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                    Err(anyhow::anyhow!("Invalid data types for operator `*=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                                 })
                             }
                             "/=" => {
@@ -643,10 +641,10 @@ impl Value {
                                         *a /= *b;
                                         return Ok(Value::Void);
                                     } else {
-                                        return Err(anyhow::anyhow!("Invalid data types for operator `/=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                        return Err(anyhow::anyhow!("Invalid data types for operator `/=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                     });
                                     #[cfg(not(feature = "glam"))]
-                                    Err(anyhow::anyhow!("Invalid data types for operator `/=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                    Err(anyhow::anyhow!("Invalid data types for operator `/=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                                 })
                             }
                             "%=" => {
@@ -654,7 +652,7 @@ impl Value {
                                     *a %= b;
                                     return Ok(Value::Void);
                                 } else {
-                                    Err(anyhow::anyhow!("Invalid data types for operator `%=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                    Err(anyhow::anyhow!("Invalid data types for operator `%=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                                 })
                             }
                             _ => todo!(),
@@ -672,10 +670,10 @@ impl Value {
                                 try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
                                     return Ok(Value::Data(Data::new_dynamic(*a + *b)))
                                 } else {
-                                    return Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                    return Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
                                 #[cfg(not(feature = "glam"))]
-                                Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                             })
                         }
                         "-" => {
@@ -686,10 +684,10 @@ impl Value {
                                 try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
                                     return Ok(Value::Data(Data::new_dynamic(*a - *b)))
                                 } else {
-                                    return Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                    return Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
                                 #[cfg(not(feature = "glam"))]
-                                Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                             })
                         }
                         "*" => {
@@ -700,10 +698,10 @@ impl Value {
                                 try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
                                     return Ok(Value::Data(Data::new_dynamic(*a * *b)))
                                 } else {
-                                    return Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                    return Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
                                 #[cfg(not(feature = "glam"))]
-                                Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                             })
                         }
                         "/" => {
@@ -714,17 +712,17 @@ impl Value {
                                 try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4; |a, b| {
                                     return Ok(Value::Data(Data::new_dynamic(*a / *b)))
                                 } else {
-                                    return Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                    return Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
                                 #[cfg(not(feature = "glam"))]
-                                Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                             })
                         }
                         "%" => {
                             try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
                                 return Ok(Value::Data(Data::new_dynamic(a % b)));
                             } else {
-                                return Err(anyhow::anyhow!("Invalid data types for operator `%`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                return Err(anyhow::anyhow!("Invalid data types for operator `%`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                             })
                         }
                         "=" => {
@@ -737,10 +735,10 @@ impl Value {
                                     *a = *b;
                                     return Ok(Value::Data(Data::new_dynamic(*a)));
                                 } else {
-                                    return Err(anyhow::anyhow!("Invalid data types for operator `=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                    return Err(anyhow::anyhow!("Invalid data types for operator `=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
                                 #[cfg(not(feature = "glam"))]
-                                Err(anyhow::anyhow!("Invalid data types for operator `=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                Err(anyhow::anyhow!("Invalid data types for operator `=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                             })
                         }
                         "+=" => {
@@ -753,10 +751,10 @@ impl Value {
                                     *a += *b;
                                     return Ok(Value::Data(Data::new_dynamic(*a)));
                                 } else {
-                                    return Err(anyhow::anyhow!("Invalid data types for operator `+=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                    return Err(anyhow::anyhow!("Invalid data types for operator `+=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
                                 #[cfg(not(feature = "glam"))]
-                                Err(anyhow::anyhow!("Invalid data types for operator `+=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                Err(anyhow::anyhow!("Invalid data types for operator `+=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                             })
                         }
                         "-=" => {
@@ -769,10 +767,10 @@ impl Value {
                                     *a -= *b;
                                     return Ok(Value::Data(Data::new_dynamic(*a)));
                                 } else {
-                                    return Err(anyhow::anyhow!("Invalid data types for operator `-=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                    return Err(anyhow::anyhow!("Invalid data types for operator `-=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
                                 #[cfg(not(feature = "glam"))]
-                                Err(anyhow::anyhow!("Invalid data types for operator `-=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                Err(anyhow::anyhow!("Invalid data types for operator `-=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                             })
                         }
                         "*=" => {
@@ -785,10 +783,10 @@ impl Value {
                                     *a *= *b;
                                     return Ok(Value::Data(Data::new_dynamic(*a)));
                                 } else {
-                                    return Err(anyhow::anyhow!("Invalid data types for operator `*=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                    return Err(anyhow::anyhow!("Invalid data types for operator `*=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
                                 #[cfg(not(feature = "glam"))]
-                                Err(anyhow::anyhow!("Invalid data types for operator `*=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                Err(anyhow::anyhow!("Invalid data types for operator `*=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                             })
                         }
                         "/=" => {
@@ -801,10 +799,10 @@ impl Value {
                                     *a /= *b;
                                     return Ok(Value::Data(Data::new_dynamic(*a)));
                                 } else {
-                                    return Err(anyhow::anyhow!("Invalid data types for operator `/=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                    return Err(anyhow::anyhow!("Invalid data types for operator `/=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
                                 #[cfg(not(feature = "glam"))]
-                                Err(anyhow::anyhow!("Invalid data types for operator `/=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()))
+                                Err(anyhow::anyhow!("Invalid data types for operator `/=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                             })
                         }
                         "%=" => {
@@ -812,7 +810,7 @@ impl Value {
                                 *a %= b;
                                 return Ok(Value::Data(Data::new_dynamic(*a)));
                             } else {
-                                return Err(anyhow::anyhow!("Invalid data types for operator `%=`: {:?} and {:?}", a.type_uid().type_name(), b.type_uid().type_name()));
+                                return Err(anyhow::anyhow!("Invalid data types for operator `%=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                             })
                         }
                         _ => bail!("Invalid infix operator for data: {}", op),

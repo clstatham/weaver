@@ -43,7 +43,7 @@ impl<'a> QueryBuilder<'a> {
 
     /// Requests read access to a component for the query.
     pub fn read<T: Atom>(mut self) -> Result<Self> {
-        let id = T::type_uid();
+        let id = T::type_id();
         ensure!(
             !self.access.contains(&QueryBuilderAccess::Write(id)),
             "cannot read and write the same component in a query: {:?}",
@@ -60,7 +60,7 @@ impl<'a> QueryBuilder<'a> {
 
     /// Requests write access to a component for the query.
     pub fn write<T: Atom>(mut self) -> Result<Self> {
-        let id = T::type_uid();
+        let id = T::type_id();
         ensure!(
             !self.access.contains(&QueryBuilderAccess::Read(id)),
             "cannot read and write the same component in a query: {:?}",
@@ -77,7 +77,7 @@ impl<'a> QueryBuilder<'a> {
 
     /// Requests that the query only returns entities that have a component of the specified type, without requiring access to the component.
     pub fn with<T: Atom>(mut self) -> Result<Self> {
-        let id = T::type_uid();
+        let id = T::type_id();
         ensure!(
             !self.access.contains(&QueryBuilderAccess::Without(id)),
             "cannot include the same component twice in a query: {:?}",
@@ -94,7 +94,7 @@ impl<'a> QueryBuilder<'a> {
 
     /// Requests that the query only returns entities that do not have a component of the specified type.
     pub fn without<T: Atom>(mut self) -> Result<Self> {
-        let id = T::type_uid();
+        let id = T::type_id();
         ensure!(
             !self.access.contains(&QueryBuilderAccess::With(id)),
             "cannot exclude the same component twice in a query: {:?}",
@@ -288,7 +288,7 @@ impl<'a> Proxy<'a> {
     }
 
     pub fn get<T: Atom>(&self) -> Option<&T> {
-        if self.component_type != T::static_type_uid() {
+        if self.component_type != T::static_type_id() {
             return None;
         }
 
@@ -314,7 +314,7 @@ impl<'a> ProxyMut<'a> {
     }
 
     pub fn get<T: Atom>(&self) -> Option<&T> {
-        if self.component_type != T::static_type_uid() {
+        if self.component_type != T::static_type_id() {
             return None;
         }
 
@@ -322,7 +322,7 @@ impl<'a> ProxyMut<'a> {
     }
 
     pub fn get_mut<T: Atom>(&mut self) -> Option<&mut T> {
-        if self.component_type != T::static_type_uid() {
+        if self.component_type != T::static_type_id() {
             return None;
         }
 
@@ -545,11 +545,11 @@ mod tests {
         let e1 = e1[0].get_data().unwrap();
         let e2 = e2[0].get_data().unwrap();
 
-        let e1_ty = e1.type_uid();
-        let e2_ty = e2.type_uid();
+        let e1_ty = e1.type_id();
+        let e2_ty = e2.type_id();
 
-        assert_eq!(e1_ty, Position::type_uid());
-        assert_eq!(e2_ty, Position::type_uid());
+        assert_eq!(e1_ty, Position::type_id());
+        assert_eq!(e2_ty, Position::type_id());
     }
 
     #[test]
@@ -578,10 +578,10 @@ mod tests {
         let e1 = e1[0].get_data_mut().unwrap();
         let e2 = e2[0].get_data_mut().unwrap();
 
-        let e1_ty = e1.type_uid();
-        let e2_ty = e2.type_uid();
+        let e1_ty = e1.type_id();
+        let e2_ty = e2.type_id();
 
-        assert_eq!(e1_ty, Position::type_uid());
-        assert_eq!(e2_ty, Position::type_uid());
+        assert_eq!(e1_ty, Position::type_id());
+        assert_eq!(e2_ty, Position::type_id());
     }
 }

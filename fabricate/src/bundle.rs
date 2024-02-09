@@ -12,7 +12,7 @@ pub trait Bundle: Sized + 'static {
 
 impl<T: Atom> Bundle for T {
     fn type_ids() -> Vec<Entity> {
-        vec![T::static_type_uid()]
+        vec![T::static_type_id()]
     }
 
     fn into_data_vec(self) -> Vec<Data> {
@@ -25,7 +25,7 @@ macro_rules! impl_bundle_for_tuple {
         #[allow(non_snake_case)]
         impl<$($name: Atom),*> Bundle for ($($name,)*) {
             fn type_ids() -> Vec<Entity> {
-                vec![$(<$name as StaticId>::static_type_uid()),*]
+                vec![$(<$name as StaticId>::static_type_id()),*]
             }
 
             fn into_data_vec(self) -> Vec<Data> {

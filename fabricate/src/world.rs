@@ -95,7 +95,7 @@ impl World {
     pub fn create_data<T: Atom>(&mut self, data: T) -> Result<Entity> {
         let d = Data::new_dynamic(data);
         let e = self.create_entity()?;
-        let v = d.value_uid();
+        let v = d.entity();
         self.add_data(e, vec![d])?;
         Ok(v)
     }
@@ -137,7 +137,7 @@ impl World {
             archetype.row_type_filtered(entity, |ty| ty.id() == relationship_type)?;
         let mut out = Vec::new();
         for relationship in relationships {
-            let relationship_type = relationship.type_uid();
+            let relationship_type = relationship.type_id();
             let relative_id = relationship_type.meta().value();
             out.push(Entity::with_current_generation(relative_id).unwrap());
         }
@@ -145,7 +145,7 @@ impl World {
     }
 
     pub fn get_relatives<R: Relationship>(&self, entity: Entity) -> Option<Vec<Entity>> {
-        let relationship_type = R::type_uid();
+        let relationship_type = R::type_id();
         self.get_relatives_id(entity, relationship_type.id())
     }
 
@@ -154,7 +154,7 @@ impl World {
         let relationships = archetype.row_type_filtered(entity, |ty| ty.is_relative())?;
         let mut out = Vec::new();
         for relationship in relationships {
-            let relationship_type = relationship.type_uid();
+            let relationship_type = relationship.type_id();
             let relative_id = relationship_type.meta().value();
             out.push((
                 relationship_type.id(),
@@ -205,8 +205,8 @@ impl World {
         self.storage.garbage_collect();
     }
 
-    pub fn get_system(&self, uid: Entity) -> Option<&DynamicSystem> {
-        self.systems.get(&uid)
+    pub fn get_system(&self, system: Entity) -> Option<&DynamicSystem> {
+        self.systems.get(&system)
     }
 
     pub fn add_system(

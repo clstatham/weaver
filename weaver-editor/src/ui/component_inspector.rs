@@ -21,12 +21,12 @@ pub trait InspectExt: Atom {
     fn ui(&mut self, ui: &mut egui::Ui) {
         for value in self.inspect() {
             match value.typ {
-                t if t == bool::type_uid() => {
+                t if t == bool::type_id() => {
                     let mut v = *value.value.as_any_mut().downcast_mut::<bool>().unwrap();
                     ui.add(egui::Checkbox::new(&mut v, value.name));
                     *value.value.as_any_mut().downcast_mut::<bool>().unwrap() = v;
                 }
-                t if t == i32::type_uid() => {
+                t if t == i32::type_id() => {
                     let mut v = *value.value.as_any_mut().downcast_mut::<i32>().unwrap();
                     ui.horizontal(|ui| {
                         ui.label(value.name);
@@ -34,7 +34,7 @@ pub trait InspectExt: Atom {
                     });
                     *value.value.as_any_mut().downcast_mut::<i32>().unwrap() = v;
                 }
-                t if t == f32::type_uid() => {
+                t if t == f32::type_id() => {
                     let mut v = *value.value.as_any_mut().downcast_mut::<f32>().unwrap();
                     ui.horizontal(|ui| {
                         ui.label(value.name);
@@ -42,14 +42,14 @@ pub trait InspectExt: Atom {
                     });
                     *value.value.as_any_mut().downcast_mut::<f32>().unwrap() = v;
                 }
-                t if t == String::type_uid() => {
+                t if t == String::type_id() => {
                     ui.horizontal(|ui| {
                         let v = value.value.as_any_mut().downcast_mut::<String>().unwrap();
                         ui.label(value.name);
                         ui.add(egui::TextEdit::singleline(v));
                     });
                 }
-                t if t == Color::type_uid() => {
+                t if t == Color::type_id() => {
                     let v = *value.value.as_any_mut().downcast_mut::<Color>().unwrap();
                     let (r, g, b, a) = v.rgba_int();
                     let mut v = egui::Color32::from_rgb(r, g, b);
@@ -65,7 +65,7 @@ pub trait InspectExt: Atom {
                     let v = Color::from_rgba_int(v.r(), v.g(), v.b(), a);
                     *value.value.as_any_mut().downcast_mut::<Color>().unwrap() = v;
                 }
-                t if t == Vec3::type_uid() => {
+                t if t == Vec3::type_id() => {
                     let mut v = *value.value.as_any_mut().downcast_mut::<Vec3>().unwrap();
                     ui.horizontal(|ui| {
                         ui.label(value.name);
@@ -84,7 +84,7 @@ pub trait InspectExt: Atom {
                     });
                     *value.value.as_any_mut().downcast_mut::<Vec3>().unwrap() = v;
                 }
-                t if t == Vec4::type_uid() => {
+                t if t == Vec4::type_id() => {
                     let mut v = *value.value.as_any_mut().downcast_mut::<Vec4>().unwrap();
                     ui.horizontal(|ui| {
                         ui.label(value.name);

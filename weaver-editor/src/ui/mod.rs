@@ -106,14 +106,14 @@ pub struct EditorStateUi;
 
 impl System for EditorStateUi {
     fn reads(&self) -> Vec<Entity> {
-        vec![EguiContext::static_type_uid()]
+        vec![EguiContext::static_type_id()]
     }
 
     fn writes(&self) -> Vec<Entity> {
         vec![
-            EditorState::static_type_uid(),
-            Tabs::static_type_uid(),
-            FpsDisplay::static_type_uid(),
+            EditorState::static_type_id(),
+            Tabs::static_type_id(),
+            FpsDisplay::static_type_id(),
         ]
     }
 

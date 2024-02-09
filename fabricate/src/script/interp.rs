@@ -308,14 +308,14 @@ impl InterpreterContext {
                             let value = match result {
                                 QueryItem::Proxy(p) => ValueHandle::Ref(SharedLock::new(
                                     Value::Data(Data::new_pointer(
-                                        p.component.type_uid(),
-                                        p.component.value_uid(),
+                                        p.component.type_id(),
+                                        p.component.entity(),
                                     )),
                                 )),
                                 QueryItem::ProxyMut(p) => ValueHandle::Mut(SharedLock::new(
                                     Value::Data(Data::new_pointer(
-                                        p.component.type_uid(),
-                                        p.component.value_uid(),
+                                        p.component.type_id(),
+                                        p.component.entity(),
                                     )),
                                 )),
                                 _ => todo!(),
@@ -394,14 +394,14 @@ impl InterpreterContext {
         // let e = env.world.write().create_entity()?;
         // for (arg_name, arg) in args {
         //     // let value = self.interp_expr(env, arg)?;
-        //     // let value_uid = value.read().value_uid(env).map_err(|_| {
+        //     // let entity = value.read().entity(env).map_err(|_| {
         //     //     runtime_error!(
         //     //         arg.span,
         //     //         format!("Invalid argument for constructing {}: {}", name, arg_name)
         //     //     )
         //     // })?;
         //     // let mut world = env.world.write();
-        //     // let value_ty = value_uid.type_id().unwrap();
+        //     // let value_ty = entity.type_id().unwrap();
         // }
 
         todo!("Implement constructing entities");
@@ -521,7 +521,7 @@ impl InterpreterContext {
                             },
                             Data::Pointer(p) => {
                                 // deref one level
-                                let data_ref = world.get(p.target_value_uid(), p.target_type_uid()).unwrap();
+                                let data_ref = world.get(p.target_entity(), p.target_type_id()).unwrap();
                                 let vtable = if let Some(data_ref) = data_ref.as_dynamic() {
                                     data_ref.data().data().script_vtable()
                                 } else {
@@ -539,11 +539,11 @@ impl InterpreterContext {
                                 TakesSelf::Ref => {
                                     match &data {
                                         Data::Dynamic(d) => {
-                                            let d = world.get(d.value_uid(), d.type_uid()).unwrap();
+                                            let d = world.get(d.entity(), d.type_id()).unwrap();
                                             args.insert(0, MethodArg::Ref(d));
                                         }
                                         Data::Pointer(p) => {
-                                            let d = world.storage().find(p.target_type_uid(), p.target_value_uid()).unwrap();
+                                            let d = world.storage().find(p.target_type_id(), p.target_entity()).unwrap();
                                             args.insert(0, MethodArg::Ref(d));
                                         }
                                     }
@@ -592,7 +592,7 @@ impl InterpreterContext {
                             },
                             Data::Pointer(p) => {
                                 // deref one level
-                                let data_ref = world.storage().find(p.target_type_uid(), p.target_value_uid()).unwrap();
+                                let data_ref = world.storage().find(p.target_type_id(), p.target_entity()).unwrap();
                                 let vtable = if let Some(data_ref) = data_ref.as_dynamic() {
                                     data_ref.data().data().script_vtable()
                                 } else {
@@ -609,11 +609,11 @@ impl InterpreterContext {
                                 TakesSelf::RefMut => {
                                     match &data {
                                         Data::Dynamic(d) => {
-                                            let d = world.storage().find_mut(d.type_uid(), d.value_uid()).unwrap();
+                                            let d = world.storage().find_mut(d.type_id(), d.entity()).unwrap();
                                             args.insert(0, MethodArg::Mut(d));
                                         }
                                         Data::Pointer(p) => {
-                                            let d = world.storage().find_mut(p.target_type_uid(), p.target_value_uid()).unwrap();
+                                            let d = world.storage().find_mut(p.target_type_id(), p.target_entity()).unwrap();
                                             args.insert(0, MethodArg::Mut(d));
                                         }
                                     }
@@ -621,11 +621,11 @@ impl InterpreterContext {
                                 TakesSelf::Ref => {
                                     match &data {
                                         Data::Dynamic(d) => {
-                                            let d = world.storage().find(d.type_uid(), d.value_uid()).unwrap();
+                                            let d = world.storage().find(d.type_id(), d.entity()).unwrap();
                                             args.insert(0, MethodArg::Ref(d));
                                         }
                                         Data::Pointer(p) => {
-                                            let d = world.storage().find(p.target_type_uid(), p.target_value_uid()).unwrap();
+                                            let d = world.storage().find(p.target_type_id(), p.target_entity()).unwrap();
                                             args.insert(0, MethodArg::Ref(d));
                                         }
                                     }
