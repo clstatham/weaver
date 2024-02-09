@@ -18,7 +18,7 @@ pub struct TransformChild;
 
 impl Relationship for TransformChild {}
 
-pub fn inherit_transform(parent: &Entity, child: &Entity) {
+pub fn inherit_transform(parent: Entity, child: Entity) {
     parent.add_relative(TransformParent, child).unwrap();
     child.add_relative(TransformChild, parent).unwrap();
 }
@@ -83,11 +83,22 @@ impl System for Setup {
         };
         world.write().spawn((skybox,)).unwrap();
 
-        let camera = Camera::default();
+        let camera = Camera::perspective_lookat(
+            Vec3::new(5.0, 5.0, 5.0),
+            Vec3::ZERO,
+            Vec3::Y,
+            std::f32::consts::FRAC_PI_2,
+            16.0 / 9.0,
+            0.1,
+            100.0,
+        );
+        let (_, rotation, translation) =
+            camera.view_matrix.inverse().to_scale_rotation_translation();
         let controller = FlyCameraController {
             speed: 10.0,
             sensitivity: 0.1,
-            translation: Vec3::new(0.0, 0.0, 5.0),
+            translation,
+            rotation,
             ..Default::default()
         };
         world.write().spawn((camera, controller)).unwrap();
@@ -119,7 +130,7 @@ impl System for Setup {
                 GlobalTransform::default(),
             ))
             .unwrap();
-        inherit_transform(&e1, &e2);
+        inherit_transform(e1, e2);
 
         Ok(vec![])
     }
@@ -219,7 +230,7 @@ impl System for UpdateTransforms {
             .entity()
             .read::<Transform>()?
             .write::<GlobalTransform>()?
-            .without_dynamic(&Entity::new_wildcard::<TransformChild>())
+            .without_dynamic(Entity::new_wildcard::<TransformChild>())
             .unwrap()
             .build();
 
@@ -247,7 +258,7 @@ impl System for UpdateTransforms {
             if let Some(children) = world.get_relatives_id(entity, TransformParent::type_uid().id())
             {
                 for child in children {
-                    update_transforms_recurse(&world, &child, global);
+                    update_transforms_recurse(&world, child, global);
                 }
             }
         }
@@ -255,9 +266,9 @@ impl System for UpdateTransforms {
     }
 }
 
-fn update_transforms_recurse(world: &World, entity: &Entity, parent_global: GlobalTransform) {
+fn update_transforms_recurse(world: &World, entity: Entity, parent_global: GlobalTransform) {
     let local = {
-        let transform = world.get(entity, &Transform::type_uid());
+        let transform = world.get(entity, Transform::type_uid());
         if transform.is_none() {
             return;
         }
@@ -281,7 +292,7 @@ fn update_transforms_recurse(world: &World, entity: &Entity, parent_global: Glob
 
     if let Some(children) = world.get_relatives_id(entity, TransformParent::type_uid().id()) {
         for child in children {
-            update_transforms_recurse(world, &child, global);
+            update_transforms_recurse(world, child, global);
         }
     }
 }
@@ -380,7 +391,7 @@ impl System for PickEntity {
             let mut closest = None;
             let mut closest_distance = f32::MAX;
             for result in query.iter() {
-                let entity = result.entity().unwrap().clone();
+                let entity = result.entity().unwrap();
                 let global = result.get::<GlobalTransform>().unwrap();
                 let mesh = result.get::<Mesh>().unwrap();
                 let bounding = mesh.bounding_sphere().transformed(*global);

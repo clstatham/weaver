@@ -62,56 +62,56 @@ impl World {
     }
 
     /// Returns the root entity of the [`World`], representing the [`World`] itself.
-    pub fn root(&self) -> &Entity {
-        &self.root
+    pub fn root(&self) -> Entity {
+        self.root
     }
 
     pub fn add_resource<T: Atom>(&mut self, resource: T) -> Result<()> {
-        self.add(&self.root.clone(), resource)
+        self.add(self.root, resource)
     }
 
-    pub fn get_resource(&self, id: &Entity) -> Option<Ref<'_>> {
-        self.get(&self.root, id)
+    pub fn get_resource(&self, id: Entity) -> Option<Ref<'_>> {
+        self.get(self.root, id)
     }
 
-    pub fn get_resource_mut(&self, id: &Entity) -> Option<Mut<'_>> {
-        self.get_mut(&self.root, id)
+    pub fn get_resource_mut(&self, id: Entity) -> Option<Mut<'_>> {
+        self.get_mut(self.root, id)
     }
 
     pub fn read_resource<T: Atom>(&self) -> Option<Ref<'_>> {
-        self.get_component::<T>(&self.root)
+        self.get_component::<T>(self.root)
     }
 
     pub fn write_resource<T: Atom>(&self) -> Option<Mut<'_>> {
-        self.get_component_mut::<T>(&self.root)
+        self.get_component_mut::<T>(self.root)
     }
 
     pub fn insert_entity(&mut self, entity: Entity) -> Result<()> {
-        self.storage.insert_entity(entity.clone())?;
-        self.add_relative(&entity, BelongsToWorld, &self.root.clone())?;
+        self.storage.insert_entity(entity)?;
+        self.add_relative(entity, BelongsToWorld, self.root)?;
         Ok(())
     }
 
     pub fn create_data<T: Atom>(&mut self, data: T) -> Result<Entity> {
         let d = Data::new_dynamic(data);
         let e = self.create_entity()?;
-        let v = d.value_uid().clone();
-        self.add_data(&e, vec![d])?;
+        let v = d.value_uid();
+        self.add_data(e, vec![d])?;
         Ok(v)
     }
 
     /// Creates a new entity in the [`World`].
     pub fn create_entity(&mut self) -> Result<Entity> {
         let e = self.storage.create_entity();
-        self.add_relative(&e, BelongsToWorld, &self.root.clone())?;
+        self.add_relative(e, BelongsToWorld, self.root)?;
         Ok(e)
     }
 
     pub fn add_relative<R: Relationship>(
         &mut self,
-        add_to: &Entity,
+        add_to: Entity,
         relationship: R,
-        relative: &Entity,
+        relative: Entity,
     ) -> Result<()> {
         let relationship_data = relationship.into_relationship_data(relative)?;
         self.add_data(add_to, vec![relationship_data])?;
@@ -119,7 +119,7 @@ impl World {
     }
 
     /// Removes an entity from the [`World`].
-    pub fn despawn(&mut self, entity: &Entity) -> Option<Vec<Data>> {
+    pub fn despawn(&mut self, entity: Entity) -> Option<Vec<Data>> {
         self.storage.destroy_entity(entity)
     }
 
@@ -127,11 +127,11 @@ impl World {
     pub fn spawn<B: Bundle>(&mut self, components: B) -> Result<Entity> {
         let entity = self.create_entity()?;
         let data = components.into_data_vec();
-        self.add_data(&entity, data)?;
+        self.add_data(entity, data)?;
         Ok(entity)
     }
 
-    pub fn get_relatives_id(&self, entity: &Entity, relationship_type: u32) -> Option<Vec<Entity>> {
+    pub fn get_relatives_id(&self, entity: Entity, relationship_type: u32) -> Option<Vec<Entity>> {
         let archetype = self.storage().entity_archetype(entity)?;
         let relationships =
             archetype.row_type_filtered(entity, |ty| ty.id() == relationship_type)?;
@@ -144,12 +144,12 @@ impl World {
         Some(out)
     }
 
-    pub fn get_relatives<R: Relationship>(&self, entity: &Entity) -> Option<Vec<Entity>> {
+    pub fn get_relatives<R: Relationship>(&self, entity: Entity) -> Option<Vec<Entity>> {
         let relationship_type = R::type_uid();
         self.get_relatives_id(entity, relationship_type.id())
     }
 
-    pub fn all_relatives(&self, entity: &Entity) -> Option<Vec<(u32, Entity)>> {
+    pub fn all_relatives(&self, entity: Entity) -> Option<Vec<(u32, Entity)>> {
         let archetype = self.storage().entity_archetype(entity)?;
         let relationships = archetype.row_type_filtered(entity, |ty| ty.is_relative())?;
         let mut out = Vec::new();
@@ -164,39 +164,35 @@ impl World {
         Some(out)
     }
 
-    pub fn get_component<T: Atom>(&self, entity: &Entity) -> Option<Ref<'_>> {
+    pub fn get_component<T: Atom>(&self, entity: Entity) -> Option<Ref<'_>> {
         self.storage.get_component::<T>(entity)
     }
 
-    pub fn get_component_mut<T: Atom>(&self, entity: &Entity) -> Option<Mut<'_>> {
+    pub fn get_component_mut<T: Atom>(&self, entity: Entity) -> Option<Mut<'_>> {
         self.storage.get_component_mut::<T>(entity)
     }
 
-    pub fn add_data(
-        &mut self,
-        entity: &Entity,
-        data: impl IntoIterator<Item = Data>,
-    ) -> Result<()> {
+    pub fn add_data(&mut self, entity: Entity, data: impl IntoIterator<Item = Data>) -> Result<()> {
         let data = data.into_iter().collect::<Vec<_>>();
         self.storage.insert(entity, data)?;
         Ok(())
     }
 
-    pub fn add<T: Bundle>(&mut self, entity: &Entity, component: T) -> Result<()> {
+    pub fn add<T: Bundle>(&mut self, entity: Entity, component: T) -> Result<()> {
         let data = component.into_data_vec();
         self.add_data(entity, data)?;
         Ok(())
     }
 
-    pub fn has<T: Atom>(&self, entity: &Entity) -> bool {
+    pub fn has<T: Atom>(&self, entity: Entity) -> bool {
         self.storage.has::<T>(entity)
     }
 
-    pub fn get(&self, entity: &Entity, component_type: &Entity) -> Option<Ref<'_>> {
+    pub fn get(&self, entity: Entity, component_type: Entity) -> Option<Ref<'_>> {
         self.storage.get(component_type, entity)
     }
 
-    pub fn get_mut(&self, entity: &Entity, component_type: &Entity) -> Option<Mut<'_>> {
+    pub fn get_mut(&self, entity: Entity, component_type: Entity) -> Option<Mut<'_>> {
         self.storage.get_mut(component_type, entity)
     }
 
@@ -209,8 +205,8 @@ impl World {
         self.storage.garbage_collect();
     }
 
-    pub fn get_system(&self, uid: &Entity) -> Option<&DynamicSystem> {
-        self.systems.get(uid)
+    pub fn get_system(&self, uid: Entity) -> Option<&DynamicSystem> {
+        self.systems.get(&uid)
     }
 
     pub fn add_system(
@@ -223,7 +219,7 @@ impl World {
             system(world);
             Ok(Vec::new())
         });
-        self.systems.insert(id.clone(), system);
+        self.systems.insert(id, system);
         if let Some(graph) = self.system_graphs.get_mut(&stage) {
             graph.add_system(id);
         } else {
@@ -321,7 +317,7 @@ impl LockedWorldHandle {
         world.add_resource(resource).unwrap();
     }
 
-    pub fn with_resource_id<F, R>(&self, id: &Entity, f: F) -> Option<R>
+    pub fn with_resource_id<F, R>(&self, id: Entity, f: F) -> Option<R>
     where
         F: FnOnce(Ref<'_>) -> R,
     {
@@ -330,7 +326,7 @@ impl LockedWorldHandle {
         Some(f(res))
     }
 
-    pub fn with_resource_id_mut<F, R>(&self, id: &Entity, f: F) -> Option<R>
+    pub fn with_resource_id_mut<F, R>(&self, id: Entity, f: F) -> Option<R>
     where
         F: FnOnce(Mut<'_>) -> R,
     {
@@ -367,7 +363,7 @@ impl LockedWorldHandle {
         world.create_entity()
     }
 
-    pub fn despawn(&self, entity: &Entity) -> Option<Vec<Data>> {
+    pub fn despawn(&self, entity: Entity) -> Option<Vec<Data>> {
         let mut world = self.write();
         world.despawn(entity)
     }
@@ -377,17 +373,17 @@ impl LockedWorldHandle {
         world.spawn(components)
     }
 
-    pub fn get_relatives_id(&self, entity: &Entity, relationship_type: u32) -> Option<Vec<Entity>> {
+    pub fn get_relatives_id(&self, entity: Entity, relationship_type: u32) -> Option<Vec<Entity>> {
         let world = self.read();
         world.get_relatives_id(entity, relationship_type)
     }
 
-    pub fn get_relatives<R: Relationship>(&self, entity: &Entity) -> Option<Vec<Entity>> {
+    pub fn get_relatives<R: Relationship>(&self, entity: Entity) -> Option<Vec<Entity>> {
         let world = self.read();
         world.get_relatives::<R>(entity)
     }
 
-    pub fn with_component<T: Atom, F, R>(&self, entity: &Entity, f: F) -> Option<R>
+    pub fn with_component<T: Atom, F, R>(&self, entity: Entity, f: F) -> Option<R>
     where
         F: FnOnce(Ref<'_>) -> R,
     {
@@ -396,7 +392,7 @@ impl LockedWorldHandle {
         Some(f(c))
     }
 
-    pub fn with_component_mut<T: Atom, F, R>(&self, entity: &Entity, f: F) -> Option<R>
+    pub fn with_component_mut<T: Atom, F, R>(&self, entity: Entity, f: F) -> Option<R>
     where
         F: FnOnce(Mut<'_>) -> R,
     {
@@ -405,12 +401,7 @@ impl LockedWorldHandle {
         Some(f(c))
     }
 
-    pub fn with_component_id<F, R>(
-        &self,
-        entity: &Entity,
-        component_type: &Entity,
-        f: F,
-    ) -> Option<R>
+    pub fn with_component_id<F, R>(&self, entity: Entity, component_type: Entity, f: F) -> Option<R>
     where
         F: FnOnce(Ref<'_>) -> R,
     {
@@ -421,8 +412,8 @@ impl LockedWorldHandle {
 
     pub fn with_component_id_mut<F, R>(
         &self,
-        entity: &Entity,
-        component_type: &Entity,
+        entity: Entity,
+        component_type: Entity,
         f: F,
     ) -> Option<R>
     where
@@ -433,12 +424,12 @@ impl LockedWorldHandle {
         Some(f(c))
     }
 
-    pub fn add_data(&self, entity: &Entity, data: impl IntoIterator<Item = Data>) -> Result<()> {
+    pub fn add_data(&self, entity: Entity, data: impl IntoIterator<Item = Data>) -> Result<()> {
         let mut world = self.write();
         world.add_data(entity, data)
     }
 
-    pub fn add<T: Bundle>(&self, entity: &Entity, component: T) -> Result<()> {
+    pub fn add<T: Bundle>(&self, entity: Entity, component: T) -> Result<()> {
         let mut world = self.write();
         world.add(entity, component)
     }
@@ -460,9 +451,9 @@ impl LockedWorldHandle {
 
     pub fn add_relative<R: Relationship>(
         &self,
-        add_to: &Entity,
+        add_to: Entity,
         relationship: R,
-        relative: &Entity,
+        relative: Entity,
     ) -> Result<()> {
         let mut world = self.write();
         world.add_relative(add_to, relationship, relative)

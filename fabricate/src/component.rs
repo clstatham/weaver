@@ -391,7 +391,7 @@ mod tests {
         assert_eq!(
             *world
                 .storage()
-                .get_component::<u32>(&e)
+                .get_component::<u32>(e)
                 .unwrap()
                 .as_ref::<u32>()
                 .unwrap(),

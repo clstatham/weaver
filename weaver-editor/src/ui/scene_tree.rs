@@ -7,36 +7,38 @@ use crate::{state::EditorState, TransformChild, TransformParent};
 pub struct NameTag(pub String);
 
 pub fn scene_tree_ui(world: &World, state: &mut EditorState, ui: &mut egui::Ui) {
-    egui::CollapsingHeader::new("World").show(ui, |ui| {
-        let q = world
-            .query()
-            .entity()
-            .with_dynamic(&Entity::new_wildcard::<BelongsToWorld>())
-            .unwrap()
-            .without_dynamic(&Entity::new_wildcard::<TransformChild>())
-            .unwrap()
-            .build();
-        for result in q.iter() {
-            let entity = result.entity().unwrap();
-            {
-                let name = entity
-                    .with_component_ref::<NameTag, _>(|tag| tag.0.clone())
-                    .or_else(|| entity.type_name())
-                    .unwrap_or_else(|| format!("{}", entity.id()));
-                scene_tree_ui_recurse(world, state, ui, entity, &name);
+    egui::CollapsingHeader::new("World")
+        .default_open(true)
+        .show(ui, |ui| {
+            let q = world
+                .query()
+                .entity()
+                .with_dynamic(Entity::new_wildcard::<BelongsToWorld>())
+                .unwrap()
+                .without_dynamic(Entity::new_wildcard::<TransformChild>())
+                .unwrap()
+                .build();
+            for result in q.iter() {
+                let entity = result.entity().unwrap();
+                {
+                    let name = entity
+                        .with_component_ref::<NameTag, _>(|tag| tag.0.clone())
+                        .or_else(|| entity.type_name())
+                        .unwrap_or_else(|| format!("{}", entity.id()));
+                    scene_tree_ui_recurse(world, state, ui, entity, &name);
+                }
             }
-        }
-    });
+        });
 }
 
 fn scene_tree_ui_recurse(
     world: &World,
     state: &mut EditorState,
     ui: &mut egui::Ui,
-    node: &Entity,
+    node: Entity,
     name: &str,
 ) {
-    let text = if state.selected_entity == Some(node.clone()) {
+    let text = if state.selected_entity == Some(node) {
         egui::RichText::new(name).strong().underline()
     } else {
         egui::RichText::new(name)
@@ -47,11 +49,19 @@ fn scene_tree_ui_recurse(
     header
         .show_header(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(text);
+                let selected = state.selected_entity == Some(node);
+                if ui
+                    .add(egui::Label::new(text).sense(egui::Sense::click_and_drag()))
+                    .clicked()
+                    && !selected
+                {
+                    state.selected_entity = Some(node);
+                    state.selected_component = None;
+                }
                 ui.with_layout(egui::Layout::right_to_left(Default::default()), |ui| {
                     if ui.button("Rename").clicked() {
                         state.entity_rename_buffer = name.to_string();
-                        state.entity_being_renamed = Some(node.clone());
+                        state.entity_being_renamed = Some(node);
                     }
                 });
             });
@@ -64,7 +74,7 @@ fn scene_tree_ui_recurse(
                         .with_component_ref::<NameTag, _>(|tag| tag.0.clone())
                         .or_else(|| child.type_name())
                         .unwrap_or_else(|| format!("{}", child.id()));
-                    scene_tree_ui_recurse(world, state, ui, &child, &name);
+                    scene_tree_ui_recurse(world, state, ui, child, &name);
                 }
             }
 
@@ -80,17 +90,17 @@ fn scene_tree_ui_recurse(
                     .type_name()
                     .unwrap_or_else(|| format!("[type {}]", ty.id()));
 
-                let name = if state.selected_component == Some(component.value_uid().clone()) {
+                let name = if state.selected_component == Some(component.value_uid()) {
                     egui::RichText::new(name).strong().underline()
                 } else {
                     egui::RichText::new(name)
                 };
-                let selected = state.selected_component == Some(component.value_uid().clone());
+                let selected = state.selected_component == Some(component.value_uid());
                 let header = egui::SelectableLabel::new(selected, name);
                 let response = ui.add(header);
                 if response.clicked() {
-                    state.selected_entity = Some(node.clone());
-                    state.selected_component = Some(component.value_uid().clone());
+                    state.selected_entity = Some(node);
+                    state.selected_component = Some(component.value_uid());
                 }
             }
         });

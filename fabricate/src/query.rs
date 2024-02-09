@@ -45,12 +45,12 @@ impl<'a> QueryBuilder<'a> {
     pub fn read<T: Atom>(mut self) -> Result<Self> {
         let id = T::type_uid();
         ensure!(
-            !self.access.contains(&QueryBuilderAccess::Write(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::Write(id)),
             "cannot read and write the same component in a query: {:?}",
             id
         );
         ensure!(
-            !self.access.contains(&QueryBuilderAccess::Read(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::Read(id)),
             "cannot read the same component twice in a query: {:?}",
             id
         );
@@ -62,12 +62,12 @@ impl<'a> QueryBuilder<'a> {
     pub fn write<T: Atom>(mut self) -> Result<Self> {
         let id = T::type_uid();
         ensure!(
-            !self.access.contains(&QueryBuilderAccess::Read(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::Read(id)),
             "cannot read and write the same component in a query: {:?}",
             id
         );
         ensure!(
-            !self.access.contains(&QueryBuilderAccess::Write(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::Write(id)),
             "cannot write the same component twice in a query: {:?}",
             id
         );
@@ -79,14 +79,12 @@ impl<'a> QueryBuilder<'a> {
     pub fn with<T: Atom>(mut self) -> Result<Self> {
         let id = T::type_uid();
         ensure!(
-            !self
-                .access
-                .contains(&QueryBuilderAccess::Without(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::Without(id)),
             "cannot include the same component twice in a query: {:?}",
             id
         );
         ensure!(
-            !self.access.contains(&QueryBuilderAccess::With(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::With(id)),
             "cannot include and exclude the same component in a query: {:?}",
             id
         );
@@ -98,14 +96,12 @@ impl<'a> QueryBuilder<'a> {
     pub fn without<T: Atom>(mut self) -> Result<Self> {
         let id = T::type_uid();
         ensure!(
-            !self.access.contains(&QueryBuilderAccess::With(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::With(id)),
             "cannot exclude the same component twice in a query: {:?}",
             id
         );
         ensure!(
-            !self
-                .access
-                .contains(&QueryBuilderAccess::Without(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::Without(id)),
             "cannot include and exclude the same component in a query: {:?}",
             id
         );
@@ -114,70 +110,66 @@ impl<'a> QueryBuilder<'a> {
     }
 
     /// Requests read access to a component for the query based on its type [`Uid`].
-    pub fn read_dynamic(mut self, id: &Entity) -> Result<Self> {
+    pub fn read_dynamic(mut self, id: Entity) -> Result<Self> {
         ensure!(
-            !self.access.contains(&QueryBuilderAccess::Write(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::Write(id)),
             "cannot read and write the same component in a query: {:?}",
             id
         );
         ensure!(
-            !self.access.contains(&QueryBuilderAccess::Read(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::Read(id)),
             "cannot read the same component twice in a query: {:?}",
             id
         );
-        self.access.push(QueryBuilderAccess::Read(id.clone()));
+        self.access.push(QueryBuilderAccess::Read(id));
         Ok(self)
     }
 
     /// Requests write access to a component for the query based on its type [`Uid`].
-    pub fn write_dynamic(mut self, id: &Entity) -> Result<Self> {
+    pub fn write_dynamic(mut self, id: Entity) -> Result<Self> {
         ensure!(
-            !self.access.contains(&QueryBuilderAccess::Read(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::Read(id)),
             "cannot read and write the same component in a query: {:?}",
             id
         );
         ensure!(
-            !self.access.contains(&QueryBuilderAccess::Write(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::Write(id)),
             "cannot write the same component twice in a query: {:?}",
             id
         );
-        self.access.push(QueryBuilderAccess::Write(id.clone()));
+        self.access.push(QueryBuilderAccess::Write(id));
         Ok(self)
     }
 
     /// Requests that the query only returns entities that have a component with the specified type id, without requiring access to the component.
-    pub fn with_dynamic(mut self, id: &Entity) -> Result<Self> {
+    pub fn with_dynamic(mut self, id: Entity) -> Result<Self> {
         ensure!(
-            !self
-                .access
-                .contains(&QueryBuilderAccess::Without(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::Without(id)),
             "cannot include the same component twice in a query: {:?}",
             id
         );
         ensure!(
-            !self.access.contains(&QueryBuilderAccess::With(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::With(id)),
             "cannot include and exclude the same component in a query: {:?}",
             id
         );
-        self.access.push(QueryBuilderAccess::With(id.clone()));
+        self.access.push(QueryBuilderAccess::With(id));
         Ok(self)
     }
 
     /// Requests that the query only returns entities that do not have a component with the specified type id.
-    pub fn without_dynamic(mut self, id: &Entity) -> Result<Self> {
+    pub fn without_dynamic(mut self, id: Entity) -> Result<Self> {
         ensure!(
-            !self.access.contains(&QueryBuilderAccess::With(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::With(id)),
             "cannot exclude the same component twice in a query: {:?}",
             id
         );
         ensure!(
-            !self
-                .access
-                .contains(&QueryBuilderAccess::Without(id.clone())),
+            !self.access.contains(&QueryBuilderAccess::Without(id)),
             "cannot include and exclude the same component in a query: {:?}",
             id
         );
-        self.access.push(QueryBuilderAccess::Without(id.clone()));
+        self.access.push(QueryBuilderAccess::Without(id));
         Ok(self)
     }
 
@@ -192,10 +184,10 @@ impl<'a> QueryBuilder<'a> {
 
         for access in self.access.iter() {
             match access {
-                QueryBuilderAccess::Read(id) => reads.push(id.clone()),
-                QueryBuilderAccess::Write(id) => writes.push(id.clone()),
-                QueryBuilderAccess::With(id) => with.push(id.clone()),
-                QueryBuilderAccess::Without(id) => without.push(id.clone()),
+                QueryBuilderAccess::Read(id) => reads.push(*id),
+                QueryBuilderAccess::Write(id) => writes.push(*id),
+                QueryBuilderAccess::With(id) => with.push(*id),
+                QueryBuilderAccess::Without(id) => without.push(*id),
                 QueryBuilderAccess::Entity => {}
             }
         }
@@ -216,7 +208,7 @@ impl<'a> QueryBuilder<'a> {
                 matches = false;
             }
             if matches {
-                entities.extend(archetype.entity_iter().cloned());
+                entities.extend(archetype.entity_iter());
             }
         }
         Query {
@@ -245,7 +237,7 @@ impl<'a> Query<'a> {
         }
     }
 
-    pub fn get(&self, entity: &Entity) -> Option<QueryResults> {
+    pub fn get(&self, entity: Entity) -> Option<QueryResults> {
         let archetype = self.world.storage().entity_archetype(entity)?;
 
         let mut data = Vec::new();
@@ -253,25 +245,25 @@ impl<'a> Query<'a> {
         for access in self.access.iter() {
             match access {
                 QueryBuilderAccess::Read(id) => {
-                    let component = archetype.get(id, entity)?;
+                    let component = archetype.get(*id, entity)?;
                     let proxy = Proxy {
-                        component_type: id.clone(),
+                        component_type: *id,
                         component,
-                        entity: entity.clone(),
+                        entity,
                     };
                     data.push(QueryItem::Proxy(proxy));
                 }
                 QueryBuilderAccess::Write(id) => {
-                    let component = archetype.get_mut(id, entity)?;
+                    let component = archetype.get_mut(*id, entity)?;
                     let proxy = ProxyMut {
-                        component_type: id.clone(),
+                        component_type: *id,
                         component,
-                        entity: entity.clone(),
+                        entity,
                     };
                     data.push(QueryItem::ProxyMut(proxy));
                 }
                 QueryBuilderAccess::Entity => {
-                    data.push(QueryItem::Entity(entity.clone()));
+                    data.push(QueryItem::Entity(entity));
                 }
                 QueryBuilderAccess::With(_) => {}
                 QueryBuilderAccess::Without(_) => {}
@@ -303,8 +295,8 @@ impl<'a> Proxy<'a> {
         self.component.as_dynamic()?.as_ref::<T>()
     }
 
-    pub fn entity(&self) -> &Entity {
-        &self.entity
+    pub fn entity(&self) -> Entity {
+        self.entity
     }
 }
 
@@ -337,8 +329,8 @@ impl<'a> ProxyMut<'a> {
         self.component.as_dynamic_mut()?.as_mut::<T>()
     }
 
-    pub fn entity(&self) -> &Entity {
-        &self.entity
+    pub fn entity(&self) -> Entity {
+        self.entity
     }
 }
 
@@ -353,11 +345,11 @@ pub enum QueryItem<'a> {
 
 impl<'a> QueryItem<'a> {
     /// Returns the entity for the query item.
-    pub fn entity(&self) -> &Entity {
+    pub fn entity(&self) -> Entity {
         match self {
-            QueryItem::Entity(entity) => entity,
-            QueryItem::Proxy(data) => &data.entity,
-            QueryItem::ProxyMut(data) => &data.entity,
+            QueryItem::Entity(entity) => *entity,
+            QueryItem::Proxy(data) => data.entity,
+            QueryItem::ProxyMut(data) => data.entity,
         }
     }
 
@@ -400,10 +392,10 @@ impl<'a> QueryItem<'a> {
 
     /// Returns the [`Entity`] representing the type of the component in the query item.
     /// Returns [`None`] if the query item does not contain a component.
-    pub fn get_type(&self) -> Option<&Entity> {
+    pub fn get_type(&self) -> Option<Entity> {
         match self {
-            QueryItem::Proxy(data) => Some(&data.component_type),
-            QueryItem::ProxyMut(data) => Some(&data.component_type),
+            QueryItem::Proxy(data) => Some(data.component_type),
+            QueryItem::ProxyMut(data) => Some(data.component_type),
             _ => None,
         }
     }
@@ -422,7 +414,7 @@ impl<'a> Debug for QueryItem<'a> {
 pub struct QueryResults<'a>(Vec<QueryItem<'a>>);
 
 impl<'a> QueryResults<'a> {
-    pub fn entity(&self) -> Option<&Entity> {
+    pub fn entity(&self) -> Option<Entity> {
         self.0.first().map(|item| item.entity())
     }
 
@@ -467,7 +459,7 @@ impl<'a> Iterator for QueryIter<'a> {
             return None;
         }
 
-        let entity = &self.entities[self.index];
+        let entity = self.entities[self.index];
 
         if entity.is_dead() {
             self.index += 1;
@@ -481,23 +473,23 @@ impl<'a> Iterator for QueryIter<'a> {
         for access in self.access.iter() {
             match access {
                 QueryBuilderAccess::Read(id) => {
-                    let component = archetype.get(id, entity).unwrap();
+                    let component = archetype.get(*id, entity).unwrap();
                     data.push(QueryItem::Proxy(Proxy {
-                        component_type: id.clone(),
+                        component_type: *id,
                         component,
-                        entity: entity.clone(),
+                        entity,
                     }))
                 }
                 QueryBuilderAccess::Write(id) => {
-                    let component = archetype.get_mut(id, entity).unwrap();
+                    let component = archetype.get_mut(*id, entity).unwrap();
                     data.push(QueryItem::ProxyMut(ProxyMut {
-                        component_type: id.clone(),
+                        component_type: *id,
                         component,
-                        entity: entity.clone(),
+                        entity,
                     }))
                 }
                 QueryBuilderAccess::Entity => {
-                    data.push(QueryItem::Entity(entity.clone()));
+                    data.push(QueryItem::Entity(entity));
                 }
                 QueryBuilderAccess::With(_) => {}
                 QueryBuilderAccess::Without(_) => {}
@@ -534,7 +526,7 @@ mod tests {
         let mut world = world_handle.write();
 
         let entity1 = world.spawn((Position { x: 0.0, y: 0.0 },)).unwrap();
-        world.add(&entity1, Velocity { x: 1.0, y: 1.0 }).unwrap();
+        world.add(entity1, Velocity { x: 1.0, y: 1.0 }).unwrap();
 
         let entity2 = world.spawn((Position { x: 0.0, y: 0.0 },)).unwrap();
 
@@ -544,8 +536,8 @@ mod tests {
 
         assert_eq!(iter.count(), 2);
 
-        let e1 = query.get(&entity1).unwrap().into_inner();
-        let e2 = query.get(&entity2).unwrap().into_inner();
+        let e1 = query.get(entity1).unwrap().into_inner();
+        let e2 = query.get(entity2).unwrap().into_inner();
 
         assert_eq!(e1.len(), 1);
         assert_eq!(e2.len(), 1);
@@ -556,8 +548,8 @@ mod tests {
         let e1_ty = e1.type_uid();
         let e2_ty = e2.type_uid();
 
-        assert_eq!(e1_ty, &Position::type_uid());
-        assert_eq!(e2_ty, &Position::type_uid());
+        assert_eq!(e1_ty, Position::type_uid());
+        assert_eq!(e2_ty, Position::type_uid());
     }
 
     #[test]
@@ -567,7 +559,7 @@ mod tests {
         let mut world = world_handle.write();
 
         let entity1 = world.spawn((Position { x: 0.0, y: 0.0 },)).unwrap();
-        world.add(&entity1, Velocity { x: 1.0, y: 1.0 }).unwrap();
+        world.add(entity1, Velocity { x: 1.0, y: 1.0 }).unwrap();
 
         let entity2 = world.spawn((Position { x: 0.0, y: 0.0 },)).unwrap();
 
@@ -577,8 +569,8 @@ mod tests {
 
         assert_eq!(iter.count(), 2);
 
-        let mut e1 = query.get(&entity1).unwrap().into_inner();
-        let mut e2 = query.get(&entity2).unwrap().into_inner();
+        let mut e1 = query.get(entity1).unwrap().into_inner();
+        let mut e2 = query.get(entity2).unwrap().into_inner();
 
         assert_eq!(e1.len(), 1);
         assert_eq!(e2.len(), 1);
@@ -589,7 +581,7 @@ mod tests {
         let e1_ty = e1.type_uid();
         let e2_ty = e2.type_uid();
 
-        assert_eq!(e1_ty, &Position::type_uid());
-        assert_eq!(e2_ty, &Position::type_uid());
+        assert_eq!(e1_ty, Position::type_uid());
+        assert_eq!(e2_ty, Position::type_uid());
     }
 }

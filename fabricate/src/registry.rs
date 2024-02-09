@@ -193,7 +193,7 @@ impl Display for EntityMeta {
 
 /// A unique identifier for a value.
 /// This can be either a primitive value (e.g. `42`), or a dynamic/composite value (e.g. a struct instance).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(C)]
 pub struct Entity(u32, EntityMeta);
 
@@ -214,7 +214,7 @@ impl Entity {
         global_registry().current_generation(uid)
     }
 
-    pub fn new_relationship(relation: &Entity, relative: &Entity) -> Self {
+    pub fn new_relationship(relation: Entity, relative: Entity) -> Self {
         log::trace!("Creating relationship: ({}, {})", relation, relative);
         Self(relation.id(), EntityMeta::new_relative(relative.id()))
     }
@@ -231,7 +231,7 @@ impl Entity {
         Self::new_wildcard_id(T::static_type_uid().id())
     }
 
-    pub fn allocate(ty: Option<&Entity>) -> Self {
+    pub fn allocate(ty: Option<Entity>) -> Self {
         let this = if let Some(ty) = ty {
             global_registry().allocate_entity_with_type(ty)
         } else {
@@ -251,39 +251,39 @@ impl Entity {
         global_registry().get_named_type(name)
     }
 
-    pub const fn as_usize(&self) -> usize {
+    pub const fn as_usize(self) -> usize {
         self.0 as usize
     }
 
-    pub fn is_placeholder(&self) -> bool {
+    pub fn is_placeholder(self) -> bool {
         self.id() == Uid::PLACEHOLDER.as_u32()
     }
 
-    pub const fn is_wildcard(&self) -> bool {
+    pub const fn is_wildcard(self) -> bool {
         self.meta().is_wildcard()
     }
 
-    pub const fn id(&self) -> u32 {
+    pub const fn id(self) -> u32 {
         self.0
     }
 
-    pub const fn meta(&self) -> EntityMeta {
+    pub const fn meta(self) -> EntityMeta {
         self.1
     }
 
-    pub const fn is_relative(&self) -> bool {
+    pub const fn is_relative(self) -> bool {
         self.meta().is_relative()
     }
 
-    pub const fn is_generative(&self) -> bool {
+    pub const fn is_generative(self) -> bool {
         self.meta().is_generation()
     }
 
-    pub const fn is_type(&self) -> bool {
+    pub const fn is_type(self) -> bool {
         self.meta().is_type()
     }
 
-    pub const fn generation(&self) -> Option<u32> {
+    pub const fn generation(self) -> Option<u32> {
         if self.meta().is_generation() {
             Some(self.meta().value())
         } else {
@@ -291,7 +291,7 @@ impl Entity {
         }
     }
 
-    pub const fn associated_value_id(&self) -> Option<u32> {
+    pub const fn associated_value_id(self) -> Option<u32> {
         if self.meta().is_relative() {
             Some(self.meta().value())
         } else {
@@ -299,24 +299,24 @@ impl Entity {
         }
     }
 
-    pub fn is_alive(&self) -> bool {
+    pub fn is_alive(self) -> bool {
         self.is_generative()
             && global_registry().value_generations.read().get(&self.id())
                 == Some(&self.meta().value())
     }
 
-    pub fn is_dead(&self) -> bool {
+    pub fn is_dead(self) -> bool {
         !self.is_alive()
     }
 
-    pub fn kill(&self) {
+    pub fn kill(self) {
         if self.is_generative() {
             log::trace!("Killing value: {}", self);
             global_registry().delete_value(self);
         }
     }
 
-    pub fn check_placeholder(&self) -> Option<&Self> {
+    pub fn check_placeholder(self) -> Option<Self> {
         if self.is_placeholder() {
             None
         } else {
@@ -324,32 +324,32 @@ impl Entity {
         }
     }
 
-    pub fn type_id(&self) -> Option<Entity> {
+    pub fn type_id(self) -> Option<Entity> {
         if self.is_type() {
-            Some(self.clone())
+            Some(self)
         } else {
             global_registry().get_value_type(self)
         }
     }
 
-    pub fn register_as_type(&self, typ: &Entity) {
+    pub fn register_as_type(self, typ: Entity) {
         debug_assert!(!self.is_type());
         debug_assert!(typ.is_type());
         global_registry().register_value_as_type(self, typ);
     }
 
-    pub fn type_name(&self) -> Option<String> {
+    pub fn type_name(self) -> Option<String> {
         self.type_id()
             .and_then(|uid| global_registry().get_type_name(uid))
     }
 
-    pub fn register_type_name(&self, name: &str) {
+    pub fn register_type_name(self, name: &str) {
         if let Some(ty) = self.type_id() {
-            global_registry().register_type_name(&ty, name);
+            global_registry().register_type_name(ty, name);
         }
     }
 
-    pub fn with_world<F, R>(&self, f: F) -> R
+    pub fn with_world<F, R>(self, f: F) -> R
     where
         F: FnOnce(&World) -> R,
     {
@@ -357,56 +357,56 @@ impl Entity {
         f(&world)
     }
 
-    pub fn defer<F, R>(&self, f: F) -> Result<R>
+    pub fn defer<F, R>(self, f: F) -> Result<R>
     where
         F: FnOnce(&World, &mut Commands) -> R,
     {
         get_world().defer(f)
     }
 
-    pub fn with_ref<F, R>(&self, f: F) -> Option<R>
+    pub fn with_ref<F, R>(self, f: F) -> Option<R>
     where
         F: FnOnce(Ref<'_>) -> R,
     {
         self.with_world(|world| {
             let storage = world.storage();
-            let r = storage.find(&self.type_id()?, self)?;
+            let r = storage.find(self.type_id()?, self)?;
             Some(f(r))
         })
     }
 
-    pub fn with_mut<F, R>(&self, f: F) -> Option<R>
+    pub fn with_mut<F, R>(self, f: F) -> Option<R>
     where
         F: FnOnce(Mut<'_>) -> R,
     {
         self.with_world(|world| {
             let storage = world.storage();
-            let r = storage.find_mut(&self.type_id()?, self)?;
+            let r = storage.find_mut(self.type_id()?, self)?;
             Some(f(r))
         })
     }
 
-    pub fn has<T: Atom>(&self) -> bool {
+    pub fn has<T: Atom>(self) -> bool {
         self.with_world(|world| world.has::<T>(self))
     }
 
-    pub fn with_component_ref<T: Atom, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+    pub fn with_component_ref<T: Atom, R>(self, f: impl FnOnce(&T) -> R) -> Option<R> {
         self.with_world(|world| {
-            let r = world.get(self, &T::type_uid())?;
+            let r = world.get(self, T::type_uid())?;
             let r = r.as_ref::<T>()?;
             Some(f(r))
         })
     }
 
-    pub fn with_component_mut<T: Atom, R>(&self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+    pub fn with_component_mut<T: Atom, R>(self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
         self.with_world(|world| {
-            let mut r = world.get_mut(self, &T::type_uid())?;
+            let mut r = world.get_mut(self, T::type_uid())?;
             let r = r.as_mut::<T>()?;
             Some(f(r))
         })
     }
 
-    pub fn with_relatives<F, R>(&self, relationship_type: u32, f: F) -> Option<R>
+    pub fn with_relatives<F, R>(self, relationship_type: u32, f: F) -> Option<R>
     where
         F: FnOnce(&[Entity]) -> R,
     {
@@ -414,7 +414,7 @@ impl Entity {
         Some(f(&rels))
     }
 
-    pub fn with_all_relatives<F, R>(&self, f: F) -> Option<R>
+    pub fn with_all_relatives<F, R>(self, f: F) -> Option<R>
     where
         F: FnOnce(&[(u32, Entity)]) -> R,
     {
@@ -422,7 +422,7 @@ impl Entity {
         Some(f(&rels))
     }
 
-    pub fn add_relative<R: Relationship>(&self, relationship: R, relative: &Entity) -> Result<()> {
+    pub fn add_relative<R: Relationship>(self, relationship: R, relative: Entity) -> Result<()> {
         self.defer(|_, commands| {
             commands.add_components(self, vec![relationship.into_relationship_data(relative)?]);
             Ok::<(), anyhow::Error>(())
@@ -430,7 +430,7 @@ impl Entity {
         Ok(())
     }
 
-    pub fn add<T: Bundle>(&self, bundle: T) -> Result<()> {
+    pub fn add_components<T: Bundle>(self, bundle: T) -> Result<()> {
         let data = bundle.into_data_vec();
         self.defer(|_, commands| {
             commands.add_components(self, data);
@@ -591,26 +591,22 @@ impl Registry {
         let uid = self.next_id.fetch_add(1, Ordering::Relaxed);
         let uid = Entity::new_type(uid);
         if let Some(name) = name {
-            self.register_type_name(&uid, name);
+            self.register_type_name(uid, name);
         }
         uid
     }
 
     /// Registers the given value as the given type.
-    fn register_value_as_type(&self, value: &Entity, value_type: &Entity) {
-        self.value_types
-            .write()
-            .insert(value.clone(), value_type.clone());
+    fn register_value_as_type(&self, value: Entity, value_type: Entity) {
+        self.value_types.write().insert(value, value_type);
     }
 
     /// Associates the given unique identifier with the given name.
     ///
     /// WARNING: This will overwrite any existing unique identifier for the given name, and vice versa.
-    fn register_type_name(&self, typ: &Entity, name: &str) {
-        self.named_types
-            .write()
-            .insert(name.to_owned(), typ.clone());
-        self.type_names.write().insert(typ.clone(), name.to_owned());
+    fn register_type_name(&self, typ: Entity, name: &str) {
+        self.named_types.write().insert(name.to_owned(), typ);
+        self.type_names.write().insert(typ, name.to_owned());
     }
 
     /// Registers the given type as a static type with the given name.
@@ -623,7 +619,7 @@ impl Registry {
             return uid;
         }
         let uid = self.allocate_type(Some(name));
-        self.static_types.write().insert(id, uid.clone());
+        self.static_types.write().insert(id, uid);
         uid
     }
 
@@ -633,7 +629,7 @@ impl Registry {
             return uid;
         }
         let uid = self.allocate_type(None);
-        self.static_types.write().insert(id, uid.clone());
+        self.static_types.write().insert(id, uid);
         uid
     }
 
@@ -669,13 +665,13 @@ impl Registry {
         Entity::with_generation(uid, 0)
     }
 
-    fn allocate_entity_with_type(&self, value_type: &Entity) -> Entity {
+    fn allocate_entity_with_type(&self, value_type: Entity) -> Entity {
         let uid = self.allocate_generative_entity();
-        self.register_value_as_type(&uid, value_type);
+        self.register_value_as_type(uid, value_type);
         uid
     }
 
-    fn delete_value(&self, uid: &Entity) {
+    fn delete_value(&self, uid: Entity) {
         if !self.dead.write().contains(&uid.id()) {
             self.dead.write().insert(uid.id(), ());
             if let Some(gen) = self.value_generations.write().get_mut(&uid.id()) {
@@ -688,8 +684,8 @@ impl Registry {
     }
 
     /// Returns the [`Entity`] of the type that the given [`ValueUid`] is associated with, if it exists.
-    fn get_value_type(&self, uid: &Entity) -> Option<Entity> {
-        self.value_types.read().get(uid).cloned()
+    fn get_value_type(&self, uid: Entity) -> Option<Entity> {
+        self.value_types.read().get(&uid).cloned()
     }
 
     fn allocate(&self) -> Uid {
@@ -765,12 +761,12 @@ mod tests {
         let bar = registry.get_or_register_static_type::<u64>();
         let baz = registry.get_or_register_static_type::<u128>();
 
-        let foo_value = registry.allocate_entity_with_type(&foo);
-        let bar_value = registry.allocate_entity_with_type(&bar);
-        let baz_value = registry.allocate_entity_with_type(&baz);
+        let foo_value = registry.allocate_entity_with_type(foo);
+        let bar_value = registry.allocate_entity_with_type(bar);
+        let baz_value = registry.allocate_entity_with_type(baz);
 
-        assert_eq!(registry.get_value_type(&foo_value), Some(foo));
-        assert_eq!(registry.get_value_type(&bar_value), Some(bar));
-        assert_eq!(registry.get_value_type(&baz_value), Some(baz));
+        assert_eq!(registry.get_value_type(foo_value), Some(foo));
+        assert_eq!(registry.get_value_type(bar_value), Some(bar));
+        assert_eq!(registry.get_value_type(baz_value), Some(baz));
     }
 }

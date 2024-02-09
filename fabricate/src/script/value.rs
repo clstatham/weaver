@@ -119,16 +119,16 @@ impl Value {
         }
     }
 
-    pub fn as_resource(&self) -> Option<&Entity> {
+    pub fn as_resource(&self) -> Option<Entity> {
         match self {
-            Value::Resource(r) => Some(r),
+            Value::Resource(r) => Some(*r),
             _ => None,
         }
     }
 
     pub fn value_uid(&self, env: &RuntimeEnv) -> Result<Entity> {
         match self {
-            Value::Data(d) => Ok(d.value_uid().clone()),
+            Value::Data(d) => Ok(d.value_uid()),
             Value::Bool(b) => {
                 let data = env.world.write().create_data(*b)?;
                 Ok(data)
@@ -158,7 +158,7 @@ impl Value {
             Value::Int(i) => Value::Int(*i),
             Value::Float(f) => Value::Float(*f),
             Value::String(s) => Value::String(s.clone()),
-            Value::Resource(r) => Value::Resource(r.clone()),
+            Value::Resource(r) => Value::Resource(*r),
             Value::Query(q) => Value::Query(q.clone()),
             Value::Void => Value::Void,
         }

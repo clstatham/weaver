@@ -291,10 +291,12 @@ impl InterpreterContext {
                     for (_, q) in qs.iter() {
                         match q {
                             QueryBuilderAccess::Entity => query = query.entity(),
-                            QueryBuilderAccess::Read(id) => query = query.read_dynamic(id)?,
-                            QueryBuilderAccess::Write(id) => query = query.write_dynamic(id)?,
-                            QueryBuilderAccess::With(id) => query = query.with_dynamic(id)?,
-                            QueryBuilderAccess::Without(id) => query = query.without_dynamic(id)?,
+                            QueryBuilderAccess::Read(id) => query = query.read_dynamic(*id)?,
+                            QueryBuilderAccess::Write(id) => query = query.write_dynamic(*id)?,
+                            QueryBuilderAccess::With(id) => query = query.with_dynamic(*id)?,
+                            QueryBuilderAccess::Without(id) => {
+                                query = query.without_dynamic(*id)?
+                            }
                         }
                     }
                     let query = query.build();
@@ -501,7 +503,7 @@ impl InterpreterContext {
                         let lhs_data = lhs_data.read();
                         let data = match &*lhs_data {
                             Value::Resource(res) => {
-                                let res = world.get_resource(res).ok_or_else(|| {
+                                let res = world.get_resource(*res).ok_or_else(|| {
                                     runtime_error!(
                                         lhs.span,
                                         format!("Invalid resource: {}", lhs_val.display(env))
@@ -572,7 +574,7 @@ impl InterpreterContext {
                         let lhs_data = lhs_data.write();
                         let data = match &*lhs_data {
                             Value::Resource(res) => {
-                                let res = world.get_resource(res).ok_or_else(|| {
+                                let res = world.get_resource(*res).ok_or_else(|| {
                                     runtime_error!(
                                         lhs.span,
                                         format!("Invalid resource: {}", lhs_val.display(env))

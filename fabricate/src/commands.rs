@@ -31,8 +31,8 @@ impl Commands {
         self.enqueue(Command::DespawnEntity(entity));
     }
 
-    pub fn add_components(&mut self, entity: &Entity, data: Vec<Data>) {
-        self.enqueue(Command::AddComponents(entity.clone(), data));
+    pub fn add_components(&mut self, entity: Entity, data: Vec<Data>) {
+        self.enqueue(Command::AddComponents(entity, data));
     }
 
     pub fn enqueue(&mut self, command: Command) {
@@ -50,10 +50,10 @@ impl Commands {
         while let Some(command) = self.dequeue() {
             match command {
                 Command::DespawnEntity(entity) => {
-                    world.despawn(&entity);
+                    world.despawn(entity);
                 }
                 Command::AddComponents(entity, data) => {
-                    world.add_data(&entity, data)?;
+                    world.add_data(entity, data)?;
                 }
             }
         }

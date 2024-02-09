@@ -7,7 +7,7 @@ use crate::{
 };
 
 pub trait Relationship: Atom {
-    fn into_relationship_data(self, relative: &Entity) -> Result<Data>
+    fn into_relationship_data(self, relative: Entity) -> Result<Data>
     where
         Self: Sized,
     {
