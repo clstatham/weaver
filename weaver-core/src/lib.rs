@@ -29,7 +29,7 @@ pub mod prelude {
         asset_server::AssetServer,
         camera::{Camera, FlyCameraController},
         color::Color,
-        doodads::{Cone, Cube, Doodad, Doodads},
+        doodads::{Cone, Cube, Doodad, Doodads, Line},
         geom::{Aabb, BoundingSphere, Ray, Rect},
         input::{Input, KeyCode, MouseButton},
         light::{DirectionalLight, PointLight},
@@ -55,6 +55,7 @@ pub(crate) fn register_names() {
     Color::register_static_name("Color");
     Cone::register_static_name("Cone");
     Cube::register_static_name("Cube");
+    Line::register_static_name("Line");
     DirectionalLight::register_static_name("DirectionalLight");
     Doodad::register_static_name("Doodad");
     Doodads::register_static_name("Doodads");

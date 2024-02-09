@@ -295,6 +295,10 @@ impl Aabb {
         (self.min + self.max) / 2.0
     }
 
+    pub fn size(&self) -> glam::Vec3 {
+        self.max - self.min
+    }
+
     pub fn transformed(&self, transform: GlobalTransform) -> Self {
         let transform = transform.matrix;
         let points = [

@@ -2,7 +2,7 @@ use fabricate::{lock::SharedLock, prelude::Atom};
 
 use crate::color::Color;
 
-pub const MAX_DOODADS: usize = 100;
+pub const MAX_DOODADS: usize = 1024;
 
 #[derive(Default, Clone, Atom)]
 pub struct Doodads {
@@ -28,7 +28,7 @@ impl Doodads {
 
     pub fn push(&mut self, doodad: Doodad) {
         let mut doodads = self.doodads.write();
-        if !self.locked && doodads.len() < MAX_DOODADS {
+        if !self.locked {
             doodads.push(doodad);
         }
     }
@@ -36,9 +36,23 @@ impl Doodads {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Doodad {
+    Line(Line),
     Cube(Cube),
     WireCube(Cube),
     Cone(Cone),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Line {
+    pub start: glam::Vec3,
+    pub end: glam::Vec3,
+    pub color: Color,
+}
+
+impl Line {
+    pub const fn new(start: glam::Vec3, end: glam::Vec3, color: Color) -> Self {
+        Self { start, end, color }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -50,7 +64,7 @@ pub struct Cube {
 }
 
 impl Cube {
-    pub fn new(
+    pub const fn new(
         position: glam::Vec3,
         rotation: glam::Quat,
         scale: glam::Vec3,
@@ -85,7 +99,7 @@ pub struct Cone {
 }
 
 impl Cone {
-    pub fn new(
+    pub const fn new(
         position: glam::Vec3,
         rotation: glam::Quat,
         scale: glam::Vec3,

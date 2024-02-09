@@ -40,6 +40,7 @@ fn main() -> anyhow::Result<()> {
 
     app.add_system_to_stage(ui::EditorStateUi, SystemStage::Ui);
 
+    app.add_system_to_stage(DrawEditorDoodads, SystemStage::PreRender);
     app.add_system_to_stage(EditorRender, SystemStage::Render);
 
     app.add_script("assets/scripts/editor/main.loom");
@@ -280,5 +281,62 @@ fn update_transforms_recurse(world: &World, entity: &Entity, parent_global: Glob
         for child in children {
             update_transforms_recurse(world, &child, global);
         }
+    }
+}
+
+pub struct DrawEditorDoodads;
+
+impl System for DrawEditorDoodads {
+    fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
+        let world = world.read();
+        let mut doodads = world.write_resource::<Doodads>().unwrap();
+        let doodads = doodads.as_mut::<Doodads>().unwrap();
+
+        let gray = Color::new(0.5, 0.5, 0.5, 1.0);
+
+        let grid_size = 100;
+
+        for i in -grid_size..=grid_size {
+            doodads.push(Doodad::Line(Line::new(
+                Vec3::new(-grid_size as f32, 0.0, i as f32),
+                Vec3::new(grid_size as f32, 0.0, i as f32),
+                gray,
+            )));
+            doodads.push(Doodad::Line(Line::new(
+                Vec3::new(i as f32, 0.0, -grid_size as f32),
+                Vec3::new(i as f32, 0.0, grid_size as f32),
+                gray,
+            )));
+        }
+
+        let state = world.read_resource::<EditorState>().unwrap();
+        let state = state.as_ref::<EditorState>().unwrap();
+
+        if let Some(ref selected) = state.selected_entity {
+            let transform = selected.with_component_ref::<GlobalTransform, _>(|t| *t);
+            let aabb = selected.with_component_ref::<Mesh, _>(|m| m.aabb());
+            if let Some((transform, aabb)) = transform.zip(aabb) {
+                let aabb = aabb.transformed(transform);
+                let position = aabb.center();
+                let scale = aabb.size();
+                let color = Color::new(0.0, 1.0, 0.0, 1.0);
+                doodads.push(Doodad::WireCube(Cube::new(
+                    position,
+                    Quat::IDENTITY,
+                    scale,
+                    color,
+                )));
+            }
+        }
+
+        Ok(vec![])
+    }
+
+    fn reads(&self) -> Vec<Entity> {
+        vec![]
+    }
+
+    fn writes(&self) -> Vec<Entity> {
+        vec![Renderer::static_type_uid(), Doodads::static_type_uid()]
     }
 }
