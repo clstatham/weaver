@@ -74,9 +74,7 @@ impl SystemGraph {
     pub fn run(&self, world: LockedWorldHandle) {
         let orphans = self.graph.orphans();
         for node in self.graph.bfs(orphans).unwrap() {
-            let world_lock = world.read();
-            let system = world_lock.get_system(*node).unwrap().clone();
-            drop(world_lock);
+            let system = world.with_system(*node, |sys| sys.clone()).unwrap();
             system.run(world.clone(), &[]).unwrap();
         }
     }

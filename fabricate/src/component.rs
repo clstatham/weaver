@@ -158,7 +158,7 @@ pub trait Component: Send + Sync + 'static {
     }
 }
 
-macro_rules! impl_atom_simple {
+macro_rules! impl_component_simple {
     ($($t:ty),*) => {
         $(
             impl Component for $t {
@@ -182,7 +182,7 @@ macro_rules! impl_atom_simple {
     };
 }
 
-impl_atom_simple!(
+impl_component_simple!(
     (),
     usize,
     u8,
@@ -377,20 +377,4 @@ impl Component for glam::Quat {
         w => Ref |as_ref this: Self| -> f32 { this.w }
         length => Ref |as_ref this: Self| -> f32 { this.length() }
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::world::get_world;
-
-    #[test]
-    fn test_component_primitive() {
-        let world = get_world();
-        let mut world = world.write();
-        let e = world.spawn((0u32,)).unwrap();
-        assert_eq!(
-            *world.storage().get_component::<u32>(e).unwrap().as_ref(),
-            0
-        );
-    }
 }

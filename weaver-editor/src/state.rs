@@ -47,7 +47,7 @@ impl EditorAction for RenameEntity {
     fn end(&mut self, _state: &mut EditorState) -> anyhow::Result<()> {
         if self.entity.has::<NameTag>() {
             self.entity
-                .with_component_mut::<NameTag, _>(|tag| tag.0 = self.new_name.clone());
+                .with_component_mut::<NameTag, _>(|mut tag| tag.0 = self.new_name.clone());
         } else {
             self.entity.add(NameTag(self.new_name.clone()))?;
         }
@@ -57,7 +57,7 @@ impl EditorAction for RenameEntity {
     fn undo(&mut self, _state: &mut EditorState) -> anyhow::Result<()> {
         if self.entity.has::<NameTag>() {
             self.entity
-                .with_component_mut::<NameTag, _>(|tag| tag.0 = self.old_name.clone());
+                .with_component_mut::<NameTag, _>(|mut tag| tag.0 = self.old_name.clone());
         } else {
             self.entity.add(NameTag(self.old_name.clone()))?;
         }

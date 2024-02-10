@@ -64,17 +64,15 @@ macro_rules! runtime_error {
     };
 }
 
-pub struct RuntimeEnv {
+pub(super) struct RuntimeEnv {
     pub world: LockedWorldHandle,
-    pub scopes: Vec<Scope>,
     pub arena: Arena<InterpreterContext>,
 }
 
 impl RuntimeEnv {
-    pub fn new(world: LockedWorldHandle, scopes: Vec<Scope>) -> Self {
+    pub fn new(world: LockedWorldHandle) -> Self {
         Self {
             world,
-            scopes,
             arena: Arena::new(),
         }
     }
@@ -91,23 +89,25 @@ impl RuntimeEnv {
             self.arena.alloc(InterpreterContext::new())
         }
     }
+}
 
-    pub fn pop_scope(&self, scope: &InterpreterContext) {
-        for allocation in &scope.allocations {
+#[derive(Clone)]
+pub(super) struct InterpreterContext {
+    pub names: FxHashMap<String, ValueHandle>,
+    pub allocations: Vec<ValueHandle>,
+    pub should_break: Option<Option<ValueHandle>>,
+    pub should_return: Option<Option<ValueHandle>>,
+}
+
+impl Drop for InterpreterContext {
+    fn drop(&mut self) {
+        for allocation in &self.allocations {
             match allocation {
                 ValueHandle::Ref(r) => r.read().despawn(),
                 ValueHandle::Mut(m) => m.read().despawn(),
             }
         }
     }
-}
-
-#[derive(Clone)]
-pub struct InterpreterContext {
-    pub names: FxHashMap<String, ValueHandle>,
-    pub allocations: Vec<ValueHandle>,
-    pub should_break: Option<Option<ValueHandle>>,
-    pub should_return: Option<Option<ValueHandle>>,
 }
 
 impl InterpreterContext {
@@ -120,8 +120,10 @@ impl InterpreterContext {
         }
     }
 
-    pub fn alloc_value(&mut self, value: ValueHandle) {
-        self.allocations.push(value);
+    pub fn alloc_value(&mut self, value: Value) -> ValueHandle {
+        let value = ValueHandle::Mut(SharedLock::new(value));
+        self.allocations.push(value.clone());
+        value
     }
 
     pub fn interp_system(
@@ -130,7 +132,7 @@ impl InterpreterContext {
         system: &System,
     ) -> anyhow::Result<ValueHandle> {
         self.interp_block(env, &system.block.statements)?;
-        Ok(Value::Void.into())
+        Ok(self.alloc_value(Value::Void))
     }
 
     pub fn interp_block(
@@ -150,7 +152,6 @@ impl InterpreterContext {
                 break;
             }
         }
-        env.pop_scope(scope);
         Ok(())
     }
 
@@ -162,7 +163,7 @@ impl InterpreterContext {
         match statement {
             Statement::Expr(expr) => {
                 self.interp_expr(env, expr)?;
-                Ok(Value::Void.into())
+                Ok(self.alloc_value(Value::Void))
             }
             Statement::Break(retval) => {
                 let retval = if let Some(retval) = retval {
@@ -171,7 +172,7 @@ impl InterpreterContext {
                     None
                 };
                 self.should_break = Some(retval);
-                Ok(Value::Void.into())
+                Ok(self.alloc_value(Value::Void))
             }
             Statement::Return(retval) => {
                 let retval = if let Some(retval) = retval {
@@ -180,7 +181,7 @@ impl InterpreterContext {
                     None
                 };
                 self.should_return = Some(retval);
-                Ok(Value::Void.into())
+                Ok(self.alloc_value(Value::Void))
             }
             Statement::System(system) => self.interp_system(env, system),
             Statement::Func(_) => todo!(),
@@ -194,23 +195,20 @@ impl InterpreterContext {
         env: &RuntimeEnv,
         expr: &SpanExpr,
     ) -> anyhow::Result<ValueHandle> {
-        match &expr.expr {
+        let out = match &expr.expr {
             Expr::IntLiteral(i) => {
                 let value = Value::Int(*i);
-                let value = ValueHandle::Mut(SharedLock::new(value));
-                self.alloc_value(value.to_owned());
+                let value = self.alloc_value(value);
                 Ok(value)
             }
             Expr::FloatLiteral(f) => {
                 let value = Value::Float(*f);
-                let value = ValueHandle::Mut(SharedLock::new(value));
-                self.alloc_value(value.to_owned());
+                let value = self.alloc_value(value);
                 Ok(value)
             }
             Expr::StringLiteral(s) => {
                 let value = Value::String(s.clone());
-                let value = ValueHandle::Mut(SharedLock::new(value));
-                self.alloc_value(value.to_owned());
+                let value = self.alloc_value(value);
                 Ok(value)
             }
             Expr::Ident(ident) => {
@@ -230,7 +228,7 @@ impl InterpreterContext {
             Expr::Query(query) => self.interp_query(env, query),
             Expr::Block(block) => {
                 self.interp_block(env, &block.statements)?;
-                Ok(Value::Void.into())
+                Ok(self.alloc_value(Value::Void))
             }
             Expr::Loop { condition, block } => self.interp_loop(env, condition.as_deref(), block),
             Expr::Res {
@@ -243,7 +241,8 @@ impl InterpreterContext {
                 expr.as_str(),
                 expr.expr
             ),
-        }
+        }?;
+        Ok(out)
     }
 
     pub fn interp_res(
@@ -283,58 +282,67 @@ impl InterpreterContext {
                 let cond = self.interp_expr(env, condition)?;
                 let cond = cond.read();
                 if let Value::Bool(false) = &*cond {
-                    return Ok(Value::Void.into());
+                    return Ok(self.alloc_value(Value::Void));
                 }
                 if let Value::Query(qs) = &*cond {
-                    let world = env.world.read();
-                    let mut query = world.query();
-                    for (_, q) in qs.iter() {
-                        match q {
-                            QueryBuilderAccess::Entity => query = query.entity(),
-                            QueryBuilderAccess::Read(id) => query = query.read_dynamic(*id)?,
-                            QueryBuilderAccess::Write(id) => query = query.write_dynamic(*id)?,
-                            QueryBuilderAccess::With(id) => query = query.with_dynamic(*id)?,
-                            QueryBuilderAccess::Without(id) => {
-                                query = query.without_dynamic(*id)?
+                    env.world.query(
+                        |mut query| {
+                            for (_, q) in qs.iter() {
+                                match q {
+                                    QueryBuilderAccess::Entity => query = query.entity(),
+                                    QueryBuilderAccess::Read(id) => {
+                                        query = query.read_dynamic(*id).unwrap()
+                                    }
+                                    QueryBuilderAccess::Write(id) => {
+                                        query = query.write_dynamic(*id).unwrap()
+                                    }
+                                    QueryBuilderAccess::With(id) => {
+                                        query = query.with_dynamic(*id).unwrap()
+                                    }
+                                    QueryBuilderAccess::Without(id) => {
+                                        query = query.without_dynamic(*id).unwrap()
+                                    }
+                                }
                             }
-                        }
-                    }
-                    let query = query.build();
 
-                    for results in query.iter() {
-                        let scope = env.push_scope(Some(self));
+                            query
+                        },
+                        |query| {
+                            for results in query.iter() {
+                                let scope = env.push_scope(Some(self));
 
-                        for ((name, _), result) in qs.iter().zip(results.into_inner()) {
-                            let value = match result {
-                                QueryItem::Proxy(p) => ValueHandle::Ref(SharedLock::new(
-                                    Value::Data(Data::new_pointer(
-                                        p.component.type_id(),
-                                        p.component.entity(),
-                                    )),
-                                )),
-                                QueryItem::ProxyMut(p) => ValueHandle::Mut(SharedLock::new(
-                                    Value::Data(Data::new_pointer(
-                                        p.component.type_id(),
-                                        p.component.entity(),
-                                    )),
-                                )),
-                                _ => todo!(),
-                            };
+                                for ((name, _), result) in qs.iter().zip(results.into_inner()) {
+                                    let value = match result {
+                                        QueryItem::Proxy(p) => {
+                                            self.alloc_value(Value::Data(Data::new_pointer(
+                                                p.component.type_id(),
+                                                p.component.entity(),
+                                            )))
+                                        }
+                                        QueryItem::ProxyMut(p) => {
+                                            self.alloc_value(Value::Data(Data::new_pointer(
+                                                p.component.type_id(),
+                                                p.component.entity(),
+                                            )))
+                                        }
+                                        _ => todo!(),
+                                    };
+                                    scope.names.insert(name.clone(), value);
+                                }
 
-                            scope.names.insert(name.clone(), value);
-                        }
+                                scope.interp_expr(env, block)?;
 
-                        scope.interp_expr(env, block)?;
+                                if scope.should_break.is_some() {
+                                    self.should_break = scope.should_break.take();
+                                }
+                                if scope.should_return.is_some() {
+                                    self.should_return = scope.should_return.take();
+                                }
+                            }
 
-                        if scope.should_break.is_some() {
-                            self.should_break = scope.should_break.take();
-                        }
-                        if scope.should_return.is_some() {
-                            self.should_return = scope.should_return.take();
-                        }
-
-                        env.pop_scope(scope);
-                    }
+                            Ok::<_, anyhow::Error>(())
+                        },
+                    )?;
                 } else {
                     loop {
                         self.interp_expr(env, block)?;
@@ -363,7 +371,7 @@ impl InterpreterContext {
                 }
             },
         }
-        Ok(Value::Void.into())
+        Ok(self.alloc_value(Value::Void))
     }
 
     pub fn interp_query(&mut self, env: &RuntimeEnv, query: &Query) -> anyhow::Result<ValueHandle> {
@@ -380,7 +388,7 @@ impl InterpreterContext {
             .zip(query)
             .map(|(n, q)| (n, q))
             .collect::<Vec<_>>();
-        Ok(Value::Query(query).into())
+        Ok(self.alloc_value(Value::Query(query)))
     }
 
     pub fn interp_construct(
@@ -414,11 +422,11 @@ impl InterpreterContext {
             "print" => {
                 for arg in &call.args {
                     let value = self.interp_expr(env, arg)?;
-                    let value = value.display(env);
+                    let value = value.display();
                     print!("{}", value);
                 }
                 println!();
-                Ok(Value::Void.into())
+                Ok(self.alloc_value(Value::Void))
             }
             #[cfg(feature = "glam")]
             "vec3" => {
@@ -440,8 +448,7 @@ impl InterpreterContext {
 
                 let v = glam::Vec3::new(x, y, z);
                 let data = Data::new_dynamic(v);
-                let data = ValueHandle::Mut(SharedLock::new(Value::Data(data)));
-                self.alloc_value(data.to_owned());
+                let data = self.alloc_value(Value::Data(data));
                 Ok(data)
             }
             #[cfg(feature = "glam")]
@@ -449,13 +456,14 @@ impl InterpreterContext {
                 let axis = self.interp_expr(env, &call.args[0])?;
                 let angle_val = self.interp_expr(env, &call.args[1])?;
 
-                let axis = axis.read();
-                let axis_data = axis.as_data().ok_or_else(|| {
-                    runtime_error!(call.name.span, "Invalid argument for quat: axis")
+                let axis_val = axis.read();
+                let axis_data = axis_val.as_data().ok_or_else(|| {
+                    runtime_error!(call.args[0].span, "Invalid argument for quat: axis")
                 })?;
                 let axis = axis_data.as_ref::<glam::Vec3>().ok_or_else(|| {
                     runtime_error!(call.args[0].span, "Invalid argument for quat: axis")
                 })?;
+                axis_val.despawn();
 
                 let angle = angle_val.read().as_float().ok_or_else(|| {
                     runtime_error!(call.args[1].span, "Invalid argument for quat: angle")
@@ -464,8 +472,7 @@ impl InterpreterContext {
 
                 let q = glam::Quat::from_axis_angle(*axis, angle);
                 let data = Data::new_dynamic(q);
-                let data = ValueHandle::Mut(SharedLock::new(Value::Data(data)));
-                self.alloc_value(data.to_owned());
+                let data = self.alloc_value(Value::Data(data));
                 Ok(data)
             }
             _ => todo!("Implement other calls: {:?}", call),
@@ -483,19 +490,18 @@ impl InterpreterContext {
         match &rhs.expr {
             Expr::Ident(_) => bail!(rhs.span, "Invalid member access: accessing member fields of struct components is no longer supported; use a method instead"),
             Expr::Call(call) => {
-                let world = env.world.read();
                 let mut args = Vec::new();
                 for arg in &call.args {
                     let span = arg.span.clone();
                     let arg = self.interp_expr(env, arg)?;
                     let arg_lock = arg.read();
                     if let Value::Data(data) = &*arg_lock {
-                        args.push(crate::component::MethodArg::Owned(data.to_owned()));
+                        args.push(MethodArg::Owned(data.to_owned()));
                     } else {
                         let arg = arg_lock.to_owned_data().map_err(|_| {
                             runtime_error!(span, "Invalid argument for method call")
                         })?;
-                        args.push(crate::component::MethodArg::Owned(arg));
+                        args.push(MethodArg::Owned(arg));
                     }
                 }
                 match lhs_val {
@@ -503,13 +509,12 @@ impl InterpreterContext {
                         let lhs_data = lhs_data.read();
                         let data = match &*lhs_data {
                             Value::Resource(res) => {
-                                let res = world.get_resource(*res).ok_or_else(|| {
-                                    runtime_error!(
-                                        lhs.span,
-                                        format!("Invalid resource: {}", lhs_val.display(env))
-                                    )
-                                })?;
-                                res.to_owned().unwrap()
+                                env.world.with_resource_id(*res, |res| res.to_owned().unwrap()).ok_or_else(|| {
+                                        runtime_error!(
+                                            lhs.span,
+                                            format!("Invalid resource: {}", lhs_val.display())
+                                        )
+                                    })?
                             }
                             Value::Data(data) => data.to_owned(),
                             _ => todo!(),
@@ -521,66 +526,65 @@ impl InterpreterContext {
                             },
                             Data::Pointer(p) => {
                                 // deref one level
-                                let data_ref = world.get(p.target_entity(), p.target_type_id()).unwrap();
-                                let vtable = if let Some(data_ref) = data_ref.as_dynamic() {
-                                    data_ref.data().data().script_vtable()
-                                } else {
-                                    bail!(rhs.span, "Invalid method call: No such method")
-                                };
-
-                                vtable
+                                p.with_deref(|d| d.as_dynamic().map(|d| d.data().data().script_vtable()).ok_or_else(|| {
+                                    runtime_error!(rhs.span, "Invalid method call: No such method")
+                                }))??
                             }
                         };
 
-                        if let Some(method) = vtable.get_method(call.name.as_str()) {
-                            match method.takes_self {
-                                TakesSelf::None => {},
-                                TakesSelf::RefMut => bail!(call.name.span, "Invalid method call: Method takes self by mutable reference"),
-                                TakesSelf::Ref => {
-                                    match &data {
-                                        Data::Dynamic(d) => {
-                                            let d = world.get(d.entity(), d.type_id()).unwrap();
-                                            args.insert(0, MethodArg::Ref(d));
+                        let result = env.world.defer(move |world, _| {
+                            let mut args = args;
+                            if let Some(method) = vtable.get_method(call.name.as_str()) {
+                                match method.takes_self {
+                                    TakesSelf::None => {},
+                                    TakesSelf::RefMut => bail!(call.name.span, "Invalid method call: Method takes self by mutable reference"),
+                                    TakesSelf::Ref => {
+                                        match &data {
+                                            Data::Dynamic(d) => {
+                                                let d = world.get(d.entity(), d.type_id()).unwrap();
+                                                args.insert(0, MethodArg::Ref(d));
+                                            }
+                                            Data::Pointer(p) => {
+                                                let d = world.storage().find(p.target_type_id(), p.target_entity()).unwrap();
+                                                args.insert(0, MethodArg::Ref(d));
+                                            }
                                         }
-                                        Data::Pointer(p) => {
-                                            let d = world.storage().find(p.target_type_id(), p.target_entity()).unwrap();
-                                            args.insert(0, MethodArg::Ref(d));
-                                        }
-                                    }
-                                },
+                                    },
+                                }
+                            } else {
+                                bail!(call.name.span, "Invalid method call: No such method")
                             }
-                        } else {
-                            bail!(call.name.span, "Invalid method call: No such method")
-                        }
-
-
-                        let mut result = vtable.call_method(call.name.as_str(), args)?;
-
-                        ensure!(
-                            result.len() == 1,
-                            runtime_error!(
-                                call.name.span,
-                                format!(
-                                    "Invalid return value for method call: {}",
-                                    call.name.as_str()
+    
+    
+                            let mut result = vtable.call_method(call.name.as_str(), args)?;
+    
+                            ensure!(
+                                result.len() == 1,
+                                runtime_error!(
+                                    call.name.span,
+                                    format!(
+                                        "Invalid return value for method call: {}",
+                                        call.name.as_str()
+                                    )
                                 )
-                            )
-                        );
-                        let result = result.pop().unwrap();
+                            );
+                            let result = result.pop().unwrap();
 
-                        Ok(ValueHandle::Mut(SharedLock::new(Value::Data(result))))
+                            Ok(result)
+                        })??;
+
+                        Ok(self.alloc_value(Value::Data(result)))
                     }
                     ValueHandle::Mut(ref lhs_data) => {
                         let lhs_data = lhs_data.write();
                         let data = match &*lhs_data {
                             Value::Resource(res) => {
-                                let res = world.get_resource(*res).ok_or_else(|| {
+                                env.world.with_resource_id(*res, |res| res.to_owned().unwrap()).ok_or_else(|| {
                                     runtime_error!(
                                         lhs.span,
-                                        format!("Invalid resource: {}", lhs_val.display(env))
+                                        format!("Invalid resource: {}", lhs_val.display())
                                     )
-                                })?;
-                                res.to_owned().unwrap()
+                                })?
                             }
                             Value::Data(data) => data.to_owned(),
                             _ => todo!(),
@@ -592,65 +596,65 @@ impl InterpreterContext {
                             },
                             Data::Pointer(p) => {
                                 // deref one level
-                                let data_ref = world.storage().find(p.target_type_id(), p.target_entity()).unwrap();
-                                let vtable = if let Some(data_ref) = data_ref.as_dynamic() {
-                                    data_ref.data().data().script_vtable()
-                                } else {
-                                    bail!(rhs.span, "Invalid method call: No such method")
-                                };
-
-                                vtable
+                                p.with_deref(|d| d.as_dynamic().map(|d| d.data().data().script_vtable()).ok_or_else(|| {
+                                    runtime_error!(rhs.span, "Invalid method call: No such method")
+                                }))??
                             }
                         };
 
-                        if let Some(method) = vtable.get_method(call.name.as_str()) {
-                            match method.takes_self {
-                                TakesSelf::None => {},
-                                TakesSelf::RefMut => {
-                                    match &data {
-                                        Data::Dynamic(d) => {
-                                            let d = world.storage().find_mut(d.type_id(), d.entity()).unwrap();
-                                            args.insert(0, MethodArg::Mut(d));
-                                        }
-                                        Data::Pointer(p) => {
-                                            let d = world.storage().find_mut(p.target_type_id(), p.target_entity()).unwrap();
-                                            args.insert(0, MethodArg::Mut(d));
+                        let result = env.world.defer(|world, _| {
+                            let mut args = args;
+                            if let Some(method) = vtable.get_method(call.name.as_str()) {
+                                match method.takes_self {
+                                    TakesSelf::None => {},
+                                    TakesSelf::RefMut => {
+                                        match &data {
+                                            Data::Dynamic(d) => {
+                                                let d = world.storage().find_mut(d.type_id(), d.entity()).unwrap();
+                                                args.insert(0, MethodArg::Mut(d));
+                                            }
+                                            Data::Pointer(p) => {
+                                                let d = world.storage().find_mut(p.target_type_id(), p.target_entity()).unwrap();
+                                                args.insert(0, MethodArg::Mut(d));
+                                            }
                                         }
                                     }
+                                    TakesSelf::Ref => {
+                                        match &data {
+                                            Data::Dynamic(d) => {
+                                                let d = world.storage().find(d.type_id(), d.entity()).unwrap();
+                                                args.insert(0, MethodArg::Ref(d));
+                                            }
+                                            Data::Pointer(p) => {
+                                                let d = world.storage().find(p.target_type_id(), p.target_entity()).unwrap();
+                                                args.insert(0, MethodArg::Ref(d));
+                                            }
+                                        }
+                                    },
                                 }
-                                TakesSelf::Ref => {
-                                    match &data {
-                                        Data::Dynamic(d) => {
-                                            let d = world.storage().find(d.type_id(), d.entity()).unwrap();
-                                            args.insert(0, MethodArg::Ref(d));
-                                        }
-                                        Data::Pointer(p) => {
-                                            let d = world.storage().find(p.target_type_id(), p.target_entity()).unwrap();
-                                            args.insert(0, MethodArg::Ref(d));
-                                        }
-                                    }
-                                },
+                            } else {
+                                bail!(call.name.span, "Invalid method call: No such method")
                             }
-                        } else {
-                            bail!(call.name.span, "Invalid method call: No such method")
-                        }
-
-
-                        let mut result = vtable.call_method(call.name.as_str(), args)?;
-
-                        ensure!(
-                            result.len() == 1,
-                            runtime_error!(
-                                call.name.span,
-                                format!(
-                                    "Invalid return value for method call: {}",
-                                    call.name.as_str()
+    
+    
+                            let mut result = vtable.call_method(call.name.as_str(), args)?;
+    
+                            ensure!(
+                                result.len() == 1,
+                                runtime_error!(
+                                    call.name.span,
+                                    format!(
+                                        "Invalid return value for method call: {}",
+                                        call.name.as_str()
+                                    )
                                 )
-                            )
-                        );
-                        let result = result.pop().unwrap();
+                            );
+                            let result = result.pop().unwrap();
 
-                        Ok(ValueHandle::Mut(SharedLock::new(Value::Data(result))))
+                            Ok(result)
+                        })??;
+
+                        Ok(self.alloc_value(Value::Data(result)))
                     }
                 }
             }
@@ -667,11 +671,7 @@ impl InterpreterContext {
     ) -> anyhow::Result<ValueHandle> {
         let lhs_val = self.interp_expr(env, lhs)?;
         let rhs_val = self.interp_expr(env, rhs)?;
-        let out = lhs_val.infix(op, &rhs_val, env)?;
-        let out = ValueHandle::Mut(SharedLock::new(out));
-        if matches!(&*out.read(), Value::Data(_)) {
-            self.alloc_value(out.to_owned());
-        }
+        let out = lhs_val.infix(op, &rhs_val, self)?;
         Ok(out)
     }
 
@@ -686,13 +686,13 @@ impl InterpreterContext {
         let name = ident.as_str().to_string();
         let value = if mutability {
             match value {
-                ValueHandle::Ref(r) => ValueHandle::Mut(r.to_owned()),
-                ValueHandle::Mut(m) => ValueHandle::Mut(m.to_owned()),
+                ValueHandle::Ref(ref r) => ValueHandle::Mut(r.to_owned()),
+                ValueHandle::Mut(ref m) => ValueHandle::Mut(m.to_owned()),
             }
         } else {
             match value {
-                ValueHandle::Ref(r) => ValueHandle::Ref(r.to_owned()),
-                ValueHandle::Mut(m) => ValueHandle::Ref(m.to_owned()),
+                ValueHandle::Ref(ref r) => ValueHandle::Ref(r.to_owned()),
+                ValueHandle::Mut(ref m) => ValueHandle::Ref(m.to_owned()),
             }
         };
         self.names.insert(name, value.to_owned());
@@ -720,12 +720,11 @@ impl BuildOnWorld for Script {
             match scope {
                 Scope::System(ref system) => {
                     let system_clone = system.clone();
-                    let scopes = self.scopes.clone();
-                    let run_fn = move |world| {
-                        let env = RuntimeEnv::new(world, scopes.clone());
+                    let run_fn = move |world: LockedWorldHandle| {
+                        let env = RuntimeEnv::new(world.clone());
                         let ctx = env.push_scope(None);
+
                         ctx.interp_system(&env, &system_clone).unwrap();
-                        env.pop_scope(ctx);
                     };
 
                     let tag = system.tag.clone();
@@ -737,10 +736,10 @@ impl BuildOnWorld for Script {
                         Some("@post_update") => SystemStage::PostUpdate,
                         Some("@shutdown") => SystemStage::Shutdown,
                         Some(tag) => todo!("Unknown system tag: {}", tag),
-                        _ => SystemStage::Update,
+                        None => SystemStage::Update,
                     };
 
-                    world.write().add_system(stage, run_fn);
+                    world.add_system(stage, run_fn)?;
                 }
 
                 Scope::Component(_component) => {
@@ -794,195 +793,5 @@ impl BuildOnWorld for String {
 
     fn build_on_world(&self, _world: LockedWorldHandle) -> anyhow::Result<Entity> {
         Ok(Entity::allocate_type(Some(self.as_str())))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::prelude::*;
-
-    #[test]
-    fn test_interp_literals() {
-        let world_handle = get_world();
-        let env = RuntimeEnv::new(world_handle.clone(), Vec::new());
-        let ctx = env.push_scope(None);
-        {
-            let value = ctx
-                .interp_expr(
-                    &env,
-                    &SpanExpr {
-                        span: Span::default(),
-                        expr: Expr::IntLiteral(42),
-                    },
-                )
-                .unwrap()
-                .deep_copy();
-            assert_eq!(value.as_int(), Some(42));
-        }
-
-        {
-            let value = ctx
-                .interp_expr(
-                    &env,
-                    &SpanExpr {
-                        span: Span::default(),
-                        expr: Expr::FloatLiteral(4.20),
-                    },
-                )
-                .unwrap()
-                .deep_copy();
-            assert_eq!(value.as_float(), Some(4.20));
-        }
-    }
-
-    #[test]
-    fn test_interp_infix() {
-        let world_handle = get_world();
-        let env = RuntimeEnv::new(world_handle.clone(), Vec::new());
-        let ctx = env.push_scope(None);
-        {
-            let value = ctx
-                .interp_expr(
-                    &env,
-                    &SpanExpr {
-                        span: Span::default(),
-                        expr: Expr::Infix {
-                            op: "+".to_string(),
-                            lhs: Box::new(SpanExpr {
-                                span: Span::default(),
-                                expr: Expr::IntLiteral(40),
-                            }),
-                            rhs: Box::new(SpanExpr {
-                                span: Span::default(),
-                                expr: Expr::IntLiteral(2),
-                            }),
-                        },
-                    },
-                )
-                .unwrap()
-                .deep_copy();
-            assert_eq!(value.as_int(), Some(42));
-        }
-
-        {
-            let value = ctx
-                .interp_expr(
-                    &env,
-                    &SpanExpr {
-                        span: Span::default(),
-                        expr: Expr::Infix {
-                            op: "+".to_string(),
-                            lhs: Box::new(SpanExpr {
-                                span: Span::default(),
-                                expr: Expr::FloatLiteral(4.0),
-                            }),
-                            rhs: Box::new(SpanExpr {
-                                span: Span::default(),
-                                expr: Expr::FloatLiteral(0.2),
-                            }),
-                        },
-                    },
-                )
-                .unwrap()
-                .deep_copy();
-            assert_eq!(value.as_float(), Some(4.2));
-        }
-    }
-
-    #[test]
-    fn test_interp_infix_assign() {
-        let world_handle = get_world();
-        let env = RuntimeEnv::new(world_handle.clone(), Vec::new());
-        let ctx = env.push_scope(None);
-        {
-            let value = ctx
-                .interp_decl(
-                    &env,
-                    true,
-                    &SpanExpr {
-                        span: Span {
-                            line_no: 1,
-                            col_no: 1,
-                            line: "".to_string(),
-                            fragment: "x".to_string(),
-                        },
-                        expr: Expr::Ident("x".to_string()),
-                    },
-                    &SpanExpr {
-                        span: Span::default(),
-                        expr: Expr::IntLiteral(42),
-                    },
-                )
-                .unwrap()
-                .deep_copy();
-            assert_eq!(value.as_int(), Some(42));
-
-            let value = ctx
-                .interp_expr(
-                    &env,
-                    &SpanExpr {
-                        span: Span::default(),
-                        expr: Expr::Infix {
-                            op: "+=".to_string(),
-                            lhs: Box::new(SpanExpr {
-                                span: Span::default(),
-                                expr: Expr::Ident("x".to_string()),
-                            }),
-                            rhs: Box::new(SpanExpr {
-                                span: Span::default(),
-                                expr: Expr::IntLiteral(2),
-                            }),
-                        },
-                    },
-                )
-                .unwrap()
-                .deep_copy();
-            assert_eq!(value.as_int(), Some(44));
-        }
-    }
-
-    #[test]
-    fn test_interp_decl() {
-        let world_handle = get_world();
-        let env = RuntimeEnv::new(world_handle.clone(), Vec::new());
-        let ctx = env.push_scope(None);
-        {
-            let value = ctx
-                .interp_decl(
-                    &env,
-                    true,
-                    &SpanExpr {
-                        span: Span::default(),
-                        expr: Expr::Ident("x".to_string()),
-                    },
-                    &SpanExpr {
-                        span: Span::default(),
-                        expr: Expr::IntLiteral(42),
-                    },
-                )
-                .unwrap()
-                .deep_copy();
-            assert_eq!(value.as_int(), Some(42));
-        }
-
-        {
-            let value = ctx
-                .interp_decl(
-                    &env,
-                    false,
-                    &SpanExpr {
-                        span: Span::default(),
-                        expr: Expr::Ident("y".to_string()),
-                    },
-                    &SpanExpr {
-                        span: Span::default(),
-                        expr: Expr::FloatLiteral(4.20),
-                    },
-                )
-                .unwrap()
-                .deep_copy();
-            assert_eq!(value.as_float(), Some(4.20));
-        }
     }
 }

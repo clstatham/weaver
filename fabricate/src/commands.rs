@@ -2,58 +2,118 @@ use std::collections::VecDeque;
 
 use anyhow::Result;
 
-use crate::{registry::Entity, storage::Data, world::World};
+use crate::{
+    bundle::Bundle,
+    lock::SharedLock,
+    registry::Entity,
+    storage::Data,
+    system::SystemStage,
+    world::{LockedWorldHandle, World},
+};
 
 pub enum Command {
+    SpawnEntity(Entity),
     DespawnEntity(Entity),
     AddComponents(Entity, Vec<Data>),
+    AddSystem(SystemStage, Box<dyn Fn(LockedWorldHandle) + Send + Sync>),
+    GarbageCollect,
 }
 
-#[derive(Default)]
+/// Commands to apply to a mutable world after a [`System`][crate::system::System] or [`defer`][crate::world::LockedWorldHandle::defer] block.
+#[derive(Default, Clone)]
 pub struct Commands {
-    queue: VecDeque<Command>,
-    spawned_entities: Vec<Entity>,
+    pub(crate) queue: SharedLock<VecDeque<Command>>,
 }
 
 impl Commands {
+    /// Create a new, empty command queue.
     pub fn new() -> Self {
         Self {
-            queue: VecDeque::new(),
-            spawned_entities: Vec::new(),
+            queue: SharedLock::new(VecDeque::new()),
         }
     }
 
-    pub fn create_entity(&mut self) {
-        self.spawned_entities.push(Entity::allocate(None));
+    /// Enqueues a command to spawn an entity.
+    ///
+    /// # Note
+    ///
+    /// The entity will not be visible on the [`World`] until [`finalize`][Commands::finalize]is called.
+    pub fn create_entity(&mut self) -> Entity {
+        let e = Entity::allocate(None);
+        self.queue.write().push_back(Command::SpawnEntity(e));
+        e
     }
 
+    pub fn spawn<B: Bundle>(&mut self, bundle: B) -> Entity {
+        let entity = self.create_entity();
+        self.add(entity, bundle.into_data_vec());
+        entity
+    }
+
+    /// Enqueues a command to despawn an entity.
+    ///
+    /// # Note
+    ///
+    /// The entity will not be removed from the [`World`] until [`finalize`][Commands::finalize]is called.
     pub fn despawn(&mut self, entity: Entity) {
-        self.enqueue(Command::DespawnEntity(entity));
+        self.queue.write().push_back(Command::DespawnEntity(entity));
     }
 
-    pub fn add_components(&mut self, entity: Entity, data: Vec<Data>) {
-        self.enqueue(Command::AddComponents(entity, data));
+    /// Enqueues a command to add components to an entity.
+    ///
+    /// # Note
+    ///
+    /// The components will not be visible on the [`World`] until [`finalize`][Commands::finalize]is called.
+    pub fn add(&mut self, entity: Entity, data: Vec<Data>) {
+        self.queue
+            .write()
+            .push_back(Command::AddComponents(entity, data));
     }
 
-    pub fn enqueue(&mut self, command: Command) {
-        self.queue.push_back(command);
+    /// Enqueues a command to add a system to a stage.
+    ///
+    /// # Note
+    ///
+    /// The system will not be visible on the [`World`] until [`finalize`][Commands::finalize]is called.
+    pub fn add_system(
+        &mut self,
+        stage: SystemStage,
+        system: impl Fn(LockedWorldHandle) + Send + Sync + 'static,
+    ) {
+        self.queue
+            .write()
+            .push_back(Command::AddSystem(stage, Box::new(system)));
     }
 
-    pub fn dequeue(&mut self) -> Option<Command> {
-        self.queue.pop_front()
+    /// Enqueues a command to garbage collect the world.
+    ///
+    /// This will remove any entities that have been despawned.
+    ///
+    /// # Note
+    ///
+    /// The garbage collection will not be visible on the [`World`] until [`finalize`][Commands::finalize]is called.
+    pub fn garbage_collect(&mut self) {
+        self.queue.write().push_back(Command::GarbageCollect);
     }
 
+    /// Finalizes the command queue, applying all enqueued commands to the world.
     pub(crate) fn finalize(&mut self, world: &mut World) -> Result<()> {
-        for entity in self.spawned_entities.drain(..) {
-            world.insert_entity(entity)?;
-        }
-        while let Some(command) = self.dequeue() {
+        while let Some(command) = self.queue.write().pop_front() {
             match command {
+                Command::SpawnEntity(e) => {
+                    world.insert_entity(e)?;
+                }
                 Command::DespawnEntity(entity) => {
                     world.despawn(entity);
                 }
                 Command::AddComponents(entity, data) => {
                     world.add_data(entity, data)?;
+                }
+                Command::AddSystem(stage, system) => {
+                    world.add_system(stage, system);
+                }
+                Command::GarbageCollect => {
+                    world.garbage_collect();
                 }
             }
         }

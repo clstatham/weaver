@@ -1,4 +1,3 @@
-use fabricate::world::BelongsToWorld;
 use weaver::prelude::*;
 
 use crate::{state::EditorState, TransformChild, TransformParent};
@@ -13,8 +12,6 @@ pub fn scene_tree_ui(world: &World, state: &mut EditorState, ui: &mut egui::Ui) 
             let q = world
                 .query()
                 .entity()
-                .with_dynamic(Entity::new_wildcard::<BelongsToWorld>())
-                .unwrap()
                 .without_dynamic(Entity::new_wildcard::<TransformChild>())
                 .unwrap()
                 .build();

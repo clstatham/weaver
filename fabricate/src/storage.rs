@@ -12,6 +12,7 @@ use crate::{
     prelude::{Entity, Id, MapRead, MapWrite, Read, Write},
     registry::StaticId,
     relationship::Relationship,
+    world::get_world,
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -217,18 +218,20 @@ pub struct DynamicData {
 impl DynamicData {
     pub fn new<T: Component>(data: T) -> Self {
         let type_id = T::static_type_id();
-        let entity = Entity::allocate(Some(type_id));
+        let data_entity = get_world().create_entity().unwrap();
+        data_entity.register_as_type(type_id);
         let data = Box::new(data);
         Self {
             type_id,
-            entity,
+            entity: data_entity,
             data,
         }
     }
 
     pub fn new_relationship<R: Relationship>(relation: R, relative: Entity) -> Self {
         let type_id = Entity::new_relationship(R::static_type_id().id(), relative.id());
-        let entity = Entity::allocate(Some(type_id));
+        let entity = get_world().create_entity().unwrap();
+        entity.register_as_type(type_id);
         let data = Box::new(relation);
         Self {
             type_id,
@@ -436,6 +439,20 @@ impl Pointer {
 
     pub fn into_data(self) -> Data {
         Data::Pointer(self)
+    }
+
+    pub fn with_deref<F, R>(&self, f: F) -> Result<R>
+    where
+        F: FnOnce(Ref<'_>) -> R,
+    {
+        self.target_entity.with_value_ref(f)
+    }
+
+    pub fn with_deref_mut<F, R>(&self, f: F) -> Result<R>
+    where
+        F: FnOnce(Mut<'_>) -> R,
+    {
+        self.target_entity.with_value_mut(f)
     }
 }
 
@@ -1709,25 +1726,25 @@ impl Storage {
         archetype.get_static_mut(entity)
     }
 
-    pub fn find(&self, type_id: Entity, value_id: Entity) -> Option<Ref<'_>> {
+    pub fn find(&self, type_id: Entity, entity: Entity) -> Option<Ref<'_>> {
         self.archetypes
             .iter()
             .filter(|(_, a)| a.contains_type(type_id))
-            .find_map(|(_, a)| a.find(type_id, value_id))
+            .find_map(|(_, a)| a.find(type_id, entity))
     }
 
-    pub fn find_untyped(&self, value_id: Entity) -> Option<Ref<'_>> {
-        if let Some(type_id) = value_id.type_id() {
+    pub fn find_untyped(&self, entity: Entity) -> Option<Ref<'_>> {
+        if let Some(type_id) = entity.type_id() {
             // short path
-            self.find(type_id, value_id)
+            self.find(type_id, entity)
         } else {
             // give it our best effort
             self.archetypes().find_map(|a| {
                 a.type_columns().find_map(|(_, c)| {
                     let c_lock = c.read();
                     if let Some(c_lock) = c_lock.as_dynamic() {
-                        if c_lock.data_uids().contains(&value_id) {
-                            let e = c_lock.find_entity_with(value_id)?;
+                        if c_lock.data_uids().contains(&entity) {
+                            let e = c_lock.find_entity_with(entity)?;
 
                             let d = c.get_dynamic(e)?;
                             Some(Ref::Dynamic(d))
@@ -1735,8 +1752,8 @@ impl Storage {
                             None
                         }
                     } else if let Some(c_lock) = c_lock.as_pointer() {
-                        if c_lock.dense.iter().any(|p| p.target_entity() == value_id) {
-                            let e = c_lock.find_entity_with_pointer_to(value_id)?;
+                        if c_lock.dense.iter().any(|p| p.target_entity() == entity) {
+                            let e = c_lock.find_entity_with_pointer_to(entity)?;
 
                             let p = c.get_pointer(e)?;
                             Some(Ref::Pointer(p))
@@ -1751,33 +1768,42 @@ impl Storage {
         }
     }
 
-    pub fn find_mut(&self, type_id: Entity, value_id: Entity) -> Option<Mut<'_>> {
+    pub fn find_mut(&self, type_id: Entity, entity: Entity) -> Option<Mut<'_>> {
         self.archetypes
             .iter()
             .filter(|(_, a)| a.contains_type(type_id))
-            .find_map(|(_, a)| a.find_mut(type_id, value_id))
+            .find_map(|(_, a)| a.find_mut(type_id, entity))
     }
 
-    pub fn find_untyped_mut(&self, value_id: Entity) -> Option<Mut<'_>> {
-        if let Some(type_id) = value_id.type_id() {
+    pub fn find_untyped_mut(&self, entity: Entity) -> Option<Mut<'_>> {
+        if let Some(type_id) = entity.type_id() {
             // short path
-            self.find_mut(type_id, value_id)
+            self.find_mut(type_id, entity)
         } else {
             // give it our best effort
             self.archetypes().find_map(|a| {
                 a.type_columns().find_map(|(_, c)| {
                     let c_lock = c.read();
                     if let Some(c_lock) = c_lock.as_dynamic() {
-                        if c_lock.data_uids().contains(&value_id) {
-                            let e = c_lock.find_entity_with(value_id)?;
+                        if c_lock.data_uids().contains(&entity) {
+                            let e = c_lock.find_entity_with(entity)?;
 
                             let d = c.get_dynamic_mut(e)?;
                             Some(Mut::Dynamic(d))
                         } else {
                             None
                         }
+                    } else if let Some(c_lock) = c_lock.as_pointer() {
+                        if c_lock.dense.iter().any(|p| p.target_entity() == entity) {
+                            let e = c_lock.find_entity_with_pointer_to(entity)?;
+
+                            let p = c.get_pointer_mut(e)?;
+                            Some(Mut::Pointer(p))
+                        } else {
+                            None
+                        }
                     } else {
-                        todo!()
+                        unreachable!()
                     }
                 })
             })
@@ -1801,7 +1827,8 @@ impl Storage {
 
     pub fn insert_entity(&mut self, entity: Entity) -> Result<()> {
         if self.entity_archetypes.contains(&entity) {
-            bail!("entity already exists in storage: {:?}", entity);
+            // bail!("entity already exists in storage: {:?}", entity);
+            return Ok(());
         }
         self.entity_archetypes.insert(entity, Id::default());
         Ok(())

@@ -1,4 +1,3 @@
-use anyhow::Result;
 use fabricate::storage::Data;
 
 use crate::{
@@ -7,10 +6,10 @@ use crate::{
 };
 
 pub trait Relationship: Component {
-    fn into_relationship_data(self, relative: Entity) -> Result<Data>
+    fn into_relationship_data(self, relative: Entity) -> Data
     where
         Self: Sized,
     {
-        Ok(Data::new_relationship(self, relative))
+        Data::new_relationship(self, relative)
     }
 }

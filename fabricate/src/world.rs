@@ -1,13 +1,11 @@
 use std::sync::OnceLock;
 
 use anyhow::Result;
-use fabricate_macro::Component;
 
 use crate::{
-    self as fabricate,
     commands::Commands,
     component::Component,
-    lock::{DeferredRead, DeferredWrite, Read, SharedLock, Write},
+    lock::SharedLock,
     prelude::{Bundle, Mut},
     query::{Query, QueryBuilder},
     registry::{Entity, Id},
@@ -22,11 +20,6 @@ static WORLD: OnceLock<LockedWorldHandle> = OnceLock::new();
 pub fn get_world() -> &'static LockedWorldHandle {
     WORLD.get_or_init(World::new_handle)
 }
-
-#[derive(Component, Clone, Copy)]
-pub struct BelongsToWorld;
-
-impl Relationship for BelongsToWorld {}
 
 /// A container for all the data in the game world.
 /// Contains a [`Storage`] for all the entities and components.
@@ -56,11 +49,6 @@ impl World {
         &self.storage
     }
 
-    /// Returns a mutable reference to the component [`Storage`] in the [`World`].
-    pub fn storage_mut(&mut self) -> &mut Storage {
-        &mut self.storage
-    }
-
     /// Returns the root entity of the [`World`], representing the [`World`] itself.
     pub fn root(&self) -> Entity {
         self.root
@@ -88,23 +76,22 @@ impl World {
 
     pub fn insert_entity(&mut self, entity: Entity) -> Result<()> {
         self.storage.insert_entity(entity)?;
-        self.add_relative(entity, BelongsToWorld, self.root)?;
+        // self.add_relative(entity, BelongsToWorld, self.root)?;
         Ok(())
-    }
-
-    pub fn create_data<T: Component>(&mut self, data: T) -> Result<Entity> {
-        let d = Data::new_dynamic(data);
-        let e = self.create_entity()?;
-        let v = d.entity();
-        self.add_data(e, vec![d])?;
-        Ok(v)
     }
 
     /// Creates a new entity in the [`World`].
     pub fn create_entity(&mut self) -> Result<Entity> {
         let e = self.storage.create_entity();
-        self.add_relative(e, BelongsToWorld, self.root)?;
+        // self.add_relative(e, BelongsToWorld, self.root)?;
         Ok(e)
+    }
+
+    pub fn all_entities(&self) -> Vec<Entity> {
+        self.storage
+            .archetypes()
+            .flat_map(|a| a.entity_iter())
+            .collect()
     }
 
     pub fn add_relative<R: Relationship>(
@@ -113,8 +100,8 @@ impl World {
         relationship: R,
         relative: Entity,
     ) -> Result<()> {
-        let relationship_data = relationship.into_relationship_data(relative)?;
-        self.add_data(add_to, vec![relationship_data])?;
+        let relationship_data = relationship.into_relationship_data(relative);
+        self.add_data(add_to, [relationship_data])?;
         Ok(())
     }
 
@@ -138,8 +125,7 @@ impl World {
         let mut out = Vec::new();
         for relationship in relationships {
             let relationship_type = relationship.type_id();
-            let relative_id = relationship_type.meta().value();
-            out.push(Entity::new_with_current_generation(relative_id).unwrap());
+            out.push(relationship_type.relationship_second()?);
         }
         Some(out)
     }
@@ -155,10 +141,9 @@ impl World {
         let mut out = Vec::new();
         for relationship in relationships {
             let relationship_type = relationship.type_id();
-            let relative_id = relationship_type.meta().value();
             out.push((
                 relationship_type.id(),
-                Entity::new_with_current_generation(relative_id).unwrap(),
+                relationship_type.relationship_second()?,
             ));
         }
         Some(out)
@@ -239,60 +224,32 @@ impl LockedWorldHandle {
         Self(SharedLock::new(world), SharedLock::new(Commands::new()))
     }
 
-    /// Requests a read lock on the [`World`].
-    pub fn read(&self) -> DeferredRead<'_, World> {
-        let commands = self.1.clone();
-        self.0.read_defer(move |world| {
-            if let Some(mut world) = world.try_write() {
-                if let Some(mut commands) = commands.try_write() {
-                    commands
-                        .finalize(&mut world)
-                        .expect("Failed to finalize commands");
-                }
-            }
-        })
-    }
-
-    /// Requests a write lock on the [`World`].
-    pub fn write(&self) -> DeferredWrite<'_, World> {
-        let commands = self.1.clone();
-        self.0.write_defer(move |world| {
-            if let Some(mut world) = world.try_write() {
-                if let Some(mut commands) = commands.try_write() {
-                    commands
-                        .finalize(&mut world)
-                        .expect("Failed to finalize commands");
-                }
-            }
-        })
-    }
-
-    pub fn try_read(&self) -> Option<Read<'_, World>> {
-        self.0.try_read()
-    }
-
-    pub fn try_write(&self) -> Option<Write<'_, World>> {
-        self.0.try_write()
-    }
-
     pub fn defer<F, R>(&self, f: F) -> Result<R>
     where
         F: FnOnce(&World, &mut Commands) -> R,
     {
-        let world = self.read();
-        let mut commands = self.1.write();
+        let world = self
+            .0
+            .try_read()
+            .ok_or_else(|| anyhow::anyhow!("Defer failed: World already locked"))?;
+        let mut commands = Commands::new();
         let result = f(&world, &mut commands);
         drop(world);
-        if let Some(mut world) = self.try_write() {
-            if let Some(mut commands) = self.1.try_write() {
-                commands.finalize(&mut world)?;
-            }
+
+        self.1
+            .write()
+            .queue
+            .write()
+            .extend(commands.queue.write().drain(..));
+
+        if let Some(mut world) = self.0.try_write() {
+            self.1.write().finalize(&mut world)?;
         }
         Ok(result)
     }
 
     pub fn run_systems(&self, stage: SystemStage) {
-        let world = self.read();
+        let world = self.0.read();
         if let Some(graph) = world.system_graphs.get(&stage).cloned() {
             drop(world);
             graph.run(self.clone());
@@ -307,21 +264,24 @@ impl LockedWorldHandle {
         &self,
         stage: SystemStage,
         system: impl Fn(LockedWorldHandle) + Send + Sync + 'static,
-    ) {
-        let mut world = self.write();
-        world.add_system(stage, system);
+    ) -> Result<()> {
+        self.defer(|_, commands| {
+            commands.add_system(stage, system);
+        })
     }
 
-    pub fn add_resource<T: Component>(&self, resource: T) {
-        let mut world = self.write();
-        world.add_resource(resource).unwrap();
+    pub fn add_resource<T: Component>(&self, resource: T) -> Result<()> {
+        let data = resource.into_data_vec();
+        self.defer(|world, commands| {
+            commands.add(world.root, data);
+        })
     }
 
     pub fn with_resource_id<F, R>(&self, id: Entity, f: F) -> Option<R>
     where
         F: FnOnce(Ref<'_>) -> R,
     {
-        let world = self.read();
+        let world = self.0.read();
         let res = world.get_resource(id)?;
         Some(f(res))
     }
@@ -330,64 +290,71 @@ impl LockedWorldHandle {
     where
         F: FnOnce(Mut<'_>) -> R,
     {
-        let world = self.read();
+        let world = self.0.read();
         let res = world.get_resource_mut(id)?;
         Some(f(res))
     }
 
-    pub fn with_resource<T: Component, F, R>(&self, f: F) -> Option<R>
+    pub fn with_resource<T: Component, F, R>(&self, f: F) -> Result<R>
     where
         F: FnOnce(StaticRef<'_, T>) -> R,
     {
-        let world = self.read();
-        let res = world.read_resource::<T>()?;
-        Some(f(res))
+        self.defer(|world, _| {
+            let res = world.read_resource::<T>()?;
+            Some(f(res))
+        })?
+        .ok_or_else(|| anyhow::anyhow!("Resource not found"))
     }
 
-    pub fn with_resource_mut<T: Component, F, R>(&self, f: F) -> Option<R>
+    pub fn with_resource_mut<T: Component, F, R>(&self, f: F) -> Result<R>
     where
         F: FnOnce(StaticMut<'_, T>) -> R,
     {
-        let world = self.read();
-        let res = world.write_resource::<T>()?;
-        Some(f(res))
-    }
-
-    pub fn create_data<T: Component>(&self, data: T) -> Result<Entity> {
-        let mut world = self.write();
-        world.create_data(data)
+        self.defer(|world, _| {
+            let res = world.write_resource::<T>()?;
+            Some(f(res))
+        })?
+        .ok_or_else(|| anyhow::anyhow!("Resource not found"))
     }
 
     pub fn create_entity(&self) -> Result<Entity> {
-        let mut world = self.write();
-        world.create_entity()
+        self.defer(|_, commands| commands.create_entity())
     }
 
-    pub fn despawn(&self, entity: Entity) -> Option<Vec<Data>> {
-        let mut world = self.write();
-        world.despawn(entity)
+    pub fn despawn(&self, entity: Entity) -> Result<()> {
+        self.defer(|_, commands| {
+            commands.despawn(entity);
+        })
     }
 
     pub fn spawn<B: Bundle>(&self, components: B) -> Result<Entity> {
-        let mut world = self.write();
-        world.spawn(components)
+        self.defer(|_, commands| {
+            let entity = commands.create_entity();
+            commands.add(entity, components.into_data_vec());
+            Ok(entity)
+        })?
     }
 
     pub fn get_relatives_id(&self, entity: Entity, relationship_type: Id) -> Option<Vec<Entity>> {
-        let world = self.read();
+        let world = self.0.read();
         world.get_relatives_id(entity, relationship_type)
     }
 
     pub fn get_relatives<R: Relationship>(&self, entity: Entity) -> Option<Vec<Entity>> {
-        let world = self.read();
+        let world = self.0.read();
         world.get_relatives::<R>(entity)
     }
 
-    pub fn with_component<T: Component, F, R>(&self, entity: Entity, f: F) -> Option<R>
+    pub fn all_relatives(&self, entity: Entity) -> Option<Vec<(Id, Entity)>> {
+        let world = self.0.read();
+        world.all_relatives(entity)
+    }
+
+    pub fn with_component_ref<T: Component, F, R>(&self, entity: Entity, f: F) -> Option<R>
     where
         F: FnOnce(StaticRef<'_, T>) -> R,
     {
-        let world = self.read();
+        let world = self.0.read();
         let c = world.get_component::<T>(entity)?;
         Some(f(c))
     }
@@ -396,16 +363,21 @@ impl LockedWorldHandle {
     where
         F: FnOnce(StaticMut<'_, T>) -> R,
     {
-        let world = self.read();
+        let world = self.0.read();
         let c = world.get_component_mut::<T>(entity)?;
         Some(f(c))
     }
 
-    pub fn with_component_id<F, R>(&self, entity: Entity, component_type: Entity, f: F) -> Option<R>
+    pub fn with_component_id_ref<F, R>(
+        &self,
+        entity: Entity,
+        component_type: Entity,
+        f: F,
+    ) -> Option<R>
     where
         F: FnOnce(Ref<'_>) -> R,
     {
-        let world = self.read();
+        let world = self.0.read();
         let c = world.get(entity, component_type)?;
         Some(f(c))
     }
@@ -419,19 +391,21 @@ impl LockedWorldHandle {
     where
         F: FnOnce(Mut<'_>) -> R,
     {
-        let world = self.read();
+        let world = self.0.read();
         let c = world.get_mut(entity, component_type)?;
         Some(f(c))
     }
 
     pub fn add_data(&self, entity: Entity, data: impl IntoIterator<Item = Data>) -> Result<()> {
-        let mut world = self.write();
-        world.add_data(entity, data)
+        self.defer(|_, commands| {
+            commands.add(entity, data.into_iter().collect());
+        })
     }
 
     pub fn add<T: Bundle>(&self, entity: Entity, component: T) -> Result<()> {
-        let mut world = self.write();
-        world.add(entity, component)
+        self.defer(|_, commands| {
+            commands.add(entity, component.into_data_vec());
+        })
     }
 
     pub fn query<F, G, R>(&self, build_query: F, with_query: G) -> R
@@ -439,14 +413,15 @@ impl LockedWorldHandle {
         F: FnOnce(QueryBuilder) -> QueryBuilder,
         G: FnOnce(Query) -> R,
     {
-        let world = self.read();
+        let world = self.0.read();
         let query = build_query(QueryBuilder::new(&world)).build();
         with_query(query)
     }
 
-    pub fn garbage_collect(&self) {
-        let mut world = self.write();
-        world.garbage_collect();
+    pub fn garbage_collect(&self) -> Result<()> {
+        self.defer(|_, commands| {
+            commands.garbage_collect();
+        })
     }
 
     pub fn add_relative<R: Relationship>(
@@ -455,8 +430,29 @@ impl LockedWorldHandle {
         relationship: R,
         relative: Entity,
     ) -> Result<()> {
-        let mut world = self.write();
-        world.add_relative(add_to, relationship, relative)
+        let data = relationship.into_relationship_data(relative);
+        self.defer(|_, commands| {
+            commands.add(add_to, vec![data]);
+        })
+    }
+
+    pub fn all_entities(&self) -> Vec<Entity> {
+        let world = self.0.read();
+        world.all_entities()
+    }
+
+    pub fn with_system<F, R>(&self, system: Entity, f: F) -> Option<R>
+    where
+        F: FnOnce(&DynamicSystem) -> R,
+    {
+        let world = self.0.read();
+        let system = world.get_system(system)?;
+        Some(f(system))
+    }
+
+    pub fn has<T: Component>(&self, entity: Entity) -> bool {
+        let world = self.0.read();
+        world.has::<T>(entity)
     }
 }
 

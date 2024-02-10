@@ -372,6 +372,10 @@ impl<T> SharedLock<T> {
     pub fn read_write(&self) -> ReadWrite<'_, T> {
         ReadWrite::new(&self.0)
     }
+
+    pub fn strong_count(&self) -> usize {
+        Arc::strong_count(&self.0)
+    }
 }
 
 impl<T> Clone for SharedLock<T> {

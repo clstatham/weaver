@@ -14,11 +14,10 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     bundle::Bundle,
-    commands::Commands,
     component::Component,
     lock::Lock,
     relationship::Relationship,
-    storage::{Mut, Ref, SortedMap},
+    storage::{Mut, Ref, SortedMap, StaticMut, StaticRef},
     world::{get_world, World},
 };
 
@@ -81,7 +80,7 @@ impl Id {
         self == Self::WILDCARD
     }
 
-    pub fn check_placeholder(self) -> Option<Self> {
+    pub fn check_not_placeholder(self) -> Option<Self> {
         if self.is_placeholder() {
             None
         } else {
@@ -278,7 +277,31 @@ impl Entity {
         self.meta().is_type()
     }
 
-    pub fn generation(self) -> Option<Id> {
+    pub fn check_relative(self) -> Option<Self> {
+        if self.is_relative() {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
+    pub fn check_generational(self) -> Option<Self> {
+        if self.is_generational() {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
+    pub fn check_type(self) -> Option<Self> {
+        if self.is_type() {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_generation(self) -> Option<Id> {
         if self.meta().is_generation() {
             Some(self.meta().value())
         } else {
@@ -311,7 +334,7 @@ impl Entity {
         }
     }
 
-    pub fn check_placeholder(self) -> Option<Self> {
+    pub fn check_not_placeholder(self) -> Option<Self> {
         if self.is_placeholder() {
             None
         } else {
@@ -344,44 +367,33 @@ impl Entity {
         }
     }
 
-    pub fn with_world<F, R>(self, f: F) -> R
-    where
-        F: FnOnce(&World) -> R,
-    {
-        let world = get_world().read();
-        f(&world)
-    }
-
-    pub fn defer<F, R>(self, f: F) -> Result<R>
-    where
-        F: FnOnce(&World, &mut Commands) -> R,
-    {
-        get_world().defer(f)
-    }
-
-    pub fn with_value_ref<F, R>(self, f: F) -> Option<R>
+    pub fn with_value_ref<F, R>(self, f: F) -> Result<R>
     where
         F: FnOnce(Ref<'_>) -> R,
     {
-        self.with_world(|world| {
-            let storage = world.storage();
-            let r = storage.find(self.type_id()?, self)?;
-            Some(f(r))
-        })
+        get_world()
+            .defer(|world, _| {
+                let storage = world.storage();
+                let r = storage.find(self.type_id()?, self)?;
+                Some(f(r))
+            })?
+            .ok_or_else(|| anyhow::anyhow!("Value does not exist: {}", self))
     }
 
-    pub fn with_value_mut<F, R>(self, f: F) -> Option<R>
+    pub fn with_value_mut<F, R>(self, f: F) -> Result<R>
     where
         F: FnOnce(Mut<'_>) -> R,
     {
-        self.with_world(|world| {
-            let storage = world.storage();
-            let r = storage.find_mut(self.type_id()?, self)?;
-            Some(f(r))
-        })
+        get_world()
+            .defer(|world, _| {
+                let storage = world.storage();
+                let r = storage.find_mut(self.type_id()?, self)?;
+                Some(f(r))
+            })?
+            .ok_or_else(|| anyhow::anyhow!("Value does not exist: {}", self))
     }
 
-    pub fn with_self_as_ref<T: Component, F, R>(self, f: F) -> Option<R>
+    pub fn with_self_as_ref<T: Component, F, R>(self, f: F) -> Result<R>
     where
         F: FnOnce(&T) -> R,
     {
@@ -389,9 +401,10 @@ impl Entity {
             let r = r.as_ref::<T>()?;
             Some(f(r))
         })?
+        .ok_or_else(|| anyhow::anyhow!("Value does not exist: {}", self))
     }
 
-    pub fn with_self_as_mut<T: Component, F, R>(self, f: F) -> Option<R>
+    pub fn with_self_as_mut<T: Component, F, R>(self, f: F) -> Result<R>
     where
         F: FnOnce(&mut T) -> R,
     {
@@ -399,6 +412,7 @@ impl Entity {
             let r = r.as_mut::<T>()?;
             Some(f(r))
         })?
+        .ok_or_else(|| anyhow::anyhow!("Value does not exist: {}", self))
     }
 
     pub fn is<T: Component>(self) -> bool {
@@ -406,30 +420,48 @@ impl Entity {
     }
 
     pub fn has<T: Component>(self) -> bool {
-        self.with_world(|world| world.has::<T>(self))
+        get_world().has::<T>(self)
     }
 
-    pub fn with_component_ref<T: Component, R>(self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        self.with_world(|world| {
-            let r = world.get(self, T::type_id())?;
-            let r = r.as_ref::<T>()?;
-            Some(f(r))
-        })
+    pub fn with_component_ref<T: Component, R>(
+        self,
+        f: impl FnOnce(StaticRef<'_, T>) -> R,
+    ) -> Option<R> {
+        get_world().with_component_ref(self, f)
     }
 
-    pub fn with_component_mut<T: Component, R>(self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
-        self.with_world(|world| {
-            let mut r = world.get_mut(self, T::type_id())?;
-            let r = r.as_mut::<T>()?;
-            Some(f(r))
-        })
+    pub fn with_component_mut<T: Component, R>(
+        self,
+        f: impl FnOnce(StaticMut<'_, T>) -> R,
+    ) -> Option<R> {
+        get_world().with_component_mut(self, f)
+    }
+
+    pub fn relationship_first(self) -> Option<Entity> {
+        self.check_relative()?;
+        if let Some(e) = Entity::new_with_current_generation(self.id()) {
+            Some(e)
+        } else {
+            log::error!("Relationship first entity does not exist: {}", self);
+            None
+        }
+    }
+
+    pub fn relationship_second(self) -> Option<Entity> {
+        self.check_relative()?;
+        if let Some(e) = Entity::new_with_current_generation(self.meta().value()) {
+            Some(e)
+        } else {
+            log::error!("Relationship second entity does not exist: {}", self);
+            None
+        }
     }
 
     pub fn with_relatives<F, R>(self, relationship_type: Id, f: F) -> Option<R>
     where
         F: FnOnce(&[Entity]) -> R,
     {
-        let rels = self.with_world(|world| world.get_relatives_id(self, relationship_type))?;
+        let rels = get_world().get_relatives_id(self, relationship_type)?;
         Some(f(&rels))
     }
 
@@ -437,13 +469,14 @@ impl Entity {
     where
         F: FnOnce(&[(Id, Entity)]) -> R,
     {
-        let rels = self.with_world(|world| world.all_relatives(self))?;
+        let rels = get_world().all_relatives(self)?;
         Some(f(&rels))
     }
 
     pub fn add_relative<R: Relationship>(self, relationship: R, relative: Entity) -> Result<()> {
-        self.defer(|_, commands| {
-            commands.add_components(self, vec![relationship.into_relationship_data(relative)?]);
+        let data = relationship.into_relationship_data(relative);
+        get_world().defer(|_, commands| {
+            commands.add(self, vec![data]);
             Ok::<(), anyhow::Error>(())
         })??;
         Ok(())
@@ -452,8 +485,8 @@ impl Entity {
     #[allow(clippy::should_implement_trait)]
     pub fn add<T: Bundle>(self, components: T) -> Result<()> {
         let data = components.into_data_vec();
-        self.defer(|_, commands| {
-            commands.add_components(self, data);
+        get_world().defer(|_, commands| {
+            commands.add(self, data);
             Ok::<(), anyhow::Error>(())
         })??;
         Ok(())
