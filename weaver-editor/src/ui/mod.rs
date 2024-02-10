@@ -60,7 +60,6 @@ impl<'a> TabViewer for EditorTabViewer<'a> {
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
         {
             let renderer = self.world.read_resource::<Renderer>().unwrap();
-            let renderer = renderer.as_ref::<Renderer>().unwrap();
             match tab.as_str() {
                 "Viewport" => {
                     let camera = self
@@ -76,7 +75,6 @@ impl<'a> TabViewer for EditorTabViewer<'a> {
 
                     if let Some(id) = self.state.viewport_id {
                         let ctx = self.world.read_resource::<EguiContext>().unwrap();
-                        let ctx = ctx.as_ref::<EguiContext>().unwrap();
 
                         let view = renderer
                             .main_viewport()
@@ -120,13 +118,9 @@ impl System for EditorStateUi {
     fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
         let world = world.read();
         let mut state = world.write_resource::<EditorState>().unwrap();
-        let state = state.as_mut::<EditorState>().unwrap();
         let mut tree = world.write_resource::<Tabs>().unwrap();
-        let tree = tree.as_mut::<Tabs>().unwrap();
         let mut fps = world.write_resource::<FpsDisplay>().unwrap();
-        let fps = fps.as_mut::<FpsDisplay>().unwrap();
         let ctx = world.read_resource::<EguiContext>().unwrap();
-        let ctx = ctx.as_ref::<EguiContext>().unwrap();
         ctx.draw_if_ready(|ctx| {
             egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
                 fps.run_ui(ui);
@@ -139,7 +133,7 @@ impl System for EditorStateUi {
                         ui,
                         &mut EditorTabViewer {
                             world: &world,
-                            state,
+                            state: &mut state,
                         },
                     );
             });

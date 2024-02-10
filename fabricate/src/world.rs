@@ -10,10 +10,10 @@ use crate::{
     lock::{DeferredRead, DeferredWrite, Read, SharedLock, Write},
     prelude::{Bundle, Mut},
     query::{Query, QueryBuilder},
-    registry::Entity,
+    registry::{Entity, Id},
     relationship::Relationship,
     script::{interp::BuildOnWorld, Script},
-    storage::{Data, Ref, SortedMap, Storage},
+    storage::{Data, Ref, SortedMap, StaticMut, StaticRef, Storage},
     system::{DynamicSystem, SystemGraph, SystemStage},
 };
 
@@ -78,11 +78,11 @@ impl World {
         self.get_mut(self.root, id)
     }
 
-    pub fn read_resource<T: Atom>(&self) -> Option<Ref<'_>> {
+    pub fn read_resource<T: Atom>(&self) -> Option<StaticRef<'_, T>> {
         self.get_component::<T>(self.root)
     }
 
-    pub fn write_resource<T: Atom>(&self) -> Option<Mut<'_>> {
+    pub fn write_resource<T: Atom>(&self) -> Option<StaticMut<'_, T>> {
         self.get_component_mut::<T>(self.root)
     }
 
@@ -131,7 +131,7 @@ impl World {
         Ok(entity)
     }
 
-    pub fn get_relatives_id(&self, entity: Entity, relationship_type: u32) -> Option<Vec<Entity>> {
+    pub fn get_relatives_id(&self, entity: Entity, relationship_type: Id) -> Option<Vec<Entity>> {
         let archetype = self.storage().entity_archetype(entity)?;
         let relationships =
             archetype.row_type_filtered(entity, |ty| ty.id() == relationship_type)?;
@@ -139,7 +139,7 @@ impl World {
         for relationship in relationships {
             let relationship_type = relationship.type_id();
             let relative_id = relationship_type.meta().value();
-            out.push(Entity::with_current_generation(relative_id).unwrap());
+            out.push(Entity::new_with_current_generation(relative_id).unwrap());
         }
         Some(out)
     }
@@ -149,7 +149,7 @@ impl World {
         self.get_relatives_id(entity, relationship_type.id())
     }
 
-    pub fn all_relatives(&self, entity: Entity) -> Option<Vec<(u32, Entity)>> {
+    pub fn all_relatives(&self, entity: Entity) -> Option<Vec<(Id, Entity)>> {
         let archetype = self.storage().entity_archetype(entity)?;
         let relationships = archetype.row_type_filtered(entity, |ty| ty.is_relative())?;
         let mut out = Vec::new();
@@ -158,17 +158,17 @@ impl World {
             let relative_id = relationship_type.meta().value();
             out.push((
                 relationship_type.id(),
-                Entity::with_current_generation(relative_id).unwrap(),
+                Entity::new_with_current_generation(relative_id).unwrap(),
             ));
         }
         Some(out)
     }
 
-    pub fn get_component<T: Atom>(&self, entity: Entity) -> Option<Ref<'_>> {
+    pub fn get_component<T: Atom>(&self, entity: Entity) -> Option<StaticRef<'_, T>> {
         self.storage.get_component::<T>(entity)
     }
 
-    pub fn get_component_mut<T: Atom>(&self, entity: Entity) -> Option<Mut<'_>> {
+    pub fn get_component_mut<T: Atom>(&self, entity: Entity) -> Option<StaticMut<'_, T>> {
         self.storage.get_component_mut::<T>(entity)
     }
 
@@ -337,7 +337,7 @@ impl LockedWorldHandle {
 
     pub fn with_resource<T: Atom, F, R>(&self, f: F) -> Option<R>
     where
-        F: FnOnce(Ref<'_>) -> R,
+        F: FnOnce(StaticRef<'_, T>) -> R,
     {
         let world = self.read();
         let res = world.read_resource::<T>()?;
@@ -346,7 +346,7 @@ impl LockedWorldHandle {
 
     pub fn with_resource_mut<T: Atom, F, R>(&self, f: F) -> Option<R>
     where
-        F: FnOnce(Mut<'_>) -> R,
+        F: FnOnce(StaticMut<'_, T>) -> R,
     {
         let world = self.read();
         let res = world.write_resource::<T>()?;
@@ -373,7 +373,7 @@ impl LockedWorldHandle {
         world.spawn(components)
     }
 
-    pub fn get_relatives_id(&self, entity: Entity, relationship_type: u32) -> Option<Vec<Entity>> {
+    pub fn get_relatives_id(&self, entity: Entity, relationship_type: Id) -> Option<Vec<Entity>> {
         let world = self.read();
         world.get_relatives_id(entity, relationship_type)
     }
@@ -385,7 +385,7 @@ impl LockedWorldHandle {
 
     pub fn with_component<T: Atom, F, R>(&self, entity: Entity, f: F) -> Option<R>
     where
-        F: FnOnce(Ref<'_>) -> R,
+        F: FnOnce(StaticRef<'_, T>) -> R,
     {
         let world = self.read();
         let c = world.get_component::<T>(entity)?;
@@ -394,7 +394,7 @@ impl LockedWorldHandle {
 
     pub fn with_component_mut<T: Atom, F, R>(&self, entity: Entity, f: F) -> Option<R>
     where
-        F: FnOnce(Mut<'_>) -> R,
+        F: FnOnce(StaticMut<'_, T>) -> R,
     {
         let world = self.read();
         let c = world.get_component_mut::<T>(entity)?;

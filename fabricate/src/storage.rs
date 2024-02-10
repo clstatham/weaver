@@ -1,4 +1,7 @@
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+};
 
 use anyhow::{bail, Result};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -6,7 +9,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{
     component::Atom,
     lock::Lock,
-    prelude::{Entity, MapRead, MapWrite, Read, Uid, Write},
+    prelude::{Entity, Id, MapRead, MapWrite, Read, Write},
     registry::StaticId,
     relationship::Relationship,
 };
@@ -223,8 +226,8 @@ impl DynamicData {
         }
     }
 
-    pub fn new_relation<R: Relationship>(relation: R, relative: Entity) -> Self {
-        let type_id = Entity::new_relationship(R::static_type_id(), relative);
+    pub fn new_relationship<R: Relationship>(relation: R, relative: Entity) -> Self {
+        let type_id = Entity::new_relationship(R::static_type_id().id(), relative.id());
         let entity = Entity::allocate(Some(type_id));
         let data = Box::new(relation);
         Self {
@@ -323,8 +326,8 @@ impl Data {
         Self::Pointer(Pointer::new(target_type_id, target_entity))
     }
 
-    pub fn new_relation<R: Relationship>(relation: R, relative: Entity) -> Self {
-        Self::Dynamic(DynamicData::new_relation(relation, relative))
+    pub fn new_relationship<R: Relationship>(relation: R, relative: Entity) -> Self {
+        Self::Dynamic(DynamicData::new_relationship(relation, relative))
     }
 
     pub fn type_id(&self) -> Entity {
@@ -534,19 +537,149 @@ impl<'a> PointerMut<'a> {
     }
 }
 
-pub struct DynamicDataRef<'a> {
+pub struct StaticRef<'a, T: Atom> {
     type_id: Entity,
     entity: Entity,
-    column: Read<'a, Column>,
+    component: MapRead<'a, T>,
 }
 
-impl PartialEq for DynamicDataRef<'_> {
+impl<'a, T: Atom> PartialEq for StaticRef<'a, T> {
     fn eq(&self, other: &Self) -> bool {
         self.type_id == other.type_id && self.entity == other.entity
     }
 }
 
-impl<'a> DynamicDataRef<'a> {
+impl<'a, T: Atom> StaticRef<'a, T> {
+    pub fn new(type_id: Entity, entity: Entity, component: MapRead<'a, T>) -> Self {
+        Self {
+            type_id,
+            entity,
+            component,
+        }
+    }
+
+    pub fn type_id(&self) -> Entity {
+        self.type_id
+    }
+
+    pub fn entity(&self) -> Entity {
+        self.entity
+    }
+}
+
+impl<T: Atom> AsRef<T> for StaticRef<'_, T> {
+    fn as_ref(&self) -> &T {
+        &self.component
+    }
+}
+
+impl<T: Atom> Deref for StaticRef<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.component
+    }
+}
+
+impl<T: Atom> Debug for StaticRef<'_, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StaticRef")
+            .field("type_id", &self.type_id)
+            .field("entity", &self.entity)
+            .finish()
+    }
+}
+
+impl<T: Atom> std::fmt::Display for StaticRef<'_, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("StaticRef")
+    }
+}
+
+pub struct StaticMut<'a, T: Atom> {
+    type_id: Entity,
+    entity: Entity,
+    component: MapWrite<'a, T>,
+}
+
+impl<'a, T: Atom> PartialEq for StaticMut<'a, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.type_id == other.type_id && self.entity == other.entity
+    }
+}
+
+impl<'a, T: Atom> StaticMut<'a, T> {
+    pub fn new(type_id: Entity, entity: Entity, component: MapWrite<'a, T>) -> Self {
+        Self {
+            type_id,
+            entity,
+            component,
+        }
+    }
+
+    pub fn type_id(&self) -> Entity {
+        self.type_id
+    }
+
+    pub fn entity(&self) -> Entity {
+        self.entity
+    }
+}
+
+impl<T: Atom> AsRef<T> for StaticMut<'_, T> {
+    fn as_ref(&self) -> &T {
+        &self.component
+    }
+}
+
+impl<T: Atom> AsMut<T> for StaticMut<'_, T> {
+    fn as_mut(&mut self) -> &mut T {
+        &mut self.component
+    }
+}
+
+impl<T: Atom> Deref for StaticMut<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.component
+    }
+}
+
+impl<T: Atom> DerefMut for StaticMut<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.component
+    }
+}
+
+impl<T: Atom> Debug for StaticMut<'_, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StaticMut")
+            .field("type_id", &self.type_id)
+            .field("entity", &self.entity)
+            .finish()
+    }
+}
+
+impl<T: Atom> std::fmt::Display for StaticMut<'_, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("StaticMut")
+    }
+}
+
+pub struct DynamicRef<'a> {
+    type_id: Entity,
+    entity: Entity,
+    column: Read<'a, Column>,
+}
+
+impl PartialEq for DynamicRef<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.type_id == other.type_id && self.entity == other.entity
+    }
+}
+
+impl<'a> DynamicRef<'a> {
     pub fn new(type_id: Entity, entity: Entity, column: Read<'a, Column>) -> Self {
         Self {
             type_id,
@@ -576,7 +709,7 @@ impl<'a> DynamicDataRef<'a> {
     }
 }
 
-impl<'a> Debug for DynamicDataRef<'a> {
+impl<'a> Debug for DynamicRef<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DynamicDataRef")
             .field("type_id", &self.type_id)
@@ -585,25 +718,25 @@ impl<'a> Debug for DynamicDataRef<'a> {
     }
 }
 
-impl<'a> std::fmt::Display for DynamicDataRef<'a> {
+impl<'a> std::fmt::Display for DynamicRef<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("DynamicDataRef")
     }
 }
 
-pub struct DynamicDataMut<'a> {
+pub struct DynamicMut<'a> {
     type_id: Entity,
     entity: Entity,
     column: Write<'a, Column>,
 }
 
-impl PartialEq for DynamicDataMut<'_> {
+impl PartialEq for DynamicMut<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.type_id == other.type_id && self.entity == other.entity
     }
 }
 
-impl<'a> DynamicDataMut<'a> {
+impl<'a> DynamicMut<'a> {
     pub fn new(type_id: Entity, entity: Entity, column: Write<'a, Column>) -> Self {
         Self {
             type_id,
@@ -641,7 +774,7 @@ impl<'a> DynamicDataMut<'a> {
     }
 }
 
-impl<'a> Debug for DynamicDataMut<'a> {
+impl<'a> Debug for DynamicMut<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DynamicDataMut")
             .field("type_id", &self.type_id)
@@ -650,7 +783,7 @@ impl<'a> Debug for DynamicDataMut<'a> {
     }
 }
 
-impl<'a> std::fmt::Display for DynamicDataMut<'a> {
+impl<'a> std::fmt::Display for DynamicMut<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("DynamicDataMut")
     }
@@ -659,7 +792,7 @@ impl<'a> std::fmt::Display for DynamicDataMut<'a> {
 #[derive(Debug, PartialEq)]
 pub enum Ref<'a> {
     Pointer(PointerRef<'a>),
-    Dynamic(DynamicDataRef<'a>),
+    Dynamic(DynamicRef<'a>),
 }
 
 impl<'a> Ref<'a> {
@@ -684,7 +817,7 @@ impl<'a> Ref<'a> {
         }
     }
 
-    pub fn as_dynamic(&self) -> Option<&DynamicDataRef<'a>> {
+    pub fn as_dynamic(&self) -> Option<&DynamicRef<'a>> {
         match self {
             Self::Pointer(_) => None,
             Self::Dynamic(data) => Some(data),
@@ -709,7 +842,7 @@ impl<'a> Ref<'a> {
 #[derive(Debug)]
 pub enum Mut<'a> {
     Pointer(PointerMut<'a>),
-    Dynamic(DynamicDataMut<'a>),
+    Dynamic(DynamicMut<'a>),
 }
 
 impl<'a> Mut<'a> {
@@ -734,14 +867,14 @@ impl<'a> Mut<'a> {
         }
     }
 
-    pub fn as_dynamic(&self) -> Option<&DynamicDataMut<'a>> {
+    pub fn as_dynamic(&self) -> Option<&DynamicMut<'a>> {
         match self {
             Self::Pointer(_) => None,
             Self::Dynamic(data) => Some(data),
         }
     }
 
-    pub fn as_dynamic_mut(&mut self) -> Option<&mut DynamicDataMut<'a>> {
+    pub fn as_dynamic_mut(&mut self) -> Option<&mut DynamicMut<'a>> {
         match self {
             Self::Pointer(_) => None,
             Self::Dynamic(data) => Some(data),
@@ -791,7 +924,7 @@ impl DynamicColumn {
         self.type_id
     }
 
-    pub fn entities(&self) -> Vec<Entity> {
+    pub fn data_uids(&self) -> Vec<Entity> {
         self.dense.iter().map(|data| data.entity).collect()
     }
 
@@ -1200,7 +1333,7 @@ impl LockedColumn {
         }))
     }
 
-    pub fn get_dynamic(&self, entity: Entity) -> Option<DynamicDataRef<'_>> {
+    pub fn get_dynamic(&self, entity: Entity) -> Option<DynamicRef<'_>> {
         let col_lock = self.0.read();
         let col = col_lock.as_dynamic()?;
 
@@ -1208,11 +1341,11 @@ impl LockedColumn {
             return None;
         }
 
-        let data = DynamicDataRef::new(col.type_id(), entity, col_lock);
+        let data = DynamicRef::new(col.type_id(), entity, col_lock);
         Some(data)
     }
 
-    pub fn get_dynamic_mut(&self, entity: Entity) -> Option<DynamicDataMut<'_>> {
+    pub fn get_dynamic_mut(&self, entity: Entity) -> Option<DynamicMut<'_>> {
         let col_lock = self.0.read();
 
         if !col_lock.contains(entity) {
@@ -1221,7 +1354,7 @@ impl LockedColumn {
 
         drop(col_lock);
         let col_lock = self.0.write();
-        let data = DynamicDataMut::new(col_lock.type_id(), entity, col_lock);
+        let data = DynamicMut::new(col_lock.type_id(), entity, col_lock);
         Some(data)
     }
 
@@ -1269,13 +1402,13 @@ impl LockedColumn {
 /// Storage for a sparse set of indices and a dense array of contiguous arrays of instances of a (single) storable type.
 #[derive(Debug, Default)]
 pub struct Archetype {
-    archetype_id: Uid,
+    archetype_id: Id,
     entity_ids: FxHashSet<Entity>,
     type_columns: FxHashMap<Entity, LockedColumn>,
 }
 
 impl Archetype {
-    pub fn archetype_id(&self) -> Uid {
+    pub fn archetype_id(&self) -> Id {
         self.archetype_id
     }
 
@@ -1367,6 +1500,17 @@ impl Archetype {
         self.type_columns.clear();
     }
 
+    pub fn get_static<T: Atom>(&self, entity: Entity) -> Option<StaticRef<'_, T>> {
+        let column = self.type_columns.get(&T::type_id())?;
+        let is_dynamic = matches!(&*column.read(), Column::Dynamic(_));
+        if is_dynamic {
+            let component = column.get::<T>(entity)?;
+            Some(StaticRef::new(T::static_type_id(), entity, component))
+        } else {
+            None
+        }
+    }
+
     pub fn get(&self, type_id: Entity, entity: Entity) -> Option<Ref<'_>> {
         let column = self.type_columns.get(&type_id)?;
         let is_dynamic = matches!(&*column.read(), Column::Dynamic(_));
@@ -1376,6 +1520,17 @@ impl Archetype {
         } else {
             let pointer = column.get_pointer(entity)?;
             Some(Ref::Pointer(pointer))
+        }
+    }
+
+    pub fn get_static_mut<T: Atom>(&self, entity: Entity) -> Option<StaticMut<'_, T>> {
+        let column = self.type_columns.get(&T::type_id())?;
+        let is_dynamic = matches!(&*column.read(), Column::Dynamic(_));
+        if is_dynamic {
+            let component = column.get_mut(entity)?;
+            Some(StaticMut::new(T::static_type_id(), entity, component))
+        } else {
+            None
         }
     }
 
@@ -1476,8 +1631,8 @@ impl Archetype {
 
 #[derive(Debug)]
 pub struct Storage {
-    archetypes: SortedMap<Uid, Archetype>,
-    entity_archetypes: SortedMap<Entity, Uid>,
+    archetypes: SortedMap<Id, Archetype>,
+    entity_archetypes: SortedMap<Entity, Id>,
 }
 
 impl Storage {
@@ -1488,7 +1643,7 @@ impl Storage {
         }
     }
 
-    pub fn archetype(&self, archetype_id: &Uid) -> Option<&Archetype> {
+    pub fn archetype(&self, archetype_id: &Id) -> Option<&Archetype> {
         self.archetypes.get(archetype_id)
     }
 
@@ -1544,12 +1699,14 @@ impl Storage {
         archetype.get_mut(type_id, entity)
     }
 
-    pub fn get_component<T: Atom>(&self, entity: Entity) -> Option<Ref<'_>> {
-        self.get(T::type_id(), entity)
+    pub fn get_component<T: Atom>(&self, entity: Entity) -> Option<StaticRef<'_, T>> {
+        let archetype = self.entity_archetype(entity)?;
+        archetype.get_static(entity)
     }
 
-    pub fn get_component_mut<T: Atom>(&self, entity: Entity) -> Option<Mut<'_>> {
-        self.get_mut(T::type_id(), entity)
+    pub fn get_component_mut<T: Atom>(&self, entity: Entity) -> Option<StaticMut<'_, T>> {
+        let archetype = self.entity_archetype(entity)?;
+        archetype.get_static_mut(entity)
     }
 
     pub fn find(&self, type_id: Entity, value_id: Entity) -> Option<Ref<'_>> {
@@ -1569,7 +1726,7 @@ impl Storage {
                 a.type_columns().find_map(|(_, c)| {
                     let c_lock = c.read();
                     if let Some(c_lock) = c_lock.as_dynamic() {
-                        if c_lock.entities().contains(&value_id) {
+                        if c_lock.data_uids().contains(&value_id) {
                             let e = c_lock.find_entity_with(value_id)?;
 
                             let d = c.get_dynamic(e)?;
@@ -1611,7 +1768,7 @@ impl Storage {
                 a.type_columns().find_map(|(_, c)| {
                     let c_lock = c.read();
                     if let Some(c_lock) = c_lock.as_dynamic() {
-                        if c_lock.entities().contains(&value_id) {
+                        if c_lock.data_uids().contains(&value_id) {
                             let e = c_lock.find_entity_with(value_id)?;
 
                             let d = c.get_dynamic_mut(e)?;
@@ -1646,13 +1803,13 @@ impl Storage {
         if self.entity_archetypes.contains(&entity) {
             bail!("entity already exists in storage: {:?}", entity);
         }
-        self.entity_archetypes.insert(entity, Uid::default());
+        self.entity_archetypes.insert(entity, Id::default());
         Ok(())
     }
 
     pub fn create_entity(&mut self) -> Entity {
         let entity = Entity::allocate(None);
-        self.entity_archetypes.insert(entity, Uid::default());
+        self.entity_archetypes.insert(entity, Id::default());
         entity
     }
 
@@ -1750,7 +1907,7 @@ impl Storage {
                 type_columns.insert(type_id, column);
             }
 
-            let archetype_id = Uid::allocate();
+            let archetype_id = Id::allocate();
             let archetype = Archetype {
                 archetype_id,
                 type_columns,

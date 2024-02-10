@@ -389,12 +389,7 @@ mod tests {
         let mut world = world.write();
         let e = world.spawn((0u32,)).unwrap();
         assert_eq!(
-            *world
-                .storage()
-                .get_component::<u32>(e)
-                .unwrap()
-                .as_ref::<u32>()
-                .unwrap(),
+            *world.storage().get_component::<u32>(e).unwrap().as_ref(),
             0
         );
     }

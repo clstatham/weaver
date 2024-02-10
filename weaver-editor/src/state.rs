@@ -49,7 +49,7 @@ impl EditorAction for RenameEntity {
             self.entity
                 .with_component_mut::<NameTag, _>(|tag| tag.0 = self.new_name.clone());
         } else {
-            self.entity.add_components(NameTag(self.new_name.clone()))?;
+            self.entity.add(NameTag(self.new_name.clone()))?;
         }
         Ok(())
     }
@@ -59,7 +59,7 @@ impl EditorAction for RenameEntity {
             self.entity
                 .with_component_mut::<NameTag, _>(|tag| tag.0 = self.old_name.clone());
         } else {
-            self.entity.add_components(NameTag(self.old_name.clone()))?;
+            self.entity.add(NameTag(self.old_name.clone()))?;
         }
         Ok(())
     }

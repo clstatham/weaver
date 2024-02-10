@@ -21,10 +21,10 @@ pub mod prelude {
         graph::{Edge, Graph},
         lock::{MapRead, MapWrite, Read, ReadWrite, SharedLock, Write},
         query::Query,
-        registry::{global_registry, Entity, Registry, RegistryHandle, Uid},
+        registry::{global_registry, Entity, Id, Registry, RegistryHandle},
         script::Script,
         script_vtable,
-        storage::{Data, DynamicData, DynamicDataMut, DynamicDataRef, Mut, Ref, Storage},
+        storage::{Data, DynamicData, DynamicMut, DynamicRef, Mut, Ref, Storage},
         system::{DynamicSystem, System, SystemGraph, SystemStage},
         world::{get_world, LockedWorldHandle, World},
     };

@@ -530,7 +530,6 @@ impl Pass for DoodadRenderPass {
         let mut cone_colors = Vec::new();
 
         let doodads = world.read_resource::<Doodads>().unwrap();
-        let doodads = doodads.as_ref::<Doodads>().unwrap();
         for doodad in doodads.doodads.write().drain(..) {
             match doodad {
                 Doodad::Line(line) => {

@@ -57,9 +57,7 @@ impl System for Setup {
         {
             let world = world.read();
             let ctx = world.read_resource::<EguiContext>().unwrap();
-            let ctx = ctx.as_ref::<EguiContext>().unwrap();
             let renderer = world.read_resource::<Renderer>().unwrap();
-            let renderer = renderer.as_ref::<Renderer>().unwrap();
 
             let viewport = renderer.main_viewport();
             let viewport = viewport.read();
@@ -68,7 +66,6 @@ impl System for Setup {
             let id = ctx.convert_texture(renderer.device(), &view);
 
             let mut state = world.write_resource::<EditorState>().unwrap();
-            let state = state.as_mut::<EditorState>().unwrap();
 
             state.viewport_id = Some(id);
         }
@@ -76,10 +73,8 @@ impl System for Setup {
         let skybox = {
             let world = world.read();
             let mut assets = world.write_resource::<AssetServer>().unwrap();
-            let assets = assets.as_mut::<AssetServer>().unwrap();
             let hdr_loader = world.read_resource::<HdrLoader>().unwrap();
-            let hdr_loader = hdr_loader.as_ref::<HdrLoader>().unwrap();
-            assets.load_skybox("sky_2k.hdr", hdr_loader)
+            assets.load_skybox("sky_2k.hdr", &hdr_loader)
         };
         world.write().spawn((skybox,)).unwrap();
 
@@ -106,7 +101,6 @@ impl System for Setup {
         let (mesh, material) = {
             let world = world.read();
             let mut assets = world.write_resource::<AssetServer>().unwrap();
-            let assets = assets.as_mut::<AssetServer>().unwrap();
             let mesh = assets.load_mesh("meshes/monkey_2x.glb");
             let material = assets.load_material("materials/wood.glb");
             (mesh, material)
@@ -150,9 +144,7 @@ impl System for UpdateCamera {
     fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
         let world = world.read();
         let input = world.read_resource::<Input>().unwrap();
-        let input = input.as_ref::<Input>().unwrap();
         let time = world.read_resource::<Time>().unwrap();
-        let time = time.as_ref::<Time>().unwrap();
         let query = world
             .query()
             .write::<Camera>()?
@@ -165,7 +157,7 @@ impl System for UpdateCamera {
             let camera = camera.get_mut::<Camera>().unwrap();
             let controller = controller.get_mut::<FlyCameraController>().unwrap();
             let aspect = controller.aspect;
-            controller.update(input, time.delta_seconds, aspect, camera);
+            controller.update(&input, time.delta_seconds, aspect, camera);
         }
         Ok(vec![])
     }
@@ -185,17 +177,14 @@ impl System for EditorRender {
     fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
         let world = world.read();
         let mut renderer = world.write_resource::<Renderer>().unwrap();
-        let renderer = renderer.as_mut::<Renderer>().unwrap();
         let mut ui = world.write_resource::<EguiContext>().unwrap();
-        let ui = ui.as_mut::<EguiContext>().unwrap();
         let window = world.read_resource::<Window>().unwrap();
-        let window = window.as_ref::<Window>().unwrap();
         {
             let mut encoder = renderer.begin_render();
             renderer.prepare_components();
             renderer.prepare_passes();
             renderer.render_to_viewport(&mut encoder).unwrap();
-            renderer.render_ui(ui, window, &mut encoder);
+            renderer.render_ui(&mut ui, &window, &mut encoder);
 
             // renderer.render_viewport_to_screen(&mut encoder).unwrap();
             renderer.end_render(encoder);
@@ -284,7 +273,6 @@ fn update_transforms_recurse(world: &World, entity: Entity, parent_global: Globa
 
     let global = {
         let mut global = world.get_component_mut::<GlobalTransform>(entity).unwrap();
-        let global = global.as_mut::<GlobalTransform>().unwrap();
 
         global.matrix = parent_global.matrix * local;
         *global
@@ -303,7 +291,6 @@ impl System for DrawEditorDoodads {
     fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
         let world = world.read();
         let mut doodads = world.write_resource::<Doodads>().unwrap();
-        let doodads = doodads.as_mut::<Doodads>().unwrap();
 
         let gray = Color::new(0.5, 0.5, 0.5, 1.0);
 
@@ -323,7 +310,6 @@ impl System for DrawEditorDoodads {
         }
 
         let state = world.read_resource::<EditorState>().unwrap();
-        let state = state.as_ref::<EditorState>().unwrap();
 
         if let Some(ref selected) = state.selected_entity {
             let transform = selected.with_component_ref::<GlobalTransform, _>(|t| *t);
@@ -360,9 +346,7 @@ impl System for PickEntity {
     fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
         let world = world.read();
         let input = world.read_resource::<Input>().unwrap();
-        let input = input.as_ref::<Input>().unwrap();
         let renderer = world.read_resource::<Renderer>().unwrap();
-        let renderer = renderer.as_ref::<Renderer>().unwrap();
 
         let q = world
             .query()
@@ -404,7 +388,6 @@ impl System for PickEntity {
             }
             if let Some(closest) = closest {
                 let mut state = world.write_resource::<EditorState>().unwrap();
-                let state = state.as_mut::<EditorState>().unwrap();
                 if state.selected_entity != Some(closest.to_owned()) {
                     state.selected_entity = Some(closest);
                     state.selected_component = None;

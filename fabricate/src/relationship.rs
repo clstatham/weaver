@@ -11,6 +11,6 @@ pub trait Relationship: Atom {
     where
         Self: Sized,
     {
-        Ok(Data::new_relation(self, relative))
+        Ok(Data::new_relationship(self, relative))
     }
 }

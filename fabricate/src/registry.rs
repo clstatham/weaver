@@ -51,9 +51,9 @@ use crate::{
     derive_more::Sum,
 )]
 #[repr(transparent)]
-pub struct Uid(u32);
+pub struct Id(u32);
 
-impl Uid {
+impl Id {
     pub const PLACEHOLDER: Self = Self(u32::MAX);
     pub const WILDCARD: Self = Self(VALUE_INFO_MASK);
 
@@ -90,7 +90,7 @@ impl Uid {
     }
 }
 
-impl Default for Uid {
+impl Default for Id {
     fn default() -> Self {
         Self::PLACEHOLDER
     }
@@ -105,42 +105,42 @@ pub const VALUE_METADATA_MASK: u32 = !((1 << METADATA_SHIFT) - 1);
 pub const VALUE_INFO_MASK: u32 = !VALUE_METADATA_MASK;
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct EntityMeta(u32);
+pub struct EntityMeta(Id);
 
 impl EntityMeta {
-    pub const PLACEHOLDER: Self = Self(u32::MAX);
-    pub const WILDCARD: Self = Self(VALUE_INFO_MASK);
+    pub const PLACEHOLDER: Self = Self(Id::PLACEHOLDER);
+    pub const WILDCARD: Self = Self(Id(VALUE_INFO_MASK));
 
-    pub const fn new_relative(id: u32) -> Self {
-        Self(id | RELATIVE_BITS)
+    pub const fn new_relative(id: Id) -> Self {
+        Self(Id(id.as_u32() | RELATIVE_BITS))
     }
 
-    pub const fn new_generation(generation: u32) -> Self {
-        Self(generation | GENERATION_BITS)
+    pub const fn new_generation(generation: Id) -> Self {
+        Self(Id(generation.as_u32() | GENERATION_BITS))
     }
 
-    pub const fn new_type(id: u32) -> Self {
-        Self(id | TYPE_BITS)
+    pub const fn new_type(id: Id) -> Self {
+        Self(Id(id.as_u32() | TYPE_BITS))
     }
 
-    pub const fn value(&self) -> u32 {
-        self.0 & VALUE_INFO_MASK
+    pub const fn value(&self) -> Id {
+        Id(self.0.as_u32() & VALUE_INFO_MASK)
     }
 
     pub const fn is_relative(&self) -> bool {
-        self.0 & VALUE_METADATA_MASK == RELATIVE_BITS
+        self.0.as_u32() & VALUE_METADATA_MASK == RELATIVE_BITS
     }
 
     pub const fn is_generation(&self) -> bool {
-        self.0 & VALUE_METADATA_MASK == GENERATION_BITS
+        self.0.as_u32() & VALUE_METADATA_MASK == GENERATION_BITS
     }
 
     pub const fn is_type(&self) -> bool {
-        self.0 & VALUE_METADATA_MASK == TYPE_BITS
+        self.0.as_u32() & VALUE_METADATA_MASK == TYPE_BITS
     }
 
     pub const fn is_wildcard(&self) -> bool {
-        self.0 == Self::WILDCARD.0
+        self.0.as_u32() == Self::WILDCARD.0.as_u32()
     }
 }
 
@@ -195,35 +195,30 @@ impl Display for EntityMeta {
 /// This can be either a primitive value (e.g. `42`), or a dynamic/composite value (e.g. a struct instance).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(C)]
-pub struct Entity(u32, EntityMeta);
+pub struct Entity(Id, EntityMeta);
 
 impl Entity {
     pub const fn placeholder() -> Self {
-        Self(Uid::PLACEHOLDER.as_u32(), EntityMeta::PLACEHOLDER)
+        Self(Id::PLACEHOLDER, EntityMeta::PLACEHOLDER)
     }
 
-    pub const fn new(entity: Uid) -> Self {
-        Self(entity.as_u32(), EntityMeta::new_generation(0))
+    pub const fn new_generational(id: Id, generation: Id) -> Self {
+        Self(id, EntityMeta::new_generation(generation))
     }
 
-    pub const fn with_generation(entity: u32, generation: u32) -> Self {
-        Self(entity, EntityMeta::new_generation(generation))
+    pub fn new_with_current_generation(id: Id) -> Option<Self> {
+        global_registry().current_generation(id)
     }
 
-    pub fn with_current_generation(entity: u32) -> Option<Self> {
-        global_registry().current_generation(entity)
+    pub const fn new_relationship(relation: Id, relative: Id) -> Self {
+        Self(relation, EntityMeta::new_relative(relative))
     }
 
-    pub fn new_relationship(relation: Entity, relative: Entity) -> Self {
-        log::trace!("Creating relationship: ({}, {})", relation, relative);
-        Self(relation.id(), EntityMeta::new_relative(relative.id()))
-    }
-
-    pub fn new_type(entity: u32) -> Self {
+    pub const fn new_type(entity: Id) -> Self {
         Self(entity, EntityMeta::new_type(entity))
     }
 
-    pub fn new_wildcard_id(entity: u32) -> Self {
+    pub const fn new_wildcard_id(entity: Id) -> Self {
         Self(entity, EntityMeta::WILDCARD)
     }
 
@@ -235,7 +230,7 @@ impl Entity {
         let this = if let Some(ty) = ty {
             global_registry().allocate_entity_with_type(ty)
         } else {
-            global_registry().allocate_generative_entity()
+            global_registry().allocate_generational_entity()
         };
         log::trace!("Allocated value: {}", this);
         this
@@ -252,18 +247,18 @@ impl Entity {
     }
 
     pub const fn as_usize(self) -> usize {
-        self.0 as usize
+        self.id().as_usize()
     }
 
     pub fn is_placeholder(self) -> bool {
-        self.id() == Uid::PLACEHOLDER.as_u32()
+        self.id() == Id::PLACEHOLDER
     }
 
-    pub const fn is_wildcard(self) -> bool {
+    pub fn is_wildcard(self) -> bool {
         self.meta().is_wildcard()
     }
 
-    pub const fn id(self) -> u32 {
+    pub const fn id(self) -> Id {
         self.0
     }
 
@@ -275,7 +270,7 @@ impl Entity {
         self.meta().is_relative()
     }
 
-    pub const fn is_generative(self) -> bool {
+    pub const fn is_generational(self) -> bool {
         self.meta().is_generation()
     }
 
@@ -283,7 +278,7 @@ impl Entity {
         self.meta().is_type()
     }
 
-    pub const fn generation(self) -> Option<u32> {
+    pub fn generation(self) -> Option<Id> {
         if self.meta().is_generation() {
             Some(self.meta().value())
         } else {
@@ -291,7 +286,7 @@ impl Entity {
         }
     }
 
-    pub const fn associated_value_id(self) -> Option<u32> {
+    pub fn get_relative(self) -> Option<Id> {
         if self.meta().is_relative() {
             Some(self.meta().value())
         } else {
@@ -300,8 +295,8 @@ impl Entity {
     }
 
     pub fn is_alive(self) -> bool {
-        self.is_generative()
-            && global_registry().value_generations.read().get(&self.id())
+        self.is_generational()
+            && global_registry().entity_generations.read().get(&self.id())
                 == Some(&self.meta().value())
     }
 
@@ -310,9 +305,9 @@ impl Entity {
     }
 
     pub fn kill(self) {
-        if self.is_generative() {
+        if self.is_generational() {
             log::trace!("Killing value: {}", self);
-            global_registry().delete_value(self);
+            global_registry().delete_entity(self);
         }
     }
 
@@ -335,7 +330,7 @@ impl Entity {
     pub fn register_as_type(self, typ: Entity) {
         debug_assert!(!self.is_type());
         debug_assert!(typ.is_type());
-        global_registry().register_value_as_type(self, typ);
+        global_registry().register_entity_as_type(self, typ);
     }
 
     pub fn type_name(self) -> Option<String> {
@@ -364,7 +359,7 @@ impl Entity {
         get_world().defer(f)
     }
 
-    pub fn with_ref<F, R>(self, f: F) -> Option<R>
+    pub fn with_value_ref<F, R>(self, f: F) -> Option<R>
     where
         F: FnOnce(Ref<'_>) -> R,
     {
@@ -375,7 +370,7 @@ impl Entity {
         })
     }
 
-    pub fn with_mut<F, R>(self, f: F) -> Option<R>
+    pub fn with_value_mut<F, R>(self, f: F) -> Option<R>
     where
         F: FnOnce(Mut<'_>) -> R,
     {
@@ -384,6 +379,30 @@ impl Entity {
             let r = storage.find_mut(self.type_id()?, self)?;
             Some(f(r))
         })
+    }
+
+    pub fn with_self_as_ref<T: Atom, F, R>(self, f: F) -> Option<R>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        self.with_value_ref(|r| {
+            let r = r.as_ref::<T>()?;
+            Some(f(r))
+        })?
+    }
+
+    pub fn with_self_as_mut<T: Atom, F, R>(self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        self.with_value_mut(|mut r| {
+            let r = r.as_mut::<T>()?;
+            Some(f(r))
+        })?
+    }
+
+    pub fn is<T: Atom>(self) -> bool {
+        self.type_id() == Some(T::type_id())
     }
 
     pub fn has<T: Atom>(self) -> bool {
@@ -406,7 +425,7 @@ impl Entity {
         })
     }
 
-    pub fn with_relatives<F, R>(self, relationship_type: u32, f: F) -> Option<R>
+    pub fn with_relatives<F, R>(self, relationship_type: Id, f: F) -> Option<R>
     where
         F: FnOnce(&[Entity]) -> R,
     {
@@ -416,7 +435,7 @@ impl Entity {
 
     pub fn with_all_relatives<F, R>(self, f: F) -> Option<R>
     where
-        F: FnOnce(&[(u32, Entity)]) -> R,
+        F: FnOnce(&[(Id, Entity)]) -> R,
     {
         let rels = self.with_world(|world| world.all_relatives(self))?;
         Some(f(&rels))
@@ -430,8 +449,9 @@ impl Entity {
         Ok(())
     }
 
-    pub fn add_components<T: Bundle>(self, bundle: T) -> Result<()> {
-        let data = bundle.into_data_vec();
+    #[allow(clippy::should_implement_trait)]
+    pub fn add<T: Bundle>(self, components: T) -> Result<()> {
+        let data = components.into_data_vec();
         self.defer(|_, commands| {
             commands.add_components(self, data);
             Ok::<(), anyhow::Error>(())
@@ -517,9 +537,9 @@ pub struct Registry {
     named_types: Lock<FxHashMap<String, Entity>>,
     type_names: Lock<FxHashMap<Entity, String>>,
 
-    value_types: Lock<FxHashMap<Entity, Entity>>,
-    dead: Lock<SortedMap<u32, ()>>,
-    value_generations: Lock<FxHashMap<u32, u32>>,
+    entity_types: Lock<FxHashMap<Entity, Entity>>,
+    dead: Lock<SortedMap<Id, ()>>,
+    entity_generations: Lock<FxHashMap<Id, Id>>,
 }
 
 impl Debug for Registry {
@@ -539,9 +559,9 @@ impl Registry {
             named_types: Lock::new(FxHashMap::default()),
             type_names: Lock::new(FxHashMap::default()),
 
-            value_types: Lock::new(FxHashMap::default()),
+            entity_types: Lock::new(FxHashMap::default()),
             dead: Lock::new(SortedMap::default()),
-            value_generations: Lock::new(FxHashMap::default()),
+            entity_generations: Lock::new(FxHashMap::default()),
         };
 
         let storable_types = vec![
@@ -589,7 +609,7 @@ impl Registry {
             }
         }
         let entity = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let entity = Entity::new_type(entity);
+        let entity = Entity::new_type(Id(entity));
         if let Some(name) = name {
             self.register_type_name(entity, name);
         }
@@ -597,8 +617,8 @@ impl Registry {
     }
 
     /// Registers the given value as the given type.
-    fn register_value_as_type(&self, value: Entity, value_type: Entity) {
-        self.value_types.write().insert(value, value_type);
+    fn register_entity_as_type(&self, entity: Entity, entity_type: Entity) {
+        self.entity_types.write().insert(entity, entity_type);
     }
 
     /// Associates the given unique identifier with the given name.
@@ -633,24 +653,23 @@ impl Registry {
         entity
     }
 
-    fn current_generation(&self, entity: u32) -> Option<Entity> {
-        if let Some(gen) = self.value_generations.read().get(&entity) {
-            return Some(Entity::with_generation(entity, *gen));
+    fn current_generation(&self, entity: Id) -> Option<Entity> {
+        if let Some(gen) = self.entity_generations.read().get(&entity) {
+            return Some(Entity::new_generational(entity, *gen));
         }
         None
     }
 
-    fn allocate_generative_entity(&self) -> Entity {
-        // try to find a vacancy in living_values
+    fn allocate_generational_entity(&self) -> Entity {
         if let Some((entity, ())) = self.dead.write().drain().next() {
-            // if a vacancy is found, return the entity with the next generation
-            let gen = *self.value_generations.read().get(&entity).unwrap();
-            return Entity::with_generation(entity, gen);
+            // vacancy found, return the entity with the next generation
+            let gen = *self.entity_generations.read().get(&entity).unwrap();
+            return Entity::new_generational(entity, gen);
         }
         // if no vacancy is found, allocate a new value
         let entity = self.next_id.fetch_add(1, Ordering::Relaxed);
         if entity == u32::MAX {
-            // we panic here to prevent weird bugs from happening where the entity id rolls over or equals Entity::PLACEHOLDER (which is u32::MAX)
+            // we panic here to prevent weird bugs from happening where the entity id rolls over or equals EntityId::PLACEHOLDER (which is u32::MAX)
             panic!("Entity allocation overflow");
         }
         if entity % 10000 == 0 && entity != 0 {
@@ -661,36 +680,38 @@ impl Registry {
                 entity as f64 / u32::MAX as f64 * 100.0
             );
         }
-        self.value_generations.write().insert(entity, 0);
-        Entity::with_generation(entity, 0)
+        let id = Id(entity);
+        let gen = Id(0);
+        self.entity_generations.write().insert(id, gen);
+        Entity::new_generational(id, gen)
     }
 
     fn allocate_entity_with_type(&self, value_type: Entity) -> Entity {
-        let entity = self.allocate_generative_entity();
-        self.register_value_as_type(entity, value_type);
+        let entity = self.allocate_generational_entity();
+        self.register_entity_as_type(entity, value_type);
         entity
     }
 
-    fn delete_value(&self, entity: Entity) {
+    fn delete_entity(&self, entity: Entity) {
         if !self.dead.write().contains(&entity.id()) {
             self.dead.write().insert(entity.id(), ());
-            if let Some(gen) = self.value_generations.write().get_mut(&entity.id()) {
-                if gen.checked_add(1).is_none() {
+            if let Some(gen) = self.entity_generations.write().get_mut(&entity.id()) {
+                if gen.0.checked_add(1).is_none() {
                     log::warn!("Generation overflow for value: {}", entity);
                 }
-                *gen = gen.wrapping_add(1);
+                gen.0 = gen.0.wrapping_add(1);
             }
         }
     }
 
-    /// Returns the [`Entity`] of the type that the given [`ValueUid`] is associated with, if it exists.
+    /// Returns the [`Entity`] of the type that the given [`Entity`] is associated with, if it exists.
     fn get_value_type(&self, entity: Entity) -> Option<Entity> {
-        self.value_types.read().get(&entity).cloned()
+        self.entity_types.read().get(&entity).cloned()
     }
 
-    fn allocate(&self) -> Uid {
+    fn allocate(&self) -> Id {
         let entity = self.next_id.fetch_add(1, Ordering::Relaxed);
-        Uid::new(entity)
+        Id::new(entity)
     }
 }
 

@@ -122,7 +122,6 @@ impl App {
                         winit::event::WindowEvent::Resized(size) => {
                             let world = self.world.read();
                             let renderer = world.read_resource::<Renderer>().unwrap();
-                            let renderer = renderer.as_ref::<Renderer>().unwrap();
 
                             renderer.resize_surface(size.width, size.height);
                         }
@@ -130,7 +129,6 @@ impl App {
                             // center the cursor
                             let world = self.world.read();
                             let window = world.read_resource::<Window>().unwrap();
-                            let window = window.as_ref::<Window>().unwrap();
                             if window.fps_mode {
                                 window
                                     .window
@@ -156,16 +154,13 @@ impl App {
                             {
                                 let world = self.world.read();
                                 let mut input = world.write_resource::<Input>().unwrap();
-                                let input = input.as_mut::<Input>().unwrap();
                                 input.prepare_for_update();
 
                                 while let Ok(event) = window_event_rx.try_recv() {
                                     input.update_window(&event);
 
                                     let window = world.read_resource::<Window>().unwrap();
-                                    let window = window.as_ref::<Window>().unwrap();
                                     let ui = world.read_resource::<EguiContext>().unwrap();
-                                    let ui = ui.as_ref::<EguiContext>().unwrap();
                                     ui.handle_input(&window.window, &event);
                                 }
                                 while let Ok(event) = device_event_rx.try_recv() {
@@ -176,7 +171,6 @@ impl App {
                             {
                                 let world = self.world.read();
                                 let mut time = world.write_resource::<Time>().unwrap();
-                                let time = time.as_mut::<Time>().unwrap();
                                 time.update();
                             }
 
@@ -189,9 +183,7 @@ impl App {
                             {
                                 let world = self.world.read();
                                 let window = world.read_resource::<Window>().unwrap();
-                                let window = window.as_ref::<Window>().unwrap();
                                 let gui = world.read_resource::<EguiContext>().unwrap();
-                                let gui = gui.as_ref::<EguiContext>().unwrap();
                                 gui.begin_frame(&window.window);
                             }
 
@@ -200,7 +192,6 @@ impl App {
                             {
                                 let world = self.world.read();
                                 let gui = world.read_resource::<EguiContext>().unwrap();
-                                let gui = gui.as_ref::<EguiContext>().unwrap();
                                 gui.end_frame();
                             }
 
@@ -215,8 +206,6 @@ impl App {
                                 let window = world.read_resource::<Window>();
                                 let renderer = world.read_resource::<Renderer>();
                                 if let (Some(window), Some(renderer)) = (window, renderer) {
-                                    let window = window.as_ref::<Window>().unwrap();
-                                    let renderer = renderer.as_ref::<Renderer>().unwrap();
                                     window.window.pre_present_notify();
                                     renderer.present();
                                     window.request_redraw();
