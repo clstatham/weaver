@@ -8,12 +8,12 @@ use weaver::{
 pub mod state;
 pub mod ui;
 
-#[derive(Atom, Clone, Copy)]
+#[derive(Component, Clone, Copy)]
 pub struct TransformParent;
 
 impl Relationship for TransformParent {}
 
-#[derive(Atom, Clone, Copy)]
+#[derive(Component, Clone, Copy)]
 pub struct TransformChild;
 
 impl Relationship for TransformChild {}

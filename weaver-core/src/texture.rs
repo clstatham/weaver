@@ -384,7 +384,7 @@ impl Texture {
     }
 }
 
-#[derive(Clone, Atom, GpuComponent, BindableComponent)]
+#[derive(Clone, Component, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Skybox {
     #[gpu(component)]

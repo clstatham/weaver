@@ -18,7 +18,7 @@ pub enum MethodArg<'a> {
 }
 
 impl<'a> MethodArg<'a> {
-    pub fn as_ref<T: Atom>(&self) -> Option<&'_ T> {
+    pub fn as_ref<T: Component>(&self) -> Option<&'_ T> {
         match self {
             MethodArg::Owned(d) => d.as_ref(),
             MethodArg::Ref(r) => r.as_ref(),
@@ -26,7 +26,7 @@ impl<'a> MethodArg<'a> {
         }
     }
 
-    pub fn as_mut<T: Atom>(&mut self) -> Option<&'_ mut T> {
+    pub fn as_mut<T: Component>(&mut self) -> Option<&'_ mut T> {
         match self {
             MethodArg::Owned(d) => d.as_mut(),
             MethodArg::Mut(m) => m.as_mut(),
@@ -34,7 +34,7 @@ impl<'a> MethodArg<'a> {
         }
     }
 
-    pub fn into_owned<T: Atom>(&self) -> Option<T>
+    pub fn into_owned<T: Component>(&self) -> Option<T>
     where
         T: Clone,
     {
@@ -110,10 +110,10 @@ macro_rules! script_vtable {
 pub struct ValueRef<'a> {
     pub name: &'static str,
     pub typ: Entity,
-    pub value: &'a mut dyn Atom,
+    pub value: &'a mut dyn Component,
 }
 
-pub trait Atom: Send + Sync + 'static {
+pub trait Component: Send + Sync + 'static {
     fn type_id() -> Entity
     where
         Self: Sized,
@@ -127,7 +127,7 @@ pub trait Atom: Send + Sync + 'static {
 
     fn as_any_box(self: Box<Self>) -> Box<dyn Any>;
 
-    fn clone_box(&self) -> Box<dyn Atom>;
+    fn clone_box(&self) -> Box<dyn Component>;
 
     fn into_data(self) -> Data
     where
@@ -161,7 +161,7 @@ pub trait Atom: Send + Sync + 'static {
 macro_rules! impl_atom_simple {
     ($($t:ty),*) => {
         $(
-            impl Atom for $t {
+            impl Component for $t {
                 fn as_any(&self) -> &dyn Any {
                     self
                 }
@@ -174,7 +174,7 @@ macro_rules! impl_atom_simple {
                     self
                 }
 
-                fn clone_box(&self) -> Box<dyn Atom> {
+                fn clone_box(&self) -> Box<dyn Component> {
                     Box::new(self.clone())
                 }
             }
@@ -202,7 +202,7 @@ impl_atom_simple!(
     char
 );
 
-impl<T: Atom + Clone> Atom for Option<T> {
+impl<T: Component + Clone> Component for Option<T> {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -212,12 +212,12 @@ impl<T: Atom + Clone> Atom for Option<T> {
     fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
         self
     }
-    fn clone_box(&self) -> Box<dyn Atom> {
+    fn clone_box(&self) -> Box<dyn Component> {
         Box::new(self.clone())
     }
 }
 
-impl<T: Atom + Clone> Atom for Vec<T> {
+impl<T: Component + Clone> Component for Vec<T> {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -227,7 +227,7 @@ impl<T: Atom + Clone> Atom for Vec<T> {
     fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
         self
     }
-    fn clone_box(&self) -> Box<dyn Atom> {
+    fn clone_box(&self) -> Box<dyn Component> {
         Box::new(self.clone())
     }
 
@@ -237,7 +237,7 @@ impl<T: Atom + Clone> Atom for Vec<T> {
     );
 }
 
-impl<T: Atom + Clone> Atom for std::collections::VecDeque<T> {
+impl<T: Component + Clone> Component for std::collections::VecDeque<T> {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -247,7 +247,7 @@ impl<T: Atom + Clone> Atom for std::collections::VecDeque<T> {
     fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
         self
     }
-    fn clone_box(&self) -> Box<dyn Atom> {
+    fn clone_box(&self) -> Box<dyn Component> {
         Box::new(self.clone())
     }
     script_vtable!(this: std::collections::VecDeque<T>;
@@ -256,7 +256,7 @@ impl<T: Atom + Clone> Atom for std::collections::VecDeque<T> {
     );
 }
 
-impl<T: Send + Sync + Any> Atom for SharedLock<T> {
+impl<T: Send + Sync + Any> Component for SharedLock<T> {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -266,12 +266,12 @@ impl<T: Send + Sync + Any> Atom for SharedLock<T> {
     fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
         self
     }
-    fn clone_box(&self) -> Box<dyn Atom> {
+    fn clone_box(&self) -> Box<dyn Component> {
         Box::new(self.clone())
     }
 }
 
-impl Atom for String {
+impl Component for String {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -281,7 +281,7 @@ impl Atom for String {
     fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
         self
     }
-    fn clone_box(&self) -> Box<dyn Atom> {
+    fn clone_box(&self) -> Box<dyn Component> {
         Box::new(self.clone())
     }
     script_vtable!(this: String;
@@ -291,7 +291,7 @@ impl Atom for String {
 }
 
 #[cfg(feature = "glam")]
-impl Atom for glam::Vec2 {
+impl Component for glam::Vec2 {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -301,7 +301,7 @@ impl Atom for glam::Vec2 {
     fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
         self
     }
-    fn clone_box(&self) -> Box<dyn Atom> {
+    fn clone_box(&self) -> Box<dyn Component> {
         Box::new(*self)
     }
     script_vtable!(this: glam::Vec2;
@@ -312,7 +312,7 @@ impl Atom for glam::Vec2 {
 }
 
 #[cfg(feature = "glam")]
-impl Atom for glam::Vec3 {
+impl Component for glam::Vec3 {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -322,7 +322,7 @@ impl Atom for glam::Vec3 {
     fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
         self
     }
-    fn clone_box(&self) -> Box<dyn Atom> {
+    fn clone_box(&self) -> Box<dyn Component> {
         Box::new(*self)
     }
     script_vtable!(this: glam::Vec3;
@@ -334,7 +334,7 @@ impl Atom for glam::Vec3 {
 }
 
 #[cfg(feature = "glam")]
-impl Atom for glam::Vec4 {
+impl Component for glam::Vec4 {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -344,7 +344,7 @@ impl Atom for glam::Vec4 {
     fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
         self
     }
-    fn clone_box(&self) -> Box<dyn Atom> {
+    fn clone_box(&self) -> Box<dyn Component> {
         Box::new(*self)
     }
     script_vtable!(this: glam::Vec4;
@@ -357,7 +357,7 @@ impl Atom for glam::Vec4 {
 }
 
 #[cfg(feature = "glam")]
-impl Atom for glam::Quat {
+impl Component for glam::Quat {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -367,7 +367,7 @@ impl Atom for glam::Quat {
     fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
         self
     }
-    fn clone_box(&self) -> Box<dyn Atom> {
+    fn clone_box(&self) -> Box<dyn Component> {
         Box::new(*self)
     }
     script_vtable!(this: glam::Quat;

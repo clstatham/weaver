@@ -7,7 +7,7 @@ use anyhow::{bail, Result};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    component::Atom,
+    component::Component,
     lock::Lock,
     prelude::{Entity, Id, MapRead, MapWrite, Read, Write},
     registry::StaticId,
@@ -211,11 +211,11 @@ impl<K: Ord + Copy, V> From<Vec<(K, V)>> for SortedMap<K, V> {
 pub struct DynamicData {
     type_id: Entity,
     entity: Entity,
-    data: Box<dyn Atom>,
+    data: Box<dyn Component>,
 }
 
 impl DynamicData {
-    pub fn new<T: Atom>(data: T) -> Self {
+    pub fn new<T: Component>(data: T) -> Self {
         let type_id = T::static_type_id();
         let entity = Entity::allocate(Some(type_id));
         let data = Box::new(data);
@@ -245,7 +245,7 @@ impl DynamicData {
         self.entity
     }
 
-    pub fn as_ref<T: Atom>(&self) -> Option<&T> {
+    pub fn as_ref<T: Component>(&self) -> Option<&T> {
         if self.type_id == T::static_type_id() {
             Some((*self.data).as_any().downcast_ref().unwrap())
         } else {
@@ -253,7 +253,7 @@ impl DynamicData {
         }
     }
 
-    pub fn as_mut<T: Atom>(&mut self) -> Option<&mut T> {
+    pub fn as_mut<T: Component>(&mut self) -> Option<&mut T> {
         if self.type_id == T::static_type_id() {
             Some((*self.data).as_any_mut().downcast_mut().unwrap())
         } else {
@@ -261,7 +261,7 @@ impl DynamicData {
         }
     }
 
-    pub fn into<T: Atom>(self) -> Result<Box<T>, Self> {
+    pub fn into<T: Component>(self) -> Result<Box<T>, Self> {
         if self.type_id == T::static_type_id() {
             Ok(self.data.as_any_box().downcast().unwrap())
         } else {
@@ -277,11 +277,11 @@ impl DynamicData {
         }
     }
 
-    pub fn data(&self) -> &dyn Atom {
+    pub fn data(&self) -> &dyn Component {
         self.data.as_ref()
     }
 
-    pub fn data_mut(&mut self) -> &mut dyn Atom {
+    pub fn data_mut(&mut self) -> &mut dyn Component {
         self.data.as_mut()
     }
 }
@@ -318,7 +318,7 @@ pub enum Data {
 }
 
 impl Data {
-    pub fn new_dynamic<T: Atom>(data: T) -> Self {
+    pub fn new_dynamic<T: Component>(data: T) -> Self {
         Self::Dynamic(DynamicData::new(data))
     }
 
@@ -344,14 +344,14 @@ impl Data {
         }
     }
 
-    pub fn as_ref<T: Atom>(&self) -> Option<&T> {
+    pub fn as_ref<T: Component>(&self) -> Option<&T> {
         match self {
             Self::Dynamic(data) => data.as_ref(),
             Self::Pointer(_) => None,
         }
     }
 
-    pub fn as_mut<T: Atom>(&mut self) -> Option<&mut T> {
+    pub fn as_mut<T: Component>(&mut self) -> Option<&mut T> {
         match self {
             Self::Dynamic(data) => data.as_mut(),
             Self::Pointer(_) => None,
@@ -372,7 +372,7 @@ impl Data {
         }
     }
 
-    pub fn into<T: Atom>(self) -> Result<Box<T>, Self> {
+    pub fn into<T: Component>(self) -> Result<Box<T>, Self> {
         match self {
             Self::Dynamic(data) => data.into::<T>().map_err(Self::Dynamic),
             Self::Pointer(_) => Err(self),
@@ -537,19 +537,19 @@ impl<'a> PointerMut<'a> {
     }
 }
 
-pub struct StaticRef<'a, T: Atom> {
+pub struct StaticRef<'a, T: Component> {
     type_id: Entity,
     entity: Entity,
     component: MapRead<'a, T>,
 }
 
-impl<'a, T: Atom> PartialEq for StaticRef<'a, T> {
+impl<'a, T: Component> PartialEq for StaticRef<'a, T> {
     fn eq(&self, other: &Self) -> bool {
         self.type_id == other.type_id && self.entity == other.entity
     }
 }
 
-impl<'a, T: Atom> StaticRef<'a, T> {
+impl<'a, T: Component> StaticRef<'a, T> {
     pub fn new(type_id: Entity, entity: Entity, component: MapRead<'a, T>) -> Self {
         Self {
             type_id,
@@ -567,13 +567,13 @@ impl<'a, T: Atom> StaticRef<'a, T> {
     }
 }
 
-impl<T: Atom> AsRef<T> for StaticRef<'_, T> {
+impl<T: Component> AsRef<T> for StaticRef<'_, T> {
     fn as_ref(&self) -> &T {
         &self.component
     }
 }
 
-impl<T: Atom> Deref for StaticRef<'_, T> {
+impl<T: Component> Deref for StaticRef<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -581,7 +581,7 @@ impl<T: Atom> Deref for StaticRef<'_, T> {
     }
 }
 
-impl<T: Atom> Debug for StaticRef<'_, T> {
+impl<T: Component> Debug for StaticRef<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StaticRef")
             .field("type_id", &self.type_id)
@@ -590,25 +590,25 @@ impl<T: Atom> Debug for StaticRef<'_, T> {
     }
 }
 
-impl<T: Atom> std::fmt::Display for StaticRef<'_, T> {
+impl<T: Component> std::fmt::Display for StaticRef<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("StaticRef")
     }
 }
 
-pub struct StaticMut<'a, T: Atom> {
+pub struct StaticMut<'a, T: Component> {
     type_id: Entity,
     entity: Entity,
     component: MapWrite<'a, T>,
 }
 
-impl<'a, T: Atom> PartialEq for StaticMut<'a, T> {
+impl<'a, T: Component> PartialEq for StaticMut<'a, T> {
     fn eq(&self, other: &Self) -> bool {
         self.type_id == other.type_id && self.entity == other.entity
     }
 }
 
-impl<'a, T: Atom> StaticMut<'a, T> {
+impl<'a, T: Component> StaticMut<'a, T> {
     pub fn new(type_id: Entity, entity: Entity, component: MapWrite<'a, T>) -> Self {
         Self {
             type_id,
@@ -626,19 +626,19 @@ impl<'a, T: Atom> StaticMut<'a, T> {
     }
 }
 
-impl<T: Atom> AsRef<T> for StaticMut<'_, T> {
+impl<T: Component> AsRef<T> for StaticMut<'_, T> {
     fn as_ref(&self) -> &T {
         &self.component
     }
 }
 
-impl<T: Atom> AsMut<T> for StaticMut<'_, T> {
+impl<T: Component> AsMut<T> for StaticMut<'_, T> {
     fn as_mut(&mut self) -> &mut T {
         &mut self.component
     }
 }
 
-impl<T: Atom> Deref for StaticMut<'_, T> {
+impl<T: Component> Deref for StaticMut<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -646,13 +646,13 @@ impl<T: Atom> Deref for StaticMut<'_, T> {
     }
 }
 
-impl<T: Atom> DerefMut for StaticMut<'_, T> {
+impl<T: Component> DerefMut for StaticMut<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.component
     }
 }
 
-impl<T: Atom> Debug for StaticMut<'_, T> {
+impl<T: Component> Debug for StaticMut<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StaticMut")
             .field("type_id", &self.type_id)
@@ -661,7 +661,7 @@ impl<T: Atom> Debug for StaticMut<'_, T> {
     }
 }
 
-impl<T: Atom> std::fmt::Display for StaticMut<'_, T> {
+impl<T: Component> std::fmt::Display for StaticMut<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("StaticMut")
     }
@@ -700,7 +700,7 @@ impl<'a> DynamicRef<'a> {
         self.column.as_dynamic().unwrap().get(self.entity).unwrap()
     }
 
-    pub fn as_ref<T: Atom>(&self) -> Option<&T> {
+    pub fn as_ref<T: Component>(&self) -> Option<&T> {
         self.column.as_dynamic()?.get(self.entity)?.as_ref()
     }
 
@@ -753,7 +753,7 @@ impl<'a> DynamicMut<'a> {
         self.data().entity
     }
 
-    pub fn as_ref<T: Atom>(&self) -> Option<&T> {
+    pub fn as_ref<T: Component>(&self) -> Option<&T> {
         self.column.as_dynamic()?.get(self.entity)?.as_ref()
     }
 
@@ -769,7 +769,7 @@ impl<'a> DynamicMut<'a> {
             .unwrap()
     }
 
-    pub fn as_mut<T: Atom>(&mut self) -> Option<&mut T> {
+    pub fn as_mut<T: Component>(&mut self) -> Option<&mut T> {
         self.column.as_dynamic_mut()?.get_mut(self.entity)?.as_mut()
     }
 }
@@ -824,7 +824,7 @@ impl<'a> Ref<'a> {
         }
     }
 
-    pub fn as_ref<T: Atom>(&self) -> Option<&T> {
+    pub fn as_ref<T: Component>(&self) -> Option<&T> {
         match self {
             Self::Pointer(_) => None,
             Self::Dynamic(data) => data.as_ref(),
@@ -881,14 +881,14 @@ impl<'a> Mut<'a> {
         }
     }
 
-    pub fn as_ref<T: Atom>(&self) -> Option<&T> {
+    pub fn as_ref<T: Component>(&self) -> Option<&T> {
         match self {
             Self::Pointer(_) => None,
             Self::Dynamic(data) => data.as_ref(),
         }
     }
 
-    pub fn as_mut<T: Atom>(&mut self) -> Option<&mut T> {
+    pub fn as_mut<T: Component>(&mut self) -> Option<&mut T> {
         match self {
             Self::Pointer(_) => None,
             Self::Dynamic(data) => data.as_mut(),
@@ -1277,7 +1277,7 @@ impl LockedColumn {
         self.0.read().entity_ids().clone()
     }
 
-    pub fn get<T: Atom>(&self, entity: Entity) -> Option<MapRead<'_, T>> {
+    pub fn get<T: Component>(&self, entity: Entity) -> Option<MapRead<'_, T>> {
         if entity.is_dead() {
             return None;
         }
@@ -1305,7 +1305,7 @@ impl LockedColumn {
         }))
     }
 
-    pub fn get_mut<T: Atom>(&self, entity: Entity) -> Option<MapWrite<'_, T>> {
+    pub fn get_mut<T: Component>(&self, entity: Entity) -> Option<MapWrite<'_, T>> {
         if entity.is_dead() {
             return None;
         }
@@ -1500,7 +1500,7 @@ impl Archetype {
         self.type_columns.clear();
     }
 
-    pub fn get_static<T: Atom>(&self, entity: Entity) -> Option<StaticRef<'_, T>> {
+    pub fn get_static<T: Component>(&self, entity: Entity) -> Option<StaticRef<'_, T>> {
         let column = self.type_columns.get(&T::type_id())?;
         let is_dynamic = matches!(&*column.read(), Column::Dynamic(_));
         if is_dynamic {
@@ -1523,7 +1523,7 @@ impl Archetype {
         }
     }
 
-    pub fn get_static_mut<T: Atom>(&self, entity: Entity) -> Option<StaticMut<'_, T>> {
+    pub fn get_static_mut<T: Component>(&self, entity: Entity) -> Option<StaticMut<'_, T>> {
         let column = self.type_columns.get(&T::type_id())?;
         let is_dynamic = matches!(&*column.read(), Column::Dynamic(_));
         if is_dynamic {
@@ -1683,7 +1683,7 @@ impl Storage {
         self.archetypes.clear();
     }
 
-    pub fn has<T: Atom>(&self, entity: Entity) -> bool {
+    pub fn has<T: Component>(&self, entity: Entity) -> bool {
         self.entity_archetype(entity)
             .map(|a| a.contains_type(T::type_id()))
             .unwrap_or(false)
@@ -1699,12 +1699,12 @@ impl Storage {
         archetype.get_mut(type_id, entity)
     }
 
-    pub fn get_component<T: Atom>(&self, entity: Entity) -> Option<StaticRef<'_, T>> {
+    pub fn get_component<T: Component>(&self, entity: Entity) -> Option<StaticRef<'_, T>> {
         let archetype = self.entity_archetype(entity)?;
         archetype.get_static(entity)
     }
 
-    pub fn get_component_mut<T: Atom>(&self, entity: Entity) -> Option<StaticMut<'_, T>> {
+    pub fn get_component_mut<T: Component>(&self, entity: Entity) -> Option<StaticMut<'_, T>> {
         let archetype = self.entity_archetype(entity)?;
         archetype.get_static_mut(entity)
     }

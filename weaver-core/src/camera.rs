@@ -42,7 +42,7 @@ impl From<&Camera> for CameraUniform {
     }
 }
 
-#[derive(Clone, Atom, GpuComponent, BindableComponent)]
+#[derive(Clone, Component, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Camera {
     pub view_matrix: glam::Mat4,
@@ -134,7 +134,7 @@ impl Default for Camera {
     }
 }
 
-#[derive(Debug, Clone, Copy, Atom)]
+#[derive(Debug, Clone, Copy, Component)]
 pub struct FlyCameraController {
     pub speed: f32,
     pub sensitivity: f32,

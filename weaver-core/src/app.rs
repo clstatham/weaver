@@ -10,7 +10,7 @@ use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use crate::renderer::{compute::hdr_loader::HdrLoader, Renderer};
 
-#[derive(Clone, Atom)]
+#[derive(Clone, Component)]
 pub struct Window {
     pub(crate) window: Arc<winit::window::Window>,
     pub fps_mode: bool,
@@ -79,7 +79,7 @@ impl App {
         })
     }
 
-    pub fn add_resource<T: Atom>(&self, resource: T) -> anyhow::Result<()> {
+    pub fn add_resource<T: Component>(&self, resource: T) -> anyhow::Result<()> {
         self.world.write().add_resource(resource)
     }
 

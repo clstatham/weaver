@@ -17,7 +17,7 @@ pub mod world;
 pub mod prelude {
     pub use crate::{
         bundle::Bundle,
-        component::Atom,
+        component::Component,
         graph::{Edge, Graph},
         lock::{MapRead, MapWrite, Read, ReadWrite, SharedLock, Write},
         query::Query,
@@ -29,5 +29,5 @@ pub mod prelude {
         world::{get_world, LockedWorldHandle, World},
     };
     pub use anyhow::{anyhow, bail, ensure, Result};
-    pub use fabricate_macro::Atom;
+    pub use fabricate_macro::Component;
 }

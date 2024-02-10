@@ -14,7 +14,7 @@ pub mod syntax_highlighting;
 
 pub type Tab = String;
 
-#[derive(Clone, Atom)]
+#[derive(Clone, Component)]
 pub struct Tabs {
     pub(crate) tree: DockState<Tab>,
 }

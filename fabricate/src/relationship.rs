@@ -3,10 +3,10 @@ use fabricate::storage::Data;
 
 use crate::{
     self as fabricate,
-    prelude::{Atom, Entity},
+    prelude::{Component, Entity},
 };
 
-pub trait Relationship: Atom {
+pub trait Relationship: Component {
     fn into_relationship_data(self, relative: Entity) -> Result<Data>
     where
         Self: Sized,

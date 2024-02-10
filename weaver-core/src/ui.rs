@@ -3,7 +3,7 @@ use std::sync::Arc;
 use egui::Context;
 use egui_wgpu::renderer::ScreenDescriptor;
 use egui_winit::State;
-use fabricate::prelude::Atom;
+use fabricate::prelude::Component;
 use parking_lot::RwLock;
 use winit::window::Window;
 
@@ -13,9 +13,9 @@ pub mod builtin {
     use std::collections::VecDeque;
 
     use egui_plot::Line;
-    use fabricate::prelude::Atom;
+    use fabricate::prelude::Component;
 
-    #[derive(Clone, Atom)]
+    #[derive(Clone, Component)]
     pub struct FpsDisplay {
         last_frame: std::time::Instant,
         last_update: std::time::Instant,
@@ -90,7 +90,7 @@ pub mod builtin {
     }
 }
 
-#[derive(Atom)]
+#[derive(Component)]
 pub struct EguiContext {
     state: Arc<RwLock<State>>,
     renderer: Arc<RwLock<egui_wgpu::Renderer>>,

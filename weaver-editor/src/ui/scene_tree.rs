@@ -3,7 +3,7 @@ use weaver::prelude::*;
 
 use crate::{state::EditorState, TransformChild, TransformParent};
 
-#[derive(Atom, Clone)]
+#[derive(Component, Clone)]
 pub struct NameTag(pub String);
 
 pub fn scene_tree_ui(world: &World, state: &mut EditorState, ui: &mut egui::Ui) {

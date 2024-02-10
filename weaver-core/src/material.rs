@@ -14,7 +14,7 @@ use super::{
 };
 
 /// PBR material based on Bevy
-#[derive(Clone, Atom, GpuComponent, BindableComponent)]
+#[derive(Clone, Component, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Material {
     asset_id: AssetId,

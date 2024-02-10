@@ -64,8 +64,8 @@ impl syn::parse::Parse for Method {
     }
 }
 
-#[proc_macro_derive(Atom, attributes(script_vtable, inspect))]
-pub fn derive_atom(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(Component, attributes(script_vtable, inspect))]
+pub fn derive_component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
 
@@ -170,7 +170,7 @@ pub fn derive_atom(input: TokenStream) -> TokenStream {
             inspect = quote! {
                 vec![
                     #(
-                        <#field_types as fabricate::component::Atom>::as_value_ref(&mut self.#field_names, stringify!(#field_names)),
+                        <#field_types as fabricate::component::Component>::as_value_ref(&mut self.#field_names, stringify!(#field_names)),
                     )*
                 ]
             };
@@ -179,7 +179,7 @@ pub fn derive_atom(input: TokenStream) -> TokenStream {
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     quote! {
-        impl #impl_generics fabricate::component::Atom for #name #ty_generics #where_clause {
+        impl #impl_generics fabricate::component::Component for #name #ty_generics #where_clause {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
@@ -189,7 +189,7 @@ pub fn derive_atom(input: TokenStream) -> TokenStream {
             fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
                 self
             }
-            fn clone_box(&self) -> Box<dyn fabricate::component::Atom> {
+            fn clone_box(&self) -> Box<dyn fabricate::component::Component> {
                 Box::new(self.clone())
             }
 

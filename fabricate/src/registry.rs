@@ -15,7 +15,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{
     bundle::Bundle,
     commands::Commands,
-    component::Atom,
+    component::Component,
     lock::Lock,
     relationship::Relationship,
     storage::{Mut, Ref, SortedMap},
@@ -381,7 +381,7 @@ impl Entity {
         })
     }
 
-    pub fn with_self_as_ref<T: Atom, F, R>(self, f: F) -> Option<R>
+    pub fn with_self_as_ref<T: Component, F, R>(self, f: F) -> Option<R>
     where
         F: FnOnce(&T) -> R,
     {
@@ -391,7 +391,7 @@ impl Entity {
         })?
     }
 
-    pub fn with_self_as_mut<T: Atom, F, R>(self, f: F) -> Option<R>
+    pub fn with_self_as_mut<T: Component, F, R>(self, f: F) -> Option<R>
     where
         F: FnOnce(&mut T) -> R,
     {
@@ -401,15 +401,15 @@ impl Entity {
         })?
     }
 
-    pub fn is<T: Atom>(self) -> bool {
+    pub fn is<T: Component>(self) -> bool {
         self.type_id() == Some(T::type_id())
     }
 
-    pub fn has<T: Atom>(self) -> bool {
+    pub fn has<T: Component>(self) -> bool {
         self.with_world(|world| world.has::<T>(self))
     }
 
-    pub fn with_component_ref<T: Atom, R>(self, f: impl FnOnce(&T) -> R) -> Option<R> {
+    pub fn with_component_ref<T: Component, R>(self, f: impl FnOnce(&T) -> R) -> Option<R> {
         self.with_world(|world| {
             let r = world.get(self, T::type_id())?;
             let r = r.as_ref::<T>()?;
@@ -417,7 +417,7 @@ impl Entity {
         })
     }
 
-    pub fn with_component_mut<T: Atom, R>(self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+    pub fn with_component_mut<T: Component, R>(self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
         self.with_world(|world| {
             let mut r = world.get_mut(self, T::type_id())?;
             let r = r.as_mut::<T>()?;

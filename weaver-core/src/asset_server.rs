@@ -41,7 +41,7 @@ impl Default for AssetId {
     }
 }
 
-#[derive(Clone, Atom)]
+#[derive(Clone, Component)]
 pub struct AssetServer {
     next_id: u64,
     path_prefix: PathBuf,

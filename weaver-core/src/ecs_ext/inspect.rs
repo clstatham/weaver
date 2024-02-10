@@ -1,6 +1,6 @@
-use fabricate::component::Atom;
+use fabricate::component::Component;
 
-pub trait Value: Atom {
+pub trait Value: Component {
     fn value_type() -> ValueType
     where
         Self: Sized;

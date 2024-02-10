@@ -17,7 +17,7 @@ where
     *value = v;
 }
 
-pub trait InspectExt: Atom {
+pub trait InspectExt: Component {
     fn ui(&mut self, ui: &mut egui::Ui) {
         for value in self.inspect() {
             match value.typ {
@@ -113,7 +113,7 @@ pub trait InspectExt: Atom {
     }
 }
 
-impl<T: Atom + ?Sized> InspectExt for T {}
+impl<T: Component + ?Sized> InspectExt for T {}
 
 pub fn component_inspector_ui(world: &World, state: &mut EditorState, ui: &mut egui::Ui) {
     if let Some(component) = state.selected_component {

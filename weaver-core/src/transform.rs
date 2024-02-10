@@ -5,7 +5,7 @@ use crate::renderer::internals::{LazyBindGroup, LazyGpuHandle};
 
 use super::mesh::MAX_MESHES;
 
-#[derive(Atom, Clone, Copy)]
+#[derive(Component, Clone, Copy)]
 #[script_vtable(
     translation(&Self) -> glam::Vec3,
     rotation(&Self) -> glam::Quat,
@@ -120,7 +120,7 @@ impl Default for Transform {
     }
 }
 
-#[derive(Clone, Copy, Debug, Atom, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, Debug, Component, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct GlobalTransform {
     pub matrix: glam::Mat4,

@@ -27,7 +27,7 @@ impl FpsCounter {
     }
 }
 
-#[derive(Clone, Atom)]
+#[derive(Clone, Component)]
 pub struct FpsDisplay {
     last_frame: std::time::Instant,
     last_update: std::time::Instant,

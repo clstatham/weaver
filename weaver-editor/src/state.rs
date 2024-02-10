@@ -65,7 +65,7 @@ impl EditorAction for RenameEntity {
     }
 }
 
-#[derive(Atom)]
+#[derive(Component)]
 pub struct EditorState {
     pub(crate) selected_entity: Option<Entity>,
     pub(crate) selected_component: Option<Entity>,

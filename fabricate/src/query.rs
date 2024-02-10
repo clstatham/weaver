@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use anyhow::{ensure, Result};
 
 use crate::{
-    component::Atom,
+    component::Component,
     registry::{Entity, StaticId},
     storage::{Mut, Ref},
     world::World,
@@ -42,7 +42,7 @@ impl<'a> QueryBuilder<'a> {
     }
 
     /// Requests read access to a component for the query.
-    pub fn read<T: Atom>(mut self) -> Result<Self> {
+    pub fn read<T: Component>(mut self) -> Result<Self> {
         let id = T::type_id();
         ensure!(
             !self.access.contains(&QueryBuilderAccess::Write(id)),
@@ -59,7 +59,7 @@ impl<'a> QueryBuilder<'a> {
     }
 
     /// Requests write access to a component for the query.
-    pub fn write<T: Atom>(mut self) -> Result<Self> {
+    pub fn write<T: Component>(mut self) -> Result<Self> {
         let id = T::type_id();
         ensure!(
             !self.access.contains(&QueryBuilderAccess::Read(id)),
@@ -76,7 +76,7 @@ impl<'a> QueryBuilder<'a> {
     }
 
     /// Requests that the query only returns entities that have a component of the specified type, without requiring access to the component.
-    pub fn with<T: Atom>(mut self) -> Result<Self> {
+    pub fn with<T: Component>(mut self) -> Result<Self> {
         let id = T::type_id();
         ensure!(
             !self.access.contains(&QueryBuilderAccess::Without(id)),
@@ -93,7 +93,7 @@ impl<'a> QueryBuilder<'a> {
     }
 
     /// Requests that the query only returns entities that do not have a component of the specified type.
-    pub fn without<T: Atom>(mut self) -> Result<Self> {
+    pub fn without<T: Component>(mut self) -> Result<Self> {
         let id = T::type_id();
         ensure!(
             !self.access.contains(&QueryBuilderAccess::With(id)),
@@ -287,7 +287,7 @@ impl<'a> Proxy<'a> {
         self.component_type.type_name()
     }
 
-    pub fn get<T: Atom>(&self) -> Option<&T> {
+    pub fn get<T: Component>(&self) -> Option<&T> {
         if self.component_type != T::static_type_id() {
             return None;
         }
@@ -313,7 +313,7 @@ impl<'a> ProxyMut<'a> {
         self.component_type.type_name()
     }
 
-    pub fn get<T: Atom>(&self) -> Option<&T> {
+    pub fn get<T: Component>(&self) -> Option<&T> {
         if self.component_type != T::static_type_id() {
             return None;
         }
@@ -321,7 +321,7 @@ impl<'a> ProxyMut<'a> {
         self.component.as_dynamic()?.as_ref::<T>()
     }
 
-    pub fn get_mut<T: Atom>(&mut self) -> Option<&mut T> {
+    pub fn get_mut<T: Component>(&mut self) -> Option<&mut T> {
         if self.component_type != T::static_type_id() {
             return None;
         }
@@ -355,7 +355,7 @@ impl<'a> QueryItem<'a> {
 
     /// Returns a component for the query item.
     /// Returns [`None`] if the query item does not contain a component of the specified type.
-    pub fn get<T: Atom>(&self) -> Option<&T> {
+    pub fn get<T: Component>(&self) -> Option<&T> {
         match self {
             QueryItem::Proxy(data) => data.get::<T>(),
             QueryItem::ProxyMut(data) => data.get::<T>(),
@@ -365,7 +365,7 @@ impl<'a> QueryItem<'a> {
 
     /// Returns a mutable component for the query item.
     /// Returns [`None`] if the query item does not contain a mutable component of the specified type.
-    pub fn get_mut<T: Atom>(&mut self) -> Option<&mut T> {
+    pub fn get_mut<T: Component>(&mut self) -> Option<&mut T> {
         match self {
             QueryItem::ProxyMut(data) => data.get_mut::<T>(),
             _ => None,
@@ -418,11 +418,11 @@ impl<'a> QueryResults<'a> {
         self.0.first().map(|item| item.entity())
     }
 
-    pub fn get<T: Atom>(&self) -> Option<&T> {
+    pub fn get<T: Component>(&self) -> Option<&T> {
         self.0.iter().find_map(|item| item.get::<T>())
     }
 
-    pub fn get_mut<T: Atom>(&mut self) -> Option<&'_ mut T> {
+    pub fn get_mut<T: Component>(&mut self) -> Option<&'_ mut T> {
         self.0.iter_mut().find_map(|item| item.get_mut::<T>())
     }
 
@@ -507,13 +507,13 @@ mod tests {
     use crate as fabricate;
     use crate::prelude::*;
 
-    #[derive(Atom, Clone, Debug, PartialEq)]
+    #[derive(Component, Clone, Debug, PartialEq)]
     struct Position {
         x: f32,
         y: f32,
     }
 
-    #[derive(Atom, Clone, Debug, PartialEq)]
+    #[derive(Component, Clone, Debug, PartialEq)]
     struct Velocity {
         x: f32,
         y: f32,

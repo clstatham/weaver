@@ -1,6 +1,6 @@
-use fabricate::{prelude::Atom, script_vtable};
+use fabricate::{prelude::Component, script_vtable};
 
-#[derive(Clone, Atom)]
+#[derive(Clone, Component)]
 #[script_vtable(
     delta_seconds(&Self) -> f32,
     total_seconds(&Self) -> f32,

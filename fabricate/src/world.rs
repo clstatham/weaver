@@ -1,12 +1,12 @@
 use std::sync::OnceLock;
 
 use anyhow::Result;
-use fabricate_macro::Atom;
+use fabricate_macro::Component;
 
 use crate::{
     self as fabricate,
     commands::Commands,
-    component::Atom,
+    component::Component,
     lock::{DeferredRead, DeferredWrite, Read, SharedLock, Write},
     prelude::{Bundle, Mut},
     query::{Query, QueryBuilder},
@@ -23,7 +23,7 @@ pub fn get_world() -> &'static LockedWorldHandle {
     WORLD.get_or_init(World::new_handle)
 }
 
-#[derive(Atom, Clone, Copy)]
+#[derive(Component, Clone, Copy)]
 pub struct BelongsToWorld;
 
 impl Relationship for BelongsToWorld {}
@@ -66,7 +66,7 @@ impl World {
         self.root
     }
 
-    pub fn add_resource<T: Atom>(&mut self, resource: T) -> Result<()> {
+    pub fn add_resource<T: Component>(&mut self, resource: T) -> Result<()> {
         self.add(self.root, resource)
     }
 
@@ -78,11 +78,11 @@ impl World {
         self.get_mut(self.root, id)
     }
 
-    pub fn read_resource<T: Atom>(&self) -> Option<StaticRef<'_, T>> {
+    pub fn read_resource<T: Component>(&self) -> Option<StaticRef<'_, T>> {
         self.get_component::<T>(self.root)
     }
 
-    pub fn write_resource<T: Atom>(&self) -> Option<StaticMut<'_, T>> {
+    pub fn write_resource<T: Component>(&self) -> Option<StaticMut<'_, T>> {
         self.get_component_mut::<T>(self.root)
     }
 
@@ -92,7 +92,7 @@ impl World {
         Ok(())
     }
 
-    pub fn create_data<T: Atom>(&mut self, data: T) -> Result<Entity> {
+    pub fn create_data<T: Component>(&mut self, data: T) -> Result<Entity> {
         let d = Data::new_dynamic(data);
         let e = self.create_entity()?;
         let v = d.entity();
@@ -164,11 +164,11 @@ impl World {
         Some(out)
     }
 
-    pub fn get_component<T: Atom>(&self, entity: Entity) -> Option<StaticRef<'_, T>> {
+    pub fn get_component<T: Component>(&self, entity: Entity) -> Option<StaticRef<'_, T>> {
         self.storage.get_component::<T>(entity)
     }
 
-    pub fn get_component_mut<T: Atom>(&self, entity: Entity) -> Option<StaticMut<'_, T>> {
+    pub fn get_component_mut<T: Component>(&self, entity: Entity) -> Option<StaticMut<'_, T>> {
         self.storage.get_component_mut::<T>(entity)
     }
 
@@ -184,7 +184,7 @@ impl World {
         Ok(())
     }
 
-    pub fn has<T: Atom>(&self, entity: Entity) -> bool {
+    pub fn has<T: Component>(&self, entity: Entity) -> bool {
         self.storage.has::<T>(entity)
     }
 
@@ -312,7 +312,7 @@ impl LockedWorldHandle {
         world.add_system(stage, system);
     }
 
-    pub fn add_resource<T: Atom>(&self, resource: T) {
+    pub fn add_resource<T: Component>(&self, resource: T) {
         let mut world = self.write();
         world.add_resource(resource).unwrap();
     }
@@ -335,7 +335,7 @@ impl LockedWorldHandle {
         Some(f(res))
     }
 
-    pub fn with_resource<T: Atom, F, R>(&self, f: F) -> Option<R>
+    pub fn with_resource<T: Component, F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(StaticRef<'_, T>) -> R,
     {
@@ -344,7 +344,7 @@ impl LockedWorldHandle {
         Some(f(res))
     }
 
-    pub fn with_resource_mut<T: Atom, F, R>(&self, f: F) -> Option<R>
+    pub fn with_resource_mut<T: Component, F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(StaticMut<'_, T>) -> R,
     {
@@ -353,7 +353,7 @@ impl LockedWorldHandle {
         Some(f(res))
     }
 
-    pub fn create_data<T: Atom>(&self, data: T) -> Result<Entity> {
+    pub fn create_data<T: Component>(&self, data: T) -> Result<Entity> {
         let mut world = self.write();
         world.create_data(data)
     }
@@ -383,7 +383,7 @@ impl LockedWorldHandle {
         world.get_relatives::<R>(entity)
     }
 
-    pub fn with_component<T: Atom, F, R>(&self, entity: Entity, f: F) -> Option<R>
+    pub fn with_component<T: Component, F, R>(&self, entity: Entity, f: F) -> Option<R>
     where
         F: FnOnce(StaticRef<'_, T>) -> R,
     {
@@ -392,7 +392,7 @@ impl LockedWorldHandle {
         Some(f(c))
     }
 
-    pub fn with_component_mut<T: Atom, F, R>(&self, entity: Entity, f: F) -> Option<R>
+    pub fn with_component_mut<T: Component, F, R>(&self, entity: Entity, f: F) -> Option<R>
     where
         F: FnOnce(StaticMut<'_, T>) -> R,
     {
