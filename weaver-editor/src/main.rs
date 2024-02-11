@@ -18,9 +18,9 @@ pub struct TransformChild;
 
 impl Relationship for TransformChild {}
 
-pub fn inherit_transform(parent: Entity, child: Entity) {
-    parent.add_relative(TransformParent, child).unwrap();
-    child.add_relative(TransformChild, parent).unwrap();
+pub fn inherit_transform(world: &LockedWorldHandle, parent: Entity, child: Entity) {
+    parent.add_relative(world, TransformParent, child).unwrap();
+    child.add_relative(world, TransformChild, parent).unwrap();
 }
 
 fn main() -> anyhow::Result<()> {
@@ -53,8 +53,8 @@ fn main() -> anyhow::Result<()> {
 pub struct Setup;
 
 impl System for Setup {
-    fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
-        world.defer(|world, commands| {
+    fn run(&self, world_handle: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
+        world_handle.defer(|world, commands| {
             {
                 let ctx = world.read_resource::<EguiContext>().unwrap();
                 let renderer = world.read_resource::<Renderer>().unwrap();
@@ -116,7 +116,7 @@ impl System for Setup {
                 Transform::from_translation(Vec3::new(2.0, 0.0, 0.0)),
                 GlobalTransform::default(),
             ));
-            inherit_transform(e1, e2);
+            inherit_transform(&world_handle, e1, e2);
 
             Ok::<(), anyhow::Error>(())
         })??;
@@ -289,8 +289,8 @@ fn update_transforms_recurse(world: &World, entity: Entity, parent_global: Globa
 pub struct DrawEditorDoodads;
 
 impl System for DrawEditorDoodads {
-    fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
-        world.defer(|world, _| {
+    fn run(&self, world_handle: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
+        world_handle.defer(|world, _| {
             let mut doodads = world.write_resource::<Doodads>().unwrap();
 
             let gray = Color::new(0.5, 0.5, 0.5, 1.0);
@@ -313,8 +313,9 @@ impl System for DrawEditorDoodads {
             let state = world.read_resource::<EditorState>().unwrap();
 
             if let Some(ref selected) = state.selected_entity {
-                let transform = selected.with_component_ref::<GlobalTransform, _>(|t| *t);
-                let aabb = selected.with_component_ref::<Mesh, _>(|m| m.aabb());
+                let transform =
+                    selected.with_component_ref::<GlobalTransform, _>(&world_handle, |t| *t);
+                let aabb = selected.with_component_ref::<Mesh, _>(&world_handle, |m| m.aabb());
                 if let Some((transform, aabb)) = transform.zip(aabb) {
                     let aabb = aabb.transformed(transform);
                     let position = aabb.center();

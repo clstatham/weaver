@@ -46,11 +46,12 @@ impl<'a> MethodArg<'a> {
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub struct ScriptMethod {
     pub name: String,
     pub args: Vec<Entity>,
     pub ret: Entity,
-    pub run: fn(&mut Vec<MethodArg>) -> Result<Vec<Data>>,
+    pub run: Box<dyn Fn(&mut Vec<MethodArg>) -> Result<Vec<Data>>>,
     pub takes_self: TakesSelf,
 }
 
@@ -80,24 +81,25 @@ impl ScriptVtable {
 #[macro_export]
 macro_rules! script_vtable {
     ($this:ident: $name:ty; $($method:ident => $takes_self:ident |$($access:ident $arg_names:ident: $arg_tys:ty),*| -> $ret:ty $body:block)*) => {
-        fn script_vtable(&self) -> fabricate::component::ScriptVtable {
+        fn script_vtable(&self, world: LockedWorldHandle) -> fabricate::component::ScriptVtable {
             fabricate::component::ScriptVtable {
                 methods: {
                     let mut map = std::collections::HashMap::default();
                     $(
+                        let world_clone = world.clone();
                         map.insert(stringify!($method).to_string(), fabricate::component::ScriptMethod {
                             name: stringify!($method).to_string(),
                             args: vec![$(<$arg_tys as fabricate::registry::StaticId>::static_type_id()),*],
                             ret: <$ret as fabricate::registry::StaticId>::static_type_id(),
                             takes_self: TakesSelf::$takes_self,
-                            run: |args| {
+                            run: Box::new(move |args| {
                                 let [$($arg_names),*] = &mut args[..] else { anyhow::bail!("Wrong number of args") };
                                 $(
                                     let $arg_names = $arg_names.$access::<$arg_tys>().unwrap();
                                 )*
                                 let ret = $body;
-                                Ok(vec![fabricate::storage::Data::new_dynamic(ret)])
-                            },
+                                Ok(vec![fabricate::storage::Data::new_dynamic(&world_clone, ret)])
+                            }),
                         });
                     )*
                     map
@@ -129,14 +131,15 @@ pub trait Component: Send + Sync + 'static {
 
     fn clone_box(&self) -> Box<dyn Component>;
 
-    fn into_data(self) -> Data
+    fn into_data(self, world: &LockedWorldHandle) -> Data
     where
         Self: Sized,
     {
-        Data::new_dynamic(self)
+        Data::new_dynamic(world, self)
     }
 
-    fn script_vtable(&self) -> ScriptVtable {
+    #[allow(unused)]
+    fn script_vtable(&self, world: LockedWorldHandle) -> ScriptVtable {
         ScriptVtable {
             methods: HashMap::default(),
         }

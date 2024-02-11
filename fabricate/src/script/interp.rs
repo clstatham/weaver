@@ -75,19 +75,27 @@ impl RuntimeEnv {
     pub fn push_scope(&self, inherit: Option<&InterpreterContext>) -> &mut InterpreterContext {
         if let Some(inherit) = inherit {
             self.arena.alloc(InterpreterContext {
+                world: self.world.clone(),
                 names: inherit.names.clone(),
                 allocations: Vec::new(),
                 should_break: None,
                 should_return: None,
             })
         } else {
-            self.arena.alloc(InterpreterContext::new())
+            self.arena.alloc(InterpreterContext {
+                world: self.world.clone(),
+                names: FxHashMap::default(),
+                allocations: Vec::new(),
+                should_break: None,
+                should_return: None,
+            })
         }
     }
 }
 
 #[derive(Clone)]
 pub(super) struct InterpreterContext {
+    pub world: LockedWorldHandle,
     pub names: FxHashMap<String, ValueHandle>,
     pub allocations: Vec<ValueHandle>,
     pub should_break: Option<Option<ValueHandle>>,
@@ -98,23 +106,14 @@ impl Drop for InterpreterContext {
     fn drop(&mut self) {
         for allocation in &self.allocations {
             match allocation {
-                ValueHandle::Ref(r) => r.read().despawn(),
-                ValueHandle::Mut(m) => m.read().despawn(),
+                ValueHandle::Ref(r) => r.read().despawn(&self.world),
+                ValueHandle::Mut(m) => m.read().despawn(&self.world),
             }
         }
     }
 }
 
 impl InterpreterContext {
-    pub fn new() -> Self {
-        Self {
-            names: FxHashMap::default(),
-            allocations: Vec::new(),
-            should_break: None,
-            should_return: None,
-        }
-    }
-
     pub fn alloc_value(&mut self, value: Value) -> ValueHandle {
         let value = ValueHandle::Mut(SharedLock::new(value));
         self.allocations.push(value.clone());
@@ -462,18 +461,18 @@ impl InterpreterContext {
                 let x = x_val.read().as_float().ok_or_else(|| {
                     runtime_error!(call.name.span, "Invalid argument for vec3: x")
                 })?;
-                x_val.read().despawn();
+                x_val.read().despawn(&env.world);
                 let y = y_val.read().as_float().ok_or_else(|| {
                     runtime_error!(call.name.span, "Invalid argument for vec3: y")
                 })?;
-                y_val.read().despawn();
+                y_val.read().despawn(&env.world);
                 let z = z_val.read().as_float().ok_or_else(|| {
                     runtime_error!(call.name.span, "Invalid argument for vec3: z")
                 })?;
-                z_val.read().despawn();
+                z_val.read().despawn(&env.world);
 
                 let v = glam::Vec3::new(x, y, z);
-                let data = Data::new_dynamic(v);
+                let data = Data::new_dynamic(&env.world, v);
                 let data = self.alloc_value(Value::Data(data));
                 Ok(data)
             }
@@ -489,15 +488,15 @@ impl InterpreterContext {
                 let axis = axis_data.as_ref::<glam::Vec3>().ok_or_else(|| {
                     runtime_error!(call.args[0].span, "Invalid argument for quat: axis")
                 })?;
-                axis_val.despawn();
+                axis_val.despawn(&env.world);
 
                 let angle = angle_val.read().as_float().ok_or_else(|| {
                     runtime_error!(call.args[1].span, "Invalid argument for quat: angle")
                 })?;
-                angle_val.read().despawn();
+                angle_val.read().despawn(&env.world);
 
                 let q = glam::Quat::from_axis_angle(*axis, angle);
-                let data = Data::new_dynamic(q);
+                let data = Data::new_dynamic(&env.world, q);
                 let data = self.alloc_value(Value::Data(data));
                 Ok(data)
             }
@@ -524,7 +523,7 @@ impl InterpreterContext {
                     if let Value::Data(data) = &*arg_lock {
                         args.push(MethodArg::Owned(data.to_owned()));
                     } else {
-                        let arg = arg_lock.to_owned_data().map_err(|_| {
+                        let arg = arg_lock.to_owned_data(&env.world).map_err(|_| {
                             runtime_error!(span, "Invalid argument for method call")
                         })?;
                         args.push(MethodArg::Owned(arg));
@@ -548,11 +547,11 @@ impl InterpreterContext {
 
                         let vtable = match &data {
                             Data::Dynamic(d) => {
-                                d.data().script_vtable()
+                                d.data().script_vtable(env.world.clone())
                             },
                             Data::Pointer(p) => {
                                 // deref one level
-                                p.with_deref(|d| d.as_dynamic().map(|d| d.data().data().script_vtable()).ok_or_else(|| {
+                                p.with_deref(&env.world,|d| d.as_dynamic().map(|d| d.data().data().script_vtable(env.world.clone())).ok_or_else(|| {
                                     runtime_error!(rhs.span, "Invalid method call: No such method")
                                 }))??
                             }
@@ -625,11 +624,11 @@ impl InterpreterContext {
 
                         let vtable = match &data {
                             Data::Dynamic(d) => {
-                                d.data().script_vtable()
+                                d.data().script_vtable(env.world.clone())
                             },
                             Data::Pointer(p) => {
                                 // deref one level
-                                p.with_deref(|d| d.as_dynamic().map(|d| d.data().data().script_vtable()).ok_or_else(|| {
+                                p.with_deref(&env.world, |d| d.as_dynamic().map(|d| d.data().data().script_vtable(env.world.clone())).ok_or_else(|| {
                                     runtime_error!(rhs.span, "Invalid method call: No such method")
                                 }))??
                             }
@@ -740,11 +739,6 @@ impl InterpreterContext {
     }
 }
 
-impl Default for InterpreterContext {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 pub trait BuildOnWorld {
     type Output;

@@ -40,7 +40,7 @@ impl App {
     ) -> anyhow::Result<Self> {
         crate::register_names();
 
-        let world = get_world();
+        let world = World::new_handle();
 
         let event_loop = EventLoop::new()?;
         let window = WindowBuilder::new()

@@ -12,7 +12,7 @@ use crate::{
     prelude::{Entity, MapRead, MapWrite, Read, Write},
     registry::{global_registry, Id, StaticId},
     relationship::Relationship,
-    world::get_world,
+    world::LockedWorldHandle,
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -216,9 +216,9 @@ pub struct DynamicData {
 }
 
 impl DynamicData {
-    pub fn new<T: Component>(data: T) -> Self {
+    pub fn new<T: Component>(world: &LockedWorldHandle, data: T) -> Self {
         let type_id = T::static_type_id();
-        let entity = get_world().create_entity().unwrap();
+        let entity = world.create_entity().unwrap();
         entity.register_as_type(type_id);
         log::trace!("Created data entity {}", entity);
         let data = Box::new(data);
@@ -229,9 +229,13 @@ impl DynamicData {
         }
     }
 
-    pub fn new_relationship<R: Relationship>(relation: R, relative: Entity) -> Self {
+    pub fn new_relationship<R: Relationship>(
+        world: &LockedWorldHandle,
+        relation: R,
+        relative: Entity,
+    ) -> Self {
         let type_id = Entity::new_relationship(R::static_type_id().id(), relative.id());
-        let entity = get_world().create_entity().unwrap();
+        let entity = world.create_entity().unwrap();
         entity.register_as_type(type_id);
         log::trace!("Created relationship data entity {}", entity);
         let data = Box::new(relation);
@@ -323,16 +327,20 @@ pub enum Data {
 }
 
 impl Data {
-    pub fn new_dynamic<T: Component>(data: T) -> Self {
-        Self::Dynamic(DynamicData::new(data))
+    pub fn new_dynamic<T: Component>(world: &LockedWorldHandle, data: T) -> Self {
+        Self::Dynamic(DynamicData::new(world, data))
     }
 
     pub fn new_pointer(target_type_id: Entity, target_entity: Entity) -> Self {
         Self::Pointer(Pointer::new(target_type_id, target_entity))
     }
 
-    pub fn new_relationship<R: Relationship>(relation: R, relative: Entity) -> Self {
-        Self::Dynamic(DynamicData::new_relationship(relation, relative))
+    pub fn new_relationship<R: Relationship>(
+        world: &LockedWorldHandle,
+        relation: R,
+        relative: Entity,
+    ) -> Self {
+        Self::Dynamic(DynamicData::new_relationship(world, relation, relative))
     }
 
     pub fn type_id(&self) -> Entity {
@@ -443,18 +451,18 @@ impl Pointer {
         Data::Pointer(self)
     }
 
-    pub fn with_deref<F, R>(&self, f: F) -> Result<R>
+    pub fn with_deref<F, R>(&self, world: &LockedWorldHandle, f: F) -> Result<R>
     where
         F: FnOnce(Ref<'_>) -> R,
     {
-        self.target_entity.with_value_ref(f)
+        self.target_entity.with_value_ref(world, f)
     }
 
-    pub fn with_deref_mut<F, R>(&self, f: F) -> Result<R>
+    pub fn with_deref_mut<F, R>(&self, world: &LockedWorldHandle, f: F) -> Result<R>
     where
         F: FnOnce(Mut<'_>) -> R,
     {
-        self.target_entity.with_value_mut(f)
+        self.target_entity.with_value_mut(world, f)
     }
 }
 

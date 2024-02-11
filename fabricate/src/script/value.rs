@@ -3,7 +3,7 @@ use anyhow::{bail, Result};
 use crate::{
     lock::Write,
     prelude::{Data, Entity, Read, SharedLock},
-    query::QueryBuilderAccess,
+    query::QueryBuilderAccess, world::LockedWorldHandle,
 };
 
 use super::interp::InterpreterContext;
@@ -113,72 +113,49 @@ impl Value {
         }
     }
 
-    pub fn to_owned_data(&self) -> Result<Data> {
+    pub fn to_owned_data(&self, world: &LockedWorldHandle) -> Result<Data> {
         match self {
             Value::Data(d) => Ok(d.to_owned()),
-            Value::Bool(b) => Ok(Data::new_dynamic(*b)),
-            Value::Int(i) => Ok(Data::new_dynamic(*i)),
-            Value::Float(f) => Ok(Data::new_dynamic(*f)),
-            Value::String(s) => Ok(Data::new_dynamic(s.clone())),
+            Value::Bool(b) => Ok(Data::new_dynamic(world, *b)),
+            Value::Int(i) => Ok(Data::new_dynamic(world, *i)),
+            Value::Float(f) => Ok(Data::new_dynamic(world, *f)),
+            Value::String(s) => Ok(Data::new_dynamic(world, s.clone())),
             Value::Resource(_) => bail!("Cannot convert Resource to Data"),
             Value::Query(_) => bail!("Cannot convert Query to Data"),
             Value::Void => bail!("Cannot convert Void to Data"),
         }
     }
 
-    pub fn despawn(&self) {
+    pub fn despawn(&self, world: &LockedWorldHandle) {
         if let Value::Data(d) = self {
             if d.entity().is_alive() {
-                d.entity().kill();
+                d.entity().kill(world);
             }
         }
     }
 
-    pub fn try_downcast_data(&self) -> Option<Self> {
+    pub fn try_downcast_data(&self, world: &LockedWorldHandle) -> Option<Self> {
         if let Value::Data(d) = self {
             if let Some(b) = d.as_ref::<bool>() {
-                self.despawn();
+                self.despawn(world);
                 return Some(Value::Bool(*b));
-            } else if let Some(i) = d.as_ref::<isize>() {
-                self.despawn();
-                return Some(Value::Int(*i as i64));
-            } else if let Some(i) = d.as_ref::<i64>() {
-                self.despawn();
-                return Some(Value::Int(*i));
-            } else if let Some(i) = d.as_ref::<i32>() {
-                self.despawn();
-                return Some(Value::Int(*i as i64));
-            } else if let Some(i) = d.as_ref::<i16>() {
-                self.despawn();
-                return Some(Value::Int(*i as i64));
-            } else if let Some(i) = d.as_ref::<i8>() {
-                self.despawn();
-                return Some(Value::Int(*i as i64));
-            } else if let Some(i) = d.as_ref::<usize>() {
-                self.despawn();
-                return Some(Value::Int(*i as i64));
-            } else if let Some(i) = d.as_ref::<u64>() {
-                self.despawn();
-                return Some(Value::Int(*i as i64));
-            } else if let Some(i) = d.as_ref::<u32>() {
-                self.despawn();
-                return Some(Value::Int(*i as i64));
-            } else if let Some(i) = d.as_ref::<u16>() {
-                self.despawn();
-                return Some(Value::Int(*i as i64));
-            } else if let Some(i) = d.as_ref::<u8>() {
-                self.despawn();
-                return Some(Value::Int(*i as i64));
-            } else if let Some(f) = d.as_ref::<f32>() {
-                self.despawn();
-                return Some(Value::Float(*f));
-            } else if let Some(f) = d.as_ref::<f64>() {
-                self.despawn();
-                return Some(Value::Float(*f as f32));
-            } else if let Some(s) = d.as_ref::<String>() {
-                self.despawn();
-                return Some(Value::String(s.clone()));
             }
+            try_all_types!(d; i64, u64, i32, u32, i16, u16, i8, u8; |data| {
+                self.despawn(world);
+                #[allow(clippy::unnecessary_cast)]
+                return Some(Value::Int(*data as i64));
+            } else {});
+            try_all_types!(d; f32, f64; |data| {
+                self.despawn(world);
+                #[allow(clippy::unnecessary_cast)]
+                return Some(Value::Float(*data as f32));
+            } else {});
+            try_all_types!(d; String; |data| {
+                self.despawn(world);
+                return Some(Value::String(data.clone()));
+            } else {});
+            
+            return None
         }
         None
     }
@@ -209,22 +186,22 @@ impl Value {
                 _ => bail!("Invalid infix operator for float: {}", op),
             },
             (Value::Data(_), Value::Int(b)) => {
-                let b = ctx.alloc_value(Value::Data(Data::new_dynamic(*b)));
+                let b = ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *b)));
                 let b = b.read();
                 self.infix(op, &b, ctx)
             }
             (Value::Int(a), Value::Data(_)) => {
-                let a = ctx.alloc_value(Value::Data(Data::new_dynamic(*a)));
+                let a = ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a)));
                 let a = a.read();
                 a.infix(op, other, ctx)
             }
             (Value::Data(_), Value::Float(b)) => {
-                let b = ctx.alloc_value(Value::Data(Data::new_dynamic(*b)));
+                let b = ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *b)));
                 let b = b.read();
                 self.infix(op, &b, ctx)
             }
             (Value::Float(a), Value::Data(_)) => {
-                let a = ctx.alloc_value(Value::Data(Data::new_dynamic(*a)));
+                let a = ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a)));
                 let a = a.read();
                 a.infix(op, other, ctx)
             }
@@ -232,7 +209,7 @@ impl Value {
                 if let Some(b) = b.as_pointer() {
                     // deref
                     return b
-                        .with_deref(|b| {
+                        .with_deref(&ctx.world.clone(), |b| {
                             let b = b.to_owned().unwrap();
                             let b = Value::Data(b);
                             return self.infix(op, &b, ctx);
@@ -242,27 +219,27 @@ impl Value {
                 if let Some(a) = a.as_pointer() {
                     // deref
                     return a
-                        .with_deref(|a| {
+                        .with_deref(&ctx.world.clone(), |a| {
                             let a = a.to_owned().unwrap();
                             let a = Value::Data(a);
                             return a.infix(op, other, ctx);
                         })
                         .unwrap();
                 }
-                if let Some(a) = self.try_downcast_data() {
+                if let Some(a) = self.try_downcast_data(&ctx.world) {
                     return a.infix(op, other, ctx);
                 }
-                if let Some(b) = other.try_downcast_data() {
+                if let Some(b) = other.try_downcast_data(&ctx.world) {
                     return self.infix(op, &b, ctx);
                 }
                 match op {
                     "+" => {
                         try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                            return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(a + b))));
+                            return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, a + b))));
                         } else {
                             #[cfg(feature = "glam")]
                             try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a + *b))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a + *b))));
                             } else {
                                 return Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                             });
@@ -272,11 +249,11 @@ impl Value {
                     }
                     "-" => {
                         try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                            return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(a - b))));
+                            return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, a - b))));
                         } else {
                             #[cfg(feature = "glam")]
                             try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a - *b))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a - *b))));
                             } else {
                                 return Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                             });
@@ -286,11 +263,11 @@ impl Value {
                     }
                     "*" => {
                         try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                            return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(a * b))));
+                            return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, a * b))));
                         } else {
                             #[cfg(feature = "glam")]
                             try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a * *b))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a * *b))));
                             } else {
                                 return Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                             });
@@ -300,11 +277,11 @@ impl Value {
                     }
                     "/" => {
                         try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                            return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(a / b))));
+                            return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, a / b))));
                         } else {
                             #[cfg(feature = "glam")]
                             try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4; |a, b| {
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a / *b))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a / *b))));
                             } else {
                                 return Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                             });
@@ -314,7 +291,7 @@ impl Value {
                     }
                     "%" => {
                         try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                            return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(a % b))));
+                            return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, a % b))));
                         } else {
                             Err(anyhow::anyhow!("Invalid data types for operator `%`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                         })
@@ -399,22 +376,22 @@ impl Value {
                 _ => bail!("Invalid infix operator for float: {}", op),
             },
             (a, Value::Int(b)) => {
-                let b = ctx.alloc_value(Value::Data(Data::new_dynamic(*b)));
+                let b = ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *b)));
                 let b = b.read();
                 a.infix_mut(op, &b, ctx)
             }
             (Value::Int(a), Value::Data(_)) => {
-                let a = ctx.alloc_value(Value::Data(Data::new_dynamic(*a)));
+                let a = ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a)));
                 let mut a = a.write();
                 a.infix_mut(op, other, ctx)
             }
             (a, Value::Float(b)) => {
-                let b = ctx.alloc_value(Value::Data(Data::new_dynamic(*b)));
+                let b = ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *b)));
                 let b = b.read();
                 a.infix_mut(op, &b, ctx)
             }
             (Value::Float(a), Value::Data(_)) => {
-                let a = ctx.alloc_value(Value::Data(Data::new_dynamic(*a)));
+                let a = ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a)));
                 let mut a = a.write();
                 a.infix_mut(op, other, ctx)
             }
@@ -422,29 +399,29 @@ impl Value {
                 if let Some(b) = b.as_data().and_then(|b| b.as_pointer()) {
                     // deref
                     return b
-                        .with_deref_mut(|b| {
+                        .with_deref_mut(&ctx.world.clone(), |b| {
                             let b = b.to_owned();
                             let b = Value::Data(b);
                             return a.infix_mut(op, &b, ctx);
                         })
                         .unwrap();
                 }
-                if let Some(b) = other.try_downcast_data() {
+                if let Some(b) = other.try_downcast_data(&ctx.world) {
                     return a.infix_mut(op, &b, ctx);
                 }
                 if let Some(a) = a.as_data().and_then(|a| a.as_pointer()) {
                     // deref mut
-                    a.with_deref_mut(|mut a| {
+                    a.with_deref_mut(&ctx.world.clone(), |mut a| {
                         
                     if let Value::Data(b) = b {
                         match op {
                             "+" => {
                                 try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a + *b))));
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a + *b))));
                                 } else {
                                     #[cfg(feature = "glam")]
                                     try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
-                                        return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a + *b))));
+                                        return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a + *b))));
                                     } else {
                                         return Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                     });
@@ -454,11 +431,11 @@ impl Value {
                             }
                             "-" => {
                                 try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a - *b))));
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a - *b))));
                                 } else {
                                     #[cfg(feature = "glam")]
                                     try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
-                                        return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a - *b))));
+                                        return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a - *b))));
                                     } else {
                                         return Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                     });
@@ -468,11 +445,11 @@ impl Value {
                             }
                             "*" => {
                                 try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a * *b))));
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a * *b))));
                                 } else {
                                     #[cfg(feature = "glam")]
                                     try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
-                                        return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a * *b))));
+                                        return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a * *b))));
                                     } else {
                                         return Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                     });
@@ -482,11 +459,11 @@ impl Value {
                             }
                             "/" => {
                                 try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a / *b))));
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a / *b))));
                                 } else {
                                     #[cfg(feature = "glam")]
                                     try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4; |a, b| {
-                                        return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a / *b))));
+                                        return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a / *b))));
                                     } else {
                                         return Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                     });
@@ -496,7 +473,7 @@ impl Value {
                             }
                             "%" => {
                                 try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a % *b))));
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a % *b))));
                                 } else {
                                     Err(anyhow::anyhow!("Invalid data types for operator `%`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()))
                                 })
@@ -599,11 +576,11 @@ impl Value {
                     match op {
                         "+" => {
                             try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(a + b))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, a + b))));
                             } else {
                                 #[cfg(feature = "glam")]
                                 try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a + *b))))
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a + *b))))
                                 } else {
                                     return Err(anyhow::anyhow!("Invalid data types for operator `+`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
@@ -613,11 +590,11 @@ impl Value {
                         }
                         "-" => {
                             try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(a - b))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, a - b))));
                             } else {
                                 #[cfg(feature = "glam")]
                                 try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a - *b))))
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a - *b))))
                                 } else {
                                     return Err(anyhow::anyhow!("Invalid data types for operator `-`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
@@ -627,11 +604,11 @@ impl Value {
                         }
                         "*" => {
                             try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(a * b))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, a * b))));
                             } else {
                                 #[cfg(feature = "glam")]
                                 try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a * *b))))
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a * *b))))
                                 } else {
                                     return Err(anyhow::anyhow!("Invalid data types for operator `*`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
@@ -641,11 +618,11 @@ impl Value {
                         }
                         "/" => {
                             try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(a / b))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, a / b))));
                             } else {
                                 #[cfg(feature = "glam")]
                                 try_all_types_both!(a, b; glam::Vec2, glam::Vec3, glam::Vec4; |a, b| {
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a / *b))))
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a / *b))))
                                 } else {
                                     return Err(anyhow::anyhow!("Invalid data types for operator `/`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
@@ -655,7 +632,7 @@ impl Value {
                         }
                         "%" => {
                             try_all_types_both!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(a % b))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, a % b))));
                             } else {
                                 return Err(anyhow::anyhow!("Invalid data types for operator `%`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                             })
@@ -663,12 +640,12 @@ impl Value {
                         "=" => {
                             try_all_types_both_mut_lhs!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
                                 *a = *b;
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a))));
                             } else {
                                 #[cfg(feature = "glam")]
                                 try_all_types_both_mut_lhs!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
                                     *a = *b;
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a))));
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a))));
                                 } else {
                                     return Err(anyhow::anyhow!("Invalid data types for operator `=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
@@ -679,12 +656,12 @@ impl Value {
                         "+=" => {
                             try_all_types_both_mut_lhs!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
                                 *a += b;
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a))));
                             } else {
                                 #[cfg(feature = "glam")]
                                 try_all_types_both_mut_lhs!(a, b; glam::Vec2, glam::Vec3, glam::Vec4; |a, b| {
                                     *a += *b;
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a))));
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a))));
                                 } else {
                                     return Err(anyhow::anyhow!("Invalid data types for operator `+=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
@@ -695,12 +672,12 @@ impl Value {
                         "-=" => {
                             try_all_types_both_mut_lhs!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
                                 *a -= b;
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a))));
                             } else {
                                 #[cfg(feature = "glam")]
                                 try_all_types_both_mut_lhs!(a, b; glam::Vec2, glam::Vec3, glam::Vec4; |a, b| {
                                     *a -= *b;
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a))));
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a))));
                                 } else {
                                     return Err(anyhow::anyhow!("Invalid data types for operator `-=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
@@ -711,12 +688,12 @@ impl Value {
                         "*=" => {
                             try_all_types_both_mut_lhs!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
                                 *a *= b;
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a))));
                             } else {
                                 #[cfg(feature = "glam")]
                                 try_all_types_both_mut_lhs!(a, b; glam::Vec2, glam::Vec3, glam::Vec4, glam::Quat; |a, b| {
                                     *a *= *b;
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a))));
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a))));
                                 } else {
                                     return Err(anyhow::anyhow!("Invalid data types for operator `*=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
@@ -727,12 +704,12 @@ impl Value {
                         "/=" => {
                             try_all_types_both_mut_lhs!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
                                 *a /= b;
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a))));
                             } else {
                                 #[cfg(feature = "glam")]
                                 try_all_types_both_mut_lhs!(a, b; glam::Vec2, glam::Vec3, glam::Vec4; |a, b| {
                                     *a /= *b;
-                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a))));
+                                    return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a))));
                                 } else {
                                     return Err(anyhow::anyhow!("Invalid data types for operator `/=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                                 });
@@ -743,7 +720,7 @@ impl Value {
                         "%=" => {
                             try_all_types_both_mut_lhs!(a, b; u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64; |a, b| {
                                 *a %= b;
-                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(*a))));
+                                return Ok(ctx.alloc_value(Value::Data(Data::new_dynamic(&ctx.world, *a))));
                             } else {
                                 return Err(anyhow::anyhow!("Invalid data types for operator `%=`: {:?} and {:?}", a.type_id().type_name(), b.type_id().type_name()));
                             })
@@ -798,19 +775,19 @@ impl ValueHandle {
     }
 }
 
-impl Drop for ValueHandle {
-    fn drop(&mut self) {
-        match self {
-            Self::Ref(lock) => {
-                if lock.strong_count() == 1 {
-                    lock.read().despawn();
-                }
-            }
-            Self::Mut(lock) => {
-                if lock.strong_count() == 1 {
-                    lock.read().despawn();
-                }
-            }
-        }
-    }
-}
+// impl Drop for ValueHandle {
+//     fn drop(&mut self) {
+//         match self {
+//             Self::Ref(lock) => {
+//                 if lock.strong_count() == 1 {
+//                     lock.read().despawn();
+//                 }
+//             }
+//             Self::Mut(lock) => {
+//                 if lock.strong_count() == 1 {
+//                     lock.read().despawn();
+//                 }
+//             }
+//         }
+//     }
+// }

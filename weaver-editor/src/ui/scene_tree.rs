@@ -5,30 +5,35 @@ use crate::{state::EditorState, TransformChild, TransformParent};
 #[derive(Component, Clone)]
 pub struct NameTag(pub String);
 
-pub fn scene_tree_ui(world: &World, state: &mut EditorState, ui: &mut egui::Ui) {
-    egui::CollapsingHeader::new("World")
-        .default_open(true)
-        .show(ui, |ui| {
-            let q = world
-                .query()
-                .entity()
-                .without_dynamic(Entity::new_wildcard::<TransformChild>())
-                .unwrap()
-                .build();
-            for result in q.iter() {
-                let entity = result.entity().unwrap();
-                {
-                    let name = entity
-                        .with_component_ref::<NameTag, _>(|tag| tag.0.clone())
-                        .or_else(|| entity.type_name())
-                        .unwrap_or_else(|| format!("{}", entity.id()));
-                    scene_tree_ui_recurse(world, state, ui, entity, &name);
-                }
-            }
-        });
+pub fn scene_tree_ui(world_handle: &LockedWorldHandle, state: &mut EditorState, ui: &mut egui::Ui) {
+    world_handle
+        .defer(|world, _| {
+            egui::CollapsingHeader::new("World")
+                .default_open(true)
+                .show(ui, |ui| {
+                    let q = world
+                        .query()
+                        .entity()
+                        .without_dynamic(Entity::new_wildcard::<TransformChild>())
+                        .unwrap()
+                        .build();
+                    for result in q.iter() {
+                        let entity = result.entity().unwrap();
+                        {
+                            let name = entity
+                                .with_component_ref::<NameTag, _>(world_handle, |tag| tag.0.clone())
+                                .or_else(|| entity.type_name())
+                                .unwrap_or_else(|| format!("{}", entity.id()));
+                            scene_tree_ui_recurse(world_handle, world, state, ui, entity, &name);
+                        }
+                    }
+                });
+        })
+        .unwrap();
 }
 
 fn scene_tree_ui_recurse(
+    world_handle: &LockedWorldHandle,
     world: &World,
     state: &mut EditorState,
     ui: &mut egui::Ui,
@@ -68,10 +73,10 @@ fn scene_tree_ui_recurse(
             if let Some(rels) = rels {
                 for child in rels {
                     let name = child
-                        .with_component_ref::<NameTag, _>(|tag| tag.0.clone())
+                        .with_component_ref::<NameTag, _>(world_handle, |tag| tag.0.clone())
                         .or_else(|| child.type_name())
                         .unwrap_or_else(|| format!("{}", child.id()));
-                    scene_tree_ui_recurse(world, state, ui, child, &name);
+                    scene_tree_ui_recurse(world_handle, world, state, ui, child, &name);
                 }
             }
 

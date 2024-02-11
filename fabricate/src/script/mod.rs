@@ -54,12 +54,12 @@ impl Script {
 
 #[cfg(test)]
 mod tests {
-    use crate::{system::SystemStage, world::get_world};
+    use crate::{system::SystemStage, world::World};
 
     use super::*;
     #[test]
     fn test_script() {
-        let world = get_world();
+        let world = World::new_handle();
         let script = Script::load("src/script/test-scripts/test1.loom").unwrap();
         world.add_script(script);
 

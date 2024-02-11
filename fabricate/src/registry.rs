@@ -18,7 +18,7 @@ use crate::{
     lock::Lock,
     relationship::Relationship,
     storage::{Mut, Ref, StaticMut, StaticRef},
-    world::{get_world, World},
+    world::{LockedWorldHandle, World},
 };
 
 /// A unique identifier.
@@ -323,8 +323,8 @@ impl Entity {
         !self.is_alive()
     }
 
-    pub fn kill(self) {
-        get_world().despawn(self).unwrap();
+    pub fn kill(self, world: &LockedWorldHandle) {
+        world.despawn(self).unwrap();
         if self.is_generational() {
             global_registry().delete_entity(self);
         } else {
@@ -365,11 +365,11 @@ impl Entity {
         }
     }
 
-    pub fn with_value_ref<F, R>(self, f: F) -> Result<R>
+    pub fn with_value_ref<F, R>(self, world: &LockedWorldHandle, f: F) -> Result<R>
     where
         F: FnOnce(Ref<'_>) -> R,
     {
-        get_world()
+        world
             .defer(|world, _| {
                 let storage = world.storage();
                 let r = storage.find(self.type_id()?, self)?;
@@ -378,11 +378,11 @@ impl Entity {
             .ok_or_else(|| anyhow::anyhow!("Value does not exist: {}", self))
     }
 
-    pub fn with_value_mut<F, R>(self, f: F) -> Result<R>
+    pub fn with_value_mut<F, R>(self, world: &LockedWorldHandle, f: F) -> Result<R>
     where
         F: FnOnce(Mut<'_>) -> R,
     {
-        get_world()
+        world
             .defer(|world, _| {
                 let storage = world.storage();
                 let r = storage.find_mut(self.type_id()?, self)?;
@@ -391,22 +391,22 @@ impl Entity {
             .ok_or_else(|| anyhow::anyhow!("Value does not exist: {}", self))
     }
 
-    pub fn with_self_as_ref<T: Component, F, R>(self, f: F) -> Result<R>
+    pub fn with_self_as_ref<T: Component, F, R>(self, world: &LockedWorldHandle, f: F) -> Result<R>
     where
         F: FnOnce(&T) -> R,
     {
-        self.with_value_ref(|r| {
+        self.with_value_ref(world, |r| {
             let r = r.as_ref::<T>()?;
             Some(f(r))
         })?
         .ok_or_else(|| anyhow::anyhow!("Value does not exist: {}", self))
     }
 
-    pub fn with_self_as_mut<T: Component, F, R>(self, f: F) -> Result<R>
+    pub fn with_self_as_mut<T: Component, F, R>(self, world: &LockedWorldHandle, f: F) -> Result<R>
     where
         F: FnOnce(&mut T) -> R,
     {
-        self.with_value_mut(|mut r| {
+        self.with_value_mut(world, |mut r| {
             let r = r.as_mut::<T>()?;
             Some(f(r))
         })?
@@ -417,22 +417,24 @@ impl Entity {
         self.type_id() == Some(T::type_id())
     }
 
-    pub fn has<T: Component>(self) -> bool {
-        get_world().has::<T>(self)
+    pub fn has<T: Component>(self, world: &LockedWorldHandle) -> bool {
+        world.has::<T>(self)
     }
 
     pub fn with_component_ref<T: Component, R>(
         self,
+        world: &LockedWorldHandle,
         f: impl FnOnce(StaticRef<'_, T>) -> R,
     ) -> Option<R> {
-        get_world().with_component_ref(self, f)
+        world.with_component_ref(self, f)
     }
 
     pub fn with_component_mut<T: Component, R>(
         self,
+        world: &LockedWorldHandle,
         f: impl FnOnce(StaticMut<'_, T>) -> R,
     ) -> Option<R> {
-        get_world().with_component_mut(self, f)
+        world.with_component_mut(self, f)
     }
 
     pub fn relationship_first(self) -> Option<Entity> {
@@ -455,25 +457,35 @@ impl Entity {
         }
     }
 
-    pub fn with_relatives<F, R>(self, relationship_type: Id, f: F) -> Option<R>
+    pub fn with_relatives<F, R>(
+        self,
+        world: &LockedWorldHandle,
+        relationship_type: Id,
+        f: F,
+    ) -> Option<R>
     where
         F: FnOnce(&[Entity]) -> R,
     {
-        let rels = get_world().get_relatives_id(self, relationship_type)?;
+        let rels = world.get_relatives_id(self, relationship_type)?;
         Some(f(&rels))
     }
 
-    pub fn with_all_relatives<F, R>(self, f: F) -> Option<R>
+    pub fn with_all_relatives<F, R>(self, world: &LockedWorldHandle, f: F) -> Option<R>
     where
         F: FnOnce(&[(Id, Entity)]) -> R,
     {
-        let rels = get_world().all_relatives(self)?;
+        let rels = world.all_relatives(self)?;
         Some(f(&rels))
     }
 
-    pub fn add_relative<R: Relationship>(self, relationship: R, relative: Entity) -> Result<()> {
-        let data = relationship.into_relationship_data(relative);
-        get_world().defer(|_, commands| {
+    pub fn add_relative<R: Relationship>(
+        self,
+        world: &LockedWorldHandle,
+        relationship: R,
+        relative: Entity,
+    ) -> Result<()> {
+        let data = relationship.into_relationship_data(world, relative);
+        world.defer(|_, commands| {
             commands.add(self, vec![data]);
             Ok::<(), anyhow::Error>(())
         })??;
@@ -481,9 +493,9 @@ impl Entity {
     }
 
     #[allow(clippy::should_implement_trait)]
-    pub fn add<T: Bundle>(self, components: T) -> Result<()> {
-        let data = components.into_data_vec();
-        get_world().defer(|_, commands| {
+    pub fn add<T: Bundle>(self, world: &LockedWorldHandle, components: T) -> Result<()> {
+        let data = components.into_data_vec(world);
+        world.defer(|_, commands| {
             commands.add(self, data);
             Ok::<(), anyhow::Error>(())
         })??;

@@ -46,7 +46,7 @@ impl Default for Tabs {
 }
 
 pub struct EditorTabViewer<'a> {
-    world: &'a World,
+    world: LockedWorldHandle,
     state: &'a mut EditorState,
 }
 
@@ -58,45 +58,47 @@ impl<'a> TabViewer for EditorTabViewer<'a> {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
-        {
-            let renderer = self.world.read_resource::<Renderer>().unwrap();
-            match tab.as_str() {
-                "Viewport" => {
-                    let camera = self
-                        .world
-                        .query()
-                        .write::<FlyCameraController>()
-                        .unwrap()
-                        .build();
-                    let mut camera = camera.iter().next().unwrap();
-                    let rect = ui.min_rect();
-                    renderer.set_viewport_rect(rect.into());
-                    camera.get_mut::<FlyCameraController>().unwrap().aspect = rect.aspect_ratio();
+        self.world
+            .defer(|world, _| {
+                let renderer = world.read_resource::<Renderer>().unwrap();
+                match tab.as_str() {
+                    "Viewport" => {
+                        let camera = world
+                            .query()
+                            .write::<FlyCameraController>()
+                            .unwrap()
+                            .build();
+                        let mut camera = camera.iter().next().unwrap();
+                        let rect = ui.min_rect();
+                        renderer.set_viewport_rect(rect.into());
+                        camera.get_mut::<FlyCameraController>().unwrap().aspect =
+                            rect.aspect_ratio();
 
-                    if let Some(id) = self.state.viewport_id {
-                        let ctx = self.world.read_resource::<EguiContext>().unwrap();
+                        if let Some(id) = self.state.viewport_id {
+                            let ctx = world.read_resource::<EguiContext>().unwrap();
 
-                        let view = renderer
-                            .main_viewport()
-                            .read()
-                            .color_view(renderer.resource_manager());
+                            let view = renderer
+                                .main_viewport()
+                                .read()
+                                .color_view(renderer.resource_manager());
 
-                        ctx.update_texture(renderer.device(), &view, id);
+                            ctx.update_texture(renderer.device(), &view, id);
 
-                        ui.image((id, rect.size()));
+                            ui.image((id, rect.size()));
+                        }
+                    }
+                    "Scene Tree" => {
+                        scene_tree::scene_tree_ui(&self.world, self.state, ui);
+                    }
+                    "Component Inspector" => {
+                        component_inspector::component_inspector_ui(world, self.state, ui);
+                    }
+                    tab => {
+                        ui.label(tab);
                     }
                 }
-                "Scene Tree" => {
-                    scene_tree::scene_tree_ui(self.world, self.state, ui);
-                }
-                "Component Inspector" => {
-                    component_inspector::component_inspector_ui(self.world, self.state, ui);
-                }
-                tab => {
-                    ui.label(tab);
-                }
-            }
-        }
+            })
+            .unwrap();
     }
 }
 
@@ -115,8 +117,8 @@ impl System for EditorStateUi {
         ]
     }
 
-    fn run(&self, world: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
-        world.defer(|world, _| {
+    fn run(&self, world_handle: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
+        world_handle.defer(|world, _| {
             let mut state = world.write_resource::<EditorState>().unwrap();
             let mut tree = world.write_resource::<Tabs>().unwrap();
             let mut fps = world.write_resource::<FpsDisplay>().unwrap();
@@ -132,13 +134,13 @@ impl System for EditorStateUi {
                         .show_inside(
                             ui,
                             &mut EditorTabViewer {
-                                world,
+                                world: world_handle.clone(),
                                 state: &mut state,
                             },
                         );
                 });
 
-                state.rename_entity_window(ctx).unwrap();
+                state.rename_entity_window(&world_handle, ctx).unwrap();
             });
 
             Ok::<_, anyhow::Error>(())

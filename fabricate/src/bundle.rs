@@ -2,12 +2,13 @@ use crate::{
     prelude::Component,
     registry::{Entity, StaticId},
     storage::Data,
+    world::LockedWorldHandle,
 };
 
 /// A collection of components to be added to an entity.
 pub trait Bundle: Sized + 'static {
     fn type_ids() -> Vec<Entity>;
-    fn into_data_vec(self) -> Vec<Data>;
+    fn into_data_vec(self, world: &LockedWorldHandle) -> Vec<Data>;
 }
 
 impl<T: Component> Bundle for T {
@@ -15,8 +16,8 @@ impl<T: Component> Bundle for T {
         vec![T::static_type_id()]
     }
 
-    fn into_data_vec(self) -> Vec<Data> {
-        vec![T::into_data(self)]
+    fn into_data_vec(self, world: &LockedWorldHandle) -> Vec<Data> {
+        vec![T::into_data(self, world)]
     }
 }
 
@@ -28,9 +29,9 @@ macro_rules! impl_bundle_for_tuple {
                 vec![$(<$name as StaticId>::static_type_id()),*]
             }
 
-            fn into_data_vec(self) -> Vec<Data> {
+            fn into_data_vec(self, world: &LockedWorldHandle) -> Vec<Data> {
                 let ($($name,)*) = self;
-                vec![$(<$name as Component>::into_data($name),)*]
+                vec![$(<$name as Component>::into_data($name, world),)*]
             }
         }
     };

@@ -1,9 +1,9 @@
-use std::sync::OnceLock;
+use std::collections::VecDeque;
 
 use anyhow::Result;
 
 use crate::{
-    commands::Commands,
+    commands::{Command, Commands},
     component::Component,
     lock::SharedLock,
     prelude::{Bundle, Mut},
@@ -14,12 +14,6 @@ use crate::{
     storage::{Data, Ref, SortedMap, StaticMut, StaticRef, Storage},
     system::{DynamicSystem, SystemGraph, SystemStage},
 };
-
-static WORLD: OnceLock<LockedWorldHandle> = OnceLock::new();
-
-pub fn get_world() -> &'static LockedWorldHandle {
-    WORLD.get_or_init(World::new_handle)
-}
 
 /// A container for all the data in the game world.
 /// Contains a [`Storage`] for all the entities and components.
@@ -54,24 +48,12 @@ impl World {
         self.root
     }
 
-    pub fn add_resource<T: Component>(&mut self, resource: T) -> Result<()> {
-        self.add(self.root, resource)
-    }
-
-    pub fn get_resource(&self, id: Entity) -> Option<Ref<'_>> {
-        self.get(self.root, id)
-    }
-
-    pub fn get_resource_mut(&self, id: Entity) -> Option<Mut<'_>> {
-        self.get_mut(self.root, id)
-    }
-
     pub fn read_resource<T: Component>(&self) -> Option<StaticRef<'_, T>> {
-        self.get_component::<T>(self.root)
+        self.storage.get_component::<T>(self.root)
     }
 
     pub fn write_resource<T: Component>(&self) -> Option<StaticMut<'_, T>> {
-        self.get_component_mut::<T>(self.root)
+        self.storage.get_component_mut::<T>(self.root)
     }
 
     pub fn insert_entity(&mut self, entity: Entity) -> Result<()> {
@@ -92,28 +74,9 @@ impl World {
             .collect()
     }
 
-    pub fn add_relative<R: Relationship>(
-        &mut self,
-        add_to: Entity,
-        relationship: R,
-        relative: Entity,
-    ) -> Result<()> {
-        let relationship_data = relationship.into_relationship_data(relative);
-        self.add_data(add_to, [relationship_data])?;
-        Ok(())
-    }
-
     /// Removes an entity from the [`World`].
     pub fn despawn(&mut self, entity: Entity) -> Option<Vec<Data>> {
         self.storage.destroy_entity(entity)
-    }
-
-    /// Creates a new entity in the [`World`] with the given [`Bundle`] of components.
-    pub fn spawn<B: Bundle>(&mut self, components: B) -> Result<Entity> {
-        let entity = self.create_entity()?;
-        let data = components.into_data_vec();
-        self.add_data(entity, data)?;
-        Ok(entity)
     }
 
     pub fn get_relatives_id(&self, entity: Entity, relationship_type: Id) -> Option<Vec<Entity>> {
@@ -158,12 +121,6 @@ impl World {
     pub fn add_data(&mut self, entity: Entity, data: impl IntoIterator<Item = Data>) -> Result<()> {
         let data = data.into_iter().collect::<Vec<_>>();
         self.storage.insert(entity, data)?;
-        Ok(())
-    }
-
-    pub fn add<T: Bundle>(&mut self, entity: Entity, component: T) -> Result<()> {
-        let data = component.into_data_vec();
-        self.add_data(entity, data)?;
         Ok(())
     }
 
@@ -215,14 +172,14 @@ impl World {
 
 /// A shared handle to a [`World`] that can be locked for reading or writing.
 #[derive(Clone)]
-pub struct LockedWorldHandle(SharedLock<World>, SharedLock<Commands>);
+pub struct LockedWorldHandle(SharedLock<World>, SharedLock<VecDeque<Command>>);
 
 impl LockedWorldHandle {
     pub fn new(world: World) -> Self {
-        Self(SharedLock::new(world), SharedLock::new(Commands::new()))
+        Self(SharedLock::new(world), SharedLock::new(VecDeque::new()))
     }
 
-    pub fn command_queue(&self) -> SharedLock<Commands> {
+    pub fn command_queue(&self) -> SharedLock<VecDeque<Command>> {
         self.1.clone()
     }
 
@@ -234,18 +191,19 @@ impl LockedWorldHandle {
             .0
             .try_read()
             .ok_or_else(|| anyhow::anyhow!("Defer failed: World already locked"))?;
-        let mut commands = Commands::new();
+        let mut commands = Commands::new(self.clone());
         let result = f(&world, &mut commands);
         drop(world);
 
-        self.1
-            .write()
-            .queue
-            .write()
-            .append(&mut commands.queue.write());
+        self.1.write().append(&mut commands.queue.write());
+        drop(commands);
 
         if let Some(mut world) = self.0.try_write() {
-            self.1.write().finalize(&mut world)?;
+            let mut commands = Commands {
+                world: self.clone(),
+                queue: self.1.clone(),
+            };
+            commands.finalize(&mut world)?;
         }
         Ok(result)
     }
@@ -273,7 +231,7 @@ impl LockedWorldHandle {
     }
 
     pub fn add_resource<T: Component>(&self, resource: T) -> Result<()> {
-        let data = resource.into_data_vec();
+        let data = resource.into_data_vec(self);
         self.defer(|world, commands| {
             commands.add(world.root, data);
         })
@@ -284,7 +242,7 @@ impl LockedWorldHandle {
         F: FnOnce(Ref<'_>) -> R,
     {
         let world = self.0.read();
-        let res = world.get_resource(id)?;
+        let res = world.get(world.root, id)?;
         Some(f(res))
     }
 
@@ -293,7 +251,7 @@ impl LockedWorldHandle {
         F: FnOnce(Mut<'_>) -> R,
     {
         let world = self.0.read();
-        let res = world.get_resource_mut(id)?;
+        let res = world.get_mut(world.root, id)?;
         Some(f(res))
     }
 
@@ -302,7 +260,7 @@ impl LockedWorldHandle {
         F: FnOnce(StaticRef<'_, T>) -> R,
     {
         self.defer(|world, _| {
-            let res = world.read_resource::<T>()?;
+            let res = world.get_component::<T>(world.root)?;
             Some(f(res))
         })?
         .ok_or_else(|| anyhow::anyhow!("Resource not found"))
@@ -313,7 +271,7 @@ impl LockedWorldHandle {
         F: FnOnce(StaticMut<'_, T>) -> R,
     {
         self.defer(|world, _| {
-            let res = world.write_resource::<T>()?;
+            let res = world.get_component_mut::<T>(world.root)?;
             Some(f(res))
         })?
         .ok_or_else(|| anyhow::anyhow!("Resource not found"))
@@ -332,7 +290,7 @@ impl LockedWorldHandle {
     pub fn spawn<B: Bundle>(&self, components: B) -> Result<Entity> {
         self.defer(|_, commands| {
             let entity = commands.create_entity();
-            commands.add(entity, components.into_data_vec());
+            commands.add(entity, components.into_data_vec(self));
             Ok(entity)
         })?
     }
@@ -406,7 +364,7 @@ impl LockedWorldHandle {
 
     pub fn add<T: Bundle>(&self, entity: Entity, component: T) -> Result<()> {
         self.defer(|_, commands| {
-            commands.add(entity, component.into_data_vec());
+            commands.add(entity, component.into_data_vec(self));
         })
     }
 
@@ -432,7 +390,7 @@ impl LockedWorldHandle {
         relationship: R,
         relative: Entity,
     ) -> Result<()> {
-        let data = relationship.into_relationship_data(relative);
+        let data = relationship.into_relationship_data(self, relative);
         self.defer(|_, commands| {
             commands.add(add_to, vec![data]);
         })

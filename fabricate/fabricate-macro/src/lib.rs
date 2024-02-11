@@ -135,17 +135,18 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         let takes_self = method.takes_self;
 
         method_gen.push(quote! {
+            let world_clone = world.clone();
             map.insert(stringify!(#method_name).to_string(), fabricate::component::ScriptMethod {
                 name: stringify!(#method_name).to_string(),
                 args: vec![#(#arg_tys_id),*],
                 ret: <#ret as fabricate::registry::StaticId>::static_type_id(),
                 takes_self: #takes_self,
-                run: |mut args| {
+                run: Box::new(move |mut args| {
                     let [#(#arg_names),*] = &mut args[..] else { fabricate::prelude::bail!("Wrong number of args") };
                     #(#arg_bindings)*
                     let ret = Self::#method_name(#(#arg_names),*);
-                    Ok(vec![fabricate::storage::Data::new_dynamic(ret)])
-                },
+                    Ok(vec![fabricate::storage::Data::new_dynamic(&world_clone, ret)])
+                }),
             });
         });
     }
@@ -193,7 +194,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                 Box::new(self.clone())
             }
 
-            fn script_vtable(&self) -> fabricate::component::ScriptVtable {
+            fn script_vtable(&self, world: fabricate::world::LockedWorldHandle) -> fabricate::component::ScriptVtable {
                 let mut map = std::collections::HashMap::default();
                 #(#method_gen)*
                 fabricate::component::ScriptVtable { methods: map }

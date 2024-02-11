@@ -20,15 +20,17 @@ pub enum Command {
 }
 
 /// Commands to apply to a mutable world after a [`System`][crate::system::System] or [`defer`][crate::world::LockedWorldHandle::defer] block.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Commands {
+    pub(crate) world: LockedWorldHandle,
     pub(crate) queue: SharedLock<VecDeque<Command>>,
 }
 
 impl Commands {
     /// Create a new, empty command queue.
-    pub fn new() -> Self {
+    pub fn new(world: LockedWorldHandle) -> Self {
         Self {
+            world,
             queue: SharedLock::new(VecDeque::new()),
         }
     }
@@ -46,7 +48,7 @@ impl Commands {
 
     pub fn spawn<B: Bundle>(&mut self, bundle: B) -> Entity {
         let entity = self.create_entity();
-        self.add(entity, bundle.into_data_vec());
+        self.add(entity, bundle.into_data_vec(&self.world));
         entity
     }
 

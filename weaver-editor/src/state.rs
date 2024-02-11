@@ -8,16 +8,16 @@ use weaver::prelude::*;
 use crate::ui::scene_tree::NameTag;
 
 pub trait EditorAction: Send + Sync + Any + 'static {
-    fn begin(&mut self, state: &mut EditorState) -> anyhow::Result<()>;
+    fn begin(&mut self, world: &LockedWorldHandle, state: &mut EditorState) -> anyhow::Result<()>;
     #[allow(unused_variables)]
-    fn update(&mut self, state: &mut EditorState) -> anyhow::Result<()> {
+    fn update(&mut self, world: &LockedWorldHandle, state: &mut EditorState) -> anyhow::Result<()> {
         Ok(())
     }
-    fn end(&mut self, state: &mut EditorState) -> anyhow::Result<()>;
-    fn undo(&mut self, state: &mut EditorState) -> anyhow::Result<()>;
-    fn redo(&mut self, state: &mut EditorState) -> anyhow::Result<()> {
-        self.begin(state)?;
-        self.end(state)?;
+    fn end(&mut self, world: &LockedWorldHandle, state: &mut EditorState) -> anyhow::Result<()>;
+    fn undo(&mut self, world: &LockedWorldHandle, state: &mut EditorState) -> anyhow::Result<()>;
+    fn redo(&mut self, world: &LockedWorldHandle, state: &mut EditorState) -> anyhow::Result<()> {
+        self.begin(world, state)?;
+        self.end(world, state)?;
         Ok(())
     }
 }
@@ -29,11 +29,11 @@ pub struct RenameEntity {
 }
 
 impl EditorAction for RenameEntity {
-    fn begin(&mut self, _state: &mut EditorState) -> anyhow::Result<()> {
-        if self.entity.has::<NameTag>() {
+    fn begin(&mut self, world: &LockedWorldHandle, _state: &mut EditorState) -> anyhow::Result<()> {
+        if self.entity.has::<NameTag>(world) {
             self.old_name = self
                 .entity
-                .with_component_ref::<NameTag, _>(|tag| tag.0.clone())
+                .with_component_ref::<NameTag, _>(world, |tag| tag.0.clone())
                 .unwrap();
         } else {
             self.old_name = self
@@ -44,22 +44,22 @@ impl EditorAction for RenameEntity {
         Ok(())
     }
 
-    fn end(&mut self, _state: &mut EditorState) -> anyhow::Result<()> {
-        if self.entity.has::<NameTag>() {
+    fn end(&mut self, world: &LockedWorldHandle, _state: &mut EditorState) -> anyhow::Result<()> {
+        if self.entity.has::<NameTag>(world) {
             self.entity
-                .with_component_mut::<NameTag, _>(|mut tag| tag.0 = self.new_name.clone());
+                .with_component_mut::<NameTag, _>(world, |mut tag| tag.0 = self.new_name.clone());
         } else {
-            self.entity.add(NameTag(self.new_name.clone()))?;
+            self.entity.add(world, NameTag(self.new_name.clone()))?;
         }
         Ok(())
     }
 
-    fn undo(&mut self, _state: &mut EditorState) -> anyhow::Result<()> {
-        if self.entity.has::<NameTag>() {
+    fn undo(&mut self, world: &LockedWorldHandle, _state: &mut EditorState) -> anyhow::Result<()> {
+        if self.entity.has::<NameTag>(world) {
             self.entity
-                .with_component_mut::<NameTag, _>(|mut tag| tag.0 = self.old_name.clone());
+                .with_component_mut::<NameTag, _>(world, |mut tag| tag.0 = self.old_name.clone());
         } else {
-            self.entity.add(NameTag(self.old_name.clone()))?;
+            self.entity.add(world, NameTag(self.old_name.clone()))?;
         }
         Ok(())
     }
@@ -103,15 +103,23 @@ impl EditorState {
         }
     }
 
-    pub fn perform_action<T: EditorAction>(&mut self, action: T) -> anyhow::Result<()> {
+    pub fn perform_action<T: EditorAction>(
+        &mut self,
+        world: &LockedWorldHandle,
+        action: T,
+    ) -> anyhow::Result<()> {
         let action = Box::new(action);
-        self.begin_action(action)?;
-        self.end_action::<T>()?;
+        self.begin_action(world, action)?;
+        self.end_action::<T>(world)?;
         Ok(())
     }
 
-    pub fn begin_action(&mut self, mut action: Box<dyn EditorAction>) -> anyhow::Result<()> {
-        action.begin(self)?;
+    pub fn begin_action(
+        &mut self,
+        world: &LockedWorldHandle,
+        mut action: Box<dyn EditorAction>,
+    ) -> anyhow::Result<()> {
+        action.begin(world, self)?;
         if self
             .actions_in_progress
             .insert((*action).type_id(), action)
@@ -126,31 +134,35 @@ impl EditorState {
         self.actions_in_progress.get(&TypeId::of::<T>()).is_some()
     }
 
-    pub fn end_action<T: EditorAction>(&mut self) -> anyhow::Result<()> {
+    pub fn end_action<T: EditorAction>(&mut self, world: &LockedWorldHandle) -> anyhow::Result<()> {
         if let Some(mut action) = self.actions_in_progress.remove(&TypeId::of::<T>()) {
-            action.end(self)?;
+            action.end(world, self)?;
             self.action_history.push(action);
         }
         Ok(())
     }
 
-    pub fn undo(&mut self) -> anyhow::Result<()> {
+    pub fn undo(&mut self, world: &LockedWorldHandle) -> anyhow::Result<()> {
         if let Some(mut action) = self.action_history.pop() {
-            action.undo(self)?;
+            action.undo(world, self)?;
             self.undo_history.push(action);
         }
         Ok(())
     }
 
-    pub fn redo(&mut self) -> anyhow::Result<()> {
+    pub fn redo(&mut self, world: &LockedWorldHandle) -> anyhow::Result<()> {
         if let Some(mut action) = self.undo_history.pop() {
-            action.redo(self)?;
+            action.redo(world, self)?;
             self.action_history.push(action);
         }
         Ok(())
     }
 
-    pub fn rename_entity_window(&mut self, ctx: &egui::Context) -> anyhow::Result<()> {
+    pub fn rename_entity_window(
+        &mut self,
+        world: &LockedWorldHandle,
+        ctx: &egui::Context,
+    ) -> anyhow::Result<()> {
         if self.entity_being_renamed.is_some() {
             egui::Window::new("Rename Entity")
                 .default_pos(ctx.screen_rect().center())
@@ -165,11 +177,14 @@ impl EditorState {
                         }
                         if ui.button("Rename").clicked() {
                             if let Some(entity) = self.entity_being_renamed.take() {
-                                self.perform_action(RenameEntity {
-                                    entity,
-                                    old_name: String::new(),
-                                    new_name: self.entity_rename_buffer.clone(),
-                                })
+                                self.perform_action(
+                                    world,
+                                    RenameEntity {
+                                        entity,
+                                        old_name: String::new(),
+                                        new_name: self.entity_rename_buffer.clone(),
+                                    },
+                                )
                                 .unwrap();
 
                                 self.entity_rename_buffer.clear();
