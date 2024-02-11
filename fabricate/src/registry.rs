@@ -125,16 +125,16 @@ pub enum EntityMeta {
 }
 
 impl EntityMeta {
-    pub const fn new_relative(id: Id) -> Self {
-        Self::Relative(id)
+    pub const fn new_relative(relative: Id) -> Self {
+        Self::Relative(relative)
     }
 
     pub const fn new_generation(generation: Id) -> Self {
         Self::Generation(generation)
     }
 
-    pub const fn new_type(id: Id) -> Self {
-        Self::Type(id)
+    pub const fn new_type(type_id: Id) -> Self {
+        Self::Type(type_id)
     }
 
     pub const fn value(&self) -> Id {

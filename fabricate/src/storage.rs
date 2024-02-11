@@ -1837,7 +1837,6 @@ impl Storage {
 
     pub fn insert_entity(&mut self, entity: Entity) -> Result<()> {
         if self.entity_archetypes.contains(&entity) {
-            // bail!("entity already exists in storage: {:?}", entity);
             return Ok(());
         }
         self.entity_archetypes.insert(

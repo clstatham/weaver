@@ -7,7 +7,6 @@ pub mod asset_server;
 pub mod camera;
 pub mod color;
 pub mod doodads;
-pub mod ecs_ext;
 pub mod geom;
 pub mod input;
 pub mod light;
@@ -15,7 +14,6 @@ pub mod material;
 pub mod mesh;
 pub mod particles;
 pub mod physics;
-pub mod relations;
 pub mod renderer;
 pub mod scripts;
 pub mod texture;
@@ -55,7 +53,6 @@ pub(crate) fn register_names() {
     Color::register_static_name("Color");
     Cone::register_static_name("Cone");
     Cube::register_static_name("Cube");
-    Line::register_static_name("Line");
     DirectionalLight::register_static_name("DirectionalLight");
     Doodad::register_static_name("Doodad");
     Doodads::register_static_name("Doodads");
@@ -64,6 +61,7 @@ pub(crate) fn register_names() {
     GlobalTransform::register_static_name("GlobalTransform");
     Input::register_static_name("Input");
     KeyCode::register_static_name("KeyCode");
+    Line::register_static_name("Line");
     Material::register_static_name("Material");
     Mesh::register_static_name("Mesh");
     MouseButton::register_static_name("MouseButton");
@@ -77,9 +75,9 @@ pub(crate) fn register_names() {
     Time::register_static_name("Time");
     Transform::register_static_name("Transform");
 
-    glam::Vec3::register_static_name("Vec3");
-    glam::Vec4::register_static_name("Vec4");
-    glam::Vec2::register_static_name("Vec2");
     glam::Mat4::register_static_name("Mat4");
     glam::Quat::register_static_name("Quat");
+    glam::Vec2::register_static_name("Vec2");
+    glam::Vec3::register_static_name("Vec3");
+    glam::Vec4::register_static_name("Vec4");
 }
