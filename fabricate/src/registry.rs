@@ -25,7 +25,6 @@ use crate::{
 /// This is a wrapper around a [`u32`] that is used to uniquely identify entities, components, and other resources.
 
 #[derive(
-    Debug,
     Clone,
     Copy,
     PartialEq,
@@ -39,7 +38,6 @@ use crate::{
     bytemuck::Zeroable,
     derive_more::Add,
     derive_more::Sub,
-    derive_more::Display,
     derive_more::From,
     derive_more::Into,
     derive_more::Mul,
@@ -89,13 +87,37 @@ impl Id {
     }
 }
 
+impl Debug for Id {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_placeholder() {
+            write!(f, "placeholder")
+        } else if self.is_wildcard() {
+            write!(f, "wildcard")
+        } else {
+            write!(f, "{}", self.0)
+        }
+    }
+}
+
+impl Display for Id {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_placeholder() {
+            write!(f, "placeholder")
+        } else if self.is_wildcard() {
+            write!(f, "wildcard")
+        } else {
+            write!(f, "{}", self.0)
+        }
+    }
+}
+
 impl Default for Id {
     fn default() -> Self {
         Self::PLACEHOLDER
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash)]
 pub enum EntityMeta {
     Relative(Id),
     Generation(Id),
@@ -138,12 +160,15 @@ impl EntityMeta {
     pub const fn is_wildcard(&self) -> bool {
         self.value().is_wildcard()
     }
+
+    pub const fn is_placeholder(&self) -> bool {
+        self.value().is_placeholder()
+    }
 }
 
-#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for EntityMeta {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.value().partial_cmp(&other.value())
+        Some(self.cmp(other))
     }
 }
 
@@ -153,30 +178,18 @@ impl Ord for EntityMeta {
     }
 }
 
-impl Debug for EntityMeta {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_relative() {
-            write!(f, "relative: {}", self.value())
-        } else if self.is_generation() {
-            write!(f, "generation: {}", self.value())
-        } else if self.is_type() {
-            write!(f, "type: {}", self.value())
-        } else {
-            write!(f, "unknown: {}", self.value())
-        }
-    }
-}
-
 impl Display for EntityMeta {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_relative() {
-            write!(f, "id: {}", self.value())
-        } else if self.is_generation() {
-            write!(f, "generation: {}", self.value())
-        } else if self.is_type() {
-            write!(f, "type: {}", self.value())
-        } else {
-            write!(f, "unknown: {}", self.value())
+        match self {
+            Self::Relative(id) => write!(f, "relative: {}", id),
+            Self::Generation(id) => write!(f, "generation: {}", id),
+            Self::Type(id) => {
+                if let Some(name) = global_registry().get_type_name(Entity::new_type(*id)) {
+                    write!(f, "type: {} ({})", id, name)
+                } else {
+                    write!(f, "type: {}", id)
+                }
+            }
         }
     }
 }
@@ -480,26 +493,7 @@ impl Entity {
 
 impl Display for Entity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(name) = self.type_name() {
-            write!(
-                f,
-                "Entity({}, {}, type: {}, type_id: {})",
-                self.id(),
-                self.meta(),
-                name,
-                self.type_id().unwrap().id()
-            )
-        } else if let Some(ty) = self.type_id() {
-            write!(
-                f,
-                "Entity({}, {}, type_id: {})",
-                self.id(),
-                self.meta(),
-                ty.id()
-            )
-        } else {
-            write!(f, "Entity({}, {})", self.id(), self.meta())
-        }
+        write!(f, "{}({})", self.id(), self.meta())
     }
 }
 

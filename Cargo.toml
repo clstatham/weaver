@@ -25,6 +25,13 @@ weaver-core = { path = "weaver-core" }
 weaver-proc-macro = { path = "weaver-proc-macro" }
 fabricate = { path = "fabricate" }
 
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "fabricate"
+harness = false
+
 [profile.release]
 debug = true
 opt-level = 3
