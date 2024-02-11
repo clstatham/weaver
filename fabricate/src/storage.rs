@@ -9,8 +9,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{
     component::Component,
     lock::Lock,
-    prelude::{Entity, Id, MapRead, MapWrite, Read, Write},
-    registry::StaticId,
+    prelude::{Entity, MapRead, MapWrite, Read, Write},
+    registry::{global_registry, StaticId},
     relationship::Relationship,
     world::get_world,
 };
@@ -218,12 +218,13 @@ pub struct DynamicData {
 impl DynamicData {
     pub fn new<T: Component>(data: T) -> Self {
         let type_id = T::static_type_id();
-        let data_entity = get_world().create_entity().unwrap();
-        data_entity.register_as_type(type_id);
+        let entity = get_world().create_entity().unwrap();
+        entity.register_as_type(type_id);
+        log::trace!("Created data entity {}", entity);
         let data = Box::new(data);
         Self {
             type_id,
-            entity: data_entity,
+            entity,
             data,
         }
     }
@@ -232,6 +233,7 @@ impl DynamicData {
         let type_id = Entity::new_relationship(R::static_type_id().id(), relative.id());
         let entity = get_world().create_entity().unwrap();
         entity.register_as_type(type_id);
+        log::trace!("Created relationship data entity {}", entity);
         let data = Box::new(relation);
         Self {
             type_id,
@@ -1417,15 +1419,15 @@ impl LockedColumn {
 }
 
 /// Storage for a sparse set of indices and a dense array of contiguous arrays of instances of a (single) storable type.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Archetype {
-    archetype_id: Id,
+    archetype_id: Entity,
     entity_ids: FxHashSet<Entity>,
     type_columns: FxHashMap<Entity, LockedColumn>,
 }
 
 impl Archetype {
-    pub fn archetype_id(&self) -> Id {
+    pub fn archetype_id(&self) -> Entity {
         self.archetype_id
     }
 
@@ -1648,8 +1650,8 @@ impl Archetype {
 
 #[derive(Debug)]
 pub struct Storage {
-    archetypes: SortedMap<Id, Archetype>,
-    entity_archetypes: SortedMap<Entity, Id>,
+    archetypes: SortedMap<Entity, Archetype>,
+    entity_archetypes: SortedMap<Entity, Entity>,
 }
 
 impl Storage {
@@ -1660,7 +1662,7 @@ impl Storage {
         }
     }
 
-    pub fn archetype(&self, archetype_id: &Id) -> Option<&Archetype> {
+    pub fn archetype(&self, archetype_id: &Entity) -> Option<&Archetype> {
         self.archetypes.get(archetype_id)
     }
 
@@ -1830,13 +1832,13 @@ impl Storage {
             // bail!("entity already exists in storage: {:?}", entity);
             return Ok(());
         }
-        self.entity_archetypes.insert(entity, Id::default());
+        self.entity_archetypes.insert(entity, Entity::placeholder());
         Ok(())
     }
 
     pub fn create_entity(&mut self) -> Entity {
         let entity = Entity::allocate(None);
-        self.entity_archetypes.insert(entity, Id::default());
+        self.entity_archetypes.insert(entity, Entity::placeholder());
         entity
     }
 
@@ -1870,6 +1872,7 @@ impl Storage {
         for archetype in archetypes {
             if self.archetype(&archetype).unwrap().has_no_entities() {
                 self.archetypes.remove(&archetype);
+                global_registry().delete_entity(archetype);
             }
         }
     }
@@ -1934,7 +1937,7 @@ impl Storage {
                 type_columns.insert(type_id, column);
             }
 
-            let archetype_id = Id::allocate();
+            let archetype_id = Entity::allocate(None);
             let archetype = Archetype {
                 archetype_id,
                 type_columns,

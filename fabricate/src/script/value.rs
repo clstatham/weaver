@@ -51,7 +51,7 @@ macro_rules! try_all_types_both_mut_lhs {
     }};
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(super) enum Value {
     Void,
     Bool(bool),
@@ -128,53 +128,55 @@ impl Value {
 
     pub fn despawn(&self) {
         if let Value::Data(d) = self {
-            d.entity().kill();
+            if d.entity().is_alive() {
+                d.entity().kill();
+            }
         }
     }
 
     pub fn try_downcast_data(&self) -> Option<Self> {
         if let Value::Data(d) = self {
             if let Some(b) = d.as_ref::<bool>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::Bool(*b));
             } else if let Some(i) = d.as_ref::<isize>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<i64>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::Int(*i));
             } else if let Some(i) = d.as_ref::<i32>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<i16>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<i8>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<usize>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<u64>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<u32>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<u16>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::Int(*i as i64));
             } else if let Some(i) = d.as_ref::<u8>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::Int(*i as i64));
             } else if let Some(f) = d.as_ref::<f32>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::Float(*f));
             } else if let Some(f) = d.as_ref::<f64>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::Float(*f as f32));
             } else if let Some(s) = d.as_ref::<String>() {
-                d.entity().kill();
+                self.despawn();
                 return Some(Value::String(s.clone()));
             }
         }

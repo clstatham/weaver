@@ -50,12 +50,12 @@ pub struct ScriptMethod {
     pub name: String,
     pub args: Vec<Entity>,
     pub ret: Entity,
-    pub run: fn(Vec<MethodArg>) -> Result<Vec<Data>>,
+    pub run: fn(&mut Vec<MethodArg>) -> Result<Vec<Data>>,
     pub takes_self: TakesSelf,
 }
 
 impl ScriptMethod {
-    pub fn run(&self, args: Vec<MethodArg<'_>>) -> Result<Vec<Data>> {
+    pub fn run(&self, args: &mut Vec<MethodArg<'_>>) -> Result<Vec<Data>> {
         (self.run)(args)
     }
 }
@@ -69,7 +69,7 @@ impl ScriptVtable {
         self.methods.get(name)
     }
 
-    pub fn call_method(&self, name: &str, args: Vec<MethodArg<'_>>) -> Result<Vec<Data>> {
+    pub fn call_method(&self, name: &str, args: &mut Vec<MethodArg<'_>>) -> Result<Vec<Data>> {
         let method = self
             .get_method(name)
             .ok_or_else(|| anyhow::anyhow!("Method {} not found", name))?;
@@ -90,7 +90,7 @@ macro_rules! script_vtable {
                             args: vec![$(<$arg_tys as fabricate::registry::StaticId>::static_type_id()),*],
                             ret: <$ret as fabricate::registry::StaticId>::static_type_id(),
                             takes_self: TakesSelf::$takes_self,
-                            run: |mut args| {
+                            run: |args| {
                                 let [$($arg_names),*] = &mut args[..] else { anyhow::bail!("Wrong number of args") };
                                 $(
                                     let $arg_names = $arg_names.$access::<$arg_tys>().unwrap();

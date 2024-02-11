@@ -76,14 +76,12 @@ impl World {
 
     pub fn insert_entity(&mut self, entity: Entity) -> Result<()> {
         self.storage.insert_entity(entity)?;
-        // self.add_relative(entity, BelongsToWorld, self.root)?;
         Ok(())
     }
 
     /// Creates a new entity in the [`World`].
     pub fn create_entity(&mut self) -> Result<Entity> {
         let e = self.storage.create_entity();
-        // self.add_relative(e, BelongsToWorld, self.root)?;
         Ok(e)
     }
 
@@ -224,6 +222,10 @@ impl LockedWorldHandle {
         Self(SharedLock::new(world), SharedLock::new(Commands::new()))
     }
 
+    pub fn command_queue(&self) -> SharedLock<Commands> {
+        self.1.clone()
+    }
+
     pub fn defer<F, R>(&self, f: F) -> Result<R>
     where
         F: FnOnce(&World, &mut Commands) -> R,
@@ -240,7 +242,7 @@ impl LockedWorldHandle {
             .write()
             .queue
             .write()
-            .extend(commands.queue.write().drain(..));
+            .append(&mut commands.queue.write());
 
         if let Some(mut world) = self.0.try_write() {
             self.1.write().finalize(&mut world)?;

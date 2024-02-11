@@ -1,14 +1,9 @@
-use std::error::Error;
-
 use anyhow::ensure;
 use rustc_hash::FxHashMap;
 use typed_arena::Arena;
 
 use crate::{
-    component::{MethodArg, TakesSelf},
-    prelude::{Data, Entity, LockedWorldHandle, SharedLock},
-    query::{QueryBuilderAccess, QueryItem},
-    system::SystemStage,
+    commands::Command, component::{MethodArg, TakesSelf}, prelude::{Data, Entity, LockedWorldHandle, SharedLock}, query::{QueryBuilderAccess, QueryItem}, system::SystemStage
 };
 
 use super::{
@@ -50,7 +45,7 @@ impl std::fmt::Debug for RuntimeError {
     }
 }
 
-impl Error for RuntimeError {}
+impl std::error::Error for RuntimeError {}
 
 macro_rules! bail {
     ($span:expr, $message:expr) => {
@@ -126,33 +121,48 @@ impl InterpreterContext {
         value
     }
 
+    pub fn forget(&mut self, value: ValueHandle) {
+        self.allocations.retain(|v| *v.read() != *value.read());
+    }
+
     pub fn interp_system(
         &mut self,
         env: &RuntimeEnv,
         system: &System,
     ) -> anyhow::Result<ValueHandle> {
-        self.interp_block(env, &system.block.statements)?;
-        Ok(self.alloc_value(Value::Void))
+        self.interp_block(env, &system.block.statements)
     }
 
     pub fn interp_block(
         &mut self,
         env: &RuntimeEnv,
         statements: &[Statement],
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<ValueHandle> {
         let scope = env.push_scope(Some(self));
+        let mut out = scope.alloc_value(Value::Void);
         for statement in statements {
-            scope.interp_statement(env, statement)?;
+            out = scope.interp_statement(env, statement)?;
             if let Some(retval) = scope.should_return.take() {
-                self.should_return = Some(retval);
+                self.should_return = Some(retval.clone());
+                if let Some(retval) = retval {
+                    out = retval;
+                } else {
+                    out = scope.alloc_value(Value::Void);
+                }
                 break;
             }
             if let Some(retval) = scope.should_break.take() {
-                self.should_break = Some(retval);
+                self.should_break = Some(retval.clone());
+                if let Some(retval) = retval {
+                    out = retval;
+                } else {
+                    out = scope.alloc_value(Value::Void);
+                }
                 break;
             }
         }
-        Ok(())
+        scope.forget(out.clone());
+        Ok(out)
     }
 
     pub fn interp_statement(
@@ -162,8 +172,7 @@ impl InterpreterContext {
     ) -> anyhow::Result<ValueHandle> {
         match statement {
             Statement::Expr(expr) => {
-                self.interp_expr(env, expr)?;
-                Ok(self.alloc_value(Value::Void))
+                self.interp_expr(env, expr)
             }
             Statement::Break(retval) => {
                 let retval = if let Some(retval) = retval {
@@ -171,8 +180,12 @@ impl InterpreterContext {
                 } else {
                     None
                 };
-                self.should_break = Some(retval);
-                Ok(self.alloc_value(Value::Void))
+                self.should_break = Some(retval.clone());
+                if let Some(retval) = retval {
+                    Ok(retval)
+                } else {
+                    Ok(self.alloc_value(Value::Void))
+                }
             }
             Statement::Return(retval) => {
                 let retval = if let Some(retval) = retval {
@@ -180,8 +193,12 @@ impl InterpreterContext {
                 } else {
                     None
                 };
-                self.should_return = Some(retval);
-                Ok(self.alloc_value(Value::Void))
+                self.should_return = Some(retval.clone());
+                if let Some(retval) = retval {
+                    Ok(retval)
+                } else {
+                    Ok(self.alloc_value(Value::Void))
+                }
             }
             Statement::System(system) => self.interp_system(env, system),
             Statement::Func(_) => todo!(),
@@ -195,53 +212,62 @@ impl InterpreterContext {
         env: &RuntimeEnv,
         expr: &SpanExpr,
     ) -> anyhow::Result<ValueHandle> {
+        let scope = env.push_scope(Some(self));
         let out = match &expr.expr {
             Expr::IntLiteral(i) => {
                 let value = Value::Int(*i);
-                let value = self.alloc_value(value);
+                let value = scope.alloc_value(value);
                 Ok(value)
             }
             Expr::FloatLiteral(f) => {
                 let value = Value::Float(*f);
-                let value = self.alloc_value(value);
+                let value = scope.alloc_value(value);
                 Ok(value)
             }
             Expr::StringLiteral(s) => {
                 let value = Value::String(s.clone());
-                let value = self.alloc_value(value);
+                let value = scope.alloc_value(value);
                 Ok(value)
             }
             Expr::Ident(ident) => {
-                self.names.get(ident.as_str()).cloned().ok_or_else(|| {
+                scope.names.get(ident.as_str()).cloned().ok_or_else(|| {
                     runtime_error!(expr.span, format!("Unknown identifier: {}", ident))
                 })
             }
-            Expr::Infix { op, lhs, rhs } => self.interp_infix(env, op, lhs, rhs),
+            Expr::Infix { op, lhs, rhs } => scope.interp_infix(env, op, lhs, rhs),
             Expr::Decl {
                 mutability,
                 ident,
                 initial_value,
-            } => self.interp_decl(env, *mutability, ident, initial_value),
-            Expr::Call(call) => self.interp_call(env, call),
-            Expr::Member { lhs, rhs } => self.interp_member(env, lhs, rhs),
-            Expr::Construct { name, args } => self.interp_construct(env, name, args),
-            Expr::Query(query) => self.interp_query(env, query),
+            } => {
+                let val = scope.interp_decl(env, *mutability, ident, initial_value)?;
+                self.names.insert(ident.as_str().to_string(), val.clone());
+                Ok(val)
+            },
+            Expr::Call(call) => scope.interp_call(env, call),
+            Expr::Member { lhs, rhs } => scope.interp_member(env, lhs, rhs),
+            Expr::Construct { name, args } => scope.interp_construct(env, name, args),
+            Expr::Query(query) => scope.interp_query(env, query),
             Expr::Block(block) => {
-                self.interp_block(env, &block.statements)?;
-                Ok(self.alloc_value(Value::Void))
+                scope.interp_block(env, &block.statements)
             }
-            Expr::Loop { condition, block } => self.interp_loop(env, condition.as_deref(), block),
+            Expr::Loop { condition, block } => scope.interp_loop(env, condition.as_deref(), block),
             Expr::Res {
                 mutability,
                 ident,
                 res,
-            } => self.interp_res(env, *mutability, ident, res),
+            } => {
+                let val = scope.interp_res(env, *mutability, ident, res)?;
+                self.names.insert(ident.as_str().to_string(), val.clone());
+                Ok(val)
+            },
             _ => todo!(
                 "Implement other expressions:\n{}\n{:?}",
                 expr.as_str(),
                 expr.expr
             ),
         }?;
+        scope.forget(out.clone());
         Ok(out)
     }
 
@@ -314,13 +340,13 @@ impl InterpreterContext {
                                 for ((name, _), result) in qs.iter().zip(results.into_inner()) {
                                     let value = match result {
                                         QueryItem::Proxy(p) => {
-                                            self.alloc_value(Value::Data(Data::new_pointer(
+                                            scope.alloc_value(Value::Data(Data::new_pointer(
                                                 p.component.type_id(),
                                                 p.component.entity(),
                                             )))
                                         }
                                         QueryItem::ProxyMut(p) => {
-                                            self.alloc_value(Value::Data(Data::new_pointer(
+                                            scope.alloc_value(Value::Data(Data::new_pointer(
                                                 p.component.type_id(),
                                                 p.component.entity(),
                                             )))
@@ -532,7 +558,7 @@ impl InterpreterContext {
                             }
                         };
 
-                        let result = env.world.defer(move |world, _| {
+                        let result = env.world.defer(move |world, commands| {
                             let mut args = args;
                             if let Some(method) = vtable.get_method(call.name.as_str()) {
                                 match method.takes_self {
@@ -556,7 +582,7 @@ impl InterpreterContext {
                             }
     
     
-                            let mut result = vtable.call_method(call.name.as_str(), args)?;
+                            let mut result = vtable.call_method(call.name.as_str(), &mut args)?;
     
                             ensure!(
                                 result.len() == 1,
@@ -569,6 +595,13 @@ impl InterpreterContext {
                                 )
                             );
                             let result = result.pop().unwrap();
+                            commands.despawn(result.entity());
+
+                            for arg in args {
+                                if let MethodArg::Owned(data) = arg {
+                                    commands.despawn(data.entity());
+                                }
+                            }
 
                             Ok(result)
                         })??;
@@ -602,7 +635,7 @@ impl InterpreterContext {
                             }
                         };
 
-                        let result = env.world.defer(|world, _| {
+                        let result = env.world.defer(|world, commands| {
                             let mut args = args;
                             if let Some(method) = vtable.get_method(call.name.as_str()) {
                                 match method.takes_self {
@@ -637,7 +670,7 @@ impl InterpreterContext {
                             }
     
     
-                            let mut result = vtable.call_method(call.name.as_str(), args)?;
+                            let mut result = vtable.call_method(call.name.as_str(), &mut args)?;
     
                             ensure!(
                                 result.len() == 1,
@@ -650,6 +683,13 @@ impl InterpreterContext {
                                 )
                             );
                             let result = result.pop().unwrap();
+                            commands.despawn(result.entity());
+
+                            for arg in args {
+                                if let MethodArg::Owned(data) = arg {
+                                    commands.despawn(data.entity());
+                                }
+                            }
 
                             Ok(result)
                         })??;

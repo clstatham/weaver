@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fmt::{Debug, Display},
     hash::{BuildHasherDefault, Hash},
     ops::{Deref, Range},
@@ -17,7 +17,7 @@ use crate::{
     component::Component,
     lock::Lock,
     relationship::Relationship,
-    storage::{Mut, Ref, SortedMap, StaticMut, StaticRef},
+    storage::{Mut, Ref, StaticMut, StaticRef},
     world::{get_world, World},
 };
 
@@ -226,19 +226,15 @@ impl Entity {
     }
 
     pub fn allocate(ty: Option<Entity>) -> Self {
-        let this = if let Some(ty) = ty {
+        if let Some(ty) = ty {
             global_registry().allocate_entity_with_type(ty)
         } else {
             global_registry().allocate_generational_entity()
-        };
-        log::trace!("Allocated value: {}", this);
-        this
+        }
     }
 
     pub fn allocate_type(name: Option<&str>) -> Self {
-        let this = global_registry().allocate_type(name);
-        log::trace!("Allocated type: {}", this);
-        this
+        global_registry().allocate_type(name)
     }
 
     pub fn type_from_name(name: &str) -> Option<Self> {
@@ -328,9 +324,11 @@ impl Entity {
     }
 
     pub fn kill(self) {
+        get_world().despawn(self).unwrap();
         if self.is_generational() {
-            log::trace!("Killing value: {}", self);
             global_registry().delete_entity(self);
+        } else {
+            log::warn!("Entity::kill(): Value is not generational: {}", self);
         }
     }
 
@@ -352,7 +350,7 @@ impl Entity {
 
     pub fn register_as_type(self, typ: Entity) {
         debug_assert!(!self.is_type());
-        debug_assert!(typ.is_type());
+        debug_assert!(typ.is_type() || typ.is_relative());
         global_registry().register_entity_as_type(self, typ);
     }
 
@@ -571,7 +569,7 @@ pub struct Registry {
     type_names: Lock<FxHashMap<Entity, String>>,
 
     entity_types: Lock<FxHashMap<Entity, Entity>>,
-    dead: Lock<SortedMap<Id, ()>>,
+    dead: Lock<VecDeque<Id>>,
     entity_generations: Lock<FxHashMap<Id, Id>>,
 }
 
@@ -593,7 +591,7 @@ impl Registry {
             type_names: Lock::new(FxHashMap::default()),
 
             entity_types: Lock::new(FxHashMap::default()),
-            dead: Lock::new(SortedMap::default()),
+            dead: Lock::new(VecDeque::default()),
             entity_generations: Lock::new(FxHashMap::default()),
         };
 
@@ -694,7 +692,7 @@ impl Registry {
     }
 
     fn allocate_generational_entity(&self) -> Entity {
-        if let Some((entity, ())) = self.dead.write().drain().next() {
+        if let Some(entity) = self.dead.write().pop_front() {
             // vacancy found, return the entity with the next generation
             let gen = *self.entity_generations.read().get(&entity).unwrap();
             return Entity::new_generational(entity, gen);
@@ -725,15 +723,24 @@ impl Registry {
         entity
     }
 
-    fn delete_entity(&self, entity: Entity) {
-        if !self.dead.write().contains(&entity.id()) {
-            self.dead.write().insert(entity.id(), ());
-            if let Some(gen) = self.entity_generations.write().get_mut(&entity.id()) {
-                if gen.0.checked_add(1).is_none() {
-                    log::warn!("Generation overflow for value: {}", entity);
-                }
-                gen.0 = gen.0.wrapping_add(1);
+    pub(crate) fn delete_entity(&self, entity: Entity) {
+        if self.dead.read().contains(&entity.id()) {
+            log::warn!("Entity is already dead: {}", entity);
+            return;
+        }
+        if entity.is_dead() {
+            log::warn!("Entity is already dead: {}", entity);
+            return;
+        }
+        log::trace!("Killing value: {}", entity);
+        self.dead.write().push_back(entity.id());
+        if let Some(gen) = self.entity_generations.write().get_mut(&entity.id()) {
+            if gen.0.checked_add(1).is_none() {
+                log::warn!("Generation overflow for value: {}", entity);
             }
+            gen.0 = gen.0.wrapping_add(1);
+        } else {
+            log::error!("Generation not found for value: {}", entity);
         }
     }
 

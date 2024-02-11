@@ -76,4 +76,10 @@ pub(crate) fn register_names() {
     Texture::register_static_name("Texture");
     Time::register_static_name("Time");
     Transform::register_static_name("Transform");
+
+    glam::Vec3::register_static_name("Vec3");
+    glam::Vec4::register_static_name("Vec4");
+    glam::Vec2::register_static_name("Vec2");
+    glam::Mat4::register_static_name("Mat4");
+    glam::Quat::register_static_name("Quat");
 }
