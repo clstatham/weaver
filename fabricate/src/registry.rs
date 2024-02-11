@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, VecDeque},
     fmt::{Debug, Display},
     hash::{BuildHasherDefault, Hash},
-    ops::{Deref, Range},
+    ops::Deref,
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc,
@@ -54,7 +54,7 @@ pub struct Id(u32);
 
 impl Id {
     pub const PLACEHOLDER: Self = Self(u32::MAX);
-    pub const WILDCARD: Self = Self(VALUE_INFO_MASK);
+    pub const WILDCARD: Self = Self(u32::MAX - 1);
 
     const fn new(value: u32) -> Self {
         Self(value)
@@ -72,12 +72,12 @@ impl Id {
         self.0 as usize
     }
 
-    pub fn is_placeholder(self) -> bool {
-        self == Self::PLACEHOLDER
+    pub const fn is_placeholder(self) -> bool {
+        self.0 == Self::PLACEHOLDER.0
     }
 
-    pub fn is_wildcard(self) -> bool {
-        self == Self::WILDCARD
+    pub const fn is_wildcard(self) -> bool {
+        self.0 == Self::WILDCARD.0
     }
 
     pub fn check_not_placeholder(self) -> Option<Self> {
@@ -95,57 +95,48 @@ impl Default for Id {
     }
 }
 
-pub const METADATA_SHIFT: u32 = 28;
-pub const METADATA_BITS: Range<u32> = METADATA_SHIFT..32;
-pub const GENERATION_BITS: u32 = 1 << METADATA_SHIFT;
-pub const RELATIVE_BITS: u32 = 2 << METADATA_SHIFT;
-pub const TYPE_BITS: u32 = 3 << METADATA_SHIFT;
-pub const VALUE_METADATA_MASK: u32 = !((1 << METADATA_SHIFT) - 1);
-pub const VALUE_INFO_MASK: u32 = !VALUE_METADATA_MASK;
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(transparent)]
-pub struct EntityMeta(Id);
+pub enum EntityMeta {
+    Relative(Id),
+    Generation(Id),
+    Type(Id),
+}
 
 impl EntityMeta {
-    pub const PLACEHOLDER: Self = Self(Id::PLACEHOLDER);
-    pub const WILDCARD: Self = Self(Id(VALUE_INFO_MASK));
-
     pub const fn new_relative(id: Id) -> Self {
-        Self(Id(id.as_u32() | RELATIVE_BITS))
+        Self::Relative(id)
     }
 
     pub const fn new_generation(generation: Id) -> Self {
-        Self(Id(generation.as_u32() | GENERATION_BITS))
+        Self::Generation(generation)
     }
 
     pub const fn new_type(id: Id) -> Self {
-        Self(Id(id.as_u32() | TYPE_BITS))
+        Self::Type(id)
     }
 
     pub const fn value(&self) -> Id {
-        Id(self.0.as_u32() & VALUE_INFO_MASK)
+        match self {
+            Self::Relative(id) => *id,
+            Self::Generation(id) => *id,
+            Self::Type(id) => *id,
+        }
     }
 
     pub const fn is_relative(&self) -> bool {
-        self.0.as_u32() & VALUE_METADATA_MASK == RELATIVE_BITS
+        matches!(self, Self::Relative(_))
     }
 
     pub const fn is_generation(&self) -> bool {
-        self.0.as_u32() & VALUE_METADATA_MASK == GENERATION_BITS
+        matches!(self, Self::Generation(_))
     }
 
     pub const fn is_type(&self) -> bool {
-        self.0.as_u32() & VALUE_METADATA_MASK == TYPE_BITS
+        matches!(self, Self::Type(_))
     }
 
     pub const fn is_wildcard(&self) -> bool {
-        self.0.as_u32() == Self::WILDCARD.0.as_u32()
-    }
-}
-
-impl Default for EntityMeta {
-    fn default() -> Self {
-        Self::PLACEHOLDER
+        self.value().is_wildcard()
     }
 }
 
@@ -197,10 +188,6 @@ impl Display for EntityMeta {
 pub struct Entity(Id, EntityMeta);
 
 impl Entity {
-    pub const fn placeholder() -> Self {
-        Self(Id::PLACEHOLDER, EntityMeta::PLACEHOLDER)
-    }
-
     pub const fn new_generational(id: Id, generation: Id) -> Self {
         Self(id, EntityMeta::new_generation(generation))
     }
@@ -218,7 +205,7 @@ impl Entity {
     }
 
     pub const fn new_wildcard_id(entity: Id) -> Self {
-        Self(entity, EntityMeta::WILDCARD)
+        Self(entity, EntityMeta::new_type(Id::WILDCARD))
     }
 
     pub fn new_wildcard<T: StaticId + ?Sized>() -> Self {
@@ -717,9 +704,9 @@ impl Registry {
         Entity::new_generational(id, gen)
     }
 
-    fn allocate_entity_with_type(&self, value_type: Entity) -> Entity {
+    fn allocate_entity_with_type(&self, entity_type: Entity) -> Entity {
         let entity = self.allocate_generational_entity();
-        self.register_entity_as_type(entity, value_type);
+        self.register_entity_as_type(entity, entity_type);
         entity
     }
 
@@ -732,15 +719,15 @@ impl Registry {
             log::warn!("Entity is already dead: {}", entity);
             return;
         }
-        log::trace!("Killing value: {}", entity);
+        log::trace!("Killing entity: {}", entity);
         self.dead.write().push_back(entity.id());
         if let Some(gen) = self.entity_generations.write().get_mut(&entity.id()) {
             if gen.0.checked_add(1).is_none() {
-                log::warn!("Generation overflow for value: {}", entity);
+                log::warn!("Generation overflow for entity: {}", entity);
             }
             gen.0 = gen.0.wrapping_add(1);
         } else {
-            log::error!("Generation not found for value: {}", entity);
+            log::error!("Generation not found for entity: {}", entity);
         }
     }
 

@@ -10,7 +10,7 @@ use crate::{
     component::Component,
     lock::Lock,
     prelude::{Entity, MapRead, MapWrite, Read, Write},
-    registry::{global_registry, StaticId},
+    registry::{global_registry, Id, StaticId},
     relationship::Relationship,
     world::get_world,
 };
@@ -1832,13 +1832,19 @@ impl Storage {
             // bail!("entity already exists in storage: {:?}", entity);
             return Ok(());
         }
-        self.entity_archetypes.insert(entity, Entity::placeholder());
+        self.entity_archetypes.insert(
+            entity,
+            Entity::new_generational(Id::PLACEHOLDER, Id::PLACEHOLDER),
+        );
         Ok(())
     }
 
     pub fn create_entity(&mut self) -> Entity {
         let entity = Entity::allocate(None);
-        self.entity_archetypes.insert(entity, Entity::placeholder());
+        self.entity_archetypes.insert(
+            entity,
+            Entity::new_generational(Id::PLACEHOLDER, Id::PLACEHOLDER),
+        );
         entity
     }
 

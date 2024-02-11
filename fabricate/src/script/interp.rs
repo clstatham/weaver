@@ -3,7 +3,7 @@ use rustc_hash::FxHashMap;
 use typed_arena::Arena;
 
 use crate::{
-    commands::Command, component::{MethodArg, TakesSelf}, prelude::{Data, Entity, LockedWorldHandle, SharedLock}, query::{QueryBuilderAccess, QueryItem}, system::SystemStage
+    component::{MethodArg, TakesSelf}, prelude::{Data, Entity, LockedWorldHandle, SharedLock}, query::{QueryBuilderAccess, QueryItem}, system::SystemStage
 };
 
 use super::{
