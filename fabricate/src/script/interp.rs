@@ -106,8 +106,8 @@ impl Drop for InterpreterContext {
     fn drop(&mut self) {
         for allocation in &self.allocations {
             match allocation {
-                ValueHandle::Ref(r) => r.read().despawn(&self.world),
-                ValueHandle::Mut(m) => m.read().despawn(&self.world),
+                ValueHandle::Ref(r, _) => r.read().despawn(&self.world),
+                ValueHandle::Mut(m, _) => m.read().despawn(&self.world),
             }
         }
     }
@@ -115,7 +115,7 @@ impl Drop for InterpreterContext {
 
 impl InterpreterContext {
     pub fn alloc_value(&mut self, value: Value) -> ValueHandle {
-        let value = ValueHandle::Mut(SharedLock::new(value));
+        let value = ValueHandle::Mut(SharedLock::new(value), self.world.clone());
         self.allocations.push(value.clone());
         value
     }
@@ -287,9 +287,9 @@ impl InterpreterContext {
         })?;
 
         let value = if mutability {
-            ValueHandle::Mut(SharedLock::new(Value::Resource(res_id)))
+            ValueHandle::Mut(SharedLock::new(Value::Resource(res_id)), self.world.clone())
         } else {
-            ValueHandle::Ref(SharedLock::new(Value::Resource(res_id)))
+            ValueHandle::Ref(SharedLock::new(Value::Resource(res_id)), self.world.clone())
         };
 
         self.names.insert(name, value.to_owned());
@@ -530,7 +530,7 @@ impl InterpreterContext {
                     }
                 }
                 match lhs_val {
-                    ValueHandle::Ref(ref lhs_data) => {
+                    ValueHandle::Ref(ref lhs_data, _) => {
                         let lhs_data = lhs_data.read();
                         let data = match &*lhs_data {
                             Value::Resource(res) => {
@@ -607,7 +607,7 @@ impl InterpreterContext {
 
                         Ok(self.alloc_value(Value::Data(result)))
                     }
-                    ValueHandle::Mut(ref lhs_data) => {
+                    ValueHandle::Mut(ref lhs_data, _) => {
                         let lhs_data = lhs_data.write();
                         let data = match &*lhs_data {
                             Value::Resource(res) => {
@@ -725,13 +725,13 @@ impl InterpreterContext {
         let name = ident.as_str().to_string();
         let value = if mutability {
             match value {
-                ValueHandle::Ref(ref r) => ValueHandle::Mut(r.to_owned()),
-                ValueHandle::Mut(ref m) => ValueHandle::Mut(m.to_owned()),
+                ValueHandle::Ref(ref r, _) => ValueHandle::Mut(r.to_owned(), self.world.clone()),
+                ValueHandle::Mut(ref m, _) => ValueHandle::Mut(m.to_owned(), self.world.clone()),
             }
         } else {
             match value {
-                ValueHandle::Ref(ref r) => ValueHandle::Ref(r.to_owned()),
-                ValueHandle::Mut(ref m) => ValueHandle::Ref(m.to_owned()),
+                ValueHandle::Ref(ref r, _) => ValueHandle::Ref(r.to_owned(), self.world.clone()),
+                ValueHandle::Mut(ref m, _) => ValueHandle::Ref(m.to_owned(), self.world.clone()),
             }
         };
         self.names.insert(name, value.to_owned());

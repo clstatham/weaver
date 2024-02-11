@@ -735,24 +735,24 @@ impl Value {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(super) enum ValueHandle {
-    Ref(SharedLock<Value>),
-    Mut(SharedLock<Value>),
+    Ref(SharedLock<Value>, LockedWorldHandle),
+    Mut(SharedLock<Value>, LockedWorldHandle),
 }
 
 impl ValueHandle {
     pub fn read(&self) -> Read<'_, Value> {
         match self {
-            Self::Ref(lock) => lock.read(),
-            Self::Mut(lock) => lock.read(),
+            Self::Ref(lock, _) => lock.read(),
+            Self::Mut(lock, _) => lock.read(),
         }
     }
 
     pub fn write(&self) -> Write<'_, Value> {
         match self {
-            Self::Ref(lock) => lock.write(),
-            Self::Mut(lock) => lock.write(),
+            Self::Ref(lock, _) => lock.write(),
+            Self::Mut(lock, _) => lock.write(),
         }
     }
 
@@ -767,27 +767,27 @@ impl ValueHandle {
         ctx: &mut InterpreterContext,
     ) -> Result<ValueHandle> {
         match (self, other) {
-            (Self::Ref(a), Self::Ref(b)) => a.read().infix(op, &b.read(), ctx),
-            (Self::Ref(a), Self::Mut(b)) => a.read().infix(op, &b.read(), ctx),
-            (Self::Mut(a), Self::Ref(b)) => a.write().infix_mut(op, &b.read(), ctx),
-            (Self::Mut(a), Self::Mut(b)) => a.write().infix_mut(op, &b.read(), ctx),
+            (Self::Ref(a, _), Self::Ref(b, _)) => a.read().infix(op, &b.read(), ctx),
+            (Self::Ref(a, _), Self::Mut(b, _)) => a.read().infix(op, &b.read(), ctx),
+            (Self::Mut(a, _), Self::Ref(b, _)) => a.write().infix_mut(op, &b.read(), ctx),
+            (Self::Mut(a, _), Self::Mut(b, _)) => a.write().infix_mut(op, &b.read(), ctx),
         }
     }
 }
 
-// impl Drop for ValueHandle {
-//     fn drop(&mut self) {
-//         match self {
-//             Self::Ref(lock) => {
-//                 if lock.strong_count() == 1 {
-//                     lock.read().despawn();
-//                 }
-//             }
-//             Self::Mut(lock) => {
-//                 if lock.strong_count() == 1 {
-//                     lock.read().despawn();
-//                 }
-//             }
-//         }
-//     }
-// }
+impl Drop for ValueHandle {
+    fn drop(&mut self) {
+        match self {
+            Self::Ref(lock, world) => {
+                if lock.strong_count() == 1 {
+                    lock.read().despawn(world);
+                }
+            }
+            Self::Mut(lock, world) => {
+                if lock.strong_count() == 1 {
+                    lock.read().despawn(world);
+                }
+            }
+        }
+    }
+}
