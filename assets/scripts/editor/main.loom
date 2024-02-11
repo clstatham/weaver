@@ -1,14 +1,14 @@
 @startup
-system setup {
-}
+system setup {}
 
 @update
-system update_player {
-    var res time: Time;
+system spin {
+    let res time: Time;
 
     let y = vec3(0.0, 1.0, 0.0);
     let delta = time.delta_seconds();
     let q = quat(y, delta);
+    
     loop query _ [var t: Transform] {
         let rot = q * t.rotation();
         t.set_rotation(rot);

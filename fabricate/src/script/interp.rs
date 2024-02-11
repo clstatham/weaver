@@ -566,7 +566,7 @@ impl InterpreterContext {
                                     TakesSelf::Ref => {
                                         match &data {
                                             Data::Dynamic(d) => {
-                                                let d = world.get(d.entity(), d.type_id()).unwrap();
+                                                let d = world.storage().find(d.type_id(), d.entity()).unwrap();
                                                 args.insert(0, MethodArg::Ref(d));
                                             }
                                             Data::Pointer(p) => {
