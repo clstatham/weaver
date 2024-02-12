@@ -71,7 +71,7 @@ fn scene_tree_ui_recurse(
         .body(|ui| {
             let rels = world.get_relatives_id(node, TransformParent::type_id().id());
             if let Some(rels) = rels {
-                for child in rels {
+                for (_, child) in rels {
                     let name = child
                         .with_component_ref::<NameTag, _>(world_handle, |tag| tag.0.clone())
                         .or_else(|| child.type_name())

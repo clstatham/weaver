@@ -17,6 +17,7 @@ pub mod world;
 pub mod prelude {
     pub use crate::{
         bundle::Bundle,
+        commands::Commands,
         component::Component,
         graph::{Edge, Graph},
         lock::{MapRead, MapWrite, Read, ReadWrite, SharedLock, Write},

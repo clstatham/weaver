@@ -1,25 +1,26 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Weak};
 
 use anyhow::Result;
+use rustc_hash::FxHashMap;
 
 use crate::{
     commands::{Command, Commands},
     component::Component,
-    lock::SharedLock,
+    lock::{Lock, SharedLock},
     prelude::{Bundle, Mut},
     query::{Query, QueryBuilder},
     registry::{Entity, Id},
     relationship::Relationship,
     script::{interp::BuildOnWorld, Script},
     storage::{Data, Ref, SortedMap, StaticMut, StaticRef, Storage},
-    system::{DynamicSystem, SystemGraph, SystemStage},
+    system::{DynamicSystem, System, SystemGraph, SystemStage},
 };
 
 /// A container for all the data in the game world.
 /// Contains a [`Storage`] for all the entities and components.
 pub struct World {
     storage: Storage,
-    systems: SortedMap<Entity, DynamicSystem>,
+    systems: FxHashMap<Entity, DynamicSystem>,
     system_graphs: SortedMap<SystemStage, SystemGraph>,
     root: Entity,
 }
@@ -31,7 +32,7 @@ impl World {
         let root = storage.create_entity();
         let world = Self {
             storage,
-            systems: SortedMap::default(),
+            systems: FxHashMap::default(),
             system_graphs: SortedMap::default(),
             root,
         };
@@ -79,21 +80,20 @@ impl World {
         self.storage.destroy_entity(entity)
     }
 
-    pub fn get_relatives_id(&self, entity: Entity, relationship_type: Id) -> Option<Vec<Entity>> {
+    pub fn get_relatives_id(
+        &self,
+        entity: Entity,
+        relationship_type: Id,
+    ) -> Option<Vec<(Ref<'_>, Entity)>> {
         let archetype = self.storage().entity_archetype(entity)?;
         let relationships =
             archetype.row_type_filtered(entity, |ty| ty.id() == relationship_type)?;
         let mut out = Vec::new();
         for relationship in relationships {
             let relationship_type = relationship.type_id();
-            out.push(relationship_type.relationship_second()?);
+            out.push((relationship, relationship_type.relationship_second()?));
         }
         Some(out)
-    }
-
-    pub fn get_relatives<R: Relationship>(&self, entity: Entity) -> Option<Vec<Entity>> {
-        let relationship_type = R::type_id();
-        self.get_relatives_id(entity, relationship_type.id())
     }
 
     pub fn all_relatives(&self, entity: Entity) -> Option<Vec<(Id, Entity)>> {
@@ -149,16 +149,9 @@ impl World {
         self.systems.get(&system)
     }
 
-    pub fn add_system(
-        &mut self,
-        stage: SystemStage,
-        system: impl Fn(LockedWorldHandle) + Send + Sync + 'static,
-    ) {
+    pub fn add_system(&mut self, stage: SystemStage, system: impl System) {
         let id = Entity::allocate(None);
-        let system = DynamicSystem::new(move |world, _| {
-            system(world);
-            Ok(Vec::new())
-        });
+        let system = DynamicSystem::new(system);
         self.systems.insert(id, system);
         if let Some(graph) = self.system_graphs.get_mut(&stage) {
             graph.add_system(id);
@@ -177,6 +170,10 @@ pub struct LockedWorldHandle(SharedLock<World>, SharedLock<VecDeque<Command>>);
 impl LockedWorldHandle {
     pub fn new(world: World) -> Self {
         Self(SharedLock::new(world), SharedLock::new(VecDeque::new()))
+    }
+
+    pub fn downgrade(&self) -> Weak<Lock<World>> {
+        self.0.downgrade()
     }
 
     pub fn command_queue(&self) -> SharedLock<VecDeque<Command>> {
@@ -208,32 +205,28 @@ impl LockedWorldHandle {
         Ok(result)
     }
 
-    pub fn run_systems(&self, stage: SystemStage) {
+    pub fn run_systems(&self, stage: SystemStage) -> Result<()> {
         let world = self.0.read();
         if let Some(graph) = world.system_graphs.get(&stage).cloned() {
             drop(world);
-            graph.run(self.clone());
+            graph.run(self.clone())?;
         }
+        Ok(())
     }
 
     pub fn add_script(&self, script: Script) {
         script.build_on_world(self.clone()).unwrap();
     }
 
-    pub fn add_system(
-        &self,
-        stage: SystemStage,
-        system: impl Fn(LockedWorldHandle) + Send + Sync + 'static,
-    ) -> Result<()> {
+    pub fn add_system(&self, stage: SystemStage, system: impl System) -> Result<()> {
         self.defer(|_, commands| {
             commands.add_system(stage, system);
         })
     }
 
     pub fn add_resource<T: Component>(&self, resource: T) -> Result<()> {
-        let data = resource.into_data_vec(self);
         self.defer(|world, commands| {
-            commands.add(world.root, data);
+            commands.add(world.root, resource);
         })
     }
 
@@ -290,19 +283,9 @@ impl LockedWorldHandle {
     pub fn spawn<B: Bundle>(&self, components: B) -> Result<Entity> {
         self.defer(|_, commands| {
             let entity = commands.create_entity();
-            commands.add(entity, components.into_data_vec(self));
+            commands.add(entity, components);
             Ok(entity)
         })?
-    }
-
-    pub fn get_relatives_id(&self, entity: Entity, relationship_type: Id) -> Option<Vec<Entity>> {
-        let world = self.0.read();
-        world.get_relatives_id(entity, relationship_type)
-    }
-
-    pub fn get_relatives<R: Relationship>(&self, entity: Entity) -> Option<Vec<Entity>> {
-        let world = self.0.read();
-        world.get_relatives::<R>(entity)
     }
 
     pub fn all_relatives(&self, entity: Entity) -> Option<Vec<(Id, Entity)>> {
@@ -356,15 +339,9 @@ impl LockedWorldHandle {
         Some(f(c))
     }
 
-    pub fn add_data(&self, entity: Entity, data: impl IntoIterator<Item = Data>) -> Result<()> {
+    pub fn add<T: Bundle>(&self, entity: Entity, components: T) -> Result<()> {
         self.defer(|_, commands| {
-            commands.add(entity, data.into_iter().collect());
-        })
-    }
-
-    pub fn add<T: Bundle>(&self, entity: Entity, component: T) -> Result<()> {
-        self.defer(|_, commands| {
-            commands.add(entity, component.into_data_vec(self));
+            commands.add(entity, components);
         })
     }
 
@@ -390,9 +367,8 @@ impl LockedWorldHandle {
         relationship: R,
         relative: Entity,
     ) -> Result<()> {
-        let data = relationship.into_relationship_data(self, relative);
         self.defer(|_, commands| {
-            commands.add(add_to, vec![data]);
+            commands.add_relationship(add_to, relationship, relative);
         })
     }
 

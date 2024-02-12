@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use crate::prelude::{Data, Entity, Graph, LockedWorldHandle};
+use crate::{self as fabricate, commands::Commands, world::World};
+use fabricate_macro::Component;
+
+use crate::prelude::{Entity, Graph, LockedWorldHandle};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SystemStage {
@@ -19,45 +22,40 @@ pub enum SystemStage {
 /// Systems can read, write, and access entities and components in the [`World`].
 ///
 /// [`World`]: crate::world::World
-pub trait System {
-    fn run(&self, world: LockedWorldHandle, inputs: &[Data]) -> anyhow::Result<Vec<Data>>;
-    fn reads(&self) -> Vec<Entity>;
-    fn writes(&self) -> Vec<Entity>;
+pub trait System: Send + Sync + 'static {
+    fn run(&self, world: &World, commands: &mut Commands) -> anyhow::Result<()>;
 }
 
-#[derive(Clone)]
+impl<T> System for T
+where
+    T: Fn(&World, &mut Commands) -> anyhow::Result<()> + Send + Sync + 'static,
+{
+    fn run(&self, world: &World, commands: &mut Commands) -> anyhow::Result<()> {
+        self(world, commands)
+    }
+}
+
+impl System for Arc<dyn System> {
+    fn run(&self, world: &World, commands: &mut Commands) -> anyhow::Result<()> {
+        self.as_ref().run(world, commands)
+    }
+}
+
+#[derive(Clone, Component)]
 pub struct DynamicSystem {
     #[allow(clippy::type_complexity)]
-    run: Arc<
-        dyn for<'a> Fn(LockedWorldHandle, &'a [Data]) -> anyhow::Result<Vec<Data>>
-            + Send
-            + Sync
-            + 'static,
-    >,
+    run: Arc<dyn System>,
 }
 
 impl DynamicSystem {
-    pub fn new(
-        run: impl for<'a> Fn(LockedWorldHandle, &'a [Data]) -> anyhow::Result<Vec<Data>>
-            + Send
-            + Sync
-            + 'static,
-    ) -> Self {
+    pub fn new(run: impl System) -> Self {
         Self { run: Arc::new(run) }
     }
 }
 
 impl System for DynamicSystem {
-    fn run(&self, world: LockedWorldHandle, inputs: &[Data]) -> anyhow::Result<Vec<Data>> {
-        (self.run)(world, inputs)
-    }
-
-    fn reads(&self) -> Vec<Entity> {
-        vec![] // todo
-    }
-
-    fn writes(&self) -> Vec<Entity> {
-        vec![] // todo
+    fn run(&self, world: &World, commands: &mut Commands) -> anyhow::Result<()> {
+        self.run.run(world, commands)
     }
 }
 
@@ -71,11 +69,12 @@ impl SystemGraph {
         self.graph.add_node(system_id);
     }
 
-    pub fn run(&self, world: LockedWorldHandle) {
+    pub fn run(&self, world: LockedWorldHandle) -> anyhow::Result<()> {
         let orphans = self.graph.orphans();
         for node in self.graph.bfs(orphans).unwrap() {
             let system = world.with_system(*node, |sys| sys.clone()).unwrap();
-            system.run(world.clone(), &[]).unwrap();
+            world.defer(|world, commands| system.run(world, commands))??;
         }
+        Ok(())
     }
 }

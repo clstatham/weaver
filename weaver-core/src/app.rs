@@ -83,14 +83,8 @@ impl App {
         self.world.add_resource(resource)
     }
 
-    pub fn add_system_to_stage<T: System + 'static + Send + Sync>(
-        &self,
-        system: T,
-        stage: SystemStage,
-    ) -> anyhow::Result<()> {
-        self.world.add_system(stage, move |world| {
-            system.run(world, &[]).unwrap();
-        })?;
+    pub fn add_system<T: System>(&self, system: T, stage: SystemStage) -> anyhow::Result<()> {
+        self.world.add_system(stage, system)?;
         Ok(())
     }
 
@@ -100,7 +94,7 @@ impl App {
     }
 
     pub fn run(self) -> anyhow::Result<()> {
-        self.world.run_systems(SystemStage::Startup);
+        self.world.run_systems(SystemStage::Startup).unwrap();
 
         let (window_event_tx, window_event_rx) = crossbeam_channel::unbounded();
         let (device_event_tx, device_event_rx) = crossbeam_channel::unbounded();
@@ -109,7 +103,7 @@ impl App {
 
             match event {
                 winit::event::Event::LoopExiting => {
-                    self.world.run_systems(SystemStage::Shutdown);
+                    self.world.run_systems(SystemStage::Shutdown).unwrap();
                 }
                 winit::event::Event::DeviceEvent { event, .. } => {
                     device_event_tx.send(event.clone()).unwrap();
@@ -183,11 +177,11 @@ impl App {
                                     .unwrap();
                             }
 
-                            self.world.run_systems(SystemStage::PreUpdate);
+                            self.world.run_systems(SystemStage::PreUpdate).unwrap();
 
-                            self.world.run_systems(SystemStage::Update);
+                            self.world.run_systems(SystemStage::Update).unwrap();
 
-                            self.world.run_systems(SystemStage::PostUpdate);
+                            self.world.run_systems(SystemStage::PostUpdate).unwrap();
 
                             {
                                 self.world
@@ -199,7 +193,7 @@ impl App {
                                     .unwrap();
                             }
 
-                            self.world.run_systems(SystemStage::Ui);
+                            self.world.run_systems(SystemStage::Ui).unwrap();
 
                             {
                                 self.world
@@ -210,11 +204,11 @@ impl App {
                                     .unwrap();
                             }
 
-                            self.world.run_systems(SystemStage::PreRender);
+                            self.world.run_systems(SystemStage::PreRender).unwrap();
 
-                            self.world.run_systems(SystemStage::Render);
+                            self.world.run_systems(SystemStage::Render).unwrap();
 
-                            self.world.run_systems(SystemStage::PostRender);
+                            self.world.run_systems(SystemStage::PostRender).unwrap();
 
                             {
                                 self.world

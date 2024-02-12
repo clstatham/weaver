@@ -1,5 +1,5 @@
 use egui_dock::{DockArea, DockState, NodeIndex, Style, TabViewer};
-use fabricate::registry::StaticId;
+use fabricate::commands::Commands;
 use weaver::prelude::*;
 
 use crate::state::EditorState;
@@ -102,50 +102,30 @@ impl<'a> TabViewer for EditorTabViewer<'a> {
     }
 }
 
-pub struct EditorStateUi;
+pub fn editor_ui(world: &World, commands: &mut Commands) -> anyhow::Result<()> {
+    let mut state = world.write_resource::<EditorState>().unwrap();
+    let mut tree = world.write_resource::<Tabs>().unwrap();
+    let mut fps = world.write_resource::<FpsDisplay>().unwrap();
+    let ctx = world.read_resource::<EguiContext>().unwrap();
+    ctx.draw_if_ready(|ctx| {
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            fps.run_ui(ui);
+        });
 
-impl System for EditorStateUi {
-    fn reads(&self) -> Vec<Entity> {
-        vec![EguiContext::static_type_id()]
-    }
+        egui::CentralPanel::default().show(ctx, |ui| {
+            DockArea::new(&mut tree.tree)
+                .style(Style::from_egui(ctx.style().as_ref()))
+                .show_inside(
+                    ui,
+                    &mut EditorTabViewer {
+                        world: commands.world().clone(),
+                        state: &mut state,
+                    },
+                );
+        });
 
-    fn writes(&self) -> Vec<Entity> {
-        vec![
-            EditorState::static_type_id(),
-            Tabs::static_type_id(),
-            FpsDisplay::static_type_id(),
-        ]
-    }
+        state.rename_entity_window(commands.world(), ctx).unwrap();
+    });
 
-    fn run(&self, world_handle: LockedWorldHandle, _: &[Data]) -> anyhow::Result<Vec<Data>> {
-        world_handle.defer(|world, _| {
-            let mut state = world.write_resource::<EditorState>().unwrap();
-            let mut tree = world.write_resource::<Tabs>().unwrap();
-            let mut fps = world.write_resource::<FpsDisplay>().unwrap();
-            let ctx = world.read_resource::<EguiContext>().unwrap();
-            ctx.draw_if_ready(|ctx| {
-                egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-                    fps.run_ui(ui);
-                });
-
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    DockArea::new(&mut tree.tree)
-                        .style(Style::from_egui(ctx.style().as_ref()))
-                        .show_inside(
-                            ui,
-                            &mut EditorTabViewer {
-                                world: world_handle.clone(),
-                                state: &mut state,
-                            },
-                        );
-                });
-
-                state.rename_entity_window(&world_handle, ctx).unwrap();
-            });
-
-            Ok::<_, anyhow::Error>(())
-        })??;
-
-        Ok(vec![])
-    }
+    Ok(())
 }

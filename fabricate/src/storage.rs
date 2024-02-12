@@ -255,7 +255,7 @@ impl DynamicData {
     }
 
     pub fn as_ref<T: Component>(&self) -> Option<&T> {
-        if self.type_id == T::static_type_id() {
+        if self.type_id.id() == T::static_type_id().id() {
             Some((*self.data).as_any().downcast_ref().unwrap())
         } else {
             None
@@ -263,7 +263,7 @@ impl DynamicData {
     }
 
     pub fn as_mut<T: Component>(&mut self) -> Option<&mut T> {
-        if self.type_id == T::static_type_id() {
+        if self.type_id.id() == T::static_type_id().id() {
             Some((*self.data).as_any_mut().downcast_mut().unwrap())
         } else {
             None
@@ -271,7 +271,7 @@ impl DynamicData {
     }
 
     pub fn into<T: Component>(self) -> Result<Box<T>, Self> {
-        if self.type_id == T::static_type_id() {
+        if self.type_id.id() == T::static_type_id().id() {
             Ok(self.data.as_any_box().downcast().unwrap())
         } else {
             Err(self)

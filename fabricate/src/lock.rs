@@ -1,6 +1,6 @@
 use std::{
     ops::{Deref, DerefMut},
-    sync::Arc,
+    sync::{Arc, Weak},
 };
 
 use parking_lot::*;
@@ -359,6 +359,10 @@ pub struct SharedLock<T: ?Sized>(Arc<Lock<T>>);
 impl<T> SharedLock<T> {
     pub fn new(value: T) -> Self {
         Self(Arc::new(Lock::new(value)))
+    }
+
+    pub fn downgrade(&self) -> Weak<Lock<T>> {
+        Arc::downgrade(&self.0)
     }
 
     pub fn read(&self) -> Read<'_, T> {

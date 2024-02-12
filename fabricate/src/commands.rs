@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Arc};
 
 use anyhow::Result;
 
@@ -6,8 +6,9 @@ use crate::{
     bundle::Bundle,
     lock::SharedLock,
     registry::Entity,
+    relationship::Relationship,
     storage::Data,
-    system::SystemStage,
+    system::{System, SystemStage},
     world::{LockedWorldHandle, World},
 };
 
@@ -15,7 +16,7 @@ pub enum Command {
     SpawnEntity(Entity),
     DespawnEntity(Entity),
     AddComponents(Entity, Vec<Data>),
-    AddSystem(SystemStage, Box<dyn Fn(LockedWorldHandle) + Send + Sync>),
+    AddSystem(SystemStage, Arc<dyn System>),
     GarbageCollect,
 }
 
@@ -35,6 +36,10 @@ impl Commands {
         }
     }
 
+    pub fn world(&self) -> &LockedWorldHandle {
+        &self.world
+    }
+
     /// Enqueues a command to spawn an entity.
     ///
     /// # Note
@@ -48,7 +53,7 @@ impl Commands {
 
     pub fn spawn<B: Bundle>(&mut self, bundle: B) -> Entity {
         let entity = self.create_entity();
-        self.add(entity, bundle.into_data_vec(&self.world));
+        self.add(entity, bundle);
         entity
     }
 
@@ -66,10 +71,23 @@ impl Commands {
     /// # Note
     ///
     /// The components will not be visible on the [`World`] until [`finalize`][Commands::finalize]is called.
-    pub fn add(&mut self, entity: Entity, data: Vec<Data>) {
-        self.queue
-            .write()
-            .push_back(Command::AddComponents(entity, data));
+    pub fn add<B: Bundle>(&mut self, entity: Entity, components: B) {
+        self.queue.write().push_back(Command::AddComponents(
+            entity,
+            components.into_data_vec(&self.world),
+        ));
+    }
+
+    pub fn add_relationship<R: Relationship>(
+        &mut self,
+        entity: Entity,
+        relationship: R,
+        relative: Entity,
+    ) {
+        self.queue.write().push_back(Command::AddComponents(
+            entity,
+            vec![relationship.into_relationship_data(&self.world, relative)],
+        ));
     }
 
     /// Enqueues a command to add a system to a stage.
@@ -77,14 +95,10 @@ impl Commands {
     /// # Note
     ///
     /// The system will not be visible on the [`World`] until [`finalize`][Commands::finalize]is called.
-    pub fn add_system(
-        &mut self,
-        stage: SystemStage,
-        system: impl Fn(LockedWorldHandle) + Send + Sync + 'static,
-    ) {
+    pub fn add_system(&mut self, stage: SystemStage, system: impl System) {
         self.queue
             .write()
-            .push_back(Command::AddSystem(stage, Box::new(system)));
+            .push_back(Command::AddSystem(stage, Arc::new(system)));
     }
 
     /// Enqueues a command to garbage collect the world.

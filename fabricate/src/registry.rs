@@ -457,19 +457,6 @@ impl Entity {
         }
     }
 
-    pub fn with_relatives<F, R>(
-        self,
-        world: &LockedWorldHandle,
-        relationship_type: Id,
-        f: F,
-    ) -> Option<R>
-    where
-        F: FnOnce(&[Entity]) -> R,
-    {
-        let rels = world.get_relatives_id(self, relationship_type)?;
-        Some(f(&rels))
-    }
-
     pub fn with_all_relatives<F, R>(self, world: &LockedWorldHandle, f: F) -> Option<R>
     where
         F: FnOnce(&[(Id, Entity)]) -> R,
@@ -484,9 +471,8 @@ impl Entity {
         relationship: R,
         relative: Entity,
     ) -> Result<()> {
-        let data = relationship.into_relationship_data(world, relative);
         world.defer(|_, commands| {
-            commands.add(self, vec![data]);
+            commands.add_relationship(self, relationship, relative);
             Ok::<(), anyhow::Error>(())
         })??;
         Ok(())
@@ -494,9 +480,8 @@ impl Entity {
 
     #[allow(clippy::should_implement_trait)]
     pub fn add<T: Bundle>(self, world: &LockedWorldHandle, components: T) -> Result<()> {
-        let data = components.into_data_vec(world);
         world.defer(|_, commands| {
-            commands.add(self, data);
+            commands.add(self, components);
             Ok::<(), anyhow::Error>(())
         })??;
         Ok(())

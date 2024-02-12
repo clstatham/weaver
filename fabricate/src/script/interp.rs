@@ -3,11 +3,16 @@ use rustc_hash::FxHashMap;
 use typed_arena::Arena;
 
 use crate::{
-    component::{MethodArg, TakesSelf}, prelude::{Data, Entity, LockedWorldHandle, SharedLock}, query::{QueryBuilderAccess, QueryItem}, system::SystemStage
+    commands::Commands, 
+    component::{MethodArg, TakesSelf}, 
+    prelude::{Data, Entity, LockedWorldHandle, SharedLock}, 
+    query::{QueryBuilderAccess, QueryItem}, 
+    system::SystemStage, 
+    world::World,
 };
 
 use super::{
-    parser::{Call, Expr, Query, Scope, Span, SpanExpr, Statement, System, TypedIdent},
+    parser::{Call, Expr, Query, Scope, Span, SpanExpr, Statement, TypedIdent},
     value::{Value, ValueHandle},
     Script,
 };
@@ -127,7 +132,7 @@ impl InterpreterContext {
     pub fn interp_system(
         &mut self,
         env: &RuntimeEnv,
-        system: &System,
+        system: &super::parser::System,
     ) -> anyhow::Result<ValueHandle> {
         self.interp_block(env, &system.block.statements)
     }
@@ -754,11 +759,15 @@ impl BuildOnWorld for Script {
             match scope {
                 Scope::System(ref system) => {
                     let system_clone = system.clone();
-                    let run_fn = move |world: LockedWorldHandle| {
-                        let env = RuntimeEnv::new(world.clone());
+                    let world_clone = world.clone();
+                    let run_fn = move |_:  &World, _: &mut Commands| {
+                        let world_clone = world_clone.clone();
+                        let env = RuntimeEnv::new(world_clone);
                         let ctx = env.push_scope(None);
 
-                        ctx.interp_system(&env, &system_clone).unwrap();
+                        ctx.interp_system(&env, &system_clone)?;
+
+                        anyhow::Ok(())
                     };
 
                     let tag = system.tag.clone();

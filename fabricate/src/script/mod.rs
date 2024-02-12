@@ -1,14 +1,16 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use fabricate_macro::Component;
 
 use self::parser::{LoomParser, Scope};
+use crate as fabricate;
 
 pub mod interp;
 pub mod parser;
 pub mod value;
 
-#[derive(Clone)]
+#[derive(Clone, Component)]
 pub struct Script {
     pub name: String,
     pub path: PathBuf,
@@ -63,6 +65,6 @@ mod tests {
         let script = Script::load("src/script/test-scripts/test1.loom").unwrap();
         world.add_script(script);
 
-        world.run_systems(SystemStage::Startup);
+        world.run_systems(SystemStage::Startup).unwrap();
     }
 }
