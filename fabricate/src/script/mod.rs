@@ -2,9 +2,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use fabricate_macro::Component;
+use rustc_hash::FxHashMap;
 
 use self::parser::{LoomParser, Scope};
-use crate as fabricate;
+use crate::{self as fabricate, registry::Entity};
 
 pub mod interp;
 pub mod parser;
@@ -15,6 +16,7 @@ pub struct Script {
     pub name: String,
     pub path: PathBuf,
     pub content: String,
+    types: FxHashMap<Entity, Vec<(String, Entity)>>,
     scopes: Vec<Scope>,
 }
 
@@ -24,6 +26,7 @@ impl Script {
             name,
             path,
             content,
+            types: FxHashMap::default(),
             scopes: Vec::new(),
         };
         let mut parser = LoomParser::new();
@@ -44,6 +47,7 @@ impl Script {
             name,
             path,
             content,
+            types: FxHashMap::default(),
             scopes,
         })
     }

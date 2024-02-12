@@ -869,6 +869,7 @@ impl LoomParser {
         ensure!(pair.as_rule() == Rule::var_res);
         let mut inner = pair.clone().into_inner();
         let ident = inner.next().unwrap();
+        let _eq = inner.next().unwrap();
         let res = inner.next().unwrap();
 
         let ident = self.parse_ident(ident)?;
@@ -886,6 +887,7 @@ impl LoomParser {
         ensure!(pair.as_rule() == Rule::let_res);
         let mut inner = pair.clone().into_inner();
         let ident = inner.next().unwrap();
+        let _eq = inner.next().unwrap();
         let res = inner.next().unwrap();
 
         let ident = self.parse_ident(ident)?;

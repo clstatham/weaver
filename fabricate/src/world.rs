@@ -11,7 +11,7 @@ use crate::{
     query::{Query, QueryBuilder},
     registry::{Entity, Id},
     relationship::Relationship,
-    script::{interp::BuildOnWorld, Script},
+    script::Script,
     storage::{Data, Ref, SortedMap, StaticMut, StaticRef, Storage},
     system::{DynamicSystem, System, SystemGraph, SystemStage},
 };
@@ -230,7 +230,7 @@ impl LockedWorldHandle {
         Ok(())
     }
 
-    pub fn add_script(&self, script: Script) {
+    pub fn add_script(&self, mut script: Script) {
         script.build_on_world(self.clone()).unwrap();
     }
 

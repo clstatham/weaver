@@ -1,6 +1,6 @@
 component Player {
     speed: f32,
-    health: i32,
+    health: i64,
 }
 
 @startup
@@ -13,7 +13,7 @@ system setup {
 
 @update
 system spin {
-    let res time: Time;
+    let time = res Time;
 
     let y = vec3(0.0, 1.0, 0.0);
     let delta = time.delta_seconds();

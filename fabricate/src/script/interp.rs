@@ -66,13 +66,15 @@ macro_rules! runtime_error {
 
 pub(super) struct RuntimeEnv {
     pub world: LockedWorldHandle,
+    pub types: FxHashMap<Entity, Vec<(String, Entity)>>,
     pub arena: Arena<InterpreterContext>,
 }
 
 impl RuntimeEnv {
-    pub fn new(world: LockedWorldHandle) -> Self {
+    pub fn new(world: LockedWorldHandle, types: FxHashMap<Entity, Vec<(String, Entity)>>) -> Self {
         Self {
             world,
+            types,
             arena: Arena::new(),
         }
     }
@@ -433,6 +435,11 @@ impl InterpreterContext {
             runtime_error!(name.span, format!("Invalid type for construct: {}", type_name))
         })?;
 
+        let expected_fields = env
+            .types
+            .get(&ty)
+            .ok_or_else(|| runtime_error!(name.span, "Invalid type for construct"))?;
+
         let mut args = args
             .iter()
             .map(|(n, e)| {
@@ -443,6 +450,37 @@ impl InterpreterContext {
                 Ok((n.clone(), value))
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
+
+        for (arg_name, arg) in args.iter() {
+            if let Some((_, expected_ty)) = expected_fields.iter().find(|(n, _)| n == arg_name) {
+                if arg.type_id() != *expected_ty {
+                    bail!(
+                        name.span,
+                        format!(
+                            "Invalid argument for construct: Expected type {}, got {}",
+                            expected_ty,
+                            arg.type_id(),
+                        )
+                    );
+                }
+            } else {
+                bail!(
+                    name.span,
+                    format!("Invalid argument for construct: No such field {}", arg_name)
+                );
+            }
+        }
+
+        if args.len() != expected_fields.len() {
+            bail!(
+                name.span,
+                format!(
+                    "Invalid argument for construct: Expected {} fields, got {}",
+                    expected_fields.len(),
+                    args.len()
+                )
+            );
+        }
 
         let e = env.world.defer(|_, commands| {
             let e = commands.create_entity();
@@ -781,24 +819,19 @@ impl InterpreterContext {
 }
 
 
-pub trait BuildOnWorld {
-    type Output;
 
-    fn build_on_world(&self, world: LockedWorldHandle) -> anyhow::Result<Self::Output>;
-}
-
-impl BuildOnWorld for Script {
-    type Output = ();
-
-    fn build_on_world(&self, world: LockedWorldHandle) -> anyhow::Result<()> {
+impl Script {
+    pub fn build_on_world(&mut self, world: LockedWorldHandle) -> anyhow::Result<()> {
         for scope in &self.scopes {
             match scope {
                 Scope::System(ref system) => {
                     let system_clone = system.clone();
                     let world_clone = world.clone();
+                    let types = self.types.clone();
                     let run_fn = move |_:  &World, _: &mut Commands| {
                         let world_clone = world_clone.clone();
-                        let env = RuntimeEnv::new(world_clone);
+                        let types = types.clone();
+                        let env = RuntimeEnv::new(world_clone, types);
                         let ctx = env.push_scope(None);
 
                         ctx.interp_system(&env, &system_clone)?;
@@ -831,9 +864,10 @@ impl BuildOnWorld for Script {
                                 format!("Invalid type for field: {}", field.ty.as_str())
                             )
                         })?;
-                        fields.push((field.name.as_str(), ty));
+                        fields.push((field.name.as_str().to_owned(), ty));
                     }
-                    Entity::allocate_type(Some(type_name));
+                    let ty = Entity::allocate_type(Some(type_name));
+                    self.types.insert(ty, fields);
                 }
                 Scope::Func(_) => {}
                 Scope::Impl(_) => {}
@@ -845,9 +879,7 @@ impl BuildOnWorld for Script {
     }
 }
 
-impl BuildOnWorld for Query {
-    type Output = Vec<QueryBuilderAccess>;
-
+impl Query {
     fn build_on_world(&self, world: LockedWorldHandle) -> anyhow::Result<Vec<QueryBuilderAccess>> {
         let mut query = Vec::new();
         for component in &self.components {
@@ -863,29 +895,20 @@ impl BuildOnWorld for Query {
             }
         }
         for with in &self.with {
-            let id = with.as_str().to_string().build_on_world(world.clone())?;
+            let id = Entity::allocate_type(Some(with.as_str()));
             query.push(QueryBuilderAccess::With(id));
         }
         for without in &self.without {
-            let id = without.as_str().to_string().build_on_world(world.clone())?;
+            let id = Entity::allocate_type(Some(without.as_str()));
             query.push(QueryBuilderAccess::Without(id));
         }
         Ok(query)
     }
 }
 
-impl BuildOnWorld for TypedIdent {
-    type Output = Entity;
-
+impl TypedIdent {
     fn build_on_world(&self, _world: LockedWorldHandle) -> anyhow::Result<Entity> {
         Ok(Entity::allocate_type(Some(self.ty.as_str())))
     }
 }
 
-impl BuildOnWorld for String {
-    type Output = Entity;
-
-    fn build_on_world(&self, _world: LockedWorldHandle) -> anyhow::Result<Entity> {
-        Ok(Entity::allocate_type(Some(self.as_str())))
-    }
-}

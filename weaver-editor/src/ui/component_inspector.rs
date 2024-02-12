@@ -118,16 +118,6 @@ pub fn inspect_value(value: ValueRef, ui: &mut egui::Ui) {
     }
 }
 
-pub trait InspectExt: Component {
-    fn inspect_ui(&mut self, ui: &mut egui::Ui) {
-        for value in self.inspect() {
-            inspect_value(value, ui)
-        }
-    }
-}
-
-impl<T: Component + ?Sized> InspectExt for T {}
-
 pub fn component_inspector_ui(
     world: &World,
     commands: &mut Commands,
@@ -140,7 +130,9 @@ pub fn component_inspector_ui(
             .and_then(|type_id| world.storage().find_mut(type_id, selected_component));
         if let Some(ref mut component) = component {
             if let Some(component) = component.as_dynamic_mut() {
-                component.data_mut().data_mut().inspect_ui(ui);
+                for value in component.data_mut().data_mut().inspect() {
+                    inspect_value(value, ui);
+                }
             } else if let Some(component_ptr) = component.as_pointer_mut() {
                 let target = component_ptr.target_entity();
                 let has = world.get_relatives_id(target, Has::type_id().id()).unwrap();
