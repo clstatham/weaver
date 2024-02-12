@@ -1,9 +1,11 @@
 use crate::{self as fabricate, registry::StaticId};
-use std::{any::Any, collections::HashMap};
+use std::collections::HashMap;
 
 use anyhow::Result;
 
 use crate::prelude::*;
+
+pub mod runtime;
 
 pub enum TakesSelf {
     None,
@@ -109,8 +111,9 @@ macro_rules! script_vtable {
     };
 }
 
+/// Used to implement reflection for component types that are created at compile time.
 pub struct ValueRef<'a> {
-    pub name: &'static str,
+    pub name: &'a str,
     pub typ: Entity,
     pub value: &'a mut dyn Component,
 }
@@ -123,11 +126,11 @@ pub trait Component: Send + Sync + 'static {
         <Self as StaticId>::static_type_id()
     }
 
-    fn as_any(&self) -> &dyn Any;
+    fn as_any(&self) -> &dyn std::any::Any;
 
-    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 
-    fn as_any_box(self: Box<Self>) -> Box<dyn Any>;
+    fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any>;
 
     fn clone_box(&self) -> Box<dyn Component>;
 
@@ -165,15 +168,15 @@ macro_rules! impl_component_simple {
     ($($t:ty),*) => {
         $(
             impl Component for $t {
-                fn as_any(&self) -> &dyn Any {
+                fn as_any(&self) -> &dyn std::any::Any {
                     self
                 }
 
-                fn as_any_mut(&mut self) -> &mut dyn Any {
+                fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
                     self
                 }
 
-                fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
+                fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
                     self
                 }
 
@@ -206,13 +209,13 @@ impl_component_simple!(
 );
 
 impl<T: Component + Clone> Component for Option<T> {
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
-    fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
+    fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
     fn clone_box(&self) -> Box<dyn Component> {
@@ -221,13 +224,13 @@ impl<T: Component + Clone> Component for Option<T> {
 }
 
 impl<T: Component + Clone> Component for Vec<T> {
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
-    fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
+    fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
     fn clone_box(&self) -> Box<dyn Component> {
@@ -241,13 +244,13 @@ impl<T: Component + Clone> Component for Vec<T> {
 }
 
 impl<T: Component + Clone> Component for std::collections::VecDeque<T> {
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
-    fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
+    fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
     fn clone_box(&self) -> Box<dyn Component> {
@@ -259,14 +262,14 @@ impl<T: Component + Clone> Component for std::collections::VecDeque<T> {
     );
 }
 
-impl<T: Send + Sync + Any> Component for SharedLock<T> {
-    fn as_any(&self) -> &dyn Any {
+impl<T: Component> Component for SharedLock<T> {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
-    fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
+    fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
     fn clone_box(&self) -> Box<dyn Component> {
@@ -275,13 +278,13 @@ impl<T: Send + Sync + Any> Component for SharedLock<T> {
 }
 
 impl Component for String {
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
-    fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
+    fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
     fn clone_box(&self) -> Box<dyn Component> {
@@ -295,13 +298,13 @@ impl Component for String {
 
 #[cfg(feature = "glam")]
 impl Component for glam::Vec2 {
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
-    fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
+    fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
     fn clone_box(&self) -> Box<dyn Component> {
@@ -316,13 +319,13 @@ impl Component for glam::Vec2 {
 
 #[cfg(feature = "glam")]
 impl Component for glam::Vec3 {
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
-    fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
+    fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
     fn clone_box(&self) -> Box<dyn Component> {
@@ -338,13 +341,13 @@ impl Component for glam::Vec3 {
 
 #[cfg(feature = "glam")]
 impl Component for glam::Vec4 {
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
-    fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
+    fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
     fn clone_box(&self) -> Box<dyn Component> {
@@ -361,13 +364,13 @@ impl Component for glam::Vec4 {
 
 #[cfg(feature = "glam")]
 impl Component for glam::Quat {
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
-    fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
+    fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
     fn clone_box(&self) -> Box<dyn Component> {

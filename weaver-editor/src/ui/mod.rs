@@ -59,7 +59,7 @@ impl<'a> TabViewer for EditorTabViewer<'a> {
 
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
         self.world
-            .defer(|world, _| {
+            .defer(|world, commands| {
                 let renderer = world.read_resource::<Renderer>().unwrap();
                 match tab.as_str() {
                     "Viewport" => {
@@ -91,7 +91,9 @@ impl<'a> TabViewer for EditorTabViewer<'a> {
                         scene_tree::scene_tree_ui(&self.world, self.state, ui);
                     }
                     "Component Inspector" => {
-                        component_inspector::component_inspector_ui(world, self.state, ui);
+                        component_inspector::component_inspector_ui(
+                            world, commands, self.state, ui,
+                        );
                     }
                     tab => {
                         ui.label(tab);

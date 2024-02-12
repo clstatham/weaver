@@ -57,6 +57,12 @@ impl Commands {
         entity
     }
 
+    pub fn spawn_data(&mut self, data: Vec<Data>) -> Entity {
+        let entity = self.create_entity();
+        self.add_data(entity, data);
+        entity
+    }
+
     /// Enqueues a command to despawn an entity.
     ///
     /// # Note
@@ -76,6 +82,12 @@ impl Commands {
             entity,
             components.into_data_vec(&self.world),
         ));
+    }
+
+    pub fn add_data(&mut self, entity: Entity, data: Vec<Data>) {
+        self.queue
+            .write()
+            .push_back(Command::AddComponents(entity, data));
     }
 
     pub fn add_relationship<R: Relationship>(

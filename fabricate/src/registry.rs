@@ -437,6 +437,24 @@ impl Entity {
         world.with_component_mut(self, f)
     }
 
+    pub fn with_component_id_ref<R>(
+        self,
+        world: &LockedWorldHandle,
+        component_ty: Entity,
+        f: impl FnOnce(Ref<'_>) -> R,
+    ) -> Option<R> {
+        world.with_component_id_ref(self, component_ty, f)
+    }
+
+    pub fn with_component_id_mut<R>(
+        self,
+        world: &LockedWorldHandle,
+        component_ty: Entity,
+        f: impl FnOnce(Mut<'_>) -> R,
+    ) -> Option<R> {
+        world.with_component_id_mut(self, component_ty, f)
+    }
+
     pub fn relationship_first(self) -> Option<Entity> {
         self.check_relative()?;
         if let Some(e) = Entity::new_with_current_generation(self.id()) {

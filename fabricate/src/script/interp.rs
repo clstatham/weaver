@@ -4,7 +4,7 @@ use typed_arena::Arena;
 
 use crate::{
     commands::Commands, 
-    component::{MethodArg, TakesSelf}, 
+    component::{runtime::{Has, IsComponent}, MethodArg, TakesSelf}, 
     prelude::{Data, Entity, LockedWorldHandle, SharedLock}, 
     query::{QueryBuilderAccess, QueryItem}, 
     system::SystemStage, 
@@ -311,9 +311,7 @@ impl InterpreterContext {
             Some(condition) => {
                 let cond = self.interp_expr(env, condition)?;
                 let cond = cond.read();
-                if let Value::Bool(false) = &*cond {
-                    return Ok(self.alloc_value(Value::Void));
-                }
+                
                 if let Value::Query(qs) = &*cond {
                     env.world.query(
                         |mut query| {
@@ -375,17 +373,20 @@ impl InterpreterContext {
                     )?;
                 } else {
                     loop {
+                        let cond = self.interp_expr(env, condition)?;
+                        let cond = cond.read();
+                        match cond.as_bool() {
+                            Some(true) => {}
+                            Some(false) => return Ok(self.alloc_value(Value::Void)),
+                            None => bail!(condition.span, "Invalid condition for loop"),
+                        }
+
                         self.interp_expr(env, block)?;
+
                         if self.should_break.is_some() {
                             break;
                         }
                         if self.should_return.is_some() {
-                            break;
-                        }
-
-                        let condition = self.interp_expr(env, condition)?;
-                        let condition = condition.read();
-                        if let Value::Bool(false) = &*condition {
                             break;
                         }
                     }
@@ -423,28 +424,42 @@ impl InterpreterContext {
 
     pub fn interp_construct(
         &mut self,
-        _env: &RuntimeEnv,
-        _name: &SpanExpr,
-        _args: &[(String, SpanExpr)],
+        env: &RuntimeEnv,
+        name: &SpanExpr,
+        args: &[(String, SpanExpr)],
     ) -> anyhow::Result<ValueHandle> {
-        // let name = name.as_str();
-        // let ty = Entity::allocate_type(Some(name));
-        // let e = env.world.write().create_entity()?;
-        // for (arg_name, arg) in args {
-        //     // let value = self.interp_expr(env, arg)?;
-        //     // let entity = value.read().entity(env).map_err(|_| {
-        //     //     runtime_error!(
-        //     //         arg.span,
-        //     //         format!("Invalid argument for constructing {}: {}", name, arg_name)
-        //     //     )
-        //     // })?;
-        //     // let mut world = env.world.write();
-        //     // let value_ty = entity.type_id().unwrap();
-        // }
+        let type_name = name.as_str();
+        let ty = Entity::type_from_name(type_name).ok_or_else(|| {
+            runtime_error!(name.span, format!("Invalid type for construct: {}", type_name))
+        })?;
 
-        todo!("Implement constructing entities");
+        let mut args = args
+            .iter()
+            .map(|(n, e)| {
+                let value = self.interp_expr(env, e)?;
+                let value = value.read().to_owned_data(&env.world).map_err(|_| {
+                    runtime_error!(e.span, "Invalid argument for construct")
+                })?;
+                Ok((n.clone(), value))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
-        // Ok(Value::Data(Data::new_pointer(&ty, &e)).into())
+        let e = env.world.defer(|_, commands| {
+            let e = commands.create_entity();
+            e.register_as_type(ty);
+            for (name, value) in args.drain(..) {
+                let value_ty = value.type_id();
+                let value_entity = commands.spawn_data(vec![value]);
+                value_entity.register_as_type(value_ty);
+                commands.add(value_entity, IsComponent);
+                commands.add_relationship(e, Has::new(&name), value_entity);
+            }
+            commands.add(e, IsComponent);
+            e
+        })?;
+
+
+        Ok(self.alloc_value(Value::Entity(e)))
     }
 
     pub fn interp_call(&mut self, env: &RuntimeEnv, call: &Call) -> anyhow::Result<ValueHandle> {
@@ -457,6 +472,27 @@ impl InterpreterContext {
                 }
                 println!();
                 Ok(self.alloc_value(Value::Void))
+            }
+            "spawn" => {
+                let mut components = Vec::new();
+                for arg in &call.args {
+                    let value = self.interp_expr(env, arg)?;
+                    let value = value.read();
+                    if let Some(e) = value.as_entity() {
+                        components.push(Data::new_pointer(e.type_id().unwrap(), e));
+                    } else {
+                        let data = value.to_owned_data(&env.world).map_err(|_| {
+                            runtime_error!(arg.span, "Invalid argument for spawn")
+                        })?;
+                        components.push(data);
+                    }
+                }
+
+                let e = env.world.defer(|_, commands| {
+                    commands.spawn_data(components)
+                })?;
+
+                Ok(self.alloc_value(Value::Entity(e)))
             }
             #[cfg(feature = "glam")]
             "vec3" => {
@@ -785,8 +821,19 @@ impl BuildOnWorld for Script {
                     world.add_system(stage, run_fn)?;
                 }
 
-                Scope::Component(_component) => {
-                    todo!("Implement component registration")
+                Scope::Component(component) => {
+                    let type_name = component.name.as_str();
+                    let mut fields = Vec::new();
+                    for field in &component.fields {
+                        let ty = Entity::type_from_name(field.ty.as_str()).ok_or_else(|| {
+                            runtime_error!(
+                                field.ty.span,
+                                format!("Invalid type for field: {}", field.ty.as_str())
+                            )
+                        })?;
+                        fields.push((field.name.as_str(), ty));
+                    }
+                    Entity::allocate_type(Some(type_name));
                 }
                 Scope::Func(_) => {}
                 Scope::Impl(_) => {}
@@ -804,6 +851,10 @@ impl BuildOnWorld for Query {
     fn build_on_world(&self, world: LockedWorldHandle) -> anyhow::Result<Vec<QueryBuilderAccess>> {
         let mut query = Vec::new();
         for component in &self.components {
+            if component.ty.as_str() == "Entity" {
+                query.push(QueryBuilderAccess::Entity);
+                continue;
+            }
             let id = component.build_on_world(world.clone())?;
             if component.mutability {
                 query.push(QueryBuilderAccess::Write(id));

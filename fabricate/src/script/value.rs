@@ -59,6 +59,7 @@ pub(super) enum Value {
     Float(f32),
     String(String),
     Data(Data),
+    Entity(Entity),
     Resource(Entity),
     Query(Vec<(String, QueryBuilderAccess)>),
 }
@@ -80,14 +81,43 @@ impl Value {
                     format!("Data({:?})", r)
                 }
             }
+            Value::Entity(e) => e.to_string(),
             Value::Resource(r) => format!("Res({:?})", r),
             Value::Query(q) => format!("Query({:?})", q),
+        }
+    }
+
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            Value::Bool(b) => Some(*b),
+            Value::Data(d) => {
+                try_all_types!(d; bool; |data| {
+                    return Some(*data);
+                } else {
+                    try_all_types!(d; u8, u16, u32, u64, usize, i8, i16, i32, i64, isize; |data| {
+                        return Some(*data != 0);
+                    } else {
+                        None
+                    })
+                })
+            }
+            _ => None,
         }
     }
 
     pub fn as_int(&self) -> Option<i64> {
         match self {
             Value::Int(i) => Some(*i),
+            Value::Float(f) => Some(*f as i64),
+            Value::Bool(b) => Some(*b as i64),
+            Value::Data(d) => {
+                try_all_types!(d; u8, u16, u32, u64, usize, i8, i16, i32, i64, isize; |data| {
+                    #[allow(clippy::unnecessary_cast)]
+                    return Some(*data as i64);
+                } else {
+                    None
+                })
+            }
             _ => None,
         }
     }
@@ -95,9 +125,11 @@ impl Value {
     pub fn as_float(&self) -> Option<f32> {
         match self {
             Value::Float(f) => Some(*f),
+            Value::Int(i) => Some(*i as f32),
             Value::Data(d) => {
-                try_all_types!(d; f32; |data| {
-                    return Some(*data);
+                try_all_types!(d; f32, f64, u8, u16, u32, u64, usize, i8, i16, i32, i64, isize; |data| {
+                    #[allow(clippy::unnecessary_cast)]
+                    return Some(*data as f32);
                 } else {
                     None
                 })
@@ -113,6 +145,13 @@ impl Value {
         }
     }
 
+    pub fn as_entity(&self) -> Option<Entity> {
+        match self {
+            Value::Entity(e) => Some(*e),
+            _ => None,
+        }
+    }
+
     pub fn to_owned_data(&self, world: &LockedWorldHandle) -> Result<Data> {
         match self {
             Value::Data(d) => Ok(d.to_owned()),
@@ -120,6 +159,7 @@ impl Value {
             Value::Int(i) => Ok(Data::new_dynamic(world, *i)),
             Value::Float(f) => Ok(Data::new_dynamic(world, *f)),
             Value::String(s) => Ok(Data::new_dynamic(world, s.clone())),
+            Value::Entity(_) => bail!("Cannot convert Entity to Data"),
             Value::Resource(_) => bail!("Cannot convert Resource to Data"),
             Value::Query(_) => bail!("Cannot convert Query to Data"),
             Value::Void => bail!("Cannot convert Void to Data"),

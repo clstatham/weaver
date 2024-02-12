@@ -10,12 +10,12 @@
             "name": "Debug executable 'weaver-editor'",
             "env": {
                 "RUST_BACKTRACE": "1",
-                "RUST_LOG": "fabricate=trace"
+                "RUST_LOG": "info"
             },
             "cargo": {
                 "env": {
                     "RUST_BACKTRACE": "1",
-                    "RUST_LOG": "fabricate=trace"
+                    "RUST_LOG": "info"
                 },
                 "args": [
                     "build",

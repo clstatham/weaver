@@ -1,3 +1,4 @@
+use fabricate::component::runtime::IsComponent;
 use weaver::prelude::*;
 
 use crate::{state::EditorState, TransformChild, TransformParent};
@@ -16,10 +17,12 @@ pub fn scene_tree_ui(world_handle: &LockedWorldHandle, state: &mut EditorState, 
                         .entity()
                         .without_dynamic(Entity::new_wildcard::<TransformChild>())
                         .unwrap()
+                        .without::<IsComponent>()
+                        .unwrap()
                         .build();
                     for result in q.iter() {
                         let entity = result.entity().unwrap();
-                        {
+                        if entity.is_alive() {
                             let name = entity
                                 .with_component_ref::<NameTag, _>(world_handle, |tag| tag.0.clone())
                                 .or_else(|| entity.type_name())
@@ -81,29 +84,52 @@ fn scene_tree_ui_recurse(
             }
 
             let arch = world.storage().entity_archetype(node).unwrap();
-            let components = arch
-                .row_type_filtered(node, |ty| {
-                    !ty.is_relative() && ty.id() != NameTag::type_id().id()
-                })
-                .unwrap();
-            for component in components {
-                let ty = component.type_id();
-                let name = ty
-                    .type_name()
-                    .unwrap_or_else(|| format!("[type {}]", ty.id()));
+            let components = arch.row_type_filtered(node, |ty| {
+                !ty.is_relative() && ty.id() != NameTag::type_id().id()
+            });
+            if let Some(components) = components {
+                for component in components {
+                    let ty = component.type_id();
+                    let name = ty
+                        .type_name()
+                        .unwrap_or_else(|| format!("[type {}]", ty.id()));
 
-                let name = if state.selected_component == Some(component.entity()) {
-                    egui::RichText::new(name).strong().underline()
-                } else {
-                    egui::RichText::new(name)
-                };
-                let selected = state.selected_component == Some(component.entity());
-                let header = egui::SelectableLabel::new(selected, name);
-                let response = ui.add(header);
-                if response.clicked() {
-                    state.selected_entity = Some(node);
-                    state.selected_component = Some(component.entity());
+                    let name = if state.selected_component == Some(component.entity()) {
+                        egui::RichText::new(name).strong().underline()
+                    } else {
+                        egui::RichText::new(name)
+                    };
+                    let selected = state.selected_component == Some(component.entity());
+                    let header = egui::SelectableLabel::new(selected, name);
+                    let response = ui.add(header);
+                    if response.clicked() {
+                        state.selected_entity = Some(node);
+                        state.selected_component = Some(component.entity());
+                    }
                 }
             }
+
+            // let has = world.get_relatives_id(node, Has::type_id().id());
+            // if let Some(has) = has {
+            //     for (component, _) in has {
+            //         let ty = component.type_id();
+            //         let name = ty
+            //             .type_name()
+            //             .unwrap_or_else(|| format!("[type {}]", ty.id()));
+
+            //         let name = if state.selected_component == Some(component.entity()) {
+            //             egui::RichText::new(name).strong().underline()
+            //         } else {
+            //             egui::RichText::new(name)
+            //         };
+            //         let selected = state.selected_component == Some(component.entity());
+            //         let header = egui::SelectableLabel::new(selected, name);
+            //         let response = ui.add(header);
+            //         if response.clicked() {
+            //             state.selected_entity = Some(node);
+            //             state.selected_component = Some(component.entity());
+            //         }
+            //     }
+            // }
         });
 }

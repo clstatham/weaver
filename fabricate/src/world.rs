@@ -96,6 +96,22 @@ impl World {
         Some(out)
     }
 
+    pub fn get_relatives_id_mut(
+        &self,
+        entity: Entity,
+        relationship_type: Id,
+    ) -> Option<Vec<(Mut<'_>, Entity)>> {
+        let archetype = self.storage().entity_archetype(entity)?;
+        let relationships =
+            archetype.row_mut_type_filtered(entity, |ty| ty.id() == relationship_type)?;
+        let mut out = Vec::new();
+        for relationship in relationships {
+            let relationship_type = relationship.type_id();
+            out.push((relationship, relationship_type.relationship_second()?));
+        }
+        Some(out)
+    }
+
     pub fn all_relatives(&self, entity: Entity) -> Option<Vec<(Id, Entity)>> {
         let archetype = self.storage().entity_archetype(entity)?;
         let relationships = archetype.row_type_filtered(entity, |ty| ty.is_relative())?;

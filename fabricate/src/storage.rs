@@ -425,6 +425,15 @@ impl Data {
     }
 }
 
+impl Clone for Data {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Dynamic(data) => Self::Dynamic(data.clone()),
+            Self::Pointer(pointer) => Self::Pointer(pointer.clone()),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Pointer {
     target_type_id: Entity,
@@ -555,7 +564,7 @@ impl<'a> PointerMut<'a> {
         self.target_entity
     }
 
-    pub fn deref_mut(&mut self, storage: &'a mut Storage) -> Option<Mut<'_>> {
+    pub fn deref_mut(&mut self, storage: &'a Storage) -> Option<Mut<'_>> {
         storage.deref_pointer_mut(self)
     }
 
@@ -887,7 +896,7 @@ impl<'a> Mut<'a> {
         }
     }
 
-    pub fn as_pointer_mut(&self) -> Option<&PointerMut<'a>> {
+    pub fn as_pointer_mut(&mut self) -> Option<&mut PointerMut<'a>> {
         match self {
             Self::Pointer(pointer) => Some(pointer),
             Self::Dynamic(_) => None,
@@ -1473,8 +1482,28 @@ impl Archetype {
         let mut row = Vec::new();
         for (type_id, column) in self.type_columns() {
             if filter_types(type_id) {
-                let data = column.get_dynamic(entity)?;
-                row.push(Ref::Dynamic(data));
+                if let Some(data) = column.get_dynamic(entity) {
+                    row.push(Ref::Dynamic(data));
+                } else if let Some(pointer) = column.get_pointer(entity) {
+                    row.push(Ref::Pointer(pointer));
+                }
+            }
+        }
+        Some(row)
+    }
+
+    pub fn row_mut_type_filtered<F>(&self, entity: Entity, filter_types: F) -> Option<Vec<Mut<'_>>>
+    where
+        F: Fn(Entity) -> bool,
+    {
+        let mut row = Vec::new();
+        for (type_id, column) in self.type_columns() {
+            if filter_types(type_id) {
+                if let Some(data) = column.get_dynamic_mut(entity) {
+                    row.push(Mut::Dynamic(data));
+                } else if let Some(pointer) = column.get_pointer_mut(entity) {
+                    row.push(Mut::Pointer(pointer));
+                }
             }
         }
         Some(row)

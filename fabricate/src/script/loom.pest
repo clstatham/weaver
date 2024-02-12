@@ -71,16 +71,9 @@ system_tag = @{ startup | update }
 // keyword    = @{ component | system | impl | func | let | var | if | else | elif | loop | break | query | with | without }
 
 // Types
-int               =  { "Int" }
-float             =  { "Float" }
-vec3              =  { "Vec3" }
-quat              =  { "Quat" }
-mat3              =  { "Mat3" }
-mat4              =  { "Mat4" }
-string            =  { "String" }
 ident             = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
 capitalized_ident = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | ASCII_DIGIT | "_")* }
-type              =  { int | float | vec3 | quat | mat3 | mat4 | string | capitalized_ident }
+type              =  { "i32" | "f32" | "Vec3" | "Quat" | "Mat3" | "Mat4" | "String" | capitalized_ident }
 let_ident         =  { let ~ ident }
 var_ident         =  { var ~ ident }
 typed_ident       =  { ident ~ colon ~ type }
@@ -94,7 +87,7 @@ statements = { statement* }
 // Statements
 block          = { lbrace ~ statements ~ rbrace }
 statement      = { (component_stmt | system_stmt | func_stmt | impl_stmt | break_stmt | return_stmt | expr) ~ semi? }
-component_stmt = { component ~ ident ~ lbrace ~ typed_ident* ~ rbrace }
+component_stmt = { component ~ capitalized_ident ~ lbrace ~ (typed_ident ~ comma)* ~ typed_ident? ~ rbrace }
 system_stmt    = { system_tag? ~ system ~ ident ~ block }
 break_stmt     = { break ~ expr? }
 return_stmt    = { return ~ expr? }

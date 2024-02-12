@@ -23,6 +23,7 @@ pub mod prelude {
         lock::{MapRead, MapWrite, Read, ReadWrite, SharedLock, Write},
         query::Query,
         registry::{global_registry, Entity, Id, Registry, RegistryHandle},
+        relationship::Relationship,
         script::Script,
         script_vtable,
         storage::{Data, DynamicData, DynamicMut, DynamicRef, Mut, Ref, Storage},
