@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
+use weaver_util::lock::Lock;
 
 use crate::{
     camera::{Camera, CameraUniform},
@@ -171,7 +171,7 @@ impl Default for PbrBuffers {
 pub struct PbrRenderPass {
     pipeline: wgpu::RenderPipeline,
     buffers: PbrBuffers,
-    unique_meshes: RwLock<UniqueMeshes>,
+    unique_meshes: Lock<UniqueMeshes>,
 }
 
 impl PbrRenderPass {
@@ -229,7 +229,7 @@ impl PbrRenderPass {
             multiview: None,
         });
 
-        let unique_meshes = RwLock::new(UniqueMeshes::default());
+        let unique_meshes = Lock::new(UniqueMeshes::default());
 
         Self {
             pipeline,

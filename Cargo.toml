@@ -9,7 +9,7 @@ edition = "2021"
 members = [
     "crates/weaver-proc-macro",
     "crates/weaver-core",
-    "crates/weaver-editor",
+    "crates/weaver-editor", "crates/weaver-util",
 ]
 
 [features]

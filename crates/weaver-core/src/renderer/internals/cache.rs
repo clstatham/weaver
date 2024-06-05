@@ -1,7 +1,7 @@
 use std::{any::TypeId, sync::Arc};
 
-use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
+use weaver_util::lock::Lock;
 
 use super::BindableComponent;
 
@@ -9,7 +9,7 @@ use super::BindableComponent;
 #[derive(Default)]
 pub struct BindGroupLayoutCache {
     /// Bind group layouts for each component id.
-    pub(crate) layouts: RwLock<FxHashMap<TypeId, Arc<wgpu::BindGroupLayout>>>,
+    pub(crate) layouts: Lock<FxHashMap<TypeId, Arc<wgpu::BindGroupLayout>>>,
 }
 
 impl BindGroupLayoutCache {

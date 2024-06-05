@@ -1,4 +1,5 @@
-use crate::{color::Color, util::lock::SharedLock};
+use crate::color::Color;
+use weaver_util::lock::SharedLock;
 
 pub const MAX_DOODADS: usize = 1024;
 

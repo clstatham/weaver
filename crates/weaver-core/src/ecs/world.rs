@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::util::lock::Lock;
+use weaver_util::lock::Lock;
 
 use super::{
     component::Component,

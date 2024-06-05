@@ -1,6 +1,6 @@
 use std::{fmt::Debug, sync::Arc};
 
-use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
+use weaver_util::lock::{Lock, MapRead, Read};
 
 use super::{BindGroupLayoutCache, BindableComponent, GpuResourceManager};
 
@@ -188,7 +188,7 @@ impl Debug for GpuHandleStatus {
 #[derive(Clone)]
 pub struct GpuHandle {
     pub(super) id: u64,
-    pub(super) status: Arc<RwLock<GpuHandleStatus>>,
+    pub(super) status: Arc<Lock<GpuHandleStatus>>,
 }
 
 impl GpuHandle {
@@ -210,22 +210,20 @@ impl GpuHandle {
     }
 
     /// Returns the underlying buffer iff the handle is ready and the underlying resource is a buffer.
-    pub fn get_buffer(&self) -> Option<MappedRwLockReadGuard<'_, wgpu::Buffer>> {
+    pub fn get_buffer(&self) -> Option<MapRead<'_, wgpu::Buffer>> {
         let status = self.status.read();
         if let GpuHandleStatus::Ready {
             resource: ref buffer,
         } = &*status
         {
             match buffer.as_ref() {
-                GpuResource::Buffer { .. } => {
-                    Some(RwLockReadGuard::map(status, |status| match status {
-                        GpuHandleStatus::Ready { resource: buffer } => match buffer.as_ref() {
-                            GpuResource::Buffer { buffer } => buffer,
-                            _ => unreachable!(),
-                        },
+                GpuResource::Buffer { .. } => Some(Read::map_read(status, |status| match status {
+                    GpuHandleStatus::Ready { resource: buffer } => match buffer.as_ref() {
+                        GpuResource::Buffer { buffer } => buffer,
                         _ => unreachable!(),
-                    }))
-                }
+                    },
+                    _ => unreachable!(),
+                })),
                 GpuResource::Texture { .. } => {
                     log::warn!(
                         "Attempted to get buffer from texture: {} is {:?}",
@@ -254,7 +252,7 @@ impl GpuHandle {
     }
 
     /// Returns the underlying texture iff the handle is ready and the underlying resource is a texture.
-    pub fn get_texture(&self) -> Option<MappedRwLockReadGuard<'_, wgpu::Texture>> {
+    pub fn get_texture(&self) -> Option<MapRead<'_, wgpu::Texture>> {
         let status = self.status.read();
         if let GpuHandleStatus::Ready {
             resource: ref buffer,
@@ -262,7 +260,7 @@ impl GpuHandle {
         {
             match buffer.as_ref() {
                 GpuResource::Texture { .. } => {
-                    Some(RwLockReadGuard::map(status, |status| match status {
+                    Some(Read::map_read(status, |status| match status {
                         GpuHandleStatus::Ready { resource: buffer } => match buffer.as_ref() {
                             GpuResource::Texture { texture, .. } => texture,
                             _ => unreachable!(),
@@ -290,7 +288,7 @@ impl GpuHandle {
     }
 
     /// Returns the underlying sampler iff the handle is ready and the underlying resource is a sampler.
-    pub fn get_sampler(&self) -> Option<MappedRwLockReadGuard<'_, wgpu::Sampler>> {
+    pub fn get_sampler(&self) -> Option<MapRead<'_, wgpu::Sampler>> {
         let status = self.status.read();
         if let GpuHandleStatus::Ready {
             resource: ref buffer,
@@ -298,7 +296,7 @@ impl GpuHandle {
         {
             match buffer.as_ref() {
                 GpuResource::Sampler { .. } => {
-                    Some(RwLockReadGuard::map(status, |status| match status {
+                    Some(Read::map_read(status, |status| match status {
                         GpuHandleStatus::Ready { resource: buffer } => match buffer.as_ref() {
                             GpuResource::Sampler { sampler } => sampler,
                             _ => unreachable!(),
@@ -404,7 +402,7 @@ impl Debug for LazyInitStatus {
 /// This is useful for resources that are not used by the GPU until the first frame.
 #[derive(Clone, Debug)]
 pub struct LazyGpuHandle {
-    status: Arc<RwLock<LazyInitStatus>>,
+    status: Arc<Lock<LazyInitStatus>>,
     label: Option<&'static str>,
 }
 
@@ -416,7 +414,7 @@ impl LazyGpuHandle {
         pending_data: Option<Arc<[u8]>>,
     ) -> Self {
         Self {
-            status: Arc::new(RwLock::new(LazyInitStatus::Uninitialized {
+            status: Arc::new(Lock::new(LazyInitStatus::Uninitialized {
                 ty,
                 label,
                 pending_data,
@@ -432,7 +430,7 @@ impl LazyGpuHandle {
     /// Creates a new `LazyGpuHandle` that is already initialized with the given handle.
     pub(crate) fn new_ready(handle: GpuHandle) -> Self {
         Self {
-            status: Arc::new(RwLock::new(LazyInitStatus::Initialized { handle })),
+            status: Arc::new(Lock::new(LazyInitStatus::Initialized { handle })),
             label: None,
         }
     }
@@ -609,9 +607,9 @@ impl LazyGpuHandle {
 #[derive(Clone, Debug)]
 pub struct LazyBindGroup<T: BindableComponent> {
     /// The bind group layout for the component.
-    pub layout: Arc<RwLock<Option<Arc<wgpu::BindGroupLayout>>>>,
+    pub layout: Arc<Lock<Option<Arc<wgpu::BindGroupLayout>>>>,
     /// The bind group for the component.
-    pub bind_group: Arc<RwLock<Option<Arc<wgpu::BindGroup>>>>,
+    pub bind_group: Arc<Lock<Option<Arc<wgpu::BindGroup>>>>,
 
     _phantom: std::marker::PhantomData<T>,
 }
@@ -622,8 +620,8 @@ where
 {
     fn default() -> Self {
         Self {
-            layout: Arc::new(RwLock::new(None)),
-            bind_group: Arc::new(RwLock::new(None)),
+            layout: Arc::new(Lock::new(None)),
+            bind_group: Arc::new(Lock::new(None)),
             _phantom: std::marker::PhantomData,
         }
     }

@@ -4,11 +4,9 @@ pub mod relationship;
 use std::rc::Rc;
 
 use petgraph::prelude::*;
+use weaver_util::lock::Lock;
 
-use crate::{
-    ecs::{component::Component, entity::Entity, world::World},
-    util::lock::Lock,
-};
+use crate::ecs::{component::Component, entity::Entity, world::World};
 
 use self::{
     node::Node,

@@ -2,7 +2,7 @@ use std::{borrow::Cow, io::Read, rc::Rc, sync::Arc};
 
 use egui_wgpu::renderer::ScreenDescriptor;
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
-use parking_lot::RwLock;
+use weaver_util::lock::Lock;
 
 use crate::{
     app::Window,
@@ -126,9 +126,9 @@ pub struct Renderer {
     surface: wgpu::Surface,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
-    config: Arc<RwLock<wgpu::SurfaceConfiguration>>,
+    config: Arc<Lock<wgpu::SurfaceConfiguration>>,
 
-    main_viewport: Arc<RwLock<Viewport>>,
+    main_viewport: Arc<Lock<Viewport>>,
 
     hdr_pass: HdrRenderPass,
     pbr_pass: PbrRenderPass,
@@ -142,7 +142,7 @@ pub struct Renderer {
 
     point_lights: PointLightArray,
     world: Rc<World>,
-    output: Arc<RwLock<Option<wgpu::SurfaceTexture>>>,
+    output: Arc<Lock<Option<wgpu::SurfaceTexture>>>,
 }
 
 impl Clone for Renderer {
@@ -234,7 +234,7 @@ impl Renderer {
             surface,
             device,
             queue,
-            config: Arc::new(RwLock::new(config)),
+            config: Arc::new(Lock::new(config)),
             hdr_pass,
             pbr_pass,
             shadow_pass,
@@ -245,8 +245,8 @@ impl Renderer {
             bind_group_layout_cache,
             point_lights,
             world,
-            output: Arc::new(RwLock::new(None)),
-            main_viewport: Arc::new(RwLock::new(main_viewport)),
+            output: Arc::new(Lock::new(None)),
+            main_viewport: Arc::new(Lock::new(main_viewport)),
         }
     }
 
@@ -273,7 +273,7 @@ impl Renderer {
         &self.resource_manager
     }
 
-    pub fn main_viewport(&self) -> &Arc<RwLock<Viewport>> {
+    pub fn main_viewport(&self) -> &Arc<Lock<Viewport>> {
         &self.main_viewport
     }
 

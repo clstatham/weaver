@@ -12,12 +12,12 @@ use crate::{
     system::{System, SystemStage},
     time::Time,
     ui::EguiContext,
-    util::lock::SharedLock,
 };
 
 use std::{rc::Rc, sync::Arc};
 
 use rustc_hash::FxHashMap;
+use weaver_util::lock::SharedLock;
 use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use crate::renderer::{compute::hdr_loader::HdrLoader, Renderer};

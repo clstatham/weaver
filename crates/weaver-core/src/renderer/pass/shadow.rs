@@ -1,8 +1,8 @@
 use std::{num::NonZeroU32, sync::Arc};
 
-use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
+use weaver_util::lock::Lock;
 
 use crate::{
     camera::Camera,
@@ -217,13 +217,13 @@ pub struct OmniShadowRenderPass {
     enabled: bool,
 
     cubemap_pipeline: wgpu::RenderPipeline,
-    shadow_buffers: RwLock<ShadowBuffers>,
+    shadow_buffers: Lock<ShadowBuffers>,
     shadow_depth_cubemap: LazyGpuHandle,
 
     overlay_pipeline: wgpu::RenderPipeline,
 
-    light_views: RwLock<Vec<LightViews>>,
-    unique_meshes: RwLock<UniqueMeshes>,
+    light_views: Lock<Vec<LightViews>>,
+    unique_meshes: Lock<UniqueMeshes>,
 }
 
 impl OmniShadowRenderPass {
@@ -364,7 +364,7 @@ impl OmniShadowRenderPass {
             enabled: true,
 
             cubemap_pipeline,
-            shadow_buffers: RwLock::new(ShadowBuffers {
+            shadow_buffers: Lock::new(ShadowBuffers {
                 shadow_cubemap,
                 bind_group: LazyBindGroup::default(),
             }),
@@ -372,8 +372,8 @@ impl OmniShadowRenderPass {
 
             overlay_pipeline,
 
-            light_views: RwLock::new(Vec::new()),
-            unique_meshes: RwLock::new(UniqueMeshes::default()),
+            light_views: Lock::new(Vec::new()),
+            unique_meshes: Lock::new(UniqueMeshes::default()),
         }
     }
 

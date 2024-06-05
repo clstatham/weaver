@@ -1,7 +1,7 @@
 use std::sync::{atomic::AtomicU64, Arc};
 
-use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
+use weaver_util::lock::Lock;
 use wgpu::util::DeviceExt;
 
 use super::resource::{GpuHandle, GpuHandleStatus, GpuResource};
@@ -16,9 +16,9 @@ pub struct GpuResourceManager {
     queue: Arc<wgpu::Queue>,
 
     /// The resources that have been allocated.
-    pub(crate) resources: RwLock<FxHashMap<u64, Arc<GpuResource>>>,
+    pub(crate) resources: Lock<FxHashMap<u64, Arc<GpuResource>>>,
     /// The handles to the resources.
-    pub(crate) handles: RwLock<FxHashMap<u64, GpuHandle>>,
+    pub(crate) handles: Lock<FxHashMap<u64, GpuHandle>>,
 }
 
 impl GpuResourceManager {
@@ -27,8 +27,8 @@ impl GpuResourceManager {
             next_buffer_id: AtomicU64::new(0),
             device,
             queue,
-            resources: RwLock::new(FxHashMap::default()),
-            handles: RwLock::new(FxHashMap::default()),
+            resources: Lock::new(FxHashMap::default()),
+            handles: Lock::new(FxHashMap::default()),
         })
     }
 
@@ -50,7 +50,7 @@ impl GpuResourceManager {
 
         let handle = GpuHandle {
             id,
-            status: Arc::new(RwLock::new(GpuHandleStatus::Ready {
+            status: Arc::new(Lock::new(GpuHandleStatus::Ready {
                 resource: buffer.clone(),
             })),
         };

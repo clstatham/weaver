@@ -3,7 +3,7 @@ use std::sync::Arc;
 use egui::Context;
 use egui_wgpu::renderer::ScreenDescriptor;
 use egui_winit::State;
-use parking_lot::RwLock;
+use weaver_util::lock::Lock;
 use winit::window::Window;
 
 use super::texture::{TextureFormat, WindowTexture};
@@ -89,9 +89,9 @@ pub mod builtin {
 }
 
 pub struct EguiContext {
-    state: Arc<RwLock<State>>,
-    renderer: Arc<RwLock<egui_wgpu::Renderer>>,
-    full_output: Arc<RwLock<Option<egui::FullOutput>>>,
+    state: Arc<Lock<State>>,
+    renderer: Arc<Lock<egui_wgpu::Renderer>>,
+    full_output: Arc<Lock<Option<egui::FullOutput>>>,
     locked: bool,
 }
 
@@ -108,9 +108,9 @@ impl EguiContext {
         let state = State::new(ctx, viewport_id, window, None, None);
         let renderer = egui_wgpu::Renderer::new(device, WindowTexture::FORMAT, None, msaa_samples);
         Self {
-            state: Arc::new(RwLock::new(state)),
-            renderer: Arc::new(RwLock::new(renderer)),
-            full_output: Arc::new(RwLock::new(None)),
+            state: Arc::new(Lock::new(state)),
+            renderer: Arc::new(Lock::new(renderer)),
+            full_output: Arc::new(Lock::new(None)),
             locked: false,
         }
     }

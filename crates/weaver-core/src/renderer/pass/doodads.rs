@@ -1,5 +1,5 @@
-use parking_lot::RwLock;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
+use weaver_util::lock::Lock;
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -216,7 +216,7 @@ struct DoodadBuffers {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     index_count: usize,
-    count: RwLock<usize>,
+    count: Lock<usize>,
 }
 
 impl DoodadBuffers {
@@ -248,7 +248,7 @@ impl DoodadBuffers {
             vertex_buffer,
             index_buffer,
             index_count,
-            count: RwLock::new(0),
+            count: Lock::new(0),
         }
     }
 

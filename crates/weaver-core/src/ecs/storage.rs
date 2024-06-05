@@ -1,6 +1,6 @@
 use std::{any::TypeId, borrow::Cow, collections::HashMap};
 
-use crate::util::lock::{ArcRead, ArcWrite, SharedLock};
+use weaver_util::lock::{ArcRead, ArcWrite, SharedLock};
 
 use super::{component::Component, entity::Entity};
 
