@@ -1,9 +1,7 @@
+use weaver_ecs::world::World;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
-use crate::{
-    ecs::world::World,
-    renderer::internals::{LazyBindGroup, LazyGpuHandle},
-};
+use crate::renderer::internals::{LazyBindGroup, LazyGpuHandle};
 
 use super::mesh::MAX_MESHES;
 

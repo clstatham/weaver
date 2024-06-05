@@ -7,7 +7,6 @@ pub mod asset_server;
 pub mod camera;
 pub mod color;
 pub mod doodads;
-pub mod ecs;
 pub mod geom;
 pub mod input;
 pub mod light;
@@ -15,9 +14,7 @@ pub mod material;
 pub mod mesh;
 pub mod particles;
 pub mod renderer;
-pub mod scene;
 pub mod scripts;
-pub mod system;
 pub mod texture;
 pub mod time;
 pub mod transform;
@@ -30,13 +27,6 @@ pub mod prelude {
         camera::{Camera, FlyCameraController},
         color::Color,
         doodads::{Cone, Cube, Doodad, Doodads, Line},
-        ecs::{
-            component::Component,
-            entity::Entity,
-            query::Query,
-            storage::{Mut, Ref},
-            world::World,
-        },
         geom::{Aabb, BoundingSphere, Ray, Rect},
         input::{Input, KeyCode, MouseButton},
         light::{DirectionalLight, PointLight},
@@ -44,8 +34,6 @@ pub mod prelude {
         mesh::Mesh,
         particles::ParticleEmitter,
         renderer::Renderer,
-        scene::{node::Node, relationship::Relationship, Scene},
-        system::{System, SystemStage},
         texture::{Skybox, Texture, TextureFormat},
         time::Time,
         transform::{GlobalTransform, Transform},

@@ -1,3 +1,4 @@
+use weaver_ecs::{query::Query, world::World};
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 use weaver_util::lock::Lock;
 use wgpu::util::DeviceExt;
@@ -6,7 +7,6 @@ use crate::{
     camera::{Camera, CameraUniform},
     color::Color,
     doodads::{Doodad, Doodads, MAX_DOODADS},
-    ecs::{query::Query, world::World},
     load_shader,
     renderer::{
         internals::{

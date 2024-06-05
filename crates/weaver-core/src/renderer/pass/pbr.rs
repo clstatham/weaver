@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
+use weaver_ecs::{query::Query, world::World};
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 use weaver_util::lock::Lock;
 
 use crate::{
     camera::{Camera, CameraUniform},
-    ecs::{query::Query, world::World},
     light::PointLightArray,
     load_shader,
     material::Material,

@@ -1,16 +1,14 @@
-pub mod node;
-pub mod relationship;
-
 use std::rc::Rc;
 
 use petgraph::prelude::*;
 use weaver_util::lock::Lock;
 
-use crate::ecs::{component::Component, entity::Entity, world::World};
-
-use self::{
+use crate::{
+    component::Component,
+    entity::Entity,
     node::Node,
     relationship::{Relationship, RelationshipConnection},
+    world::World,
 };
 
 pub struct Scene {

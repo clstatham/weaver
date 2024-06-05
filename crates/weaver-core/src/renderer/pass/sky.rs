@@ -1,6 +1,7 @@
+use weaver_ecs::{query::Query, world::World};
+
 use crate::{
     camera::Camera,
-    ecs::{query::Query, world::World},
     load_shader,
     renderer::{internals::BindableComponent, BindGroupLayoutCache, Renderer},
     texture::{DepthTexture, HdrTexture, Skybox, TextureFormat},

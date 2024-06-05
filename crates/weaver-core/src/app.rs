@@ -1,22 +1,18 @@
 use crate::{
-    asset_server::AssetServer,
-    doodads::Doodads,
-    ecs::{
-        component::Component,
-        storage::{Mut, Ref},
-        world::World,
-    },
-    input::Input,
-    prelude::Scene,
-    renderer::render_system,
-    system::{System, SystemStage},
-    time::Time,
+    asset_server::AssetServer, doodads::Doodads, input::Input, renderer::render_system, time::Time,
     ui::EguiContext,
 };
 
 use std::{rc::Rc, sync::Arc};
 
 use rustc_hash::FxHashMap;
+use weaver_ecs::{
+    component::Component,
+    scene::Scene,
+    storage::{Mut, Ref},
+    system::{System, SystemStage},
+    world::World,
+};
 use weaver_util::lock::SharedLock;
 use winit::{event_loop::EventLoop, window::WindowBuilder};
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::prelude::Scene;
+use crate::scene::Scene;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SystemStage {

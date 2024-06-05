@@ -2,16 +2,15 @@ use std::{borrow::Cow, io::Read, rc::Rc, sync::Arc};
 
 use egui_wgpu::renderer::ScreenDescriptor;
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
+use weaver_ecs::{query::Query, scene::Scene, world::World};
 use weaver_util::lock::Lock;
 
 use crate::{
     app::Window,
     camera::Camera,
-    ecs::{query::Query, world::World},
     geom::Rect,
     light::{PointLight, PointLightArray},
     material::Material,
-    prelude::Scene,
     renderer::internals::GpuComponent,
     texture::{DepthTexture, HdrTexture, TextureFormat, WindowTexture},
     ui::EguiContext,

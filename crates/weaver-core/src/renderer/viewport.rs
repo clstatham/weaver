@@ -1,5 +1,6 @@
+use weaver_ecs::world::World;
+
 use crate::{
-    ecs::world::World,
     geom::Rect,
     texture::{DepthTexture, SdrTexture, TextureFormat},
 };

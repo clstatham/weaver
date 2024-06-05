@@ -1,5 +1,4 @@
 use crate::{
-    ecs::world::World,
     material::Material,
     mesh::Mesh,
     renderer::{
@@ -14,6 +13,7 @@ use crate::{
 use std::{path::PathBuf, sync::Arc};
 
 use rustc_hash::FxHashMap;
+use weaver_ecs::world::World;
 
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 

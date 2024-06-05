@@ -1,10 +1,10 @@
 use std::{fmt::Debug, path::Path};
 
+use weaver_ecs::world::World;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
 use crate::{
     asset_server::AssetId,
-    ecs::world::World,
     renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle},
 };
 

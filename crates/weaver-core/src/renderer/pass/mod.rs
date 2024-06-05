@@ -1,4 +1,4 @@
-use crate::ecs::world::World;
+use weaver_ecs::world::World;
 
 use super::Renderer;
 

@@ -9,7 +9,9 @@ edition = "2021"
 members = [
     "crates/weaver-proc-macro",
     "crates/weaver-core",
-    "crates/weaver-editor", "crates/weaver-util",
+    "crates/weaver-editor",
+    "crates/weaver-util",
+    "crates/weaver-ecs",
 ]
 
 [features]
@@ -27,6 +29,8 @@ winit = "0.29"
 egui = "0.25"
 weaver-core = { path = "crates/weaver-core" }
 weaver-proc-macro = { path = "crates/weaver-proc-macro" }
+weaver-util = { path = "crates/weaver-util" }
+weaver-ecs = { path = "crates/weaver-ecs" }
 
 [dev-dependencies]
 criterion = "0.5"

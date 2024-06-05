@@ -1,13 +1,15 @@
 use std::sync::Arc;
 use std::{fmt::Debug, path::Path};
 
+use weaver_ecs::world::World;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
-use crate::ecs::world::World;
-use crate::prelude::Renderer;
-use crate::renderer::internals::{
-    BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager, GpuResourceType,
-    LazyBindGroup, LazyGpuHandle,
+use crate::renderer::{
+    internals::{
+        BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager, GpuResourceType,
+        LazyBindGroup, LazyGpuHandle,
+    },
+    Renderer,
 };
 
 use super::color::Color;

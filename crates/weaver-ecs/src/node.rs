@@ -1,4 +1,4 @@
-use crate::ecs::entity::Entity;
+use crate::entity::Entity;
 use petgraph::graph::NodeIndex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

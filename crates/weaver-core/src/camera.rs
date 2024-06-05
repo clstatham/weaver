@@ -1,11 +1,11 @@
 use std::fmt::Debug;
 
 use crate::{
-    ecs::world::World,
     geom::Ray,
     renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle},
 };
 
+use weaver_ecs::world::World;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 use winit::event::MouseButton;
 pub use winit::keyboard::KeyCode;

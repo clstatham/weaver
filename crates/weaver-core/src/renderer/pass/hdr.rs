@@ -1,5 +1,6 @@
+use weaver_ecs::world::World;
+
 use crate::{
-    ecs::world::World,
     load_shader,
     renderer::{internals::BindableComponent, BindGroupLayoutCache, Renderer},
     texture::{HdrTexture, SdrTexture, TextureFormat},
