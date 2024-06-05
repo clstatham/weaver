@@ -1,7 +1,6 @@
-use fabricate::prelude::*;
-
 use crate::{
     camera::Camera,
+    ecs::{query::Query, world::World},
     load_shader,
     renderer::{internals::BindableComponent, BindGroupLayoutCache, Renderer},
     texture::{DepthTexture, HdrTexture, Skybox, TextureFormat},
@@ -133,22 +132,22 @@ impl Pass for SkyRenderPass {
         let manager = &renderer.resource_manager;
         let cache = &renderer.bind_group_layout_cache;
 
-        let skybox = world.query().read::<Skybox>().unwrap().build();
-        let skybox = skybox.iter().next();
-        if skybox.is_none() {
+        let skybox_query = world.query(&Query::new().read::<Skybox>());
+        let skybox_entity = skybox_query.iter().next();
+        if skybox_entity.is_none() {
             return Ok(());
         }
-        let skybox = skybox.unwrap();
-        let skybox = skybox.get::<Skybox>().unwrap();
+        let skybox_entity = skybox_entity.unwrap();
+        let skybox = skybox_query.get::<Skybox>(skybox_entity).unwrap();
         let skybox_bind_group = skybox.lazy_init_bind_group(manager, cache)?;
 
-        let camera = world.query().read::<Camera>().unwrap().build();
-        let camera = camera.iter().next();
-        if camera.is_none() {
+        let camera_query = world.query(&Query::new().read::<Camera>());
+        let camera_entity = camera_query.iter().next();
+        if camera_entity.is_none() {
             return Ok(());
         }
-        let camera = camera.unwrap();
-        let camera = camera.get::<Camera>().unwrap();
+        let camera_entity = camera_entity.unwrap();
+        let camera = camera_query.get::<Camera>(camera_entity).unwrap();
         let camera_bind_group = camera.lazy_init_bind_group(manager, cache)?;
 
         {

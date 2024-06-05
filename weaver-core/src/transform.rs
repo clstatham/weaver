@@ -1,25 +1,16 @@
-use fabricate::prelude::*;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
-use crate::renderer::internals::{LazyBindGroup, LazyGpuHandle};
+use crate::{
+    ecs::world::World,
+    renderer::internals::{LazyBindGroup, LazyGpuHandle},
+};
 
 use super::mesh::MAX_MESHES;
 
-#[derive(Component, Clone, Copy)]
-#[script_vtable(
-    translation(&Self) -> glam::Vec3,
-    rotation(&Self) -> glam::Quat,
-    scale(&Self) -> glam::Vec3,
-    set_translation(&mut Self, glam::Vec3) -> (),
-    set_rotation(&mut Self, glam::Quat) -> (),
-    set_scale(&mut Self, glam::Vec3) -> (),
-)]
+#[derive(Clone, Copy)]
 pub struct Transform {
-    #[inspect]
     pub translation: glam::Vec3,
-    #[inspect]
     pub rotation: glam::Quat,
-    #[inspect]
     pub scale: glam::Vec3,
 }
 
@@ -120,7 +111,7 @@ impl Default for Transform {
     }
 }
 
-#[derive(Clone, Copy, Debug, Component, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct GlobalTransform {
     pub matrix: glam::Mat4,

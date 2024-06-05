@@ -1,6 +1,5 @@
-use fabricate::prelude::*;
-
 use crate::{
+    ecs::world::World,
     geom::Rect,
     texture::{DepthTexture, SdrTexture, TextureFormat},
 };

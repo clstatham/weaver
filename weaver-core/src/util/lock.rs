@@ -3,9 +3,10 @@ use std::{
     sync::{Arc, Weak},
 };
 
+use lock_api::{ArcRwLockReadGuard, ArcRwLockWriteGuard};
 use parking_lot::*;
 
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default)]
 pub struct Lock<T: ?Sized>(RwLock<T>);
 
 impl<T> Lock<T> {
@@ -21,26 +22,12 @@ impl<T> Lock<T> {
         Read::try_new(self)
     }
 
-    pub fn read_defer<F>(&self, on_drop: F) -> DeferredRead<'_, T>
-    where
-        F: FnOnce(&Lock<T>) + 'static,
-    {
-        DeferredRead::new(self, on_drop)
-    }
-
     pub fn write(&self) -> Write<'_, T> {
         Write::new(self)
     }
 
     pub fn try_write(&self) -> Option<Write<'_, T>> {
         Write::try_new(self)
-    }
-
-    pub fn write_defer<F>(&self, on_drop: F) -> DeferredWrite<'_, T>
-    where
-        F: FnOnce(&Lock<T>) + 'static,
-    {
-        DeferredWrite::new(self, on_drop)
     }
 
     pub fn read_write(&self) -> ReadWrite<'_, T> {
@@ -63,14 +50,14 @@ impl<T> Lock<T> {
 
     pub fn try_map_read<U, F>(&self, f: F) -> Option<MapRead<'_, U>>
     where
-        F: FnOnce(&T) -> &U,
+        F: FnOnce(&T) -> Option<&U>,
     {
         MapRead::try_new(self, f)
     }
 
     pub fn try_map_write<U, F>(&self, f: F) -> Option<MapWrite<'_, U>>
     where
-        F: FnOnce(&mut T) -> &mut U,
+        F: FnOnce(&mut T) -> Option<&mut U>,
     {
         MapWrite::try_new(self, f)
     }
@@ -181,91 +168,6 @@ impl<'a, T> DerefMut for Write<'a, T> {
     }
 }
 
-/// A read guard that runs a closure when dropped.
-/// Useful for deferring work until after the lock is released, especially work that requires write access to the lock.
-/// Warning: The lock is not guaranteed to be available for writing when the closure runs, since this uses a RwLock and not a Mutex.
-pub struct DeferredRead<'a, T> {
-    lock: &'a Lock<T>,
-    guard: Option<RwLockReadGuard<'a, T>>,
-    on_drop: Option<Box<dyn FnOnce(&'a Lock<T>) + 'static>>,
-}
-
-impl<'a, T> DeferredRead<'a, T> {
-    pub fn new<F>(lock: &'a Lock<T>, on_drop: F) -> Self
-    where
-        F: FnOnce(&'a Lock<T>) + 'static,
-    {
-        Self {
-            lock,
-            guard: Some(lock.0.read()),
-            on_drop: Some(Box::new(on_drop)),
-        }
-    }
-}
-
-impl<'a, T> Deref for DeferredRead<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.guard.as_ref().unwrap()
-    }
-}
-
-impl<'a, T> Drop for DeferredRead<'a, T> {
-    fn drop(&mut self) {
-        if let Some(guard) = self.guard.take() {
-            drop(guard);
-            if let Some(on_drop) = self.on_drop.take() {
-                on_drop(self.lock);
-            }
-        }
-    }
-}
-
-pub struct DeferredWrite<'a, T> {
-    lock: &'a Lock<T>,
-    guard: Option<RwLockWriteGuard<'a, T>>,
-    on_drop: Option<Box<dyn FnOnce(&'a Lock<T>) + 'static>>,
-}
-
-impl<'a, T> DeferredWrite<'a, T> {
-    pub fn new<F>(lock: &'a Lock<T>, on_drop: F) -> Self
-    where
-        F: FnOnce(&'a Lock<T>) + 'static,
-    {
-        Self {
-            lock,
-            guard: Some(lock.0.write()),
-            on_drop: Some(Box::new(on_drop)),
-        }
-    }
-}
-
-impl<'a, T> Deref for DeferredWrite<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.guard.as_ref().unwrap()
-    }
-}
-
-impl<'a, T> DerefMut for DeferredWrite<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.guard.as_mut().unwrap()
-    }
-}
-
-impl<'a, T> Drop for DeferredWrite<'a, T> {
-    fn drop(&mut self) {
-        if let Some(guard) = self.guard.take() {
-            drop(guard);
-            if let Some(on_drop) = self.on_drop.take() {
-                on_drop(self.lock);
-            }
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct MapRead<'a, T>(MappedRwLockReadGuard<'a, T>);
 
@@ -279,16 +181,31 @@ impl<'a, T> MapRead<'a, T> {
 
     pub fn try_new<U, F>(lock: &'a Lock<U>, f: F) -> Option<Self>
     where
-        F: FnOnce(&U) -> &T,
+        F: FnOnce(&U) -> Option<&T>,
     {
         lock.0
             .try_read()
-            .map(|guard| RwLockReadGuard::map(guard, f))
+            .map(|guard| RwLockReadGuard::try_map(guard, f).ok())?
             .map(Self)
     }
 
     pub fn into_inner(self) -> MappedRwLockReadGuard<'a, T> {
         self.0
+    }
+
+    pub fn map_read<U, F>(self, f: F) -> MapRead<'a, U>
+    where
+        F: FnOnce(&T) -> &U,
+    {
+        MapRead(MappedRwLockReadGuard::map(self.0, f))
+    }
+}
+
+impl<'a, 'b: 'a, T> MapRead<'b, MapRead<'a, T>> {
+    pub fn flatten(this: Self) -> MapRead<'b, T> {
+        MapRead(MappedRwLockReadGuard::map(this.into_inner(), |inner| {
+            &**inner
+        }))
     }
 }
 
@@ -319,16 +236,23 @@ impl<'a, T> MapWrite<'a, T> {
 
     pub fn try_new<U, F>(lock: &'a Lock<U>, f: F) -> Option<Self>
     where
-        F: FnOnce(&mut U) -> &mut T,
+        F: FnOnce(&mut U) -> Option<&mut T>,
     {
         lock.0
             .try_write()
-            .map(|guard| RwLockWriteGuard::map(guard, f))
+            .map(|guard| RwLockWriteGuard::try_map(guard, f).ok())?
             .map(Self)
     }
 
     pub fn into_inner(self) -> MappedRwLockWriteGuard<'a, T> {
         self.0
+    }
+
+    pub fn map_write<U, F>(self, f: F) -> MapWrite<'a, U>
+    where
+        F: FnOnce(&mut T) -> &mut U,
+    {
+        MapWrite(MappedRwLockWriteGuard::map(self.0, f))
     }
 }
 
@@ -352,33 +276,81 @@ impl<'a, T: PartialEq> PartialEq for MapWrite<'a, T> {
     }
 }
 
+#[derive(Debug)]
+pub struct ArcRead<T: ?Sized>(ArcRwLockReadGuard<RawRwLock, T>);
+
+impl<T> ArcRead<T> {
+    pub fn new(lock: &SharedLock<T>) -> Self {
+        Self(lock.0.read_arc())
+    }
+
+    pub fn into_inner(self) -> ArcRwLockReadGuard<RawRwLock, T> {
+        self.0
+    }
+}
+
+impl<T> Deref for ArcRead<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Debug)]
+pub struct ArcWrite<T: ?Sized>(ArcRwLockWriteGuard<RawRwLock, T>);
+
+impl<T> ArcWrite<T> {
+    pub fn new(lock: &SharedLock<T>) -> Self {
+        Self(lock.0.write_arc())
+    }
+
+    pub fn into_inner(self) -> ArcRwLockWriteGuard<RawRwLock, T> {
+        self.0
+    }
+}
+
+impl<T> Deref for ArcWrite<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for ArcWrite<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 #[derive(Debug, Default)]
 #[repr(transparent)]
-pub struct SharedLock<T: ?Sized>(Arc<Lock<T>>);
+pub struct SharedLock<T: ?Sized>(Arc<RwLock<T>>);
 
 impl<T> SharedLock<T> {
     pub fn new(value: T) -> Self {
-        Self(Arc::new(Lock::new(value)))
+        Self(Arc::new(RwLock::new(value)))
     }
 
-    pub fn downgrade(&self) -> Weak<Lock<T>> {
+    pub fn downgrade(&self) -> Weak<RwLock<T>> {
         Arc::downgrade(&self.0)
     }
 
-    pub fn read(&self) -> Read<'_, T> {
-        Read::new(&self.0)
+    pub fn read(&self) -> ArcRead<T> {
+        ArcRead::new(self)
     }
 
-    pub fn write(&self) -> Write<'_, T> {
-        Write::new(&self.0)
-    }
-
-    pub fn read_write(&self) -> ReadWrite<'_, T> {
-        ReadWrite::new(&self.0)
+    pub fn write(&self) -> ArcWrite<T> {
+        ArcWrite::new(self)
     }
 
     pub fn strong_count(&self) -> usize {
         Arc::strong_count(&self.0)
+    }
+
+    pub fn into_inner(self) -> Option<T> {
+        Some(RwLock::into_inner(Arc::into_inner(self.0)?))
     }
 }
 
@@ -395,27 +367,9 @@ impl<T: Clone> From<T> for SharedLock<T> {
 }
 
 impl<T> Deref for SharedLock<T> {
-    type Target = Lock<T>;
+    type Target = RwLock<T>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-impl<T> serde::Serialize for SharedLock<T>
-where
-    T: serde::Serialize,
-{
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.read().serialize(serializer)
-    }
-}
-
-impl<'de, T> serde::Deserialize<'de> for SharedLock<T>
-where
-    T: serde::Deserialize<'de>,
-{
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self::new(T::deserialize(deserializer)?))
     }
 }

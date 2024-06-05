@@ -1,10 +1,8 @@
-use fabricate::{lock::SharedLock, prelude::Component};
-
-use crate::color::Color;
+use crate::{color::Color, util::lock::SharedLock};
 
 pub const MAX_DOODADS: usize = 1024;
 
-#[derive(Default, Clone, Component)]
+#[derive(Default, Clone)]
 pub struct Doodads {
     pub(crate) doodads: SharedLock<Vec<Doodad>>,
     pub locked: bool,

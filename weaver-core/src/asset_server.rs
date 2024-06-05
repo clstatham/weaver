@@ -1,4 +1,5 @@
 use crate::{
+    ecs::world::World,
     material::Material,
     mesh::Mesh,
     renderer::{
@@ -12,7 +13,6 @@ use crate::{
 
 use std::{path::PathBuf, sync::Arc};
 
-use fabricate::prelude::*;
 use rustc_hash::FxHashMap;
 
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -41,7 +41,7 @@ impl Default for AssetId {
     }
 }
 
-#[derive(Clone, Component)]
+#[derive(Clone)]
 pub struct AssetServer {
     next_id: u64,
     path_prefix: PathBuf,
@@ -54,7 +54,7 @@ pub struct AssetServer {
 
 impl AssetServer {
     pub fn new(world: &World) -> anyhow::Result<Self> {
-        let renderer = world.read_resource::<Renderer>().unwrap();
+        let renderer = world.get_resource::<Renderer>().unwrap();
         let resource_manager = renderer.resource_manager().clone();
         Ok(Self {
             next_id: 0,

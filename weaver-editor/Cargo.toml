@@ -14,5 +14,4 @@ syntect = "5"
 weaver = { path = "../" }
 bitflags = "2.4"
 egui_dock = "0.10"
-fabricate = { path = "../fabricate" }
 bytemuck = "1.14"

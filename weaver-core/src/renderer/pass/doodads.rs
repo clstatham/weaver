@@ -2,12 +2,11 @@ use parking_lot::RwLock;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 use wgpu::util::DeviceExt;
 
-use fabricate::prelude::*;
-
 use crate::{
     camera::{Camera, CameraUniform},
     color::Color,
     doodads::{Doodad, Doodads, MAX_DOODADS},
+    ecs::{query::Query, world::World},
     load_shader,
     renderer::{
         internals::{
@@ -508,14 +507,14 @@ impl Pass for DoodadRenderPass {
         let mut cone_transforms_handle = self.cones.transform_buffer.lazy_init(manager)?;
 
         let mut camera_handle = self.camera_buffer.lazy_init(manager)?;
-        let camera = world.query().read::<Camera>().unwrap().build();
-        let camera = camera.iter().next();
-        if camera.is_none() {
+        let camera_query = world.query(&Query::new().read::<Camera>());
+        let camera_entity = camera_query.iter().next();
+        if camera_entity.is_none() {
             return Ok(());
         }
-        let camera = camera.unwrap();
-        let camera = camera.get::<Camera>().unwrap();
-        camera_handle.update(&[CameraUniform::from(camera)]);
+        let camera_entity = camera_entity.unwrap();
+        let camera = camera_query.get::<Camera>(camera_entity).unwrap();
+        camera_handle.update(&[CameraUniform::from(&*camera)]);
 
         let mut line_transforms = Vec::new();
         let mut line_colors = Vec::new();
@@ -529,7 +528,7 @@ impl Pass for DoodadRenderPass {
         let mut cone_transforms = Vec::new();
         let mut cone_colors = Vec::new();
 
-        let doodads = world.read_resource::<Doodads>().unwrap();
+        let doodads = world.get_resource::<Doodads>().unwrap();
         for doodad in doodads.doodads.write().drain(..) {
             match doodad {
                 Doodad::Line(line) => {
@@ -630,13 +629,14 @@ impl Pass for DoodadRenderPass {
             .cones
             .lazy_init_bind_group(manager, &renderer.bind_group_layout_cache)?;
 
-        let camera = world.query().read::<Camera>().unwrap().build();
-        let camera = camera.iter().next();
-        if camera.is_none() {
+        let camera_query = world.query(&Query::new().read::<Camera>());
+        let camera_entity = camera_query.iter().next();
+        if camera_entity.is_none() {
             return Ok(());
         }
-        let camera = camera.unwrap();
-        let camera = camera.get::<Camera>().unwrap();
+        let camera_entity = camera_entity.unwrap();
+        let camera = camera_query.get::<Camera>(camera_entity).unwrap();
+
         let camera_bind_group =
             camera.lazy_init_bind_group(manager, &renderer.bind_group_layout_cache)?;
 

@@ -4,10 +4,9 @@ use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
-use fabricate::prelude::*;
-
 use crate::{
     camera::{Camera, CameraUniform},
+    ecs::{query::Query, world::World},
     light::PointLightArray,
     load_shader,
     material::Material,
@@ -49,25 +48,22 @@ pub struct UniqueMeshes {
 
 impl UniqueMeshes {
     pub fn gather(&mut self, world: &World, renderer: &Renderer) {
-        let query = world
-            .query()
-            .read::<Mesh>()
-            .unwrap()
-            .read::<Material>()
-            .unwrap()
-            .read::<GlobalTransform>()
-            .unwrap()
-            .build();
+        let query = world.query(
+            &Query::new()
+                .read::<Mesh>()
+                .read::<Material>()
+                .read::<GlobalTransform>(),
+        );
 
         // clear the transforms
         for unique_mesh in self.unique_meshes.values_mut() {
             unique_mesh.transforms.clear();
         }
 
-        for result in query.iter() {
-            let mesh = result.get::<Mesh>().unwrap();
-            let material = result.get::<Material>().unwrap();
-            let transform = result.get::<GlobalTransform>().unwrap();
+        for entity in query.iter() {
+            let mesh = query.get::<Mesh>(entity).unwrap();
+            let material = query.get::<Material>(entity).unwrap();
+            let transform = query.get::<GlobalTransform>(entity).unwrap();
             let unique_mesh = self
                 .unique_meshes
                 .entry((mesh.asset_id().id(), material.asset_id().id()))
@@ -82,7 +78,7 @@ impl UniqueMeshes {
                     transforms: TransformArray::new(),
                 });
 
-            unique_mesh.transforms.push(transform);
+            unique_mesh.transforms.push(&transform);
         }
     }
 
@@ -262,13 +258,13 @@ impl PbrRenderPass {
         world: &World,
         encoder: &mut wgpu::CommandEncoder,
     ) -> anyhow::Result<()> {
-        let skybox = world.query().read::<Skybox>().unwrap().build();
-        let skybox = skybox.iter().next();
-        if skybox.is_none() {
+        let skybox_query = world.query(&Query::new().read::<Skybox>());
+        let skybox_entity = skybox_query.iter().next();
+        if skybox_entity.is_none() {
             return Ok(());
         }
-        let skybox = skybox.unwrap();
-        let skybox = skybox.get::<Skybox>().unwrap();
+        let skybox_entity = skybox_entity.unwrap();
+        let skybox = skybox_query.get::<Skybox>(skybox_entity).unwrap();
 
         let skybox_handle = &skybox
             .texture
@@ -281,13 +277,13 @@ impl PbrRenderPass {
         let skybox_texture = skybox_handle.get_texture().unwrap();
         let irradiance_texture = irradiance_handle.get_texture().unwrap();
 
-        let camera = world.query().read::<Camera>().unwrap().build();
-        let camera = camera.iter().next();
-        if camera.is_none() {
+        let camera_query = world.query(&Query::new().read::<Camera>());
+        let camera_entity = camera_query.iter().next();
+        if camera_entity.is_none() {
             return Ok(());
         }
-        let camera = camera.unwrap();
-        let camera = camera.get::<Camera>().unwrap();
+        let camera_entity = camera_entity.unwrap();
+        let camera = camera_query.get::<Camera>(camera_entity).unwrap();
 
         let camera_handle = camera.handle.lazy_init(&renderer.resource_manager)?;
 

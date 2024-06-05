@@ -1,6 +1,5 @@
-use fabricate::prelude::*;
-
 use crate::{
+    ecs::world::World,
     load_shader,
     renderer::{internals::BindableComponent, BindGroupLayoutCache, Renderer},
     texture::{HdrTexture, SdrTexture, TextureFormat},

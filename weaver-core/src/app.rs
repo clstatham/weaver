@@ -1,16 +1,26 @@
 use crate::{
-    asset_server::AssetServer, doodads::Doodads, input::Input, time::Time, ui::EguiContext,
+    asset_server::AssetServer,
+    doodads::Doodads,
+    ecs::{
+        component::Component,
+        system::{System, SystemStage},
+        world::World,
+    },
+    input::Input,
+    renderer::render_system,
+    time::Time,
+    ui::EguiContext,
+    util::lock::SharedLock,
 };
 
-use std::sync::Arc;
+use std::{rc::Rc, sync::Arc};
 
-use fabricate::prelude::*;
-
+use rustc_hash::FxHashMap;
 use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use crate::renderer::{compute::hdr_loader::HdrLoader, Renderer};
 
-#[derive(Clone, Component)]
+#[derive(Clone)]
 pub struct Window {
     pub(crate) window: Arc<winit::window::Window>,
     pub fps_mode: bool,
@@ -27,8 +37,9 @@ impl Window {
 }
 
 pub struct App {
-    event_loop: EventLoop<()>,
-    pub world: LockedWorldHandle,
+    event_loop: Option<EventLoop<()>>,
+    pub world: Rc<World>,
+    systems: SharedLock<FxHashMap<SystemStage, Vec<Arc<dyn System>>>>,
 }
 
 impl App {
@@ -38,9 +49,7 @@ impl App {
         screen_height: usize,
         vsync: bool,
     ) -> anyhow::Result<Self> {
-        crate::register_names();
-
-        let world = World::new_handle();
+        let world = Rc::new(World::new());
 
         let event_loop = EventLoop::new()?;
         let window = WindowBuilder::new()
@@ -58,52 +67,69 @@ impl App {
 
         let hdr_loader = HdrLoader::new(renderer.device());
 
-        world.add_resource(renderer)?;
-        world.add_resource(hdr_loader)?;
-        world.add_resource(Time::new())?;
-        world.add_resource(Input::default())?;
-        world.add_resource(ui)?;
-        world.add_resource(Doodads::default())?;
+        world.insert_resource(renderer);
+        world.insert_resource(hdr_loader);
+        world.insert_resource(Time::new());
+        world.insert_resource(Input::default());
+        world.insert_resource(ui);
+        world.insert_resource(Doodads::default());
 
-        let asset_server = world.defer(|world, _| AssetServer::new(world))??;
-        world.add_resource(asset_server)?;
+        let asset_server = AssetServer::new(&world)?;
+        world.insert_resource(asset_server);
 
-        world.add_resource(Window {
+        world.insert_resource(Window {
             window: Arc::new(window),
             fps_mode: false,
-        })?;
+        });
 
-        Ok(Self {
-            event_loop,
-            world: world.clone(),
-        })
+        let this = Self {
+            event_loop: Some(event_loop),
+            world,
+            systems: SharedLock::new(FxHashMap::default()),
+        };
+
+        this.add_system(render_system, SystemStage::Render)?;
+
+        Ok(this)
     }
 
-    pub fn add_resource<T: Component>(&self, resource: T) -> anyhow::Result<()> {
-        self.world.add_resource(resource)
+    pub fn add_resource<T: Component>(&self, resource: T) {
+        self.world.insert_resource(resource)
     }
 
     pub fn add_system<T: System>(&self, system: T, stage: SystemStage) -> anyhow::Result<()> {
-        self.world.add_system(stage, system)?;
+        let system = Arc::new(system);
+        self.systems.write().entry(stage).or_default().push(system);
         Ok(())
     }
 
-    pub fn add_script(&self, script_path: impl AsRef<std::path::Path>) {
-        self.world
-            .add_script(Script::load(script_path.as_ref()).unwrap());
+    pub fn run_systems(&self, stage: SystemStage) -> anyhow::Result<()> {
+        let systems = self.systems.read().get(&stage).cloned();
+        if let Some(systems) = systems {
+            for system in systems {
+                system.run(&self.world)?;
+            }
+        }
+        Ok(())
     }
 
-    pub fn run(self) -> anyhow::Result<()> {
-        self.world.run_systems(SystemStage::Startup).unwrap();
+    pub fn run(mut self) -> anyhow::Result<()> {
+        let event_loop = self.event_loop.take().unwrap();
+
+        self.run_systems(SystemStage::PreInit).unwrap();
+        self.run_systems(SystemStage::Init).unwrap();
+        self.run_systems(SystemStage::PostInit).unwrap();
 
         let (window_event_tx, window_event_rx) = crossbeam_channel::unbounded();
         let (device_event_tx, device_event_rx) = crossbeam_channel::unbounded();
-        self.event_loop.run(move |event, target| {
+        event_loop.run(move |event, target| {
             target.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
             match event {
                 winit::event::Event::LoopExiting => {
-                    self.world.run_systems(SystemStage::Shutdown).unwrap();
+                    self.run_systems(SystemStage::PreShutdown).unwrap();
+                    self.run_systems(SystemStage::Shutdown).unwrap();
+                    self.run_systems(SystemStage::PostShutdown).unwrap();
                 }
                 winit::event::Event::DeviceEvent { event, .. } => {
                     device_event_tx.send(event.clone()).unwrap();
@@ -115,117 +141,86 @@ impl App {
                             target.exit();
                         }
                         winit::event::WindowEvent::Resized(size) => {
-                            self.world
-                                .with_resource::<Renderer, _, _>(|r| {
-                                    r.resize_surface(size.width, size.height)
-                                })
-                                .unwrap();
+                            let renderer = self.world.get_resource::<Renderer>().unwrap();
+                            renderer.resize_surface(size.width, size.height);
                         }
                         winit::event::WindowEvent::CursorMoved { .. } => {
                             // center the cursor
-                            self.world
-                                .with_resource::<Window, _, _>(|window| {
-                                    if window.fps_mode {
-                                        window
-                                            .window
-                                            .set_cursor_position(winit::dpi::PhysicalPosition::new(
-                                                window.window.inner_size().width / 2,
-                                                window.window.inner_size().height / 2,
-                                            ))
-                                            .unwrap();
-                                        window
-                                            .window
-                                            .set_cursor_grab(
-                                                winit::window::CursorGrabMode::Confined,
-                                            )
-                                            .unwrap();
-                                        window.window.set_cursor_visible(false);
-                                    } else {
-                                        window
-                                            .window
-                                            .set_cursor_grab(winit::window::CursorGrabMode::None)
-                                            .unwrap();
-                                        window.window.set_cursor_visible(true);
-                                    }
-                                })
-                                .unwrap();
+                            let window = self.world.get_resource::<Window>().unwrap();
+                            if window.fps_mode {
+                                window
+                                    .window
+                                    .set_cursor_position(winit::dpi::PhysicalPosition::new(
+                                        window.window.inner_size().width / 2,
+                                        window.window.inner_size().height / 2,
+                                    ))
+                                    .unwrap();
+                                window
+                                    .window
+                                    .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                                    .unwrap();
+                                window.window.set_cursor_visible(false);
+                            } else {
+                                window
+                                    .window
+                                    .set_cursor_grab(winit::window::CursorGrabMode::None)
+                                    .unwrap();
+                                window.window.set_cursor_visible(true);
+                            }
                         }
                         winit::event::WindowEvent::RedrawRequested => {
                             {
-                                self.world
-                                    .defer(|world, _| {
-                                        let mut input = world.write_resource::<Input>().unwrap();
-                                        input.prepare_for_update();
+                                let mut input = self.world.get_resource_mut::<Input>().unwrap();
+                                input.prepare_for_update();
 
-                                        while let Ok(event) = window_event_rx.try_recv() {
-                                            input.update_window(&event);
+                                while let Ok(event) = window_event_rx.try_recv() {
+                                    input.update_window(&event);
 
-                                            let window = world.read_resource::<Window>().unwrap();
-                                            let ui = world.read_resource::<EguiContext>().unwrap();
-                                            ui.handle_input(&window.window, &event);
-                                        }
-                                        while let Ok(event) = device_event_rx.try_recv() {
-                                            input.update_device(&event);
-                                        }
-                                    })
-                                    .unwrap();
+                                    let window = self.world.get_resource::<Window>().unwrap();
+                                    let ui = self.world.get_resource::<EguiContext>().unwrap();
+                                    ui.handle_input(&window.window, &event);
+                                }
+                                while let Ok(event) = device_event_rx.try_recv() {
+                                    input.update_device(&event);
+                                }
                             }
 
                             {
-                                self.world
-                                    .with_resource_mut::<Time, _, _>(|mut time| time.update())
-                                    .unwrap();
+                                let mut time = self.world.get_resource_mut::<Time>().unwrap();
+                                time.update();
                             }
 
-                            self.world.run_systems(SystemStage::PreUpdate).unwrap();
-
-                            self.world.run_systems(SystemStage::Update).unwrap();
-
-                            self.world.run_systems(SystemStage::PostUpdate).unwrap();
+                            self.run_systems(SystemStage::PreUpdate).unwrap();
+                            self.run_systems(SystemStage::Update).unwrap();
+                            self.run_systems(SystemStage::PostUpdate).unwrap();
 
                             {
-                                self.world
-                                    .defer(|world, _| {
-                                        let window = world.read_resource::<Window>().unwrap();
-                                        let gui = world.read_resource::<EguiContext>().unwrap();
-                                        gui.begin_frame(&window.window);
-                                    })
-                                    .unwrap();
+                                let window = self.world.get_resource::<Window>().unwrap();
+                                let gui = self.world.get_resource::<EguiContext>().unwrap();
+                                gui.begin_frame(&window.window);
                             }
 
-                            self.world.run_systems(SystemStage::Ui).unwrap();
+                            self.run_systems(SystemStage::Ui).unwrap();
 
                             {
-                                self.world
-                                    .defer(|world, _| {
-                                        let gui = world.read_resource::<EguiContext>().unwrap();
-                                        gui.end_frame();
-                                    })
-                                    .unwrap();
+                                let gui = self.world.get_resource::<EguiContext>().unwrap();
+                                gui.end_frame();
                             }
 
-                            self.world.run_systems(SystemStage::PreRender).unwrap();
+                            self.run_systems(SystemStage::PreRender).unwrap();
 
-                            self.world.run_systems(SystemStage::Render).unwrap();
+                            self.run_systems(SystemStage::Render).unwrap();
 
-                            self.world.run_systems(SystemStage::PostRender).unwrap();
-
-                            {
-                                self.world
-                                    .defer(|world, _| {
-                                        let window = world.read_resource::<Window>();
-                                        let renderer = world.read_resource::<Renderer>();
-                                        if let (Some(window), Some(renderer)) = (window, renderer) {
-                                            window.window.pre_present_notify();
-                                            renderer.present();
-                                            window.request_redraw();
-                                        };
-                                    })
-                                    .unwrap();
-                            }
+                            self.run_systems(SystemStage::PostRender).unwrap();
 
                             {
-                                self.world.garbage_collect().unwrap();
+                                let window = self.world.get_resource::<Window>();
+                                let renderer = self.world.get_resource::<Renderer>();
+                                if let (Some(window), Some(renderer)) = (window, renderer) {
+                                    window.window.pre_present_notify();
+                                    renderer.present();
+                                    window.request_redraw();
+                                };
                             }
                         }
                         _ => {}

@@ -1,10 +1,4 @@
-use fabricate::{prelude::Component, script_vtable};
-
-#[derive(Clone, Component)]
-#[script_vtable(
-    delta_seconds(&Self) -> f32,
-    total_seconds(&Self) -> f32,
-)]
+#[derive(Clone)]
 pub struct Time {
     start_time: std::time::Instant,
     last_update_time: std::time::Instant,

@@ -1,10 +1,10 @@
 use std::{fmt::Debug, path::Path};
 
-use fabricate::prelude::*;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
 use crate::{
     asset_server::AssetId,
+    ecs::world::World,
     renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle},
 };
 
@@ -14,18 +14,14 @@ use super::{
 };
 
 /// PBR material based on Bevy
-#[derive(Clone, Component, GpuComponent, BindableComponent)]
+#[derive(Clone, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Material {
     asset_id: AssetId,
 
-    #[inspect]
     pub diffuse: Color,
-    #[inspect]
     pub metallic: f32,
-    #[inspect]
     pub roughness: f32,
-    #[inspect]
     pub texture_scaling: f32,
 
     #[uniform]

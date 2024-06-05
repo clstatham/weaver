@@ -2,15 +2,16 @@ use std::fmt::Debug;
 
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
-use crate::renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle};
-
-use fabricate::prelude::*;
+use crate::{
+    ecs::world::World,
+    renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle},
+};
 
 use super::color::Color;
 
 pub const MAX_LIGHTS: usize = 32;
 
-#[derive(Clone, Component, GpuComponent, BindableComponent)]
+#[derive(Clone, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct PointLight {
     pub position: glam::Vec3,

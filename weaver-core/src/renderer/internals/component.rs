@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use fabricate::prelude::*;
+use crate::ecs::world::World;
 
 use super::{BindGroupLayoutCache, GpuResourceManager};
 

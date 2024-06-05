@@ -3,8 +3,7 @@ use std::{fmt::Debug, path::Path};
 
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
-use fabricate::prelude::*;
-
+use crate::ecs::world::World;
 use crate::prelude::Renderer;
 use crate::renderer::internals::{
     BindGroupLayoutCache, BindableComponent, GpuComponent, GpuResourceManager, GpuResourceType,
@@ -384,7 +383,7 @@ impl Texture {
     }
 }
 
-#[derive(Clone, Component, GpuComponent, BindableComponent)]
+#[derive(Clone, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Skybox {
     #[gpu(component)]

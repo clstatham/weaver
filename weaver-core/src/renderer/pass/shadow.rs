@@ -1,12 +1,12 @@
 use std::{num::NonZeroU32, sync::Arc};
 
-use fabricate::prelude::*;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 
 use crate::{
     camera::Camera,
+    ecs::{query::Query, world::World},
     light::{PointLight, PointLightArray, MAX_LIGHTS},
     load_shader,
     mesh::{Mesh, Vertex},
@@ -51,22 +51,16 @@ struct UniqueMeshes {
 
 impl UniqueMeshes {
     pub fn gather(&mut self, world: &World) {
-        let query = world
-            .query()
-            .read::<Mesh>()
-            .unwrap()
-            .read::<GlobalTransform>()
-            .unwrap()
-            .build();
+        let query = world.query(&Query::new().read::<Mesh>().read::<GlobalTransform>());
 
         // clear the transforms
         for unique_mesh in self.unique_meshes.values_mut() {
             unique_mesh.transforms.clear();
         }
 
-        for result in query.iter() {
-            let mesh = result.get::<Mesh>().unwrap();
-            let transform = result.get::<GlobalTransform>().unwrap();
+        for entity in query.iter() {
+            let mesh = query.get::<Mesh>(entity).unwrap();
+            let transform = query.get::<GlobalTransform>(entity).unwrap();
             let unique_mesh = self
                 .unique_meshes
                 .entry(mesh.asset_id().id())
@@ -75,7 +69,7 @@ impl UniqueMeshes {
                     transforms: TransformArray::new(),
                 });
 
-            unique_mesh.transforms.push(transform);
+            unique_mesh.transforms.push(&transform);
         }
     }
 
@@ -516,13 +510,14 @@ impl OmniShadowRenderPass {
         renderer: &Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
-        let camera = world.query().read::<Camera>().unwrap().build();
-        let camera = camera.iter().next();
-        if camera.is_none() {
+        let camera_query = world.query(&Query::new().read::<Camera>());
+        let camera_entity = camera_query.iter().next();
+        if camera_entity.is_none() {
             return Ok(());
         }
-        let camera = camera.unwrap();
-        let camera = camera.get::<Camera>().unwrap();
+        let camera_entity = camera_entity.unwrap();
+        let camera = camera_query.get::<Camera>(camera_entity).unwrap();
+
         let camera_bind_group = camera.lazy_init_bind_group(
             &renderer.resource_manager,
             &renderer.bind_group_layout_cache,
@@ -619,9 +614,9 @@ impl Pass for OmniShadowRenderPass {
             .lazy_init(&renderer.resource_manager)?;
         self.unique_meshes.write().update_resources(world)?;
 
-        let point_lights = world.query().read::<PointLight>().unwrap().build();
-        for (i, point_light) in point_lights.iter().enumerate() {
-            let point_light = point_light.get::<PointLight>().unwrap();
+        let point_lights = world.query(&Query::new().read::<PointLight>());
+        for (i, point_light_entity) in point_lights.iter().enumerate() {
+            let point_light = point_lights.get::<PointLight>(point_light_entity).unwrap();
             let mut views = [glam::Mat4::IDENTITY; 6];
             for (i, view) in views.iter_mut().enumerate() {
                 let view_transform = match i {
@@ -667,10 +662,10 @@ impl Pass for OmniShadowRenderPass {
         renderer: &Renderer,
         world: &World,
     ) -> anyhow::Result<()> {
-        let lights = world.query().read::<PointLight>().unwrap().build();
-        for (i, light) in lights.iter().enumerate() {
-            let light = light.get::<PointLight>().unwrap();
-            self.render_cube_map(encoder, renderer, light, i)?;
+        let lights = world.query(&Query::new().read::<PointLight>());
+        for (i, light_entity) in lights.iter().enumerate() {
+            let light = lights.get::<PointLight>(light_entity).unwrap();
+            self.render_cube_map(encoder, renderer, &light, i)?;
         }
         self.overlay_shadow_cube_map(encoder, color_target, depth_target, renderer, world)?;
 

@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-use fabricate::prelude::*;
 use glam::{Vec3, Vec4};
 use rand::Rng;
 
@@ -8,7 +7,7 @@ use super::texture::Texture;
 
 pub const TOTAL_MAX_PARTICLES: usize = 10000;
 
-#[derive(Debug, Component, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Particle {
     pub position: Vec3,
     pub velocity: Vec3,

@@ -1,11 +1,11 @@
 use std::fmt::Debug;
 
 use crate::{
+    ecs::world::World,
     geom::Ray,
     renderer::internals::{GpuResourceType, LazyBindGroup, LazyGpuHandle},
 };
 
-use fabricate::prelude::*;
 use weaver_proc_macro::{BindableComponent, GpuComponent};
 use winit::event::MouseButton;
 pub use winit::keyboard::KeyCode;
@@ -42,7 +42,7 @@ impl From<&Camera> for CameraUniform {
     }
 }
 
-#[derive(Clone, Component, GpuComponent, BindableComponent)]
+#[derive(Clone, GpuComponent, BindableComponent)]
 #[gpu(update = "update")]
 pub struct Camera {
     pub view_matrix: glam::Mat4,
@@ -134,7 +134,7 @@ impl Default for Camera {
     }
 }
 
-#[derive(Debug, Clone, Copy, Component)]
+#[derive(Debug, Clone, Copy)]
 pub struct FlyCameraController {
     pub speed: f32,
     pub sensitivity: f32,

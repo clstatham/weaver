@@ -1,4 +1,4 @@
-use fabricate::prelude::*;
+use crate::ecs::world::World;
 
 use super::Renderer;
 

@@ -1,14 +1,13 @@
-use std::{borrow::Cow, io::Read, sync::Arc};
+use std::{borrow::Cow, io::Read, rc::Rc, sync::Arc};
 
 use egui_wgpu::renderer::ScreenDescriptor;
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
 use parking_lot::RwLock;
 
-use fabricate::prelude::*;
-
 use crate::{
     app::Window,
     camera::Camera,
+    ecs::{query::Query, world::World},
     geom::Rect,
     light::{PointLight, PointLightArray},
     material::Material,
@@ -122,7 +121,6 @@ macro_rules! load_shader {
 }
 
 #[allow(dead_code)]
-#[derive(Component)]
 pub struct Renderer {
     surface: wgpu::Surface,
     device: Arc<wgpu::Device>,
@@ -142,7 +140,7 @@ pub struct Renderer {
     bind_group_layout_cache: BindGroupLayoutCache,
 
     point_lights: PointLightArray,
-    world: LockedWorldHandle,
+    world: Rc<World>,
     output: Arc<RwLock<Option<wgpu::SurfaceTexture>>>,
 }
 
@@ -153,7 +151,7 @@ impl Clone for Renderer {
 }
 
 impl Renderer {
-    pub fn new(vsync: bool, window: &winit::window::Window, world: LockedWorldHandle) -> Self {
+    pub fn new(vsync: bool, window: &winit::window::Window, world: Rc<World>) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -378,41 +376,37 @@ impl Renderer {
         // prepare the renderer's built-in components
         self.hdr_pass.texture.lazy_init(resource_manager).unwrap();
 
-        self.world
-            .defer(|world, _| {
-                {
-                    let query = world.query().read::<Material>().unwrap().build();
-                    for material in query.iter() {
-                        let material = material.get::<Material>().unwrap();
-                        material.lazy_init(resource_manager).unwrap();
-                        material.update_resources(world).unwrap();
-                    }
-                }
+        {
+            let query = self.world.query(&Query::new().read::<Material>());
+            for entity in query.iter() {
+                let material = query.get::<Material>(entity).unwrap();
+                material.lazy_init(resource_manager).unwrap();
+                material.update_resources(&self.world).unwrap();
+            }
+        }
 
-                {
-                    self.point_lights.clear();
+        {
+            self.point_lights.clear();
 
-                    let query = world.query().read::<PointLight>().unwrap().build();
-                    for light in query.iter() {
-                        let light = light.get::<PointLight>().unwrap();
-                        light.lazy_init(resource_manager).unwrap();
-                        light.update_resources(world).unwrap();
-                        self.point_lights.add_light(light);
-                    }
+            let query = self.world.query(&Query::new().read::<PointLight>());
+            for entity in query.iter() {
+                let light = query.get::<PointLight>(entity).unwrap();
+                light.lazy_init(resource_manager).unwrap();
+                light.update_resources(&self.world).unwrap();
+                self.point_lights.add_light(&light);
+            }
 
-                    self.point_lights.update_resources(world).unwrap();
-                }
+            self.point_lights.update_resources(&self.world).unwrap();
+        }
 
-                {
-                    let query = world.query().read::<Camera>().unwrap().build();
-                    for camera in query.iter() {
-                        let camera = camera.get::<Camera>().unwrap();
-                        camera.lazy_init(resource_manager).unwrap();
-                        camera.update_resources(world).unwrap();
-                    }
-                }
-            })
-            .unwrap();
+        {
+            let query = self.world.query(&Query::new().read::<Camera>());
+            for entity in query.iter() {
+                let camera = query.get::<Camera>(entity).unwrap();
+                camera.lazy_init(resource_manager).unwrap();
+                camera.update_resources(&self.world).unwrap();
+            }
+        }
 
         self.resource_manager.update_all_resources();
     }
@@ -452,117 +446,126 @@ impl Renderer {
     }
 
     pub fn render_to_viewport(&mut self, encoder: &mut wgpu::CommandEncoder) -> anyhow::Result<()> {
-        self.world.defer(|world, _| {
-            let viewport_view = {
-                let viewport_handle = &self
-                    .main_viewport
-                    .read()
-                    .hdr_pass
-                    .texture
-                    .handle()
-                    .lazy_init(&self.resource_manager)?;
-                let viewport_texture = viewport_handle.get_texture().unwrap();
-                viewport_texture.create_view(&wgpu::TextureViewDescriptor {
-                    label: Some("Viewport Texture View"),
-                    format: Some(HdrTexture::FORMAT),
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    aspect: wgpu::TextureAspect::All,
-                    base_mip_level: 0,
-                    base_array_layer: 0,
-                    array_layer_count: None,
-                    mip_level_count: None,
-                })
-            };
+        let viewport_view = {
+            let viewport_handle = &self
+                .main_viewport
+                .read()
+                .hdr_pass
+                .texture
+                .handle()
+                .lazy_init(&self.resource_manager)?;
+            let viewport_texture = viewport_handle.get_texture().unwrap();
+            viewport_texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("Viewport Texture View"),
+                format: Some(HdrTexture::FORMAT),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                aspect: wgpu::TextureAspect::All,
+                base_mip_level: 0,
+                base_array_layer: 0,
+                array_layer_count: None,
+                mip_level_count: None,
+            })
+        };
 
-            let viewport_depth_view = {
-                let viewport_handle = &self
-                    .main_viewport
-                    .read()
-                    .depth_texture
-                    .handle()
-                    .lazy_init(&self.resource_manager)?;
-                let viewport_texture = viewport_handle.get_texture().unwrap();
-                viewport_texture.create_view(&wgpu::TextureViewDescriptor {
-                    label: Some("Viewport Depth Texture View"),
-                    format: Some(DepthTexture::FORMAT),
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    aspect: wgpu::TextureAspect::All,
-                    base_mip_level: 0,
-                    base_array_layer: 0,
-                    array_layer_count: None,
-                    mip_level_count: None,
-                })
-            };
+        let viewport_depth_view = {
+            let viewport_handle = &self
+                .main_viewport
+                .read()
+                .depth_texture
+                .handle()
+                .lazy_init(&self.resource_manager)?;
+            let viewport_texture = viewport_handle.get_texture().unwrap();
+            viewport_texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("Viewport Depth Texture View"),
+                format: Some(DepthTexture::FORMAT),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                aspect: wgpu::TextureAspect::All,
+                base_mip_level: 0,
+                base_array_layer: 0,
+                array_layer_count: None,
+                mip_level_count: None,
+            })
+        };
 
-            // clear the viewports
-            {
-                let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Clear Screen"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &viewport_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &viewport_depth_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
+        // clear the viewports
+        {
+            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Clear Screen"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &viewport_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &viewport_depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
                     }),
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
-            }
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+        }
 
-            self.pbr_pass
-                .render(self, &viewport_view, &viewport_depth_view, world, encoder)?;
+        self.pbr_pass.render(
+            self,
+            &viewport_view,
+            &viewport_depth_view,
+            &self.world,
+            encoder,
+        )?;
 
-            for pass in self.extra_passes.iter() {
-                pass.render_if_enabled(encoder, &viewport_view, &viewport_depth_view, self, world)?;
-            }
-
-            self.sky_pass.render_if_enabled(
+        for pass in self.extra_passes.iter() {
+            pass.render_if_enabled(
                 encoder,
                 &viewport_view,
                 &viewport_depth_view,
                 self,
-                world,
+                &self.world,
             )?;
+        }
 
-            self.doodad_pass.render_if_enabled(
-                encoder,
-                &viewport_view,
-                &viewport_depth_view,
-                self,
-                world,
-            )?;
+        self.sky_pass.render_if_enabled(
+            encoder,
+            &viewport_view,
+            &viewport_depth_view,
+            self,
+            &self.world,
+        )?;
 
-            // self.shadow_pass.render_if_enabled(
-            //     encoder,
-            //     &self.color_texture_view.read(),
-            //     &self.depth_texture_view.read(),
-            //     self,
-            //     world,
-            // )?;
+        self.doodad_pass.render_if_enabled(
+            encoder,
+            &viewport_view,
+            &viewport_depth_view,
+            self,
+            &self.world,
+        )?;
 
-            // self.particle_pass.render_if_enabled(
-            //     &self.device,
-            //     &self.queue,
-            //     &self.color_texture_view,
-            //     &self.depth_texture_view,
-            //     self,
-            //     world,
-            // )?;
+        // self.shadow_pass.render_if_enabled(
+        //     encoder,
+        //     &self.color_texture_view.read(),
+        //     &self.depth_texture_view.read(),
+        //     self,
+        //     world,
+        // )?;
 
-            self.main_viewport.read().render(encoder, self, world)?;
+        // self.particle_pass.render_if_enabled(
+        //     &self.device,
+        //     &self.queue,
+        //     &self.color_texture_view,
+        //     &self.depth_texture_view,
+        //     self,
+        //     world,
+        // )?;
 
-            Ok::<(), anyhow::Error>(())
-        })??;
+        self.main_viewport
+            .read()
+            .render(encoder, self, &self.world)?;
 
         Ok(())
     }
@@ -589,21 +592,21 @@ impl Renderer {
 
     pub fn prepare_passes(&mut self) {
         log::trace!("Preparing passes");
-        self.world
-            .defer(|world, _| {
-                self.pbr_pass.prepare(world, self);
-                self.shadow_pass.prepare_if_enabled(world, self).unwrap();
-                self.doodad_pass.prepare_if_enabled(world, self).unwrap();
-                self.sky_pass.prepare_if_enabled(world, self).unwrap();
-                self.hdr_pass.prepare(world, self).unwrap();
-
-                for pass in self.extra_passes.iter() {
-                    pass.prepare_if_enabled(world, self).unwrap();
-                }
-
-                self.resource_manager.update_all_resources();
-            })
+        self.pbr_pass.prepare(&self.world, self);
+        self.shadow_pass
+            .prepare_if_enabled(&self.world, self)
             .unwrap();
+        self.doodad_pass
+            .prepare_if_enabled(&self.world, self)
+            .unwrap();
+        self.sky_pass.prepare_if_enabled(&self.world, self).unwrap();
+        self.hdr_pass.prepare(&self.world, self).unwrap();
+
+        for pass in self.extra_passes.iter() {
+            pass.prepare_if_enabled(&self.world, self).unwrap();
+        }
+
+        self.resource_manager.update_all_resources();
     }
 
     pub fn end_render(&self, encoder: wgpu::CommandEncoder) {
@@ -616,4 +619,25 @@ impl Renderer {
             output.present();
         }
     }
+}
+
+pub fn render_system(world: &World) -> anyhow::Result<()> {
+    let mut renderer = world.get_resource_mut::<Renderer>().unwrap();
+    let mut encoder = renderer.begin_render();
+
+    renderer.prepare_components();
+    renderer.prepare_passes();
+    renderer.render_to_viewport(&mut encoder)?;
+
+    renderer.render_ui(
+        &mut world.get_resource_mut::<EguiContext>().unwrap(),
+        &world.get_resource::<Window>().unwrap(),
+        &mut encoder,
+    );
+
+    renderer.end_render(encoder);
+
+    renderer.present();
+
+    Ok(())
 }
