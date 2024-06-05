@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::ecs::world::World;
+use crate::prelude::Scene;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SystemStage {
@@ -24,20 +24,20 @@ pub enum SystemStage {
 }
 
 pub trait System: Send + Sync + 'static {
-    fn run(&self, world: &World) -> anyhow::Result<()>;
+    fn run(&self, scene: &Scene) -> anyhow::Result<()>;
 }
 
 impl<T> System for T
 where
-    T: Fn(&World) -> anyhow::Result<()> + Send + Sync + 'static,
+    T: Fn(&Scene) -> anyhow::Result<()> + Send + Sync + 'static,
 {
-    fn run(&self, world: &World) -> anyhow::Result<()> {
-        self(world)
+    fn run(&self, scene: &Scene) -> anyhow::Result<()> {
+        self(scene)
     }
 }
 
 impl System for Arc<dyn System> {
-    fn run(&self, world: &World) -> anyhow::Result<()> {
-        self.as_ref().run(world)
+    fn run(&self, scene: &Scene) -> anyhow::Result<()> {
+        self.as_ref().run(scene)
     }
 }

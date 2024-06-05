@@ -1,11 +1,13 @@
 pub mod node;
 pub mod relationship;
 
+use std::rc::Rc;
+
 use petgraph::prelude::*;
 
 use crate::{
     ecs::{component::Component, entity::Entity, world::World},
-    util::lock::SharedLock,
+    util::lock::Lock,
 };
 
 use self::{
@@ -14,16 +16,16 @@ use self::{
 };
 
 pub struct Scene {
-    world: SharedLock<World>,
+    world: Rc<World>,
     root_entity: Entity,
     root: NodeIndex,
-    graph: StableDiGraph<Node, RelationshipConnection>,
+    graph: Lock<StableDiGraph<Node, RelationshipConnection>>,
 }
 
 impl Scene {
-    pub fn new(world: SharedLock<World>) -> Self {
-        let root_entity = world.write().create_entity();
-        let mut graph: StableGraph<Node, RelationshipConnection> = StableDiGraph::new();
+    pub fn new(world: Rc<World>) -> Self {
+        let root_entity = world.create_entity();
+        let mut graph = StableDiGraph::new();
         let root = graph.add_node(Node {
             entity: root_entity,
             scene_index: NodeIndex::new(0),
@@ -33,11 +35,11 @@ impl Scene {
             world,
             root_entity,
             root,
-            graph,
+            graph: Lock::new(graph),
         }
     }
 
-    pub fn world(&self) -> &SharedLock<World> {
+    pub fn world(&self) -> &Rc<World> {
         &self.world
     }
 
@@ -45,54 +47,57 @@ impl Scene {
         self.root_entity
     }
 
-    pub fn root(&self) -> &Node {
-        &self.graph[self.root]
+    pub fn root(&self) -> Node {
+        self.graph.read()[self.root]
     }
 
-    pub fn graph(&self) -> &StableDiGraph<Node, RelationshipConnection> {
+    pub fn graph(&self) -> &Lock<StableDiGraph<Node, RelationshipConnection>> {
         &self.graph
     }
 
-    pub fn graph_mut(&mut self) -> &mut StableDiGraph<Node, RelationshipConnection> {
-        &mut self.graph
-    }
-
-    pub fn create_node(&mut self) -> Node {
-        let entity = self.world.write().create_entity();
+    pub fn create_node(&self) -> Node {
+        let entity = self.world.create_entity();
         self.add_node(entity)
     }
 
-    pub fn create_node_with<T: Component>(&mut self, component: T) -> Node {
-        let entity = self.world.write().create_entity();
-        self.world.write().insert_component(entity, component);
+    pub fn create_node_with<T: Component>(&self, component: T) -> Node {
+        let entity = self.world.create_entity();
+        self.world.insert_component(entity, component);
         self.add_node(entity)
     }
 
-    pub fn add_node(&mut self, entity: Entity) -> Node {
-        let node = self.graph.add_node(Node {
+    pub fn add_node(&self, entity: Entity) -> Node {
+        let node_scene_index = self.graph.write().add_node(Node {
             entity,
             scene_index: NodeIndex::new(0),
         });
-        self.graph[node].scene_index = node;
-        self.graph[node]
+        self.graph.write()[node_scene_index].scene_index = node_scene_index;
+        self.graph.read()[node_scene_index]
     }
 
-    pub fn add_relationship<T: Relationship>(&mut self, from: Node, to: Node, weight: T) {
+    pub fn add_relationship<T: Relationship>(&self, from: Node, to: Node, weight: T) {
         let from = from.scene_index;
         let to = to.scene_index;
-        let connection = RelationshipConnection::new(self.graph[from], self.graph[to], weight);
-        self.graph.add_edge(from, to, connection);
+        let connection =
+            RelationshipConnection::new(self.graph.read()[from], self.graph.read()[to], weight);
+        self.graph.write().add_edge(from, to, connection);
     }
 
-    pub fn remove_node(&mut self, node: Node) {
-        self.graph.remove_node(node.scene_index);
+    pub fn create_sub_scene(&self) -> Scene {
+        let sub_scene = Scene::new(self.world.clone());
+        self.add_node(sub_scene.root_entity);
+        sub_scene
+    }
+
+    pub fn remove_node(&self, node: Node) {
+        self.graph.write().remove_node(node.scene_index);
     }
 
     pub fn remove_relationship(&mut self, from: Node, to: Node) -> Option<Box<dyn Relationship>> {
         let from = from.scene_index;
         let to = to.scene_index;
-        if let Some(edge) = self.graph.find_edge(from, to) {
-            let connection = self.graph.remove_edge(edge)?;
+        if let Some(edge) = self.graph.read().find_edge(from, to) {
+            let connection = self.graph.write().remove_edge(edge)?;
             Some(connection.weight)
         } else {
             None
@@ -101,45 +106,35 @@ impl Scene {
 
     pub fn find_node(&self, entity: Entity) -> Option<Node> {
         self.graph
+            .read()
             .node_indices()
-            .find(|&node| self.graph[node].entity == entity)
-            .map(|node| self.graph[node])
+            .find(|&node| self.graph.read()[node].entity == entity)
+            .map(|node| self.graph.read()[node])
     }
 
-    pub fn children_of(&self, node: Node) -> impl Iterator<Item = Node> + '_ {
+    pub fn children_of(&self, node: Node) -> Vec<Node> {
         self.graph
+            .read()
             .neighbors_directed(node.scene_index, Direction::Outgoing)
-            .map(|node| self.graph[node])
+            .map(|node| self.graph.read()[node])
+            .collect()
     }
 
     pub fn parent_of(&self, node: Node) -> Option<Node> {
         self.graph
+            .read()
             .neighbors_directed(node.scene_index, Direction::Incoming)
-            .map(|node| self.graph[node])
+            .map(|node| self.graph.read()[node])
             .next()
     }
 
-    pub fn siblings_of(&self, node: Node) -> Option<impl Iterator<Item = Node> + '_> {
+    pub fn siblings_of(&self, node: Node) -> Option<Vec<Node>> {
         let parent = self.parent_of(node)?;
         Some(
             self.children_of(parent)
-                .filter(move |sibling| *sibling != node),
+                .into_iter()
+                .filter(move |sibling| *sibling != node)
+                .collect(),
         )
-    }
-
-    pub fn child_relationships_of(
-        &self,
-        node: Node,
-    ) -> impl Iterator<Item = &dyn Relationship> + '_ {
-        self.graph
-            .edges_directed(node.scene_index, Direction::Outgoing)
-            .map(move |edge| &*edge.weight().weight)
-    }
-
-    pub fn parent_relationship_of(&self, node: Node) -> Option<&dyn Relationship> {
-        self.graph
-            .edges_directed(node.scene_index, Direction::Incoming)
-            .map(move |edge| &*edge.weight().weight)
-            .next()
     }
 }

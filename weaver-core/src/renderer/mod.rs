@@ -11,6 +11,7 @@ use crate::{
     geom::Rect,
     light::{PointLight, PointLightArray},
     material::Material,
+    prelude::Scene,
     renderer::internals::GpuComponent,
     texture::{DepthTexture, HdrTexture, TextureFormat, WindowTexture},
     ui::EguiContext,
@@ -621,23 +622,20 @@ impl Renderer {
     }
 }
 
-pub fn render_system(world: &World) -> anyhow::Result<()> {
+pub fn render_system(scene: &Scene) -> anyhow::Result<()> {
+    let world = scene.world();
+    let mut ui = world.get_resource_mut::<EguiContext>().unwrap();
+    let window = world.get_resource::<Window>().unwrap();
     let mut renderer = world.get_resource_mut::<Renderer>().unwrap();
     let mut encoder = renderer.begin_render();
 
     renderer.prepare_components();
     renderer.prepare_passes();
-    renderer.render_to_viewport(&mut encoder)?;
 
-    renderer.render_ui(
-        &mut world.get_resource_mut::<EguiContext>().unwrap(),
-        &world.get_resource::<Window>().unwrap(),
-        &mut encoder,
-    );
+    renderer.render_to_viewport(&mut encoder)?;
+    renderer.render_ui(&mut ui, &window, &mut encoder);
 
     renderer.end_render(encoder);
-
-    renderer.present();
 
     Ok(())
 }

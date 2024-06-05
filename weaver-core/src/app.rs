@@ -3,11 +3,13 @@ use crate::{
     doodads::Doodads,
     ecs::{
         component::Component,
-        system::{System, SystemStage},
+        storage::{Mut, Ref},
         world::World,
     },
     input::Input,
+    prelude::Scene,
     renderer::render_system,
+    system::{System, SystemStage},
     time::Time,
     ui::EguiContext,
     util::lock::SharedLock,
@@ -39,6 +41,7 @@ impl Window {
 pub struct App {
     event_loop: Option<EventLoop<()>>,
     pub world: Rc<World>,
+    pub root_scene: Rc<Scene>,
     systems: SharedLock<FxHashMap<SystemStage, Vec<Arc<dyn System>>>>,
 }
 
@@ -82,9 +85,12 @@ impl App {
             fps_mode: false,
         });
 
+        let root_scene = Rc::new(Scene::new(world.clone()));
+
         let this = Self {
             event_loop: Some(event_loop),
             world,
+            root_scene,
             systems: SharedLock::new(FxHashMap::default()),
         };
 
@@ -97,6 +103,22 @@ impl App {
         self.world.insert_resource(resource)
     }
 
+    pub fn get_resource<T: Component>(&self) -> Option<Ref<T>> {
+        self.world.get_resource::<T>()
+    }
+
+    pub fn get_resource_mut<T: Component>(&self) -> Option<Mut<T>> {
+        self.world.get_resource_mut::<T>()
+    }
+
+    pub fn world(&self) -> &Rc<World> {
+        &self.world
+    }
+
+    pub fn root_scene(&self) -> &Rc<Scene> {
+        &self.root_scene
+    }
+
     pub fn add_system<T: System>(&self, system: T, stage: SystemStage) -> anyhow::Result<()> {
         let system = Arc::new(system);
         self.systems.write().entry(stage).or_default().push(system);
@@ -107,7 +129,7 @@ impl App {
         let systems = self.systems.read().get(&stage).cloned();
         if let Some(systems) = systems {
             for system in systems {
-                system.run(&self.world)?;
+                system.run(&self.root_scene)?;
             }
         }
         Ok(())
@@ -208,9 +230,7 @@ impl App {
                             }
 
                             self.run_systems(SystemStage::PreRender).unwrap();
-
                             self.run_systems(SystemStage::Render).unwrap();
-
                             self.run_systems(SystemStage::PostRender).unwrap();
 
                             {
