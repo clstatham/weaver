@@ -8,10 +8,12 @@ edition = "2021"
 [workspace]
 members = [
     "crates/weaver-proc-macro",
-    "crates/weaver-core",
+    "crates/weaver-app",
     "crates/weaver-editor",
     "crates/weaver-util",
     "crates/weaver-ecs",
+    "crates/weaver-renderer",
+    "crates/weaver-winit",
 ]
 
 [features]
@@ -27,10 +29,12 @@ anyhow = "1.0"
 parking_lot = { version = "0.12", features = ["arc_lock"] }
 winit = "0.29"
 egui = "0.25"
-weaver-core = { path = "crates/weaver-core" }
+
+weaver-app = { path = "crates/weaver-app" }
 weaver-proc-macro = { path = "crates/weaver-proc-macro" }
 weaver-util = { path = "crates/weaver-util" }
 weaver-ecs = { path = "crates/weaver-ecs" }
+weaver-winit = { path = "crates/weaver-winit" }
 
 [dev-dependencies]
 criterion = "0.5"

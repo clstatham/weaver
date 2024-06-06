@@ -1,0 +1,13 @@
+[package]
+name = "weaver-app"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.75"
+rustc-hash = "1.1.0"
+
+weaver-util = { path = "../weaver-util" }
+weaver-ecs = { path = "../weaver-ecs" }
