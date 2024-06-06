@@ -11,11 +11,29 @@ pub mod prelude {
     pub use super::WinitPlugin;
 }
 
-pub struct WinitPlugin;
+pub struct WinitPlugin {
+    pub initial_size: (u32, u32),
+}
+
+impl Default for WinitPlugin {
+    fn default() -> Self {
+        Self {
+            initial_size: (800, 600),
+        }
+    }
+}
 
 impl Plugin for WinitPlugin {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
         let event_loop = EventLoop::new()?;
+        #[allow(deprecated)]
+        let window = event_loop
+            .create_window(Window::default_attributes().with_inner_size(
+                winit::dpi::PhysicalSize::new(self.initial_size.0, self.initial_size.1),
+            ))
+            .unwrap();
+
+        app.world().insert_resource(window);
         app.world().insert_resource(event_loop);
         app.set_runner(WinitRunner);
         Ok(())
@@ -31,10 +49,11 @@ impl Runner for WinitRunner {
         app.run_systems(SystemStage::PostInit)?;
 
         let event_loop = app.world().remove_resource::<EventLoop<()>>().unwrap();
+
         let mut handler = WinitApplicationHandler { app };
         event_loop.run_app(&mut handler)?;
 
-        let WinitApplicationHandler { app } = handler;
+        let WinitApplicationHandler { app, .. } = handler;
 
         app.run_systems(SystemStage::PreShutdown)?;
         app.run_systems(SystemStage::Shutdown)?;
@@ -49,17 +68,7 @@ struct WinitApplicationHandler {
 }
 
 impl ApplicationHandler for WinitApplicationHandler {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.app.world().has_resource::<Window>() {
-            return;
-        }
-
-        let window = event_loop
-            .create_window(Window::default_attributes())
-            .unwrap();
-
-        self.app.world().insert_resource(window);
-    }
+    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
 
     fn window_event(
         &mut self,

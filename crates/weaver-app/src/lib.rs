@@ -105,6 +105,10 @@ impl App {
     }
 
     pub fn run(mut self) -> anyhow::Result<()> {
+        for plugin in self.plugins.read().iter() {
+            plugin.finish(&mut self)?;
+        }
+
         if let Some(runner) = self.runner.take() {
             runner.run(self)
         } else {

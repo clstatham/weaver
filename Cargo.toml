@@ -24,16 +24,16 @@ name = "weaver"
 path = "src/lib.rs"
 
 [dependencies]
-glam = "0.24"
+glam = "0.27.0"
 anyhow = "1.0"
 parking_lot = { version = "0.12", features = ["arc_lock"] }
-winit = "0.29"
-egui = "0.25"
+winit = "0.30.0"
 
 weaver-app = { path = "crates/weaver-app" }
 weaver-proc-macro = { path = "crates/weaver-proc-macro" }
 weaver-util = { path = "crates/weaver-util" }
 weaver-ecs = { path = "crates/weaver-ecs" }
+weaver-renderer = { path = "crates/weaver-renderer" }
 weaver-winit = { path = "crates/weaver-winit" }
 
 [dev-dependencies]
