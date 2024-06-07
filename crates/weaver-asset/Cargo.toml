@@ -5,9 +5,11 @@ edition = "2021"
 
 [dependencies]
 tobj = "4.0.2"
+bytemuck = "1.4.0"
+image = "0.25.1"
+gltf = "1.4.1"
 
 weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }
 weaver-core = { path = "../weaver-core" }
 weaver-app = { path = "../weaver-app" }
-weaver-renderer = { path = "../weaver-renderer" }

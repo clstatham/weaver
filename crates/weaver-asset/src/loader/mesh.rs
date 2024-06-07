@@ -1,9 +1,10 @@
 use std::path::Path;
 
-use weaver_core::prelude::*;
+use weaver_core::{
+    mesh::{Mesh, Vertex},
+    prelude::*,
+};
 use weaver_util::prelude::*;
-
-use weaver_renderer::mesh::{Mesh, Vertex};
 
 pub fn load_obj(path: impl AsRef<Path>) -> Result<Mesh> {
     let path = path.as_ref();

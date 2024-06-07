@@ -13,7 +13,7 @@ use weaver_util::prelude::{anyhow, Error, Result};
 pub mod loader;
 
 pub mod prelude {
-    pub use crate::{Asset, AssetPlugin, Assets, Handle};
+    pub use crate::{loader::AssetLoader, Asset, AssetPlugin, Assets, Handle};
 }
 
 pub trait Asset: Any {
@@ -36,11 +36,23 @@ impl<T: 'static> Asset for T {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Handle<T: Asset> {
     id: usize,
     _marker: std::marker::PhantomData<T>,
 }
+
+impl<T: Asset> Clone for Handle<T> {
+    #[allow(clippy::non_canonical_clone_impl)]
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T: Asset> Copy for Handle<T> {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UntypedHandle {
@@ -84,18 +96,20 @@ impl Assets {
         Self::default()
     }
 
-    pub fn insert<T: Any>(&mut self, asset: T, path: impl Into<PathBuf>) -> Handle<T> {
+    pub fn insert<T: Any>(&mut self, asset: T, path: Option<&Path>) -> Handle<T> {
         let id = self
             .next_handle_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.storage.insert(id, Box::new(asset));
-        self.paths.insert(
-            path.into(),
-            UntypedHandle {
-                id,
-                type_id: std::any::TypeId::of::<T>(),
-            },
-        );
+        if let Some(path) = path {
+            self.paths.insert(
+                path.into(),
+                UntypedHandle {
+                    id,
+                    type_id: std::any::TypeId::of::<T>(),
+                },
+            );
+        }
 
         Handle {
             id,

@@ -3,63 +3,12 @@ use crate::{
     Renderer,
 };
 use weaver_app::{plugin::Plugin, App};
+use weaver_core::mesh::Mesh;
 use weaver_ecs::prelude::*;
 use weaver_util::prelude::*;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
 pub mod primitive;
-
-#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
-#[repr(C)]
-pub struct Vertex {
-    pub position: glam::Vec3,
-    pub normal: glam::Vec3,
-    pub tangent: glam::Vec3,
-    pub tex_coords: glam::Vec2,
-}
-
-impl Vertex {
-    pub fn buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                    shader_location: 0,
-                },
-                wgpu::VertexAttribute {
-                    offset: 3 * 4,
-                    format: wgpu::VertexFormat::Float32x3,
-                    shader_location: 1,
-                },
-                wgpu::VertexAttribute {
-                    offset: 6 * 4,
-                    format: wgpu::VertexFormat::Float32x3,
-                    shader_location: 2,
-                },
-                wgpu::VertexAttribute {
-                    offset: 9 * 4,
-                    format: wgpu::VertexFormat::Float32x2,
-                    shader_location: 3,
-                },
-            ],
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct Mesh {
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
-}
-
-impl Mesh {
-    pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
-        Self { vertices, indices }
-    }
-}
 
 pub struct GpuMesh {
     pub vertex_buffer: wgpu::Buffer,

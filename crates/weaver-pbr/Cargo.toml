@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+gltf = "1.4.1"
+
 weaver-util = { path = "../weaver-util" }
 weaver-renderer = { path = "../weaver-renderer" }
 weaver-app = { path = "../weaver-app" }
 weaver-ecs = { path = "../weaver-ecs" }
+weaver-core = { path = "../weaver-core" }
+weaver-asset = { path = "../weaver-asset" }

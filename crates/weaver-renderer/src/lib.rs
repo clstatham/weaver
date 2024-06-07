@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use camera::CameraPlugin;
 use mesh::MeshPlugin;
+use texture::TexturePlugin;
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{system::SystemStage, world::World};
 use weaver_util::lock::Lock;
@@ -13,9 +14,11 @@ pub mod extract;
 pub mod graph;
 pub mod mesh;
 pub mod target;
+pub mod texture;
 
 pub mod prelude {
     pub use super::camera::{Camera, CameraPlugin};
+    pub use super::extract::RenderComponent;
     pub use super::{Renderer, RendererPlugin};
     pub use wgpu;
 }
@@ -155,6 +158,7 @@ impl Plugin for RendererPlugin {
 
         app.add_plugin(CameraPlugin)?;
         app.add_plugin(MeshPlugin)?;
+        app.add_plugin(TexturePlugin)?;
 
         app.add_system(begin_render, SystemStage::PreRender)?;
         app.add_system(end_render, SystemStage::PostRender)?;

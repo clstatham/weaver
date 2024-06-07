@@ -1,7 +1,8 @@
 use weaver::{
     app::App,
+    core::mesh::Mesh,
     ecs::{system::SystemStage, world::World},
-    pbr::PbrPlugin,
+    pbr::{material::Material, PbrPlugin},
     prelude::*,
     renderer::{camera::Camera, RendererPlugin},
     winit::WinitPlugin,
@@ -13,6 +14,7 @@ fn main() -> anyhow::Result<()> {
     app.add_plugin(WinitPlugin {
         initial_size: (1600, 900),
     })?;
+    app.add_plugin(AssetPlugin)?;
     app.add_plugin(RendererPlugin)?;
     app.add_plugin(PbrPlugin)?;
 
@@ -32,6 +34,14 @@ fn setup(world: &World) -> anyhow::Result<()> {
         0.1,
         100.0,
     ));
+
+    let asset_loader = world.get_resource::<AssetLoader>().unwrap();
+
+    let mesh = asset_loader.load::<Mesh>("assets/meshes/cube.obj")?;
+    let cube = scene.create_node_with(mesh);
+
+    let material = asset_loader.load::<Material>("assets/materials/wood.glb")?;
+    world.insert_component(cube.entity(), material);
 
     Ok(())
 }

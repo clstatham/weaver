@@ -1,4 +1,4 @@
-use super::{Mesh, Vertex};
+use weaver_core::mesh::{Mesh, Vertex};
 
 pub trait Primitive {
     fn generate_mesh(&self) -> Mesh;

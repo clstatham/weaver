@@ -17,3 +17,4 @@ weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }
 weaver-proc-macro = { path = "../weaver-proc-macro" }
 weaver-core = { path = "../weaver-core" }
+weaver-asset = { path = "../weaver-asset" }
