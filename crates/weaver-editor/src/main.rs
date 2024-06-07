@@ -1,7 +1,8 @@
 use weaver::{
     app::App,
-    ecs::{scene::Scene, system::SystemStage},
-    prelude::Vec3,
+    ecs::{system::SystemStage, world::World},
+    pbr::PbrPlugin,
+    prelude::*,
     renderer::{camera::Camera, RendererPlugin},
     winit::WinitPlugin,
 };
@@ -13,15 +14,17 @@ fn main() -> anyhow::Result<()> {
         initial_size: (1600, 900),
     })?;
     app.add_plugin(RendererPlugin)?;
+    app.add_plugin(PbrPlugin)?;
 
     app.add_system(setup, SystemStage::Init)?;
 
     app.run()
 }
 
-fn setup(scene: &Scene) -> anyhow::Result<()> {
+fn setup(world: &World) -> anyhow::Result<()> {
+    let scene = world.root_scene();
     scene.create_node_with(Camera::perspective_lookat(
-        Vec3::new(0.0, 0.0, 5.0),
+        Vec3::new(5.0, 5.0, 5.0),
         Vec3::ZERO,
         Vec3::Y,
         45.0,

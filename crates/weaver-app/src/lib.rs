@@ -32,8 +32,7 @@ where
 }
 
 pub struct App {
-    pub world: Rc<World>,
-    pub root_scene: Rc<Scene>,
+    world: Rc<World>,
     systems: SharedLock<FxHashMap<SystemStage, Vec<Arc<dyn System>>>>,
     plugins: SharedLock<Vec<Box<dyn Plugin>>>,
     runner: Option<Box<dyn Runner>>,
@@ -41,13 +40,10 @@ pub struct App {
 
 impl App {
     pub fn new() -> anyhow::Result<Self> {
-        let world = Rc::new(World::new());
-
-        let root_scene = Rc::new(Scene::new(world.clone()));
+        let world = World::new();
 
         let this = Self {
             world,
-            root_scene,
             systems: SharedLock::new(FxHashMap::default()),
             plugins: SharedLock::new(Vec::new()),
             runner: None,
@@ -84,8 +80,8 @@ impl App {
         &self.world
     }
 
-    pub fn root_scene(&self) -> &Rc<Scene> {
-        &self.root_scene
+    pub fn root_scene(&self) -> Ref<Scene> {
+        self.world.root_scene()
     }
 
     pub fn add_system<T: System>(&self, system: T, stage: SystemStage) -> anyhow::Result<()> {
@@ -98,7 +94,7 @@ impl App {
         let systems = self.systems.read().get(&stage).cloned();
         if let Some(systems) = systems {
             for system in systems {
-                system.run(&self.root_scene)?;
+                system.run(self.world())?;
             }
         }
         Ok(())

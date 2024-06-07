@@ -56,14 +56,23 @@ impl Data {
     }
 }
 
-#[derive(Default)]
-pub struct SparseSet {
-    dense: Vec<Data>,
+pub struct SparseSet<T> {
+    dense: Vec<T>,
     sparse: Vec<Option<usize>>,
     indices: Vec<usize>,
 }
 
-impl SparseSet {
+impl<T> Default for SparseSet<T> {
+    fn default() -> Self {
+        Self {
+            dense: Vec::new(),
+            sparse: Vec::new(),
+            indices: Vec::new(),
+        }
+    }
+}
+
+impl<T> SparseSet<T> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -72,7 +81,7 @@ impl SparseSet {
         self.sparse.get(id).copied().flatten()
     }
 
-    pub fn insert(&mut self, id: usize, data: Data) {
+    pub fn insert(&mut self, id: usize, data: T) {
         match self.dense_index_of(id) {
             Some(index) => {
                 self.dense[index] = data;
@@ -89,7 +98,7 @@ impl SparseSet {
         }
     }
 
-    pub fn remove(&mut self, id: usize) -> Option<Data> {
+    pub fn remove(&mut self, id: usize) -> Option<T> {
         if id >= self.sparse.len() {
             return None;
         }
@@ -107,7 +116,7 @@ impl SparseSet {
         Some(value)
     }
 
-    pub fn get(&self, id: usize) -> Option<&Data> {
+    pub fn get(&self, id: usize) -> Option<&T> {
         if id >= self.sparse.len() {
             return None;
         }
@@ -116,7 +125,7 @@ impl SparseSet {
         self.dense.get(dense_index)
     }
 
-    pub fn get_mut(&mut self, id: usize) -> Option<&mut Data> {
+    pub fn get_mut(&mut self, id: usize) -> Option<&mut T> {
         if id >= self.sparse.len() {
             return None;
         }
@@ -129,11 +138,11 @@ impl SparseSet {
         self.sparse.get(id).copied().flatten().is_some()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Data> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
         self.dense.iter()
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Data> + '_ {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> + '_ {
         self.dense.iter_mut()
     }
 
@@ -154,7 +163,7 @@ impl SparseSet {
 
 #[derive(Default)]
 pub struct Archetype {
-    columns: Vec<SharedLock<SparseSet>>,
+    columns: Vec<SharedLock<SparseSet<Data>>>,
     type_ids: Vec<std::any::TypeId>,
     entities: Vec<Entity>,
 }
@@ -262,11 +271,11 @@ impl Archetype {
 
 pub struct DataRef {
     entity: Entity,
-    column: ArcRead<SparseSet>,
+    column: ArcRead<SparseSet<Data>>,
 }
 
 impl DataRef {
-    pub fn new(entity: Entity, column: ArcRead<SparseSet>) -> Self {
+    pub fn new(entity: Entity, column: ArcRead<SparseSet<Data>>) -> Self {
         Self { entity, column }
     }
 
@@ -285,11 +294,11 @@ impl std::ops::Deref for DataRef {
 
 pub struct DataMut {
     entity: Entity,
-    column: ArcWrite<SparseSet>,
+    column: ArcWrite<SparseSet<Data>>,
 }
 
 impl DataMut {
-    pub fn new(entity: Entity, column: ArcWrite<SparseSet>) -> Self {
+    pub fn new(entity: Entity, column: ArcWrite<SparseSet<Data>>) -> Self {
         Self { entity, column }
     }
 
@@ -314,12 +323,12 @@ impl std::ops::DerefMut for DataMut {
 
 pub struct Ref<T: 'static> {
     entity: Entity,
-    column: ArcRead<SparseSet>,
+    column: ArcRead<SparseSet<Data>>,
     _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: 'static> Ref<T> {
-    pub fn new(entity: Entity, column: ArcRead<SparseSet>) -> Self {
+    pub fn new(entity: Entity, column: ArcRead<SparseSet<Data>>) -> Self {
         Self {
             entity,
             column,
@@ -346,12 +355,12 @@ impl<T: 'static> std::ops::Deref for Ref<T> {
 
 pub struct Mut<T: 'static> {
     entity: Entity,
-    column: ArcWrite<SparseSet>,
+    column: ArcWrite<SparseSet<Data>>,
     _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: 'static> Mut<T> {
-    pub fn new(entity: Entity, column: ArcWrite<SparseSet>) -> Self {
+    pub fn new(entity: Entity, column: ArcWrite<SparseSet<Data>>) -> Self {
         Self {
             entity,
             column,

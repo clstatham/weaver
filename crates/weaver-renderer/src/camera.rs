@@ -1,34 +1,53 @@
 use std::fmt::Debug;
 
 use weaver_app::plugin::Plugin;
-use weaver_ecs::{query::Query, scene::Scene, system::SystemStage};
+use weaver_core::color::Color;
+use weaver_ecs::{query::Query, system::SystemStage, world::World};
 
 use crate::{
     clear_color::ClearColor,
     graph::{RenderGraph, RenderNode},
     target::RenderTarget,
+    Renderer,
 };
 
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut weaver_app::App) -> anyhow::Result<()> {
-        app.add_system(enumerate_cameras, SystemStage::Render)?;
+        app.add_system(prepare_cameras, SystemStage::PreRender)?;
+        app.add_system(render_cameras, SystemStage::Render)?;
         Ok(())
     }
 }
 
-fn enumerate_cameras(scene: &Scene) -> anyhow::Result<()> {
-    let world = scene.world();
+fn prepare_cameras(world: &World) -> anyhow::Result<()> {
     let camera_query = world.query(&Query::new().read::<Camera>());
+
     for camera_entity in camera_query.iter() {
         let camera = camera_query.get::<Camera>(camera_entity).unwrap();
         if camera.active() {
             let graph = &camera.graph;
-            let renderer = world.get_resource::<crate::Renderer>().unwrap();
-            graph.render(scene, &renderer, &camera.render_target)?;
+            let renderer = world.get_resource::<Renderer>().unwrap();
+            graph.prepare(world, &renderer)?;
         }
     }
+
+    Ok(())
+}
+
+fn render_cameras(world: &World) -> anyhow::Result<()> {
+    let camera_query = world.query(&Query::new().read::<Camera>());
+
+    for camera_entity in camera_query.iter() {
+        let camera = camera_query.get::<Camera>(camera_entity).unwrap();
+        if camera.active() {
+            let graph = &camera.graph;
+            let renderer = world.get_resource::<Renderer>().unwrap();
+            graph.render(world, &renderer)?;
+        }
+    }
+
     Ok(())
 }
 
@@ -64,7 +83,6 @@ impl From<&Camera> for CameraUniform {
 
 pub struct Camera {
     pub active: bool,
-    pub render_target: RenderTarget,
     pub graph: RenderGraph,
     pub view_matrix: glam::Mat4,
     pub projection_matrix: glam::Mat4,
@@ -84,11 +102,12 @@ impl Camera {
         let mut graph = RenderGraph::new();
         graph.add_node(RenderNode::new(
             "clear_color",
-            ClearColor::new(0.0, 0.0, 0.0, 1.0),
+            ClearColor::new(Color::RED),
+            RenderTarget::PrimaryScreen,
         ));
+
         Self {
             active: true,
-            render_target: RenderTarget::PrimaryScreen,
             graph,
             view_matrix,
             projection_matrix,
@@ -124,10 +143,6 @@ impl Camera {
 
     pub fn deactivate(&mut self) {
         self.set_active(false);
-    }
-
-    pub fn set_render_target(&mut self, render_target: RenderTarget) {
-        self.render_target = render_target;
     }
 
     pub fn render_graph(&self) -> &RenderGraph {

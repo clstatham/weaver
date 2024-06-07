@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 parking_lot = { version = "0.12.1", features = ["arc_lock"] }
 lock_api = "0.4.0"
+anyhow = "1.0.86"

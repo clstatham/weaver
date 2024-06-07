@@ -1,0 +1,12 @@
+[package]
+name = "weaver-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytemuck = "1.7.0"
+glam = { version = "0.27.0", features = ["bytemuck"] }
+
+weaver-util = { path = "../weaver-util" }
+weaver-ecs = { path = "../weaver-ecs" }
+weaver-app = { path = "../weaver-app" }

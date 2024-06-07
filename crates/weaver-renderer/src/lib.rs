@@ -1,30 +1,31 @@
 use std::sync::Arc;
 
 use camera::CameraPlugin;
+use mesh::MeshPlugin;
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{scene::Scene, system::SystemStage};
+use weaver_ecs::{system::SystemStage, world::World};
 use weaver_util::lock::Lock;
-use wgpu::{Device, Queue};
 use winit::window::Window;
 
 pub mod camera;
 pub mod clear_color;
+pub mod extract;
 pub mod graph;
-pub mod resource;
+pub mod mesh;
 pub mod target;
 
 pub mod prelude {
     pub use super::camera::{Camera, CameraPlugin};
-    pub use super::resource::*;
     pub use super::{Renderer, RendererPlugin};
+    pub use wgpu;
 }
 
 pub struct Renderer {
     instance: wgpu::Instance,
     adapter: wgpu::Adapter,
     window_surface: Option<wgpu::Surface<'static>>,
-    device: Arc<Device>,
-    queue: Arc<Queue>,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
     current_frame: Lock<Option<(wgpu::SurfaceTexture, Arc<wgpu::TextureView>)>>,
     command_buffers: Lock<Vec<wgpu::CommandBuffer>>,
 }
@@ -34,7 +35,7 @@ impl Renderer {
     pub fn new() -> Self {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
+            power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: None,
             force_fallback_adapter: false,
         }))
@@ -61,11 +62,11 @@ impl Renderer {
         }
     }
 
-    pub fn device(&self) -> &Arc<Device> {
+    pub fn device(&self) -> &Arc<wgpu::Device> {
         &self.device
     }
 
-    pub fn queue(&self) -> &Arc<Queue> {
+    pub fn queue(&self) -> &Arc<wgpu::Queue> {
         &self.queue
     }
 
@@ -138,7 +139,6 @@ impl Renderer {
         let (frame, _view) = self.current_frame.write().take().unwrap();
 
         let command_buffers = self.command_buffers.write().drain(..).collect::<Vec<_>>();
-
         self.queue.submit(command_buffers);
 
         frame.present();
@@ -151,33 +151,27 @@ pub struct RendererPlugin;
 
 impl Plugin for RendererPlugin {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
+        app.world().insert_resource(Renderer::new());
+
         app.add_plugin(CameraPlugin)?;
+        app.add_plugin(MeshPlugin)?;
 
-        let renderer = Renderer::new();
-        app.world().insert_resource(renderer);
-
-        app.add_system(create_window_surface, SystemStage::PreRender)?;
         app.add_system(begin_render, SystemStage::PreRender)?;
         app.add_system(end_render, SystemStage::PostRender)?;
 
         Ok(())
     }
-}
 
-fn create_window_surface(scene: &Scene) -> anyhow::Result<()> {
-    let world = scene.world();
-
-    if let Some(window) = world.get_resource::<Window>() {
-        let mut renderer = world.get_resource_mut::<Renderer>().unwrap();
+    fn finish(&self, app: &mut App) -> anyhow::Result<()> {
+        let mut renderer = app.world().get_resource_mut::<Renderer>().unwrap();
+        let window = app.world().get_resource::<Window>().unwrap();
         renderer.create_surface(&window)?;
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
-fn begin_render(scene: &Scene) -> anyhow::Result<()> {
-    let world = scene.world();
-
+fn begin_render(world: &World) -> anyhow::Result<()> {
     let renderer = world.get_resource::<Renderer>().unwrap();
 
     renderer.begin_frame()?;
@@ -185,9 +179,7 @@ fn begin_render(scene: &Scene) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn end_render(scene: &Scene) -> anyhow::Result<()> {
-    let world = scene.world();
-
+fn end_render(world: &World) -> anyhow::Result<()> {
     let renderer = world.get_resource::<Renderer>().unwrap();
 
     renderer.end_frame()?;

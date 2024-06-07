@@ -1,0 +1,10 @@
+[package]
+name = "weaver-pbr"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+weaver-util = { path = "../weaver-util" }
+weaver-renderer = { path = "../weaver-renderer" }
+weaver-app = { path = "../weaver-app" }
+weaver-ecs = { path = "../weaver-ecs" }

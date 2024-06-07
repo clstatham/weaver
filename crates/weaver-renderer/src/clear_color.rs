@@ -1,30 +1,30 @@
-use weaver_ecs::prelude::Scene;
+use weaver_core::color::Color;
+use weaver_ecs::world::World;
 
 use crate::{graph::Render, target::RenderTarget, Renderer};
 
 pub struct ClearColor {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+    pub color: Color,
 }
 
 impl ClearColor {
-    pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
-        Self { r, g, b, a }
+    pub fn new(color: Color) -> Self {
+        Self { color }
     }
 }
 
 impl Default for ClearColor {
     fn default() -> Self {
-        Self::new(0.0, 0.0, 0.0, 1.0)
+        Self {
+            color: Color::BLACK,
+        }
     }
 }
 
 impl Render for ClearColor {
     fn render(
         &self,
-        _scene: &Scene,
+        _world: &World,
         renderer: &Renderer,
         target: &RenderTarget,
     ) -> anyhow::Result<()> {
@@ -36,10 +36,10 @@ impl Render for ClearColor {
         });
 
         let color = wgpu::Color {
-            r: self.r as f64,
-            g: self.g as f64,
-            b: self.b as f64,
-            a: self.a as f64,
+            r: self.color.r as f64,
+            g: self.color.g as f64,
+            b: self.color.b as f64,
+            a: self.color.a as f64,
         };
 
         {

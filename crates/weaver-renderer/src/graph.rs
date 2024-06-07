@@ -1,14 +1,20 @@
 use petgraph::prelude::*;
-use weaver_ecs::scene::Scene;
+use weaver_ecs::world::World;
+use weaver_util::lock::Lock;
 
 use crate::{target::RenderTarget, Renderer};
 
 pub type RenderEdge = ();
 
 pub trait Render: 'static {
+    #[allow(unused_variables)]
+    fn prepare(&mut self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn render(
         &self,
-        scene: &Scene,
+        world: &World,
         renderer: &Renderer,
         target: &RenderTarget,
     ) -> anyhow::Result<()>;
@@ -16,14 +22,16 @@ pub trait Render: 'static {
 
 pub struct RenderNode {
     name: String,
-    render: Box<dyn Render>,
+    render: Lock<Box<dyn Render>>,
+    target: RenderTarget,
 }
 
 impl RenderNode {
-    pub fn new(name: &str, render: impl Render) -> Self {
+    pub fn new(name: &str, render: impl Render, target: RenderTarget) -> Self {
         Self {
             name: name.to_string(),
-            render: Box::new(render),
+            render: Lock::new(Box::new(render)),
+            target,
         }
     }
 
@@ -31,13 +39,8 @@ impl RenderNode {
         &self.name
     }
 
-    pub fn render(
-        &self,
-        scene: &Scene,
-        renderer: &Renderer,
-        target: &RenderTarget,
-    ) -> anyhow::Result<()> {
-        self.render.render(scene, renderer, target)
+    pub fn render(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
+        self.render.write().render(world, renderer, &self.target)
     }
 }
 
@@ -59,12 +62,16 @@ impl RenderGraph {
         self.graph.add_edge(from, to, ());
     }
 
-    pub fn render(
-        &self,
-        scene: &Scene,
-        renderer: &Renderer,
-        target: &RenderTarget,
-    ) -> anyhow::Result<()> {
+    pub fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
+        for node in self.graph.node_indices() {
+            let mut render_node = self.graph[node].render.write();
+            render_node.prepare(world, renderer)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn render(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
         let mut visited = vec![false; self.graph.node_count()];
         let mut stack = Vec::new();
 
@@ -74,7 +81,7 @@ impl RenderGraph {
 
         for node in stack {
             let render_node = &self.graph[node];
-            render_node.render(scene, renderer, target)?;
+            render_node.render(world, renderer)?;
         }
 
         Ok(())

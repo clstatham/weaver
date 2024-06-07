@@ -2060,6 +2060,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tobj"
+version = "4.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3bd4ba05f29e4c65b6c0c11a58b6465ffa820bac890d76ad407b4e81d8372e8"
+dependencies = [
+ "ahash",
+]
+
+[[package]]
 name = "toml_datetime"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2331,10 +2340,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "criterion",
- "glam",
  "parking_lot",
  "weaver-app",
+ "weaver-asset",
+ "weaver-core",
  "weaver-ecs",
+ "weaver-pbr",
  "weaver-proc-macro",
  "weaver-renderer",
  "weaver-util",
@@ -2348,6 +2359,29 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "rustc-hash",
+ "weaver-ecs",
+ "weaver-util",
+]
+
+[[package]]
+name = "weaver-asset"
+version = "0.1.0"
+dependencies = [
+ "tobj",
+ "weaver-app",
+ "weaver-core",
+ "weaver-ecs",
+ "weaver-renderer",
+ "weaver-util",
+]
+
+[[package]]
+name = "weaver-core"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "glam",
+ "weaver-app",
  "weaver-ecs",
  "weaver-util",
 ]
@@ -2377,6 +2411,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "weaver-pbr"
+version = "0.1.0"
+dependencies = [
+ "weaver-app",
+ "weaver-ecs",
+ "weaver-renderer",
+ "weaver-util",
+]
+
+[[package]]
 name = "weaver-proc-macro"
 version = "0.1.0"
 dependencies = [
@@ -2395,6 +2439,7 @@ dependencies = [
  "petgraph",
  "pollster",
  "weaver-app",
+ "weaver-core",
  "weaver-ecs",
  "weaver-proc-macro",
  "weaver-util",
@@ -2406,6 +2451,7 @@ dependencies = [
 name = "weaver-util"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "lock_api",
  "parking_lot",
 ]
