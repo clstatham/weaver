@@ -68,14 +68,14 @@ fn prepare_pbr_cameras(world: &World) -> Result<()> {
             let graph = base_camera.render_graph_mut();
             let renderer = world.get_resource::<Renderer>().unwrap();
 
-            if graph.node_index::<ClearColor>().is_none() {
-                // let camera_bind_group_node = graph.add_node(RenderNode::new(
-                //     "PbrCameraBindGroupNode",
-                //     PbrCameraBindGroupNode {
-                //         camera_entity: None,
-                //     },
-                // ));
-                // let pbr_node = graph.add_node(RenderNode::new("PbrNode", PbrNode::default()));
+            if graph.node_index::<PbrNode>().is_none() {
+                let camera_bind_group_node = graph.add_node(RenderNode::new(
+                    "PbrCameraBindGroupNode",
+                    PbrCameraBindGroupNode {
+                        camera_entity: None,
+                    },
+                ));
+                let pbr_node = graph.add_node(RenderNode::new("PbrNode", PbrNode::default()));
                 let clear_color_node = graph.add_node(RenderNode::new(
                     "ClearColor",
                     ClearColor::new(pbr_camera.clear_color),
@@ -88,18 +88,18 @@ fn prepare_pbr_cameras(world: &World) -> Result<()> {
                 // start:depth -> clear:depth
                 graph.add_edge(start_node, 1, clear_color_node, 1);
 
-                // // clear:color -> pbr:color
-                // graph.add_edge(clear_color_node, 0, pbr_node, 0);
-                // // clear:depth -> pbr:depth
-                // graph.add_edge(clear_color_node, 1, pbr_node, 1);
+                // clear:color -> pbr:color
+                graph.add_edge(clear_color_node, 0, pbr_node, 0);
+                // clear:depth -> pbr:depth
+                graph.add_edge(clear_color_node, 1, pbr_node, 1);
 
-                // // camera:bind_group -> pbr:camera_bind_group
-                // graph.add_edge(camera_bind_group_node, 0, pbr_node, 2);
+                // camera:bind_group -> pbr:camera_bind_group
+                graph.add_edge(camera_bind_group_node, 0, pbr_node, 2);
 
                 // pbr:color -> end:color
-                graph.add_edge(clear_color_node, 0, end_node, 0);
+                graph.add_edge(pbr_node, 0, end_node, 0);
                 // pbr:depth -> end:depth
-                graph.add_edge(clear_color_node, 1, end_node, 1);
+                graph.add_edge(pbr_node, 1, end_node, 1);
             }
 
             graph.prepare(world, &renderer, camera_entity)?;

@@ -73,7 +73,7 @@ fn create_bind_groups<T: CreateBindGroup>(world: &World) -> anyhow::Result<()> {
             );
             let bind_group = BindGroup::new(device, &*data);
             drop(data);
-            world.insert_component(entity, bind_group);
+            world.insert_component::<BindGroup<T>>(entity, bind_group);
         }
     }
 

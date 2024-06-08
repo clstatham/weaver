@@ -9,7 +9,7 @@ use weaver_core::{color::Color, texture::Texture};
 use weaver_ecs::prelude::{Entity, Query, World};
 use weaver_renderer::{
     bind_group::{CreateBindGroup, CreateBindGroupPlugin},
-    extract::RenderComponent,
+    extract::{ExtractRenderComponentPlugin, RenderComponent},
     prelude::*,
     texture::GpuTexture,
 };
@@ -417,6 +417,7 @@ pub struct MaterialPlugin;
 
 impl Plugin for MaterialPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
+        app.add_plugin(ExtractRenderComponentPlugin::<GpuMaterial>::default())?;
         app.add_plugin(CreateBindGroupPlugin::<GpuMaterial>::default())?;
         app.get_resource_mut::<AssetLoader>()
             .unwrap()

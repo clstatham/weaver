@@ -3,13 +3,13 @@ use std::fmt::Debug;
 use wgpu::util::DeviceExt;
 
 use weaver_app::plugin::Plugin;
-use weaver_ecs::{prelude::Entity, query::Query, system::SystemStage, world::World};
+use weaver_ecs::{prelude::Entity, query::Query, world::World};
 
 use crate::{
     bind_group::{CreateBindGroup, CreateBindGroupPlugin},
     buffer::GpuBuffer,
     extract::{ExtractRenderComponentPlugin, RenderComponent},
-    graph::{Render, RenderGraph},
+    graph::RenderGraph,
     Renderer,
 };
 
@@ -188,38 +188,6 @@ impl Plugin for CameraPlugin {
         app.add_plugin(ExtractRenderComponentPlugin::<GpuCamera>::default())?;
         app.add_plugin(CreateBindGroupPlugin::<GpuCamera>::default())?;
 
-        // app.add_system(prepare_cameras, SystemStage::PreRender)?;
-        // app.add_system(render_cameras, SystemStage::Render)?;
         Ok(())
     }
-}
-
-fn prepare_cameras(world: &World) -> anyhow::Result<()> {
-    let camera_query = world.query(&Query::new().read::<Camera>());
-
-    for camera_entity in camera_query.iter() {
-        let camera = camera_query.get::<Camera>(camera_entity).unwrap();
-        if camera.active() {
-            let graph = &camera.graph;
-            let renderer = world.get_resource::<Renderer>().unwrap();
-            graph.prepare(world, &renderer, camera_entity)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn render_cameras(world: &World) -> anyhow::Result<()> {
-    let camera_query = world.query(&Query::new().read::<Camera>());
-
-    for camera_entity in camera_query.iter() {
-        let camera = camera_query.get::<Camera>(camera_entity).unwrap();
-        if camera.active() {
-            let graph = &camera.graph;
-            let renderer = world.get_resource::<Renderer>().unwrap();
-            graph.render(world, &renderer)?;
-        }
-    }
-
-    Ok(())
 }
