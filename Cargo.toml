@@ -7,7 +7,6 @@ edition = "2021"
 
 [workspace]
 members = [
-    "crates/weaver-proc-macro",
     "crates/weaver-app",
     "crates/weaver-editor",
     "crates/weaver-util",
@@ -32,7 +31,6 @@ parking_lot = { version = "0.12", features = ["arc_lock"] }
 winit = "0.29.15"
 
 weaver-app = { path = "crates/weaver-app" }
-weaver-proc-macro = { path = "crates/weaver-proc-macro" }
 weaver-util = { path = "crates/weaver-util" }
 weaver-ecs = { path = "crates/weaver-ecs" }
 weaver-renderer = { path = "crates/weaver-renderer" }

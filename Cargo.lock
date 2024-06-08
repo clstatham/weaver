@@ -2925,7 +2925,6 @@ dependencies = [
  "weaver-core",
  "weaver-ecs",
  "weaver-pbr",
- "weaver-proc-macro",
  "weaver-renderer",
  "weaver-util",
  "weaver-winit",
@@ -3010,15 +3009,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "weaver-proc-macro"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.48",
-]
-
-[[package]]
 name = "weaver-renderer"
 version = "0.1.0"
 dependencies = [
@@ -3033,7 +3023,6 @@ dependencies = [
  "weaver-asset",
  "weaver-core",
  "weaver-ecs",
- "weaver-proc-macro",
  "weaver-util",
  "wgpu",
  "winit",
