@@ -3,7 +3,6 @@
 
 const PI: f32 = 3.1415926535897932384626433832795;
 
-
 struct VertexInput {
     @builtin(instance_index) instance_index: u32,
     @location(0) position: vec3<f32>,
@@ -25,7 +24,6 @@ struct CameraUniform {
     camera_position: vec3<f32>,
 };
 
-
 struct PointLight {
     position: vec4<f32>,
     color: vec4<f32>,
@@ -33,7 +31,6 @@ struct PointLight {
     intensity: f32,
     radius: f32,
 };
-
 
 // material information
 @group(0) @binding(0) var<uniform> material: MaterialUniform;
@@ -201,7 +198,7 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     // for (var i = 0u; i < point_lights.count; i = i + 1u) {
     var light: PointLight;
-    light.position = vec4<f32>(0.0, 0.0, 0.0, 3.0);
+    light.position = vec4<f32>(3.0, 3.0, 3.0, 1.0);
     light.color = vec4<f32>(1.0, 1.0, 1.0, 1.0);
     light.intensity = 1.0;
     light.proj_transform = mat4x4<f32>(

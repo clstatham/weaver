@@ -13,7 +13,8 @@ pub fn load_obj(path: impl AsRef<Path>) -> Result<Mesh> {
         &tobj::LoadOptions {
             single_index: true,
             triangulate: true,
-            ..Default::default()
+            ignore_lines: true,
+            ignore_points: true,
         },
     )?;
 

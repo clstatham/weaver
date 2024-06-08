@@ -34,7 +34,10 @@ fn setup(world: &World) -> anyhow::Result<()> {
         0.1,
         100.0,
     ));
-    world.insert_component(camera.entity(), PbrCamera::new(Color::RED));
+    world.insert_component(
+        camera.entity(),
+        PbrCamera::new(Color::new(0.1, 0.1, 0.1, 1.0)),
+    );
 
     let asset_loader = world.get_resource::<AssetLoader>().unwrap();
 
