@@ -59,7 +59,7 @@ fn update(world: &World) -> Result<()> {
 
     for entity in query.iter() {
         let mut transform = world.get_component_mut::<Transform>(entity).unwrap();
-        transform.rotation *= Quat::from_rotation_y(0.00001);
+        transform.rotation *= Quat::from_rotation_y(0.0001);
     }
 
     Ok(())

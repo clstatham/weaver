@@ -128,13 +128,6 @@ struct FragmentOutput {
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
 
-    // let model_transform = mat4x4<f32>(
-    //     vec4<f32>(1.0, 0.0, 0.0, 0.0),
-    //     vec4<f32>(0.0, 1.0, 0.0, 0.0),
-    //     vec4<f32>(0.0, 0.0, 1.0, 0.0),
-    //     vec4<f32>(0.0, 0.0, 0.0, 1.0),
-    // );
-
     // let model_transform = transforms[input.instance_index].model;
 
     let world_position = (model_transform * vec4<f32>(input.position, 1.0));
@@ -180,7 +173,7 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     var light: PointLight;
     light.position = vec4<f32>(3.0, 3.0, 3.0, 1.0);
     light.color = vec4<f32>(1.0, 1.0, 1.0, 1.0);
-    light.intensity = 1.0;
+    light.intensity = 10.0;
     light.proj_transform = mat4x4<f32>(
         vec4<f32>(1.0, 0.0, 0.0, 0.0),
         vec4<f32>(0.0, 1.0, 0.0, 0.0),

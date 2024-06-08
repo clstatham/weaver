@@ -47,6 +47,7 @@ impl Runner for WinitRunner {
 
         let event_loop = app.world().remove_resource::<EventLoop<()>>().unwrap();
 
+        #[allow(clippy::single_match)]
         event_loop.run(move |event, event_loop_window| match event {
             winit::event::Event::WindowEvent { event, window_id } => {
                 if let Some(window) = app.world().get_resource::<Window>() {
