@@ -48,37 +48,40 @@ impl Runner for WinitRunner {
         let event_loop = app.world().remove_resource::<EventLoop<()>>().unwrap();
 
         #[allow(clippy::single_match)]
-        event_loop.run(move |event, event_loop_window| match event {
-            winit::event::Event::WindowEvent { event, window_id } => {
-                if let Some(window) = app.world().get_resource::<Window>() {
-                    if window.id() == window_id {
-                        match event {
-                            WindowEvent::CloseRequested => {
-                                app.run_systems(SystemStage::PreShutdown).unwrap();
-                                app.run_systems(SystemStage::Shutdown).unwrap();
-                                app.run_systems(SystemStage::PostShutdown).unwrap();
-                                event_loop_window.exit();
+        event_loop.run(move |event, event_loop_window| {
+            event_loop_window.set_control_flow(winit::event_loop::ControlFlow::Poll);
+            match event {
+                winit::event::Event::WindowEvent { event, window_id } => {
+                    if let Some(window) = app.world().get_resource::<Window>() {
+                        if window.id() == window_id {
+                            window.request_redraw();
+                            drop(window);
+                            match event {
+                                WindowEvent::CloseRequested => {
+                                    app.run_systems(SystemStage::PreShutdown).unwrap();
+                                    app.run_systems(SystemStage::Shutdown).unwrap();
+                                    app.run_systems(SystemStage::PostShutdown).unwrap();
+                                    event_loop_window.exit();
+                                }
+                                WindowEvent::RedrawRequested => {
+                                    app.run_systems(SystemStage::PreUpdate).unwrap();
+                                    app.run_systems(SystemStage::Update).unwrap();
+                                    app.run_systems(SystemStage::PostUpdate).unwrap();
+
+                                    app.run_systems(SystemStage::Ui).unwrap();
+
+                                    app.run_systems(SystemStage::PreRender).unwrap();
+                                    app.run_systems(SystemStage::Render).unwrap();
+                                    // window.pre_present_notify();
+                                    app.run_systems(SystemStage::PostRender).unwrap();
+                                }
+                                _ => {}
                             }
-                            WindowEvent::RedrawRequested => {
-                                app.run_systems(SystemStage::PreUpdate).unwrap();
-                                app.run_systems(SystemStage::Update).unwrap();
-                                app.run_systems(SystemStage::PostUpdate).unwrap();
-
-                                app.run_systems(SystemStage::Ui).unwrap();
-
-                                app.run_systems(SystemStage::PreRender).unwrap();
-                                app.run_systems(SystemStage::Render).unwrap();
-                                window.pre_present_notify();
-                                app.run_systems(SystemStage::PostRender).unwrap();
-
-                                window.request_redraw();
-                            }
-                            _ => {}
                         }
                     }
                 }
+                _ => (),
             }
-            _ => (),
         })?;
 
         Ok(())

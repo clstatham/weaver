@@ -10,7 +10,7 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::{bail, Result};
 
-use crate::render::PbrNode;
+use crate::{light::PointLightArrayNode, render::PbrNode};
 
 struct PbrCameraBindGroupNode {
     camera_entity: Option<Entity>,
@@ -80,6 +80,8 @@ fn prepare_pbr_cameras(world: &World) -> Result<()> {
                     "ClearColor",
                     ClearColor::new(pbr_camera.clear_color),
                 ));
+                let point_light_array_node =
+                    graph.add_node(RenderNode::new("PointLightArrayNode", PointLightArrayNode));
                 let start_node = graph.node_index::<StartNode>().unwrap();
                 let end_node = graph.node_index::<EndNode>().unwrap();
 
@@ -95,6 +97,9 @@ fn prepare_pbr_cameras(world: &World) -> Result<()> {
 
                 // camera:bind_group -> pbr:camera_bind_group
                 graph.add_edge(camera_bind_group_node, 0, pbr_node, 2);
+
+                // point_light_array -> pbr:point_light_array
+                graph.add_edge(point_light_array_node, 0, pbr_node, 3);
 
                 // pbr:color -> end:color
                 graph.add_edge(pbr_node, 0, end_node, 0);

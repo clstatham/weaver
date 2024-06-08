@@ -30,7 +30,7 @@ fn setup(world: &World) -> Result<()> {
         Vec3::new(5.0, 5.0, 5.0),
         Vec3::ZERO,
         Vec3::Y,
-        45.0,
+        45.0f32.to_radians(),
         1600.0 / 900.0,
         0.1,
         100.0,
@@ -45,11 +45,31 @@ fn setup(world: &World) -> Result<()> {
     let mesh = asset_loader.load::<Mesh>("assets/meshes/cube.obj")?;
     let cube = scene.create_node_with(mesh);
 
-    let material = asset_loader.load::<Material>("assets/materials/wood.glb")?;
+    let material = asset_loader.load::<Material>("assets/materials/wood_tiles.glb")?;
+    {
+        let mut assets = world.get_resource_mut::<Assets>().unwrap();
+        assets.get_mut::<Material>(material).unwrap().texture_scale = 100.0;
+    }
     world.insert_component(cube.entity(), material);
 
-    let transform = Transform::from_rotation(Quat::from_rotation_y(20.0f32.to_radians()));
+    let mut transform = Transform::from_rotation(Quat::from_rotation_y(20.0f32.to_radians()));
+    transform.translation = Vec3::new(0.0, -1.0, 0.0);
+    transform.scale = Vec3::new(10.0, 1.0, 10.0);
     world.insert_component(cube.entity(), transform);
+
+    let _light1 = scene.create_node_with(PointLight {
+        position: Vec3::new(10.0, 5.0, 10.0),
+        color: Color::WHITE,
+        intensity: 100.0,
+        radius: 100.0,
+    });
+
+    let _light2 = scene.create_node_with(PointLight {
+        position: Vec3::new(-10.0, 5.0, -10.0),
+        color: Color::GREEN,
+        intensity: 100.0,
+        radius: 100.0,
+    });
 
     Ok(())
 }
@@ -59,7 +79,7 @@ fn update(world: &World) -> Result<()> {
 
     for entity in query.iter() {
         let mut transform = world.get_component_mut::<Transform>(entity).unwrap();
-        transform.rotation *= Quat::from_rotation_y(0.0001);
+        transform.rotation *= Quat::from_rotation_y(0.001);
     }
 
     Ok(())

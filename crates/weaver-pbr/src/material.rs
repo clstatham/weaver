@@ -8,7 +8,7 @@ use weaver_asset::{
 use weaver_core::{color::Color, texture::Texture};
 use weaver_ecs::prelude::{Entity, Query, World};
 use weaver_renderer::{
-    bind_group::{BindGroupPlugin, CreateBindGroup},
+    bind_group::{ComponentBindGroupPlugin, CreateBindGroup},
     buffer::GpuBuffer,
     extract::{RenderComponent, RenderComponentPlugin},
     prelude::*,
@@ -29,6 +29,8 @@ pub struct Material {
 
     pub ao: f32,
     pub ao_texture: Handle<Texture>,
+
+    pub texture_scale: f32,
 }
 
 pub struct MaterialLoader;
@@ -128,6 +130,7 @@ impl LoadAsset for MaterialLoader {
             metallic_roughness_texture: assets.insert(metallic_roughness_texture, None),
             ao,
             ao_texture: assets.insert(ao_texture, None),
+            texture_scale: 1.0,
         };
 
         Ok(assets.insert(material, Some(path)).into())
@@ -141,7 +144,7 @@ struct MaterialMetaUniform {
     metallic: f32,
     roughness: f32,
     ao: f32,
-    _padding: u32,
+    texture_scale: f32,
 }
 
 pub struct GpuMaterial {
@@ -189,7 +192,7 @@ impl RenderComponent for GpuMaterial {
             metallic: material.metallic,
             roughness: material.roughness,
             ao: material.ao,
-            _padding: 0,
+            texture_scale: material.texture_scale,
         };
 
         let meta = renderer
@@ -204,9 +207,9 @@ impl RenderComponent for GpuMaterial {
 
         let diffuse_texture_sampler = renderer.device().create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Diffuse Texture Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Linear,
@@ -215,9 +218,9 @@ impl RenderComponent for GpuMaterial {
 
         let normal_texture_sampler = renderer.device().create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Normal Texture Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Linear,
@@ -227,9 +230,9 @@ impl RenderComponent for GpuMaterial {
         let metallic_roughness_texture_sampler =
             renderer.device().create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("Metallic Roughness Texture Sampler"),
-                address_mode_u: wgpu::AddressMode::ClampToEdge,
-                address_mode_v: wgpu::AddressMode::ClampToEdge,
-                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                address_mode_u: wgpu::AddressMode::Repeat,
+                address_mode_v: wgpu::AddressMode::Repeat,
+                address_mode_w: wgpu::AddressMode::Repeat,
                 mag_filter: wgpu::FilterMode::Linear,
                 min_filter: wgpu::FilterMode::Linear,
                 mipmap_filter: wgpu::FilterMode::Linear,
@@ -238,9 +241,9 @@ impl RenderComponent for GpuMaterial {
 
         let ao_texture_sampler = renderer.device().create_sampler(&wgpu::SamplerDescriptor {
             label: Some("AO Texture Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Linear,
@@ -285,7 +288,7 @@ impl RenderComponent for GpuMaterial {
             metallic: material.metallic,
             roughness: material.roughness,
             ao: material.ao,
-            _padding: 0,
+            texture_scale: material.texture_scale,
         };
 
         self.meta
@@ -454,7 +457,7 @@ pub struct MaterialPlugin;
 impl Plugin for MaterialPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_plugin(RenderComponentPlugin::<GpuMaterial>::default())?;
-        app.add_plugin(BindGroupPlugin::<GpuMaterial>::default())?;
+        app.add_plugin(ComponentBindGroupPlugin::<GpuMaterial>::default())?;
         app.get_resource_mut::<AssetLoader>()
             .unwrap()
             .add_loader(MaterialLoader);

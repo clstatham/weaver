@@ -6,7 +6,7 @@ use weaver_app::plugin::Plugin;
 use weaver_ecs::{prelude::Entity, query::Query, world::World};
 
 use crate::{
-    bind_group::{BindGroupPlugin, CreateBindGroup},
+    bind_group::{ComponentBindGroupPlugin, CreateBindGroup},
     buffer::GpuBuffer,
     extract::{RenderComponent, RenderComponentPlugin},
     graph::RenderGraph,
@@ -152,9 +152,6 @@ impl RenderComponent for GpuCamera {
         world: &World,
         renderer: &Renderer,
     ) -> anyhow::Result<()> {
-        // let Some(camera) = world.get_component::<Camera>(entity) else {
-        //     return Ok(());
-        // };
         let camera = world.get_component::<Camera>(entity).unwrap();
 
         self.uniform_buffer.update(
@@ -204,7 +201,7 @@ pub struct CameraPlugin;
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut weaver_app::App) -> anyhow::Result<()> {
         app.add_plugin(RenderComponentPlugin::<GpuCamera>::default())?;
-        app.add_plugin(BindGroupPlugin::<GpuCamera>::default())?;
+        app.add_plugin(ComponentBindGroupPlugin::<GpuCamera>::default())?;
 
         Ok(())
     }

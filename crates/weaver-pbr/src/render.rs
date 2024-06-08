@@ -10,7 +10,7 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::{bail, Result};
 
-use crate::material::GpuMaterial;
+use crate::{light::GpuPointLightArray, material::GpuMaterial};
 
 #[derive(Default)]
 pub struct PbrNode {
@@ -26,6 +26,7 @@ impl PbrNode {
                 &GpuMaterial::bind_group_layout(device),
                 &GpuCamera::bind_group_layout(device),
                 &GpuTransform::bind_group_layout(device),
+                &GpuPointLightArray::bind_group_layout(device),
             ],
             push_constant_ranges: &[],
         });
@@ -128,6 +129,10 @@ impl Render for PbrNode {
             bail!("PbrNode expected a bind group in slot 2");
         };
 
+        let Slot::BindGroup(light_bind_group) = &input_slots[3] else {
+            bail!("PbrNode expected a bind group in slot 3");
+        };
+
         let pipeline = self.pipeline.as_ref().unwrap();
 
         let mut encoder =
@@ -169,6 +174,7 @@ impl Render for PbrNode {
                 render_pass.set_bind_group(0, &material_bind_group, &[]);
                 render_pass.set_bind_group(1, camera_bind_group, &[]);
                 render_pass.set_bind_group(2, &transform_bind_group, &[]);
+                render_pass.set_bind_group(3, light_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);

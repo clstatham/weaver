@@ -5,7 +5,7 @@ use weaver_core::transform::Transform;
 use weaver_ecs::{entity::Entity, query::Query, world::World};
 
 use crate::{
-    bind_group::{BindGroupPlugin, CreateBindGroup},
+    bind_group::{ComponentBindGroupPlugin, CreateBindGroup},
     buffer::GpuBuffer,
     extract::{RenderComponent, RenderComponentPlugin},
     Renderer,
@@ -98,7 +98,7 @@ pub struct TransformPlugin;
 impl Plugin for TransformPlugin {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
         app.add_plugin(RenderComponentPlugin::<GpuTransform>::default())?;
-        app.add_plugin(BindGroupPlugin::<GpuTransform>::default())?;
+        app.add_plugin(ComponentBindGroupPlugin::<GpuTransform>::default())?;
         Ok(())
     }
 }

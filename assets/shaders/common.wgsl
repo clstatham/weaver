@@ -29,7 +29,7 @@ struct CameraUniform {
 
 struct MaterialUniform {
     base_color: vec4<f32>,
-    properties: vec4<f32>, // x: metallic, y: roughness, z: ao, w: unused
+    properties: vec4<f32>, // x: metallic, y: roughness, z: ao, w: texture_scale
 };
 
 struct PointLight {

@@ -68,3 +68,41 @@ fn update_render_components<T: RenderComponent>(world: &World) -> anyhow::Result
 
     Ok(())
 }
+
+pub trait RenderResource: Component {
+    fn extract_render_resource(world: &World, renderer: &Renderer) -> Option<Self>
+    where
+        Self: Sized;
+    fn update_render_resource(&mut self, world: &World, renderer: &Renderer) -> anyhow::Result<()>;
+}
+
+pub struct RenderResourcePlugin<T: RenderResource>(std::marker::PhantomData<T>);
+
+impl<T: RenderResource> Default for RenderResourcePlugin<T> {
+    fn default() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl<T: RenderResource> Plugin for RenderResourcePlugin<T> {
+    fn build(&self, app: &mut App) -> anyhow::Result<()> {
+        app.add_system(extract_render_resource::<T>, SystemStage::PreRender)?;
+        Ok(())
+    }
+}
+
+fn extract_render_resource<T: RenderResource>(world: &World) -> anyhow::Result<()> {
+    if !world.has_resource::<T>() {
+        let renderer = world
+            .get_resource::<Renderer>()
+            .expect("Renderer resource not present before extracting render resource");
+
+        if let Some(component) = T::extract_render_resource(world, &renderer) {
+            log::debug!("Extracted render resource: {:?}", type_name::<T>());
+            drop(renderer);
+            world.insert_resource(component);
+        }
+    }
+
+    Ok(())
+}

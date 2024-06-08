@@ -42,15 +42,15 @@ where
     }
 }
 
-pub struct BindGroupPlugin<T: CreateBindGroup>(std::marker::PhantomData<T>);
+pub struct ComponentBindGroupPlugin<T: CreateBindGroup>(std::marker::PhantomData<T>);
 
-impl<T: CreateBindGroup> Default for BindGroupPlugin<T> {
+impl<T: CreateBindGroup> Default for ComponentBindGroupPlugin<T> {
     fn default() -> Self {
         Self(std::marker::PhantomData)
     }
 }
 
-impl<T: CreateBindGroup> Plugin for BindGroupPlugin<T> {
+impl<T: CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
         app.add_system(create_bind_groups::<T>, SystemStage::PreRender)?;
         Ok(())
@@ -70,6 +70,36 @@ fn create_bind_groups<T: CreateBindGroup>(world: &World) -> anyhow::Result<()> {
             drop(data);
             world.insert_component(entity, bind_group);
         }
+    }
+
+    Ok(())
+}
+
+pub struct ResourceBindGroupPlugin<T: CreateBindGroup>(std::marker::PhantomData<T>);
+
+impl<T: CreateBindGroup> Default for ResourceBindGroupPlugin<T> {
+    fn default() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl<T: CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
+    fn build(&self, app: &mut App) -> anyhow::Result<()> {
+        app.add_system(create_resource_bind_group::<T>, SystemStage::PreRender)?;
+        Ok(())
+    }
+}
+
+fn create_resource_bind_group<T: CreateBindGroup>(world: &World) -> anyhow::Result<()> {
+    let renderer = world.get_resource::<Renderer>().unwrap();
+    let device = renderer.device();
+
+    if !world.has_resource::<BindGroup<T>>() {
+        let data = world.get_resource::<T>().unwrap();
+        let bind_group = BindGroup::new(device, &*data);
+        drop(data);
+        drop(renderer);
+        world.insert_resource(bind_group);
     }
 
     Ok(())
