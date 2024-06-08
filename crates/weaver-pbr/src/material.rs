@@ -9,7 +9,8 @@ use weaver_core::{color::Color, texture::Texture};
 use weaver_ecs::prelude::{Entity, Query, World};
 use weaver_renderer::{
     bind_group::{CreateBindGroup, CreateBindGroupPlugin},
-    extract::{ExtractRenderComponentPlugin, RenderComponent},
+    buffer::GpuBuffer,
+    extract::{RenderComponent, RenderComponentPlugin},
     prelude::*,
     texture::GpuTexture,
 };
@@ -144,7 +145,7 @@ struct MaterialMetaUniform {
 }
 
 pub struct GpuMaterial {
-    pub meta: wgpu::Buffer,
+    pub meta: GpuBuffer,
 
     pub diffuse_texture: GpuTexture,
     pub diffuse_texture_sampler: wgpu::Sampler,
@@ -157,7 +158,7 @@ pub struct GpuMaterial {
 }
 
 impl RenderComponent for GpuMaterial {
-    fn query() -> Query {
+    fn extract_query() -> Query {
         Query::new().read::<Handle<Material>>()
     }
 
@@ -199,6 +200,8 @@ impl RenderComponent for GpuMaterial {
                 contents: bytemuck::cast_slice(&[meta]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
+
+        let meta = GpuBuffer::new(meta);
 
         let diffuse_texture_sampler = renderer.device().create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Diffuse Texture Sampler"),
@@ -256,6 +259,35 @@ impl RenderComponent for GpuMaterial {
             ao_texture,
             ao_texture_sampler,
         })
+    }
+
+    fn update_render_component(&mut self, entity: Entity, world: &World) -> Result<()> {
+        let Some(renderer) = world.get_resource::<Renderer>() else {
+            return Ok(());
+        };
+        let Some(assets) = world.get_resource::<Assets>() else {
+            return Ok(());
+        };
+        let Some(material) = world.get_component::<Handle<Material>>(entity) else {
+            return Ok(());
+        };
+
+        let Some(material) = assets.get(*material) else {
+            return Ok(());
+        };
+
+        let meta = MaterialMetaUniform {
+            diffuse: material.diffuse,
+            metallic: material.metallic,
+            roughness: material.roughness,
+            ao: material.ao,
+            _padding: 0,
+        };
+
+        self.meta
+            .update(renderer.queue(), bytemuck::cast_slice(&[meta]));
+
+        Ok(())
     }
 }
 
@@ -417,7 +449,7 @@ pub struct MaterialPlugin;
 
 impl Plugin for MaterialPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_plugin(ExtractRenderComponentPlugin::<GpuMaterial>::default())?;
+        app.add_plugin(RenderComponentPlugin::<GpuMaterial>::default())?;
         app.add_plugin(CreateBindGroupPlugin::<GpuMaterial>::default())?;
         app.get_resource_mut::<AssetLoader>()
             .unwrap()

@@ -8,7 +8,7 @@ use weaver_ecs::{prelude::Entity, query::Query, world::World};
 use crate::{
     bind_group::{CreateBindGroup, CreateBindGroupPlugin},
     buffer::GpuBuffer,
-    extract::{ExtractRenderComponentPlugin, RenderComponent},
+    extract::{RenderComponent, RenderComponentPlugin},
     graph::RenderGraph,
     Renderer,
 };
@@ -122,7 +122,7 @@ pub struct GpuCamera {
 }
 
 impl RenderComponent for GpuCamera {
-    fn query() -> Query {
+    fn extract_query() -> Query {
         Query::new().read::<Camera>()
     }
 
@@ -145,6 +145,22 @@ impl RenderComponent for GpuCamera {
         Some(Self {
             uniform_buffer: GpuBuffer::new(uniform_buffer),
         })
+    }
+
+    fn update_render_component(&mut self, entity: Entity, world: &World) -> anyhow::Result<()> {
+        let Some(renderer) = world.get_resource::<Renderer>() else {
+            return Ok(());
+        };
+        let Some(camera) = world.get_component::<Camera>(entity) else {
+            return Ok(());
+        };
+
+        self.uniform_buffer.update(
+            renderer.queue(),
+            bytemuck::cast_slice(&[CameraUniform::from(&*camera)]),
+        );
+
+        Ok(())
     }
 }
 
@@ -185,7 +201,7 @@ pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut weaver_app::App) -> anyhow::Result<()> {
-        app.add_plugin(ExtractRenderComponentPlugin::<GpuCamera>::default())?;
+        app.add_plugin(RenderComponentPlugin::<GpuCamera>::default())?;
         app.add_plugin(CreateBindGroupPlugin::<GpuCamera>::default())?;
 
         Ok(())

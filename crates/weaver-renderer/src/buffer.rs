@@ -11,6 +11,10 @@ impl GpuBuffer {
             buffer: Arc::new(buffer),
         }
     }
+
+    pub fn update(&self, queue: &wgpu::Queue, data: &[u8]) {
+        queue.write_buffer(&self.buffer, 0, data);
+    }
 }
 
 impl std::ops::Deref for GpuBuffer {

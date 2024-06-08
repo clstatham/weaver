@@ -1,5 +1,5 @@
 use crate::{
-    extract::{ExtractRenderComponentPlugin, RenderComponent},
+    extract::{RenderComponent, RenderComponentPlugin},
     Renderer,
 };
 use weaver_app::{plugin::Plugin, App};
@@ -18,7 +18,7 @@ pub struct GpuMesh {
 }
 
 impl RenderComponent for GpuMesh {
-    fn query() -> Query {
+    fn extract_query() -> Query {
         Query::new().read::<Handle<Mesh>>()
     }
 
@@ -49,13 +49,17 @@ impl RenderComponent for GpuMesh {
             num_indices: mesh.indices.len() as u32,
         })
     }
+
+    fn update_render_component(&mut self, _entity: Entity, _world: &World) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 pub struct MeshPlugin;
 
 impl Plugin for MeshPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_plugin(ExtractRenderComponentPlugin::<GpuMesh>::default())?;
+        app.add_plugin(RenderComponentPlugin::<GpuMesh>::default())?;
         Ok(())
     }
 }

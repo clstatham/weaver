@@ -10,7 +10,7 @@ use weaver_ecs::{
 use wgpu::util::DeviceExt;
 
 use crate::{
-    extract::{ExtractRenderComponentPlugin, RenderComponent},
+    extract::{RenderComponent, RenderComponentPlugin},
     Renderer,
 };
 
@@ -52,7 +52,7 @@ impl GpuTexture {
 }
 
 impl RenderComponent for GpuTexture {
-    fn query() -> Query {
+    fn extract_query() -> Query {
         Query::new().read::<Handle<Texture>>()
     }
 
@@ -67,13 +67,17 @@ impl RenderComponent for GpuTexture {
         let image = assets.get(*image)?;
         Self::from_image(&renderer, image)
     }
+
+    fn update_render_component(&mut self, _entity: Entity, _world: &World) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 pub struct TexturePlugin;
 
 impl Plugin for TexturePlugin {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_plugin(ExtractRenderComponentPlugin::<GpuTexture>::default())?;
+        app.add_plugin(RenderComponentPlugin::<GpuTexture>::default())?;
         Ok(())
     }
 }

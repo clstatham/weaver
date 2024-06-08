@@ -6,6 +6,7 @@ use weaver_renderer::{
     mesh::GpuMesh,
     prelude::*,
     shader::Shader,
+    transform::GpuTransform,
 };
 use weaver_util::prelude::{bail, Result};
 
@@ -24,6 +25,7 @@ impl PbrNode {
             bind_group_layouts: &[
                 &GpuMaterial::bind_group_layout(device),
                 &GpuCamera::bind_group_layout(device),
+                &GpuTransform::bind_group_layout(device),
             ],
             push_constant_ranges: &[],
         });
@@ -140,6 +142,7 @@ impl Render for PbrNode {
         for entity in query.iter() {
             let mesh = query.get::<GpuMesh>(entity).unwrap();
             let material_bind_group = query.get::<BindGroup<GpuMaterial>>(entity).unwrap();
+            let transform_bind_group = query.get::<BindGroup<GpuTransform>>(entity).unwrap();
 
             {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -167,6 +170,7 @@ impl Render for PbrNode {
                 render_pass.set_pipeline(pipeline);
                 render_pass.set_bind_group(0, &material_bind_group, &[]);
                 render_pass.set_bind_group(1, camera_bind_group, &[]);
+                render_pass.set_bind_group(2, &transform_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);

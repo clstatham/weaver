@@ -183,7 +183,7 @@ impl RenderGraph {
             }
         }
         if let Some(occupied_edge) = occupied_edge {
-            log::warn!(
+            log::debug!(
                 "Replacing RenderGraph edge from {:?}:{:?} to {:?}:{:?} with new edge from {:?}:{:?} to {:?}:{:?}",
                 self.graph[occupied_edge].from_node,
                 self.graph[occupied_edge].from_slot,

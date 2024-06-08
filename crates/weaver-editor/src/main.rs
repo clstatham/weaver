@@ -8,7 +8,7 @@ use weaver::{
     winit::WinitPlugin,
 };
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<()> {
     env_logger::init();
     let mut app = App::new()?;
     app.add_plugin(WinitPlugin {
@@ -19,11 +19,12 @@ fn main() -> anyhow::Result<()> {
     app.add_plugin(PbrPlugin)?;
 
     app.add_system(setup, SystemStage::Init)?;
+    app.add_system(update, SystemStage::Update)?;
 
     app.run()
 }
 
-fn setup(world: &World) -> anyhow::Result<()> {
+fn setup(world: &World) -> Result<()> {
     let scene = world.root_scene();
     let camera = scene.create_node_with(Camera::perspective_lookat(
         Vec3::new(5.0, 5.0, 5.0),
@@ -46,6 +47,20 @@ fn setup(world: &World) -> anyhow::Result<()> {
 
     let material = asset_loader.load::<Material>("assets/materials/wood.glb")?;
     world.insert_component(cube.entity(), material);
+
+    let transform = Transform::from_rotation(Quat::from_rotation_y(20.0f32.to_radians()));
+    world.insert_component(cube.entity(), transform);
+
+    Ok(())
+}
+
+fn update(world: &World) -> Result<()> {
+    let query = world.query(&Query::new().read::<Transform>());
+
+    for entity in query.iter() {
+        let mut transform = world.get_component_mut::<Transform>(entity).unwrap();
+        transform.rotation *= Quat::from_rotation_y(0.00001);
+    }
 
     Ok(())
 }

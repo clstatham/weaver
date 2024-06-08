@@ -3,6 +3,7 @@ use std::sync::Arc;
 use camera::CameraPlugin;
 use mesh::MeshPlugin;
 use texture::TexturePlugin;
+use transform::TransformPlugin;
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{system::SystemStage, world::World};
 use weaver_util::lock::Lock;
@@ -17,6 +18,7 @@ pub mod graph;
 pub mod mesh;
 pub mod shader;
 pub mod texture;
+pub mod transform;
 
 pub mod prelude {
     pub use super::camera::{Camera, CameraPlugin};
@@ -110,7 +112,7 @@ impl Renderer {
                 format: wgpu::TextureFormat::Bgra8UnormSrgb,
                 width: window.inner_size().width,
                 height: window.inner_size().height,
-                present_mode: wgpu::PresentMode::AutoVsync,
+                present_mode: wgpu::PresentMode::AutoNoVsync,
                 desired_maximum_frame_latency: 2,
                 alpha_mode: caps.alpha_modes[0],
                 view_formats: vec![],
@@ -203,6 +205,7 @@ impl Plugin for RendererPlugin {
         app.world().insert_resource(Renderer::new());
 
         app.add_plugin(CameraPlugin)?;
+        app.add_plugin(TransformPlugin)?;
         app.add_plugin(MeshPlugin)?;
         app.add_plugin(TexturePlugin)?;
 

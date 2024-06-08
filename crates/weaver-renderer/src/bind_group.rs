@@ -1,4 +1,4 @@
-use std::{any::type_name, ops::Deref, sync::Arc};
+use std::{ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{query::Query, system::SystemStage, world::World};
@@ -66,14 +66,9 @@ fn create_bind_groups<T: CreateBindGroup>(world: &World) -> anyhow::Result<()> {
     for entity in query.iter() {
         if !world.has_component::<BindGroup<T>>(entity) {
             let data = world.get_component::<T>(entity).unwrap();
-            log::info!(
-                "Creating {:?} bind group for entity {:?}",
-                type_name::<T>(),
-                entity
-            );
             let bind_group = BindGroup::new(device, &*data);
             drop(data);
-            world.insert_component::<BindGroup<T>>(entity, bind_group);
+            world.insert_component(entity, bind_group);
         }
     }
 

@@ -74,7 +74,7 @@ pub fn preprocess_shader(
 
     let shader = std::fs::read_to_string(file_path).unwrap();
 
-    // try_every_shader_file(&mut composer, file_path, base_include_path, 100).unwrap();
+    try_every_shader_file(&mut composer, file_path, base_include_path, 100).unwrap();
 
     let module = composer
         .make_naga_module(NagaModuleDescriptor {
