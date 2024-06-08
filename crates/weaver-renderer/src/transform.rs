@@ -5,7 +5,7 @@ use weaver_core::transform::Transform;
 use weaver_ecs::{entity::Entity, query::Query, world::World};
 
 use crate::{
-    bind_group::{CreateBindGroup, CreateBindGroupPlugin},
+    bind_group::{BindGroupPlugin, CreateBindGroup},
     buffer::GpuBuffer,
     extract::{RenderComponent, RenderComponentPlugin},
     Renderer,
@@ -20,12 +20,11 @@ impl RenderComponent for GpuTransform {
         Query::new().read::<Transform>()
     }
 
-    fn extract_render_component(entity: Entity, world: &World) -> Option<Self>
+    fn extract_render_component(entity: Entity, world: &World, renderer: &Renderer) -> Option<Self>
     where
         Self: Sized,
     {
         let transform = world.get_component::<Transform>(entity)?;
-        let renderer = world.get_resource::<Renderer>()?;
 
         let buffer = GpuBuffer::new(renderer.device().create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -38,11 +37,13 @@ impl RenderComponent for GpuTransform {
         Some(Self { buffer })
     }
 
-    fn update_render_component(&mut self, entity: Entity, world: &World) -> anyhow::Result<()> {
+    fn update_render_component(
+        &mut self,
+        entity: Entity,
+        world: &World,
+        renderer: &Renderer,
+    ) -> anyhow::Result<()> {
         let Some(transform) = world.get_component::<Transform>(entity) else {
-            return Ok(());
-        };
-        let Some(renderer) = world.get_resource::<Renderer>() else {
             return Ok(());
         };
 
@@ -96,7 +97,7 @@ pub struct TransformPlugin;
 impl Plugin for TransformPlugin {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
         app.add_plugin(RenderComponentPlugin::<GpuTransform>::default())?;
-        app.add_plugin(CreateBindGroupPlugin::<GpuTransform>::default())?;
+        app.add_plugin(BindGroupPlugin::<GpuTransform>::default())?;
         Ok(())
     }
 }

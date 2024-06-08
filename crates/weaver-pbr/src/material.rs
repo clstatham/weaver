@@ -8,7 +8,7 @@ use weaver_asset::{
 use weaver_core::{color::Color, texture::Texture};
 use weaver_ecs::prelude::{Entity, Query, World};
 use weaver_renderer::{
-    bind_group::{CreateBindGroup, CreateBindGroupPlugin},
+    bind_group::{BindGroupPlugin, CreateBindGroup},
     buffer::GpuBuffer,
     extract::{RenderComponent, RenderComponentPlugin},
     prelude::*,
@@ -162,28 +162,27 @@ impl RenderComponent for GpuMaterial {
         Query::new().read::<Handle<Material>>()
     }
 
-    fn extract_render_component(entity: Entity, world: &World) -> Option<Self>
+    fn extract_render_component(entity: Entity, world: &World, renderer: &Renderer) -> Option<Self>
     where
         Self: Sized,
     {
-        let renderer = world.get_resource::<Renderer>()?;
         let assets = world.get_resource::<Assets>()?;
         let material = world.get_component::<Handle<Material>>(entity)?;
 
         let material = assets.get(*material)?;
 
         let diffuse_texture = assets.get(material.diffuse_texture)?;
-        let diffuse_texture = GpuTexture::from_image(&renderer, diffuse_texture)?;
+        let diffuse_texture = GpuTexture::from_image(renderer, diffuse_texture)?;
 
         let normal_texture = assets.get(material.normal_texture)?;
-        let normal_texture = GpuTexture::from_image(&renderer, normal_texture)?;
+        let normal_texture = GpuTexture::from_image(renderer, normal_texture)?;
 
         let metallic_roughness_texture = assets.get(material.metallic_roughness_texture)?;
         let metallic_roughness_texture =
-            GpuTexture::from_image(&renderer, metallic_roughness_texture)?;
+            GpuTexture::from_image(renderer, metallic_roughness_texture)?;
 
         let ao_texture = assets.get(material.ao_texture)?;
-        let ao_texture = GpuTexture::from_image(&renderer, ao_texture)?;
+        let ao_texture = GpuTexture::from_image(renderer, ao_texture)?;
 
         let meta = MaterialMetaUniform {
             diffuse: material.diffuse,
@@ -261,10 +260,12 @@ impl RenderComponent for GpuMaterial {
         })
     }
 
-    fn update_render_component(&mut self, entity: Entity, world: &World) -> Result<()> {
-        let Some(renderer) = world.get_resource::<Renderer>() else {
-            return Ok(());
-        };
+    fn update_render_component(
+        &mut self,
+        entity: Entity,
+        world: &World,
+        renderer: &Renderer,
+    ) -> Result<()> {
         let Some(assets) = world.get_resource::<Assets>() else {
             return Ok(());
         };
@@ -450,7 +451,7 @@ pub struct MaterialPlugin;
 impl Plugin for MaterialPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_plugin(RenderComponentPlugin::<GpuMaterial>::default())?;
-        app.add_plugin(CreateBindGroupPlugin::<GpuMaterial>::default())?;
+        app.add_plugin(BindGroupPlugin::<GpuMaterial>::default())?;
         app.get_resource_mut::<AssetLoader>()
             .unwrap()
             .add_loader(MaterialLoader);

@@ -56,19 +56,23 @@ impl RenderComponent for GpuTexture {
         Query::new().read::<Handle<Texture>>()
     }
 
-    fn extract_render_component(entity: Entity, world: &World) -> Option<Self>
+    fn extract_render_component(entity: Entity, world: &World, renderer: &Renderer) -> Option<Self>
     where
         Self: Sized,
     {
-        let renderer = world.get_resource::<Renderer>()?;
         let assets = world.get_resource::<Assets>()?;
         let image = world.get_component::<Handle<Texture>>(entity)?;
 
         let image = assets.get(*image)?;
-        Self::from_image(&renderer, image)
+        Self::from_image(renderer, image)
     }
 
-    fn update_render_component(&mut self, _entity: Entity, _world: &World) -> anyhow::Result<()> {
+    fn update_render_component(
+        &mut self,
+        _entity: Entity,
+        _world: &World,
+        _renderer: &Renderer,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 }

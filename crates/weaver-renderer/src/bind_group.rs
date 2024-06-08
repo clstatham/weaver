@@ -42,15 +42,15 @@ where
     }
 }
 
-pub struct CreateBindGroupPlugin<T: CreateBindGroup>(std::marker::PhantomData<T>);
+pub struct BindGroupPlugin<T: CreateBindGroup>(std::marker::PhantomData<T>);
 
-impl<T: CreateBindGroup> Default for CreateBindGroupPlugin<T> {
+impl<T: CreateBindGroup> Default for BindGroupPlugin<T> {
     fn default() -> Self {
         Self(std::marker::PhantomData)
     }
 }
 
-impl<T: CreateBindGroup> Plugin for CreateBindGroupPlugin<T> {
+impl<T: CreateBindGroup> Plugin for BindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
         app.add_system(create_bind_groups::<T>, SystemStage::PreRender)?;
         Ok(())

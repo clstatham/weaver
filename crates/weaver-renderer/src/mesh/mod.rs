@@ -22,11 +22,10 @@ impl RenderComponent for GpuMesh {
         Query::new().read::<Handle<Mesh>>()
     }
 
-    fn extract_render_component(entity: Entity, world: &World) -> Option<Self>
+    fn extract_render_component(entity: Entity, world: &World, renderer: &Renderer) -> Option<Self>
     where
         Self: Sized,
     {
-        let renderer = world.get_resource::<Renderer>()?;
         let assets = world.get_resource::<Assets>()?;
         let mesh = world.get_component::<Handle<Mesh>>(entity)?;
         let mesh = assets.get(*mesh)?;
@@ -50,7 +49,12 @@ impl RenderComponent for GpuMesh {
         })
     }
 
-    fn update_render_component(&mut self, _entity: Entity, _world: &World) -> anyhow::Result<()> {
+    fn update_render_component(
+        &mut self,
+        _entity: Entity,
+        _world: &World,
+        _renderer: &Renderer,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 }
