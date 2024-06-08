@@ -35,11 +35,11 @@ pub struct CurrentFrame {
 }
 
 pub struct Renderer {
-    instance: wgpu::Instance,
-    adapter: wgpu::Adapter,
+    instance: Option<wgpu::Instance>,
+    adapter: Option<wgpu::Adapter>,
     window_surface: Option<wgpu::Surface<'static>>,
-    device: Arc<wgpu::Device>,
-    queue: Arc<wgpu::Queue>,
+    device: Option<Arc<wgpu::Device>>,
+    queue: Option<Arc<wgpu::Queue>>,
     current_frame: Lock<Option<CurrentFrame>>,
     depth_texture: Lock<Option<Arc<wgpu::Texture>>>,
     command_buffers: Lock<Vec<wgpu::CommandBuffer>>,
@@ -48,30 +48,12 @@ pub struct Renderer {
 impl Renderer {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            force_fallback_adapter: false,
-        }))
-        .unwrap();
-
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                label: None,
-            },
-            None,
-        ))
-        .unwrap();
-
         Self {
-            instance,
-            adapter,
+            instance: None,
+            adapter: None,
             window_surface: None,
-            device: Arc::new(device),
-            queue: Arc::new(queue),
+            device: None,
+            queue: None,
             current_frame: Lock::new(None),
             depth_texture: Lock::new(None),
             command_buffers: Lock::new(Vec::new()),
@@ -79,11 +61,11 @@ impl Renderer {
     }
 
     pub fn device(&self) -> &Arc<wgpu::Device> {
-        &self.device
+        self.device.as_ref().unwrap()
     }
 
     pub fn queue(&self) -> &Arc<wgpu::Queue> {
-        &self.queue
+        self.queue.as_ref().unwrap()
     }
 
     pub fn current_frame_view(&self) -> Option<(Arc<wgpu::TextureView>, Arc<wgpu::TextureView>)> {
@@ -95,25 +77,49 @@ impl Renderer {
 
     pub fn create_surface(&mut self, window: &Window) -> anyhow::Result<()> {
         if self.window_surface.is_some() {
+            log::warn!("Surface already created");
             return Ok(());
         }
 
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            ..Default::default()
+        });
+
         let surface = unsafe {
-            self.instance
-                .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::from_window(window)?)?
+            instance
+                .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::from_window(window).unwrap())?
         };
 
-        let caps = surface.get_capabilities(&self.adapter);
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: Some(&surface),
+            force_fallback_adapter: false,
+        }))
+        .unwrap();
+
+        let (device, queue) = pollster::block_on(adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                required_features: wgpu::Features::empty(),
+                required_limits:
+                    wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
+                label: None,
+            },
+            None,
+        ))
+        .unwrap();
+
+        let caps = surface.get_capabilities(&adapter);
 
         surface.configure(
-            &self.device,
+            &device,
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
-                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                format: wgpu::TextureFormat::Bgra8Unorm,
                 width: window.inner_size().width,
                 height: window.inner_size().height,
                 present_mode: wgpu::PresentMode::AutoNoVsync,
-                desired_maximum_frame_latency: 2,
+                desired_maximum_frame_latency: 1,
                 alpha_mode: caps.alpha_modes[0],
                 view_formats: vec![],
             },
@@ -121,7 +127,7 @@ impl Renderer {
 
         self.window_surface = Some(surface);
 
-        let depth_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Depth Texture"),
             size: wgpu::Extent3d {
                 width: window.inner_size().width,
@@ -138,15 +144,17 @@ impl Renderer {
 
         *self.depth_texture.write() = Some(Arc::new(depth_texture));
 
-        Ok(())
-    }
+        self.instance = Some(instance);
+        self.adapter = Some(adapter);
+        self.device = Some(Arc::new(device));
+        self.queue = Some(Arc::new(queue));
 
-    pub fn destroy_surface(&mut self) {
-        self.window_surface = None;
+        Ok(())
     }
 
     pub fn begin_frame(&self) -> anyhow::Result<()> {
         if self.current_frame.read().is_some() {
+            log::warn!("Current frame already exists");
             return Ok(());
         }
 
@@ -190,7 +198,7 @@ impl Renderer {
         } = self.current_frame.write().take().unwrap();
 
         let command_buffers = self.command_buffers.write().drain(..).collect::<Vec<_>>();
-        self.queue.submit(command_buffers);
+        self.queue().submit(command_buffers);
 
         surface_texture.present();
 

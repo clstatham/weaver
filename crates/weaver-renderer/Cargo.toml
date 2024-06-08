@@ -5,12 +5,12 @@ edition = "2021"
 
 [dependencies]
 log = "0.4.14"
-naga_oil = "0.14.0"
-wgpu = { version = "0.20.0", features = ["naga-ir"] }
+naga_oil = "0.13"
+wgpu = { version = "0.19.4", features = ["naga-ir"] }
 glam = { version = "0.27.0", features = ["bytemuck"] }
 anyhow = "1.0.40"
 bytemuck = { version = "1.16.0", features = ["derive"] }
-winit = "0.30.0"
+winit = "0.29.15"
 pollster = "0.3.0"
 petgraph = "0.6.5"
 

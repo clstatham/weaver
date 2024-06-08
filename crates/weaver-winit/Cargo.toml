@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.86"
-winit = "0.30.0"
+winit = "0.29.15"
 
 weaver-app = { path = "../weaver-app" }
 weaver-ecs = { path = "../weaver-ecs" }

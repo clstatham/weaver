@@ -43,9 +43,10 @@ impl RenderComponent for GpuTransform {
         world: &World,
         renderer: &Renderer,
     ) -> anyhow::Result<()> {
-        let Some(transform) = world.get_component::<Transform>(entity) else {
-            return Ok(());
-        };
+        // let Some(transform) = world.get_component::<Transform>(entity) else {
+        //     return Ok(());
+        // };
+        let transform = world.get_component::<Transform>(entity).unwrap();
 
         self.buffer.update(
             renderer.queue(),

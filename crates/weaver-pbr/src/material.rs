@@ -266,16 +266,19 @@ impl RenderComponent for GpuMaterial {
         world: &World,
         renderer: &Renderer,
     ) -> Result<()> {
-        let Some(assets) = world.get_resource::<Assets>() else {
-            return Ok(());
-        };
-        let Some(material) = world.get_component::<Handle<Material>>(entity) else {
-            return Ok(());
-        };
+        // let Some(assets) = world.get_resource::<Assets>() else {
+        //     return Ok(());
+        // };
+        let assets = world.get_resource::<Assets>().unwrap();
+        // let Some(material) = world.get_component::<Handle<Material>>(entity) else {
+        //     return Ok(());
+        // };
+        let material = world.get_component::<Handle<Material>>(entity).unwrap();
 
-        let Some(material) = assets.get(*material) else {
-            return Ok(());
-        };
+        // let Some(material) = assets.get(*material) else {
+        //     return Ok(());
+        // };
+        let material = assets.get(*material).unwrap();
 
         let meta = MaterialMetaUniform {
             diffuse: material.diffuse,

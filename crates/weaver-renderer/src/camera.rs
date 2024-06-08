@@ -152,9 +152,10 @@ impl RenderComponent for GpuCamera {
         world: &World,
         renderer: &Renderer,
     ) -> anyhow::Result<()> {
-        let Some(camera) = world.get_component::<Camera>(entity) else {
-            return Ok(());
-        };
+        // let Some(camera) = world.get_component::<Camera>(entity) else {
+        //     return Ok(());
+        // };
+        let camera = world.get_component::<Camera>(entity).unwrap();
 
         self.uniform_buffer.update(
             renderer.queue(),

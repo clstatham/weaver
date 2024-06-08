@@ -1,10 +1,10 @@
 use weaver_app::{plugin::Plugin, prelude::App, Runner};
 use weaver_ecs::system::SystemStage;
 use winit::{
-    application::ApplicationHandler,
+    dpi::LogicalSize,
     event::WindowEvent,
-    event_loop::{ActiveEventLoop, EventLoop},
-    window::{Window, WindowId},
+    event_loop::EventLoop,
+    window::{Window, WindowBuilder},
 };
 
 pub mod prelude {
@@ -26,12 +26,9 @@ impl Default for WinitPlugin {
 impl Plugin for WinitPlugin {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
         let event_loop = EventLoop::new()?;
-        #[allow(deprecated)]
-        let window = event_loop
-            .create_window(Window::default_attributes().with_inner_size(
-                winit::dpi::PhysicalSize::new(self.initial_size.0, self.initial_size.1),
-            ))
-            .unwrap();
+        let window = WindowBuilder::new()
+            .with_inner_size(LogicalSize::new(self.initial_size.0, self.initial_size.1))
+            .build(&event_loop)?;
 
         app.world().insert_resource(window);
         app.world().insert_resource(event_loop);
@@ -50,55 +47,39 @@ impl Runner for WinitRunner {
 
         let event_loop = app.world().remove_resource::<EventLoop<()>>().unwrap();
 
-        let mut handler = WinitApplicationHandler { app };
-        event_loop.run_app(&mut handler)?;
+        event_loop.run(move |event, event_loop_window| match event {
+            winit::event::Event::WindowEvent { event, window_id } => {
+                if let Some(window) = app.world().get_resource::<Window>() {
+                    if window.id() == window_id {
+                        match event {
+                            WindowEvent::CloseRequested => {
+                                app.run_systems(SystemStage::PreShutdown).unwrap();
+                                app.run_systems(SystemStage::Shutdown).unwrap();
+                                app.run_systems(SystemStage::PostShutdown).unwrap();
+                                event_loop_window.exit();
+                            }
+                            WindowEvent::RedrawRequested => {
+                                app.run_systems(SystemStage::PreUpdate).unwrap();
+                                app.run_systems(SystemStage::Update).unwrap();
+                                app.run_systems(SystemStage::PostUpdate).unwrap();
 
-        let WinitApplicationHandler { app, .. } = handler;
+                                app.run_systems(SystemStage::Ui).unwrap();
 
-        app.run_systems(SystemStage::PreShutdown)?;
-        app.run_systems(SystemStage::Shutdown)?;
-        app.run_systems(SystemStage::PostShutdown)?;
+                                app.run_systems(SystemStage::PreRender).unwrap();
+                                app.run_systems(SystemStage::Render).unwrap();
+                                window.pre_present_notify();
+                                app.run_systems(SystemStage::PostRender).unwrap();
 
-        Ok(())
-    }
-}
-
-struct WinitApplicationHandler {
-    app: App,
-}
-
-impl ApplicationHandler for WinitApplicationHandler {
-    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
-
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        window_id: WindowId,
-        event: WindowEvent,
-    ) {
-        if let Some(window) = self.app.world().get_resource::<Window>() {
-            if window.id() == window_id {
-                match event {
-                    WindowEvent::CloseRequested => {
-                        event_loop.exit();
+                                window.request_redraw();
+                            }
+                            _ => {}
+                        }
                     }
-                    WindowEvent::RedrawRequested => {
-                        self.app.run_systems(SystemStage::PreUpdate).unwrap();
-                        self.app.run_systems(SystemStage::Update).unwrap();
-                        self.app.run_systems(SystemStage::PostUpdate).unwrap();
-
-                        self.app.run_systems(SystemStage::Ui).unwrap();
-
-                        self.app.run_systems(SystemStage::PreRender).unwrap();
-                        self.app.run_systems(SystemStage::Render).unwrap();
-                        window.pre_present_notify();
-                        self.app.run_systems(SystemStage::PostRender).unwrap();
-
-                        window.request_redraw();
-                    }
-                    _ => {}
                 }
             }
-        }
+            _ => (),
+        })?;
+
+        Ok(())
     }
 }
