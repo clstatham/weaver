@@ -1,55 +1,17 @@
 use std::fmt::Debug;
 
+use wgpu::util::DeviceExt;
+
 use weaver_app::plugin::Plugin;
-use weaver_core::color::Color;
-use weaver_ecs::{query::Query, system::SystemStage, world::World};
+use weaver_ecs::{prelude::Entity, query::Query, system::SystemStage, world::World};
 
 use crate::{
-    clear_color::ClearColor,
-    graph::{RenderGraph, RenderNode},
-    target::RenderTarget,
+    bind_group::{CreateBindGroup, CreateBindGroupPlugin},
+    buffer::GpuBuffer,
+    extract::{ExtractRenderComponentPlugin, RenderComponent},
+    graph::{Render, RenderGraph},
     Renderer,
 };
-
-pub struct CameraPlugin;
-
-impl Plugin for CameraPlugin {
-    fn build(&self, app: &mut weaver_app::App) -> anyhow::Result<()> {
-        app.add_system(prepare_cameras, SystemStage::PreRender)?;
-        app.add_system(render_cameras, SystemStage::Render)?;
-        Ok(())
-    }
-}
-
-fn prepare_cameras(world: &World) -> anyhow::Result<()> {
-    let camera_query = world.query(&Query::new().read::<Camera>());
-
-    for camera_entity in camera_query.iter() {
-        let camera = camera_query.get::<Camera>(camera_entity).unwrap();
-        if camera.active() {
-            let graph = &camera.graph;
-            let renderer = world.get_resource::<Renderer>().unwrap();
-            graph.prepare(world, &renderer)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn render_cameras(world: &World) -> anyhow::Result<()> {
-    let camera_query = world.query(&Query::new().read::<Camera>());
-
-    for camera_entity in camera_query.iter() {
-        let camera = camera_query.get::<Camera>(camera_entity).unwrap();
-        if camera.active() {
-            let graph = &camera.graph;
-            let renderer = world.get_resource::<Renderer>().unwrap();
-            graph.render(world, &renderer)?;
-        }
-    }
-
-    Ok(())
-}
 
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
@@ -99,12 +61,7 @@ impl Debug for Camera {
 
 impl Camera {
     pub fn new(view_matrix: glam::Mat4, projection_matrix: glam::Mat4) -> Self {
-        let mut graph = RenderGraph::new();
-        graph.add_node(RenderNode::new(
-            "clear_color",
-            ClearColor::new(Color::RED),
-            RenderTarget::PrimaryScreen,
-        ));
+        let graph = RenderGraph::new();
 
         Self {
             active: true,
@@ -158,4 +115,111 @@ impl Default for Camera {
     fn default() -> Self {
         Self::new(glam::Mat4::IDENTITY, glam::Mat4::IDENTITY)
     }
+}
+
+pub struct GpuCamera {
+    pub uniform_buffer: GpuBuffer,
+}
+
+impl RenderComponent for GpuCamera {
+    fn query() -> Query {
+        Query::new().read::<Camera>()
+    }
+
+    fn extract_render_component(entity: Entity, world: &World) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        let renderer = world.get_resource::<Renderer>()?;
+        let camera = world.get_component::<Camera>(entity)?;
+
+        let uniform_buffer =
+            renderer
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Camera Uniform Buffer"),
+                    contents: bytemuck::cast_slice(&[CameraUniform::from(&*camera)]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+
+        Some(Self {
+            uniform_buffer: GpuBuffer::new(uniform_buffer),
+        })
+    }
+}
+
+impl CreateBindGroup for GpuCamera {
+    fn create_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &Self::bind_group_layout(device),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &self.uniform_buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+            label: Some("Camera Bind Group"),
+        })
+    }
+
+    fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Camera Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        })
+    }
+}
+
+pub struct CameraPlugin;
+
+impl Plugin for CameraPlugin {
+    fn build(&self, app: &mut weaver_app::App) -> anyhow::Result<()> {
+        app.add_plugin(ExtractRenderComponentPlugin::<GpuCamera>::default())?;
+        app.add_plugin(CreateBindGroupPlugin::<GpuCamera>::default())?;
+
+        // app.add_system(prepare_cameras, SystemStage::PreRender)?;
+        // app.add_system(render_cameras, SystemStage::Render)?;
+        Ok(())
+    }
+}
+
+fn prepare_cameras(world: &World) -> anyhow::Result<()> {
+    let camera_query = world.query(&Query::new().read::<Camera>());
+
+    for camera_entity in camera_query.iter() {
+        let camera = camera_query.get::<Camera>(camera_entity).unwrap();
+        if camera.active() {
+            let graph = &camera.graph;
+            let renderer = world.get_resource::<Renderer>().unwrap();
+            graph.prepare(world, &renderer, camera_entity)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn render_cameras(world: &World) -> anyhow::Result<()> {
+    let camera_query = world.query(&Query::new().read::<Camera>());
+
+    for camera_entity in camera_query.iter() {
+        let camera = camera_query.get::<Camera>(camera_entity).unwrap();
+        if camera.active() {
+            let graph = &camera.graph;
+            let renderer = world.get_resource::<Renderer>().unwrap();
+            graph.render(world, &renderer)?;
+        }
+    }
+
+    Ok(())
 }

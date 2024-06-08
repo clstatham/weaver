@@ -3,6 +3,7 @@ use crate::{
     Renderer,
 };
 use weaver_app::{plugin::Plugin, App};
+use weaver_asset::{Assets, Handle};
 use weaver_core::mesh::Mesh;
 use weaver_ecs::prelude::*;
 use weaver_util::prelude::*;
@@ -18,7 +19,7 @@ pub struct GpuMesh {
 
 impl RenderComponent for GpuMesh {
     fn query() -> Query {
-        Query::new().read::<Mesh>()
+        Query::new().read::<Handle<Mesh>>()
     }
 
     fn extract_render_component(entity: Entity, world: &World) -> Option<Self>
@@ -26,7 +27,9 @@ impl RenderComponent for GpuMesh {
         Self: Sized,
     {
         let renderer = world.get_resource::<Renderer>()?;
-        let mesh = world.get_component::<Mesh>(entity)?;
+        let assets = world.get_resource::<Assets>()?;
+        let mesh = world.get_component::<Handle<Mesh>>(entity)?;
+        let mesh = assets.get(*mesh)?;
 
         let vertex_buffer = renderer.device().create_buffer_init(&BufferInitDescriptor {
             label: Some("Mesh Vertex Buffer"),

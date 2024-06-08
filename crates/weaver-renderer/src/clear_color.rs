@@ -1,7 +1,10 @@
 use weaver_core::color::Color;
 use weaver_ecs::world::World;
 
-use crate::{graph::Render, target::RenderTarget, Renderer};
+use crate::{
+    graph::{Render, Slot},
+    Renderer,
+};
 
 pub struct ClearColor {
     pub color: Color,
@@ -26,11 +29,19 @@ impl Render for ClearColor {
         &self,
         _world: &World,
         renderer: &Renderer,
-        target: &RenderTarget,
-    ) -> anyhow::Result<()> {
+        input_slots: &[Slot],
+    ) -> anyhow::Result<Vec<Slot>> {
+        log::trace!("ClearColor::render");
         let device = renderer.device();
 
-        let view = target.texture_view(renderer).unwrap();
+        let Slot::Texture(color_target) = &input_slots[0] else {
+            return Err(anyhow::anyhow!("Expected a texture slot"));
+        };
+
+        let Slot::Texture(depth_target) = &input_slots[1] else {
+            return Err(anyhow::anyhow!("Expected a texture slot"));
+        };
+
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("clear_color"),
         });
@@ -46,14 +57,21 @@ impl Render for ClearColor {
             let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear_color"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: color_target,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(color),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_target,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
@@ -61,6 +79,9 @@ impl Render for ClearColor {
 
         renderer.enqueue_command_buffer(encoder.finish());
 
-        Ok(())
+        Ok(vec![
+            Slot::Texture(color_target.clone()),
+            Slot::Texture(depth_target.clone()),
+        ])
     }
 }

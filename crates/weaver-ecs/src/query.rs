@@ -191,4 +191,42 @@ mod tests {
             Some(&*world.get_component::<Velocity>(entity3).unwrap())
         );
     }
+
+    #[test]
+    fn query_multiple_reads() {
+        let world = World::new();
+        let entity1 = world.create_entity();
+        let entity2 = world.create_entity();
+        let entity3 = world.create_entity();
+
+        world.insert_component(entity1, Position { x: 0.0, y: 0.0 });
+        world.insert_component(entity1, Velocity { x: 1.0, y: 1.0 });
+
+        world.insert_component(entity2, Position { x: 0.0, y: 0.0 });
+        world.insert_component(entity2, Acceleration { x: 1.0, y: 1.0 });
+
+        world.insert_component(entity3, Position { x: 0.0, y: 0.0 });
+        world.insert_component(entity3, Velocity { x: 1.0, y: 1.0 });
+        world.insert_component(entity3, Acceleration { x: 1.0, y: 1.0 });
+
+        let query = Query::new().read::<Position>().read::<Velocity>();
+        let results = query.get(&world);
+        let entities = results.iter().collect::<Vec<_>>();
+
+        assert!(entities.contains(&entity1));
+        assert!(!entities.contains(&entity2));
+        assert!(entities.contains(&entity3));
+
+        assert!(results.has::<Position>(entity1));
+        assert!(results.has::<Velocity>(entity1));
+        assert!(!results.has::<Acceleration>(entity1));
+
+        assert!(!results.has::<Position>(entity2));
+        assert!(!results.has::<Velocity>(entity2));
+        assert!(!results.has::<Acceleration>(entity2));
+
+        assert!(results.has::<Position>(entity3));
+        assert!(results.has::<Velocity>(entity3));
+        // assert!(!results.has::<Acceleration>(entity3));
+    }
 }

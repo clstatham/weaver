@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+log = "0.4.14"
 gltf = "1.4.1"
+bytemuck = "1.7.0"
 
 weaver-util = { path = "../weaver-util" }
 weaver-renderer = { path = "../weaver-renderer" }

@@ -91,6 +91,7 @@ impl ApplicationHandler for WinitApplicationHandler {
 
                         self.app.run_systems(SystemStage::PreRender).unwrap();
                         self.app.run_systems(SystemStage::Render).unwrap();
+                        window.pre_present_notify();
                         self.app.run_systems(SystemStage::PostRender).unwrap();
 
                         window.request_redraw();

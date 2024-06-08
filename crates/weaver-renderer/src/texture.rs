@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use weaver_app::{plugin::Plugin, prelude::App};
 use weaver_asset::{Assets, Handle};
 use weaver_core::texture::Texture;
@@ -12,9 +14,10 @@ use crate::{
     Renderer,
 };
 
+#[derive(Clone)]
 pub struct GpuTexture {
-    pub texture: wgpu::Texture,
-    pub view: wgpu::TextureView,
+    pub texture: Arc<wgpu::Texture>,
+    pub view: Arc<wgpu::TextureView>,
 }
 
 impl GpuTexture {
@@ -41,7 +44,10 @@ impl GpuTexture {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        Some(Self { texture, view })
+        Some(Self {
+            texture: Arc::new(texture),
+            view: Arc::new(view),
+        })
     }
 }
 

@@ -2,7 +2,7 @@ use weaver::{
     app::App,
     core::mesh::Mesh,
     ecs::{system::SystemStage, world::World},
-    pbr::{material::Material, PbrPlugin},
+    pbr::{camera::PbrCamera, material::Material, PbrPlugin},
     prelude::*,
     renderer::{camera::Camera, RendererPlugin},
     winit::WinitPlugin,
@@ -25,7 +25,7 @@ fn main() -> anyhow::Result<()> {
 
 fn setup(world: &World) -> anyhow::Result<()> {
     let scene = world.root_scene();
-    scene.create_node_with(Camera::perspective_lookat(
+    let camera = scene.create_node_with(Camera::perspective_lookat(
         Vec3::new(5.0, 5.0, 5.0),
         Vec3::ZERO,
         Vec3::Y,
@@ -34,6 +34,7 @@ fn setup(world: &World) -> anyhow::Result<()> {
         0.1,
         100.0,
     ));
+    world.insert_component(camera.entity(), PbrCamera::new(Color::RED));
 
     let asset_loader = world.get_resource::<AssetLoader>().unwrap();
 

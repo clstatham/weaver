@@ -1,28 +1,53 @@
-#define_import_path weaver::pbr
-#import weaver::common::{ModelTransform, CameraUniform, PointLights, MaterialUniform, VertexInput, MIN_LIGHT_INTENSITY, PI};
+// #define_import_path weaver::pbr
+// #import weaver::common::{ModelTransform, CameraUniform, PointLights, MaterialUniform, VertexInput, MIN_LIGHT_INTENSITY, PI};
 
-// model information
-@group(0) @binding(0) var<storage> transforms: array<ModelTransform>;
+const PI: f32 = 3.1415926535897932384626433832795;
+
+
+struct VertexInput {
+    @builtin(instance_index) instance_index: u32,
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) tangent: vec3<f32>,
+    @location(3) uv: vec2<f32>,
+};
+
+struct MaterialUniform {
+    base_color: vec4<f32>,
+    properties: vec4<f32>, // x: metallic, y: roughness, z: ao, w: unused
+};
+
+struct CameraUniform {
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    inv_view: mat4x4<f32>,
+    inv_proj: mat4x4<f32>,
+    camera_position: vec3<f32>,
+};
+
+
+struct PointLight {
+    position: vec4<f32>,
+    color: vec4<f32>,
+    proj_transform: mat4x4<f32>,
+    intensity: f32,
+    radius: f32,
+};
+
+
+// material information
+@group(0) @binding(0) var<uniform> material: MaterialUniform;
+@group(0) @binding(1) var          diffuse_tex: texture_2d<f32>;
+@group(0) @binding(2) var          diffuse_sampler: sampler;
+@group(0) @binding(3) var          normal_tex: texture_2d<f32>;
+@group(0) @binding(4) var          normal_sampler: sampler;
+@group(0) @binding(5) var          roughness_tex: texture_2d<f32>;
+@group(0) @binding(6) var          roughness_sampler: sampler;
+@group(0) @binding(7) var          ao_tex: texture_2d<f32>;
+@group(0) @binding(8) var          ao_sampler: sampler;
 
 // envorinment information
 @group(1) @binding(0) var<uniform> camera: CameraUniform;
-@group(1) @binding(1) var          env_map: texture_cube<f32>;
-@group(1) @binding(2) var          irradiance_map: texture_cube<f32>;
-@group(1) @binding(3) var          env_sampler: sampler;
-
-// material information
-@group(2) @binding(0) var<uniform> material: MaterialUniform;
-@group(2) @binding(1) var          diffuse_tex: texture_2d<f32>;
-@group(2) @binding(2) var          diffuse_sampler: sampler;
-@group(2) @binding(3) var          normal_tex: texture_2d<f32>;
-@group(2) @binding(4) var          normal_sampler: sampler;
-@group(2) @binding(5) var          roughness_tex: texture_2d<f32>;
-@group(2) @binding(6) var          roughness_sampler: sampler;
-@group(2) @binding(7) var          ao_tex: texture_2d<f32>;
-@group(2) @binding(8) var          ao_sampler: sampler;
-
-// light information
-@group(3) @binding(0) var<storage> point_lights: PointLights;
 
 fn saturate(x: f32) -> f32 {
     return clamp(x, 0.0, 1.0);
@@ -92,22 +117,22 @@ fn calculate_lighting(
     return (kD * albedo / PI + specular) * light_color * attenuation * NdL;
 }
 
-fn calculate_ibl(
-    albedo: vec3<f32>,
-    N: vec3<f32>,
-    V: vec3<f32>,
-    roughness: f32,
-    metallic: f32,
-) -> vec3<f32> {
-    let NdV = max(dot(N, V), 0.0);
-    let R = reflect(-V, N);
+// fn calculate_ibl(
+//     albedo: vec3<f32>,
+//     N: vec3<f32>,
+//     V: vec3<f32>,
+//     roughness: f32,
+//     metallic: f32,
+// ) -> vec3<f32> {
+//     let NdV = max(dot(N, V), 0.0);
+//     let R = reflect(-V, N);
 
-    let diffuse_irradiance = textureSample(env_map, env_sampler, N).rgb;
+//     let diffuse_irradiance = textureSample(env_map, env_sampler, N).rgb;
 
-    let diffuse = diffuse_irradiance * albedo;
+//     let diffuse = diffuse_irradiance * albedo;
 
-    return diffuse;
-}
+//     return diffuse;
+// }
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -126,7 +151,14 @@ struct FragmentOutput {
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
 
-    let model_transform = transforms[input.instance_index].model;
+    let model_transform = mat4x4<f32>(
+        vec4<f32>(1.0, 0.0, 0.0, 0.0),
+        vec4<f32>(0.0, 1.0, 0.0, 0.0),
+        vec4<f32>(0.0, 0.0, 1.0, 0.0),
+        vec4<f32>(0.0, 0.0, 0.0, 1.0),
+    );
+
+    // let model_transform = transforms[input.instance_index].model;
 
     let world_position = (model_transform * vec4<f32>(input.position, 1.0));
 
@@ -149,7 +181,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     var output: FragmentOutput;
 
-    let uv = material.texture_scale.xy * vertex.uv;
+    let uv = vertex.uv;
 
     let tex_color = textureSample(diffuse_tex, diffuse_sampler, uv).rgb * material.base_color.rgb;
     let albedo = pow(tex_color, vec3(2.2));
@@ -167,25 +199,36 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     var illumination = vec3(0.0);
 
-    for (var i = 0u; i < point_lights.count; i = i + 1u) {
-        let light = point_lights.lights[i];
-        let light_pos = light.position.xyz;
-        let L = normalize(light_pos - vertex.world_position);
+    // for (var i = 0u; i < point_lights.count; i = i + 1u) {
+    var light: PointLight;
+    light.position = vec4<f32>(0.0, 0.0, 0.0, 3.0);
+    light.color = vec4<f32>(1.0, 1.0, 1.0, 1.0);
+    light.intensity = 1.0;
+    light.proj_transform = mat4x4<f32>(
+        vec4<f32>(1.0, 0.0, 0.0, 0.0),
+        vec4<f32>(0.0, 1.0, 0.0, 0.0),
+        vec4<f32>(0.0, 0.0, 1.0, 0.0),
+        vec4<f32>(0.0, 0.0, 0.0, 1.0),
+    );
+    light.radius = 10.0;
+    // let light = point_lights.lights[i];
+    let light_pos = light.position.xyz;
+    let L = normalize(light_pos - vertex.world_position);
 
-        let distance = length(light_pos - vertex.world_position);
-        let attenuation = light.intensity / (1.0 + distance * distance / (light.radius * light.radius));
+    let distance = length(light_pos - vertex.world_position);
+    let attenuation = light.intensity / (1.0 + distance * distance / (light.radius * light.radius));
 
-        if attenuation < MIN_LIGHT_INTENSITY {
-            // light is too far away, ignore it
-            continue;
-        }
-        illumination += calculate_lighting(albedo, roughness, metallic, N, L, V, light.color.rgb, attenuation);
-    }
+    // if attenuation < MIN_LIGHT_INTENSITY {
+    //         // light is too far away, ignore it
+    //     continue;
+    // }
+    illumination += calculate_lighting(albedo, roughness, metallic, N, L, V, light.color.rgb, attenuation);
+    // }
 
     let tex_ao = textureSample(ao_tex, ao_sampler, uv).r;
 
     // WIP
-    illumination += calculate_ibl(albedo, N, V, roughness, metallic) * metallic;
+    // illumination += calculate_ibl(albedo, N, V, roughness, metallic) * metallic;
 
     var out_color = illumination * tex_ao;
 

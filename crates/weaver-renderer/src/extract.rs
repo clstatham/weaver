@@ -1,3 +1,5 @@
+use std::any::type_name;
+
 use weaver_app::{plugin::Plugin, prelude::App};
 use weaver_ecs::{
     component::Component, entity::Entity, query::Query, system::SystemStage, world::World,
@@ -31,6 +33,7 @@ fn extract_render_components<T: RenderComponent>(world: &World) -> anyhow::Resul
     for entity in query.iter() {
         if !world.has_component::<T>(entity) {
             if let Some(component) = T::extract_render_component(entity, world) {
+                log::info!("Extracted render component: {:?}", type_name::<T>());
                 world.insert_component(entity, component);
             }
         }

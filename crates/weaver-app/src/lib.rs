@@ -53,9 +53,13 @@ impl App {
     }
 
     pub fn add_plugin<T: Plugin>(&mut self, plugin: T) -> anyhow::Result<()> {
+        let name = plugin.name().to_owned();
+        log::info!("Adding plugin: {:?}", &name);
         plugin.build(self)?;
 
         self.plugins.write().push(Box::new(plugin));
+
+        log::info!("Added plugin: {:?}", &name);
 
         Ok(())
     }
