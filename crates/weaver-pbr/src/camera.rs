@@ -115,13 +115,14 @@ fn prepare_pbr_cameras(world: &World) -> Result<()> {
 }
 
 fn render_pbr_cameras(world: &World) -> Result<()> {
-    let camera_query = world.query(&Query::new().read::<Camera>());
+    let camera_query = world.query(&Query::new().write::<Camera>());
 
     for camera_entity in camera_query.iter() {
-        let camera = camera_query.get::<Camera>(camera_entity).unwrap();
+        let mut camera = camera_query.get_mut::<Camera>(camera_entity).unwrap();
         if camera.active() {
-            let graph = &camera.render_graph();
+            let graph = camera.render_graph_mut();
             let renderer = world.get_resource::<Renderer>().unwrap();
+            graph.prepare(world, &renderer, camera_entity)?;
             graph.render(world, &renderer)?;
         }
     }

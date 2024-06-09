@@ -56,7 +56,6 @@ impl<T: RenderAsset> Default for ExtractRenderAssetPlugin<T> {
 
 impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_resource(ExtractedRenderAssets::new());
         app.add_system(extract_render_asset::<T>, SystemStage::PreRender)?;
         app.add_system(update_render_asset::<T>, SystemStage::PreRender)?;
         Ok(())

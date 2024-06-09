@@ -36,7 +36,7 @@ impl<T: 'static> Asset for T {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug)]
 pub struct Handle<T: Asset> {
     id: usize,
     _marker: std::marker::PhantomData<T>,
@@ -70,6 +70,20 @@ impl<T: Asset> Clone for Handle<T> {
 }
 
 impl<T: Asset> Copy for Handle<T> {}
+
+impl<T: Asset> PartialEq for Handle<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<T: Asset> Eq for Handle<T> {}
+
+impl<T: Asset> std::hash::Hash for Handle<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UntypedHandle {

@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use asset::ExtractedRenderAssets;
+use bind_group::ExtractedAssetBindGroups;
 use camera::CameraPlugin;
 use mesh::MeshPlugin;
 use texture::TexturePlugin;
@@ -212,9 +214,11 @@ pub struct RendererPlugin;
 impl Plugin for RendererPlugin {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
         app.world().insert_resource(Renderer::new());
+        app.world().insert_resource(ExtractedRenderAssets::new());
+        app.world().insert_resource(ExtractedAssetBindGroups::new());
 
         app.add_plugin(CameraPlugin)?;
-        app.add_plugin(TransformPlugin)?;
+        // app.add_plugin(TransformPlugin)?;
         app.add_plugin(MeshPlugin)?;
         app.add_plugin(TexturePlugin)?;
 

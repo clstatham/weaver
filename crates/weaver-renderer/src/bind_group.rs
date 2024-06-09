@@ -1,10 +1,10 @@
-use std::{ops::Deref, sync::Arc};
+use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{Assets, Handle};
+use weaver_asset::{Assets, Handle, UntypedHandle};
 use weaver_ecs::{query::Query, system::SystemStage, world::World};
 
-use crate::Renderer;
+use crate::{asset::RenderAsset, Renderer};
 
 pub trait CreateBindGroup: 'static {
     fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
@@ -106,36 +106,70 @@ fn create_resource_bind_group<T: CreateBindGroup>(world: &World) -> anyhow::Resu
     Ok(())
 }
 
-pub struct AssetBindGroupPlugin<T: CreateBindGroup>(std::marker::PhantomData<T>);
+#[derive(Default)]
+pub struct ExtractedAssetBindGroups {
+    bind_groups: HashMap<UntypedHandle, UntypedHandle>,
+}
 
-impl<T: CreateBindGroup> Default for AssetBindGroupPlugin<T> {
+impl ExtractedAssetBindGroups {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(&mut self, handle: UntypedHandle, bind_group: UntypedHandle) {
+        self.bind_groups.insert(handle, bind_group);
+    }
+
+    pub fn contains(&self, handle: &UntypedHandle) -> bool {
+        self.bind_groups.contains_key(handle)
+    }
+}
+
+pub struct AssetBindGroupPlugin<T: CreateBindGroup + RenderAsset>(std::marker::PhantomData<T>);
+
+impl<T: CreateBindGroup + RenderAsset> Default for AssetBindGroupPlugin<T> {
     fn default() -> Self {
         Self(std::marker::PhantomData)
     }
 }
 
-impl<T: CreateBindGroup> Plugin for AssetBindGroupPlugin<T> {
+impl<T: CreateBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
         app.add_system(create_asset_bind_group::<T>, SystemStage::PreRender)?;
         Ok(())
     }
 }
 
-fn create_asset_bind_group<T: CreateBindGroup>(world: &World) -> anyhow::Result<()> {
+fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(world: &World) -> anyhow::Result<()> {
     let renderer = world.get_resource::<Renderer>().unwrap();
     let device = renderer.device();
 
-    let assets = world.get_resource::<Assets>().unwrap();
+    let mut assets = world.get_resource_mut::<Assets>().unwrap();
 
     let query = world.query(&Query::new().read::<Handle<T>>());
 
     for entity in query.iter() {
-        if !world.has_component::<BindGroup<T>>(entity) {
-            let handle = query.get::<Handle<T>>(entity).unwrap();
-            let data = assets.get::<T>(*handle).unwrap();
-            let bind_group = BindGroup::new(device, data);
+        let handle = query.get::<Handle<T>>(entity).unwrap();
+
+        if world.has_component::<Handle<BindGroup<T>>>(entity) {
+            continue;
+        }
+
+        let mut asset_bind_groups = world
+            .get_resource_mut::<ExtractedAssetBindGroups>()
+            .unwrap();
+
+        if let Some(bind_group_handle) = asset_bind_groups.bind_groups.get(&handle.into_untyped()) {
             drop(handle);
-            world.insert_component(entity, bind_group);
+            let bind_group_handle = Handle::<BindGroup<T>>::try_from(*bind_group_handle).unwrap();
+            world.insert_component(entity, bind_group_handle);
+        } else {
+            let asset = assets.get::<T>(*handle).unwrap();
+            let bind_group = BindGroup::new(device, asset);
+            let bind_group_handle = assets.insert(bind_group, None);
+            asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
+            drop(handle);
+            world.insert_component(entity, bind_group_handle);
         }
     }
 
