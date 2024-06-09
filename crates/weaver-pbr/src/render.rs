@@ -1,3 +1,4 @@
+use weaver_asset::{Assets, Handle};
 use weaver_ecs::{entity::Entity, prelude::World, query::Query};
 use weaver_renderer::{
     bind_group::{BindGroup, CreateBindGroup},
@@ -113,7 +114,7 @@ impl Render for PbrNode {
         log::trace!("PbrNode::render");
         let query = world.query(
             &Query::new()
-                .read::<GpuMesh>()
+                .read::<Handle<GpuMesh>>()
                 .read::<BindGroup<GpuMaterial>>(),
         );
 
@@ -143,7 +144,9 @@ impl Render for PbrNode {
                 });
 
         for entity in query.iter() {
-            let mesh = query.get::<GpuMesh>(entity).unwrap();
+            let assets = world.get_resource::<Assets>().unwrap();
+            let mesh = query.get::<Handle<GpuMesh>>(entity).unwrap();
+            let mesh = assets.get::<GpuMesh>(*mesh).unwrap();
             let material_bind_group = query.get::<BindGroup<GpuMaterial>>(entity).unwrap();
             let transform_bind_group = query.get::<BindGroup<GpuTransform>>(entity).unwrap();
 

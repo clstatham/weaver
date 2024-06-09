@@ -42,6 +42,23 @@ pub struct Handle<T: Asset> {
     _marker: std::marker::PhantomData<T>,
 }
 
+impl<T: Asset> Handle<T> {
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    pub fn into_untyped(self) -> UntypedHandle {
+        self.into()
+    }
+
+    pub fn from_raw(id: usize) -> Self {
+        Self {
+            id,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<T: Asset> Clone for Handle<T> {
     #[allow(clippy::non_canonical_clone_impl)]
     fn clone(&self) -> Self {

@@ -9,6 +9,7 @@ use weaver_ecs::{system::SystemStage, world::World};
 use weaver_util::lock::Lock;
 use winit::window::Window;
 
+pub mod asset;
 pub mod bind_group;
 pub mod buffer;
 pub mod camera;

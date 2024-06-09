@@ -1,4 +1,5 @@
 use crate::{
+    asset::{ExtractRenderAssetPlugin, RenderAsset},
     extract::{RenderComponent, RenderComponentPlugin},
     Renderer,
 };
@@ -17,45 +18,30 @@ pub struct GpuMesh {
     pub num_indices: u32,
 }
 
-impl RenderComponent for GpuMesh {
-    fn extract_query() -> Query {
-        Query::new().read::<Handle<Mesh>>()
-    }
+impl RenderAsset for GpuMesh {
+    type BaseAsset = Mesh;
 
-    fn extract_render_component(entity: Entity, world: &World, renderer: &Renderer) -> Option<Self>
+    fn extract_render_asset(base_asset: &Mesh, _world: &World, renderer: &Renderer) -> Option<Self>
     where
         Self: Sized,
     {
-        let assets = world.get_resource::<Assets>()?;
-        let mesh = world.get_component::<Handle<Mesh>>(entity)?;
-        let mesh = assets.get(*mesh)?;
-
         let vertex_buffer = renderer.device().create_buffer_init(&BufferInitDescriptor {
-            label: Some("Mesh Vertex Buffer"),
-            contents: bytemuck::cast_slice(&mesh.vertices),
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&base_asset.vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
         let index_buffer = renderer.device().create_buffer_init(&BufferInitDescriptor {
-            label: Some("Mesh Index Buffer"),
-            contents: bytemuck::cast_slice(&mesh.indices),
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&base_asset.indices),
             usage: wgpu::BufferUsages::INDEX,
         });
 
         Some(Self {
             vertex_buffer,
             index_buffer,
-            num_indices: mesh.indices.len() as u32,
+            num_indices: base_asset.indices.len() as u32,
         })
-    }
-
-    fn update_render_component(
-        &mut self,
-        _entity: Entity,
-        _world: &World,
-        _renderer: &Renderer,
-    ) -> anyhow::Result<()> {
-        Ok(())
     }
 }
 
@@ -63,7 +49,7 @@ pub struct MeshPlugin;
 
 impl Plugin for MeshPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_plugin(RenderComponentPlugin::<GpuMesh>::default())?;
+        app.add_plugin(ExtractRenderAssetPlugin::<GpuMesh>::default())?;
         Ok(())
     }
 }
