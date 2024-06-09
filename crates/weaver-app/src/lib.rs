@@ -19,14 +19,14 @@ pub mod prelude {
 }
 
 pub trait Runner: 'static {
-    fn run(&self, app: App) -> anyhow::Result<()>;
+    fn run(&self, app: &mut App) -> anyhow::Result<()>;
 }
 
 impl<T> Runner for T
 where
-    T: Fn(App) -> anyhow::Result<()> + Send + Sync + 'static,
+    T: Fn(&mut App) -> anyhow::Result<()> + Send + Sync + 'static,
 {
-    fn run(&self, app: App) -> anyhow::Result<()> {
+    fn run(&self, app: &mut App) -> anyhow::Result<()> {
         self(app)
     }
 }
@@ -52,22 +52,23 @@ impl App {
         Ok(this)
     }
 
-    pub fn add_plugin<T: Plugin>(&mut self, plugin: T) -> anyhow::Result<()> {
+    pub fn add_plugin<T: Plugin>(&mut self, plugin: T) -> anyhow::Result<&mut Self> {
         let name = plugin.name().to_owned();
         log::debug!("Adding plugin: {:?}", &name);
         plugin.build(self)?;
 
         self.plugins.write().push(Box::new(plugin));
 
-        Ok(())
+        Ok(self)
     }
 
     pub fn set_runner<T: Runner>(&mut self, runner: T) {
         self.runner = Some(Box::new(runner));
     }
 
-    pub fn add_resource<T: Component>(&self, resource: T) {
-        self.world.insert_resource(resource)
+    pub fn add_resource<T: Component>(&self, resource: T) -> &Self {
+        self.world.insert_resource(resource);
+        self
     }
 
     pub fn get_resource<T: Component>(&self) -> Option<Ref<T>> {
@@ -86,10 +87,14 @@ impl App {
         self.world.root_scene()
     }
 
-    pub fn add_system<T: System>(&self, system: T, stage: SystemStage) -> anyhow::Result<()> {
+    pub fn add_system<T: System>(
+        &mut self,
+        system: T,
+        stage: SystemStage,
+    ) -> anyhow::Result<&mut Self> {
         let system = Arc::new(system);
         self.systems.write().entry(stage).or_default().push(system);
-        Ok(())
+        Ok(self)
     }
 
     pub fn run_systems(&self, stage: SystemStage) -> anyhow::Result<()> {
@@ -102,9 +107,9 @@ impl App {
         Ok(())
     }
 
-    pub fn run(mut self) -> anyhow::Result<()> {
+    pub fn run(&mut self) -> anyhow::Result<()> {
         for plugin in self.plugins.read().iter() {
-            plugin.finish(&mut self)?;
+            plugin.finish(self)?;
         }
 
         if let Some(runner) = self.runner.take() {

@@ -6,12 +6,11 @@ use weaver_asset::{
     Assets, Handle, UntypedHandle,
 };
 use weaver_core::{color::Color, texture::Texture};
-use weaver_ecs::prelude::{Entity, Query, World};
+use weaver_ecs::prelude::World;
 use weaver_renderer::{
     asset::{ExtractRenderAssetPlugin, RenderAsset},
-    bind_group::{AssetBindGroupPlugin, ComponentBindGroupPlugin, CreateBindGroup},
+    bind_group::{AssetBindGroupPlugin, CreateBindGroup},
     buffer::GpuBuffer,
-    extract::{RenderComponent, RenderComponentPlugin},
     prelude::*,
     texture::GpuTexture,
 };

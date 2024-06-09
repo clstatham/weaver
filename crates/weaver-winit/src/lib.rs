@@ -40,7 +40,7 @@ impl Plugin for WinitPlugin {
 struct WinitRunner;
 
 impl Runner for WinitRunner {
-    fn run(&self, app: App) -> anyhow::Result<()> {
+    fn run(&self, app: &mut App) -> anyhow::Result<()> {
         app.run_systems(SystemStage::PreInit)?;
         app.run_systems(SystemStage::Init)?;
         app.run_systems(SystemStage::PostInit)?;

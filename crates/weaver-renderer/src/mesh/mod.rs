@@ -1,10 +1,8 @@
 use crate::{
     asset::{ExtractRenderAssetPlugin, RenderAsset},
-    extract::{RenderComponent, RenderComponentPlugin},
     Renderer,
 };
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{Assets, Handle};
 use weaver_core::mesh::Mesh;
 use weaver_ecs::prelude::*;
 use weaver_util::prelude::*;

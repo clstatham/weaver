@@ -15,23 +15,21 @@ use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 
 fn main() -> Result<()> {
     env_logger::init();
-    let mut app = App::new()?;
-    app.add_plugin(WinitPlugin {
-        initial_size: (1280, 720),
-    })?;
-    app.add_plugin(TimePlugin)?;
-    app.add_plugin(InputPlugin)?;
-    app.add_plugin(AssetPlugin)?;
-    app.add_plugin(RendererPlugin)?;
-    app.add_plugin(PbrPlugin)?;
-    app.add_plugin(LogFrameTimePlugin {
-        log_interval: std::time::Duration::from_secs(1),
-    })?;
-
-    app.add_system(setup, SystemStage::Init)?;
-    app.add_system(update, SystemStage::Update)?;
-
-    app.run()
+    App::new()?
+        .add_plugin(WinitPlugin {
+            initial_size: (1280, 720),
+        })?
+        .add_plugin(TimePlugin)?
+        .add_plugin(InputPlugin)?
+        .add_plugin(AssetPlugin)?
+        .add_plugin(RendererPlugin)?
+        .add_plugin(PbrPlugin)?
+        .add_plugin(LogFrameTimePlugin {
+            log_interval: std::time::Duration::from_secs(1),
+        })?
+        .add_system(setup, SystemStage::Init)?
+        .add_system(update, SystemStage::Update)?
+        .run()
 }
 
 fn setup(world: &World) -> Result<()> {
@@ -59,17 +57,6 @@ fn setup(world: &World) -> Result<()> {
         let mut assets = world.get_resource_mut::<Assets>().unwrap();
         assets.get_mut::<Material>(material).unwrap().texture_scale = 1.0;
     }
-
-    // let cube = scene.create_node_with(mesh);
-    // world.insert_component(cube.entity(), material);
-
-    // let transform = Transform {
-    //     translation: Vec3::new(0.0, 0.0, 0.0),
-    //     rotation: Quat::IDENTITY,
-    //     scale: Vec3::new(1.0, 1.0, 1.0),
-    // };
-
-    // world.insert_component(cube.entity(), transform);
 
     for i in -5..5 {
         for j in -5..5 {
@@ -104,13 +91,6 @@ fn setup(world: &World) -> Result<()> {
         });
     }
 
-    // let _light = scene.create_node_with(PointLight {
-    //     position: Vec3::new(0.0, 5.0, 0.0),
-    //     color: Color::WHITE,
-    //     intensity: 10.0,
-    //     radius: 100.0,
-    // });
-
     Ok(())
 }
 
@@ -120,7 +100,8 @@ fn update(world: &World) -> Result<()> {
 
     for entity in query.iter() {
         let mut transform = world.get_component_mut::<Transform>(entity).unwrap();
-        transform.translation.y = 2.0 * (time.total_time).sin();
+        let offset = transform.translation.x - transform.translation.z;
+        transform.translation.y = 2.0 * (time.total_time + offset / 2.0).sin();
         transform.rotation = Quat::from_rotation_y(time.total_time);
     }
 
