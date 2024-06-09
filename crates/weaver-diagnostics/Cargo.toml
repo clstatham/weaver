@@ -1,12 +1,12 @@
 [package]
-name = "weaver-winit"
+name = "weaver-diagnostics"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.86"
-winit = "0.29.15"
+log = "0.4"
 
 weaver-app = { path = "../weaver-app" }
-weaver-ecs = { path = "../weaver-ecs" }
 weaver-core = { path = "../weaver-core" }
+weaver-ecs = { path = "../weaver-ecs" }
+weaver-util = { path = "../weaver-util" }

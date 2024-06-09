@@ -1,6 +1,8 @@
 pub mod color;
+pub mod input;
 pub mod mesh;
 pub mod texture;
+pub mod time;
 pub mod transform;
 
 pub mod prelude {

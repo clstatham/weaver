@@ -12,6 +12,7 @@ env_logger = "0.11.0"
 log = "0.4.20"
 syntect = "5"
 weaver = { path = "../../" }
+weaver-diagnostics = { path = "../weaver-diagnostics" }
 bitflags = "2.4"
 egui_dock = "0.10"
 bytemuck = "1.14"

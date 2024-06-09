@@ -1,12 +1,17 @@
 use weaver::{
     app::App,
-    core::mesh::Mesh,
+    core::{
+        input::InputPlugin,
+        mesh::Mesh,
+        time::{Time, TimePlugin},
+    },
     ecs::{system::SystemStage, world::World},
     pbr::{camera::PbrCamera, material::Material, PbrPlugin},
     prelude::*,
     renderer::{camera::Camera, RendererPlugin},
     winit::WinitPlugin,
 };
+use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -14,9 +19,14 @@ fn main() -> Result<()> {
     app.add_plugin(WinitPlugin {
         initial_size: (1600, 900),
     })?;
+    app.add_plugin(TimePlugin)?;
+    app.add_plugin(InputPlugin)?;
     app.add_plugin(AssetPlugin)?;
     app.add_plugin(RendererPlugin)?;
     app.add_plugin(PbrPlugin)?;
+    app.add_plugin(LogFrameTimePlugin {
+        log_interval: std::time::Duration::from_secs(1),
+    })?;
 
     app.add_system(setup, SystemStage::Init)?;
     app.add_system(update, SystemStage::Update)?;
@@ -48,38 +58,56 @@ fn setup(world: &World) -> Result<()> {
     let material = asset_loader.load::<Material>("assets/materials/wood_tiles.glb")?;
     {
         let mut assets = world.get_resource_mut::<Assets>().unwrap();
-        assets.get_mut::<Material>(material).unwrap().texture_scale = 100.0;
+        assets.get_mut::<Material>(material).unwrap().texture_scale = 1.0;
     }
     world.insert_component(cube.entity(), material);
 
-    let mut transform = Transform::from_rotation(Quat::from_rotation_y(20.0f32.to_radians()));
-    transform.translation = Vec3::new(0.0, -1.0, 0.0);
-    transform.scale = Vec3::new(10.0, 1.0, 10.0);
+    let transform = Transform {
+        translation: Vec3::new(0.0, 0.0, 0.0),
+        rotation: Quat::IDENTITY,
+        scale: Vec3::new(1.0, 1.0, 1.0),
+    };
     world.insert_component(cube.entity(), transform);
 
-    let _light1 = scene.create_node_with(PointLight {
-        position: Vec3::new(10.0, 5.0, 10.0),
-        color: Color::WHITE,
-        intensity: 100.0,
-        radius: 100.0,
-    });
-
-    let _light2 = scene.create_node_with(PointLight {
-        position: Vec3::new(-10.0, 5.0, -10.0),
-        color: Color::GREEN,
-        intensity: 100.0,
-        radius: 100.0,
-    });
+    const COLORS: [Color; 6] = [
+        Color::RED,
+        Color::GREEN,
+        Color::BLUE,
+        Color::YELLOW,
+        Color::MAGENTA,
+        Color::CYAN,
+    ];
+    for i in 0..6 {
+        let theta = i as f32 * std::f32::consts::PI / 3.0;
+        let _light = scene.create_node_with(PointLight {
+            position: Vec3::new(10.0 * theta.cos(), 5.0, 10.0 * theta.sin()),
+            color: COLORS[i],
+            intensity: 100.0,
+            radius: 100.0,
+        });
+    }
 
     Ok(())
 }
 
 fn update(world: &World) -> Result<()> {
+    let time = world.get_resource::<Time>().unwrap();
     let query = world.query(&Query::new().read::<Transform>());
 
     for entity in query.iter() {
         let mut transform = world.get_component_mut::<Transform>(entity).unwrap();
-        transform.rotation *= Quat::from_rotation_y(0.001);
+        transform.translation.y = 2.0 * (time.total_time).sin();
+        transform.rotation = Quat::from_rotation_y(time.total_time);
+    }
+
+    let query = world.query(&Query::new().read::<PointLight>());
+    let light_count = query.iter().count();
+
+    for (i, entity) in query.iter().enumerate() {
+        let mut point_light = world.get_component_mut::<PointLight>(entity).unwrap();
+        let theta = time.total_time * 0.5 + (i as f32 - light_count as f32 / 2.0);
+        point_light.position.x = 10.0 * theta.cos();
+        point_light.position.z = 10.0 * theta.sin();
     }
 
     Ok(())

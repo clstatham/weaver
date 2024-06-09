@@ -87,6 +87,7 @@ impl<T: RenderResource> Default for RenderResourcePlugin<T> {
 impl<T: RenderResource> Plugin for RenderResourcePlugin<T> {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
         app.add_system(extract_render_resource::<T>, SystemStage::PreRender)?;
+        app.add_system(update_render_resource::<T>, SystemStage::PreRender)?;
         Ok(())
     }
 }
@@ -102,6 +103,18 @@ fn extract_render_resource<T: RenderResource>(world: &World) -> anyhow::Result<(
             drop(renderer);
             world.insert_resource(component);
         }
+    }
+
+    Ok(())
+}
+
+fn update_render_resource<T: RenderResource>(world: &World) -> anyhow::Result<()> {
+    let renderer = world
+        .get_resource::<Renderer>()
+        .expect("Renderer resource not present before updating render resource");
+
+    if let Some(mut resource) = world.get_resource_mut::<T>() {
+        resource.update_render_resource(world, &renderer)?;
     }
 
     Ok(())

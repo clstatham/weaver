@@ -102,7 +102,7 @@ impl RenderResource for GpuPointLightArray {
                     contents: bytemuck::cast_slice(&[PointLightArrayUniform::from(
                         point_light_uniforms,
                     )]),
-                    usage: wgpu::BufferUsages::STORAGE,
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                 });
 
         Some(Self {

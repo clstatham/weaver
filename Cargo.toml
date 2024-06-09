@@ -15,7 +15,7 @@ members = [
     "crates/weaver-winit",
     "crates/weaver-pbr",
     "crates/weaver-core",
-    "crates/weaver-asset",
+    "crates/weaver-asset", "crates/weaver-diagnostics",
 ]
 
 [features]

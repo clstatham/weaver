@@ -2966,6 +2966,18 @@ dependencies = [
  "weaver-app",
  "weaver-ecs",
  "weaver-util",
+ "winit",
+]
+
+[[package]]
+name = "weaver-diagnostics"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "weaver-app",
+ "weaver-core",
+ "weaver-ecs",
+ "weaver-util",
 ]
 
 [[package]]
@@ -2991,6 +3003,7 @@ dependencies = [
  "log",
  "syntect",
  "weaver",
+ "weaver-diagnostics",
 ]
 
 [[package]]
@@ -3043,6 +3056,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "weaver-app",
+ "weaver-core",
  "weaver-ecs",
  "winit",
 ]
