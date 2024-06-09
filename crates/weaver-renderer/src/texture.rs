@@ -1,18 +1,10 @@
 use std::sync::Arc;
 
 use weaver_app::{plugin::Plugin, prelude::App};
-use weaver_asset::{Assets, Handle};
 use weaver_core::texture::Texture;
-use weaver_ecs::{
-    prelude::{Entity, World},
-    query::Query,
-};
 use wgpu::util::DeviceExt;
 
-use crate::{
-    extract::{RenderComponent, RenderComponentPlugin},
-    Renderer,
-};
+use crate::Renderer;
 
 #[derive(Clone)]
 pub struct GpuTexture {
@@ -49,39 +41,17 @@ impl GpuTexture {
             view: Arc::new(view),
         })
     }
-}
 
-impl RenderComponent for GpuTexture {
-    fn extract_query() -> Query {
-        Query::new().read::<Handle<Texture>>()
-    }
-
-    fn extract_render_component(entity: Entity, world: &World, renderer: &Renderer) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        let assets = world.get_resource::<Assets>()?;
-        let image = world.get_component::<Handle<Texture>>(entity)?;
-
-        let image = assets.get(*image)?;
-        Self::from_image(renderer, image)
-    }
-
-    fn update_render_component(
-        &mut self,
-        _entity: Entity,
-        _world: &World,
-        _renderer: &Renderer,
-    ) -> anyhow::Result<()> {
-        Ok(())
+    pub fn format(&self) -> wgpu::TextureFormat {
+        self.texture.format()
     }
 }
 
 pub struct TexturePlugin;
 
 impl Plugin for TexturePlugin {
-    fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_plugin(RenderComponentPlugin::<GpuTexture>::default())?;
+    fn build(&self, _app: &mut App) -> anyhow::Result<()> {
+        // todo?
         Ok(())
     }
 }
