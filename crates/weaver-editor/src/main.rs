@@ -52,7 +52,7 @@ fn setup(world: &World) -> Result<()> {
 
     let mesh = asset_loader.load::<Mesh>("assets/meshes/cube.obj")?;
 
-    let material = asset_loader.load::<Material>("assets/materials/wood_tiles.glb")?;
+    let material = asset_loader.load::<Material>("assets/materials/metal.glb")?;
     {
         let mut assets = world.get_resource_mut::<Assets>().unwrap();
         assets.get_mut::<Material>(material).unwrap().texture_scale = 1.0;
@@ -72,7 +72,7 @@ fn setup(world: &World) -> Result<()> {
         }
     }
 
-    const COLORS: [Color; 6] = [
+    const COLORS: &[Color] = &[
         Color::RED,
         Color::GREEN,
         Color::BLUE,
@@ -81,11 +81,11 @@ fn setup(world: &World) -> Result<()> {
         Color::CYAN,
     ];
     // make a circle of lights
-    for i in 0..6 {
-        let theta = (i as f32 / 6.0) * std::f32::consts::PI * 2.0;
+    for (i, color) in COLORS.iter().enumerate() {
+        let theta = (i as f32 / COLORS.len() as f32) * std::f32::consts::PI * 2.0;
         let _light = scene.create_node_with(PointLight {
             position: Vec3::new(10.0 * theta.cos(), 5.0, 10.0 * theta.sin()),
-            color: COLORS[i],
+            color: *color,
             intensity: 100.0,
             radius: 100.0,
         });
@@ -101,7 +101,7 @@ fn update(world: &World) -> Result<()> {
     for entity in query.iter() {
         let mut transform = world.get_component_mut::<Transform>(entity).unwrap();
         let offset = transform.translation.x - transform.translation.z;
-        transform.translation.y = 2.0 * (time.total_time + offset / 2.0).sin();
+        transform.translation.y = 1.0 * (time.total_time + offset / 2.0).sin();
         transform.rotation = Quat::from_rotation_y(time.total_time);
     }
 
