@@ -1,6 +1,7 @@
 use std::{ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
+use weaver_asset::{Assets, Handle};
 use weaver_ecs::{query::Query, system::SystemStage, world::World};
 
 use crate::Renderer;
@@ -100,6 +101,42 @@ fn create_resource_bind_group<T: CreateBindGroup>(world: &World) -> anyhow::Resu
         drop(data);
         drop(renderer);
         world.insert_resource(bind_group);
+    }
+
+    Ok(())
+}
+
+pub struct AssetBindGroupPlugin<T: CreateBindGroup>(std::marker::PhantomData<T>);
+
+impl<T: CreateBindGroup> Default for AssetBindGroupPlugin<T> {
+    fn default() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl<T: CreateBindGroup> Plugin for AssetBindGroupPlugin<T> {
+    fn build(&self, app: &mut App) -> anyhow::Result<()> {
+        app.add_system(create_asset_bind_group::<T>, SystemStage::PreRender)?;
+        Ok(())
+    }
+}
+
+fn create_asset_bind_group<T: CreateBindGroup>(world: &World) -> anyhow::Result<()> {
+    let renderer = world.get_resource::<Renderer>().unwrap();
+    let device = renderer.device();
+
+    let assets = world.get_resource::<Assets>().unwrap();
+
+    let query = world.query(&Query::new().read::<Handle<T>>());
+
+    for entity in query.iter() {
+        if !world.has_component::<BindGroup<T>>(entity) {
+            let handle = query.get::<Handle<T>>(entity).unwrap();
+            let data = assets.get::<T>(*handle).unwrap();
+            let bind_group = BindGroup::new(device, data);
+            drop(handle);
+            world.insert_component(entity, bind_group);
+        }
     }
 
     Ok(())

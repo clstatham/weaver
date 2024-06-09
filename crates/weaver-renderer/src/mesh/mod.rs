@@ -43,6 +43,18 @@ impl RenderAsset for GpuMesh {
             num_indices: base_asset.indices.len() as u32,
         })
     }
+
+    fn update_render_asset(
+        &self,
+        _base_asset: &Self::BaseAsset,
+        _world: &World,
+        _renderer: &Renderer,
+    ) -> anyhow::Result<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
 }
 
 pub struct MeshPlugin;
