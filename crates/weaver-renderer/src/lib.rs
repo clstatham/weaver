@@ -5,7 +5,6 @@ use bind_group::ExtractedAssetBindGroups;
 use camera::CameraPlugin;
 use mesh::MeshPlugin;
 use texture::TexturePlugin;
-use transform::TransformPlugin;
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{system::SystemStage, world::World};
 use weaver_util::lock::Lock;
@@ -161,6 +160,8 @@ impl Renderer {
             return Ok(());
         }
 
+        log::trace!("Begin frame");
+
         let surface = self.window_surface.as_ref().unwrap();
         let frame = surface.get_current_texture()?;
         let color_view = frame
@@ -195,6 +196,8 @@ impl Renderer {
             log::warn!("No current frame to end");
             return Ok(());
         }
+
+        log::trace!("End frame");
 
         let CurrentFrame {
             surface_texture, ..

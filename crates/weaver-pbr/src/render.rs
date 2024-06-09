@@ -156,7 +156,7 @@ impl Render for PbrNode {
                     let transform_buffer =
                         renderer.device().create_buffer(&wgpu::BufferDescriptor {
                             label: Some("PBR Transform Buffer"),
-                            size: std::mem::size_of::<Mat4>() as u64 * 100000,
+                            size: std::mem::size_of::<Mat4>() as u64 * 1000,
                             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
                             mapped_at_creation: false,
                         });
@@ -234,6 +234,8 @@ impl Render for PbrNode {
         };
 
         let pipeline = self.pipeline.as_ref().unwrap();
+
+        log::trace!("PbrNode::render");
 
         let mut encoder =
             renderer

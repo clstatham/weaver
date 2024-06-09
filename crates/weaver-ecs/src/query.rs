@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::{any::TypeId, collections::HashSet};
 
 use super::{
     component::Component,
@@ -78,7 +78,10 @@ impl Query {
             }
         }
 
-        QueryResults { world, entities }
+        QueryResults {
+            world,
+            entities: entities.into_iter().collect(),
+        }
     }
 }
 

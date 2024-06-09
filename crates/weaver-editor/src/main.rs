@@ -60,15 +60,26 @@ fn setup(world: &World) -> Result<()> {
         assets.get_mut::<Material>(material).unwrap().texture_scale = 1.0;
     }
 
-    for i in -10..10 {
-        for j in -10..10 {
+    // let cube = scene.create_node_with(mesh);
+    // world.insert_component(cube.entity(), material);
+
+    // let transform = Transform {
+    //     translation: Vec3::new(0.0, 0.0, 0.0),
+    //     rotation: Quat::IDENTITY,
+    //     scale: Vec3::new(1.0, 1.0, 1.0),
+    // };
+
+    // world.insert_component(cube.entity(), transform);
+
+    for i in -5..5 {
+        for j in -5..5 {
             let cube = scene.create_node_with(mesh);
             world.insert_component(cube.entity(), material);
 
             let transform = Transform {
                 translation: Vec3::new(i as f32, 0.0, j as f32),
                 rotation: Quat::IDENTITY,
-                scale: Vec3::new(0.2, 0.2, 0.2),
+                scale: Vec3::new(0.3, 0.3, 0.3),
             };
             world.insert_component(cube.entity(), transform);
         }
@@ -82,8 +93,9 @@ fn setup(world: &World) -> Result<()> {
         Color::MAGENTA,
         Color::CYAN,
     ];
+    // make a circle of lights
     for i in 0..6 {
-        let theta = i as f32 * std::f32::consts::PI / 3.0;
+        let theta = (i as f32 / 6.0) * std::f32::consts::PI * 2.0;
         let _light = scene.create_node_with(PointLight {
             position: Vec3::new(10.0 * theta.cos(), 5.0, 10.0 * theta.sin()),
             color: COLORS[i],
@@ -91,6 +103,13 @@ fn setup(world: &World) -> Result<()> {
             radius: 100.0,
         });
     }
+
+    // let _light = scene.create_node_with(PointLight {
+    //     position: Vec3::new(0.0, 5.0, 0.0),
+    //     color: Color::WHITE,
+    //     intensity: 10.0,
+    //     radius: 100.0,
+    // });
 
     Ok(())
 }

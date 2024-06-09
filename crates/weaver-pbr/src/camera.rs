@@ -122,7 +122,6 @@ fn render_pbr_cameras(world: &World) -> Result<()> {
         if camera.active() {
             let graph = camera.render_graph_mut();
             let renderer = world.get_resource::<Renderer>().unwrap();
-            graph.prepare(world, &renderer, camera_entity)?;
             graph.render(world, &renderer)?;
         }
     }

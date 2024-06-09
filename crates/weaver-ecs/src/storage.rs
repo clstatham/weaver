@@ -1,4 +1,8 @@
-use std::{any::TypeId, borrow::Cow, collections::HashMap};
+use std::{
+    any::TypeId,
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+};
 
 use weaver_util::lock::{ArcRead, ArcWrite, SharedLock};
 
@@ -165,7 +169,7 @@ impl<T> SparseSet<T> {
 pub struct Archetype {
     columns: Vec<SharedLock<SparseSet<Data>>>,
     type_ids: Vec<std::any::TypeId>,
-    entities: Vec<Entity>,
+    entities: HashSet<Entity>,
 }
 
 impl Archetype {
@@ -176,17 +180,9 @@ impl Archetype {
     pub fn insert(&mut self, entity: Entity, data: Data) {
         let type_id = data.type_id();
 
-        let index = self
-            .type_ids
-            .iter()
-            .position(|&id| id == type_id)
-            .unwrap_or_else(|| {
-                self.type_ids.push(type_id);
-                self.columns.push(SharedLock::new(SparseSet::new()));
-                self.columns.len() - 1
-            });
+        let index = self.type_ids.iter().position(|&id| id == type_id).unwrap();
 
-        self.entities.push(entity);
+        self.entities.insert(entity);
 
         self.columns[index].write().insert(entity.as_usize(), data)
     }
@@ -416,6 +412,12 @@ impl Storage {
 
         let data = if let Some(old_archetype) = old_archetype {
             let mut data = old_archetype.remove(entity);
+            if data.iter().any(|data| data.is::<T>()) {
+                panic!(
+                    "Entity already has component of type {}",
+                    std::any::type_name::<T>()
+                );
+            }
             data.push(Data::new(new_data));
             data
         } else {
@@ -438,7 +440,14 @@ impl Storage {
             let archetype_id = ArchetypeId(self.next_archetype_id);
             self.next_archetype_id += 1;
 
-            let archetype = Archetype::new();
+            let mut archetype = Archetype::new();
+
+            archetype.type_ids = data.iter().map(|data| data.type_id()).collect();
+            archetype.columns = archetype
+                .type_ids
+                .iter()
+                .map(|_| SharedLock::new(SparseSet::new()))
+                .collect();
 
             self.archetypes.insert(archetype_id, archetype);
 
@@ -496,7 +505,14 @@ impl Storage {
                 let archetype_id = ArchetypeId(self.next_archetype_id);
                 self.next_archetype_id += 1;
 
-                let archetype = Archetype::new();
+                let mut archetype = Archetype::new();
+
+                archetype.type_ids = data.iter().map(|data| data.type_id()).collect();
+                archetype.columns = archetype
+                    .type_ids
+                    .iter()
+                    .map(|_| SharedLock::new(SparseSet::new()))
+                    .collect();
 
                 self.archetypes.insert(archetype_id, archetype);
 

@@ -30,7 +30,7 @@ struct PointLights {
 @group(1) @binding(0) var<uniform> camera: CameraUniform;
 
 // model information
-@group(2) @binding(0) var<storage> model_transforms: array<mat4x4<f32>, 100000>;
+@group(2) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
 
 // lights information
 @group(3) @binding(0) var<storage> point_lights: PointLights;
@@ -149,7 +149,9 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     let tex_color = textureSample(diffuse_tex, diffuse_sampler, uv).rgb * material.base_color.rgb;
     let albedo = pow(tex_color, vec3(2.2));
 
-    var tex_normal = pow(textureSample(normal_tex, normal_sampler, uv).rgb, vec3(1.0 / 2.2)) * 2.0 - 1.0;
+    var tex_normal = textureSample(normal_tex, normal_sampler, uv).rgb;
+    tex_normal = normalize(pow(tex_normal, vec3(1.0 / 2.0)));
+    tex_normal = tex_normal * 2.0 - 1.0;
     let TBN = mat3x3<f32>(vertex.world_tangent, vertex.world_binormal, vertex.world_normal);
     let N = normalize(TBN * tex_normal);
 
