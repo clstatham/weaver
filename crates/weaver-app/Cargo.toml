@@ -12,3 +12,4 @@ rustc-hash = "1.1.0"
 
 weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }
+weaver-reflect = { path = "../weaver-reflect" }

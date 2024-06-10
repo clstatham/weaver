@@ -57,7 +57,12 @@ impl StructInfo {
     }
 
     pub fn field(&self, field_name: &str) -> Option<&FieldInfo> {
-        self.fields.iter().find(|field| field.name == field_name)
+        self.field_index(field_name)
+            .map(|index| &self.fields[index])
+    }
+
+    pub fn field_index(&self, field_name: &str) -> Option<usize> {
+        self.field_indices.get(field_name).copied()
     }
 
     pub fn is<T: Reflect + Typed>(&self) -> bool {

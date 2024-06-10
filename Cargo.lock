@@ -2940,6 +2940,7 @@ dependencies = [
  "log",
  "rustc-hash",
  "weaver-ecs",
+ "weaver-reflect",
  "weaver-util",
 ]
 

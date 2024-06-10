@@ -52,14 +52,14 @@ fn setup(world: &World) -> Result<()> {
 
     let mesh = asset_loader.load::<Mesh>("assets/meshes/cube.obj")?;
 
-    let material = asset_loader.load::<Material>("assets/materials/metal.glb")?;
+    let material = asset_loader.load::<Material>("assets/materials/wood_tiles.glb")?;
     {
         let mut assets = world.get_resource_mut::<Assets>().unwrap();
         assets.get_mut::<Material>(material).unwrap().texture_scale = 1.0;
     }
 
-    for i in -5..5 {
-        for j in -5..5 {
+    for i in -10..10 {
+        for j in -10..10 {
             let cube = scene.create_node_with(mesh);
             world.insert_component(cube.entity(), material);
 

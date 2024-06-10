@@ -9,6 +9,7 @@ use weaver_ecs::{
     system::{System, SystemStage},
     world::World,
 };
+use weaver_reflect::registry::TypeRegistry;
 use weaver_util::lock::SharedLock;
 
 pub mod plugin;
@@ -48,6 +49,8 @@ impl App {
             plugins: SharedLock::new(Vec::new()),
             runner: None,
         };
+
+        this.add_resource(TypeRegistry::new());
 
         Ok(this)
     }
