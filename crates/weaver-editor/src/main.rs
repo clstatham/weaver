@@ -40,27 +40,23 @@ fn main() -> Result<()> {
 
 fn setup(world: &World) -> Result<()> {
     let scene = world.root_scene();
-    let camera = scene.create_node_with(Camera::perspective_lookat(
-        Vec3::new(10.0, 10.0, 10.0),
-        Vec3::ZERO,
-        Vec3::Y,
-        45.0f32.to_radians(),
-        1280.0 / 720.0,
-        0.1,
-        100.0,
-    ));
-    world.insert_component(
-        camera.entity(),
+    let _camera = scene.spawn((
+        Camera::perspective_lookat(
+            Vec3::new(10.0, 10.0, 10.0),
+            Vec3::ZERO,
+            Vec3::Y,
+            45.0f32.to_radians(),
+            1280.0 / 720.0,
+            0.1,
+            100.0,
+        ),
         PbrCamera::new(Color::new(0.1, 0.1, 0.1, 1.0)),
-    );
-    world.insert_component(
-        camera.entity(),
         *camera::FlyCameraController {
             aspect: 1280.0 / 720.0,
             ..Default::default()
         }
         .look_at(Vec3::new(10.0, 10.0, 10.0), Vec3::ZERO, Vec3::Y),
-    );
+    ));
 
     let asset_loader = world.get_resource::<AssetLoader>().unwrap();
 
@@ -74,15 +70,15 @@ fn setup(world: &World) -> Result<()> {
 
     for i in -10..10 {
         for j in -10..10 {
-            let cube = scene.create_node_with(mesh);
-            world.insert_component(cube.entity(), material);
-
-            let transform = Transform {
-                translation: Vec3::new(i as f32, 0.0, j as f32),
-                rotation: Quat::IDENTITY,
-                scale: Vec3::new(0.3, 0.3, 0.3),
-            };
-            world.insert_component(cube.entity(), transform);
+            let _cube = scene.spawn((
+                mesh,
+                material,
+                Transform {
+                    translation: Vec3::new(i as f32, 0.0, j as f32),
+                    rotation: Quat::IDENTITY,
+                    scale: Vec3::new(0.3, 0.3, 0.3),
+                },
+            ));
         }
     }
 
@@ -97,7 +93,7 @@ fn setup(world: &World) -> Result<()> {
     // make a circle of lights
     for (i, color) in COLORS.iter().enumerate() {
         let theta = (i as f32 / COLORS.len() as f32) * std::f32::consts::PI * 2.0;
-        let _light = scene.create_node_with(PointLight {
+        let _light = scene.spawn(PointLight {
             position: Vec3::new(10.0 * theta.cos(), 5.0, 10.0 * theta.sin()),
             color: *color,
             intensity: 100.0,

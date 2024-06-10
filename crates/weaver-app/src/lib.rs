@@ -3,7 +3,9 @@ use std::{rc::Rc, sync::Arc};
 use plugin::Plugin;
 use rustc_hash::FxHashMap;
 use weaver_ecs::{
+    bundle::Bundle,
     component::Component,
+    entity::Entity,
     scene::Scene,
     storage::{Mut, Ref},
     system::{System, SystemStage},
@@ -80,6 +82,10 @@ impl App {
 
     pub fn get_resource_mut<T: Component>(&self) -> Option<Mut<T>> {
         self.world.get_resource_mut::<T>()
+    }
+
+    pub fn spawn<T: Bundle>(&self, bundle: T) -> Entity {
+        self.world().spawn(bundle)
     }
 
     pub fn world(&self) -> &Rc<World> {

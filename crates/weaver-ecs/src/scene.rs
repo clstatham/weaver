@@ -9,6 +9,7 @@ use crate::{
     component::Component,
     entity::Entity,
     node::Node,
+    prelude::Bundle,
     relationship::{Relationship, RelationshipConnection},
     world::World,
 };
@@ -62,6 +63,11 @@ impl Scene {
     pub fn create_node_with<T: Component>(&self, component: T) -> Node {
         let entity = self.world.create_entity();
         self.world.insert_component(entity, component);
+        self.add_node(entity)
+    }
+
+    pub fn spawn<T: Bundle>(&self, bundle: T) -> Node {
+        let entity = self.world.spawn(bundle);
         self.add_node(entity)
     }
 

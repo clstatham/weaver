@@ -1,16 +1,16 @@
 use std::{
     any::TypeId,
-    borrow::Cow,
     collections::{HashMap, HashSet},
 };
 
 use weaver_util::lock::{ArcRead, ArcWrite, SharedLock};
 
+use crate::prelude::Bundle;
+
 use super::{component::Component, entity::Entity};
 
 pub struct Data {
     type_id: std::any::TypeId,
-    type_name: Cow<'static, str>,
     data: Box<dyn Component>,
 }
 
@@ -18,17 +18,19 @@ impl Data {
     pub fn new<T: Component>(data: T) -> Self {
         Self {
             type_id: std::any::TypeId::of::<T>(),
-            type_name: std::any::type_name::<T>().into(),
             data: Box::new(data),
+        }
+    }
+
+    pub fn new_dynamic(data: Box<dyn Component>) -> Self {
+        Self {
+            type_id: (*data).as_any().type_id(),
+            data,
         }
     }
 
     pub fn type_id(&self) -> std::any::TypeId {
         self.type_id
-    }
-
-    pub fn type_name(&self) -> &str {
-        &self.type_name
     }
 
     pub fn is<T: Component>(&self) -> bool {
@@ -404,6 +406,66 @@ pub struct Storage {
 impl Storage {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn insert_components<T: Bundle>(&mut self, entity: Entity, bundle: T) {
+        let old_archetype = self
+            .entity_archetype
+            .remove(&entity)
+            .and_then(|id| self.archetypes.get_mut(&id));
+
+        let components = bundle.into_components();
+        let mut data = components
+            .into_iter()
+            .map(Data::new_dynamic)
+            .collect::<Vec<_>>();
+
+        if let Some(old_archetype) = old_archetype {
+            let mut old_data = old_archetype.remove(entity);
+
+            data.append(&mut old_data);
+        }
+
+        let existing = self
+            .archetypes
+            .iter_mut()
+            .find(|(_, archetype)| {
+                archetype.exclusively_contains_types(
+                    &data
+                        .iter()
+                        .map(|component| component.type_id())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .map(|(id, archetype)| (archetype, *id));
+
+        let (archetype, archetype_id) = if let Some((archetype, existing_archetype_id)) = existing {
+            (archetype, existing_archetype_id)
+        } else {
+            let archetype_id = ArchetypeId(self.next_archetype_id);
+            self.next_archetype_id += 1;
+
+            let mut archetype = Archetype::new();
+
+            archetype.type_ids = data.iter().map(|data| data.type_id()).collect();
+            archetype.columns = archetype
+                .type_ids
+                .iter()
+                .map(|_| SharedLock::new(SparseSet::new()))
+                .collect();
+
+            self.archetypes.insert(archetype_id, archetype);
+
+            let archetype = self.archetypes.get_mut(&archetype_id).unwrap();
+
+            (archetype, archetype_id)
+        };
+
+        for data in data {
+            archetype.insert(entity, data);
+        }
+
+        self.entity_archetype.insert(entity, archetype_id);
     }
 
     pub fn insert_component<T: Component>(&mut self, entity: Entity, new_data: T) {

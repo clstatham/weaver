@@ -5,7 +5,7 @@ use std::{
 
 use weaver_util::lock::Lock;
 
-use crate::prelude::Scene;
+use crate::prelude::{Bundle, Scene};
 
 use super::{
     component::Component,
@@ -56,6 +56,12 @@ impl World {
         }
     }
 
+    pub fn spawn<T: Bundle>(&self, bundle: T) -> Entity {
+        let entity = self.create_entity();
+        self.storage().write().insert_components(entity, bundle);
+        entity
+    }
+
     pub fn destroy_entity(&self, entity: Entity) {
         self.storage.write().remove_entity(entity);
         self.free_entities.write().push(entity);
@@ -63,6 +69,10 @@ impl World {
 
     pub fn insert_component<T: Component>(&self, entity: Entity, component: T) {
         self.storage.write().insert_component(entity, component)
+    }
+
+    pub fn insert_components<T: Bundle>(&self, entity: Entity, bundle: T) {
+        self.storage.write().insert_components(entity, bundle)
     }
 
     pub fn remove_component<T: Component>(&self, entity: Entity) -> Option<T> {
