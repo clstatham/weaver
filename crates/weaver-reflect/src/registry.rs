@@ -269,6 +269,9 @@ impl TypeRegistry {
     }
 
     pub fn register<T: Typed>(&mut self) {
+        if self.types.contains_key(&TypeId::of::<T>()) {
+            return;
+        }
         let type_registration = TypeRegistration {
             type_id: TypeId::of::<T>(),
             type_name: T::type_name(),

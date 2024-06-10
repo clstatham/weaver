@@ -11,6 +11,7 @@ use weaver::{
     weaver_renderer::{camera::Camera, RendererPlugin},
     weaver_winit::WinitPlugin,
 };
+use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_egui::{prelude::egui, EguiContext, EguiPlugin};
 
@@ -19,6 +20,7 @@ pub mod camera;
 fn main() -> Result<()> {
     env_logger::init();
     App::new()?
+        .add_plugin(CoreTypesPlugin)?
         .add_plugin(WinitPlugin {
             initial_size: (1280, 720),
         })?
@@ -110,7 +112,7 @@ fn update(world: &World) -> Result<()> {
 
     for entity in query.iter() {
         let mut transform = world.get_component_mut::<Transform>(entity).unwrap();
-        let offset = transform.translation.x - transform.translation.z;
+        let offset = transform.translation.x * transform.translation.z * 0.1;
         transform.translation.y = 1.0 * (time.total_time + offset / 2.0).sin();
         transform.rotation = Quat::from_rotation_y(time.total_time);
     }

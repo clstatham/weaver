@@ -2,9 +2,10 @@ use std::path::Path;
 
 use glam::{Vec2, Vec3};
 use weaver_asset::{loader::LoadAsset, prelude::Asset};
+use weaver_reflect::prelude::Reflect;
 use weaver_util::prelude::{bail, Result};
 
-#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, PartialEq, Reflect, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Vertex {
     pub position: Vec3,
@@ -13,7 +14,7 @@ pub struct Vertex {
     pub tex_coords: Vec2,
 }
 
-#[derive(Default, Asset, Clone)]
+#[derive(Default, Asset, Clone, Reflect)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,

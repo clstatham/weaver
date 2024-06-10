@@ -11,7 +11,7 @@ use weaver_ecs::{
     system::{System, SystemStage},
     world::World,
 };
-use weaver_reflect::registry::TypeRegistry;
+use weaver_reflect::registry::{TypeRegistry, Typed};
 use weaver_util::lock::SharedLock;
 
 pub mod plugin;
@@ -69,6 +69,12 @@ impl App {
 
     pub fn set_runner<T: Runner>(&mut self, runner: T) {
         self.runner = Some(Box::new(runner));
+    }
+
+    pub fn register_type<T: Typed>(&self) {
+        self.get_resource_mut::<TypeRegistry>()
+            .unwrap()
+            .register::<T>();
     }
 
     pub fn add_resource<T: Component>(&self, resource: T) -> &Self {

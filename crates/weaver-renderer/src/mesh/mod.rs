@@ -64,6 +64,7 @@ impl Plugin for MeshPlugin {
         app.add_plugin(ExtractRenderAssetPlugin::<GpuMesh>::default())?;
         let mut loader = app.get_resource_mut::<AssetLoader>().unwrap();
         loader.add_loader(MeshLoader);
+        app.register_type::<Mesh>();
         Ok(())
     }
 }
