@@ -1,11 +1,13 @@
+use std::ops::Deref;
+
 use weaver_app::{plugin::Plugin, prelude::App, Runner};
 use weaver_core::input::Input;
-use weaver_ecs::{system::SystemStage, world::World};
+use weaver_ecs::{prelude::Component, system::SystemStage, world::World};
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
+    event_loop::ControlFlow,
+    window::WindowBuilder,
 };
 
 pub mod prelude {
@@ -13,7 +15,25 @@ pub mod prelude {
     pub use winit;
 }
 
-#[derive(Default)]
+#[derive(Component)]
+pub struct Window {
+    window: winit::window::Window,
+}
+
+impl Deref for Window {
+    type Target = winit::window::Window;
+
+    fn deref(&self) -> &Self::Target {
+        &self.window
+    }
+}
+
+#[derive(Component)]
+pub struct EventLoop {
+    event_loop: winit::event_loop::EventLoop<()>,
+}
+
+#[derive(Default, Component)]
 pub struct WinitEventHooks {
     #[allow(clippy::type_complexity)]
     pub on_event: Vec<Box<dyn Fn(&World, &Event<()>)>>,
@@ -42,13 +62,13 @@ impl Default for WinitPlugin {
 
 impl Plugin for WinitPlugin {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        let event_loop = EventLoop::new()?;
+        let event_loop = winit::event_loop::EventLoop::new()?;
         let window = WindowBuilder::new()
             .with_inner_size(LogicalSize::new(self.initial_size.0, self.initial_size.1))
             .build(&event_loop)?;
 
-        app.world().insert_resource(window);
-        app.world().insert_resource(event_loop);
+        app.world().insert_resource(Window { window });
+        app.world().insert_resource(EventLoop { event_loop });
         app.world().insert_resource(WinitEventHooks::default());
         app.set_runner(WinitRunner);
         Ok(())
@@ -63,9 +83,9 @@ impl Runner for WinitRunner {
         app.run_systems(SystemStage::Init)?;
         app.run_systems(SystemStage::PostInit)?;
 
-        let event_loop = app.world().remove_resource::<EventLoop<()>>().unwrap();
+        let event_loop = app.world().remove_resource::<EventLoop>().unwrap();
 
-        event_loop.run(move |event, event_loop_window| {
+        event_loop.event_loop.run(move |event, event_loop_window| {
             event_loop_window.set_control_flow(ControlFlow::Poll);
             if let Some(hooks) = app.world().get_resource::<WinitEventHooks>() {
                 for hook in hooks.on_event.iter() {

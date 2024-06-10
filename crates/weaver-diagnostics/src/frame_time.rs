@@ -1,7 +1,8 @@
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{system::SystemStage, world::World};
+use weaver_ecs::{prelude::Component, system::SystemStage, world::World};
 use weaver_util::prelude::Result;
 
+#[derive(Component)]
 pub struct FrameTimeDiagnostics {
     pub frame_time: f32,
     pub fps: f32,

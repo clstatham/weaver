@@ -6,9 +6,9 @@ use camera::CameraPlugin;
 use mesh::MeshPlugin;
 use texture::TexturePlugin;
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{system::SystemStage, world::World};
+use weaver_ecs::{prelude::Component, system::SystemStage, world::World};
 use weaver_util::lock::Lock;
-use winit::window::Window;
+use weaver_winit::Window;
 
 pub mod asset;
 pub mod bind_group;
@@ -36,6 +36,7 @@ pub struct CurrentFrame {
     pub depth_view: Arc<wgpu::TextureView>,
 }
 
+#[derive(Component)]
 pub struct Renderer {
     instance: Option<wgpu::Instance>,
     adapter: Option<wgpu::Adapter>,
@@ -90,7 +91,7 @@ impl Renderer {
 
         let surface = unsafe {
             instance
-                .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::from_window(window).unwrap())?
+                .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::from_window(&**window).unwrap())?
         };
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {

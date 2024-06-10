@@ -4,6 +4,7 @@ use std::{
     hash::{BuildHasherDefault, Hasher},
 };
 
+use weaver_ecs::prelude::Component;
 use weaver_util::prelude::{impl_downcast, Downcast};
 
 use crate::Reflect;
@@ -226,6 +227,7 @@ pub struct TypeRegistration {
     pub type_aux_data: TypeIdMap<Box<dyn TypeAuxData>>,
 }
 
+#[derive(Component)]
 pub struct TypeRegistry {
     types: TypeIdMap<TypeRegistration>,
     type_names: HashMap<&'static str, TypeId>,

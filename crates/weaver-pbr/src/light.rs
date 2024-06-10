@@ -2,7 +2,7 @@ use weaver_app::{plugin::Plugin, App};
 use wgpu::util::DeviceExt;
 
 use weaver_core::{color::Color, prelude::Vec3};
-use weaver_ecs::prelude::{Query, World};
+use weaver_ecs::prelude::{Component, Query, World};
 use weaver_renderer::{
     bind_group::{BindGroup, CreateBindGroup, ResourceBindGroupPlugin},
     buffer::GpuBuffer,
@@ -12,7 +12,7 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::Result;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Component)]
 pub struct PointLight {
     pub position: Vec3,
     pub color: Color,
@@ -75,6 +75,7 @@ impl From<Vec<PointLightUniform>> for PointLightArrayUniform {
     }
 }
 
+#[derive(Component)]
 pub struct GpuPointLightArray {
     pub buffer: GpuBuffer,
 }

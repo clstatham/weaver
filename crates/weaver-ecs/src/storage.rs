@@ -317,13 +317,13 @@ impl std::ops::DerefMut for DataMut {
     }
 }
 
-pub struct Ref<T: 'static> {
+pub struct Ref<T: Component> {
     entity: Entity,
     column: ArcRead<SparseSet<Data>>,
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: 'static> Ref<T> {
+impl<T: Component> Ref<T> {
     pub fn new(entity: Entity, column: ArcRead<SparseSet<Data>>) -> Self {
         Self {
             entity,
@@ -337,7 +337,7 @@ impl<T: 'static> Ref<T> {
     }
 }
 
-impl<T: 'static> std::ops::Deref for Ref<T> {
+impl<T: Component> std::ops::Deref for Ref<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -349,13 +349,13 @@ impl<T: 'static> std::ops::Deref for Ref<T> {
     }
 }
 
-pub struct Mut<T: 'static> {
+pub struct Mut<T: Component> {
     entity: Entity,
     column: ArcWrite<SparseSet<Data>>,
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: 'static> Mut<T> {
+impl<T: Component> Mut<T> {
     pub fn new(entity: Entity, column: ArcWrite<SparseSet<Data>>) -> Self {
         Self {
             entity,
@@ -369,7 +369,7 @@ impl<T: 'static> Mut<T> {
     }
 }
 
-impl<T: 'static> std::ops::Deref for Mut<T> {
+impl<T: Component> std::ops::Deref for Mut<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -381,7 +381,7 @@ impl<T: 'static> std::ops::Deref for Mut<T> {
     }
 }
 
-impl<T: 'static> std::ops::DerefMut for Mut<T> {
+impl<T: Component> std::ops::DerefMut for Mut<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.column
             .get_mut(self.entity.as_usize())
@@ -527,7 +527,11 @@ impl Storage {
 
         self.entity_archetype.insert(entity, new_archetype_id);
 
-        Some(*component.into_data().as_any_box().downcast::<T>().unwrap())
+        let Ok(component) = component.into_data().downcast::<T>() else {
+            panic!("downcast failed: expected {}", std::any::type_name::<T>());
+        };
+
+        Some(*component)
     }
 
     pub fn remove_entity(&mut self, entity: Entity) -> Option<Vec<Data>> {
@@ -617,21 +621,24 @@ impl Storage {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use weaver_ecs_macros::Component;
 
-    #[derive(Debug, PartialEq, Clone)]
+    use super::*;
+    use crate as weaver_ecs;
+
+    #[derive(Debug, PartialEq, Clone, Component)]
     struct Position {
         x: f32,
         y: f32,
     }
 
-    #[derive(Debug, PartialEq, Clone)]
+    #[derive(Debug, PartialEq, Clone, Component)]
     struct Velocity {
         dx: f32,
         dy: f32,
     }
 
-    #[derive(Debug, PartialEq, Clone)]
+    #[derive(Debug, PartialEq, Clone, Component)]
     struct Acceleration {
         ddx: f32,
         ddy: f32,

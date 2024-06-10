@@ -1,19 +1,4 @@
-pub trait Component: 'static {
-    fn as_any(&self) -> &dyn std::any::Any;
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-    fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any>;
-}
+use weaver_util::prelude::{impl_downcast, Downcast};
 
-impl<T: 'static> Component for T {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    fn as_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self
-    }
-}
+pub trait Component: Downcast {}
+impl_downcast!(Component);

@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 log = "0.4.14"
-weaver-util = { path = "../weaver-util" }
 petgraph = "0.6.5"
 anyhow = "1.0.40"
+
+weaver-util = { path = "../weaver-util" }
+weaver-ecs-macros = { path = "../weaver-ecs-macros" }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{system::SystemStage, world::World};
+use weaver_ecs::{prelude::Component, system::SystemStage, world::World};
 use weaver_util::prelude::Result;
 use winit::{
     event::{DeviceEvent, ElementState, WindowEvent},
@@ -10,6 +10,7 @@ use winit::{
 
 pub use winit::{event::MouseButton, keyboard::KeyCode};
 
+#[derive(Component)]
 pub struct Input {
     pub(crate) keys: HashMap<u32, bool>,
     pub(crate) mouse: [bool; 8],

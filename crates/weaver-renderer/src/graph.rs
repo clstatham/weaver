@@ -7,7 +7,7 @@ use std::{
 };
 
 use petgraph::prelude::*;
-use weaver_ecs::{component::Component, entity::Entity, world::World};
+use weaver_ecs::{entity::Entity, world::World};
 use weaver_util::lock::Lock;
 
 use crate::Renderer;
@@ -20,7 +20,7 @@ pub struct RenderEdge {
     pub to_slot: usize,
 }
 
-pub trait Render: Component {
+pub trait Render: 'static {
     #[allow(unused_variables)]
     fn prepare(
         &mut self,

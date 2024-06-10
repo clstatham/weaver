@@ -1,11 +1,12 @@
 use weaver_core::color::Color;
-use weaver_ecs::world::World;
+use weaver_ecs::{prelude::Component, world::World};
 
 use crate::{
     graph::{Render, Slot},
     Renderer,
 };
 
+#[derive(Component)]
 pub struct ClearColor {
     pub color: Color,
 }

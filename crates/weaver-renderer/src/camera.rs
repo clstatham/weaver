@@ -3,7 +3,11 @@ use std::fmt::Debug;
 use wgpu::util::DeviceExt;
 
 use weaver_app::plugin::Plugin;
-use weaver_ecs::{prelude::Entity, query::Query, world::World};
+use weaver_ecs::{
+    prelude::{Component, Entity},
+    query::Query,
+    world::World,
+};
 
 use crate::{
     bind_group::{ComponentBindGroupPlugin, CreateBindGroup},
@@ -43,6 +47,7 @@ impl From<&Camera> for CameraUniform {
     }
 }
 
+#[derive(Component)]
 pub struct Camera {
     pub active: bool,
     pub graph: RenderGraph,
@@ -117,6 +122,7 @@ impl Default for Camera {
     }
 }
 
+#[derive(Component)]
 pub struct GpuCamera {
     pub uniform_buffer: GpuBuffer,
 }

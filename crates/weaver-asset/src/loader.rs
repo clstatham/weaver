@@ -1,10 +1,11 @@
 use std::{path::Path, rc::Rc};
 
-use weaver_ecs::{component::Component, world::World};
+use weaver_ecs::{prelude::Component, world::World};
 use weaver_util::prelude::*;
 
 use crate::{Asset, Assets, Handle, UntypedHandle};
 
+#[derive(Component)]
 pub struct AssetLoader {
     world: Rc<World>,
     loaders: Vec<Box<dyn LoadAsset>>,
@@ -48,6 +49,6 @@ impl AssetLoader {
     }
 }
 
-pub trait LoadAsset: Component {
+pub trait LoadAsset {
     fn load_asset(&self, path: &Path, assets: &mut Assets) -> Result<UntypedHandle>;
 }

@@ -2,15 +2,17 @@ use egui::{Context, FullOutput};
 use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::{winit, State};
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{system::SystemStage, world::World};
+use weaver_ecs::{prelude::Component, system::SystemStage, world::World};
 use weaver_renderer::prelude::wgpu;
 use weaver_util::{lock::SharedLock, prelude::Result};
+use weaver_winit::Window;
 
 pub mod prelude {
     pub use super::{EguiContext, EguiPlugin};
     pub use egui;
 }
 
+#[derive(Component)]
 pub struct EguiContext {
     state: SharedLock<State>,
     renderer: SharedLock<Renderer>,
@@ -156,7 +158,7 @@ impl Plugin for EguiPlugin {
     }
     fn finish(&self, app: &mut App) -> Result<()> {
         let renderer = app.get_resource::<weaver_renderer::Renderer>().unwrap();
-        let window = app.get_resource::<winit::window::Window>().unwrap();
+        let window = app.get_resource::<Window>().unwrap();
         let egui_context = EguiContext::new(renderer.device(), &window, 1);
         drop(renderer);
         drop(window);
@@ -175,7 +177,7 @@ impl Plugin for EguiPlugin {
 
 fn begin_frame(world: &World) -> Result<()> {
     let egui_context = world.get_resource::<EguiContext>().unwrap();
-    let window = world.get_resource::<winit::window::Window>().unwrap();
+    let window = world.get_resource::<Window>().unwrap();
     egui_context.begin_frame(&window);
     Ok(())
 }
@@ -189,7 +191,7 @@ fn end_frame(world: &World) -> Result<()> {
 fn render(world: &World) -> Result<()> {
     let renderer = world.get_resource::<weaver_renderer::Renderer>().unwrap();
     let mut egui_context = world.get_resource_mut::<EguiContext>().unwrap();
-    let window = world.get_resource::<winit::window::Window>().unwrap();
+    let window = world.get_resource::<Window>().unwrap();
     let (window_surface_view, _) = renderer.current_frame_view().unwrap();
     let screen_descriptor = ScreenDescriptor {
         pixels_per_point: 1.0,
@@ -215,7 +217,7 @@ fn render(world: &World) -> Result<()> {
 fn egui_event_hook(world: &World, event: &winit::event::Event<()>) {
     let egui_context = world.get_resource::<EguiContext>().unwrap();
     if let winit::event::Event::WindowEvent { event, window_id } = event {
-        if let Some(window) = world.get_resource::<winit::window::Window>() {
+        if let Some(window) = world.get_resource::<Window>() {
             if window.id() == *window_id {
                 egui_context.handle_input(&window, event);
             }

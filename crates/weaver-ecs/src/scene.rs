@@ -1,9 +1,11 @@
 use std::rc::Rc;
 
 use petgraph::prelude::*;
+use weaver_ecs_macros::Component;
 use weaver_util::lock::Lock;
 
 use crate::{
+    self as weaver_ecs,
     component::Component,
     entity::Entity,
     node::Node,
@@ -11,6 +13,7 @@ use crate::{
     world::World,
 };
 
+#[derive(Component)]
 pub struct Scene {
     world: Rc<World>,
     root_entity: Entity,

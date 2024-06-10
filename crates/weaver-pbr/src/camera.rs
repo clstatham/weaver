@@ -1,6 +1,8 @@
 use weaver_app::{plugin::Plugin, App};
 use weaver_core::color::Color;
-use weaver_ecs::{entity::Entity, query::Query, system::SystemStage, world::World};
+use weaver_ecs::{
+    entity::Entity, prelude::Component, query::Query, system::SystemStage, world::World,
+};
 use weaver_renderer::{
     bind_group::BindGroup,
     camera::{Camera, GpuCamera},
@@ -38,6 +40,7 @@ impl Render for PbrCameraBindGroupNode {
     }
 }
 
+#[derive(Component)]
 pub struct PbrCamera {
     clear_color: Color,
 }

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{Asset, Assets, Handle, UntypedHandle};
-use weaver_ecs::{query::Query, system::SystemStage, world::World};
+use weaver_ecs::{prelude::Component, query::Query, system::SystemStage, world::World};
 
 use crate::Renderer;
 
@@ -27,7 +27,7 @@ pub trait RenderAsset: Asset {
         Self: Sized;
 }
 
-#[derive(Default)]
+#[derive(Default, Component)]
 pub struct ExtractedRenderAssets {
     assets: HashMap<UntypedHandle, UntypedHandle>,
 }

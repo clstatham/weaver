@@ -3224,7 +3224,17 @@ dependencies = [
  "anyhow",
  "log",
  "petgraph",
+ "weaver-ecs-macros",
  "weaver-util",
+]
+
+[[package]]
+name = "weaver-ecs-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.48",
 ]
 
 [[package]]
@@ -3275,6 +3285,7 @@ name = "weaver-reflect"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "weaver-ecs",
  "weaver-reflect-macros",
  "weaver-util",
 ]
@@ -3304,6 +3315,7 @@ dependencies = [
  "weaver-core",
  "weaver-ecs",
  "weaver-util",
+ "weaver-winit",
  "wgpu",
  "winit",
 ]

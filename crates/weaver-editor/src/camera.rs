@@ -1,6 +1,6 @@
-use weaver::{core::input::Input, prelude::*};
+use weaver::prelude::*;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Component)]
 pub struct FlyCameraController {
     pub speed: f32,
     pub sensitivity: f32,

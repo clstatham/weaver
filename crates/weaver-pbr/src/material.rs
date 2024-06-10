@@ -7,7 +7,7 @@ use weaver_asset::{
     Assets, Handle, UntypedHandle,
 };
 use weaver_core::{color::Color, texture::Texture};
-use weaver_ecs::prelude::World;
+use weaver_ecs::prelude::{Component, World};
 use weaver_renderer::{
     asset::{ExtractRenderAssetPlugin, RenderAsset},
     bind_group::{AssetBindGroupPlugin, CreateBindGroup},
@@ -149,7 +149,7 @@ struct MaterialMetaUniform {
     texture_scale: f32,
 }
 
-#[derive(Asset)]
+#[derive(Asset, Component)]
 pub struct GpuMaterial {
     pub meta: GpuBuffer,
 

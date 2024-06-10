@@ -8,3 +8,4 @@ glam = "0.27.0"
 
 weaver-util = { path = "../weaver-util" }
 weaver-reflect-macros = { path = "../weaver-reflect-macros" }
+weaver-ecs = { path = "../weaver-ecs" }

@@ -1,15 +1,15 @@
 use weaver::{
-    app::App,
-    core::{
+    prelude::*,
+    weaver_app::App,
+    weaver_core::{
         input::InputPlugin,
         mesh::Mesh,
         time::{Time, TimePlugin},
     },
-    ecs::{system::SystemStage, world::World},
-    pbr::{camera::PbrCamera, material::Material, PbrPlugin},
-    prelude::*,
-    renderer::{camera::Camera, RendererPlugin},
-    winit::WinitPlugin,
+    weaver_ecs::{system::SystemStage, world::World},
+    weaver_pbr::{camera::PbrCamera, material::Material, PbrPlugin},
+    weaver_renderer::{camera::Camera, RendererPlugin},
+    weaver_winit::WinitPlugin,
 };
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_egui::{prelude::egui, EguiContext, EguiPlugin};

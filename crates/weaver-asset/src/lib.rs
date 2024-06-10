@@ -6,7 +6,7 @@ use std::{
 
 use loader::AssetLoader;
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::storage::SparseSet;
+use weaver_ecs::{prelude::Component, storage::SparseSet};
 use weaver_util::prelude::{anyhow, impl_downcast, Downcast, Error, Result};
 
 pub mod loader;
@@ -19,7 +19,7 @@ pub mod prelude {
 pub trait Asset: Downcast {}
 impl_downcast!(Asset);
 
-#[derive(Debug)]
+#[derive(Debug, Component)]
 pub struct Handle<T: Asset> {
     id: usize,
     _marker: std::marker::PhantomData<T>,
@@ -98,7 +98,7 @@ impl<T: Asset> TryFrom<UntypedHandle> for Handle<T> {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Component)]
 pub struct Assets {
     next_handle_id: AtomicUsize,
     storage: SparseSet<Box<dyn Asset>>,
@@ -134,7 +134,7 @@ impl Assets {
     pub fn get<T: Asset>(&self, handle: Handle<T>) -> Option<&T> {
         self.storage
             .get(handle.id)
-            .and_then(|asset| (**asset).as_any().downcast_ref())
+            .and_then(|asset| (**asset).downcast_ref())
     }
 
     pub fn find_by_path(&self, path: impl AsRef<Path>) -> Option<UntypedHandle> {
@@ -144,7 +144,7 @@ impl Assets {
     pub fn get_mut<T: Asset>(&mut self, handle: Handle<T>) -> Option<&mut T> {
         self.storage
             .get_mut(handle.id)
-            .and_then(|asset| (**asset).as_any_mut().downcast_mut())
+            .and_then(|asset| (**asset).downcast_mut())
     }
 
     pub fn remove<T: Asset>(&mut self, handle: Handle<T>) -> Option<T> {

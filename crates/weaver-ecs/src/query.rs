@@ -118,21 +118,24 @@ impl<'a> QueryResults<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate as weaver_ecs;
+    use weaver_ecs_macros::Component;
+
     use super::*;
 
-    #[derive(Debug, Default, PartialEq)]
+    #[derive(Debug, Default, PartialEq, Component)]
     struct Position {
         x: f32,
         y: f32,
     }
 
-    #[derive(Debug, Default, PartialEq)]
+    #[derive(Debug, Default, PartialEq, Component)]
     struct Velocity {
         x: f32,
         y: f32,
     }
 
-    #[derive(Debug, Default, PartialEq)]
+    #[derive(Debug, Default, PartialEq, Component)]
     struct Acceleration {
         x: f32,
         y: f32,
