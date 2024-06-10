@@ -12,6 +12,7 @@ use weaver::{
     winit::WinitPlugin,
 };
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
+use weaver_egui::{prelude::egui, EguiContext, EguiPlugin};
 
 pub mod camera;
 
@@ -26,12 +27,14 @@ fn main() -> Result<()> {
         .add_plugin(AssetPlugin)?
         .add_plugin(RendererPlugin)?
         .add_plugin(PbrPlugin)?
+        .add_plugin(EguiPlugin)?
         .add_plugin(LogFrameTimePlugin {
             log_interval: std::time::Duration::from_secs(1),
         })?
         .add_system(setup, SystemStage::Init)?
         .add_system(update, SystemStage::Update)?
         .add_system(camera::update_camera, SystemStage::Update)?
+        .add_system(ui, SystemStage::Ui)?
         .run()
 }
 
@@ -125,6 +128,20 @@ fn update(world: &World) -> Result<()> {
         point_light.position.x = 10.0 * theta.cos();
         point_light.position.z = 10.0 * theta.sin();
     }
+
+    Ok(())
+}
+
+fn ui(world: &World) -> Result<()> {
+    let egui_context = world.get_resource::<EguiContext>().unwrap();
+
+    egui_context.draw_if_ready(|ctx| {
+        egui::Window::new("Hello World").show(ctx, |ui| {
+            ui.label("Hello World!");
+            ui.label("This is a test of the emergency broadcast system.");
+            ui.label("This is only a test.");
+        })
+    });
 
     Ok(())
 }

@@ -1,6 +1,6 @@
 use weaver_app::{plugin::Plugin, prelude::App, Runner};
 use weaver_core::input::Input;
-use weaver_ecs::system::SystemStage;
+use weaver_ecs::{system::SystemStage, world::World};
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -9,7 +9,23 @@ use winit::{
 };
 
 pub mod prelude {
-    pub use super::WinitPlugin;
+    pub use super::{WinitEventHooks, WinitPlugin};
+    pub use winit;
+}
+
+#[derive(Default)]
+pub struct WinitEventHooks {
+    #[allow(clippy::type_complexity)]
+    pub on_event: Vec<Box<dyn Fn(&World, &Event<()>)>>,
+}
+
+impl WinitEventHooks {
+    pub fn push_event_hook<F>(&mut self, f: F)
+    where
+        F: Fn(&World, &Event<()>) + 'static,
+    {
+        self.on_event.push(Box::new(f));
+    }
 }
 
 pub struct WinitPlugin {
@@ -33,6 +49,7 @@ impl Plugin for WinitPlugin {
 
         app.world().insert_resource(window);
         app.world().insert_resource(event_loop);
+        app.world().insert_resource(WinitEventHooks::default());
         app.set_runner(WinitRunner);
         Ok(())
     }
@@ -50,6 +67,11 @@ impl Runner for WinitRunner {
 
         event_loop.run(move |event, event_loop_window| {
             event_loop_window.set_control_flow(ControlFlow::Poll);
+            if let Some(hooks) = app.world().get_resource::<WinitEventHooks>() {
+                for hook in hooks.on_event.iter() {
+                    hook(app.world(), &event);
+                }
+            }
             match event {
                 Event::DeviceEvent { event, .. } => {
                     if let Some(mut input) = app.world().get_resource_mut::<Input>() {
@@ -78,7 +100,9 @@ impl Runner for WinitRunner {
                                     app.run_systems(SystemStage::Update).unwrap();
                                     app.run_systems(SystemStage::PostUpdate).unwrap();
 
+                                    app.run_systems(SystemStage::PreUi).unwrap();
                                     app.run_systems(SystemStage::Ui).unwrap();
+                                    app.run_systems(SystemStage::PostUi).unwrap();
 
                                     app.run_systems(SystemStage::PreRender).unwrap();
                                     app.run_systems(SystemStage::Render).unwrap();

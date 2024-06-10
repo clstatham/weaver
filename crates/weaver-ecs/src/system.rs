@@ -12,7 +12,9 @@ pub enum SystemStage {
     Update,
     PostUpdate,
 
+    PreUi,
     Ui,
+    PostUi,
 
     PreRender,
     Render,

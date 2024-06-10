@@ -1,0 +1,15 @@
+[package]
+name = "weaver-egui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+egui = "0.27.2"
+egui-wgpu = "0.27.2"
+egui-winit = "0.27.2"
+
+weaver-util = { path = "../weaver-util" }
+weaver-renderer = { path = "../weaver-renderer" }
+weaver-winit = { path = "../weaver-winit" }
+weaver-app = { path = "../weaver-app" }
+weaver-ecs = { path = "../weaver-ecs" }
