@@ -13,6 +13,8 @@ use weaver::{
 };
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 
+pub mod camera;
+
 fn main() -> Result<()> {
     env_logger::init();
     App::new()?
@@ -29,6 +31,7 @@ fn main() -> Result<()> {
         })?
         .add_system(setup, SystemStage::Init)?
         .add_system(update, SystemStage::Update)?
+        .add_system(camera::update_camera, SystemStage::Update)?
         .run()
 }
 
@@ -46,6 +49,14 @@ fn setup(world: &World) -> Result<()> {
     world.insert_component(
         camera.entity(),
         PbrCamera::new(Color::new(0.1, 0.1, 0.1, 1.0)),
+    );
+    world.insert_component(
+        camera.entity(),
+        *camera::FlyCameraController {
+            aspect: 1280.0 / 720.0,
+            ..Default::default()
+        }
+        .look_at(Vec3::new(10.0, 10.0, 10.0), Vec3::ZERO, Vec3::Y),
     );
 
     let asset_loader = world.get_resource::<AssetLoader>().unwrap();

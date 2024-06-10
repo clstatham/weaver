@@ -1,14 +1,17 @@
+use std::collections::HashMap;
+
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{system::SystemStage, world::World};
 use weaver_util::prelude::Result;
 use winit::{
-    event::{DeviceEvent, ElementState, MouseButton, WindowEvent},
-    keyboard::KeyCode,
+    event::{DeviceEvent, ElementState, WindowEvent},
     platform::scancode::PhysicalKeyExtScancode,
 };
 
+pub use winit::{event::MouseButton, keyboard::KeyCode};
+
 pub struct Input {
-    pub(crate) keys: [bool; 1024],
+    pub(crate) keys: HashMap<u32, bool>,
     pub(crate) mouse: [bool; 8],
     pub(crate) mouse_pos: (f32, f32),
     pub(crate) mouse_delta: (f32, f32),
@@ -17,7 +20,7 @@ pub struct Input {
 impl Default for Input {
     fn default() -> Self {
         Self {
-            keys: [false; 1024],
+            keys: HashMap::new(),
             mouse: [false; 8],
             mouse_pos: (0.0, 0.0),
             mouse_delta: (0.0, 0.0),
@@ -28,7 +31,7 @@ impl Default for Input {
 impl Input {
     pub fn key_down(&self, key: KeyCode) -> bool {
         if let Some(scancode) = key.to_scancode() {
-            self.keys[scancode as usize]
+            self.keys.get(&scancode).copied().unwrap_or(false)
         } else {
             false
         }
@@ -75,7 +78,8 @@ impl Input {
             }
             DeviceEvent::Key(key) => {
                 if let Some(scancode) = key.physical_key.to_scancode() {
-                    self.keys[scancode as usize] = key.state == ElementState::Pressed;
+                    self.keys
+                        .insert(scancode, key.state == ElementState::Pressed);
                 }
             }
             _ => {}

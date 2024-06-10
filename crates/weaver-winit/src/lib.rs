@@ -1,9 +1,10 @@
 use weaver_app::{plugin::Plugin, prelude::App, Runner};
+use weaver_core::input::Input;
 use weaver_ecs::system::SystemStage;
 use winit::{
     dpi::LogicalSize,
-    event::WindowEvent,
-    event_loop::EventLoop,
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
 
@@ -47,15 +48,24 @@ impl Runner for WinitRunner {
 
         let event_loop = app.world().remove_resource::<EventLoop<()>>().unwrap();
 
-        #[allow(clippy::single_match)]
         event_loop.run(move |event, event_loop_window| {
-            event_loop_window.set_control_flow(winit::event_loop::ControlFlow::Poll);
+            event_loop_window.set_control_flow(ControlFlow::Poll);
             match event {
-                winit::event::Event::WindowEvent { event, window_id } => {
+                Event::DeviceEvent { event, .. } => {
+                    if let Some(mut input) = app.world().get_resource_mut::<Input>() {
+                        input.update_device(&event);
+                    }
+                }
+                Event::WindowEvent { event, window_id } => {
                     if let Some(window) = app.world().get_resource::<Window>() {
                         if window.id() == window_id {
                             window.request_redraw();
                             drop(window);
+
+                            if let Some(mut input) = app.world().get_resource_mut::<Input>() {
+                                input.update_window(&event);
+                            }
+
                             match event {
                                 WindowEvent::CloseRequested => {
                                     app.run_systems(SystemStage::PreShutdown).unwrap();
