@@ -2925,6 +2925,7 @@ dependencies = [
  "weaver-core",
  "weaver-ecs",
  "weaver-pbr",
+ "weaver-reflect",
  "weaver-renderer",
  "weaver-util",
  "weaver-winit",
@@ -2965,6 +2966,7 @@ dependencies = [
  "image",
  "weaver-app",
  "weaver-ecs",
+ "weaver-reflect",
  "weaver-util",
  "winit",
 ]
@@ -3019,6 +3021,23 @@ dependencies = [
  "weaver-ecs",
  "weaver-renderer",
  "weaver-util",
+]
+
+[[package]]
+name = "weaver-reflect"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "weaver-reflect-macros",
+]
+
+[[package]]
+name = "weaver-reflect-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.48",
 ]
 
 [[package]]

@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+use weaver_reflect::prelude::Reflect;
+
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Reflect)]
 #[repr(C)]
 pub struct Color {
     pub r: f32,
