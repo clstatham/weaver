@@ -3,13 +3,15 @@ use crate::{
     Renderer,
 };
 use weaver_app::{plugin::Plugin, App};
-use weaver_core::mesh::Mesh;
+use weaver_asset::{loader::AssetLoader, prelude::Asset};
+use weaver_core::mesh::{Mesh, MeshLoader};
 use weaver_ecs::prelude::*;
 use weaver_util::prelude::*;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
 pub mod primitive;
 
+#[derive(Asset)]
 pub struct GpuMesh {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
@@ -60,6 +62,8 @@ pub struct MeshPlugin;
 impl Plugin for MeshPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_plugin(ExtractRenderAssetPlugin::<GpuMesh>::default())?;
+        let mut loader = app.get_resource_mut::<AssetLoader>().unwrap();
+        loader.add_loader(MeshLoader);
         Ok(())
     }
 }

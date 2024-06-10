@@ -1,3 +1,13 @@
+use std::path::Path;
+
+use weaver_asset::{
+    loader::LoadAsset,
+    prelude::{Asset, Assets},
+    UntypedHandle,
+};
+use weaver_util::prelude::Result;
+
+#[derive(Asset)]
 pub struct Texture {
     pub image: image::RgbaImage,
 }
@@ -54,5 +64,16 @@ impl Texture {
 
     pub fn resize(&mut self, width: u32, height: u32, filter: image::imageops::FilterType) {
         self.image = image::imageops::resize(&self.image, width, height, filter);
+    }
+}
+
+pub struct TextureLoader;
+
+impl LoadAsset for TextureLoader {
+    fn load_asset(&self, path: &Path, assets: &mut Assets) -> Result<UntypedHandle> {
+        let image = image::open(path)?;
+        let image = image.to_rgba8();
+        let texture = Texture::from_rgba8(&image, image.width(), image.height());
+        Ok(assets.insert(texture, Some(path)).into())
     }
 }

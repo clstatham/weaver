@@ -5,9 +5,6 @@ use weaver_util::prelude::*;
 
 use crate::{Asset, Assets, Handle, UntypedHandle};
 
-pub mod image;
-pub mod mesh;
-
 pub struct AssetLoader {
     world: Rc<World>,
     loaders: Vec<Box<dyn LoadAsset>>,
@@ -41,27 +38,13 @@ impl AssetLoader {
             return Ok(handle);
         }
 
-        match path.extension().and_then(|ext| ext.to_str()) {
-            Some("obj") => {
-                let asset = self::mesh::load_obj(path)?;
-                let handle = assets.insert(asset, Some(path));
-                Ok(handle.into())
-            }
-            Some("png") => {
-                let asset = self::image::load_png(path)?;
-                let handle = assets.insert(asset, Some(path));
-                Ok(handle.into())
-            }
-            _ => {
-                for loader in &self.loaders {
-                    if let Ok(handle) = loader.load_asset(path, &mut assets) {
-                        return Ok(handle);
-                    }
-                }
-
-                Err(anyhow!("No loader found for {:?}", path))
+        for loader in &self.loaders {
+            if let Ok(handle) = loader.load_asset(path, &mut assets) {
+                return Ok(handle);
             }
         }
+
+        bail!("no loader found for asset: {:?}", path);
     }
 }
 

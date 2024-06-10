@@ -48,18 +48,6 @@ pub fn impl_reflect_struct(name: &syn::Ident, fields: &syn::FieldsNamed) -> Toke
 
     quote! {
         impl #reflect_module::Reflect for #name {
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-
-            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-                self
-            }
-
-            fn into_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
-                self
-            }
-
             fn as_reflect(&self) -> &dyn #reflect_module::Reflect {
                 self
             }

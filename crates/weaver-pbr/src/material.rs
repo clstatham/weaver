@@ -3,6 +3,7 @@ use std::path::Path;
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{
     loader::{AssetLoader, LoadAsset},
+    prelude::Asset,
     Assets, Handle, UntypedHandle,
 };
 use weaver_core::{color::Color, texture::Texture};
@@ -17,6 +18,7 @@ use weaver_renderer::{
 use weaver_util::prelude::*;
 use wgpu::util::DeviceExt;
 
+#[derive(Asset)]
 pub struct Material {
     pub diffuse: Color,
     pub diffuse_texture: Handle<Texture>,
@@ -147,6 +149,7 @@ struct MaterialMetaUniform {
     texture_scale: f32,
 }
 
+#[derive(Asset)]
 pub struct GpuMaterial {
     pub meta: GpuBuffer,
 

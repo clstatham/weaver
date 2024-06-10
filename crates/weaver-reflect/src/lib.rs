@@ -1,4 +1,4 @@
-use std::any::Any;
+use weaver_util::prelude::{impl_downcast, Downcast};
 
 pub mod impls;
 pub mod registry;
@@ -9,30 +9,16 @@ pub mod prelude {
     pub use weaver_reflect_macros::*;
 }
 
-pub trait Reflect: Any {
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-    fn into_any_box(self: Box<Self>) -> Box<dyn Any>;
+pub trait Reflect: Downcast {
     fn as_reflect(&self) -> &dyn Reflect;
     fn as_reflect_mut(&mut self) -> &mut dyn Reflect;
     fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect>;
 
     fn reflect_type_name(&self) -> &'static str;
 }
+impl_downcast!(Reflect);
 
 impl<T: Reflect> Reflect for Box<T> {
-    fn as_any(&self) -> &dyn Any {
-        self.as_ref()
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self.as_mut()
-    }
-
-    fn into_any_box(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-
     fn as_reflect(&self) -> &dyn Reflect {
         self.as_ref()
     }
@@ -47,6 +33,12 @@ impl<T: Reflect> Reflect for Box<T> {
 
     fn reflect_type_name(&self) -> &'static str {
         T::reflect_type_name(self)
+    }
+}
+
+impl dyn Reflect {
+    pub fn take<T: Reflect>(self: Box<dyn Reflect>) -> Result<T, Box<dyn Reflect>> {
+        self.downcast::<T>().map(|boxed| *boxed)
     }
 }
 
@@ -97,9 +89,12 @@ mod tests {
         let mut registry = TypeRegistry::new();
         registry.register::<TestStruct>();
 
-        let type_info = registry.get_type_info::<TestStruct>().unwrap();
-        let TypeInfo::Struct(info) = type_info else {
-            panic!("Expected TypeInfo::Struct, got {:?}", type_info);
+        let type_registration = registry.get_type_info::<TestStruct>().unwrap();
+        let TypeInfo::Struct(info) = type_registration.type_info else {
+            panic!(
+                "Expected TypeInfo::Struct, got {:?}",
+                type_registration.type_info
+            );
         };
 
         assert_eq!(info.type_name, "TestStruct");

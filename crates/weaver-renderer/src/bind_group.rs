@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{Assets, Handle, UntypedHandle};
+use weaver_asset::{prelude::Asset, Assets, Handle, UntypedHandle};
 use weaver_ecs::{query::Query, system::SystemStage, world::World};
 
 use crate::{asset::RenderAsset, Renderer};
@@ -13,6 +13,7 @@ pub trait CreateBindGroup: 'static {
     fn create_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup;
 }
 
+#[derive(Asset)]
 pub struct BindGroup<T: CreateBindGroup> {
     bind_group: Arc<wgpu::BindGroup>,
     _marker: std::marker::PhantomData<T>,

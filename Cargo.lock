@@ -2953,9 +2953,18 @@ dependencies = [
  "image",
  "tobj",
  "weaver-app",
- "weaver-core",
+ "weaver-asset-macros",
  "weaver-ecs",
  "weaver-util",
+]
+
+[[package]]
+name = "weaver-asset-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.48",
 ]
 
 [[package]]
@@ -2964,8 +2973,11 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "glam",
+ "gltf",
  "image",
+ "tobj",
  "weaver-app",
+ "weaver-asset",
  "weaver-ecs",
  "weaver-reflect",
  "weaver-util",
@@ -3030,6 +3042,7 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "weaver-reflect-macros",
+ "weaver-util",
 ]
 
 [[package]]
@@ -3066,6 +3079,7 @@ name = "weaver-util"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "downcast-rs",
  "lock_api",
  "parking_lot",
 ]

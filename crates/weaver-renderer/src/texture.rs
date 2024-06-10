@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use weaver_app::{plugin::Plugin, prelude::App};
-use weaver_core::texture::Texture;
+use weaver_asset::loader::AssetLoader;
+use weaver_core::texture::{Texture, TextureLoader};
 use wgpu::util::DeviceExt;
 
 use crate::Renderer;
@@ -50,8 +51,9 @@ impl GpuTexture {
 pub struct TexturePlugin;
 
 impl Plugin for TexturePlugin {
-    fn build(&self, _app: &mut App) -> anyhow::Result<()> {
-        // todo?
+    fn build(&self, app: &mut App) -> anyhow::Result<()> {
+        let mut loader = app.get_resource_mut::<AssetLoader>().unwrap();
+        loader.add_loader(TextureLoader);
         Ok(())
     }
 }

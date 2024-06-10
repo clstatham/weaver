@@ -7,3 +7,4 @@ edition = "2021"
 parking_lot = { version = "0.12.1", features = ["arc_lock"] }
 lock_api = "0.4.0"
 anyhow = "1.0.86"
+downcast-rs = "1.0.0"

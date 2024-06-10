@@ -1,8 +1,8 @@
-use std::any::Any;
+use weaver_util::prelude::{impl_downcast, Downcast};
 
 use crate::App;
 
-pub trait Plugin: Any {
+pub trait Plugin: Downcast {
     fn name(&self) -> &str {
         std::any::type_name::<Self>()
     }
@@ -14,3 +14,4 @@ pub trait Plugin: Any {
         Ok(())
     }
 }
+impl_downcast!(Plugin);

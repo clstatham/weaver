@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     collections::HashMap,
     path::{Path, PathBuf},
     sync::atomic::AtomicUsize,
@@ -8,33 +7,17 @@ use std::{
 use loader::AssetLoader;
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::storage::SparseSet;
-use weaver_util::prelude::{anyhow, Error, Result};
+use weaver_util::prelude::{anyhow, impl_downcast, Downcast, Error, Result};
 
 pub mod loader;
 
 pub mod prelude {
     pub use crate::{loader::AssetLoader, Asset, AssetPlugin, Assets, Handle};
+    pub use weaver_asset_macros::Asset;
 }
 
-pub trait Asset: Any {
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-    fn as_any_box(self: Box<Self>) -> Box<dyn Any>;
-}
-
-impl<T: 'static> Asset for T {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-}
+pub trait Asset: Downcast {}
+impl_downcast!(Asset);
 
 #[derive(Debug)]
 pub struct Handle<T: Asset> {
@@ -127,7 +110,7 @@ impl Assets {
         Self::default()
     }
 
-    pub fn insert<T: Any>(&mut self, asset: T, path: Option<&Path>) -> Handle<T> {
+    pub fn insert<T: Asset>(&mut self, asset: T, path: Option<&Path>) -> Handle<T> {
         let id = self
             .next_handle_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -148,7 +131,7 @@ impl Assets {
         }
     }
 
-    pub fn get<T: Any>(&self, handle: Handle<T>) -> Option<&T> {
+    pub fn get<T: Asset>(&self, handle: Handle<T>) -> Option<&T> {
         self.storage
             .get(handle.id)
             .and_then(|asset| (**asset).as_any().downcast_ref())
@@ -158,16 +141,16 @@ impl Assets {
         self.paths.get(&PathBuf::from(path.as_ref())).copied()
     }
 
-    pub fn get_mut<T: Any>(&mut self, handle: Handle<T>) -> Option<&mut T> {
+    pub fn get_mut<T: Asset>(&mut self, handle: Handle<T>) -> Option<&mut T> {
         self.storage
             .get_mut(handle.id)
             .and_then(|asset| (**asset).as_any_mut().downcast_mut())
     }
 
-    pub fn remove<T: Any>(&mut self, handle: Handle<T>) -> Option<T> {
+    pub fn remove<T: Asset>(&mut self, handle: Handle<T>) -> Option<T> {
         self.storage
             .remove(handle.id)
-            .and_then(|asset| asset.as_any_box().downcast().ok())
+            .and_then(|asset| asset.downcast().ok())
             .map(|asset| *asset)
     }
 }

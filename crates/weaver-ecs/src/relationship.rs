@@ -1,27 +1,9 @@
-use std::any::Any;
+use weaver_util::prelude::{impl_downcast, Downcast};
 
 use super::node::Node;
 
-pub trait Relationship: Any {
-    fn as_any(&self) -> &dyn Any
-    where
-        Self: Sized,
-    {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn Any
-    where
-        Self: Sized,
-    {
-        self
-    }
-    fn as_any_box(self: Box<Self>) -> Box<dyn Any>
-    where
-        Self: Sized,
-    {
-        self
-    }
-}
+pub trait Relationship: Downcast {}
+impl_downcast!(Relationship);
 
 pub struct RelationshipConnection {
     pub from: Node,

@@ -5,35 +5,35 @@ use crate::{
     Reflect,
 };
 
-impl Reflect for glam::Vec2 {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
+macro_rules! impl_reflect {
+    ($t:ty) => {
+        impl Reflect for $t {
+            fn as_reflect(&self) -> &dyn Reflect {
+                self
+            }
 
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
+            fn as_reflect_mut(&mut self) -> &mut dyn Reflect {
+                self
+            }
 
-    fn into_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self
-    }
+            fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect> {
+                self
+            }
 
-    fn as_reflect(&self) -> &dyn Reflect {
-        self
-    }
-
-    fn as_reflect_mut(&mut self) -> &mut dyn Reflect {
-        self
-    }
-
-    fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect> {
-        self
-    }
-
-    fn reflect_type_name(&self) -> &'static str {
-        Self::type_name()
-    }
+            fn reflect_type_name(&self) -> &'static str {
+                Self::type_name()
+            }
+        }
+    };
 }
+
+impl_reflect!(glam::Vec2);
+impl_reflect!(glam::Vec3);
+impl_reflect!(glam::Vec4);
+impl_reflect!(glam::Mat2);
+impl_reflect!(glam::Mat3);
+impl_reflect!(glam::Mat4);
+impl_reflect!(glam::Quat);
 
 impl Struct for glam::Vec2 {
     fn field(&self, field_name: &str) -> Option<&dyn Reflect> {
@@ -81,36 +81,6 @@ impl Typed for glam::Vec2 {
                 field_indices: vec![("x", 0), ("y", 1)].into_iter().collect(),
             })
         })
-    }
-}
-
-impl Reflect for glam::Vec3 {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    fn into_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self
-    }
-
-    fn as_reflect(&self) -> &dyn Reflect {
-        self
-    }
-
-    fn as_reflect_mut(&mut self) -> &mut dyn Reflect {
-        self
-    }
-
-    fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect> {
-        self
-    }
-
-    fn reflect_type_name(&self) -> &'static str {
-        Self::type_name()
     }
 }
 
@@ -167,36 +137,6 @@ impl Typed for glam::Vec3 {
                 field_indices: vec![("x", 0), ("y", 1), ("z", 2)].into_iter().collect(),
             })
         })
-    }
-}
-
-impl Reflect for glam::Vec4 {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    fn into_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self
-    }
-
-    fn as_reflect(&self) -> &dyn Reflect {
-        self
-    }
-
-    fn as_reflect_mut(&mut self) -> &mut dyn Reflect {
-        self
-    }
-
-    fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect> {
-        self
-    }
-
-    fn reflect_type_name(&self) -> &'static str {
-        Self::type_name()
     }
 }
 
@@ -265,36 +205,6 @@ impl Typed for glam::Vec4 {
     }
 }
 
-impl Reflect for glam::Mat2 {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    fn into_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self
-    }
-
-    fn as_reflect(&self) -> &dyn Reflect {
-        self
-    }
-
-    fn as_reflect_mut(&mut self) -> &mut dyn Reflect {
-        self
-    }
-
-    fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect> {
-        self
-    }
-
-    fn reflect_type_name(&self) -> &'static str {
-        Self::type_name()
-    }
-}
-
 impl Struct for glam::Mat2 {
     fn field(&self, field_name: &str) -> Option<&dyn Reflect> {
         match field_name {
@@ -341,36 +251,6 @@ impl Typed for glam::Mat2 {
                 field_indices: vec![("x_axis", 0), ("y_axis", 1)].into_iter().collect(),
             })
         })
-    }
-}
-
-impl Reflect for glam::Mat3 {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    fn into_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self
-    }
-
-    fn as_reflect(&self) -> &dyn Reflect {
-        self
-    }
-
-    fn as_reflect_mut(&mut self) -> &mut dyn Reflect {
-        self
-    }
-
-    fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect> {
-        self
-    }
-
-    fn reflect_type_name(&self) -> &'static str {
-        Self::type_name()
     }
 }
 
@@ -429,36 +309,6 @@ impl Typed for glam::Mat3 {
                     .collect(),
             })
         })
-    }
-}
-
-impl Reflect for glam::Mat4 {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    fn into_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self
-    }
-
-    fn as_reflect(&self) -> &dyn Reflect {
-        self
-    }
-
-    fn as_reflect_mut(&mut self) -> &mut dyn Reflect {
-        self
-    }
-
-    fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect> {
-        self
-    }
-
-    fn reflect_type_name(&self) -> &'static str {
-        Self::type_name()
     }
 }
 
@@ -524,36 +374,6 @@ impl Typed for glam::Mat4 {
                     .collect(),
             })
         })
-    }
-}
-
-impl Reflect for glam::Quat {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    fn into_any_box(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self
-    }
-
-    fn as_reflect(&self) -> &dyn Reflect {
-        self
-    }
-
-    fn as_reflect_mut(&mut self) -> &mut dyn Reflect {
-        self
-    }
-
-    fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect> {
-        self
-    }
-
-    fn reflect_type_name(&self) -> &'static str {
-        Self::type_name()
     }
 }
 

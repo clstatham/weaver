@@ -11,5 +11,5 @@ gltf = "1.4.1"
 
 weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }
-weaver-core = { path = "../weaver-core" }
 weaver-app = { path = "../weaver-app" }
+weaver-asset-macros = { path = "../weaver-asset-macros" }
