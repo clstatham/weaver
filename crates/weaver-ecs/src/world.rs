@@ -90,8 +90,8 @@ impl World {
         self.storage.read().has_component::<T>(entity)
     }
 
-    pub fn query<Q: QueryFilter>(&self) -> Query<Q> {
-        Query::new(self)
+    pub fn query<Q: QueryFilter>(self: &Rc<Self>) -> Query<Q> {
+        Query::new(self.clone())
     }
 
     pub const fn resource_entity(&self) -> Entity {

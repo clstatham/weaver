@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{prelude::Component, system::SystemStage, world::World};
+use weaver_ecs::{
+    prelude::Component,
+    system::{ResMut, SystemStage},
+};
 use weaver_util::prelude::Result;
 use winit::{
     event::{DeviceEvent, ElementState, WindowEvent},
@@ -118,8 +121,7 @@ impl Plugin for InputPlugin {
     }
 }
 
-fn update_input(world: &World) -> Result<()> {
-    let mut input = world.get_resource_mut::<Input>().unwrap();
+fn update_input(mut input: ResMut<Input>) -> Result<()> {
     input.prepare();
     Ok(())
 }

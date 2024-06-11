@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use weaver_asset::{Assets, Handle};
 use weaver_core::{prelude::Mat4, transform::Transform};
@@ -145,7 +145,7 @@ impl PbrNode {
 }
 
 impl Render for PbrNode {
-    fn prepare(&self, world: &World, renderer: &Renderer) -> Result<()> {
+    fn prepare(&self, world: Rc<World>, renderer: &Renderer) -> Result<()> {
         if self.pipeline.read().is_none() {
             self.init_pipeline(renderer);
         }
@@ -225,7 +225,7 @@ impl Render for PbrNode {
 
     fn render(
         &self,
-        world: &World,
+        world: Rc<World>,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> Result<Vec<Slot>> {

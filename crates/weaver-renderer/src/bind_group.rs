@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Deref, sync::Arc};
+use std::{collections::HashMap, ops::Deref, rc::Rc, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{prelude::Asset, Assets, Handle, UntypedHandle};
@@ -59,11 +59,11 @@ impl<T: CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
     }
 }
 
-fn create_bind_groups<T: CreateBindGroup>(world: &World) -> anyhow::Result<()> {
-    let renderer = world.get_resource::<Renderer>().unwrap();
+fn create_bind_groups<T: CreateBindGroup>(world: Rc<World>) -> anyhow::Result<()> {
+    let renderer = world.clone().get_resource::<Renderer>().unwrap();
     let device = renderer.device();
 
-    let query = world.query::<&T>();
+    let query = world.clone().query::<&T>();
 
     for (entity, data) in query.iter() {
         if !world.has_component::<BindGroup<T>>(entity) {
@@ -91,7 +91,7 @@ impl<T: CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
     }
 }
 
-fn create_resource_bind_group<T: CreateBindGroup>(world: &World) -> anyhow::Result<()> {
+fn create_resource_bind_group<T: CreateBindGroup>(world: Rc<World>) -> anyhow::Result<()> {
     let renderer = world.get_resource::<Renderer>().unwrap();
     let device = renderer.device();
 
@@ -140,13 +140,15 @@ impl<T: CreateBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
     }
 }
 
-fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(world: &World) -> anyhow::Result<()> {
+fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
+    world: Rc<World>,
+) -> anyhow::Result<()> {
     let renderer = world.get_resource::<Renderer>().unwrap();
     let device = renderer.device();
 
     let mut assets = world.get_resource_mut::<Assets>().unwrap();
 
-    let query = world.query::<&Handle<T>>();
+    let query = world.clone().query::<&Handle<T>>();
 
     for (entity, handle) in query.iter() {
         if world.has_component::<Handle<BindGroup<T>>>(entity) {

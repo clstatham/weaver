@@ -1,5 +1,8 @@
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{prelude::Component, system::SystemStage, world::World};
+use weaver_ecs::{
+    prelude::Component,
+    system::{ResMut, SystemStage},
+};
 use weaver_util::prelude::Result;
 
 #[derive(Component)]
@@ -40,8 +43,7 @@ impl Plugin for TimePlugin {
     }
 }
 
-fn update_time(world: &World) -> Result<()> {
-    let mut time = world.get_resource_mut::<Time>().unwrap();
+fn update_time(mut time: ResMut<Time>) -> Result<()> {
     time.update();
     Ok(())
 }

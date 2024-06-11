@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use weaver::{
     prelude::*,
     weaver_app::App,
@@ -40,7 +42,7 @@ fn main() -> Result<()> {
         .run()
 }
 
-fn setup(world: &World) -> Result<()> {
+fn setup(world: Rc<World>) -> Result<()> {
     let scene = world.root_scene();
     let _camera = scene.spawn((
         Camera::perspective_lookat(
@@ -106,7 +108,7 @@ fn setup(world: &World) -> Result<()> {
     Ok(())
 }
 
-fn update(world: &World) -> Result<()> {
+fn update(world: Rc<World>) -> Result<()> {
     let time = world.get_resource::<Time>().unwrap();
     let query = world.query::<&mut Transform>();
 
@@ -127,7 +129,7 @@ fn update(world: &World) -> Result<()> {
     Ok(())
 }
 
-fn ui(world: &World) -> Result<()> {
+fn ui(world: Rc<World>) -> Result<()> {
     let egui_context = world.get_resource::<EguiContext>().unwrap();
 
     egui_context.draw_if_ready(|ctx| {

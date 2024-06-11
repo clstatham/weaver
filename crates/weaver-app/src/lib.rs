@@ -8,7 +8,7 @@ use weaver_ecs::{
     entity::Entity,
     scene::Scene,
     storage::{Mut, Ref},
-    system::{System, SystemStage},
+    system::{FunctionSystem, System, SystemStage},
     world::World,
 };
 use weaver_reflect::registry::{TypeRegistry, Typed};
@@ -102,13 +102,16 @@ impl App {
         self.world.root_scene()
     }
 
-    pub fn add_system<T: System>(
+    pub fn add_system<M>(
         &mut self,
-        system: T,
+        system: impl FunctionSystem<M> + 'static,
         stage: SystemStage,
     ) -> anyhow::Result<&mut Self> {
-        let system = Arc::new(system);
-        self.systems.write().entry(stage).or_default().push(system);
+        self.systems
+            .write()
+            .entry(stage)
+            .or_default()
+            .push(system.into_system());
         Ok(self)
     }
 
@@ -116,7 +119,7 @@ impl App {
         let systems = self.systems.read().get(&stage).cloned();
         if let Some(systems) = systems {
             for system in systems {
-                system.run(self.world())?;
+                system.run(self.world().clone())?;
             }
         }
         Ok(())

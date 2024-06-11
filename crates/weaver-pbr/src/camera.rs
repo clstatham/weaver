@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use weaver_app::{plugin::Plugin, App};
 use weaver_core::color::Color;
 use weaver_ecs::{entity::Entity, prelude::Component, system::SystemStage, world::World};
@@ -17,13 +19,13 @@ struct PbrCameraBindGroupNode {
 }
 
 impl Render for PbrCameraBindGroupNode {
-    fn prepare(&self, _world: &World, _renderer: &Renderer) -> Result<()> {
+    fn prepare(&self, _world: Rc<World>, _renderer: &Renderer) -> Result<()> {
         Ok(())
     }
 
     fn render(
         &self,
-        world: &World,
+        world: Rc<World>,
         _renderer: &Renderer,
         _input_slots: &[Slot],
     ) -> Result<Vec<Slot>> {
@@ -55,8 +57,8 @@ impl Plugin for PbrCameraPlugin {
     }
 }
 
-fn prepare_pbr_cameras(world: &World) -> Result<()> {
-    let camera_query = world.query::<(&mut Camera, &PbrCamera)>();
+fn prepare_pbr_cameras(world: Rc<World>) -> Result<()> {
+    let camera_query = world.clone().query::<(&mut Camera, &PbrCamera)>();
 
     for (camera_entity, (mut base_camera, pbr_camera)) in camera_query.iter() {
         if base_camera.active() {
@@ -103,21 +105,21 @@ fn prepare_pbr_cameras(world: &World) -> Result<()> {
 
             drop(base_camera);
             let base_camera = world.get_component::<Camera>(camera_entity).unwrap();
-            base_camera.graph.prepare(world, &renderer)?;
+            base_camera.graph.prepare(world.clone(), &renderer)?;
         }
     }
 
     Ok(())
 }
 
-fn render_pbr_cameras(world: &World) -> Result<()> {
+fn render_pbr_cameras(world: Rc<World>) -> Result<()> {
     let camera_query = world.query::<&mut Camera>();
 
     for (_entity, mut camera) in camera_query.iter() {
         if camera.active() {
             let graph = camera.render_graph_mut();
             let renderer = world.get_resource::<Renderer>().unwrap();
-            graph.render(world, &renderer)?;
+            graph.render(world.clone(), &renderer)?;
         }
     }
 

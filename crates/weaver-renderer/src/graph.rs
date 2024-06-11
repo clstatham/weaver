@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     ops::{Index, IndexMut},
+    rc::Rc,
     sync::Arc,
 };
 
@@ -22,13 +23,13 @@ pub struct RenderEdge {
 
 pub trait Render: 'static {
     #[allow(unused_variables)]
-    fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
+    fn prepare(&self, world: Rc<World>, renderer: &Renderer) -> anyhow::Result<()> {
         Ok(())
     }
 
     fn render(
         &self,
-        world: &World,
+        world: Rc<World>,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>>;
@@ -72,13 +73,13 @@ impl RenderNode {
         self.render_type_id
     }
 
-    pub fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn prepare(&self, world: Rc<World>, renderer: &Renderer) -> anyhow::Result<()> {
         self.render.write().prepare(world, renderer)
     }
 
     pub fn render(
         &self,
-        world: &World,
+        world: Rc<World>,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>> {
@@ -91,7 +92,7 @@ pub struct StartNode;
 impl Render for StartNode {
     fn render(
         &self,
-        _world: &World,
+        _world: Rc<World>,
         renderer: &Renderer,
         _input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>> {
@@ -109,7 +110,7 @@ pub struct EndNode;
 impl Render for EndNode {
     fn render(
         &self,
-        _world: &World,
+        _world: Rc<World>,
         _renderer: &Renderer,
         input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>> {
@@ -214,16 +215,16 @@ impl RenderGraph {
         self.node_types.get(&TypeId::of::<T>()).copied()
     }
 
-    pub fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn prepare(&self, world: Rc<World>, renderer: &Renderer) -> anyhow::Result<()> {
         for node in self.graph.node_indices() {
             let render_node = &self.graph[node];
-            render_node.prepare(world, renderer)?;
+            render_node.prepare(world.clone(), renderer)?;
         }
 
         Ok(())
     }
 
-    pub fn render(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn render(&self, world: Rc<World>, renderer: &Renderer) -> anyhow::Result<()> {
         let mut output_cache: HashMap<NodeIndex, Vec<Slot>> =
             HashMap::with_capacity(self.graph.node_count());
 
@@ -249,7 +250,7 @@ impl RenderGraph {
                 input_slots.push(output_slots[from_slot].clone());
             }
 
-            let output_slots = render_node.render(world, renderer, &input_slots)?;
+            let output_slots = render_node.render(world.clone(), renderer, &input_slots)?;
             output_cache.insert(node, output_slots);
         }
 

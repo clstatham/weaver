@@ -1,5 +1,8 @@
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{prelude::Component, system::SystemStage, world::World};
+use weaver_ecs::{
+    prelude::Component,
+    system::{ResMut, SystemStage},
+};
 use weaver_util::prelude::Result;
 
 #[derive(Component)]
@@ -32,8 +35,7 @@ impl Plugin for LogFrameTimePlugin {
     }
 }
 
-fn log_frame_time(world: &World) -> Result<()> {
-    let mut frame_time = world.get_resource_mut::<FrameTimeDiagnostics>().unwrap();
+fn log_frame_time(mut frame_time: ResMut<FrameTimeDiagnostics>) -> Result<()> {
     let now = std::time::Instant::now();
     frame_time.frame_time = now.duration_since(frame_time.last_update).as_secs_f32();
     frame_time.fps = 1.0 / frame_time.frame_time;

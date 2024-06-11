@@ -1,4 +1,4 @@
-use std::{any::TypeId, marker::PhantomData};
+use std::{any::TypeId, marker::PhantomData, rc::Rc};
 
 use crate::prelude::Archetype;
 
@@ -131,14 +131,14 @@ impl_query_filter!(A, B, C, D, E, F);
 impl_query_filter!(A, B, C, D, E, F, G);
 impl_query_filter!(A, B, C, D, E, F, G, H);
 
-pub struct Query<'a, Q: QueryFilter + ?Sized> {
-    world: &'a World,
+pub struct Query<Q: QueryFilter + ?Sized> {
+    world: Rc<World>,
     entities: Box<[Entity]>,
     _phantom: PhantomData<Q>,
 }
 
-impl<'a, Q: QueryFilter + ?Sized> Query<'a, Q> {
-    pub fn new(world: &'a World) -> Self {
+impl<Q: QueryFilter + ?Sized> Query<Q> {
+    pub fn new(world: Rc<World>) -> Self {
         let mut entities = Vec::new();
         let storage = world.storage().read();
 
@@ -147,6 +147,8 @@ impl<'a, Q: QueryFilter + ?Sized> Query<'a, Q> {
                 entities.extend(archetype.entity_iter());
             }
         }
+
+        drop(storage);
 
         Self {
             world,
@@ -159,14 +161,14 @@ impl<'a, Q: QueryFilter + ?Sized> Query<'a, Q> {
         self.entities.iter().copied()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (Entity, Q::Fetch<'a>)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (Entity, Q::Fetch<'_>)> + '_ {
         self.entities
             .iter()
-            .filter_map(move |entity| Q::fetch(self.world, *entity).map(|fetch| (*entity, fetch)))
+            .filter_map(move |entity| Some((*entity, Q::fetch(&self.world, *entity)?)))
     }
 
-    pub fn get(&self, entity: Entity) -> Option<Q::Fetch<'a>> {
-        Q::fetch(self.world, entity)
+    pub fn get(&self, entity: Entity) -> Option<Q::Fetch<'_>> {
+        Q::fetch(&self.world, entity)
     }
 }
 
@@ -212,7 +214,7 @@ mod tests {
         world.insert_component(entity3, Velocity { x: 1.0, y: 1.0 });
         world.insert_component(entity3, Acceleration { x: 1.0, y: 1.0 });
 
-        let results = Query::<(&Position, &Velocity)>::new(&world);
+        let results = Query::<(&Position, &Velocity)>::new(world.clone());
 
         let entities = results.entity_iter().collect::<Vec<_>>();
         assert!(entities.contains(&entity1));

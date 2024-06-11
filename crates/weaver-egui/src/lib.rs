@@ -1,8 +1,14 @@
+use std::rc::Rc;
+
 use egui::{Context, FullOutput};
 use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::{winit, State};
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{prelude::Component, system::SystemStage, world::World};
+use weaver_ecs::{
+    prelude::Component,
+    system::{Res, SystemStage},
+    world::World,
+};
 use weaver_renderer::prelude::wgpu;
 use weaver_util::{lock::SharedLock, prelude::Result};
 use weaver_winit::Window;
@@ -175,20 +181,17 @@ impl Plugin for EguiPlugin {
     }
 }
 
-fn begin_frame(world: &World) -> Result<()> {
-    let egui_context = world.get_resource::<EguiContext>().unwrap();
-    let window = world.get_resource::<Window>().unwrap();
+fn begin_frame(egui_context: Res<EguiContext>, window: Res<Window>) -> Result<()> {
     egui_context.begin_frame(&window);
     Ok(())
 }
 
-fn end_frame(world: &World) -> Result<()> {
-    let egui_context = world.get_resource::<EguiContext>().unwrap();
+fn end_frame(egui_context: Res<EguiContext>) -> Result<()> {
     egui_context.end_frame();
     Ok(())
 }
 
-fn render(world: &World) -> Result<()> {
+fn render(world: Rc<World>) -> Result<()> {
     let renderer = world.get_resource::<weaver_renderer::Renderer>().unwrap();
     let mut egui_context = world.get_resource_mut::<EguiContext>().unwrap();
     let window = world.get_resource::<Window>().unwrap();

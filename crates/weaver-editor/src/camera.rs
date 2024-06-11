@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use weaver::prelude::*;
 
 #[derive(Debug, Clone, Copy, Component)]
@@ -104,7 +106,7 @@ impl FlyCameraController {
     }
 }
 
-pub fn update_camera(world: &World) -> Result<()> {
+pub fn update_camera(world: Rc<World>) -> Result<()> {
     let time = world.get_resource::<Time>().unwrap();
     let input = world.get_resource::<Input>().unwrap();
     // let query = world.dyn_query(

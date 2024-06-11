@@ -6,7 +6,10 @@ use camera::CameraPlugin;
 use mesh::MeshPlugin;
 use texture::TexturePlugin;
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{prelude::Component, system::SystemStage, world::World};
+use weaver_ecs::{
+    prelude::Component,
+    system::{Res, SystemStage},
+};
 use weaver_util::lock::Lock;
 use weaver_winit::Window;
 
@@ -241,17 +244,13 @@ impl Plugin for RendererPlugin {
     }
 }
 
-fn begin_render(world: &World) -> anyhow::Result<()> {
-    let renderer = world.get_resource::<Renderer>().unwrap();
-
+fn begin_render(renderer: Res<Renderer>) -> anyhow::Result<()> {
     renderer.begin_frame()?;
 
     Ok(())
 }
 
-fn end_render(world: &World) -> anyhow::Result<()> {
-    let renderer = world.get_resource::<Renderer>().unwrap();
-
+fn end_render(renderer: Res<Renderer>) -> anyhow::Result<()> {
     renderer.end_frame()?;
 
     Ok(())
