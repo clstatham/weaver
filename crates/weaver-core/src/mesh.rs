@@ -5,6 +5,8 @@ use weaver_asset::{loader::LoadAsset, prelude::Asset};
 use weaver_reflect::prelude::Reflect;
 use weaver_util::prelude::{bail, Result};
 
+use crate::prelude::Aabb;
+
 #[derive(Debug, Clone, Copy, PartialEq, Reflect, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Vertex {
@@ -14,15 +16,30 @@ pub struct Vertex {
     pub tex_coords: Vec2,
 }
 
-#[derive(Default, Asset, Clone, Reflect)]
+#[derive(Asset, Clone, Reflect)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
+    pub aabb: Aabb,
 }
 
 impl Mesh {
     pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
-        Self { vertices, indices }
+        let mut min = Vec3::splat(f32::INFINITY);
+        let mut max = Vec3::splat(f32::NEG_INFINITY);
+
+        for vertex in &vertices {
+            min = min.min(vertex.position);
+            max = max.max(vertex.position);
+        }
+
+        let aabb = Aabb::new(min, max);
+
+        Self {
+            vertices,
+            indices,
+            aabb,
+        }
     }
 }
 

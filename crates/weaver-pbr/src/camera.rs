@@ -10,17 +10,16 @@ use weaver_renderer::{
     graph::{EndNode, Render, RenderNode, Slot, StartNode},
     Renderer,
 };
-use weaver_util::prelude::{bail, Result};
+use weaver_util::prelude::Result;
 
 use crate::{light::PointLightArrayNode, render::PbrNode};
 
 struct PbrCameraBindGroupNode {
-    camera_entity: Option<Entity>,
+    camera_entity: Entity,
 }
 
 impl Render for PbrCameraBindGroupNode {
-    fn prepare(&mut self, _world: &World, _renderer: &Renderer, entity: Entity) -> Result<()> {
-        self.camera_entity = Some(entity);
+    fn prepare(&self, _world: &World, _renderer: &Renderer) -> Result<()> {
         Ok(())
     }
 
@@ -30,11 +29,8 @@ impl Render for PbrCameraBindGroupNode {
         _renderer: &Renderer,
         _input_slots: &[Slot],
     ) -> Result<Vec<Slot>> {
-        let Some(camera_entity) = self.camera_entity else {
-            bail!("PbrCameraBindGroupNode expected a camera entity");
-        };
         let bind_group = world
-            .get_component::<BindGroup<GpuCamera>>(camera_entity)
+            .get_component::<BindGroup<GpuCamera>>(self.camera_entity)
             .unwrap();
         Ok(vec![Slot::BindGroup(bind_group.bind_group().clone())])
     }
@@ -74,11 +70,10 @@ fn prepare_pbr_cameras(world: &World) -> Result<()> {
             if graph.node_index::<PbrNode>().is_none() {
                 let camera_bind_group_node = graph.add_node(RenderNode::new(
                     "PbrCameraBindGroupNode",
-                    PbrCameraBindGroupNode {
-                        camera_entity: None,
-                    },
+                    PbrCameraBindGroupNode { camera_entity },
                 ));
-                let pbr_node = graph.add_node(RenderNode::new("PbrNode", PbrNode::default()));
+                let pbr_node =
+                    graph.add_node(RenderNode::new("PbrNode", PbrNode::new(camera_entity)));
                 let clear_color_node = graph.add_node(RenderNode::new(
                     "ClearColor",
                     ClearColor::new(pbr_camera.clear_color),
@@ -110,7 +105,9 @@ fn prepare_pbr_cameras(world: &World) -> Result<()> {
                 graph.add_edge(pbr_node, 1, end_node, 1);
             }
 
-            graph.prepare(world, &renderer, camera_entity)?;
+            drop(base_camera);
+            let base_camera = camera_query.get::<Camera>(camera_entity).unwrap();
+            base_camera.graph.prepare(world, &renderer)?;
         }
     }
 

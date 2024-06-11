@@ -7,7 +7,7 @@ use std::{
 };
 
 use petgraph::prelude::*;
-use weaver_ecs::{entity::Entity, world::World};
+use weaver_ecs::world::World;
 use weaver_util::lock::Lock;
 
 use crate::Renderer;
@@ -22,12 +22,7 @@ pub struct RenderEdge {
 
 pub trait Render: 'static {
     #[allow(unused_variables)]
-    fn prepare(
-        &mut self,
-        world: &World,
-        renderer: &Renderer,
-        entity: Entity,
-    ) -> anyhow::Result<()> {
+    fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -77,13 +72,8 @@ impl RenderNode {
         self.render_type_id
     }
 
-    pub fn prepare(
-        &self,
-        world: &World,
-        renderer: &Renderer,
-        entity: Entity,
-    ) -> anyhow::Result<()> {
-        self.render.write().prepare(world, renderer, entity)
+    pub fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
+        self.render.write().prepare(world, renderer)
     }
 
     pub fn render(
@@ -224,15 +214,10 @@ impl RenderGraph {
         self.node_types.get(&TypeId::of::<T>()).copied()
     }
 
-    pub fn prepare(
-        &self,
-        world: &World,
-        renderer: &Renderer,
-        entity: Entity,
-    ) -> anyhow::Result<()> {
+    pub fn prepare(&self, world: &World, renderer: &Renderer) -> anyhow::Result<()> {
         for node in self.graph.node_indices() {
             let render_node = &self.graph[node];
-            render_node.prepare(world, renderer, entity)?;
+            render_node.prepare(world, renderer)?;
         }
 
         Ok(())

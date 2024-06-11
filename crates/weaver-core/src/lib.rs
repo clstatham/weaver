@@ -5,6 +5,7 @@ use weaver_app::{plugin::Plugin, App};
 use weaver_util::prelude::Result;
 
 pub mod color;
+pub mod geometry;
 pub mod input;
 pub mod mesh;
 pub mod texture;
@@ -13,6 +14,7 @@ pub mod transform;
 
 pub mod prelude {
     pub use crate::color::*;
+    pub use crate::geometry::*;
     pub use crate::input::*;
     pub use crate::mesh::*;
     pub use crate::texture::*;
@@ -29,6 +31,9 @@ impl Plugin for CoreTypesPlugin {
         app.register_type::<Transform>();
         app.register_type::<Color>();
         app.register_type::<Mesh>();
+        app.register_type::<geometry::Plane>();
+        app.register_type::<geometry::Ray>();
+        app.register_type::<geometry::Aabb>();
         Ok(())
     }
 }
