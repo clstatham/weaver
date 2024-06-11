@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use weaver_asset::{Assets, Handle};
 use weaver_core::{prelude::Mat4, transform::Transform};
-use weaver_ecs::{entity::Entity, prelude::World, query::Query};
+use weaver_ecs::{entity::Entity, prelude::World};
 use weaver_renderer::{
     bind_group::{BindGroup, CreateBindGroup},
     camera::GpuCamera,
@@ -154,16 +154,9 @@ impl Render for PbrNode {
             unique_material_mesh.entities.clear();
         }
 
-        let query = world.query(
-            &Query::new()
-                .read::<Handle<BindGroup<GpuMaterial>>>()
-                .read::<Handle<GpuMesh>>(),
-        );
+        let query = world.query::<(&Handle<BindGroup<GpuMaterial>>, &Handle<GpuMesh>)>();
 
-        for entity in query.iter() {
-            let material = query.get::<Handle<BindGroup<GpuMaterial>>>(entity).unwrap();
-            let gpu_mesh = query.get::<Handle<GpuMesh>>(entity).unwrap();
-
+        for (entity, (material, gpu_mesh)) in query.iter() {
             let mut unique_material_meshes = self.unique_material_meshes.write();
 
             let unique_material_mesh = unique_material_meshes

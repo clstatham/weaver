@@ -7,6 +7,7 @@ edition = "2021"
 log = "0.4.14"
 petgraph = "0.6.5"
 anyhow = "1.0.40"
+itertools = "0.13.0"
 
 weaver-util = { path = "../weaver-util" }
 weaver-ecs-macros = { path = "../weaver-ecs-macros" }

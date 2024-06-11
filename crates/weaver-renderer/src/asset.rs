@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{Asset, Assets, Handle, UntypedHandle};
-use weaver_ecs::{prelude::Component, query::Query, system::SystemStage, world::World};
+use weaver_ecs::{prelude::Component, system::SystemStage, world::World};
 
 use crate::Renderer;
 
@@ -64,11 +64,9 @@ impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
 
 fn extract_render_asset<T: RenderAsset>(world: &World) -> anyhow::Result<()> {
     // query for handles to the base asset
-    let query = world.query(&Query::new().read::<Handle<T::BaseAsset>>());
+    let query = world.query::<&Handle<T::BaseAsset>>();
 
-    for entity in query.iter() {
-        let handle = query.get::<Handle<T::BaseAsset>>(entity).unwrap();
-
+    for (entity, handle) in query.iter() {
         let mut extracted_assets = world.get_resource_mut::<ExtractedRenderAssets>().unwrap();
         if extracted_assets.contains(&handle.into_untyped()) {
             if !world.has_component::<Handle<T>>(entity) {
@@ -115,15 +113,9 @@ fn extract_render_asset<T: RenderAsset>(world: &World) -> anyhow::Result<()> {
 }
 
 fn update_render_asset<T: RenderAsset>(world: &World) -> anyhow::Result<()> {
-    let query = world.query(
-        &Query::new()
-            .read::<Handle<T>>()
-            .read::<Handle<T::BaseAsset>>(),
-    );
+    let query = world.query::<(&Handle<T>, &Handle<T::BaseAsset>)>();
 
-    for entity in query.iter() {
-        let render_handle = query.get::<Handle<T>>(entity).unwrap();
-        let base_handle = query.get::<Handle<T::BaseAsset>>(entity).unwrap();
+    for (_entity, (render_handle, base_handle)) in query.iter() {
         let assets = world.get_resource::<Assets>().unwrap();
         let render_asset = assets.get::<T>(*render_handle).unwrap();
         let base_asset = assets.get::<T::BaseAsset>(*base_handle).unwrap();

@@ -5,7 +5,6 @@ use wgpu::util::DeviceExt;
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
     prelude::{Component, Entity},
-    query::Query,
     world::World,
 };
 
@@ -128,9 +127,7 @@ pub struct GpuCamera {
 }
 
 impl RenderComponent for GpuCamera {
-    fn extract_query() -> Query {
-        Query::new().read::<Camera>()
-    }
+    type ExtractQuery<'a> = &'a Camera;
 
     fn extract_render_component(entity: Entity, world: &World, renderer: &Renderer) -> Option<Self>
     where

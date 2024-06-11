@@ -5,12 +5,11 @@ use std::{
 
 use weaver_util::lock::Lock;
 
-use crate::prelude::{Bundle, Scene};
+use crate::prelude::{Bundle, Query, QueryFilter, Scene};
 
 use super::{
     component::Component,
     entity::Entity,
-    query::{Query, QueryResults},
     storage::{Mut, Ref, Storage},
 };
 
@@ -91,8 +90,8 @@ impl World {
         self.storage.read().has_component::<T>(entity)
     }
 
-    pub fn query<'a>(&'a self, query: &Query) -> QueryResults<'a> {
-        query.get(self)
+    pub fn query<Q: QueryFilter>(&self) -> Query<Q> {
+        Query::new(self)
     }
 
     pub const fn resource_entity(&self) -> Entity {

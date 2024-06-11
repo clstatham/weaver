@@ -2,7 +2,7 @@ use weaver_app::{plugin::Plugin, App};
 use wgpu::util::DeviceExt;
 
 use weaver_core::transform::Transform;
-use weaver_ecs::{entity::Entity, prelude::Component, query::Query, world::World};
+use weaver_ecs::{entity::Entity, prelude::Component, world::World};
 
 use crate::{
     bind_group::{ComponentBindGroupPlugin, CreateBindGroup},
@@ -17,9 +17,7 @@ pub struct GpuTransform {
 }
 
 impl RenderComponent for GpuTransform {
-    fn extract_query() -> Query {
-        Query::new().read::<Transform>()
-    }
+    type ExtractQuery<'a> = &'a Transform;
 
     fn extract_render_component(entity: Entity, world: &World, renderer: &Renderer) -> Option<Self>
     where

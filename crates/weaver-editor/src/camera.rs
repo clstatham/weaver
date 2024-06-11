@@ -107,17 +107,13 @@ impl FlyCameraController {
 pub fn update_camera(world: &World) -> Result<()> {
     let time = world.get_resource::<Time>().unwrap();
     let input = world.get_resource::<Input>().unwrap();
-    let query = world.query(
-        &Query::new()
-            .write::<Camera>()
-            .write::<FlyCameraController>(),
-    );
-    for entity in query.iter() {
-        let mut controller = world
-            .get_component_mut::<FlyCameraController>(entity)
-            .unwrap();
-        let mut camera = world.get_component_mut::<Camera>(entity).unwrap();
-
+    // let query = world.dyn_query(
+    //     &DynQuery::new()
+    //         .write::<Camera>()
+    //         .write::<FlyCameraController>(),
+    // );
+    let query = world.query::<(&mut Camera, &mut FlyCameraController)>();
+    for (_entity, (mut camera, mut controller)) in query.iter() {
         let aspect = controller.aspect;
 
         controller.update(&input, time.delta_time, aspect, &mut camera);

@@ -2,13 +2,13 @@ use std::any::type_name;
 
 use weaver_app::{plugin::Plugin, prelude::App};
 use weaver_ecs::{
-    component::Component, entity::Entity, query::Query, system::SystemStage, world::World,
+    component::Component, entity::Entity, query::QueryFilter, system::SystemStage, world::World,
 };
 
 use crate::Renderer;
 
 pub trait RenderComponent: Component {
-    fn extract_query() -> Query;
+    type ExtractQuery<'a>: QueryFilter + 'a;
     fn extract_render_component(entity: Entity, world: &World, renderer: &Renderer) -> Option<Self>
     where
         Self: Sized;
@@ -37,12 +37,12 @@ impl<T: RenderComponent> Plugin for RenderComponentPlugin<T> {
 }
 
 fn extract_render_components<T: RenderComponent>(world: &World) -> anyhow::Result<()> {
-    let query = world.query(&T::extract_query());
+    let query = world.query::<T::ExtractQuery<'_>>();
     let renderer = world
         .get_resource::<Renderer>()
         .expect("Renderer resource not present before extracting render components");
 
-    for entity in query.iter() {
+    for entity in query.entity_iter() {
         if !world.has_component::<T>(entity) {
             if let Some(component) = T::extract_render_component(entity, world, &renderer) {
                 log::debug!("Extracted render component: {:?}", type_name::<T>());
@@ -55,12 +55,12 @@ fn extract_render_components<T: RenderComponent>(world: &World) -> anyhow::Resul
 }
 
 fn update_render_components<T: RenderComponent>(world: &World) -> anyhow::Result<()> {
-    let query = world.query(&Query::new().write::<T>());
+    let query = world.query::<T::ExtractQuery<'_>>();
     let renderer = world
         .get_resource::<Renderer>()
         .expect("Renderer resource not present before updating render components");
 
-    for entity in query.iter() {
+    for entity in query.entity_iter() {
         if let Some(mut component) = world.get_component_mut::<T>(entity) {
             component.update_render_component(entity, world, &renderer)?;
         }

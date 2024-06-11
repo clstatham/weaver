@@ -108,20 +108,17 @@ fn setup(world: &World) -> Result<()> {
 
 fn update(world: &World) -> Result<()> {
     let time = world.get_resource::<Time>().unwrap();
-    let query = world.query(&Query::new().read::<Transform>());
+    let query = world.query::<&mut Transform>();
 
-    for entity in query.iter() {
-        let mut transform = world.get_component_mut::<Transform>(entity).unwrap();
+    for (_entity, mut transform) in query.iter() {
         let offset = transform.translation.x * transform.translation.z * 0.1;
         transform.translation.y = 1.0 * (time.total_time + offset / 2.0).sin();
         transform.rotation = Quat::from_rotation_y(time.total_time);
     }
 
-    let query = world.query(&Query::new().read::<PointLight>());
-    let light_count = query.iter().count();
-
-    for (i, entity) in query.iter().enumerate() {
-        let mut point_light = world.get_component_mut::<PointLight>(entity).unwrap();
+    let query = world.query::<&mut PointLight>();
+    let light_count = query.entity_iter().count();
+    for (i, (_, mut point_light)) in query.iter().enumerate() {
         let theta = time.total_time * 0.5 + (i as f32 - light_count as f32 / 2.0);
         point_light.position.x = 10.0 * theta.cos();
         point_light.position.z = 10.0 * theta.sin();

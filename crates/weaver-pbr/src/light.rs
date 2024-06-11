@@ -2,7 +2,7 @@ use weaver_app::{plugin::Plugin, App};
 use wgpu::util::DeviceExt;
 
 use weaver_core::{color::Color, prelude::Vec3};
-use weaver_ecs::prelude::{Component, Query, World};
+use weaver_ecs::prelude::{Component, World};
 use weaver_renderer::{
     bind_group::{BindGroup, CreateBindGroup, ResourceBindGroupPlugin},
     buffer::GpuBuffer,
@@ -85,14 +85,11 @@ impl RenderResource for GpuPointLightArray {
     where
         Self: Sized,
     {
-        let point_lights = world.query(&Query::new().read::<PointLight>());
+        let point_lights = world.query::<&PointLight>();
 
         let point_light_uniforms: Vec<PointLightUniform> = point_lights
             .iter()
-            .map(|entity| {
-                let point_light = world.get_component::<PointLight>(entity).unwrap();
-                PointLightUniform::from(*point_light)
-            })
+            .map(|(_, point_light)| PointLightUniform::from(*point_light))
             .collect();
 
         let storage_buffer =
@@ -112,14 +109,11 @@ impl RenderResource for GpuPointLightArray {
     }
 
     fn update_render_resource(&mut self, world: &World, renderer: &Renderer) -> Result<()> {
-        let point_lights = world.query(&Query::new().read::<PointLight>());
+        let point_lights = world.query::<&PointLight>();
 
         let point_light_uniforms: Vec<PointLightUniform> = point_lights
             .iter()
-            .map(|entity| {
-                let point_light = world.get_component::<PointLight>(entity).unwrap();
-                PointLightUniform::from(*point_light)
-            })
+            .map(|(_, point_light)| PointLightUniform::from(*point_light))
             .collect();
 
         self.buffer.update(

@@ -1,8 +1,6 @@
 use weaver_app::{plugin::Plugin, App};
 use weaver_core::color::Color;
-use weaver_ecs::{
-    entity::Entity, prelude::Component, query::Query, system::SystemStage, world::World,
-};
+use weaver_ecs::{entity::Entity, prelude::Component, system::SystemStage, world::World};
 use weaver_renderer::{
     bind_group::BindGroup,
     camera::{Camera, GpuCamera},
@@ -58,11 +56,9 @@ impl Plugin for PbrCameraPlugin {
 }
 
 fn prepare_pbr_cameras(world: &World) -> Result<()> {
-    let camera_query = world.query(&Query::new().write::<Camera>().read::<PbrCamera>());
+    let camera_query = world.query::<(&mut Camera, &PbrCamera)>();
 
-    for camera_entity in camera_query.iter() {
-        let pbr_camera = camera_query.get::<PbrCamera>(camera_entity).unwrap();
-        let mut base_camera = camera_query.get_mut::<Camera>(camera_entity).unwrap();
+    for (camera_entity, (mut base_camera, pbr_camera)) in camera_query.iter() {
         if base_camera.active() {
             let graph = base_camera.render_graph_mut();
             let renderer = world.get_resource::<Renderer>().unwrap();
@@ -106,7 +102,7 @@ fn prepare_pbr_cameras(world: &World) -> Result<()> {
             }
 
             drop(base_camera);
-            let base_camera = camera_query.get::<Camera>(camera_entity).unwrap();
+            let base_camera = world.get_component::<Camera>(camera_entity).unwrap();
             base_camera.graph.prepare(world, &renderer)?;
         }
     }
@@ -115,10 +111,9 @@ fn prepare_pbr_cameras(world: &World) -> Result<()> {
 }
 
 fn render_pbr_cameras(world: &World) -> Result<()> {
-    let camera_query = world.query(&Query::new().write::<Camera>());
+    let camera_query = world.query::<&mut Camera>();
 
-    for camera_entity in camera_query.iter() {
-        let mut camera = camera_query.get_mut::<Camera>(camera_entity).unwrap();
+    for (_entity, mut camera) in camera_query.iter() {
         if camera.active() {
             let graph = camera.render_graph_mut();
             let renderer = world.get_resource::<Renderer>().unwrap();

@@ -10,14 +10,14 @@ use crate::prelude::Bundle;
 use super::{component::Component, entity::Entity};
 
 pub struct Data {
-    type_id: std::any::TypeId,
+    type_id: TypeId,
     data: Box<dyn Component>,
 }
 
 impl Data {
     pub fn new<T: Component>(data: T) -> Self {
         Self {
-            type_id: std::any::TypeId::of::<T>(),
+            type_id: TypeId::of::<T>(),
             data: Box::new(data),
         }
     }
@@ -29,12 +29,12 @@ impl Data {
         }
     }
 
-    pub fn type_id(&self) -> std::any::TypeId {
+    pub fn type_id(&self) -> TypeId {
         self.type_id
     }
 
     pub fn is<T: Component>(&self) -> bool {
-        self.type_id == std::any::TypeId::of::<T>()
+        self.type_id == TypeId::of::<T>()
     }
 
     pub fn get_data(&self) -> &dyn Component {
@@ -54,11 +54,11 @@ impl Data {
     }
 
     pub fn downcast_ref<T: Component>(&self) -> Option<&T> {
-        (*self.data).as_any().downcast_ref()
+        (*self.data).downcast_ref()
     }
 
     pub fn downcast_mut<T: Component>(&mut self) -> Option<&mut T> {
-        (*self.data).as_any_mut().downcast_mut()
+        (*self.data).downcast_mut()
     }
 }
 
@@ -167,10 +167,51 @@ impl<T> SparseSet<T> {
     }
 }
 
+pub struct ColumnRef {
+    column: ArcRead<SparseSet<Data>>,
+}
+
+impl ColumnRef {
+    pub fn new(column: ArcRead<SparseSet<Data>>) -> Self {
+        Self { column }
+    }
+}
+
+impl std::ops::Deref for ColumnRef {
+    type Target = SparseSet<Data>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.column
+    }
+}
+
+pub struct ColumnMut {
+    column: ArcWrite<SparseSet<Data>>,
+}
+
+impl ColumnMut {
+    pub fn new(column: ArcWrite<SparseSet<Data>>) -> Self {
+        Self { column }
+    }
+}
+
+impl std::ops::Deref for ColumnMut {
+    type Target = SparseSet<Data>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.column
+    }
+}
+
+impl std::ops::DerefMut for ColumnMut {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.column
+    }
+}
+
 #[derive(Default)]
 pub struct Archetype {
-    columns: Vec<SharedLock<SparseSet<Data>>>,
-    type_ids: Vec<std::any::TypeId>,
+    columns: HashMap<TypeId, SharedLock<SparseSet<Data>>>,
     entities: HashSet<Entity>,
 }
 
@@ -179,87 +220,119 @@ impl Archetype {
         Self::default()
     }
 
+    pub fn type_ids(&self) -> Vec<TypeId> {
+        self.columns.keys().copied().collect::<Vec<_>>()
+    }
+
     pub fn insert(&mut self, entity: Entity, data: Data) {
         let type_id = data.type_id();
 
-        let index = self.type_ids.iter().position(|&id| id == type_id).unwrap();
-
         self.entities.insert(entity);
 
-        self.columns[index].write().insert(entity.as_usize(), data)
+        self.columns[&type_id]
+            .write()
+            .insert(entity.as_usize(), data);
     }
 
     pub fn remove(&mut self, entity: Entity) -> Vec<Data> {
-        self.entities.retain(|e| *e != entity);
+        self.entities.remove(&entity);
 
         self.columns
-            .iter_mut()
+            .values()
             .filter_map(|column| column.write().remove(entity.as_usize()))
             .collect()
     }
 
+    #[inline]
     pub fn get<T: Component>(&self, entity: Entity) -> Option<DataRef> {
-        let type_id = std::any::TypeId::of::<T>();
+        self.get_by_type_id(entity, TypeId::of::<T>())
+    }
 
-        let index = self.type_ids.iter().position(|&id| id == type_id)?;
+    #[inline]
+    pub fn get_mut<T: Component>(&self, entity: Entity) -> Option<DataMut> {
+        self.get_by_type_id_mut(entity, TypeId::of::<T>())
+    }
 
-        if self.columns[index].read().contains(entity.as_usize()) {
-            Some(DataRef::new(entity, self.columns[index].read()))
+    pub fn get_by_type_id(&self, entity: Entity, type_id: TypeId) -> Option<DataRef> {
+        if self.columns[&type_id].read().contains(entity.as_usize()) {
+            Some(DataRef::new(entity, self.columns[&type_id].read()))
         } else {
             None
         }
     }
 
-    pub fn get_mut<T: Component>(&mut self, entity: Entity) -> Option<DataMut> {
-        let type_id = std::any::TypeId::of::<T>();
-
-        let index = self.type_ids.iter().position(|&id| id == type_id)?;
-
-        if self.columns[index].read().contains(entity.as_usize()) {
-            Some(DataMut::new(entity, self.columns[index].write()))
+    pub fn get_by_type_id_mut(&self, entity: Entity, type_id: TypeId) -> Option<DataMut> {
+        if self.columns[&type_id].read().contains(entity.as_usize()) {
+            Some(DataMut::new(entity, self.columns[&type_id].write()))
         } else {
             None
         }
+    }
+
+    #[inline]
+    pub fn get_column<T: Component>(&self) -> Option<ColumnRef> {
+        self.get_column_by_type_id(TypeId::of::<T>())
+    }
+
+    #[inline]
+    pub fn get_column_mut<T: Component>(&self) -> Option<ColumnMut> {
+        self.get_column_by_type_id_mut(TypeId::of::<T>())
+    }
+
+    pub fn get_column_by_type_id(&self, type_id: TypeId) -> Option<ColumnRef> {
+        Some(ColumnRef::new(self.columns[&type_id].read()))
+    }
+
+    pub fn get_column_by_type_id_mut(&self, type_id: TypeId) -> Option<ColumnMut> {
+        Some(ColumnMut::new(self.columns[&type_id].write()))
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
-        let type_id = std::any::TypeId::of::<T>();
+        self.has_component_by_type_id(entity, TypeId::of::<T>())
+    }
 
-        self.type_ids
-            .iter()
-            .position(|&id| id == type_id)
-            .map(|index| self.columns[index].read().contains(entity.as_usize()))
+    pub fn has_component_by_type_id(&self, entity: Entity, type_id: TypeId) -> bool {
+        self.columns
+            .get(&type_id)
+            .map(|c| c.read().contains(entity.as_usize()))
             .unwrap_or(false)
     }
 
-    pub fn has_component_by_type_id(&self, type_id: std::any::TypeId) -> bool {
-        self.type_ids.contains(&type_id)
+    pub fn contains_component_by_type_id(&self, type_id: TypeId) -> bool {
+        self.columns.contains_key(&type_id)
     }
 
     pub fn contains_entity(&self, entity: Entity) -> bool {
         self.columns
-            .iter()
+            .values()
             .any(|column| column.read().contains(entity.as_usize()))
     }
 
-    pub fn clear(&mut self) {
-        self.columns.clear();
-        self.type_ids.clear();
-    }
-
     pub fn len(&self) -> usize {
-        self.columns.iter().map(|column| column.read().len()).sum()
+        self.entities.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.columns.iter().all(|column| column.read().is_empty())
+        self.entities.is_empty()
     }
 
-    pub fn exclusively_contains_types(&self, type_ids: &[std::any::TypeId]) -> bool {
+    pub fn contains_all_types(&self, type_ids: &[TypeId]) -> bool {
         type_ids
             .iter()
-            .all(|type_id| self.type_ids.contains(type_id))
-            && self.type_ids.len() == type_ids.len()
+            .all(|type_id| self.columns.contains_key(type_id))
+    }
+
+    pub fn contains_any_type(&self, type_ids: &[TypeId]) -> bool {
+        type_ids
+            .iter()
+            .any(|type_id| self.columns.contains_key(type_id))
+    }
+
+    pub fn exclusively_contains_types(&self, type_ids: &[TypeId]) -> bool {
+        type_ids
+            .iter()
+            .all(|type_id| self.columns.contains_key(type_id))
+            && self.columns.len() == type_ids.len()
     }
 
     pub fn entity_iter(&self) -> impl Iterator<Item = Entity> + '_ {
@@ -409,10 +482,8 @@ impl Storage {
     }
 
     pub fn insert_components<T: Bundle>(&mut self, entity: Entity, bundle: T) {
-        let old_archetype = self
-            .entity_archetype
-            .remove(&entity)
-            .and_then(|id| self.archetypes.get_mut(&id));
+        let old_archetype_id = self.entity_archetype.remove(&entity);
+        let old_archetype = old_archetype_id.and_then(|id| self.archetypes.get_mut(&id));
 
         let components = bundle.into_components();
         let mut data = components
@@ -447,68 +518,9 @@ impl Storage {
 
             let mut archetype = Archetype::new();
 
-            archetype.type_ids = data.iter().map(|data| data.type_id()).collect();
-            archetype.columns = archetype
-                .type_ids
+            archetype.columns = data
                 .iter()
-                .map(|_| SharedLock::new(SparseSet::new()))
-                .collect();
-
-            self.archetypes.insert(archetype_id, archetype);
-
-            let archetype = self.archetypes.get_mut(&archetype_id).unwrap();
-
-            (archetype, archetype_id)
-        };
-
-        for data in data {
-            archetype.insert(entity, data);
-        }
-
-        self.entity_archetype.insert(entity, archetype_id);
-    }
-
-    pub fn insert_component<T: Component>(&mut self, entity: Entity, new_data: T) {
-        let old_archetype_id = self.entity_archetype.remove(&entity);
-        let old_archetype = old_archetype_id.and_then(|id| self.archetypes.get_mut(&id));
-
-        let data = if let Some(old_archetype) = old_archetype {
-            let mut data = old_archetype.remove(entity);
-            if data.iter().any(|data| data.is::<T>()) {
-                panic!(
-                    "Entity already has component of type {}",
-                    std::any::type_name::<T>()
-                );
-            }
-            data.push(Data::new(new_data));
-            data
-        } else {
-            vec![Data::new(new_data)]
-        };
-
-        let existing = self
-            .archetypes
-            .iter_mut()
-            .find(|(_, archetype)| {
-                archetype.exclusively_contains_types(
-                    &data.iter().map(|data| data.type_id()).collect::<Vec<_>>(),
-                )
-            })
-            .map(|(id, archetype)| (archetype, *id));
-
-        let (archetype, archetype_id) = if let Some((archetype, existing_archetype_id)) = existing {
-            (archetype, existing_archetype_id)
-        } else {
-            let archetype_id = ArchetypeId(self.next_archetype_id);
-            self.next_archetype_id += 1;
-
-            let mut archetype = Archetype::new();
-
-            archetype.type_ids = data.iter().map(|data| data.type_id()).collect();
-            archetype.columns = archetype
-                .type_ids
-                .iter()
-                .map(|_| SharedLock::new(SparseSet::new()))
+                .map(|data| (data.type_id(), SharedLock::new(SparseSet::new())))
                 .collect();
 
             self.archetypes.insert(archetype_id, archetype);
@@ -531,17 +543,19 @@ impl Storage {
         }
     }
 
+    pub fn insert_component<T: Component>(&mut self, entity: Entity, component: T) {
+        self.insert_components(entity, component);
+    }
+
     pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {
         // remove the entity from its current archetype
-
-        let old_archetype_id = self.entity_archetype.get(&entity)?;
-
-        let old_archetype = self.archetypes.get_mut(old_archetype_id)?;
+        let old_archetype_id = self.entity_archetype.remove(&entity)?;
+        let old_archetype = self.archetypes.get_mut(&old_archetype_id)?;
 
         let mut data = old_archetype.remove(entity);
 
         if old_archetype.is_empty() {
-            self.archetypes.remove(old_archetype_id);
+            self.archetypes.remove(&old_archetype_id);
         }
 
         self.entity_archetype.remove(&entity);
@@ -569,11 +583,9 @@ impl Storage {
 
                 let mut archetype = Archetype::new();
 
-                archetype.type_ids = data.iter().map(|data| data.type_id()).collect();
-                archetype.columns = archetype
-                    .type_ids
+                archetype.columns = data
                     .iter()
-                    .map(|_| SharedLock::new(SparseSet::new()))
+                    .map(|data| (data.type_id(), SharedLock::new(SparseSet::new())))
                     .collect();
 
                 self.archetypes.insert(archetype_id, archetype);
@@ -617,16 +629,16 @@ impl Storage {
 
         let archetype = self.archetypes.get(archetype_id)?;
 
-        let column_index = archetype
-            .type_ids
-            .iter()
-            .position(|id| *id == std::any::TypeId::of::<T>())?;
-
-        if archetype.columns[column_index]
+        if archetype
+            .columns
+            .get(&TypeId::of::<T>())?
             .read()
-            .contains(entity.id() as usize)
+            .contains(entity.as_usize())
         {
-            Some(Ref::new(entity, archetype.columns[column_index].read()))
+            Some(Ref::new(
+                entity,
+                archetype.columns[&TypeId::of::<T>()].read(),
+            ))
         } else {
             None
         }
@@ -637,35 +649,29 @@ impl Storage {
 
         let archetype = self.archetypes.get(archetype_id)?;
 
-        let column_index = archetype
-            .type_ids
-            .iter()
-            .position(|id| *id == std::any::TypeId::of::<T>())?;
-
-        if archetype.columns[column_index]
+        if archetype
+            .columns
+            .get(&TypeId::of::<T>())?
             .read()
-            .contains(entity.id() as usize)
+            .contains(entity.as_usize())
         {
-            Some(Mut::new(entity, archetype.columns[column_index].write()))
+            Some(Mut::new(
+                entity,
+                archetype.columns[&TypeId::of::<T>()].write(),
+            ))
         } else {
             None
         }
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
-        if let Some(archetype_id) = self.entity_archetype.get(&entity) {
-            if let Some(archetype) = self.archetypes.get(archetype_id) {
-                return archetype.has_component::<T>(entity);
-            }
-        }
-
-        false
+        self.has_component_by_type_id(entity, TypeId::of::<T>())
     }
 
     pub fn has_component_by_type_id(&self, entity: Entity, type_id: TypeId) -> bool {
         if let Some(archetype_id) = self.entity_archetype.get(&entity) {
             if let Some(archetype) = self.archetypes.get(archetype_id) {
-                return archetype.has_component_by_type_id(type_id);
+                return archetype.has_component_by_type_id(entity, type_id);
             }
         }
 
@@ -678,6 +684,12 @@ impl Storage {
 
     pub fn archetype_iter(&self) -> impl Iterator<Item = &Archetype> + '_ {
         self.archetypes.values()
+    }
+
+    pub fn get_archetype(&self, entity: Entity) -> Option<&Archetype> {
+        self.entity_archetype
+            .get(&entity)
+            .and_then(|archetype_id| self.archetypes.get(archetype_id))
     }
 }
 
@@ -781,14 +793,6 @@ mod tests {
         let data = storage.remove_entity(entity).unwrap();
 
         assert_eq!(data.len(), 2);
-        assert_eq!(
-            data[0].downcast_ref::<Position>(),
-            Some(&Position { x: 0.0, y: 0.0 })
-        );
-        assert_eq!(
-            data[1].downcast_ref::<Velocity>(),
-            Some(&Velocity { dx: 1.0, dy: 1.0 })
-        );
 
         assert_eq!(storage.get_component::<Position>(entity).as_deref(), None);
         assert_eq!(storage.get_component::<Velocity>(entity).as_deref(), None);
@@ -831,5 +835,57 @@ mod tests {
         assert!(storage.has_component::<Position>(entity));
         assert!(storage.has_component::<Velocity>(entity));
         assert!(!storage.has_component::<Acceleration>(entity));
+    }
+
+    #[test]
+    fn test_entity_iter() {
+        let mut storage = Storage::new();
+
+        let entity1 = Entity::new(0, 0);
+        let entity2 = Entity::new(1, 0);
+        let entity3 = Entity::new(2, 0);
+
+        storage.insert_component(entity1, Position { x: 0.0, y: 0.0 });
+        storage.insert_component(entity2, Position { x: 0.0, y: 0.0 });
+        storage.insert_component(entity3, Position { x: 0.0, y: 0.0 });
+
+        let entities = storage.entity_iter().collect::<Vec<_>>();
+
+        assert_eq!(entities.len(), 3);
+        assert!(entities.contains(&entity1));
+        assert!(entities.contains(&entity2));
+        assert!(entities.contains(&entity3));
+    }
+
+    #[test]
+    fn test_archetype_iter() {
+        let mut storage = Storage::new();
+
+        let entity1 = Entity::new(0, 0);
+        let entity2 = Entity::new(1, 0);
+        let entity3 = Entity::new(2, 0);
+
+        storage.insert_component(entity1, Position { x: 0.0, y: 0.0 });
+        storage.insert_component(entity2, Position { x: 0.0, y: 0.0 });
+        storage.insert_component(entity3, Position { x: 0.0, y: 0.0 });
+
+        let archetypes = storage.archetype_iter().collect::<Vec<_>>();
+
+        assert_eq!(archetypes.len(), 1);
+        assert_eq!(archetypes[0].len(), 3);
+    }
+
+    #[test]
+    fn test_get_archetype() {
+        let mut storage = Storage::new();
+
+        let entity = Entity::new(0, 0);
+
+        storage.insert_component(entity, Position { x: 0.0, y: 0.0 });
+        storage.insert_component(entity, Velocity { dx: 1.0, dy: 1.0 });
+
+        let archetype = storage.get_archetype(entity).unwrap();
+
+        assert_eq!(archetype.len(), 1);
     }
 }

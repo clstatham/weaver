@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{prelude::Asset, Assets, Handle, UntypedHandle};
-use weaver_ecs::{prelude::Component, query::Query, system::SystemStage, world::World};
+use weaver_ecs::{prelude::Component, system::SystemStage, world::World};
 
 use crate::{asset::RenderAsset, Renderer};
 
@@ -63,11 +63,10 @@ fn create_bind_groups<T: CreateBindGroup>(world: &World) -> anyhow::Result<()> {
     let renderer = world.get_resource::<Renderer>().unwrap();
     let device = renderer.device();
 
-    let query = world.query(&Query::new().read::<T>());
+    let query = world.query::<&T>();
 
-    for entity in query.iter() {
+    for (entity, data) in query.iter() {
         if !world.has_component::<BindGroup<T>>(entity) {
-            let data = world.get_component::<T>(entity).unwrap();
             let bind_group = BindGroup::new(device, &*data);
             drop(data);
             world.insert_component(entity, bind_group);
@@ -147,11 +146,9 @@ fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(world: &World) -> a
 
     let mut assets = world.get_resource_mut::<Assets>().unwrap();
 
-    let query = world.query(&Query::new().read::<Handle<T>>());
+    let query = world.query::<&Handle<T>>();
 
-    for entity in query.iter() {
-        let handle = query.get::<Handle<T>>(entity).unwrap();
-
+    for (entity, handle) in query.iter() {
         if world.has_component::<Handle<BindGroup<T>>>(entity) {
             continue;
         }
@@ -161,8 +158,8 @@ fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(world: &World) -> a
             .unwrap();
 
         if let Some(bind_group_handle) = asset_bind_groups.bind_groups.get(&handle.into_untyped()) {
-            drop(handle);
             let bind_group_handle = Handle::<BindGroup<T>>::try_from(*bind_group_handle).unwrap();
+            drop(handle);
             world.insert_component(entity, bind_group_handle);
         } else {
             let asset = assets.get::<T>(*handle).unwrap();

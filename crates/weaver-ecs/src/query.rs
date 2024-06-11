@@ -1,4 +1,6 @@
-use std::any::TypeId;
+use std::{any::TypeId, marker::PhantomData};
+
+use crate::prelude::Archetype;
 
 use super::{
     component::Component,
@@ -7,112 +9,164 @@ use super::{
     world::World,
 };
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Query {
-    read: Vec<TypeId>,
-    write: Vec<TypeId>,
-    without: Vec<TypeId>,
-    with: Vec<TypeId>,
+pub enum QueryAccess {
+    ReadOnly,
+    ReadWrite,
 }
 
-impl Query {
-    pub fn new() -> Self {
-        Self::default()
+pub trait QueryFilterParam {
+    type Item: Component;
+    type Fetch<'a>;
+    fn type_id() -> TypeId;
+    fn access() -> QueryAccess;
+    fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>>;
+}
+
+impl<T: Component> QueryFilterParam for &T {
+    type Item = T;
+    type Fetch<'a> = Ref<T>;
+
+    fn type_id() -> TypeId {
+        TypeId::of::<T>()
     }
 
-    pub fn read<T: Component>(mut self) -> Self {
-        self.read.push(TypeId::of::<T>());
-        self
+    fn access() -> QueryAccess {
+        QueryAccess::ReadOnly
     }
 
-    pub fn write<T: Component>(mut self) -> Self {
-        self.write.push(TypeId::of::<T>());
-        self
+    fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>> {
+        world.get_component::<T>(entity)
+    }
+}
+
+impl<T: Component> QueryFilterParam for &mut T {
+    type Item = T;
+    type Fetch<'a> = Mut<T>;
+
+    fn type_id() -> TypeId {
+        TypeId::of::<T>()
     }
 
-    pub fn without<T: Component>(mut self) -> Self {
-        self.without.push(TypeId::of::<T>());
-        self
+    fn access() -> QueryAccess {
+        QueryAccess::ReadWrite
     }
 
-    pub fn with<T: Component>(mut self) -> Self {
-        self.with.push(TypeId::of::<T>());
-        self
+    fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>> {
+        world.get_component_mut::<T>(entity)
+    }
+}
+
+pub trait QueryFilter {
+    type Fetch<'a>;
+    fn access() -> &'static [(TypeId, QueryAccess)];
+    fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>>;
+    fn test(world: &World, entity: Entity) -> bool;
+    fn test_archetype(archetype: &Archetype) -> bool;
+}
+
+impl<T> QueryFilter for T
+where
+    T: QueryFilterParam,
+{
+    type Fetch<'a> = T::Fetch<'a>;
+
+    fn access() -> &'static [(TypeId, QueryAccess)] {
+        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
+        ACCESS.get_or_init(|| vec![(T::type_id(), T::access())])
     }
 
-    pub fn get<'a>(&self, world: &'a World) -> QueryResults<'a> {
+    fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>> {
+        <T as QueryFilterParam>::fetch(world, entity)
+    }
+
+    fn test(world: &World, entity: Entity) -> bool {
+        world.has_component::<T::Item>(entity)
+    }
+
+    fn test_archetype(archetype: &Archetype) -> bool {
+        archetype.contains_component_by_type_id(TypeId::of::<T::Item>())
+    }
+}
+
+macro_rules! impl_query_filter {
+    ($($param:ident),*) => {
+        impl<$($param: QueryFilterParam),*> QueryFilter for ($($param,)*) {
+            type Fetch<'a> = ($($param::Fetch<'a>,)*);
+
+            fn access() -> &'static [(TypeId, QueryAccess)] {
+                static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
+                ACCESS.get_or_init(|| vec![$(($param::type_id(), $param::access()),)*])
+            }
+
+            #[allow(non_snake_case)]
+            fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>> {
+                let ($($param,)*) = ($($param::fetch(world, entity)?,)*);
+                Some(($($param,)*))
+
+            }
+
+            fn test(world: &World, entity: Entity) -> bool {
+                $(
+                    $param::test(world, entity) &&
+                )*
+                true
+            }
+
+            fn test_archetype(archetype: &Archetype) -> bool {
+                $(
+                    $param::test_archetype(archetype) &&
+                )*
+                true
+            }
+        }
+    };
+}
+
+impl_query_filter!(A);
+impl_query_filter!(A, B);
+impl_query_filter!(A, B, C);
+impl_query_filter!(A, B, C, D);
+impl_query_filter!(A, B, C, D, E);
+impl_query_filter!(A, B, C, D, E, F);
+impl_query_filter!(A, B, C, D, E, F, G);
+impl_query_filter!(A, B, C, D, E, F, G, H);
+
+pub struct Query<'a, Q: QueryFilter + ?Sized> {
+    world: &'a World,
+    entities: Box<[Entity]>,
+    _phantom: PhantomData<Q>,
+}
+
+impl<'a, Q: QueryFilter + ?Sized> Query<'a, Q> {
+    pub fn new(world: &'a World) -> Self {
         let mut entities = Vec::new();
+        let storage = world.storage().read();
 
-        for archetype in world.storage().read().archetype_iter() {
-            let mut matches = true;
-            if self
-                .read
-                .iter()
-                .any(|t| !archetype.has_component_by_type_id(*t))
-            {
-                matches = false;
-            }
-            if self
-                .write
-                .iter()
-                .any(|t| !archetype.has_component_by_type_id(*t))
-            {
-                matches = false;
-            }
-            if self
-                .without
-                .iter()
-                .any(|t| archetype.has_component_by_type_id(*t))
-            {
-                matches = false;
-            }
-            if self
-                .with
-                .iter()
-                .any(|t| !archetype.has_component_by_type_id(*t))
-            {
-                matches = false;
-            }
-            if matches {
+        for archetype in storage.archetype_iter() {
+            if Q::test_archetype(archetype) {
                 entities.extend(archetype.entity_iter());
             }
         }
 
-        QueryResults {
+        Self {
             world,
-            entities: entities.into_iter().collect(),
+            entities: entities.into_boxed_slice(),
+            _phantom: PhantomData,
         }
     }
-}
 
-pub struct QueryResults<'a> {
-    world: &'a World,
-    entities: Vec<Entity>,
-}
-
-impl<'a> QueryResults<'a> {
-    pub fn iter(&self) -> impl Iterator<Item = Entity> + '_ {
+    pub fn entity_iter(&self) -> impl Iterator<Item = Entity> + '_ {
         self.entities.iter().copied()
     }
 
-    pub fn get<T: Component>(&self, entity: Entity) -> Option<Ref<T>> {
-        if self.entities.contains(&entity) {
-            self.world.get_component::<T>(entity)
-        } else {
-            None
-        }
+    pub fn iter(&self) -> impl Iterator<Item = (Entity, Q::Fetch<'a>)> + '_ {
+        self.entities
+            .iter()
+            .filter_map(move |entity| Q::fetch(self.world, *entity).map(|fetch| (*entity, fetch)))
     }
 
-    pub fn get_mut<T: Component>(&self, entity: Entity) -> Option<Mut<T>> {
-        if self.entities.contains(&entity) {
-            self.world.get_component_mut::<T>(entity)
-        } else {
-            None
-        }
-    }
-
-    pub fn has<T: Component>(&self, entity: Entity) -> bool {
-        self.entities.contains(&entity) && self.world.has_component::<T>(entity)
+    pub fn get(&self, entity: Entity) -> Option<Q::Fetch<'a>> {
+        Q::fetch(self.world, entity)
     }
 }
 
@@ -158,81 +212,25 @@ mod tests {
         world.insert_component(entity3, Velocity { x: 1.0, y: 1.0 });
         world.insert_component(entity3, Acceleration { x: 1.0, y: 1.0 });
 
-        let query = Query::new().read::<Position>().write::<Velocity>();
-        let results = query.get(&world);
+        let results = Query::<(&Position, &Velocity)>::new(&world);
 
-        let entities = results.iter().collect::<Vec<_>>();
+        let entities = results.entity_iter().collect::<Vec<_>>();
         assert!(entities.contains(&entity1));
         assert!(!entities.contains(&entity2));
         assert!(entities.contains(&entity3));
 
-        assert!(results.has::<Position>(entity1));
-        assert!(results.has::<Velocity>(entity1));
-        assert!(!results.has::<Acceleration>(entity1));
-        assert!(!results.has::<Position>(entity2));
-        assert!(!results.has::<Velocity>(entity2));
-        assert!(!results.has::<Acceleration>(entity2));
-        assert!(results.has::<Position>(entity3));
-        assert!(results.has::<Velocity>(entity3));
-        assert!(results.has::<Acceleration>(entity3));
+        let Some((position, velocity)) = results.get(entity1) else {
+            panic!("Entity 1 not found");
+        };
+        assert_eq!(*position, Position { x: 0.0, y: 0.0 });
+        assert_eq!(*velocity, Velocity { x: 1.0, y: 1.0 });
 
-        assert_eq!(
-            results.get::<Position>(entity1).as_deref(),
-            Some(&*world.get_component::<Position>(entity1).unwrap())
-        );
-        assert_eq!(
-            results.get::<Velocity>(entity1).as_deref(),
-            Some(&*world.get_component::<Velocity>(entity1).unwrap())
-        );
-        assert_eq!(results.get::<Acceleration>(entity1).as_deref(), None);
-        assert_eq!(results.get::<Position>(entity2).as_deref(), None);
-        assert_eq!(results.get::<Velocity>(entity2).as_deref(), None);
-        assert_eq!(results.get::<Acceleration>(entity2).as_deref(), None);
-        assert_eq!(
-            results.get::<Position>(entity3).as_deref(),
-            Some(&*world.get_component::<Position>(entity3).unwrap())
-        );
-        assert_eq!(
-            results.get::<Velocity>(entity3).as_deref(),
-            Some(&*world.get_component::<Velocity>(entity3).unwrap())
-        );
-    }
+        assert!(results.get(entity2).is_none());
 
-    #[test]
-    fn query_multiple_reads() {
-        let world = World::new();
-        let entity1 = world.create_entity();
-        let entity2 = world.create_entity();
-        let entity3 = world.create_entity();
-
-        world.insert_component(entity1, Position { x: 0.0, y: 0.0 });
-        world.insert_component(entity1, Velocity { x: 1.0, y: 1.0 });
-
-        world.insert_component(entity2, Position { x: 0.0, y: 0.0 });
-        world.insert_component(entity2, Acceleration { x: 1.0, y: 1.0 });
-
-        world.insert_component(entity3, Position { x: 0.0, y: 0.0 });
-        world.insert_component(entity3, Velocity { x: 1.0, y: 1.0 });
-        world.insert_component(entity3, Acceleration { x: 1.0, y: 1.0 });
-
-        let query = Query::new().read::<Position>().read::<Velocity>();
-        let results = query.get(&world);
-        let entities = results.iter().collect::<Vec<_>>();
-
-        assert!(entities.contains(&entity1));
-        assert!(!entities.contains(&entity2));
-        assert!(entities.contains(&entity3));
-
-        assert!(results.has::<Position>(entity1));
-        assert!(results.has::<Velocity>(entity1));
-        assert!(!results.has::<Acceleration>(entity1));
-
-        assert!(!results.has::<Position>(entity2));
-        assert!(!results.has::<Velocity>(entity2));
-        assert!(!results.has::<Acceleration>(entity2));
-
-        assert!(results.has::<Position>(entity3));
-        assert!(results.has::<Velocity>(entity3));
-        // assert!(!results.has::<Acceleration>(entity3));
+        let Some((position, velocity)) = results.get(entity3) else {
+            panic!("Entity 3 not found");
+        };
+        assert_eq!(*position, Position { x: 0.0, y: 0.0 });
+        assert_eq!(*velocity, Velocity { x: 1.0, y: 1.0 });
     }
 }
