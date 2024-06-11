@@ -110,7 +110,7 @@ struct VertexOutput {
     @location(1) world_normal: vec3<f32>,
     @location(2) world_binormal: vec3<f32>,
     @location(3) world_tangent: vec3<f32>,
-    @location(5) uv: vec2<f32>,
+    @location(4) uv: vec2<f32>,
 }
 
 struct FragmentOutput {
@@ -150,8 +150,8 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     let albedo = pow(tex_color, vec3(2.2));
 
     var tex_normal = textureSample(normal_tex, normal_sampler, uv).rgb;
-    tex_normal = normalize(pow(tex_normal, vec3(1.0 / 2.0)));
-    tex_normal = tex_normal * 2.0 - 1.0;
+    tex_normal = pow(tex_normal, vec3(1.0 / 2.2));
+    tex_normal = normalize(tex_normal * 2.0 - 1.0);
     let TBN = mat3x3<f32>(vertex.world_tangent, vertex.world_binormal, vertex.world_normal);
     let N = normalize(TBN * tex_normal);
 
@@ -174,7 +174,7 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
         illumination += calculate_lighting(albedo, roughness, metallic, N, L, V, light.color.rgb, attenuation);
     }
 
-    let tex_ao = textureSample(ao_tex, ao_sampler, uv).r;
+    let tex_ao = textureSample(ao_tex, ao_sampler, uv).r * material.properties.z;
 
     var out_color = illumination * tex_ao;
 

@@ -15,7 +15,7 @@ use weaver::{
 };
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
-use weaver_egui::{prelude::egui, EguiContext, EguiPlugin};
+use weaver_egui::prelude::*;
 
 pub mod camera;
 
@@ -36,7 +36,6 @@ fn main() -> Result<()> {
             log_interval: std::time::Duration::from_secs(1),
         })?
         .add_system(setup, SystemStage::Init)?
-        .add_system(update, SystemStage::Update)?
         .add_system(camera::update_camera, SystemStage::Update)?
         .add_system(ui, SystemStage::Ui)?
         .run()
@@ -69,74 +68,29 @@ fn setup(world: Rc<World>) -> Result<()> {
     let material = asset_loader.load::<Material>("assets/materials/wood_tiles.glb")?;
     {
         let mut assets = world.get_resource_mut::<Assets>().unwrap();
-        assets.get_mut::<Material>(material).unwrap().texture_scale = 1.0;
+        assets.get_mut::<Material>(material).unwrap().texture_scale = 20.0;
     }
 
-    for i in -5..5 {
-        for j in -5..5 {
-            let _cube = scene.spawn((
-                mesh,
-                material,
-                Transform {
-                    translation: Vec3::new(i as f32, 0.0, j as f32),
-                    rotation: Quat::IDENTITY,
-                    scale: Vec3::new(0.3, 0.3, 0.3),
-                },
-            ));
-        }
-    }
+    let _ground = scene.spawn((
+        mesh,
+        material,
+        Transform {
+            translation: Vec3::new(0.0, -1.0, 0.0),
+            rotation: Quat::IDENTITY,
+            scale: Vec3::new(20.0, 1.0, 20.0),
+        },
+    ));
 
-    const COLORS: &[Color] = &[
-        Color::RED,
-        Color::GREEN,
-        Color::BLUE,
-        Color::YELLOW,
-        Color::MAGENTA,
-        Color::CYAN,
-    ];
-
-    for (i, color) in COLORS.iter().enumerate() {
-        let theta = (i as f32 / COLORS.len() as f32) * std::f32::consts::PI * 2.0;
-        let _light = scene.spawn(PointLight {
-            position: Vec3::new(10.0 * theta.cos(), 5.0, 10.0 * theta.sin()),
-            color: *color,
-            intensity: 100.0,
-            radius: 100.0,
-        });
-    }
-
-    Ok(())
-}
-
-fn update(
-    time: Res<Time>,
-    transforms: Query<&mut Transform>,
-    lights: Query<&mut PointLight>,
-) -> Result<()> {
-    for (_entity, mut transform) in transforms.iter() {
-        let offset = transform.translation.x * transform.translation.z * 0.1;
-        transform.translation.y = 1.0 * (time.total_time + offset / 2.0).sin();
-        transform.rotation = Quat::from_rotation_y(time.total_time);
-    }
-
-    let light_count = lights.entity_iter().count();
-    for (i, (_, mut point_light)) in lights.iter().enumerate() {
-        let theta = time.total_time * 0.5 + (i as f32 - light_count as f32 / 2.0);
-        point_light.position.x = 10.0 * theta.cos();
-        point_light.position.z = 10.0 * theta.sin();
-    }
-
-    Ok(())
-}
-
-fn ui(egui_context: Res<EguiContext>) -> Result<()> {
-    egui_context.draw_if_ready(|ctx| {
-        egui::Window::new("Hello World").show(ctx, |ui| {
-            ui.label("Hello World!");
-            ui.label("This is a test of the emergency broadcast system.");
-            ui.label("This is only a test.");
-        })
+    let _light = scene.spawn(PointLight {
+        color: Color::WHITE,
+        intensity: 100.0,
+        radius: 100.0,
+        position: Vec3::new(0.0, 10.0, 0.0),
     });
 
+    Ok(())
+}
+
+fn ui(_egui_context: Res<EguiContext>) -> Result<()> {
     Ok(())
 }
