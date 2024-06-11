@@ -58,7 +58,7 @@ impl Plugin for PbrCameraPlugin {
 }
 
 fn prepare_pbr_cameras(world: Rc<World>) -> Result<()> {
-    let camera_query = world.clone().query::<(&mut Camera, &PbrCamera)>();
+    let camera_query = world.query::<(&mut Camera, &PbrCamera)>();
 
     for (camera_entity, (mut base_camera, pbr_camera)) in camera_query.iter() {
         if base_camera.active() {

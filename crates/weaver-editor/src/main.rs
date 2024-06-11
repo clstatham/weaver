@@ -72,8 +72,8 @@ fn setup(world: Rc<World>) -> Result<()> {
         assets.get_mut::<Material>(material).unwrap().texture_scale = 1.0;
     }
 
-    for i in -10..10 {
-        for j in -10..10 {
+    for i in -5..5 {
+        for j in -5..5 {
             let _cube = scene.spawn((
                 mesh,
                 material,
@@ -94,7 +94,7 @@ fn setup(world: Rc<World>) -> Result<()> {
         Color::MAGENTA,
         Color::CYAN,
     ];
-    // make a circle of lights
+
     for (i, color) in COLORS.iter().enumerate() {
         let theta = (i as f32 / COLORS.len() as f32) * std::f32::consts::PI * 2.0;
         let _light = scene.spawn(PointLight {
@@ -108,19 +108,19 @@ fn setup(world: Rc<World>) -> Result<()> {
     Ok(())
 }
 
-fn update(world: Rc<World>) -> Result<()> {
-    let time = world.get_resource::<Time>().unwrap();
-    let query = world.query::<&mut Transform>();
-
-    for (_entity, mut transform) in query.iter() {
+fn update(
+    time: Res<Time>,
+    transforms: Query<&mut Transform>,
+    lights: Query<&mut PointLight>,
+) -> Result<()> {
+    for (_entity, mut transform) in transforms.iter() {
         let offset = transform.translation.x * transform.translation.z * 0.1;
         transform.translation.y = 1.0 * (time.total_time + offset / 2.0).sin();
         transform.rotation = Quat::from_rotation_y(time.total_time);
     }
 
-    let query = world.query::<&mut PointLight>();
-    let light_count = query.entity_iter().count();
-    for (i, (_, mut point_light)) in query.iter().enumerate() {
+    let light_count = lights.entity_iter().count();
+    for (i, (_, mut point_light)) in lights.iter().enumerate() {
         let theta = time.total_time * 0.5 + (i as f32 - light_count as f32 / 2.0);
         point_light.position.x = 10.0 * theta.cos();
         point_light.position.z = 10.0 * theta.sin();
@@ -129,9 +129,7 @@ fn update(world: Rc<World>) -> Result<()> {
     Ok(())
 }
 
-fn ui(world: Rc<World>) -> Result<()> {
-    let egui_context = world.get_resource::<EguiContext>().unwrap();
-
+fn ui(egui_context: Res<EguiContext>) -> Result<()> {
     egui_context.draw_if_ready(|ctx| {
         egui::Window::new("Hello World").show(ctx, |ui| {
             ui.label("Hello World!");

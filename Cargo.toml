@@ -17,7 +17,11 @@ members = [
     "crates/weaver-core",
     "crates/weaver-asset",
     "crates/weaver-diagnostics",
-    "crates/weaver-reflect", "crates/weaver-reflect-macros", "crates/weaver-asset-macros", "crates/weaver-egui", "crates/weaver-ecs-macros",
+    "crates/weaver-reflect",
+    "crates/weaver-reflect-macros",
+    "crates/weaver-asset-macros",
+    "crates/weaver-egui",
+    "crates/weaver-ecs-macros",
 ]
 
 [features]

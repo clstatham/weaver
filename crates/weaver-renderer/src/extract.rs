@@ -37,7 +37,7 @@ impl<T: RenderComponent> Plugin for RenderComponentPlugin<T> {
 }
 
 fn extract_render_components<T: RenderComponent>(world: Rc<World>) -> anyhow::Result<()> {
-    let query = world.clone().query::<T::ExtractQuery<'_>>();
+    let query = world.query::<T::ExtractQuery<'_>>();
     let renderer = world
         .get_resource::<Renderer>()
         .expect("Renderer resource not present before extracting render components");
@@ -55,7 +55,7 @@ fn extract_render_components<T: RenderComponent>(world: Rc<World>) -> anyhow::Re
 }
 
 fn update_render_components<T: RenderComponent>(world: Rc<World>) -> anyhow::Result<()> {
-    let query = world.clone().query::<T::ExtractQuery<'_>>();
+    let query = world.query::<T::ExtractQuery<'_>>();
     let renderer = world
         .get_resource::<Renderer>()
         .expect("Renderer resource not present before updating render components");

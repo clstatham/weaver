@@ -63,7 +63,7 @@ fn create_bind_groups<T: CreateBindGroup>(world: Rc<World>) -> anyhow::Result<()
     let renderer = world.clone().get_resource::<Renderer>().unwrap();
     let device = renderer.device();
 
-    let query = world.clone().query::<&T>();
+    let query = world.query::<&T>();
 
     for (entity, data) in query.iter() {
         if !world.has_component::<BindGroup<T>>(entity) {
@@ -148,7 +148,7 @@ fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
 
     let mut assets = world.get_resource_mut::<Assets>().unwrap();
 
-    let query = world.clone().query::<&Handle<T>>();
+    let query = world.query::<&Handle<T>>();
 
     for (entity, handle) in query.iter() {
         if world.has_component::<Handle<BindGroup<T>>>(entity) {

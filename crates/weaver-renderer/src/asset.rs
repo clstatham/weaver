@@ -64,7 +64,7 @@ impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
 
 fn extract_render_asset<T: RenderAsset>(world: Rc<World>) -> anyhow::Result<()> {
     // query for handles to the base asset
-    let query = world.clone().query::<&Handle<T::BaseAsset>>();
+    let query = world.query::<&Handle<T::BaseAsset>>();
 
     for (entity, handle) in query.iter() {
         let mut extracted_assets = world.get_resource_mut::<ExtractedRenderAssets>().unwrap();
@@ -113,7 +113,7 @@ fn extract_render_asset<T: RenderAsset>(world: Rc<World>) -> anyhow::Result<()> 
 }
 
 fn update_render_asset<T: RenderAsset>(world: Rc<World>) -> anyhow::Result<()> {
-    let query = world.clone().query::<(&Handle<T>, &Handle<T::BaseAsset>)>();
+    let query = world.query::<(&Handle<T>, &Handle<T::BaseAsset>)>();
 
     for (_entity, (render_handle, base_handle)) in query.iter() {
         let assets = world.get_resource::<Assets>().unwrap();
