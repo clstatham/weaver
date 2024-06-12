@@ -37,7 +37,7 @@ fn main() -> Result<()> {
         .run()
 }
 
-fn setup(world: Arc<World>) -> Result<()> {
+fn setup(world: &Arc<World>) -> Result<()> {
     let scene = world.root_scene();
     let _camera = scene.spawn((
         Camera::perspective_lookat(

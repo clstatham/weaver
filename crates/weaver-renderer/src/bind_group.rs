@@ -69,7 +69,7 @@ impl<T: CreateComponentBindGroup> Plugin for ComponentBindGroupPlugin<T> {
     }
 }
 
-fn create_bind_groups<T: CreateComponentBindGroup>(world: Arc<World>) -> anyhow::Result<()> {
+fn create_bind_groups<T: CreateComponentBindGroup>(world: &Arc<World>) -> anyhow::Result<()> {
     let renderer = world.clone().get_resource::<Renderer>().unwrap();
     let device = renderer.device();
 
@@ -132,7 +132,9 @@ impl<T: CreateResourceBindGroup> Plugin for ResourceBindGroupPlugin<T> {
     }
 }
 
-fn create_resource_bind_group<T: CreateResourceBindGroup>(world: Arc<World>) -> anyhow::Result<()> {
+fn create_resource_bind_group<T: CreateResourceBindGroup>(
+    world: &Arc<World>,
+) -> anyhow::Result<()> {
     let Some(renderer) = world.get_resource::<Renderer>() else {
         return Ok(());
     };
@@ -188,7 +190,7 @@ impl<T: CreateComponentBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<
 }
 
 fn create_asset_bind_group<T: CreateComponentBindGroup + RenderAsset>(
-    world: Arc<World>,
+    world: &Arc<World>,
 ) -> anyhow::Result<()> {
     let renderer = world.get_resource::<Renderer>().unwrap();
     let device = renderer.device();

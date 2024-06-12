@@ -110,7 +110,7 @@ impl RenderResource for GpuPointLightArray {
         })
     }
 
-    fn update_render_resource(&mut self, world: Arc<World>, renderer: &Renderer) -> Result<()> {
+    fn update_render_resource(&mut self, world: &Arc<World>, renderer: &Renderer) -> Result<()> {
         let point_lights = world.query::<&PointLight>();
 
         let point_light_uniforms: Vec<PointLightUniform> = point_lights

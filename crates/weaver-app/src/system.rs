@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 use weaver_ecs::{
     component::{Res, ResMut},
     prelude::{Query, Resource, World},
-    query::{QueryAccess, QueryFilter},
+    query::{QueryAccess, QueryFetch},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -50,19 +50,19 @@ impl SystemAccess {
 
 pub trait System: 'static + Send + Sync {
     fn access(&self) -> SystemAccess;
-    fn run(&self, world: Arc<World>) -> anyhow::Result<()>;
+    fn run(&self, world: &Arc<World>) -> anyhow::Result<()>;
 }
 
 pub trait SystemParam {
     fn access() -> SystemAccess;
-    fn fetch(world: Arc<World>) -> Option<Self>
+    fn fetch(world: &Arc<World>) -> Option<Self>
     where
         Self: Sized;
 }
 
 impl<Q> SystemParam for Query<Q>
 where
-    Q: QueryFilter,
+    Q: QueryFetch,
 {
     fn access() -> SystemAccess {
         SystemAccess {
@@ -90,7 +90,7 @@ where
                 .collect(),
         }
     }
-    fn fetch(world: Arc<World>) -> Option<Self> {
+    fn fetch(world: &Arc<World>) -> Option<Self> {
         Some(Query::new(world))
     }
 }
@@ -104,7 +104,7 @@ impl<T: Resource> SystemParam for Res<T> {
             components_written: Vec::new(),
         }
     }
-    fn fetch(world: Arc<World>) -> Option<Self> {
+    fn fetch(world: &Arc<World>) -> Option<Self> {
         world.get_resource::<T>()
     }
 }
@@ -118,7 +118,7 @@ impl<T: Resource> SystemParam for ResMut<T> {
             components_written: Vec::new(),
         }
     }
-    fn fetch(world: Arc<World>) -> Option<Self> {
+    fn fetch(world: &Arc<World>) -> Option<Self> {
         world.get_resource_mut::<T>()
     }
 }
@@ -162,8 +162,8 @@ macro_rules! impl_function_system {
                         access
                     }
 
-                    fn run(&self, world: Arc<World>) -> anyhow::Result<()> {
-                        let ($($param),*) = ($($param::fetch(world.clone()).ok_or_else(|| anyhow::anyhow!("Failed to fetch system param"))?),*);
+                    fn run(&self, world: &Arc<World>) -> anyhow::Result<()> {
+                        let ($($param),*) = ($($param::fetch(world).ok_or_else(|| anyhow::anyhow!("Failed to fetch system param"))?),*);
                         (self.func)($($param),*)
                     }
                 }
@@ -188,7 +188,7 @@ impl_function_system!(A, B, C, D, E, F, G, H);
 
 impl<Func> FunctionSystem<()> for Func
 where
-    Func: Fn(Arc<World>) -> anyhow::Result<()> + 'static + Send + Sync,
+    Func: Fn(&Arc<World>) -> anyhow::Result<()> + 'static + Send + Sync,
 {
     fn into_system(self) -> Arc<dyn System> {
         struct FunctionSystemImpl<Func> {
@@ -197,7 +197,7 @@ where
 
         impl<Func> System for FunctionSystemImpl<Func>
         where
-            Func: Fn(Arc<World>) -> anyhow::Result<()> + 'static + Send + Sync,
+            Func: Fn(&Arc<World>) -> anyhow::Result<()> + 'static + Send + Sync,
         {
             fn access(&self) -> SystemAccess {
                 SystemAccess {
@@ -207,7 +207,7 @@ where
                     components_written: Vec::new(),
                 }
             }
-            fn run(&self, world: Arc<World>) -> anyhow::Result<()> {
+            fn run(&self, world: &Arc<World>) -> anyhow::Result<()> {
                 (self.func)(world)
             }
         }
@@ -260,16 +260,6 @@ impl SystemGraph {
         let node = self.add_system(system);
         let child = self.index_cache[&TypeId::of::<S2>()];
         self.systems.add_edge(node, child, ());
-    }
-
-    pub fn run(&mut self, world: Arc<World>) -> anyhow::Result<()> {
-        self.resolve_dependencies(100)?;
-        let mut schedule = petgraph::visit::Topo::new(&self.systems);
-        while let Some(node) = schedule.next(&self.systems) {
-            let system = self.systems[node].clone();
-            system.run(world.clone())?;
-        }
-        Ok(())
     }
 
     pub fn get_layers(&self) -> Vec<Vec<NodeIndex>> {
@@ -372,7 +362,17 @@ impl SystemGraph {
         Ok(())
     }
 
-    pub fn run_concurrent(&mut self, world: Arc<World>) -> anyhow::Result<()> {
+    pub fn run(&mut self, world: &Arc<World>) -> anyhow::Result<()> {
+        self.resolve_dependencies(100)?;
+        let mut schedule = petgraph::visit::Topo::new(&self.systems);
+        while let Some(node) = schedule.next(&self.systems) {
+            let system = self.systems[node].clone();
+            system.run(world)?;
+        }
+        Ok(())
+    }
+
+    pub fn run_concurrent(&mut self, world: &Arc<World>) -> anyhow::Result<()> {
         self.resolve_dependencies(100)?;
 
         let layers = self.get_layers();
@@ -387,7 +387,7 @@ impl SystemGraph {
                 let world = world.clone();
                 let system = self.systems[node].clone();
                 rayon::spawn(move || {
-                    let result = system.run(world);
+                    let result = system.run(&world);
                     tx.send(result).unwrap();
                 });
             }

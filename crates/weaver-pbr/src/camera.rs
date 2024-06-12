@@ -57,7 +57,7 @@ impl Plugin for PbrCameraPlugin {
     }
 }
 
-fn prepare_pbr_cameras(world: Arc<World>) -> Result<()> {
+fn prepare_pbr_cameras(world: &Arc<World>) -> Result<()> {
     let camera_query = world.query::<(&mut Camera, &PbrCamera)>();
 
     for (camera_entity, (mut base_camera, pbr_camera)) in camera_query.iter() {
@@ -112,7 +112,7 @@ fn prepare_pbr_cameras(world: Arc<World>) -> Result<()> {
     Ok(())
 }
 
-fn render_pbr_cameras(world: Arc<World>) -> Result<()> {
+fn render_pbr_cameras(world: &Arc<World>) -> Result<()> {
     let camera_query = world.query::<&mut Camera>();
 
     for (_entity, mut camera) in camera_query.iter() {

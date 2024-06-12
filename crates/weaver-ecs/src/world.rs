@@ -5,7 +5,9 @@ use std::sync::{
 
 use weaver_util::lock::Lock;
 
-use crate::prelude::{Bundle, Query, QueryFilter, Res, ResMut, Resource, Resources, Scene};
+use crate::prelude::{
+    Bundle, Query, QueryFetch, QueryFilter, Res, ResMut, Resource, Resources, Scene,
+};
 
 use super::{
     component::Component,
@@ -90,8 +92,12 @@ impl World {
         self.storage.read().has_component::<T>(entity)
     }
 
-    pub fn query<Q: QueryFilter>(self: &Arc<Self>) -> Query<Q> {
-        Query::new(self.clone())
+    pub fn query<Q: QueryFetch>(self: &Arc<Self>) -> Query<Q, ()> {
+        Query::new(self)
+    }
+
+    pub fn query_filtered<Q: QueryFetch, F: QueryFilter>(self: &Arc<Self>) -> Query<Q, F> {
+        Query::new(self)
     }
 
     pub const fn root_scene_entity(&self) -> Entity {

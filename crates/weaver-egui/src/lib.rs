@@ -187,7 +187,7 @@ fn end_frame(egui_context: Res<EguiContext>) -> Result<()> {
     Ok(())
 }
 
-fn render(world: Arc<World>) -> Result<()> {
+fn render(world: &Arc<World>) -> Result<()> {
     let Some(renderer) = world.get_resource::<weaver_renderer::Renderer>() else {
         return Ok(());
     };

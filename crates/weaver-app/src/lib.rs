@@ -152,7 +152,7 @@ impl App {
             let world = self.world.clone();
             let (tx, rx) = crossbeam_channel::unbounded();
             self.runtime
-                .install(move || tx.send(systems.run_concurrent(world)).unwrap());
+                .install(move || tx.send(systems.run_concurrent(&world)).unwrap());
             rx.recv().unwrap()?;
         }
         Ok(())

@@ -14,7 +14,7 @@ pub enum QueryAccess {
     ReadWrite,
 }
 
-pub trait QueryFilterParam {
+pub trait QueryFetchParam {
     type Item: Component;
     type Fetch<'a>;
     fn type_id() -> TypeId;
@@ -22,7 +22,7 @@ pub trait QueryFilterParam {
     fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>>;
 }
 
-impl<T: Component> QueryFilterParam for &T {
+impl<T: Component> QueryFetchParam for &T {
     type Item = T;
     type Fetch<'a> = Ref<T>;
 
@@ -39,7 +39,7 @@ impl<T: Component> QueryFilterParam for &T {
     }
 }
 
-impl<T: Component> QueryFilterParam for &mut T {
+impl<T: Component> QueryFetchParam for &mut T {
     type Item = T;
     type Fetch<'a> = Mut<T>;
 
@@ -56,17 +56,16 @@ impl<T: Component> QueryFilterParam for &mut T {
     }
 }
 
-pub trait QueryFilter {
+pub trait QueryFetch {
     type Fetch<'a>;
     fn access() -> &'static [(TypeId, QueryAccess)];
     fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>>;
-    fn test(world: &World, entity: Entity) -> bool;
     fn test_archetype(archetype: &Archetype) -> bool;
 }
 
-impl<T> QueryFilter for T
+impl<T> QueryFetch for T
 where
-    T: QueryFilterParam,
+    T: QueryFetchParam,
 {
     type Fetch<'a> = T::Fetch<'a>;
 
@@ -76,11 +75,7 @@ where
     }
 
     fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>> {
-        <T as QueryFilterParam>::fetch(world, entity)
-    }
-
-    fn test(world: &World, entity: Entity) -> bool {
-        world.has_component::<T::Item>(entity)
+        <T as QueryFetchParam>::fetch(world, entity)
     }
 
     fn test_archetype(archetype: &Archetype) -> bool {
@@ -88,9 +83,9 @@ where
     }
 }
 
-macro_rules! impl_query_filter {
+macro_rules! impl_query_fetch {
     ($($param:ident),*) => {
-        impl<$($param: QueryFilterParam),*> QueryFilter for ($($param,)*) {
+        impl<$($param: QueryFetchParam),*> QueryFetch for ($($param,)*) {
             type Fetch<'a> = ($($param::Fetch<'a>,)*);
 
             fn access() -> &'static [(TypeId, QueryAccess)] {
@@ -105,13 +100,38 @@ macro_rules! impl_query_filter {
 
             }
 
-            fn test(world: &World, entity: Entity) -> bool {
+            fn test_archetype(archetype: &Archetype) -> bool {
                 $(
-                    $param::test(world, entity) &&
+                    $param::test_archetype(archetype) &&
                 )*
                 true
             }
+        }
+    };
+}
 
+impl_query_fetch!(A);
+impl_query_fetch!(A, B);
+impl_query_fetch!(A, B, C);
+impl_query_fetch!(A, B, C, D);
+impl_query_fetch!(A, B, C, D, E);
+impl_query_fetch!(A, B, C, D, E, F);
+impl_query_fetch!(A, B, C, D, E, F, G);
+impl_query_fetch!(A, B, C, D, E, F, G, H);
+
+pub trait QueryFilter {
+    fn test_archetype(archetype: &Archetype) -> bool;
+}
+
+impl QueryFilter for () {
+    fn test_archetype(_: &Archetype) -> bool {
+        true
+    }
+}
+
+macro_rules! impl_query_filter {
+    ($($param:ident),*) => {
+        impl<$($param: QueryFetchParam),*> QueryFilter for ($($param,)*) {
             fn test_archetype(archetype: &Archetype) -> bool {
                 $(
                     $param::test_archetype(archetype) &&
@@ -131,19 +151,44 @@ impl_query_filter!(A, B, C, D, E, F);
 impl_query_filter!(A, B, C, D, E, F, G);
 impl_query_filter!(A, B, C, D, E, F, G, H);
 
-pub struct Query<Q: QueryFilter + ?Sized> {
-    world: Arc<World>,
-    entities: Box<[Entity]>,
-    _phantom: PhantomData<Q>,
+pub struct With<T: Component>(PhantomData<T>);
+
+impl<T: Component> QueryFilter for With<T> {
+    fn test_archetype(archetype: &Archetype) -> bool {
+        archetype.contains_component_by_type_id(TypeId::of::<T>())
+    }
 }
 
-impl<Q: QueryFilter + ?Sized> Query<Q> {
-    pub fn new(world: Arc<World>) -> Self {
+pub struct Without<T: Component>(PhantomData<T>);
+
+impl<T: Component> QueryFilter for Without<T> {
+    fn test_archetype(archetype: &Archetype) -> bool {
+        !archetype.contains_component_by_type_id(TypeId::of::<T>())
+    }
+}
+
+pub struct Query<Q, F = ()>
+where
+    Q: QueryFetch + ?Sized,
+    F: QueryFilter + ?Sized,
+{
+    world: Arc<World>,
+    entities: Box<[Entity]>,
+    _fetch: PhantomData<Q>,
+    _filter: PhantomData<F>,
+}
+
+impl<Q, F> Query<Q, F>
+where
+    Q: QueryFetch + ?Sized,
+    F: QueryFilter + ?Sized,
+{
+    pub fn new(world: &Arc<World>) -> Self {
         let mut entities = Vec::new();
         let storage = world.storage().read();
 
         for archetype in storage.archetype_iter() {
-            if Q::test_archetype(archetype) {
+            if Q::test_archetype(archetype) && F::test_archetype(archetype) {
                 entities.extend(archetype.entity_iter());
             }
         }
@@ -151,9 +196,10 @@ impl<Q: QueryFilter + ?Sized> Query<Q> {
         drop(storage);
 
         Self {
-            world,
+            world: world.clone(),
             entities: entities.into_boxed_slice(),
-            _phantom: PhantomData,
+            _fetch: PhantomData,
+            _filter: PhantomData,
         }
     }
 
@@ -214,7 +260,7 @@ mod tests {
         world.insert_component(entity3, Velocity { x: 1.0, y: 1.0 });
         world.insert_component(entity3, Acceleration { x: 1.0, y: 1.0 });
 
-        let results = Query::<(&Position, &Velocity)>::new(world.clone());
+        let results = Query::<(&Position, &Velocity)>::new(&world);
 
         let entities = results.entity_iter().collect::<Vec<_>>();
         assert!(entities.contains(&entity1));

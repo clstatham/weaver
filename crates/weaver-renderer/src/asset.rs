@@ -62,7 +62,7 @@ impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
     }
 }
 
-fn extract_render_asset<T: RenderAsset>(world: Arc<World>) -> anyhow::Result<()> {
+fn extract_render_asset<T: RenderAsset>(world: &Arc<World>) -> anyhow::Result<()> {
     // query for handles to the base asset
     let query = world.query::<&Handle<T::BaseAsset>>();
 
@@ -84,7 +84,7 @@ fn extract_render_asset<T: RenderAsset>(world: Arc<World>) -> anyhow::Result<()>
                 .expect("Renderer resource not present before extracting render asset");
             let assets = world.get_resource::<Assets>().unwrap();
             let base_asset = assets.get::<T::BaseAsset>(*handle).unwrap();
-            if let Some(render_asset) = T::extract_render_asset(base_asset, &world, &renderer) {
+            if let Some(render_asset) = T::extract_render_asset(base_asset, world, &renderer) {
                 log::debug!("Extracted render asset: {:?}", std::any::type_name::<T>());
 
                 // insert the render asset into the asset storage
@@ -112,7 +112,7 @@ fn extract_render_asset<T: RenderAsset>(world: Arc<World>) -> anyhow::Result<()>
     Ok(())
 }
 
-fn update_render_asset<T: RenderAsset>(world: Arc<World>) -> anyhow::Result<()> {
+fn update_render_asset<T: RenderAsset>(world: &Arc<World>) -> anyhow::Result<()> {
     let query = world.query::<(&Handle<T>, &Handle<T::BaseAsset>)>();
 
     for (_entity, (render_handle, base_handle)) in query.iter() {
@@ -121,7 +121,7 @@ fn update_render_asset<T: RenderAsset>(world: Arc<World>) -> anyhow::Result<()> 
         let base_asset = assets.get::<T::BaseAsset>(*base_handle).unwrap();
         render_asset.update_render_asset(
             base_asset,
-            &world,
+            world,
             &world.get_resource::<Renderer>().unwrap(),
         )?;
     }

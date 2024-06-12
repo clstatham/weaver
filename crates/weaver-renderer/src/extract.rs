@@ -4,14 +4,14 @@ use weaver_app::{plugin::Plugin, prelude::App, system::SystemStage};
 use weaver_ecs::{
     component::{Component, Resource},
     entity::Entity,
-    query::QueryFilter,
+    query::QueryFetch,
     world::World,
 };
 
 use crate::Renderer;
 
 pub trait RenderComponent: Component {
-    type ExtractQuery<'a>: QueryFilter + 'a;
+    type ExtractQuery<'a>: QueryFetch + 'a;
     fn extract_render_component(entity: Entity, world: &World, renderer: &Renderer) -> Option<Self>
     where
         Self: Sized;
@@ -39,7 +39,7 @@ impl<T: RenderComponent> Plugin for RenderComponentPlugin<T> {
     }
 }
 
-fn extract_render_components<T: RenderComponent>(world: Arc<World>) -> anyhow::Result<()> {
+fn extract_render_components<T: RenderComponent>(world: &Arc<World>) -> anyhow::Result<()> {
     let query = world.query::<T::ExtractQuery<'_>>();
     let renderer = world
         .get_resource::<Renderer>()
@@ -47,7 +47,7 @@ fn extract_render_components<T: RenderComponent>(world: Arc<World>) -> anyhow::R
 
     for entity in query.entity_iter() {
         if !world.has_component::<T>(entity) {
-            if let Some(component) = T::extract_render_component(entity, &world, &renderer) {
+            if let Some(component) = T::extract_render_component(entity, world, &renderer) {
                 log::debug!("Extracted render component: {:?}", type_name::<T>());
                 world.insert_component(entity, component);
             }
@@ -57,7 +57,7 @@ fn extract_render_components<T: RenderComponent>(world: Arc<World>) -> anyhow::R
     Ok(())
 }
 
-fn update_render_components<T: RenderComponent>(world: Arc<World>) -> anyhow::Result<()> {
+fn update_render_components<T: RenderComponent>(world: &Arc<World>) -> anyhow::Result<()> {
     let query = world.query::<T::ExtractQuery<'_>>();
     let renderer = world
         .get_resource::<Renderer>()
@@ -65,7 +65,7 @@ fn update_render_components<T: RenderComponent>(world: Arc<World>) -> anyhow::Re
 
     for entity in query.entity_iter() {
         if let Some(mut component) = world.get_component_mut::<T>(entity) {
-            component.update_render_component(entity, &world, &renderer)?;
+            component.update_render_component(entity, world, &renderer)?;
         }
     }
 
@@ -78,7 +78,7 @@ pub trait RenderResource: Resource {
         Self: Sized;
     fn update_render_resource(
         &mut self,
-        world: Arc<World>,
+        world: &Arc<World>,
         renderer: &Renderer,
     ) -> anyhow::Result<()>;
 }
@@ -99,7 +99,7 @@ impl<T: RenderResource> Plugin for RenderResourcePlugin<T> {
     }
 }
 
-fn extract_render_resource<T: RenderResource>(world: Arc<World>) -> anyhow::Result<()> {
+fn extract_render_resource<T: RenderResource>(world: &Arc<World>) -> anyhow::Result<()> {
     if !world.has_resource::<T>() {
         let renderer = world
             .get_resource::<Renderer>()
@@ -115,7 +115,7 @@ fn extract_render_resource<T: RenderResource>(world: Arc<World>) -> anyhow::Resu
     Ok(())
 }
 
-fn update_render_resource<T: RenderResource>(world: Arc<World>) -> anyhow::Result<()> {
+fn update_render_resource<T: RenderResource>(world: &Arc<World>) -> anyhow::Result<()> {
     let renderer = world
         .get_resource::<Renderer>()
         .expect("Renderer resource not present before updating render resource");

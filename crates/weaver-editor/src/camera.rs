@@ -106,7 +106,7 @@ impl FlyCameraController {
     }
 }
 
-pub fn update_camera(world: Arc<World>) -> Result<()> {
+pub fn update_camera(world: &Arc<World>) -> Result<()> {
     let time = world.get_resource::<Time>().unwrap();
     let input = world.get_resource::<Input>().unwrap();
     // let query = world.dyn_query(
