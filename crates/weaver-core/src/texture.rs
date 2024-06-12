@@ -74,6 +74,6 @@ impl LoadAsset for TextureLoader {
         let image = image::open(path)?;
         let image = image.to_rgba8();
         let texture = Texture::from_rgba8(&image, image.width(), image.height());
-        Ok(assets.insert(texture, Some(path)).into())
+        Ok(assets.insert(texture).into())
     }
 }

@@ -68,13 +68,17 @@ fn setup(world: &Arc<World>) -> Result<()> {
     let material = asset_loader.load::<Material>("assets/materials/metal.glb")?;
     {
         let mut assets = world.get_resource_mut::<Assets>().unwrap();
-        assets.get_mut::<Material>(material).unwrap().texture_scale = 20.0;
+        let material = assets.get_mut::<Material>(material).unwrap();
+        material.texture_scale = 100.0;
+        material.diffuse = Color::BLACK;
     }
 
-    let material2 = asset_loader.load::<Material>("assets/materials/wood_tiles.glb")?;
+    let material2 = asset_loader.load::<Material>("assets/materials/metal.glb")?;
     {
         let mut assets = world.get_resource_mut::<Assets>().unwrap();
-        assets.get_mut::<Material>(material2).unwrap().texture_scale = 1.0;
+        let material = assets.get_mut::<Material>(material2).unwrap();
+        material.texture_scale = 20.0;
+        material.diffuse = Color::RED;
     }
 
     let _ground = scene.spawn((

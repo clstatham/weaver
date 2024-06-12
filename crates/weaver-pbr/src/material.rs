@@ -125,17 +125,17 @@ impl LoadAsset for MaterialLoader {
 
         let material = Material {
             diffuse: diffuse.into(),
-            diffuse_texture: assets.insert(diffuse_texture, None),
-            normal_texture: assets.insert(normal_texture, None),
+            diffuse_texture: assets.insert(diffuse_texture),
+            normal_texture: assets.insert(normal_texture),
             metallic,
             roughness,
-            metallic_roughness_texture: assets.insert(metallic_roughness_texture, None),
+            metallic_roughness_texture: assets.insert(metallic_roughness_texture),
             ao,
-            ao_texture: assets.insert(ao_texture, None),
+            ao_texture: assets.insert(ao_texture),
             texture_scale: 1.0,
         };
 
-        Ok(assets.insert(material, Some(path)).into())
+        Ok(assets.insert(material).into())
     }
 }
 

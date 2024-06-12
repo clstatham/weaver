@@ -35,10 +35,6 @@ impl AssetLoader {
         let path = path.as_ref();
         let mut assets = self.world.get_resource_mut::<Assets>().unwrap();
 
-        if let Some(handle) = assets.find_by_path(path) {
-            return Ok(handle);
-        }
-
         for loader in &self.loaders {
             if let Ok(handle) = loader.load_asset(path, &mut assets) {
                 return Ok(handle);

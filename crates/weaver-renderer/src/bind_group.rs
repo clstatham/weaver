@@ -216,7 +216,7 @@ fn create_asset_bind_group<T: CreateComponentBindGroup + RenderAsset>(
         } else {
             let asset = assets.get::<T>(*handle).unwrap();
             let bind_group = ComponentBindGroup::new(device, asset);
-            let bind_group_handle = assets.insert(bind_group, None);
+            let bind_group_handle = assets.insert(bind_group);
             asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
             drop(handle);
             world.insert_component(entity, bind_group_handle);

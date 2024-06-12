@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    sync::atomic::AtomicUsize,
-};
+use std::sync::atomic::AtomicUsize;
 
 use loader::AssetLoader;
 use weaver_app::{plugin::Plugin, App};
@@ -105,7 +101,6 @@ impl<T: Asset> TryFrom<UntypedHandle> for Handle<T> {
 pub struct Assets {
     next_handle_id: AtomicUsize,
     storage: SparseSet<Box<dyn Asset>>,
-    paths: HashMap<PathBuf, UntypedHandle>,
 }
 
 impl Assets {
@@ -113,20 +108,11 @@ impl Assets {
         Self::default()
     }
 
-    pub fn insert<T: Asset>(&mut self, asset: T, path: Option<&Path>) -> Handle<T> {
+    pub fn insert<T: Asset>(&mut self, asset: T) -> Handle<T> {
         let id = self
             .next_handle_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.storage.insert(id, Box::new(asset));
-        if let Some(path) = path {
-            self.paths.insert(
-                path.into(),
-                UntypedHandle {
-                    id,
-                    type_id: std::any::TypeId::of::<T>(),
-                },
-            );
-        }
 
         Handle {
             id,
@@ -138,10 +124,6 @@ impl Assets {
         self.storage
             .get(handle.id)
             .and_then(|asset| (**asset).downcast_ref())
-    }
-
-    pub fn find_by_path(&self, path: impl AsRef<Path>) -> Option<UntypedHandle> {
-        self.paths.get(&PathBuf::from(path.as_ref())).copied()
     }
 
     pub fn get_mut<T: Asset>(&mut self, handle: Handle<T>) -> Option<&mut T> {

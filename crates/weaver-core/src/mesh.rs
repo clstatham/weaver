@@ -52,7 +52,7 @@ impl LoadAsset for MeshLoader {
         assets: &mut weaver_asset::Assets,
     ) -> Result<weaver_asset::UntypedHandle> {
         let mesh = load_obj(path)?;
-        Ok(assets.insert(mesh, Some(path)).into())
+        Ok(assets.insert(mesh).into())
     }
 }
 

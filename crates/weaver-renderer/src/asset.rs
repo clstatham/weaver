@@ -90,7 +90,7 @@ fn extract_render_asset<T: RenderAsset>(world: &Arc<World>) -> anyhow::Result<()
                 // insert the render asset into the asset storage
                 drop(assets);
                 let mut assets = world.get_resource_mut::<Assets>().unwrap();
-                let render_handle = assets.insert(render_asset, None);
+                let render_handle = assets.insert(render_asset);
 
                 let untyped_handle = handle.into_untyped();
                 drop(handle);
