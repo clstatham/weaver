@@ -9,7 +9,7 @@ use weaver_ecs::{
 };
 
 use crate::{
-    bind_group::{ComponentBindGroupPlugin, CreateBindGroup},
+    bind_group::{CreateComponentBindGroup, ComponentBindGroupPlugin},
     buffer::GpuBuffer,
     extract::{RenderComponent, RenderComponentPlugin},
     graph::RenderGraph,
@@ -166,7 +166,7 @@ impl RenderComponent for GpuCamera {
     }
 }
 
-impl CreateBindGroup for GpuCamera {
+impl CreateComponentBindGroup for GpuCamera {
     fn create_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &Self::bind_group_layout(device),

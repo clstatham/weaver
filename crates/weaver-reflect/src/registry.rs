@@ -1,11 +1,10 @@
-use std::{
-    any::TypeId,
-    collections::HashMap,
-    hash::{BuildHasherDefault, Hasher},
-};
+use std::{any::TypeId, collections::HashMap, sync::Arc};
 
-use weaver_ecs::prelude::Component;
-use weaver_util::prelude::{impl_downcast, Downcast};
+use weaver_ecs::prelude::Resource;
+use weaver_util::{
+    prelude::{impl_downcast, DowncastSync},
+    TypeIdMap,
+};
 
 use crate::Reflect;
 
@@ -179,55 +178,29 @@ impl MapInfo {
     }
 }
 
-pub trait TypeAuxData: Downcast {
-    fn clone_type_aux_data(&self) -> Box<dyn TypeAuxData>;
+pub trait TypeAuxData: DowncastSync {
+    fn clone_type_aux_data(&self) -> Arc<dyn TypeAuxData>;
 }
 impl_downcast!(TypeAuxData);
 
-impl<T: Clone + Downcast> TypeAuxData for T {
-    fn clone_type_aux_data(&self) -> Box<dyn TypeAuxData> {
-        Box::new(self.clone())
+impl<T: Clone + DowncastSync> TypeAuxData for T {
+    fn clone_type_aux_data(&self) -> Arc<dyn TypeAuxData> {
+        Arc::new(self.clone())
     }
 }
 
 pub trait FromType<T> {
-    fn from_type() -> Box<Self>;
+    fn from_type() -> Arc<Self>;
 }
-
-#[derive(Default)]
-pub struct TypeIdHasher {
-    state: u64,
-}
-
-impl Hasher for TypeIdHasher {
-    fn finish(&self) -> u64 {
-        self.state
-    }
-
-    fn write_u128(&mut self, i: u128) {
-        self.state = i as u64;
-    }
-
-    fn write_u64(&mut self, i: u64) {
-        self.state = i;
-    }
-
-    fn write(&mut self, _bytes: &[u8]) {
-        unimplemented!("TypeIdHasher should not be used with anything other than TypeId")
-    }
-}
-
-pub type TypeIdMap<T> =
-    std::collections::hash_map::HashMap<TypeId, T, BuildHasherDefault<TypeIdHasher>>;
 
 pub struct TypeRegistration {
     pub type_id: TypeId,
     pub type_name: &'static str,
     pub type_info: &'static TypeInfo,
-    pub type_aux_data: TypeIdMap<Box<dyn TypeAuxData>>,
+    pub type_aux_data: TypeIdMap<Arc<dyn TypeAuxData>>,
 }
 
-#[derive(Component)]
+#[derive(Resource)]
 pub struct TypeRegistry {
     types: TypeIdMap<TypeRegistration>,
     type_names: HashMap<&'static str, TypeId>,

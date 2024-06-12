@@ -1,10 +1,10 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, sync::Arc};
 
 use weaver_asset::{Assets, Handle};
 use weaver_core::{prelude::Mat4, transform::Transform};
 use weaver_ecs::{entity::Entity, prelude::World};
 use weaver_renderer::{
-    bind_group::{BindGroup, CreateBindGroup},
+    bind_group::{ComponentBindGroup, CreateComponentBindGroup, CreateResourceBindGroup},
     camera::GpuCamera,
     graph::{Render, Slot},
     mesh::GpuMesh,
@@ -19,7 +19,7 @@ use weaver_util::{
 use crate::{light::GpuPointLightArray, material::GpuMaterial};
 
 struct UniqueMaterialMesh {
-    material: Handle<BindGroup<GpuMaterial>>,
+    material: Handle<ComponentBindGroup<GpuMaterial>>,
     mesh: Handle<GpuMesh>,
     transform_buffer: wgpu::Buffer,
     transform_bind_group: wgpu::BindGroup,
@@ -33,8 +33,9 @@ pub struct PbrNode {
     pipeline: Lock<Option<wgpu::RenderPipeline>>,
 
     #[allow(clippy::type_complexity)]
-    unique_material_meshes:
-        Lock<HashMap<(Handle<BindGroup<GpuMaterial>>, Handle<GpuMesh>), UniqueMaterialMesh>>,
+    unique_material_meshes: Lock<
+        HashMap<(Handle<ComponentBindGroup<GpuMaterial>>, Handle<GpuMesh>), UniqueMaterialMesh>,
+    >,
 
     transform_bind_group_layout: Lock<Option<wgpu::BindGroupLayout>>,
 }
@@ -145,7 +146,7 @@ impl PbrNode {
 }
 
 impl Render for PbrNode {
-    fn prepare(&self, world: Rc<World>, renderer: &Renderer) -> Result<()> {
+    fn prepare(&self, world: Arc<World>, renderer: &Renderer) -> Result<()> {
         if self.pipeline.read().is_none() {
             self.init_pipeline(renderer);
         }
@@ -154,7 +155,7 @@ impl Render for PbrNode {
             unique_material_mesh.entities.clear();
         }
 
-        let query = world.query::<(&Handle<BindGroup<GpuMaterial>>, &Handle<GpuMesh>)>();
+        let query = world.query::<(&Handle<ComponentBindGroup<GpuMaterial>>, &Handle<GpuMesh>)>();
 
         for (entity, (material, gpu_mesh)) in query.iter() {
             let mut unique_material_meshes = self.unique_material_meshes.write();
@@ -225,7 +226,7 @@ impl Render for PbrNode {
 
     fn render(
         &self,
-        world: Rc<World>,
+        world: Arc<World>,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> Result<Vec<Slot>> {
@@ -268,7 +269,9 @@ impl Render for PbrNode {
                 entities,
             } = unique_material_mesh;
 
-            let material_bind_group = assets.get::<BindGroup<GpuMaterial>>(*material).unwrap();
+            let material_bind_group = assets
+                .get::<ComponentBindGroup<GpuMaterial>>(*material)
+                .unwrap();
             let mesh = assets.get::<GpuMesh>(*mesh).unwrap();
 
             {

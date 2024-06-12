@@ -1,4 +1,4 @@
-use std::{any::TypeId, marker::PhantomData, rc::Rc};
+use std::{any::TypeId, marker::PhantomData, sync::Arc};
 
 use crate::prelude::Archetype;
 
@@ -132,13 +132,13 @@ impl_query_filter!(A, B, C, D, E, F, G);
 impl_query_filter!(A, B, C, D, E, F, G, H);
 
 pub struct Query<Q: QueryFilter + ?Sized> {
-    world: Rc<World>,
+    world: Arc<World>,
     entities: Box<[Entity]>,
     _phantom: PhantomData<Q>,
 }
 
 impl<Q: QueryFilter + ?Sized> Query<Q> {
-    pub fn new(world: Rc<World>) -> Self {
+    pub fn new(world: Arc<World>) -> Self {
         let mut entities = Vec::new();
         let storage = world.storage().read();
 

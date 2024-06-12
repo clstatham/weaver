@@ -1,14 +1,16 @@
-use weaver_util::prelude::{impl_downcast, Downcast};
+use std::sync::Arc;
+
+use weaver_util::prelude::{impl_downcast, DowncastSync};
 
 use super::node::Node;
 
-pub trait Relationship: Downcast {}
-impl_downcast!(Relationship);
+pub trait Relationship: DowncastSync {}
+impl_downcast!(sync Relationship);
 
 pub struct RelationshipConnection {
     pub from: Node,
     pub to: Node,
-    pub weight: Box<dyn Relationship>,
+    pub weight: Arc<dyn Relationship>,
 }
 
 impl RelationshipConnection {
@@ -16,7 +18,7 @@ impl RelationshipConnection {
         Self {
             from,
             to,
-            weight: Box::new(weight),
+            weight: Arc::new(weight),
         }
     }
 }

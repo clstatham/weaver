@@ -1,11 +1,11 @@
-use std::{
-    rc::Rc,
-    sync::atomic::{AtomicU32, Ordering},
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
 };
 
 use weaver_util::lock::Lock;
 
-use crate::prelude::{Bundle, Query, QueryFilter, Scene};
+use crate::prelude::{Bundle, Query, QueryFilter, Res, ResMut, Resource, Resources, Scene};
 
 use super::{
     component::Component,
@@ -14,27 +14,27 @@ use super::{
 };
 
 pub struct World {
-    resource_entity: Entity,
     root_scene_entity: Entity,
     next_entity: AtomicU32,
     free_entities: Lock<Vec<Entity>>,
     storage: Lock<Storage>,
+    resources: Lock<Resources>,
+    // non_send_resources: Lock<Resources<false>>,
 }
 
 impl World {
-    pub fn new() -> Rc<Self> {
+    pub fn new() -> Arc<Self> {
         let mut world = Self {
-            resource_entity: Entity::new(0, 0),
             root_scene_entity: Entity::new(1, 0),
             next_entity: AtomicU32::new(0),
             free_entities: Lock::new(Vec::new()),
             storage: Lock::new(Storage::new()),
+            resources: Lock::new(Resources::default()),
         };
 
-        world.resource_entity = world.create_entity(); // reserve entity 0 for the world itself
-        world.root_scene_entity = world.create_entity(); // reserve entity 1 for the root scene
+        world.root_scene_entity = world.create_entity(); // reserve entity 0 for the root scene
 
-        let world = Rc::new(world);
+        let world = Arc::new(world);
 
         let root_scene = Scene::new(world.clone());
         world.insert_component(world.root_scene_entity(), root_scene);
@@ -90,36 +90,32 @@ impl World {
         self.storage.read().has_component::<T>(entity)
     }
 
-    pub fn query<Q: QueryFilter>(self: &Rc<Self>) -> Query<Q> {
+    pub fn query<Q: QueryFilter>(self: &Arc<Self>) -> Query<Q> {
         Query::new(self.clone())
-    }
-
-    pub const fn resource_entity(&self) -> Entity {
-        self.resource_entity
     }
 
     pub const fn root_scene_entity(&self) -> Entity {
         self.root_scene_entity
     }
 
-    pub fn get_resource<T: Component>(&self) -> Option<Ref<T>> {
-        self.get_component::<T>(self.resource_entity())
+    pub fn get_resource<T: Resource>(&self) -> Option<Res<T>> {
+        self.resources.read().get::<T>()
     }
 
-    pub fn get_resource_mut<T: Component>(&self) -> Option<Mut<T>> {
-        self.get_component_mut::<T>(self.resource_entity())
+    pub fn get_resource_mut<T: Resource>(&self) -> Option<ResMut<T>> {
+        self.resources.read().get_mut::<T>()
     }
 
-    pub fn has_resource<T: Component>(&self) -> bool {
-        self.has_component::<T>(self.resource_entity())
+    pub fn has_resource<T: Resource>(&self) -> bool {
+        self.resources.read().contains::<T>()
     }
 
-    pub fn insert_resource<T: Component>(&self, component: T) {
-        self.insert_component(self.resource_entity(), component)
+    pub fn insert_resource<T: Resource>(&self, component: T) {
+        self.resources.write().insert(component)
     }
 
-    pub fn remove_resource<T: Component>(&self) -> Option<T> {
-        self.remove_component::<T>(self.resource_entity())
+    pub fn remove_resource<T: Resource>(&self) -> Option<T> {
+        self.resources.write().remove::<T>()
     }
 
     pub fn root_scene(&self) -> Ref<Scene> {

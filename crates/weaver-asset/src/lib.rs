@@ -6,8 +6,11 @@ use std::{
 
 use loader::AssetLoader;
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{prelude::Component, storage::SparseSet};
-use weaver_util::prelude::{anyhow, impl_downcast, Downcast, Error, Result};
+use weaver_ecs::{
+    prelude::{Component, Resource},
+    storage::SparseSet,
+};
+use weaver_util::prelude::{anyhow, impl_downcast, DowncastSync, Error, Result};
 
 pub mod loader;
 
@@ -16,7 +19,7 @@ pub mod prelude {
     pub use weaver_asset_macros::Asset;
 }
 
-pub trait Asset: Downcast {}
+pub trait Asset: DowncastSync {}
 impl_downcast!(Asset);
 
 #[derive(Debug, Component)]
@@ -98,7 +101,7 @@ impl<T: Asset> TryFrom<UntypedHandle> for Handle<T> {
     }
 }
 
-#[derive(Default, Component)]
+#[derive(Default, Resource)]
 pub struct Assets {
     next_handle_id: AtomicUsize,
     storage: SparseSet<Box<dyn Asset>>,

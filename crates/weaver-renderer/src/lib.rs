@@ -7,7 +7,7 @@ use mesh::MeshPlugin;
 use texture::TexturePlugin;
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
-    prelude::Component,
+    prelude::Resource,
     system::{Res, SystemStage},
 };
 use weaver_util::lock::Lock;
@@ -39,7 +39,7 @@ pub struct CurrentFrame {
     pub depth_view: Arc<wgpu::TextureView>,
 }
 
-#[derive(Component)]
+#[derive(Resource)]
 pub struct Renderer {
     instance: Option<wgpu::Instance>,
     adapter: Option<wgpu::Adapter>,

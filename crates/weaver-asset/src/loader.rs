@@ -1,18 +1,18 @@
-use std::{path::Path, rc::Rc};
+use std::{path::Path, sync::Arc};
 
-use weaver_ecs::{prelude::Component, world::World};
+use weaver_ecs::{prelude::Resource, world::World};
 use weaver_util::prelude::*;
 
 use crate::{Asset, Assets, Handle, UntypedHandle};
 
-#[derive(Component)]
+#[derive(Resource)]
 pub struct AssetLoader {
-    world: Rc<World>,
-    loaders: Vec<Box<dyn LoadAsset>>,
+    world: Arc<World>,
+    loaders: Vec<Arc<dyn LoadAsset>>,
 }
 
 impl AssetLoader {
-    pub fn new(world: Rc<World>) -> Self {
+    pub fn new(world: Arc<World>) -> Self {
         Self {
             world,
             loaders: Vec::new(),
@@ -23,7 +23,7 @@ impl AssetLoader {
     where
         L: LoadAsset + 'static,
     {
-        self.loaders.push(Box::new(loader));
+        self.loaders.push(Arc::new(loader));
     }
 
     pub fn load<T: Asset>(&self, path: impl AsRef<Path>) -> Result<Handle<T>> {
@@ -49,6 +49,6 @@ impl AssetLoader {
     }
 }
 
-pub trait LoadAsset {
+pub trait LoadAsset: Send + Sync {
     fn load_asset(&self, path: &Path, assets: &mut Assets) -> Result<UntypedHandle>;
 }

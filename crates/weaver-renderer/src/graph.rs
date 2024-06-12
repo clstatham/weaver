@@ -3,7 +3,6 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     ops::{Index, IndexMut},
-    rc::Rc,
     sync::Arc,
 };
 
@@ -21,15 +20,15 @@ pub struct RenderEdge {
     pub to_slot: usize,
 }
 
-pub trait Render: 'static {
+pub trait Render: 'static + Send + Sync {
     #[allow(unused_variables)]
-    fn prepare(&self, world: Rc<World>, renderer: &Renderer) -> anyhow::Result<()> {
+    fn prepare(&self, world: Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
         Ok(())
     }
 
     fn render(
         &self,
-        world: Rc<World>,
+        world: Arc<World>,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>>;
@@ -44,7 +43,7 @@ pub enum Slot {
 
 pub struct RenderNode {
     name: String,
-    render: Lock<Box<dyn Render>>,
+    render: Arc<Lock<Box<dyn Render>>>,
     render_type_id: TypeId,
 }
 
@@ -60,7 +59,7 @@ impl RenderNode {
     pub fn new<T: Render>(name: &str, render: T) -> Self {
         Self {
             name: name.to_string(),
-            render: Lock::new(Box::new(render)),
+            render: Arc::new(Lock::new(Box::new(render))),
             render_type_id: TypeId::of::<T>(),
         }
     }
@@ -73,13 +72,13 @@ impl RenderNode {
         self.render_type_id
     }
 
-    pub fn prepare(&self, world: Rc<World>, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn prepare(&self, world: Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
         self.render.write().prepare(world, renderer)
     }
 
     pub fn render(
         &self,
-        world: Rc<World>,
+        world: Arc<World>,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>> {
@@ -92,7 +91,7 @@ pub struct StartNode;
 impl Render for StartNode {
     fn render(
         &self,
-        _world: Rc<World>,
+        _world: Arc<World>,
         renderer: &Renderer,
         _input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>> {
@@ -110,7 +109,7 @@ pub struct EndNode;
 impl Render for EndNode {
     fn render(
         &self,
-        _world: Rc<World>,
+        _world: Arc<World>,
         _renderer: &Renderer,
         input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>> {
@@ -215,7 +214,7 @@ impl RenderGraph {
         self.node_types.get(&TypeId::of::<T>()).copied()
     }
 
-    pub fn prepare(&self, world: Rc<World>, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn prepare(&self, world: Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
         for node in self.graph.node_indices() {
             let render_node = &self.graph[node];
             render_node.prepare(world.clone(), renderer)?;
@@ -224,7 +223,7 @@ impl RenderGraph {
         Ok(())
     }
 
-    pub fn render(&self, world: Rc<World>, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn render(&self, world: Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
         let mut output_cache: HashMap<NodeIndex, Vec<Slot>> =
             HashMap::with_capacity(self.graph.node_count());
 

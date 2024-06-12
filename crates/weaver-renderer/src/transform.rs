@@ -5,7 +5,7 @@ use weaver_core::transform::Transform;
 use weaver_ecs::{entity::Entity, prelude::Component, world::World};
 
 use crate::{
-    bind_group::{ComponentBindGroupPlugin, CreateBindGroup},
+    bind_group::{CreateComponentBindGroup, ComponentBindGroupPlugin},
     buffer::GpuBuffer,
     extract::{RenderComponent, RenderComponentPlugin},
     Renderer,
@@ -56,7 +56,7 @@ impl RenderComponent for GpuTransform {
     }
 }
 
-impl CreateBindGroup for GpuTransform {
+impl CreateComponentBindGroup for GpuTransform {
     fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
     where
         Self: Sized,

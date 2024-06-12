@@ -21,7 +21,7 @@ members = [
     "crates/weaver-reflect-macros",
     "crates/weaver-asset-macros",
     "crates/weaver-egui",
-    "crates/weaver-ecs-macros",
+    "crates/weaver-ecs-macros", "crates/weaver-event",
 ]
 
 [features]

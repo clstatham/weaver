@@ -1,14 +1,14 @@
-use std::{rc::Rc, sync::Arc};
+use std::sync::Arc;
 
 use plugin::Plugin;
 use rustc_hash::FxHashMap;
 use weaver_ecs::{
     bundle::Bundle,
-    component::Component,
+    component::Resource,
     entity::Entity,
     scene::Scene,
-    storage::{Mut, Ref},
-    system::{FunctionSystem, System, SystemStage},
+    storage::Ref,
+    system::{FunctionSystem, Res, ResMut, System, SystemStage},
     world::World,
 };
 use weaver_reflect::registry::{TypeRegistry, Typed};
@@ -35,7 +35,7 @@ where
 }
 
 pub struct App {
-    world: Rc<World>,
+    world: Arc<World>,
     systems: SharedLock<FxHashMap<SystemStage, Vec<Arc<dyn System>>>>,
     plugins: SharedLock<Vec<Box<dyn Plugin>>>,
     runner: Option<Box<dyn Runner>>,
@@ -77,16 +77,16 @@ impl App {
             .register::<T>();
     }
 
-    pub fn add_resource<T: Component>(&self, resource: T) -> &Self {
+    pub fn add_resource<T: Resource>(&self, resource: T) -> &Self {
         self.world.insert_resource(resource);
         self
     }
 
-    pub fn get_resource<T: Component>(&self) -> Option<Ref<T>> {
+    pub fn get_resource<T: Resource>(&self) -> Option<Res<T>> {
         self.world.get_resource::<T>()
     }
 
-    pub fn get_resource_mut<T: Component>(&self) -> Option<Mut<T>> {
+    pub fn get_resource_mut<T: Resource>(&self) -> Option<ResMut<T>> {
         self.world.get_resource_mut::<T>()
     }
 
@@ -94,7 +94,7 @@ impl App {
         self.world().spawn(bundle)
     }
 
-    pub fn world(&self) -> &Rc<World> {
+    pub fn world(&self) -> &Arc<World> {
         &self.world
     }
 

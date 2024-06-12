@@ -10,7 +10,7 @@ use weaver_core::{color::Color, texture::Texture};
 use weaver_ecs::prelude::{Component, World};
 use weaver_renderer::{
     asset::{ExtractRenderAssetPlugin, RenderAsset},
-    bind_group::{AssetBindGroupPlugin, CreateBindGroup},
+    bind_group::{AssetBindGroupPlugin, CreateComponentBindGroup},
     buffer::GpuBuffer,
     prelude::*,
     texture::GpuTexture,
@@ -289,7 +289,7 @@ impl RenderAsset for GpuMaterial {
     }
 }
 
-impl CreateBindGroup for GpuMaterial {
+impl CreateComponentBindGroup for GpuMaterial {
     fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
     where
         Self: Sized,

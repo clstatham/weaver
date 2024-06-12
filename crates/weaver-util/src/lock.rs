@@ -7,7 +7,7 @@ use lock_api::{ArcRwLockReadGuard, ArcRwLockWriteGuard};
 use parking_lot::*;
 
 #[derive(Debug, Default)]
-pub struct Lock<T: ?Sized>(RwLock<T>);
+pub struct Lock<T>(RwLock<T>);
 
 impl<T> Lock<T> {
     pub fn new(value: T) -> Self {
@@ -279,7 +279,7 @@ impl<'a, T: PartialEq> PartialEq for MapWrite<'a, T> {
 #[derive(Debug)]
 pub struct ArcRead<T: ?Sized>(ArcRwLockReadGuard<RawRwLock, T>);
 
-impl<T> ArcRead<T> {
+impl<T: ?Sized> ArcRead<T> {
     pub fn new(lock: &SharedLock<T>) -> Self {
         Self(lock.0.read_arc())
     }
@@ -289,7 +289,7 @@ impl<T> ArcRead<T> {
     }
 }
 
-impl<T> Deref for ArcRead<T> {
+impl<T: ?Sized> Deref for ArcRead<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -300,7 +300,7 @@ impl<T> Deref for ArcRead<T> {
 #[derive(Debug)]
 pub struct ArcWrite<T: ?Sized>(ArcRwLockWriteGuard<RawRwLock, T>);
 
-impl<T> ArcWrite<T> {
+impl<T: ?Sized> ArcWrite<T> {
     pub fn new(lock: &SharedLock<T>) -> Self {
         Self(lock.0.write_arc())
     }
@@ -310,7 +310,7 @@ impl<T> ArcWrite<T> {
     }
 }
 
-impl<T> Deref for ArcWrite<T> {
+impl<T: ?Sized> Deref for ArcWrite<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -318,7 +318,7 @@ impl<T> Deref for ArcWrite<T> {
     }
 }
 
-impl<T> DerefMut for ArcWrite<T> {
+impl<T: ?Sized> DerefMut for ArcWrite<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
@@ -354,19 +354,19 @@ impl<T> SharedLock<T> {
     }
 }
 
-impl<T> Clone for SharedLock<T> {
+impl<T: ?Sized> Clone for SharedLock<T> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<T: Clone> From<T> for SharedLock<T> {
+impl<T> From<T> for SharedLock<T> {
     fn from(value: T) -> Self {
         Self::new(value)
     }
 }
 
-impl<T> Deref for SharedLock<T> {
+impl<T: ?Sized> Deref for SharedLock<T> {
     type Target = RwLock<T>;
 
     fn deref(&self) -> &Self::Target {

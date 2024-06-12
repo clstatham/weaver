@@ -10,3 +10,4 @@ winit = "0.29.15"
 weaver-app = { path = "../weaver-app" }
 weaver-ecs = { path = "../weaver-ecs" }
 weaver-core = { path = "../weaver-core" }
+weaver-util = { path = "../weaver-util" }

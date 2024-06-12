@@ -1,13 +1,9 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use weaver::{
     prelude::*,
     weaver_app::App,
-    weaver_core::{
-        input::InputPlugin,
-        mesh::Mesh,
-        time::{Time, TimePlugin},
-    },
+    weaver_core::{input::InputPlugin, mesh::Mesh, time::TimePlugin},
     weaver_ecs::{system::SystemStage, world::World},
     weaver_pbr::{camera::PbrCamera, material::Material, PbrPlugin},
     weaver_renderer::{camera::Camera, RendererPlugin},
@@ -41,7 +37,7 @@ fn main() -> Result<()> {
         .run()
 }
 
-fn setup(world: Rc<World>) -> Result<()> {
+fn setup(world: Arc<World>) -> Result<()> {
     let scene = world.root_scene();
     let _camera = scene.spawn((
         Camera::perspective_lookat(
@@ -65,7 +61,7 @@ fn setup(world: Rc<World>) -> Result<()> {
 
     let mesh = asset_loader.load::<Mesh>("assets/meshes/cube.obj")?;
 
-    let material = asset_loader.load::<Material>("assets/materials/wood_tiles.glb")?;
+    let material = asset_loader.load::<Material>("assets/materials/metal.glb")?;
     {
         let mut assets = world.get_resource_mut::<Assets>().unwrap();
         assets.get_mut::<Material>(material).unwrap().texture_scale = 20.0;

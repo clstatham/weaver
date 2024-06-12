@@ -1,8 +1,8 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{Asset, Assets, Handle, UntypedHandle};
-use weaver_ecs::{prelude::Component, system::SystemStage, world::World};
+use weaver_ecs::{prelude::Resource, system::SystemStage, world::World};
 
 use crate::Renderer;
 
@@ -27,7 +27,7 @@ pub trait RenderAsset: Asset {
         Self: Sized;
 }
 
-#[derive(Default, Component)]
+#[derive(Default, Resource)]
 pub struct ExtractedRenderAssets {
     assets: HashMap<UntypedHandle, UntypedHandle>,
 }
@@ -62,7 +62,7 @@ impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
     }
 }
 
-fn extract_render_asset<T: RenderAsset>(world: Rc<World>) -> anyhow::Result<()> {
+fn extract_render_asset<T: RenderAsset>(world: Arc<World>) -> anyhow::Result<()> {
     // query for handles to the base asset
     let query = world.query::<&Handle<T::BaseAsset>>();
 
@@ -112,7 +112,7 @@ fn extract_render_asset<T: RenderAsset>(world: Rc<World>) -> anyhow::Result<()> 
     Ok(())
 }
 
-fn update_render_asset<T: RenderAsset>(world: Rc<World>) -> anyhow::Result<()> {
+fn update_render_asset<T: RenderAsset>(world: Arc<World>) -> anyhow::Result<()> {
     let query = world.query::<(&Handle<T>, &Handle<T::BaseAsset>)>();
 
     for (_entity, (render_handle, base_handle)) in query.iter() {

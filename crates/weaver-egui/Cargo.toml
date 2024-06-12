@@ -5,8 +5,11 @@ edition = "2021"
 
 [dependencies]
 egui = "0.27.2"
-egui-wgpu = "0.27.2"
-egui-winit = "0.27.2"
+egui-wgpu = { version = "0.27.2", features = ["winit"] }
+egui-winit = { version = "0.27.2", default-features = false, features = [
+    "wayland",
+    "x11",
+] }
 
 weaver-util = { path = "../weaver-util" }
 weaver-renderer = { path = "../weaver-renderer" }

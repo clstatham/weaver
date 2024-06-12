@@ -1,10 +1,10 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_core::color::Color;
 use weaver_ecs::{entity::Entity, prelude::Component, system::SystemStage, world::World};
 use weaver_renderer::{
-    bind_group::BindGroup,
+    bind_group::ComponentBindGroup,
     camera::{Camera, GpuCamera},
     clear_color::ClearColor,
     graph::{EndNode, Render, RenderNode, Slot, StartNode},
@@ -19,18 +19,18 @@ struct PbrCameraBindGroupNode {
 }
 
 impl Render for PbrCameraBindGroupNode {
-    fn prepare(&self, _world: Rc<World>, _renderer: &Renderer) -> Result<()> {
+    fn prepare(&self, _world: Arc<World>, _renderer: &Renderer) -> Result<()> {
         Ok(())
     }
 
     fn render(
         &self,
-        world: Rc<World>,
+        world: Arc<World>,
         _renderer: &Renderer,
         _input_slots: &[Slot],
     ) -> Result<Vec<Slot>> {
         let bind_group = world
-            .get_component::<BindGroup<GpuCamera>>(self.camera_entity)
+            .get_component::<ComponentBindGroup<GpuCamera>>(self.camera_entity)
             .unwrap();
         Ok(vec![Slot::BindGroup(bind_group.bind_group().clone())])
     }
@@ -57,7 +57,7 @@ impl Plugin for PbrCameraPlugin {
     }
 }
 
-fn prepare_pbr_cameras(world: Rc<World>) -> Result<()> {
+fn prepare_pbr_cameras(world: Arc<World>) -> Result<()> {
     let camera_query = world.query::<(&mut Camera, &PbrCamera)>();
 
     for (camera_entity, (mut base_camera, pbr_camera)) in camera_query.iter() {
@@ -112,7 +112,7 @@ fn prepare_pbr_cameras(world: Rc<World>) -> Result<()> {
     Ok(())
 }
 
-fn render_pbr_cameras(world: Rc<World>) -> Result<()> {
+fn render_pbr_cameras(world: Arc<World>) -> Result<()> {
     let camera_query = world.query::<&mut Camera>();
 
     for (_entity, mut camera) in camera_query.iter() {

@@ -1,12 +1,12 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use weaver_app::{plugin::Plugin, App};
 use wgpu::util::DeviceExt;
 
 use weaver_core::{color::Color, prelude::Vec3};
-use weaver_ecs::prelude::{Component, World};
+use weaver_ecs::prelude::{Component, Resource, World};
 use weaver_renderer::{
-    bind_group::{BindGroup, CreateBindGroup, ResourceBindGroupPlugin},
+    bind_group::{CreateResourceBindGroup, ResourceBindGroup, ResourceBindGroupPlugin},
     buffer::GpuBuffer,
     extract::{RenderResource, RenderResourcePlugin},
     graph::Slot,
@@ -77,13 +77,13 @@ impl From<Vec<PointLightUniform>> for PointLightArrayUniform {
     }
 }
 
-#[derive(Component)]
+#[derive(Resource)]
 pub struct GpuPointLightArray {
     pub buffer: GpuBuffer,
 }
 
 impl RenderResource for GpuPointLightArray {
-    fn extract_render_resource(world: Rc<World>, renderer: &Renderer) -> Option<Self>
+    fn extract_render_resource(world: Arc<World>, renderer: &Renderer) -> Option<Self>
     where
         Self: Sized,
     {
@@ -110,7 +110,7 @@ impl RenderResource for GpuPointLightArray {
         })
     }
 
-    fn update_render_resource(&mut self, world: Rc<World>, renderer: &Renderer) -> Result<()> {
+    fn update_render_resource(&mut self, world: Arc<World>, renderer: &Renderer) -> Result<()> {
         let point_lights = world.query::<&PointLight>();
 
         let point_light_uniforms: Vec<PointLightUniform> = point_lights
@@ -127,7 +127,7 @@ impl RenderResource for GpuPointLightArray {
     }
 }
 
-impl CreateBindGroup for GpuPointLightArray {
+impl CreateResourceBindGroup for GpuPointLightArray {
     fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
     where
         Self: Sized,
@@ -175,12 +175,12 @@ pub struct PointLightArrayNode;
 impl Render for PointLightArrayNode {
     fn render(
         &self,
-        world: Rc<World>,
+        world: Arc<World>,
         _renderer: &Renderer,
         _input_slots: &[Slot],
     ) -> Result<Vec<Slot>> {
         let bind_group = world
-            .get_resource::<BindGroup<GpuPointLightArray>>()
+            .get_resource::<ResourceBindGroup<GpuPointLightArray>>()
             .expect("Point Light Array Bind Group resource not present");
 
         Ok(vec![Slot::BindGroup(bind_group.bind_group().clone())])

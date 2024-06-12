@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use petgraph::prelude::*;
 use weaver_ecs_macros::Component;
@@ -16,14 +16,14 @@ use crate::{
 
 #[derive(Component)]
 pub struct Scene {
-    world: Rc<World>,
+    world: Arc<World>,
     root_entity: Entity,
     root: NodeIndex,
     graph: Lock<StableDiGraph<Node, RelationshipConnection>>,
 }
 
 impl Scene {
-    pub fn new(world: Rc<World>) -> Self {
+    pub fn new(world: Arc<World>) -> Self {
         let root_entity = world.create_entity();
         let mut graph = StableDiGraph::new();
         let root = graph.add_node(Node {
@@ -39,7 +39,7 @@ impl Scene {
         }
     }
 
-    pub fn world(&self) -> &Rc<World> {
+    pub fn world(&self) -> &Arc<World> {
         &self.world
     }
 
@@ -98,7 +98,7 @@ impl Scene {
         self.graph.write().remove_node(node.scene_index);
     }
 
-    pub fn remove_relationship(&mut self, from: Node, to: Node) -> Option<Box<dyn Relationship>> {
+    pub fn remove_relationship(&mut self, from: Node, to: Node) -> Option<Arc<dyn Relationship>> {
         let from = from.scene_index;
         let to = to.scene_index;
         if let Some(edge) = self.graph.read().find_edge(from, to) {

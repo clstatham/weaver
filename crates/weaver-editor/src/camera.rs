@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use weaver::prelude::*;
 
@@ -106,7 +106,7 @@ impl FlyCameraController {
     }
 }
 
-pub fn update_camera(world: Rc<World>) -> Result<()> {
+pub fn update_camera(world: Arc<World>) -> Result<()> {
     let time = world.get_resource::<Time>().unwrap();
     let input = world.get_resource::<Input>().unwrap();
     // let query = world.dyn_query(

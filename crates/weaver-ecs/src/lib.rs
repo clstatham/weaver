@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_bound_locations)] // downcast-rs thing
+
 pub mod bundle;
 pub mod component;
 pub mod entity;

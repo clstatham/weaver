@@ -1,11 +1,11 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use egui::{Context, FullOutput};
 use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::{winit, State};
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
-    prelude::Component,
+    prelude::Resource,
     system::{Res, SystemStage},
     world::World,
 };
@@ -18,7 +18,7 @@ pub mod prelude {
     pub use egui;
 }
 
-#[derive(Component)]
+#[derive(Resource)]
 pub struct EguiContext {
     state: SharedLock<State>,
     renderer: SharedLock<Renderer>,
@@ -191,7 +191,7 @@ fn end_frame(egui_context: Res<EguiContext>) -> Result<()> {
     Ok(())
 }
 
-fn render(world: Rc<World>) -> Result<()> {
+fn render(world: Arc<World>) -> Result<()> {
     let renderer = world.get_resource::<weaver_renderer::Renderer>().unwrap();
     let mut egui_context = world.get_resource_mut::<EguiContext>().unwrap();
     let window = world.get_resource::<Window>().unwrap();

@@ -1,8 +1,12 @@
-use std::{any::type_name, rc::Rc};
+use std::{any::type_name, sync::Arc};
 
 use weaver_app::{plugin::Plugin, prelude::App};
 use weaver_ecs::{
-    component::Component, entity::Entity, query::QueryFilter, system::SystemStage, world::World,
+    component::{Component, Resource},
+    entity::Entity,
+    query::QueryFilter,
+    system::SystemStage,
+    world::World,
 };
 
 use crate::Renderer;
@@ -36,7 +40,7 @@ impl<T: RenderComponent> Plugin for RenderComponentPlugin<T> {
     }
 }
 
-fn extract_render_components<T: RenderComponent>(world: Rc<World>) -> anyhow::Result<()> {
+fn extract_render_components<T: RenderComponent>(world: Arc<World>) -> anyhow::Result<()> {
     let query = world.query::<T::ExtractQuery<'_>>();
     let renderer = world
         .get_resource::<Renderer>()
@@ -54,7 +58,7 @@ fn extract_render_components<T: RenderComponent>(world: Rc<World>) -> anyhow::Re
     Ok(())
 }
 
-fn update_render_components<T: RenderComponent>(world: Rc<World>) -> anyhow::Result<()> {
+fn update_render_components<T: RenderComponent>(world: Arc<World>) -> anyhow::Result<()> {
     let query = world.query::<T::ExtractQuery<'_>>();
     let renderer = world
         .get_resource::<Renderer>()
@@ -69,13 +73,13 @@ fn update_render_components<T: RenderComponent>(world: Rc<World>) -> anyhow::Res
     Ok(())
 }
 
-pub trait RenderResource: Component {
-    fn extract_render_resource(world: Rc<World>, renderer: &Renderer) -> Option<Self>
+pub trait RenderResource: Resource {
+    fn extract_render_resource(world: Arc<World>, renderer: &Renderer) -> Option<Self>
     where
         Self: Sized;
     fn update_render_resource(
         &mut self,
-        world: Rc<World>,
+        world: Arc<World>,
         renderer: &Renderer,
     ) -> anyhow::Result<()>;
 }
@@ -96,7 +100,7 @@ impl<T: RenderResource> Plugin for RenderResourcePlugin<T> {
     }
 }
 
-fn extract_render_resource<T: RenderResource>(world: Rc<World>) -> anyhow::Result<()> {
+fn extract_render_resource<T: RenderResource>(world: Arc<World>) -> anyhow::Result<()> {
     if !world.has_resource::<T>() {
         let renderer = world
             .get_resource::<Renderer>()
@@ -112,7 +116,7 @@ fn extract_render_resource<T: RenderResource>(world: Rc<World>) -> anyhow::Resul
     Ok(())
 }
 
-fn update_render_resource<T: RenderResource>(world: Rc<World>) -> anyhow::Result<()> {
+fn update_render_resource<T: RenderResource>(world: Arc<World>) -> anyhow::Result<()> {
     let renderer = world
         .get_resource::<Renderer>()
         .expect("Renderer resource not present before updating render resource");
