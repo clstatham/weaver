@@ -1,11 +1,7 @@
 use std::path::Path;
 
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{
-    loader::{AssetLoader, LoadAsset},
-    prelude::Asset,
-    Assets, Handle, UntypedHandle,
-};
+use weaver_asset::{prelude::Asset, Assets, Handle};
 use weaver_core::{color::Color, texture::Texture};
 use weaver_ecs::prelude::{Component, World};
 use weaver_renderer::{
@@ -18,7 +14,6 @@ use weaver_renderer::{
 use weaver_util::prelude::*;
 use wgpu::util::DeviceExt;
 
-#[derive(Asset)]
 pub struct Material {
     pub diffuse: Color,
     pub diffuse_texture: Handle<Texture>,
@@ -37,8 +32,8 @@ pub struct Material {
 
 pub struct MaterialLoader;
 
-impl LoadAsset for MaterialLoader {
-    fn load_asset(&self, path: &Path, assets: &mut Assets) -> Result<UntypedHandle> {
+impl Asset for Material {
+    fn load(assets: &mut Assets, path: &Path) -> Result<Self> {
         let (document, _buffers, images) = gltf::import(path)?;
         if document.materials().count() != 1 {
             bail!("Material file must contain exactly one material");
@@ -135,7 +130,7 @@ impl LoadAsset for MaterialLoader {
             texture_scale: 1.0,
         };
 
-        Ok(assets.insert(material).into())
+        Ok(material)
     }
 }
 
@@ -149,7 +144,7 @@ struct MaterialMetaUniform {
     texture_scale: f32,
 }
 
-#[derive(Asset, Component)]
+#[derive(Component)]
 pub struct GpuMaterial {
     pub meta: GpuBuffer,
 
@@ -161,6 +156,15 @@ pub struct GpuMaterial {
     pub metallic_roughness_texture_sampler: wgpu::Sampler,
     pub ao_texture: GpuTexture,
     pub ao_texture_sampler: wgpu::Sampler,
+}
+
+impl Asset for GpuMaterial {
+    fn load(_assets: &mut Assets, _path: &std::path::Path) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        bail!("GpuMaterial cannot be loaded from a file")
+    }
 }
 
 impl RenderAsset for GpuMaterial {
@@ -449,9 +453,6 @@ impl Plugin for MaterialPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_plugin(ExtractRenderAssetPlugin::<GpuMaterial>::default())?;
         app.add_plugin(AssetBindGroupPlugin::<GpuMaterial>::default())?;
-        app.get_resource_mut::<AssetLoader>()
-            .unwrap()
-            .add_loader(MaterialLoader);
         Ok(())
     }
 }

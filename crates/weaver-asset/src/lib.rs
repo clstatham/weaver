@@ -1,6 +1,5 @@
-use std::sync::atomic::AtomicUsize;
+use std::{path::Path, sync::atomic::AtomicUsize};
 
-use loader::AssetLoader;
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
     prelude::{Component, Resource},
@@ -8,14 +7,16 @@ use weaver_ecs::{
 };
 use weaver_util::prelude::{anyhow, impl_downcast, DowncastSync, Error, Result};
 
-pub mod loader;
-
 pub mod prelude {
-    pub use crate::{loader::AssetLoader, Asset, AssetPlugin, Assets, Handle};
+    pub use crate::{Asset, AssetPlugin, Assets, Handle};
     pub use weaver_asset_macros::Asset;
 }
 
-pub trait Asset: DowncastSync {}
+pub trait Asset: DowncastSync {
+    fn load(assets: &mut Assets, path: &std::path::Path) -> Result<Self>
+    where
+        Self: Sized;
+}
 impl_downcast!(Asset);
 
 #[derive(Debug, Component)]
@@ -108,6 +109,11 @@ impl Assets {
         Self::default()
     }
 
+    pub fn load<T: Asset>(&mut self, path: impl AsRef<Path>) -> Result<Handle<T>> {
+        let asset = T::load(self, path.as_ref())?;
+        Ok(self.insert(asset))
+    }
+
     pub fn insert<T: Asset>(&mut self, asset: T) -> Handle<T> {
         let id = self
             .next_handle_id
@@ -145,7 +151,6 @@ pub struct AssetPlugin;
 impl Plugin for AssetPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_resource(Assets::new());
-        app.add_resource(AssetLoader::new(app.world().clone()));
         Ok(())
     }
 }

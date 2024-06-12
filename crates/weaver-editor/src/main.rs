@@ -61,21 +61,19 @@ fn setup(world: &Arc<World>) -> Result<()> {
         .look_at(Vec3::new(10.0, 10.0, 10.0), Vec3::ZERO, Vec3::Y),
     ));
 
-    let asset_loader = world.get_resource::<AssetLoader>().unwrap();
+    let mut assets = world.get_resource_mut::<Assets>().unwrap();
 
-    let mesh = asset_loader.load::<Mesh>("assets/meshes/cube.obj")?;
+    let mesh = assets.load::<Mesh>("assets/meshes/cube.obj")?;
 
-    let material = asset_loader.load::<Material>("assets/materials/metal.glb")?;
+    let material = assets.load::<Material>("assets/materials/metal.glb")?;
     {
-        let mut assets = world.get_resource_mut::<Assets>().unwrap();
         let material = assets.get_mut::<Material>(material).unwrap();
         material.texture_scale = 100.0;
         material.diffuse = Color::BLACK;
     }
 
-    let material2 = asset_loader.load::<Material>("assets/materials/metal.glb")?;
+    let material2 = assets.load::<Material>("assets/materials/metal.glb")?;
     {
-        let mut assets = world.get_resource_mut::<Assets>().unwrap();
         let material = assets.get_mut::<Material>(material2).unwrap();
         material.texture_scale = 20.0;
         material.diffuse = Color::RED;

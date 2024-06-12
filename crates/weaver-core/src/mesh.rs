@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use glam::{Vec2, Vec3};
-use weaver_asset::{loader::LoadAsset, prelude::Asset};
+use weaver_asset::{prelude::Asset, Assets};
 use weaver_reflect::prelude::Reflect;
 use weaver_util::prelude::{bail, Result};
 
@@ -16,7 +16,7 @@ pub struct Vertex {
     pub tex_coords: Vec2,
 }
 
-#[derive(Asset, Clone, Reflect)]
+#[derive(Clone, Reflect)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
@@ -45,14 +45,9 @@ impl Mesh {
 
 pub struct MeshLoader;
 
-impl LoadAsset for MeshLoader {
-    fn load_asset(
-        &self,
-        path: &std::path::Path,
-        assets: &mut weaver_asset::Assets,
-    ) -> Result<weaver_asset::UntypedHandle> {
-        let mesh = load_obj(path)?;
-        Ok(assets.insert(mesh).into())
+impl Asset for Mesh {
+    fn load(_assets: &mut Assets, path: &Path) -> Result<Self> {
+        load_obj(path)
     }
 }
 

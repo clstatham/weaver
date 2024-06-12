@@ -1,5 +1,6 @@
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
+use anyhow::bail;
 use weaver_app::{plugin::Plugin, system::SystemStage, App};
 use weaver_asset::{prelude::Asset, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
@@ -23,10 +24,16 @@ pub trait CreateResourceBindGroup: Resource {
     fn create_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup;
 }
 
-#[derive(Component, Asset, Clone)]
+#[derive(Component, Clone)]
 pub struct ComponentBindGroup<T: CreateComponentBindGroup> {
     bind_group: Arc<wgpu::BindGroup>,
     _marker: std::marker::PhantomData<T>,
+}
+
+impl<T: CreateComponentBindGroup> Asset for ComponentBindGroup<T> {
+    fn load(_assets: &mut Assets, _path: &std::path::Path) -> anyhow::Result<Self> {
+        bail!("ComponentBindGroup cannot be loaded from a file")
+    }
 }
 
 impl<T: CreateComponentBindGroup> ComponentBindGroup<T> {
