@@ -15,6 +15,9 @@ use weaver_egui::prelude::*;
 
 pub mod camera;
 
+#[derive(Component)]
+struct Floor;
+
 fn main() -> Result<()> {
     env_logger::init();
     App::new()?
@@ -33,6 +36,7 @@ fn main() -> Result<()> {
         })?
         .add_system(setup, SystemStage::Init)?
         .add_system(camera::update_camera, SystemStage::Update)?
+        .add_system(update, SystemStage::Update)?
         .add_system(ui, SystemStage::Ui)?
         .run()
 }
@@ -67,6 +71,12 @@ fn setup(world: &Arc<World>) -> Result<()> {
         assets.get_mut::<Material>(material).unwrap().texture_scale = 20.0;
     }
 
+    let material2 = asset_loader.load::<Material>("assets/materials/wood_tiles.glb")?;
+    {
+        let mut assets = world.get_resource_mut::<Assets>().unwrap();
+        assets.get_mut::<Material>(material2).unwrap().texture_scale = 1.0;
+    }
+
     let _ground = scene.spawn((
         mesh,
         material,
@@ -75,14 +85,59 @@ fn setup(world: &Arc<World>) -> Result<()> {
             rotation: Quat::IDENTITY,
             scale: Vec3::new(20.0, 1.0, 20.0),
         },
+        Floor,
     ));
 
-    let _light = scene.spawn(PointLight {
-        color: Color::WHITE,
-        intensity: 100.0,
-        radius: 100.0,
-        position: Vec3::new(0.0, 10.0, 0.0),
-    });
+    // let _light = scene.spawn(PointLight {
+    //     color: Color::WHITE,
+    //     intensity: 100.0,
+    //     radius: 100.0,
+    //     position: Vec3::new(0.0, 10.0, 0.0),
+    // });
+
+    // circle of lights
+    const COLORS: [Color; 6] = [
+        Color::RED,
+        Color::GREEN,
+        Color::BLUE,
+        Color::YELLOW,
+        Color::CYAN,
+        Color::MAGENTA,
+    ];
+    for i in 0..6 {
+        let angle = i as f32 / 6.0 * std::f32::consts::PI * 2.0;
+        let _light = scene.spawn(PointLight {
+            color: COLORS[i],
+            intensity: 100.0,
+            radius: 100.0,
+            position: Vec3::new(angle.cos() * 10.0, 10.0, angle.sin() * 10.0),
+        });
+    }
+
+    // spawn some meshes
+    for i in 0..6 {
+        let angle = i as f32 / 6.0 * std::f32::consts::PI * 2.0;
+        let _mesh = scene.spawn((
+            mesh,
+            material2,
+            Transform {
+                translation: Vec3::new(angle.cos() * 5.0, 2.0, angle.sin() * 5.0),
+                rotation: Quat::IDENTITY,
+                scale: Vec3::splat(0.5),
+            },
+        ));
+    }
+
+    Ok(())
+}
+
+fn update(world: &Arc<World>) -> Result<()> {
+    let time = world.get_resource::<Time>().unwrap();
+    let query = world.query_filtered::<&mut Transform, Without<Floor>>();
+    for (_entity, mut transform) in query.iter() {
+        let angle = time.total_time * 0.5;
+        transform.rotation = Quat::from_rotation_y(angle);
+    }
 
     Ok(())
 }

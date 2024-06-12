@@ -147,8 +147,8 @@ impl App {
     }
 
     pub fn run_systems(&self, stage: SystemStage) -> anyhow::Result<()> {
-        let mut systems = self.systems.write();
-        if let Some(systems) = systems.get_mut(&stage) {
+        let systems = self.systems.read();
+        if let Some(systems) = systems.get(&stage) {
             let world = self.world.clone();
             let (tx, rx) = crossbeam_channel::unbounded();
             self.runtime

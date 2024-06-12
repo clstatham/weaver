@@ -229,6 +229,7 @@ impl SystemGraph {
     {
         let node = self.systems.add_node(system.into_system());
         self.index_cache.insert(TypeId::of::<S>(), node);
+        self.resolve_dependencies(100).unwrap();
         node
     }
 
@@ -240,6 +241,7 @@ impl SystemGraph {
         let parent = self.index_cache[&TypeId::of::<S1>()];
         let child = self.index_cache[&TypeId::of::<S2>()];
         self.systems.add_edge(parent, child, ());
+        self.resolve_dependencies(100).unwrap();
     }
 
     pub fn add_system_after<M1, M2, S1, S2>(&mut self, system: S1, _after: S2)
@@ -250,6 +252,7 @@ impl SystemGraph {
         let node = self.add_system(system);
         let parent = self.index_cache[&TypeId::of::<S2>()];
         self.systems.add_edge(parent, node, ());
+        self.resolve_dependencies(100).unwrap();
     }
 
     pub fn add_system_before<M1, M2, S1, S2>(&mut self, system: S1, _before: S2)
@@ -260,6 +263,7 @@ impl SystemGraph {
         let node = self.add_system(system);
         let child = self.index_cache[&TypeId::of::<S2>()];
         self.systems.add_edge(node, child, ());
+        self.resolve_dependencies(100).unwrap();
     }
 
     pub fn get_layers(&self) -> Vec<Vec<NodeIndex>> {
@@ -307,7 +311,7 @@ impl SystemGraph {
 
         let mut try_again = false;
 
-        // systems that access the same resources mutably cannot run concurrently
+        // only one system at a time can access a resource or component mutably
         for layer in layers {
             for i in 0..layer.len() {
                 for j in 0..i {
@@ -362,8 +366,7 @@ impl SystemGraph {
         Ok(())
     }
 
-    pub fn run(&mut self, world: &Arc<World>) -> anyhow::Result<()> {
-        self.resolve_dependencies(100)?;
+    pub fn run(&self, world: &Arc<World>) -> anyhow::Result<()> {
         let mut schedule = petgraph::visit::Topo::new(&self.systems);
         while let Some(node) = schedule.next(&self.systems) {
             let system = self.systems[node].clone();
@@ -372,9 +375,7 @@ impl SystemGraph {
         Ok(())
     }
 
-    pub fn run_concurrent(&mut self, world: &Arc<World>) -> anyhow::Result<()> {
-        self.resolve_dependencies(100)?;
-
+    pub fn run_concurrent(&self, world: &Arc<World>) -> anyhow::Result<()> {
         let layers = self.get_layers();
 
         // run each layer concurrently
