@@ -7,6 +7,7 @@ use weaver_ecs::{
     prelude::{Query, Resource, World},
     query::{QueryAccess, QueryFetch},
 };
+use weaver_event::{Event, EventChannel, EventRx, EventTx};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SystemStage {
@@ -90,6 +91,7 @@ where
                 .collect(),
         }
     }
+
     fn fetch(world: &Arc<World>) -> Option<Self> {
         Some(Query::new(world))
     }
@@ -104,6 +106,7 @@ impl<T: Resource> SystemParam for Res<T> {
             components_written: Vec::new(),
         }
     }
+
     fn fetch(world: &Arc<World>) -> Option<Self> {
         world.get_resource::<T>()
     }
@@ -118,8 +121,49 @@ impl<T: Resource> SystemParam for ResMut<T> {
             components_written: Vec::new(),
         }
     }
+
     fn fetch(world: &Arc<World>) -> Option<Self> {
         world.get_resource_mut::<T>()
+    }
+}
+
+impl<T: Event> SystemParam for EventTx<T> {
+    fn access() -> SystemAccess {
+        SystemAccess {
+            resources_read: vec![TypeId::of::<EventChannel<T>>()],
+            resources_written: Vec::new(),
+            components_read: Vec::new(),
+            components_written: Vec::new(),
+        }
+    }
+
+    fn fetch(world: &Arc<World>) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        world
+            .get_resource::<EventChannel<T>>()
+            .map(|channel| channel.tx())
+    }
+}
+
+impl<T: Event> SystemParam for EventRx<T> {
+    fn access() -> SystemAccess {
+        SystemAccess {
+            resources_read: Vec::new(),
+            resources_written: vec![TypeId::of::<EventChannel<T>>()],
+            components_read: Vec::new(),
+            components_written: Vec::new(),
+        }
+    }
+
+    fn fetch(world: &Arc<World>) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        world
+            .get_resource::<EventChannel<T>>()
+            .map(|channel| channel.rx())
     }
 }
 

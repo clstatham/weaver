@@ -21,7 +21,8 @@ members = [
     "crates/weaver-reflect-macros",
     "crates/weaver-asset-macros",
     "crates/weaver-egui",
-    "crates/weaver-ecs-macros", "crates/weaver-event",
+    "crates/weaver-ecs-macros",
+    "crates/weaver-event",
 ]
 
 [features]
@@ -45,6 +46,7 @@ weaver-pbr = { path = "crates/weaver-pbr" }
 weaver-core = { path = "crates/weaver-core" }
 weaver-asset = { path = "crates/weaver-asset" }
 weaver-reflect = { path = "crates/weaver-reflect" }
+weaver-event = { path = "crates/weaver-event" }
 
 [dev-dependencies]
 criterion = "0.5"

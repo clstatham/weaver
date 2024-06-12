@@ -67,14 +67,14 @@ fn setup(world: &Arc<World>) -> Result<()> {
 
     let material = assets.load::<Material>("assets/materials/metal.glb")?;
     {
-        let material = assets.get_mut::<Material>(material).unwrap();
+        let material = assets.get_mut(material).unwrap();
         material.texture_scale = 100.0;
         material.diffuse = Color::BLACK;
     }
 
     let material2 = assets.load::<Material>("assets/materials/metal.glb")?;
     {
-        let material = assets.get_mut::<Material>(material2).unwrap();
+        let material = assets.get_mut(material2).unwrap();
         material.texture_scale = 20.0;
         material.diffuse = Color::RED;
     }
@@ -98,7 +98,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
     // });
 
     // circle of lights
-    const COLORS: [Color; 6] = [
+    const COLORS: &[Color] = &[
         Color::RED,
         Color::GREEN,
         Color::BLUE,
@@ -106,10 +106,11 @@ fn setup(world: &Arc<World>) -> Result<()> {
         Color::CYAN,
         Color::MAGENTA,
     ];
-    for i in 0..6 {
-        let angle = i as f32 / 6.0 * std::f32::consts::PI * 2.0;
-        let _light = scene.spawn(PointLight {
-            color: COLORS[i],
+
+    for (i, color) in COLORS.iter().enumerate() {
+        let angle = i as f32 / (COLORS.len() as f32) * std::f32::consts::PI * 2.0;
+        let _light: Node = scene.spawn(PointLight {
+            color: *color,
             intensity: 100.0,
             radius: 100.0,
             position: Vec3::new(angle.cos() * 10.0, 10.0, angle.sin() * 10.0),

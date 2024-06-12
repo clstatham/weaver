@@ -2798,6 +2798,7 @@ dependencies = [
  "weaver-asset",
  "weaver-core",
  "weaver-ecs",
+ "weaver-event",
  "weaver-pbr",
  "weaver-reflect",
  "weaver-renderer",
@@ -2817,6 +2818,7 @@ dependencies = [
  "rayon",
  "rustc-hash",
  "weaver-ecs",
+ "weaver-event",
  "weaver-reflect",
  "weaver-util",
 ]

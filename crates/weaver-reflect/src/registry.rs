@@ -83,7 +83,7 @@ pub struct FieldInfo {
 
 pub trait List: Reflect {
     fn len_reflect(&self) -> usize;
-    fn is_empty(&self) -> bool {
+    fn is_empty_reflect(&self) -> bool {
         self.len_reflect() == 0
     }
     fn get_reflect(&self, index: usize) -> Option<&dyn Reflect>;
@@ -95,7 +95,7 @@ pub trait List: Reflect {
     fn remove_reflect(&mut self, index: usize) -> Option<Box<dyn Reflect>>;
     fn clear_reflect(&mut self);
     fn pop_reflect(&mut self) -> Option<Box<dyn Reflect>> {
-        if self.is_empty() {
+        if self.is_empty_reflect() {
             None
         } else {
             self.remove_reflect(self.len_reflect() - 1)

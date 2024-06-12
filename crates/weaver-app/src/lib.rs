@@ -11,6 +11,7 @@ use weaver_ecs::{
     storage::Ref,
     world::World,
 };
+use weaver_event::{Event, EventChannel};
 use weaver_reflect::registry::{TypeRegistry, Typed};
 use weaver_util::lock::SharedLock;
 
@@ -78,6 +79,11 @@ impl App {
         self.get_resource_mut::<TypeRegistry>()
             .unwrap()
             .register::<T>();
+    }
+
+    pub fn add_event<T: Event>(&mut self) -> &mut Self {
+        self.add_resource(EventChannel::<T>::new());
+        self
     }
 
     pub fn add_resource<T: Resource>(&self, resource: T) -> &Self {

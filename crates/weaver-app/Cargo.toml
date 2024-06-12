@@ -16,3 +16,4 @@ petgraph = "0.6.5"
 weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }
 weaver-reflect = { path = "../weaver-reflect" }
+weaver-event = { path = "../weaver-event" }
