@@ -1,11 +1,10 @@
 use std::{any::type_name, sync::Arc};
 
-use weaver_app::{plugin::Plugin, prelude::App};
+use weaver_app::{plugin::Plugin, prelude::App, system::SystemStage};
 use weaver_ecs::{
     component::{Component, Resource},
     entity::Entity,
     query::QueryFilter,
-    system::SystemStage,
     world::World,
 };
 
@@ -34,7 +33,7 @@ impl<T: RenderComponent> Default for RenderComponentPlugin<T> {
 
 impl<T: RenderComponent> Plugin for RenderComponentPlugin<T> {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_system(extract_render_components::<T>, SystemStage::PreRender)?;
+        app.add_system(extract_render_components::<T>, SystemStage::Extract)?;
         app.add_system(update_render_components::<T>, SystemStage::PreRender)?;
         Ok(())
     }
@@ -94,7 +93,7 @@ impl<T: RenderResource> Default for RenderResourcePlugin<T> {
 
 impl<T: RenderResource> Plugin for RenderResourcePlugin<T> {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_system(extract_render_resource::<T>, SystemStage::PreRender)?;
+        app.add_system(extract_render_resource::<T>, SystemStage::Extract)?;
         app.add_system(update_render_resource::<T>, SystemStage::PreRender)?;
         Ok(())
     }

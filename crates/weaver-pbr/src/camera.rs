@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use weaver_app::{plugin::Plugin, App};
+use weaver_app::{plugin::Plugin, system::SystemStage, App};
 use weaver_core::color::Color;
-use weaver_ecs::{entity::Entity, prelude::Component, system::SystemStage, world::World};
+use weaver_ecs::{entity::Entity, prelude::Component, world::World};
 use weaver_renderer::{
     bind_group::ComponentBindGroup,
     camera::{Camera, GpuCamera},

@@ -1,10 +1,7 @@
 use std::collections::HashMap;
 
-use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{
-    prelude::Resource,
-    system::{ResMut, SystemStage},
-};
+use weaver_app::{plugin::Plugin, system::SystemStage, App};
+use weaver_ecs::{component::ResMut, prelude::Resource};
 use weaver_util::prelude::Result;
 use winit::{
     event::{DeviceEvent, ElementState, WindowEvent},

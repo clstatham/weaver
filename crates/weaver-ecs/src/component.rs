@@ -1,19 +1,85 @@
-use std::any::TypeId;
+use std::{
+    any::TypeId,
+    ops::{Deref, DerefMut},
+};
 
 use anyhow::anyhow;
 use weaver_util::{
-    lock::SharedLock,
+    lock::{ArcRead, ArcWrite, SharedLock},
     prelude::{impl_downcast, DowncastSync},
     TypeIdMap,
 };
-
-use crate::prelude::{Res, ResMut};
 
 pub trait Component: DowncastSync {}
 impl_downcast!(sync Component);
 
 pub trait Resource: DowncastSync {}
 impl_downcast!(sync Resource);
+
+pub struct Res<T: Resource> {
+    value: ArcRead<Box<dyn Resource>>,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T: Resource> Res<T> {
+    pub fn new(value: ArcRead<Box<dyn Resource>>) -> Self {
+        Self {
+            value,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T> Deref for Res<T>
+where
+    T: Resource,
+{
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        (**self.value)
+            .downcast_ref()
+            .expect("Failed to downcast resource")
+    }
+}
+
+pub struct ResMut<T: Resource> {
+    value: ArcWrite<Box<dyn Resource>>,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T: Resource> ResMut<T> {
+    pub fn new(value: ArcWrite<Box<dyn Resource>>) -> Self {
+        Self {
+            value,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T> Deref for ResMut<T>
+where
+    T: Resource,
+{
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        (**self.value)
+            .downcast_ref()
+            .expect("Failed to downcast resource")
+    }
+}
+
+impl<T> DerefMut for ResMut<T>
+where
+    T: Resource,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        (**self.value)
+            .downcast_mut()
+            .expect("Failed to downcast resource")
+    }
+}
 
 #[derive(Default)]
 pub struct Resources {

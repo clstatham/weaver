@@ -2,19 +2,20 @@ use std::sync::Arc;
 
 use plugin::Plugin;
 use rustc_hash::FxHashMap;
+use system::{FunctionSystem, SystemGraph, SystemStage};
 use weaver_ecs::{
     bundle::Bundle,
-    component::Resource,
+    component::{Res, ResMut, Resource},
     entity::Entity,
     scene::Scene,
     storage::Ref,
-    system::{FunctionSystem, Res, ResMut, System, SystemStage},
     world::World,
 };
 use weaver_reflect::registry::{TypeRegistry, Typed};
 use weaver_util::lock::SharedLock;
 
 pub mod plugin;
+pub mod system;
 
 pub mod prelude {
     pub use crate::plugin::Plugin;
@@ -36,9 +37,10 @@ where
 
 pub struct App {
     world: Arc<World>,
-    systems: SharedLock<FxHashMap<SystemStage, Vec<Arc<dyn System>>>>,
+    systems: SharedLock<FxHashMap<SystemStage, SystemGraph>>,
     plugins: SharedLock<Vec<Box<dyn Plugin>>>,
     runner: Option<Box<dyn Runner>>,
+    runtime: rayon::ThreadPool,
 }
 
 impl App {
@@ -50,6 +52,7 @@ impl App {
             systems: SharedLock::new(FxHashMap::default()),
             plugins: SharedLock::new(Vec::new()),
             runner: None,
+            runtime: rayon::ThreadPoolBuilder::new().build().unwrap(),
         };
 
         this.add_resource(TypeRegistry::new());
@@ -111,16 +114,46 @@ impl App {
             .write()
             .entry(stage)
             .or_default()
-            .push(system.into_system());
+            .add_system(system);
+        Ok(self)
+    }
+
+    pub fn add_system_before<M1, M2>(
+        &mut self,
+        system: impl FunctionSystem<M1> + 'static,
+        before: impl FunctionSystem<M2> + 'static,
+        stage: SystemStage,
+    ) -> anyhow::Result<&mut Self> {
+        self.systems
+            .write()
+            .entry(stage)
+            .or_default()
+            .add_system_before(system, before);
+        Ok(self)
+    }
+
+    pub fn add_system_after<M1, M2>(
+        &mut self,
+        system: impl FunctionSystem<M1> + 'static,
+        after: impl FunctionSystem<M2> + 'static,
+        stage: SystemStage,
+    ) -> anyhow::Result<&mut Self> {
+        self.systems
+            .write()
+            .entry(stage)
+            .or_default()
+            .add_system_after(system, after);
         Ok(self)
     }
 
     pub fn run_systems(&self, stage: SystemStage) -> anyhow::Result<()> {
-        let systems = self.systems.read().get(&stage).cloned();
-        if let Some(systems) = systems {
-            for system in systems {
-                system.run(self.world().clone())?;
-            }
+        let mut systems = self.systems.write();
+        if let Some(systems) = systems.get_mut(&stage) {
+            let world = self.world.clone();
+            let (tx, rx) = crossbeam_channel::unbounded();
+            self.runtime
+                .install(move || tx.send(systems.run_concurrent(world)).unwrap());
+            rx.recv().unwrap()?;
         }
         Ok(())
     }

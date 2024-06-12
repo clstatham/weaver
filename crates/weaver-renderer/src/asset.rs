@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
-use weaver_app::{plugin::Plugin, App};
+use weaver_app::{plugin::Plugin, system::SystemStage, App};
 use weaver_asset::{Asset, Assets, Handle, UntypedHandle};
-use weaver_ecs::{prelude::Resource, system::SystemStage, world::World};
+use weaver_ecs::{prelude::Resource, world::World};
 
 use crate::Renderer;
 
@@ -56,7 +56,7 @@ impl<T: RenderAsset> Default for ExtractRenderAssetPlugin<T> {
 
 impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_system(extract_render_asset::<T>, SystemStage::PreRender)?;
+        app.add_system(extract_render_asset::<T>, SystemStage::Extract)?;
         app.add_system(update_render_asset::<T>, SystemStage::PreRender)?;
         Ok(())
     }

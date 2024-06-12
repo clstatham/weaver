@@ -5,11 +5,8 @@ use bind_group::ExtractedAssetBindGroups;
 use camera::CameraPlugin;
 use mesh::MeshPlugin;
 use texture::TexturePlugin;
-use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{
-    prelude::Resource,
-    system::{Res, SystemStage},
-};
+use weaver_app::{plugin::Plugin, system::SystemStage, App};
+use weaver_ecs::{component::Res, prelude::Resource};
 use weaver_util::lock::Lock;
 use weaver_winit::Window;
 

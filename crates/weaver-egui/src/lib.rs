@@ -3,12 +3,8 @@ use std::sync::Arc;
 use egui::{Context, FullOutput};
 use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::{winit, State};
-use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{
-    prelude::Resource,
-    system::{Res, SystemStage},
-    world::World,
-};
+use weaver_app::{plugin::Plugin, system::SystemStage, App};
+use weaver_ecs::{component::Res, prelude::Resource, world::World};
 use weaver_renderer::prelude::wgpu;
 use weaver_util::{lock::SharedLock, prelude::Result};
 use weaver_winit::Window;
@@ -192,10 +188,18 @@ fn end_frame(egui_context: Res<EguiContext>) -> Result<()> {
 }
 
 fn render(world: Arc<World>) -> Result<()> {
-    let renderer = world.get_resource::<weaver_renderer::Renderer>().unwrap();
-    let mut egui_context = world.get_resource_mut::<EguiContext>().unwrap();
-    let window = world.get_resource::<Window>().unwrap();
-    let (window_surface_view, _) = renderer.current_frame_view().unwrap();
+    let Some(renderer) = world.get_resource::<weaver_renderer::Renderer>() else {
+        return Ok(());
+    };
+    let Some(mut egui_context) = world.get_resource_mut::<EguiContext>() else {
+        return Ok(());
+    };
+    let Some(window) = world.get_resource::<Window>() else {
+        return Ok(());
+    };
+    let Some((window_surface_view, _)) = renderer.current_frame_view() else {
+        return Ok(());
+    };
     let screen_descriptor = ScreenDescriptor {
         pixels_per_point: 1.0,
         size_in_pixels: window.inner_size().into(),

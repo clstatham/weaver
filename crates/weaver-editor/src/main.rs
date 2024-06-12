@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use weaver::{
     prelude::*,
-    weaver_app::App,
+    weaver_app::{system::SystemStage, App},
     weaver_core::{input::InputPlugin, mesh::Mesh, time::TimePlugin},
-    weaver_ecs::{system::SystemStage, world::World},
+    weaver_ecs::world::World,
     weaver_pbr::{camera::PbrCamera, material::Material, PbrPlugin},
     weaver_renderer::{camera::Camera, RendererPlugin},
     weaver_winit::WinitPlugin,

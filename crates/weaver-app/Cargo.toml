@@ -9,6 +9,9 @@ edition = "2021"
 log = "0.4.14"
 anyhow = "1.0.75"
 rustc-hash = "1.1.0"
+rayon = "1.5.1"
+crossbeam-channel = "0.5.0"
+petgraph = "0.6.5"
 
 weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }

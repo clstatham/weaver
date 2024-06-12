@@ -2811,7 +2811,10 @@ name = "weaver-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crossbeam-channel",
  "log",
+ "petgraph",
+ "rayon",
  "rustc-hash",
  "weaver-ecs",
  "weaver-reflect",
@@ -2877,6 +2880,7 @@ dependencies = [
  "itertools 0.13.0",
  "log",
  "petgraph",
+ "static_assertions",
  "weaver-ecs-macros",
  "weaver-util",
 ]

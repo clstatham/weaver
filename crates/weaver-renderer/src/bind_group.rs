@@ -1,10 +1,9 @@
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
-use weaver_app::{plugin::Plugin, App};
+use weaver_app::{plugin::Plugin, system::SystemStage, App};
 use weaver_asset::{prelude::Asset, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
     prelude::{Component, Resource},
-    system::SystemStage,
     world::World,
 };
 
@@ -134,11 +133,15 @@ impl<T: CreateResourceBindGroup> Plugin for ResourceBindGroupPlugin<T> {
 }
 
 fn create_resource_bind_group<T: CreateResourceBindGroup>(world: Arc<World>) -> anyhow::Result<()> {
-    let renderer = world.get_resource::<Renderer>().unwrap();
+    let Some(renderer) = world.get_resource::<Renderer>() else {
+        return Ok(());
+    };
     let device = renderer.device();
 
     if !world.has_resource::<ResourceBindGroup<T>>() {
-        let data = world.get_resource::<T>().unwrap();
+        let Some(data) = world.get_resource::<T>() else {
+            return Ok(());
+        };
         let bind_group = ResourceBindGroup::new(device, &*data);
         drop(data);
         drop(renderer);

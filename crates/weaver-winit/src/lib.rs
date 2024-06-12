@@ -1,8 +1,8 @@
 use std::{ops::Deref, sync::Arc};
 
-use weaver_app::{plugin::Plugin, prelude::App, Runner};
+use weaver_app::{plugin::Plugin, prelude::App, system::SystemStage, Runner};
 use weaver_core::input::Input;
-use weaver_ecs::{prelude::Resource, system::SystemStage, world::World};
+use weaver_ecs::{prelude::Resource, world::World};
 use weaver_util::lock::Lock;
 use winit::{
     dpi::LogicalSize,
@@ -123,6 +123,7 @@ impl Runner for WinitRunner {
                                     app.run_systems(SystemStage::Ui).unwrap();
                                     app.run_systems(SystemStage::PostUi).unwrap();
 
+                                    app.run_systems(SystemStage::Extract).unwrap();
                                     app.run_systems(SystemStage::PreRender).unwrap();
                                     app.run_systems(SystemStage::Render).unwrap();
                                     // window.pre_present_notify();
