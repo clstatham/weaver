@@ -20,3 +20,4 @@ weaver-ecs = { path = "../weaver-ecs" }
 weaver-core = { path = "../weaver-core" }
 weaver-asset = { path = "../weaver-asset" }
 weaver-winit = { path = "../weaver-winit" }
+weaver-event = { path = "../weaver-event" }

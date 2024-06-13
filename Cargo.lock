@@ -2982,6 +2982,7 @@ dependencies = [
  "weaver-asset",
  "weaver-core",
  "weaver-ecs",
+ "weaver-event",
  "weaver-util",
  "weaver-winit",
  "wgpu",
@@ -3006,6 +3007,7 @@ dependencies = [
  "weaver-app",
  "weaver-core",
  "weaver-ecs",
+ "weaver-event",
  "weaver-util",
  "winit",
 ]

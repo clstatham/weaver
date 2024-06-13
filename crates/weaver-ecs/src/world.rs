@@ -1,12 +1,12 @@
 use std::sync::{
-    atomic::{AtomicU32, Ordering},
+    atomic::{AtomicU32, AtomicU64, Ordering},
     Arc,
 };
 
 use weaver_util::lock::Lock;
 
 use crate::prelude::{
-    Bundle, Query, QueryFetch, QueryFilter, Res, ResMut, Resource, Resources, Scene,
+    Bundle, Query, QueryFetch, QueryFilter, Res, ResMut, Resource, Resources, Scene, Tick,
 };
 
 use super::{
@@ -21,7 +21,7 @@ pub struct World {
     free_entities: Lock<Vec<Entity>>,
     storage: Lock<Storage>,
     resources: Lock<Resources>,
-    // non_send_resources: Lock<Resources<false>>,
+    update_tick: AtomicU64,
 }
 
 impl World {
@@ -32,6 +32,7 @@ impl World {
             free_entities: Lock::new(Vec::new()),
             storage: Lock::new(Storage::new()),
             resources: Lock::new(Resources::default()),
+            update_tick: AtomicU64::new(0),
         };
 
         world.root_scene_entity = world.create_entity(); // reserve entity 0 for the root scene
@@ -127,5 +128,13 @@ impl World {
     pub fn root_scene(&self) -> Ref<Scene> {
         self.get_component::<Scene>(self.root_scene_entity())
             .unwrap()
+    }
+
+    pub fn update_tick(&self) -> Tick {
+        Tick::new(self.update_tick.load(Ordering::Acquire))
+    }
+
+    pub fn update(&self) {
+        self.update_tick.fetch_add(1, Ordering::AcqRel);
     }
 }

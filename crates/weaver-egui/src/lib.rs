@@ -197,12 +197,14 @@ fn render(world: &Arc<World>) -> Result<()> {
     let Some(window) = world.get_resource::<Window>() else {
         return Ok(());
     };
-    let Some((window_surface_view, _)) = renderer.current_frame_view() else {
+    let Some(current_frame) = renderer.current_frame() else {
         return Ok(());
     };
+    let surface_texture_size = current_frame.surface_texture.texture.size();
+
     let screen_descriptor = ScreenDescriptor {
         pixels_per_point: 1.0,
-        size_in_pixels: window.inner_size().into(),
+        size_in_pixels: [surface_texture_size.width, surface_texture_size.height],
     };
     let mut encoder = renderer
         .device()
@@ -214,7 +216,7 @@ fn render(world: &Arc<World>) -> Result<()> {
         renderer.queue(),
         &mut encoder,
         &window,
-        &window_surface_view,
+        &current_frame.color_view,
         &screen_descriptor,
     );
     renderer.enqueue_command_buffer(encoder.finish());

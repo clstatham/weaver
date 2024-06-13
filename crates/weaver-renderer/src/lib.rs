@@ -7,8 +7,9 @@ use mesh::MeshPlugin;
 use texture::TexturePlugin;
 use weaver_app::{plugin::Plugin, system::SystemStage, App};
 use weaver_ecs::{component::Res, prelude::Resource};
+use weaver_event::EventRx;
 use weaver_util::lock::Lock;
-use weaver_winit::Window;
+use weaver_winit::{Window, WindowResized};
 
 pub mod asset;
 pub mod bind_group;
@@ -30,8 +31,9 @@ pub mod prelude {
     pub use wgpu;
 }
 
+#[derive(Clone)]
 pub struct CurrentFrame {
-    pub surface_texture: wgpu::SurfaceTexture,
+    pub surface_texture: Arc<wgpu::SurfaceTexture>,
     pub color_view: Arc<wgpu::TextureView>,
     pub depth_view: Arc<wgpu::TextureView>,
 }
@@ -71,11 +73,12 @@ impl Renderer {
         self.queue.as_ref().unwrap()
     }
 
-    pub fn current_frame_view(&self) -> Option<(Arc<wgpu::TextureView>, Arc<wgpu::TextureView>)> {
-        self.current_frame
-            .read()
-            .as_ref()
-            .map(|frame| (frame.color_view.clone(), frame.depth_view.clone()))
+    pub fn window_surface(&self) -> &wgpu::Surface<'static> {
+        self.window_surface.as_ref().unwrap()
+    }
+
+    pub fn current_frame(&self) -> Option<CurrentFrame> {
+        self.current_frame.read().as_ref().cloned()
     }
 
     pub fn create_surface(&mut self, window: &Window) -> anyhow::Result<()> {
@@ -155,6 +158,48 @@ impl Renderer {
         Ok(())
     }
 
+    pub fn resize_surface(&self, width: u32, height: u32) -> anyhow::Result<()> {
+        let surface = self.window_surface.as_ref().unwrap();
+        let device = self.device.as_ref().unwrap();
+
+        surface.configure(
+            device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
+                format: wgpu::TextureFormat::Bgra8Unorm,
+                width,
+                height,
+                present_mode: wgpu::PresentMode::AutoNoVsync,
+                desired_maximum_frame_latency: 1,
+                alpha_mode: wgpu::CompositeAlphaMode::Opaque,
+                view_formats: vec![],
+            },
+        );
+
+        let depth_texture = self.depth_texture.write().take().unwrap();
+
+        depth_texture.destroy();
+
+        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Depth Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+
+        *self.depth_texture.write() = Some(Arc::new(depth_texture));
+
+        Ok(())
+    }
+
     pub fn begin_frame(&self) -> anyhow::Result<()> {
         if self.current_frame.read().is_some() {
             log::warn!("Current frame already exists");
@@ -180,7 +225,7 @@ impl Renderer {
                     ..Default::default()
                 });
         *self.current_frame.write() = Some(CurrentFrame {
-            surface_texture: frame,
+            surface_texture: Arc::new(frame),
             color_view: Arc::new(color_view),
             depth_view: Arc::new(depth_view),
         });
@@ -207,6 +252,8 @@ impl Renderer {
         let command_buffers = self.command_buffers.write().drain(..).collect::<Vec<_>>();
         self.queue().submit(command_buffers);
 
+        let surface_texture = Arc::into_inner(surface_texture).unwrap();
+
         surface_texture.present();
 
         Ok(())
@@ -225,6 +272,8 @@ impl Plugin for RendererPlugin {
         // app.add_plugin(TransformPlugin)?;
         app.add_plugin(MeshPlugin)?;
         app.add_plugin(TexturePlugin)?;
+
+        app.add_system(resize_surface, SystemStage::PreUpdate)?;
 
         app.add_system(begin_render, SystemStage::PreRender)?;
         app.add_system(end_render, SystemStage::PostRender)?;
@@ -250,5 +299,15 @@ fn begin_render(renderer: Res<Renderer>) -> anyhow::Result<()> {
 fn end_render(renderer: Res<Renderer>) -> anyhow::Result<()> {
     renderer.end_frame()?;
 
+    Ok(())
+}
+
+fn resize_surface(renderer: Res<Renderer>, rx: EventRx<WindowResized>) -> anyhow::Result<()> {
+    let events: Vec<_> = rx.iter().collect();
+    if let Some(event) = events.last() {
+        // if multiple events are queued up, only resize the window to the last event's size
+        let WindowResized { width, height } = event;
+        renderer.resize_surface(*width, *height)?;
+    }
     Ok(())
 }

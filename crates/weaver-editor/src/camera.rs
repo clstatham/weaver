@@ -30,42 +30,42 @@ impl Default for FlyCameraController {
 }
 
 impl FlyCameraController {
-    pub fn update(&mut self, input: &Input, delta_time: f32, aspect: f32, camera: &mut Camera) {
+    pub fn update(&mut self, input: &Input, delta_time: f32, camera: &mut Camera) {
+        let forward = self.rotation * Vec3::NEG_Z;
+        let right = self.rotation * Vec3::X;
+
+        let mut velocity = Vec3::ZERO;
+
+        if input.key_down(KeyCode::KeyW) {
+            velocity += forward;
+        }
+        if input.key_down(KeyCode::KeyS) {
+            velocity -= forward;
+        }
+        if input.key_down(KeyCode::KeyD) {
+            velocity += right;
+        }
+        if input.key_down(KeyCode::KeyA) {
+            velocity -= right;
+        }
+        if input.key_down(KeyCode::Space) {
+            velocity += Vec3::Y;
+        }
+        if input.key_down(KeyCode::ControlLeft) {
+            velocity -= Vec3::Y;
+        }
+
+        velocity = velocity.normalize_or_zero() * self.speed * delta_time;
+
+        if input.key_down(KeyCode::ShiftLeft) {
+            velocity *= 2.0;
+        }
+
+        self.translation += velocity;
+
         if input.mouse_down(MouseButton::Right) {
             let mouse_delta = input.mouse_delta();
             let (mut yaw, mut pitch, _roll) = self.rotation.to_euler(EulerRot::YXZ);
-
-            let forward = self.rotation * Vec3::NEG_Z;
-            let right = self.rotation * Vec3::X;
-
-            let mut velocity = Vec3::ZERO;
-
-            if input.key_down(KeyCode::KeyW) {
-                velocity += forward;
-            }
-            if input.key_down(KeyCode::KeyS) {
-                velocity -= forward;
-            }
-            if input.key_down(KeyCode::KeyD) {
-                velocity += right;
-            }
-            if input.key_down(KeyCode::KeyA) {
-                velocity -= right;
-            }
-            if input.key_down(KeyCode::Space) {
-                velocity += Vec3::Y;
-            }
-            if input.key_down(KeyCode::ControlLeft) {
-                velocity -= Vec3::Y;
-            }
-
-            velocity = velocity.normalize_or_zero() * self.speed * delta_time;
-
-            if input.key_down(KeyCode::ShiftLeft) {
-                velocity *= 2.0;
-            }
-
-            self.translation += velocity;
 
             yaw += -(mouse_delta.0 * self.sensitivity).to_radians();
             pitch += -(mouse_delta.1 * self.sensitivity).to_radians();
@@ -80,7 +80,6 @@ impl FlyCameraController {
             self.rotation = self.rotation.normalize();
         }
 
-        self.aspect = aspect;
         camera.view_matrix = self.view_matrix();
         camera.projection_matrix = self.projection_matrix();
     }
@@ -111,9 +110,23 @@ pub fn update_camera(world: &Arc<World>) -> Result<()> {
     let input = world.get_resource::<Input>().unwrap();
     let query = world.query::<(&mut Camera, &mut FlyCameraController)>();
     for (_entity, (mut camera, mut controller)) in query.iter() {
-        let aspect = controller.aspect;
+        controller.update(&input, time.delta_time, &mut camera);
+    }
 
-        controller.update(&input, time.delta_time, aspect, &mut camera);
+    Ok(())
+}
+
+pub fn update_aspect_ratio(
+    camera: Query<&mut FlyCameraController>,
+    rx: EventRx<WindowResized>,
+) -> anyhow::Result<()> {
+    let events: Vec<_> = rx.iter().collect();
+    if let Some(event) = events.last() {
+        let WindowResized { width, height } = event;
+        let aspect = *width as f32 / *height as f32;
+        for (_entity, mut camera) in camera.iter() {
+            camera.aspect = aspect;
+        }
     }
 
     Ok(())

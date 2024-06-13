@@ -96,10 +96,11 @@ impl Render for StartNode {
         _input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>> {
         // todo: don't assume we want to render to the main window (allow input slots to specify target)
-        let (color_target, depth_target) = renderer.current_frame_view().unwrap();
+        let current_frame = renderer.current_frame().unwrap();
+
         Ok(vec![
-            Slot::Texture(color_target),
-            Slot::Texture(depth_target),
+            Slot::Texture(current_frame.color_view),
+            Slot::Texture(current_frame.depth_view),
         ])
     }
 }

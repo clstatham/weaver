@@ -150,7 +150,7 @@ pub struct AssetPlugin;
 
 impl Plugin for AssetPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_resource(Assets::new());
+        app.insert_resource(Assets::new());
         Ok(())
     }
 }

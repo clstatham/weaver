@@ -9,7 +9,7 @@ use weaver_ecs::{
 };
 
 use crate::{
-    bind_group::{CreateComponentBindGroup, ComponentBindGroupPlugin},
+    bind_group::{ComponentBindGroupPlugin, CreateComponentBindGroup},
     buffer::GpuBuffer,
     extract::{RenderComponent, RenderComponentPlugin},
     graph::RenderGraph,

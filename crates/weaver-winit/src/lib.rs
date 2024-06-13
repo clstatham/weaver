@@ -12,7 +12,7 @@ use winit::{
 };
 
 pub mod prelude {
-    pub use super::{WinitEventHooks, WinitPlugin};
+    pub use super::{WindowResized, WinitEventHooks, WinitPlugin};
     pub use winit;
 }
 
@@ -44,6 +44,12 @@ impl WinitEventHooks {
     }
 }
 
+pub struct WindowResized {
+    pub width: u32,
+    pub height: u32,
+}
+impl weaver_event::Event for WindowResized {}
+
 pub struct WinitPlugin {
     pub initial_size: (u32, u32),
 }
@@ -63,11 +69,12 @@ impl Plugin for WinitPlugin {
             .with_inner_size(LogicalSize::new(self.initial_size.0, self.initial_size.1))
             .build(&event_loop)?;
 
-        app.world().insert_resource(Window { window });
-        app.world().insert_resource(WinitEventHooks::default());
+        app.insert_resource(Window { window });
+        app.insert_resource(WinitEventHooks::default());
         app.set_runner(WinitRunner {
             event_loop: Lock::new(Some(event_loop)),
         });
+        app.add_event::<WindowResized>();
         Ok(())
     }
 }
@@ -108,6 +115,16 @@ impl Runner for WinitRunner {
                             }
 
                             match event {
+                                WindowEvent::Resized(size) => {
+                                    let mut tx = app
+                                        .world()
+                                        .get_resource_mut::<weaver_event::Events<WindowResized>>()
+                                        .unwrap();
+                                    tx.send(WindowResized {
+                                        width: size.width,
+                                        height: size.height,
+                                    });
+                                }
                                 WindowEvent::CloseRequested => {
                                     app.run_systems(SystemStage::PreShutdown).unwrap();
                                     app.run_systems(SystemStage::Shutdown).unwrap();
@@ -115,9 +132,13 @@ impl Runner for WinitRunner {
                                     event_loop_window.exit();
                                 }
                                 WindowEvent::RedrawRequested => {
+                                    app.world().update();
+
                                     app.run_systems(SystemStage::PreUpdate).unwrap();
                                     app.run_systems(SystemStage::Update).unwrap();
                                     app.run_systems(SystemStage::PostUpdate).unwrap();
+
+                                    app.run_systems(SystemStage::EventPump).unwrap();
 
                                     app.run_systems(SystemStage::PreUi).unwrap();
                                     app.run_systems(SystemStage::Ui).unwrap();

@@ -11,7 +11,7 @@ use weaver_ecs::{
     storage::Ref,
     world::World,
 };
-use weaver_event::{Event, EventChannel};
+use weaver_event::{Event, Events};
 use weaver_reflect::registry::{TypeRegistry, Typed};
 use weaver_util::lock::SharedLock;
 
@@ -56,7 +56,7 @@ impl App {
             runtime: rayon::ThreadPoolBuilder::new().build().unwrap(),
         };
 
-        this.add_resource(TypeRegistry::new());
+        this.insert_resource(TypeRegistry::new());
 
         Ok(this)
     }
@@ -82,11 +82,17 @@ impl App {
     }
 
     pub fn add_event<T: Event>(&mut self) -> &mut Self {
-        self.add_resource(EventChannel::<T>::new());
+        fn update_events<T: Event>(mut events: ResMut<Events<T>>) -> anyhow::Result<()> {
+            events.clear();
+            Ok(())
+        }
+        self.insert_resource(Events::<T>::new());
+        self.add_system(update_events::<T>, SystemStage::EventPump)
+            .unwrap();
         self
     }
 
-    pub fn add_resource<T: Resource>(&self, resource: T) -> &Self {
+    pub fn insert_resource<T: Resource>(&self, resource: T) -> &Self {
         self.world.insert_resource(resource);
         self
     }

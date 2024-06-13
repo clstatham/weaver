@@ -18,6 +18,9 @@ pub mod camera;
 #[derive(Component)]
 struct Floor;
 
+#[derive(Component)]
+struct Object;
+
 fn main() -> Result<()> {
     env_logger::init();
     App::new()?
@@ -36,6 +39,7 @@ fn main() -> Result<()> {
         })?
         .add_system(setup, SystemStage::Init)?
         .add_system(camera::update_camera, SystemStage::Update)?
+        .add_system(camera::update_aspect_ratio, SystemStage::Update)?
         .add_system(update, SystemStage::Update)?
         .add_system(ui, SystemStage::Ui)?
         .run()
@@ -90,13 +94,6 @@ fn setup(world: &Arc<World>) -> Result<()> {
         Floor,
     ));
 
-    // let _light = scene.spawn(PointLight {
-    //     color: Color::WHITE,
-    //     intensity: 100.0,
-    //     radius: 100.0,
-    //     position: Vec3::new(0.0, 10.0, 0.0),
-    // });
-
     // circle of lights
     const COLORS: &[Color] = &[
         Color::RED,
@@ -128,6 +125,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
                 rotation: Quat::IDENTITY,
                 scale: Vec3::splat(0.5),
             },
+            Object,
         ));
     }
 
@@ -136,7 +134,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
 
 fn update(world: &Arc<World>) -> Result<()> {
     let time = world.get_resource::<Time>().unwrap();
-    let query = world.query_filtered::<&mut Transform, Without<Floor>>();
+    let query = world.query_filtered::<&mut Transform, With<Object>>();
     for (_entity, mut transform) in query.iter() {
         let angle = time.total_time * 0.5;
         transform.rotation = Quat::from_rotation_y(angle);
