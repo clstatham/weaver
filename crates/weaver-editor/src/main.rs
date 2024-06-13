@@ -12,11 +12,8 @@ use weaver::{
 };
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
-use weaver_ecs::reflect::{
-    registry::{FromType, TypeRegistry},
-    Reflect,
-};
 use weaver_egui::prelude::*;
+use weaver_winit::Window;
 
 pub mod camera;
 pub mod inspect;
@@ -52,6 +49,7 @@ fn main() -> Result<()> {
         .add_system(camera::update_camera, SystemStage::Update)?
         .add_system(camera::update_aspect_ratio, SystemStage::Update)?
         .add_system(update, SystemStage::Update)?
+        .add_system(pick_entity, SystemStage::Update)?
         .add_system(ui, SystemStage::Ui)?
         .run()
 }
@@ -162,20 +160,58 @@ fn ui(world: &Arc<World>) -> Result<()> {
     let editor_state = world.get_resource::<EditorState>().unwrap();
     let egui_context = world.get_resource::<EguiContext>().unwrap();
     egui_context.draw_if_ready(|ctx| {
-        egui::Window::new("Hello World").show(ctx, |ui| {
-            ui.label("Hello World!");
-        });
-
-        egui::Window::new("Inspector").show(ctx, |ui| {
-            if let Some(entity) = editor_state.selected_entity {
-                let registry = world.get_resource::<TypeRegistry>().unwrap();
+        if let Some(entity) = editor_state.selected_entity {
+            egui::Window::new("Inspector").show(ctx, |ui| {
                 if let Some(handle) = world.get_component::<Handle<Material>>(entity) {
                     let mut assets = world.get_resource_mut::<Assets>().unwrap();
                     let material = assets.get_mut(*handle).unwrap();
-                    material.inspect_ui(&registry, ui);
+                    ui.collapsing("Material", |ui| {
+                        material.inspect_ui(ui);
+                    });
+                }
+                if let Some(mut transform) = world.get_component_mut::<Transform>(entity) {
+                    ui.collapsing("Transform", |ui| {
+                        transform.inspect_ui(ui);
+                    });
+                }
+            });
+        };
+    });
+    Ok(())
+}
+
+fn pick_entity(world: &Arc<World>) -> Result<()> {
+    let input = world.get_resource::<Input>().unwrap();
+    let egui_ctx = world.get_resource::<EguiContext>().unwrap();
+    if input.mouse_just_pressed(MouseButton::Left) && !egui_ctx.wants_input() {
+        let cursor_pos = input.mouse_pos();
+        let cursor_pos = Vec2::new(cursor_pos.0, cursor_pos.1);
+        let (_, camera) = world.query::<&Camera>().iter().next().unwrap();
+        let window = world.get_resource::<Window>().unwrap();
+        let window_size = window.inner_size();
+        let ray = camera.screen_to_ray(
+            cursor_pos,
+            Vec2::new(window_size.width as f32, window_size.height as f32),
+        );
+        let mut closest_entity = None;
+        let mut closest_distance = f32::INFINITY;
+        for (entity, transform) in world.query::<&Transform>().iter() {
+            if let Some(mesh) = world.get_component::<Handle<Mesh>>(entity) {
+                let assets = world.get_resource::<Assets>().unwrap();
+                let mesh = assets.get(*mesh).unwrap();
+                let aabb = mesh.aabb.transform(*transform);
+                if let Some(distance) = ray.intersect(aabb) {
+                    if distance < closest_distance {
+                        closest_distance = distance;
+                        closest_entity = Some(entity);
+                    }
                 }
             }
-        });
-    });
+        }
+
+        let mut editor_state = world.get_resource_mut::<EditorState>().unwrap();
+        editor_state.selected_entity = closest_entity;
+    }
+
     Ok(())
 }

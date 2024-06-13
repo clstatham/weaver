@@ -44,6 +44,11 @@ impl EguiContext {
         let _ = self.state.write().on_window_event(window, event);
     }
 
+    pub fn wants_input(&self) -> bool {
+        self.state.read().egui_ctx().wants_keyboard_input()
+            || self.state.read().egui_ctx().wants_pointer_input()
+    }
+
     pub fn begin_frame(&self, window: &winit::window::Window) {
         if self.full_output.read().is_none() {
             let raw_input = self.state.write().take_egui_input(window);

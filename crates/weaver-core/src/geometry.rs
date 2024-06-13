@@ -3,6 +3,11 @@ use weaver_ecs::prelude::Reflect;
 
 use crate::prelude::Transform;
 
+pub trait Intersect<Rhs> {
+    type Output;
+    fn intersect(&self, rhs: Rhs) -> Option<Self::Output>;
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Reflect)]
 #[repr(C)]
 pub struct Plane {
@@ -81,5 +86,44 @@ impl Aabb {
             Vec3::new(self.max.x, self.max.y, self.min.z),
             Vec3::new(self.max.x, self.max.y, self.max.z),
         ]
+    }
+}
+
+impl Intersect<Aabb> for Ray {
+    type Output = f32;
+
+    fn intersect(&self, aabb: Aabb) -> Option<Self::Output> {
+        let inv_direction = self.direction.recip();
+
+        let t1 = (aabb.min - self.origin) * inv_direction;
+        let t2 = (aabb.max - self.origin) * inv_direction;
+
+        let tmin = t1.min(t2);
+        let tmax = t1.max(t2);
+
+        let tmin = tmin.max_element();
+        let tmax = tmax.min_element();
+
+        if tmin > tmax {
+            return None;
+        }
+
+        let t = if tmin >= 0.0 {
+            tmin
+        } else if tmax >= 0.0 {
+            tmax
+        } else {
+            return None;
+        };
+
+        Some(t)
+    }
+}
+
+impl Intersect<Ray> for Aabb {
+    type Output = <Ray as Intersect<Aabb>>::Output;
+
+    fn intersect(&self, ray: Ray) -> Option<Self::Output> {
+        ray.intersect(*self)
     }
 }

@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use weaver_core::geometry::Ray;
 use wgpu::util::DeviceExt;
 
 use weaver_app::plugin::Plugin;
@@ -112,6 +113,23 @@ impl Camera {
 
     pub fn render_graph_mut(&mut self) -> &mut RenderGraph {
         &mut self.graph
+    }
+
+    pub fn screen_to_ray(&self, screen_pos: glam::Vec2, screen_size: glam::Vec2) -> Ray {
+        let ndc = glam::Vec2::new(
+            (2.0 * screen_pos.x / screen_size.x) - 1.0,
+            1.0 - (2.0 * screen_pos.y / screen_size.y),
+        );
+
+        let inv_proj = self.projection_matrix.inverse();
+        let inv_view = self.view_matrix.inverse();
+
+        let clip = glam::Vec4::new(ndc.x, ndc.y, -1.0, 1.0);
+        let eye = inv_proj * clip;
+        let eye = glam::Vec4::new(eye.x, eye.y, -1.0, 0.0);
+        let world = inv_view * eye;
+
+        Ray::new(inv_view.col(3).truncate(), world.truncate().normalize())
     }
 }
 

@@ -14,6 +14,7 @@ pub use winit::{event::MouseButton, keyboard::KeyCode};
 pub struct Input {
     pub(crate) keys: HashMap<u32, bool>,
     pub(crate) mouse: [bool; 8],
+    pub(crate) mouse_last: [bool; 8],
     pub(crate) mouse_pos: (f32, f32),
     pub(crate) mouse_delta: (f32, f32),
 }
@@ -23,6 +24,7 @@ impl Default for Input {
         Self {
             keys: HashMap::new(),
             mouse: [false; 8],
+            mouse_last: [false; 8],
             mouse_pos: (0.0, 0.0),
             mouse_delta: (0.0, 0.0),
         }
@@ -56,6 +58,38 @@ impl Input {
         }
     }
 
+    pub fn mouse_just_pressed(&self, button: MouseButton) -> bool {
+        let index = match button {
+            MouseButton::Left => 0,
+            MouseButton::Right => 1,
+            MouseButton::Middle => 2,
+            MouseButton::Other(0) => 3,
+            MouseButton::Other(1) => 4,
+            MouseButton::Other(2) => 5,
+            MouseButton::Other(3) => 6,
+            MouseButton::Other(4) => 7,
+            _ => return false,
+        };
+
+        self.mouse[index] && !self.mouse_last[index]
+    }
+
+    pub fn mouse_just_released(&self, button: MouseButton) -> bool {
+        let index = match button {
+            MouseButton::Left => 0,
+            MouseButton::Right => 1,
+            MouseButton::Middle => 2,
+            MouseButton::Other(0) => 3,
+            MouseButton::Other(1) => 4,
+            MouseButton::Other(2) => 5,
+            MouseButton::Other(3) => 6,
+            MouseButton::Other(4) => 7,
+            _ => return false,
+        };
+
+        !self.mouse[index] && self.mouse_last[index]
+    }
+
     pub fn mouse_up(&self, button: winit::event::MouseButton) -> bool {
         !self.mouse_down(button)
     }
@@ -70,6 +104,7 @@ impl Input {
 
     pub fn prepare(&mut self) {
         self.mouse_delta = (0.0, 0.0);
+        self.mouse_last = self.mouse;
     }
 
     pub fn update_device(&mut self, event: &DeviceEvent) {
