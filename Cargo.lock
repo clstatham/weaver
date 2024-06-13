@@ -2798,7 +2798,6 @@ dependencies = [
  "weaver-ecs",
  "weaver-event",
  "weaver-pbr",
- "weaver-reflect",
  "weaver-renderer",
  "weaver-util",
  "weaver-winit",
@@ -2815,7 +2814,6 @@ dependencies = [
  "rustc-hash",
  "weaver-ecs",
  "weaver-event",
- "weaver-reflect",
  "weaver-util",
 ]
 
@@ -2850,7 +2848,6 @@ dependencies = [
  "weaver-app",
  "weaver-asset",
  "weaver-ecs",
- "weaver-reflect",
  "weaver-util",
  "winit",
 ]
@@ -2870,11 +2867,13 @@ dependencies = [
 name = "weaver-ecs"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "itertools 0.13.0",
  "log",
  "petgraph",
  "static_assertions",
  "weaver-ecs-macros",
+ "weaver-reflect-macros",
  "weaver-util",
 ]
 
@@ -2933,16 +2932,6 @@ dependencies = [
  "weaver-core",
  "weaver-ecs",
  "weaver-renderer",
- "weaver-util",
-]
-
-[[package]]
-name = "weaver-reflect"
-version = "0.1.0"
-dependencies = [
- "glam",
- "weaver-ecs",
- "weaver-reflect-macros",
  "weaver-util",
 ]
 

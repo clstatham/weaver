@@ -6,6 +6,7 @@ pub mod component;
 pub mod entity;
 pub mod node;
 pub mod query;
+pub mod reflect;
 pub mod relationship;
 pub mod scene;
 pub mod storage;
@@ -23,4 +24,5 @@ pub mod prelude {
     pub use crate::storage::*;
     pub use crate::world::*;
     pub use weaver_ecs_macros::*;
+    pub use weaver_reflect_macros::*;
 }

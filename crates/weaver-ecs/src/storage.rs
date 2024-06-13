@@ -10,8 +10,8 @@ use crate::prelude::Bundle;
 use super::{component::Component, entity::Entity};
 
 pub struct Data {
-    type_id: TypeId,
-    data: Box<dyn Component>,
+    pub type_id: TypeId,
+    pub data: Box<dyn Component>,
 }
 
 impl Data {

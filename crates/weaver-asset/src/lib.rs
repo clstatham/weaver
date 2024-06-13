@@ -2,7 +2,7 @@ use std::{path::Path, sync::atomic::AtomicUsize};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
-    prelude::{Component, Resource},
+    prelude::{Component, Reflect, Resource},
     storage::SparseSet,
 };
 use weaver_util::prelude::{anyhow, impl_downcast, DowncastSync, Error, Result};
@@ -19,9 +19,10 @@ pub trait Asset: DowncastSync {
 }
 impl_downcast!(Asset);
 
-#[derive(Debug, Component)]
+#[derive(Debug, Component, Reflect)]
 pub struct Handle<T: Asset> {
     id: usize,
+    #[reflect(ignore)]
     _marker: std::marker::PhantomData<T>,
 }
 

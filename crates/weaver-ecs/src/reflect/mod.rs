@@ -1,40 +1,25 @@
-use weaver_util::prelude::{impl_downcast, Downcast};
+use registry::{Struct, Typed};
+use weaver_util::prelude::{impl_downcast, DowncastSync};
 
 pub mod impls;
 pub mod registry;
 
-pub mod prelude {
-    pub use crate::registry::*;
-    pub use crate::Reflect;
-    pub use weaver_reflect_macros::*;
-}
-
-pub trait Reflect: Downcast {
+pub trait Reflect: DowncastSync {
     fn as_reflect(&self) -> &dyn Reflect;
     fn as_reflect_mut(&mut self) -> &mut dyn Reflect;
     fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect>;
 
     fn reflect_type_name(&self) -> &'static str;
+
+    fn as_struct(&self) -> Option<&dyn registry::Struct> {
+        None
+    }
+
+    fn as_struct_mut(&mut self) -> Option<&mut dyn registry::Struct> {
+        None
+    }
 }
 impl_downcast!(Reflect);
-
-impl<T: Reflect> Reflect for Box<T> {
-    fn as_reflect(&self) -> &dyn Reflect {
-        self.as_ref()
-    }
-
-    fn as_reflect_mut(&mut self) -> &mut dyn Reflect {
-        self.as_mut()
-    }
-
-    fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect> {
-        self
-    }
-
-    fn reflect_type_name(&self) -> &'static str {
-        T::reflect_type_name(self)
-    }
-}
 
 impl dyn Reflect {
     pub fn take<T: Reflect>(self: Box<dyn Reflect>) -> Result<T, Box<dyn Reflect>> {
@@ -42,9 +27,35 @@ impl dyn Reflect {
     }
 }
 
+impl<T: Struct + Typed> Reflect for T {
+    fn as_reflect(&self) -> &dyn Reflect {
+        self
+    }
+
+    fn as_reflect_mut(&mut self) -> &mut dyn Reflect {
+        self
+    }
+
+    fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect> {
+        self
+    }
+
+    fn reflect_type_name(&self) -> &'static str {
+        T::type_name()
+    }
+
+    fn as_struct(&self) -> Option<&dyn registry::Struct> {
+        Some(self)
+    }
+
+    fn as_struct_mut(&mut self) -> Option<&mut dyn registry::Struct> {
+        Some(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate as weaver_reflect;
+    use crate as weaver_ecs;
     use registry::{Struct, TypeInfo, TypeRegistry};
     use weaver_reflect_macros::Reflect;
 

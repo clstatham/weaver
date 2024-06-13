@@ -1,4 +1,4 @@
-use weaver_reflect::prelude::Reflect;
+use weaver_ecs::prelude::Reflect;
 
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Reflect)]
 #[repr(C)]

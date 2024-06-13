@@ -13,5 +13,10 @@ pub trait Plugin: Downcast {
     fn finish(&self, app: &mut App) -> Result<()> {
         Ok(())
     }
+
+    #[allow(unused_variables)]
+    fn ready(&self, app: &App) -> bool {
+        true
+    }
 }
 impl_downcast!(Plugin);

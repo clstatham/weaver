@@ -5,7 +5,7 @@ use weaver_core::transform::Transform;
 use weaver_ecs::{entity::Entity, prelude::Component, world::World};
 
 use crate::{
-    bind_group::{CreateComponentBindGroup, ComponentBindGroupPlugin},
+    bind_group::{ComponentBindGroupPlugin, CreateComponentBindGroup},
     buffer::GpuBuffer,
     extract::{RenderComponent, RenderComponentPlugin},
     Renderer,
@@ -42,9 +42,6 @@ impl RenderComponent for GpuTransform {
         world: &World,
         renderer: &Renderer,
     ) -> anyhow::Result<()> {
-        // let Some(transform) = world.get_component::<Transform>(entity) else {
-        //     return Ok(());
-        // };
         let transform = world.get_component::<Transform>(entity).unwrap();
 
         self.buffer.update(

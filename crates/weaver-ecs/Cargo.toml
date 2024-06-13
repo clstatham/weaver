@@ -8,6 +8,8 @@ log = "0.4.14"
 petgraph = "0.6.5"
 itertools = "0.13.0"
 static_assertions = "1.1.0"
+glam = "0.27.0"
 
 weaver-util = { path = "../weaver-util" }
 weaver-ecs-macros = { path = "../weaver-ecs-macros" }
+weaver-reflect-macros = { path = "../weaver-reflect-macros" }

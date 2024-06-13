@@ -1,12 +1,13 @@
 use std::{any::TypeId, collections::HashMap, sync::Arc};
 
-use weaver_ecs::prelude::Resource;
+use crate as weaver_ecs;
+use crate::prelude::Resource;
 use weaver_util::{
     prelude::{impl_downcast, DowncastSync},
     TypeIdMap,
 };
 
-use crate::Reflect;
+use super::Reflect;
 
 pub trait Typed: Reflect {
     fn type_name() -> &'static str;
@@ -189,8 +190,13 @@ impl<T: Clone + DowncastSync> TypeAuxData for T {
     }
 }
 
-pub trait FromType<T> {
-    fn from_type() -> Arc<Self>;
+pub trait FromType<T: Sized> {
+    fn from_type() -> Self;
+}
+
+pub trait FromReflect: Sized {
+    fn from_reflect(reflect: &dyn Reflect) -> Option<&Self>;
+    fn from_reflect_mut(reflect: &mut dyn Reflect) -> Option<&mut Self>;
 }
 
 pub struct TypeRegistration {
@@ -290,6 +296,6 @@ impl TypeRegistry {
         let type_registration = self.types.get_mut(&type_id).unwrap();
         type_registration
             .type_aux_data
-            .insert(type_id, D::from_type());
+            .insert(type_id, Arc::new(D::from_type()));
     }
 }

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use inspect::InspectUi;
 use weaver::{
     prelude::*,
     weaver_app::{system::SystemStage, App},
@@ -11,15 +12,25 @@ use weaver::{
 };
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
+use weaver_ecs::reflect::{
+    registry::{FromType, TypeRegistry},
+    Reflect,
+};
 use weaver_egui::prelude::*;
 
 pub mod camera;
+pub mod inspect;
 
 #[derive(Component)]
 struct Floor;
 
 #[derive(Component)]
 struct Object;
+
+#[derive(Resource, Default)]
+struct EditorState {
+    pub selected_entity: Option<Entity>,
+}
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -47,6 +58,9 @@ fn main() -> Result<()> {
 
 fn setup(world: &Arc<World>) -> Result<()> {
     let scene = world.root_scene();
+
+    let mut state = EditorState::default();
+
     let _camera = scene.spawn((
         Camera::perspective_lookat(
             Vec3::new(10.0, 10.0, 10.0),
@@ -73,7 +87,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
     {
         let material = assets.get_mut(material).unwrap();
         material.texture_scale = 100.0;
-        material.diffuse = Color::WHITE;
+        // material.diffuse = Color::WHITE;
     }
 
     let material2 = assets.load::<Material>("assets/materials/metal.glb")?;
@@ -117,7 +131,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
     // spawn some meshes
     for i in 0..6 {
         let angle = i as f32 / 6.0 * std::f32::consts::PI * 2.0;
-        let _mesh = scene.spawn((
+        let mesh = scene.spawn((
             mesh,
             material2,
             Transform {
@@ -127,14 +141,15 @@ fn setup(world: &Arc<World>) -> Result<()> {
             },
             Object,
         ));
+        state.selected_entity = Some(mesh.entity());
     }
+
+    world.insert_resource(state);
 
     Ok(())
 }
 
-fn update(world: &Arc<World>) -> Result<()> {
-    let time = world.get_resource::<Time>().unwrap();
-    let query = world.query_filtered::<&mut Transform, With<Object>>();
+fn update(time: Res<Time>, query: Query<&mut Transform, With<Object>>) -> Result<()> {
     for (_entity, mut transform) in query.iter() {
         let angle = time.total_time * 0.5;
         transform.rotation = Quat::from_rotation_y(angle);
@@ -143,10 +158,23 @@ fn update(world: &Arc<World>) -> Result<()> {
     Ok(())
 }
 
-fn ui(egui_context: Res<EguiContext>) -> Result<()> {
+fn ui(world: &Arc<World>) -> Result<()> {
+    let editor_state = world.get_resource::<EditorState>().unwrap();
+    let egui_context = world.get_resource::<EguiContext>().unwrap();
     egui_context.draw_if_ready(|ctx| {
         egui::Window::new("Hello World").show(ctx, |ui| {
             ui.label("Hello World!");
+        });
+
+        egui::Window::new("Inspector").show(ctx, |ui| {
+            if let Some(entity) = editor_state.selected_entity {
+                let registry = world.get_resource::<TypeRegistry>().unwrap();
+                if let Some(handle) = world.get_component::<Handle<Material>>(entity) {
+                    let mut assets = world.get_resource_mut::<Assets>().unwrap();
+                    let material = assets.get_mut(*handle).unwrap();
+                    material.inspect_ui(&registry, ui);
+                }
+            }
         });
     });
     Ok(())

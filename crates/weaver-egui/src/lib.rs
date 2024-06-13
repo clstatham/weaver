@@ -162,14 +162,25 @@ impl Plugin for EguiPlugin {
         Ok(())
     }
     fn finish(&self, app: &mut App) -> Result<()> {
-        let renderer = app.get_resource::<weaver_renderer::Renderer>().unwrap();
-        let window = app.get_resource::<Window>().unwrap();
+        let Some(renderer) = app.get_resource::<weaver_renderer::Renderer>() else {
+            return Ok(());
+        };
+        if !renderer.ready_to_render() {
+            return Ok(());
+        }
+        let Some(window) = app.get_resource::<Window>() else {
+            return Ok(());
+        };
         let egui_context = EguiContext::new(renderer.device(), &window, 1);
         drop(renderer);
         drop(window);
         app.world().insert_resource(egui_context);
 
         Ok(())
+    }
+
+    fn ready(&self, app: &App) -> bool {
+        app.world().has_resource::<EguiContext>()
     }
 }
 

@@ -3,7 +3,7 @@ use std::path::Path;
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{prelude::Asset, Assets, Handle};
 use weaver_core::{color::Color, texture::Texture};
-use weaver_ecs::prelude::{Component, World};
+use weaver_ecs::prelude::{Component, Reflect, World};
 use weaver_renderer::{
     asset::{ExtractRenderAssetPlugin, RenderAsset},
     bind_group::{AssetBindGroupPlugin, CreateComponentBindGroup},
@@ -14,6 +14,7 @@ use weaver_renderer::{
 use weaver_util::prelude::*;
 use wgpu::util::DeviceExt;
 
+#[derive(Reflect)]
 pub struct Material {
     pub diffuse: Color,
     pub diffuse_texture: Handle<Texture>,
@@ -453,6 +454,7 @@ impl Plugin for MaterialPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_plugin(ExtractRenderAssetPlugin::<GpuMaterial>::default())?;
         app.add_plugin(AssetBindGroupPlugin::<GpuMaterial>::default())?;
+        app.register_type::<Material>();
         Ok(())
     }
 }

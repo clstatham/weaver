@@ -1,5 +1,5 @@
 use glam::*;
-use weaver_reflect::prelude::Reflect;
+use weaver_ecs::prelude::Reflect;
 
 use crate::prelude::Transform;
 

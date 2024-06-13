@@ -2,7 +2,7 @@ use std::path::Path;
 
 use glam::{Vec2, Vec3};
 use weaver_asset::{prelude::Asset, Assets};
-use weaver_reflect::prelude::Reflect;
+use weaver_ecs::prelude::Reflect;
 use weaver_util::prelude::{bail, Result};
 
 use crate::prelude::Aabb;

@@ -1,39 +1,9 @@
 use std::{any::TypeId, sync::OnceLock};
 
-use crate::{
+use crate::reflect::{
     registry::{FieldInfo, Struct, StructInfo, TypeInfo, Typed},
     Reflect,
 };
-
-macro_rules! impl_reflect {
-    ($t:ty) => {
-        impl Reflect for $t {
-            fn as_reflect(&self) -> &dyn Reflect {
-                self
-            }
-
-            fn as_reflect_mut(&mut self) -> &mut dyn Reflect {
-                self
-            }
-
-            fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect> {
-                self
-            }
-
-            fn reflect_type_name(&self) -> &'static str {
-                Self::type_name()
-            }
-        }
-    };
-}
-
-impl_reflect!(glam::Vec2);
-impl_reflect!(glam::Vec3);
-impl_reflect!(glam::Vec4);
-impl_reflect!(glam::Mat2);
-impl_reflect!(glam::Mat3);
-impl_reflect!(glam::Mat4);
-impl_reflect!(glam::Quat);
 
 impl Struct for glam::Vec2 {
     fn field(&self, field_name: &str) -> Option<&dyn Reflect> {

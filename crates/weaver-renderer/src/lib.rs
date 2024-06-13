@@ -65,6 +65,10 @@ impl Renderer {
         }
     }
 
+    pub fn ready_to_render(&self) -> bool {
+        self.device.is_some() && self.queue.is_some() && self.window_surface.is_some()
+    }
+
     pub fn device(&self) -> &Arc<wgpu::Device> {
         self.device.as_ref().unwrap()
     }

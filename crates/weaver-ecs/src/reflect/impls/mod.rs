@@ -1,11 +1,13 @@
 use std::{any::TypeId, collections::HashMap, hash::Hash, sync::OnceLock};
 
-use crate::{
-    prelude::{ListInfo, MapInfo},
-    registry::{TypeInfo, Typed, ValueInfo},
+use crate::reflect::{
+    registry::{ListInfo, MapInfo, TypeInfo, Typed, ValueInfo},
     Reflect,
 };
 
+use super::registry::{List, Map};
+
+pub mod ecs;
 pub mod glam;
 
 macro_rules! impl_primitive {
@@ -94,7 +96,7 @@ impl<T: Reflect + Typed> Typed for Vec<T> {
     }
 }
 
-impl<T: Reflect + Typed> crate::registry::List for Vec<T> {
+impl<T: Reflect + Typed> List for Vec<T> {
     fn len_reflect(&self) -> usize {
         self.len()
     }
@@ -171,7 +173,7 @@ impl<K: Reflect + Typed, V: Reflect + Typed> Typed for HashMap<K, V> {
     }
 }
 
-impl<K: Reflect + Typed + Hash + Eq, V: Reflect + Typed> crate::registry::Map for HashMap<K, V> {
+impl<K: Reflect + Typed + Hash + Eq, V: Reflect + Typed> Map for HashMap<K, V> {
     fn len_reflect(&self) -> usize {
         self.len()
     }

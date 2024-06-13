@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{any::TypeId, sync::Arc};
 
 use plugin::Plugin;
 use rustc_hash::FxHashMap;
@@ -7,13 +7,13 @@ use weaver_ecs::{
     bundle::Bundle,
     component::{Res, ResMut, Resource},
     entity::Entity,
+    reflect::registry::{TypeRegistry, Typed},
     scene::Scene,
     storage::Ref,
     world::World,
 };
 use weaver_event::{Event, Events};
-use weaver_reflect::registry::{TypeRegistry, Typed};
-use weaver_util::{lock::SharedLock, prelude::Result};
+use weaver_util::{lock::SharedLock, prelude::Result, TypeIdMap};
 
 pub mod plugin;
 pub mod system;
@@ -39,7 +39,7 @@ where
 pub struct App {
     world: Arc<World>,
     systems: SharedLock<FxHashMap<SystemStage, SystemGraph>>,
-    plugins: SharedLock<Vec<Box<dyn Plugin>>>,
+    plugins: SharedLock<TypeIdMap<Box<dyn Plugin>>>,
     runner: Option<Box<dyn Runner>>,
     runtime: rayon::ThreadPool,
 }
@@ -51,7 +51,7 @@ impl App {
         let this = Self {
             world,
             systems: SharedLock::new(FxHashMap::default()),
-            plugins: SharedLock::new(Vec::new()),
+            plugins: SharedLock::new(TypeIdMap::default()),
             runner: None,
             runtime: rayon::ThreadPoolBuilder::new().build().unwrap(),
         };
@@ -62,11 +62,18 @@ impl App {
     }
 
     pub fn add_plugin<T: Plugin>(&mut self, plugin: T) -> Result<&mut Self> {
+        if self.plugins.read().contains_key(&TypeId::of::<T>()) {
+            log::warn!("Plugin already added: {:?}", plugin.name());
+            return Ok(self);
+        }
+
         let name = plugin.name().to_owned();
         log::debug!("Adding plugin: {:?}", &name);
         plugin.build(self)?;
 
-        self.plugins.write().push(Box::new(plugin));
+        self.plugins
+            .write()
+            .insert(TypeId::of::<T>(), Box::new(plugin));
 
         Ok(self)
     }
@@ -171,7 +178,16 @@ impl App {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        for plugin in self.plugins.read().iter() {
+        for plugin in self.plugins.read().values() {
+            plugin.finish(self)?;
+        }
+        // todo: prevent infinite loop here
+        while let Some(plugin) = self
+            .plugins
+            .read()
+            .values()
+            .find(|plugin| !plugin.ready(self))
+        {
             plugin.finish(self)?;
         }
 

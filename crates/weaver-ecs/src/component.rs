@@ -3,15 +3,20 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use weaver_reflect_macros::reflect_trait;
 use weaver_util::{
     lock::{ArcRead, ArcWrite, SharedLock},
     prelude::{anyhow, impl_downcast, DowncastSync},
     TypeIdMap,
 };
 
+use crate::{self as weaver_ecs};
+
+#[reflect_trait]
 pub trait Component: DowncastSync {}
 impl_downcast!(sync Component);
 
+#[reflect_trait]
 pub trait Resource: DowncastSync {}
 impl_downcast!(sync Resource);
 

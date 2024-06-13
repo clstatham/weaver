@@ -17,7 +17,6 @@ members = [
     "crates/weaver-core",
     "crates/weaver-asset",
     "crates/weaver-diagnostics",
-    "crates/weaver-reflect",
     "crates/weaver-reflect-macros",
     "crates/weaver-asset-macros",
     "crates/weaver-egui",
@@ -42,7 +41,6 @@ weaver-winit = { path = "crates/weaver-winit" }
 weaver-pbr = { path = "crates/weaver-pbr" }
 weaver-core = { path = "crates/weaver-core" }
 weaver-asset = { path = "crates/weaver-asset" }
-weaver-reflect = { path = "crates/weaver-reflect" }
 weaver-event = { path = "crates/weaver-event" }
 
 [dev-dependencies]

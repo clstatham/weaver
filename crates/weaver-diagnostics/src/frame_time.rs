@@ -3,7 +3,7 @@ use weaver_ecs::{component::ResMut, prelude::Resource};
 use weaver_util::prelude::Result;
 
 #[derive(Resource)]
-pub struct FrameTimeDiagnostics {
+pub struct FrameTime {
     pub frame_time: f32,
     pub fps: f32,
     pub last_update: std::time::Instant,
@@ -12,41 +12,56 @@ pub struct FrameTimeDiagnostics {
     pub last_log: std::time::Instant,
 }
 
+pub struct FrameTimePlugin;
+
+impl Plugin for FrameTimePlugin {
+    fn build(&self, app: &mut App) -> Result<()> {
+        app.world().insert_resource(FrameTime {
+            frame_time: 0.0,
+            fps: 0.0,
+            last_update: std::time::Instant::now(),
+            frame_count: 0,
+            log_interval: std::time::Duration::from_secs(1),
+            last_log: std::time::Instant::now(),
+        });
+        app.add_system(update_frame_time, SystemStage::PreUpdate)?;
+
+        Ok(())
+    }
+}
+
 pub struct LogFrameTimePlugin {
     pub log_interval: std::time::Duration,
 }
 
 impl Plugin for LogFrameTimePlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.world().insert_resource(FrameTimeDiagnostics {
-            frame_time: 0.0,
-            fps: 0.0,
-            last_update: std::time::Instant::now(),
-            frame_count: 0,
-            log_interval: self.log_interval,
-            last_log: std::time::Instant::now(),
-        });
-        app.add_system(log_frame_time, SystemStage::PreUpdate)?;
+        app.add_plugin(FrameTimePlugin)?;
+        app.add_system_after(log_frame_time, update_frame_time, SystemStage::PreUpdate)?;
 
         Ok(())
     }
 }
 
-fn log_frame_time(mut frame_time: ResMut<FrameTimeDiagnostics>) -> Result<()> {
+fn update_frame_time(mut frame_time: ResMut<FrameTime>) -> Result<()> {
     let now = std::time::Instant::now();
     frame_time.frame_time = now.duration_since(frame_time.last_update).as_secs_f32();
     frame_time.fps = 1.0 / frame_time.frame_time;
     frame_time.last_update = now;
     frame_time.frame_count += 1;
 
-    if now.duration_since(frame_time.last_log) >= frame_time.log_interval {
-        frame_time.last_log = now;
+    Ok(())
+}
 
+fn log_frame_time(mut frame_time: ResMut<FrameTime>) -> Result<()> {
+    let now = std::time::Instant::now();
+    if now.duration_since(frame_time.last_log) >= frame_time.log_interval {
         log::info!(
             "Frame time: {:.2}ms, FPS: {:.2}",
             frame_time.frame_time * 1000.0,
             frame_time.fps
         );
+        frame_time.last_log = now;
     }
 
     Ok(())

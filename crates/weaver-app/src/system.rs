@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 use weaver_ecs::{
     component::{Res, ResMut},
     prelude::{Query, Resource, World},
-    query::{QueryAccess, QueryFetch},
+    query::{QueryAccess, QueryFetch, QueryFilter},
 };
 use weaver_event::{Event, EventRx, EventTx, Events};
 use weaver_util::prelude::{anyhow, Result};
@@ -78,9 +78,10 @@ impl<T: SystemParam> SystemParam for Option<T> {
     }
 }
 
-impl<Q> SystemParam for Query<Q>
+impl<Q, F> SystemParam for Query<Q, F>
 where
     Q: QueryFetch,
+    F: QueryFilter,
 {
     fn access() -> SystemAccess {
         SystemAccess {
