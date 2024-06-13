@@ -1,8 +1,8 @@
-use std::{ops::Deref, sync::Arc};
+use std::ops::Deref;
 
 use weaver_app::{plugin::Plugin, prelude::App, system::SystemStage, Runner};
 use weaver_core::input::Input;
-use weaver_ecs::{prelude::Resource, world::World};
+use weaver_ecs::prelude::Resource;
 use weaver_util::lock::Lock;
 use winit::{
     dpi::LogicalSize,
@@ -12,7 +12,7 @@ use winit::{
 };
 
 pub mod prelude {
-    pub use super::{WindowResized, WinitEventHooks, WinitPlugin};
+    pub use super::{WindowResized, WinitEvent, WinitPlugin};
     pub use winit;
 }
 
@@ -29,21 +29,13 @@ impl Deref for Window {
     }
 }
 
-#[derive(Default, Resource)]
-pub struct WinitEventHooks {
-    #[allow(clippy::type_complexity)]
-    pub on_event: Vec<Arc<dyn Fn(&World, &Event<()>) + Send + Sync>>,
+#[derive(Debug)]
+pub struct WinitEvent {
+    pub event: Event<()>,
 }
+impl weaver_event::Event for WinitEvent {}
 
-impl WinitEventHooks {
-    pub fn push_event_hook<F>(&mut self, f: F)
-    where
-        F: Fn(&World, &Event<()>) + 'static + Send + Sync,
-    {
-        self.on_event.push(Arc::new(f));
-    }
-}
-
+#[derive(Debug)]
 pub struct WindowResized {
     pub width: u32,
     pub height: u32,
@@ -70,10 +62,10 @@ impl Plugin for WinitPlugin {
             .build(&event_loop)?;
 
         app.insert_resource(Window { window });
-        app.insert_resource(WinitEventHooks::default());
         app.set_runner(WinitRunner {
             event_loop: Lock::new(Some(event_loop)),
         });
+        app.add_event::<WinitEvent>();
         app.add_event::<WindowResized>();
         Ok(())
     }
@@ -93,10 +85,13 @@ impl Runner for WinitRunner {
 
         event_loop.run(move |event, event_loop_window| {
             event_loop_window.set_control_flow(ControlFlow::Poll);
-            if let Some(hooks) = app.world().get_resource::<WinitEventHooks>() {
-                for hook in hooks.on_event.iter() {
-                    hook(app.world(), &event);
-                }
+            if let Some(mut tx) = app
+                .world()
+                .get_resource_mut::<weaver_event::Events<WinitEvent>>()
+            {
+                tx.send(WinitEvent {
+                    event: event.clone(),
+                });
             }
             match event {
                 Event::DeviceEvent { event, .. } => {
@@ -138,8 +133,6 @@ impl Runner for WinitRunner {
                                     app.run_systems(SystemStage::Update).unwrap();
                                     app.run_systems(SystemStage::PostUpdate).unwrap();
 
-                                    app.run_systems(SystemStage::EventPump).unwrap();
-
                                     app.run_systems(SystemStage::PreUi).unwrap();
                                     app.run_systems(SystemStage::Ui).unwrap();
                                     app.run_systems(SystemStage::PostUi).unwrap();
@@ -147,8 +140,11 @@ impl Runner for WinitRunner {
                                     app.run_systems(SystemStage::Extract).unwrap();
                                     app.run_systems(SystemStage::PreRender).unwrap();
                                     app.run_systems(SystemStage::Render).unwrap();
+                                    app.run_systems(SystemStage::RenderUi).unwrap();
                                     // window.pre_present_notify();
                                     app.run_systems(SystemStage::PostRender).unwrap();
+
+                                    app.run_systems(SystemStage::EventPump).unwrap();
                                 }
                                 _ => {}
                             }

@@ -16,3 +16,4 @@ weaver-renderer = { path = "../weaver-renderer" }
 weaver-winit = { path = "../weaver-winit" }
 weaver-app = { path = "../weaver-app" }
 weaver-ecs = { path = "../weaver-ecs" }
+weaver-event = { path = "../weaver-event" }

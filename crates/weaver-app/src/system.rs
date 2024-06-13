@@ -28,6 +28,7 @@ pub enum SystemStage {
     Extract,
     PreRender,
     Render,
+    RenderUi,
     PostRender,
 
     PreShutdown,

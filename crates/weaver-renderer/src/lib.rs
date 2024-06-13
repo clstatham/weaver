@@ -290,13 +290,13 @@ impl Plugin for RendererPlugin {
     }
 }
 
-fn begin_render(renderer: Res<Renderer>) -> anyhow::Result<()> {
+pub fn begin_render(renderer: Res<Renderer>) -> anyhow::Result<()> {
     renderer.begin_frame()?;
 
     Ok(())
 }
 
-fn end_render(renderer: Res<Renderer>) -> anyhow::Result<()> {
+pub fn end_render(renderer: Res<Renderer>) -> anyhow::Result<()> {
     renderer.end_frame()?;
 
     Ok(())

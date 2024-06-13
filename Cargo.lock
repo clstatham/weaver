@@ -2919,6 +2919,7 @@ dependencies = [
  "egui-winit",
  "weaver-app",
  "weaver-ecs",
+ "weaver-event",
  "weaver-renderer",
  "weaver-util",
  "weaver-winit",

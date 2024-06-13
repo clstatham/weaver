@@ -5,9 +5,10 @@ use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::{winit, State};
 use weaver_app::{plugin::Plugin, system::SystemStage, App};
 use weaver_ecs::{component::Res, prelude::Resource, world::World};
+use weaver_event::EventRx;
 use weaver_renderer::prelude::wgpu;
 use weaver_util::{lock::SharedLock, prelude::Result};
-use weaver_winit::Window;
+use weaver_winit::{Window, WinitEvent};
 
 pub mod prelude {
     pub use super::{EguiContext, EguiPlugin};
@@ -154,7 +155,8 @@ impl Plugin for EguiPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_system(begin_frame, SystemStage::PreUi)?;
         app.add_system(end_frame, SystemStage::PostUi)?;
-        app.add_system(render, SystemStage::Render)?;
+        app.add_system(egui_event_hook, SystemStage::PostUi)?;
+        app.add_system(crate::render, SystemStage::RenderUi)?;
 
         Ok(())
     }
@@ -166,23 +168,16 @@ impl Plugin for EguiPlugin {
         drop(window);
         app.world().insert_resource(egui_context);
 
-        if let Some(mut hooks) = app
-            .world()
-            .get_resource_mut::<weaver_winit::WinitEventHooks>()
-        {
-            hooks.push_event_hook(egui_event_hook);
-        }
-
         Ok(())
     }
 }
 
-fn begin_frame(egui_context: Res<EguiContext>, window: Res<Window>) -> Result<()> {
+pub fn begin_frame(egui_context: Res<EguiContext>, window: Res<Window>) -> Result<()> {
     egui_context.begin_frame(&window);
     Ok(())
 }
 
-fn end_frame(egui_context: Res<EguiContext>) -> Result<()> {
+pub fn end_frame(egui_context: Res<EguiContext>) -> Result<()> {
     egui_context.end_frame();
     Ok(())
 }
@@ -223,13 +218,18 @@ fn render(world: &Arc<World>) -> Result<()> {
     Ok(())
 }
 
-fn egui_event_hook(world: &World, event: &winit::event::Event<()>) {
-    let egui_context = world.get_resource::<EguiContext>().unwrap();
-    if let winit::event::Event::WindowEvent { event, window_id } = event {
-        if let Some(window) = world.get_resource::<Window>() {
+fn egui_event_hook(
+    egui_context: Res<EguiContext>,
+    window: Res<Window>,
+    rx: EventRx<WinitEvent>,
+) -> Result<()> {
+    for event in rx.iter() {
+        if let winit::event::Event::WindowEvent { window_id, event } = &event.event {
             if window.id() == *window_id {
                 egui_context.handle_input(&window, event);
             }
         }
     }
+
+    Ok(())
 }

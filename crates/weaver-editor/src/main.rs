@@ -143,6 +143,11 @@ fn update(world: &Arc<World>) -> Result<()> {
     Ok(())
 }
 
-fn ui(_egui_context: Res<EguiContext>) -> Result<()> {
+fn ui(egui_context: Res<EguiContext>) -> Result<()> {
+    egui_context.draw_if_ready(|ctx| {
+        egui::Window::new("Hello World").show(ctx, |ui| {
+            ui.label("Hello World!");
+        });
+    });
     Ok(())
 }
