@@ -3,10 +3,9 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use anyhow::anyhow;
 use weaver_util::{
     lock::{ArcRead, ArcWrite, SharedLock},
-    prelude::{impl_downcast, DowncastSync},
+    prelude::{anyhow, impl_downcast, DowncastSync},
     TypeIdMap,
 };
 

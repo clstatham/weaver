@@ -73,7 +73,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
     {
         let material = assets.get_mut(material).unwrap();
         material.texture_scale = 100.0;
-        material.diffuse = Color::BLACK;
+        material.diffuse = Color::WHITE;
     }
 
     let material2 = assets.load::<Material>("assets/materials/metal.glb")?;

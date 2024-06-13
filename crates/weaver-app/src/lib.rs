@@ -13,7 +13,7 @@ use weaver_ecs::{
 };
 use weaver_event::{Event, Events};
 use weaver_reflect::registry::{TypeRegistry, Typed};
-use weaver_util::lock::SharedLock;
+use weaver_util::{lock::SharedLock, prelude::Result};
 
 pub mod plugin;
 pub mod system;
@@ -24,14 +24,14 @@ pub mod prelude {
 }
 
 pub trait Runner: 'static {
-    fn run(&self, app: &mut App) -> anyhow::Result<()>;
+    fn run(&self, app: &mut App) -> Result<()>;
 }
 
 impl<T> Runner for T
 where
-    T: Fn(&mut App) -> anyhow::Result<()> + Send + Sync + 'static,
+    T: Fn(&mut App) -> Result<()> + Send + Sync + 'static,
 {
-    fn run(&self, app: &mut App) -> anyhow::Result<()> {
+    fn run(&self, app: &mut App) -> Result<()> {
         self(app)
     }
 }
@@ -45,7 +45,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new() -> Result<Self> {
         let world = World::new();
 
         let this = Self {
@@ -61,7 +61,7 @@ impl App {
         Ok(this)
     }
 
-    pub fn add_plugin<T: Plugin>(&mut self, plugin: T) -> anyhow::Result<&mut Self> {
+    pub fn add_plugin<T: Plugin>(&mut self, plugin: T) -> Result<&mut Self> {
         let name = plugin.name().to_owned();
         log::debug!("Adding plugin: {:?}", &name);
         plugin.build(self)?;
@@ -82,7 +82,7 @@ impl App {
     }
 
     pub fn add_event<T: Event>(&mut self) -> &mut Self {
-        fn update_events<T: Event>(mut events: ResMut<Events<T>>) -> anyhow::Result<()> {
+        fn update_events<T: Event>(mut events: ResMut<Events<T>>) -> Result<()> {
             events.clear();
             Ok(())
         }
@@ -121,7 +121,7 @@ impl App {
         &mut self,
         system: impl FunctionSystem<M> + 'static,
         stage: SystemStage,
-    ) -> anyhow::Result<&mut Self> {
+    ) -> Result<&mut Self> {
         self.systems
             .write()
             .entry(stage)
@@ -135,7 +135,7 @@ impl App {
         system: impl FunctionSystem<M1> + 'static,
         before: impl FunctionSystem<M2> + 'static,
         stage: SystemStage,
-    ) -> anyhow::Result<&mut Self> {
+    ) -> Result<&mut Self> {
         self.systems
             .write()
             .entry(stage)
@@ -149,7 +149,7 @@ impl App {
         system: impl FunctionSystem<M1> + 'static,
         after: impl FunctionSystem<M2> + 'static,
         stage: SystemStage,
-    ) -> anyhow::Result<&mut Self> {
+    ) -> Result<&mut Self> {
         self.systems
             .write()
             .entry(stage)
@@ -158,7 +158,7 @@ impl App {
         Ok(self)
     }
 
-    pub fn run_systems(&self, stage: SystemStage) -> anyhow::Result<()> {
+    pub fn run_systems(&self, stage: SystemStage) -> Result<()> {
         let systems = self.systems.read();
         if let Some(systems) = systems.get(&stage) {
             let world = self.world.clone();
@@ -170,7 +170,7 @@ impl App {
         Ok(())
     }
 
-    pub fn run(&mut self) -> anyhow::Result<()> {
+    pub fn run(&mut self) -> Result<()> {
         for plugin in self.plugins.read().iter() {
             plugin.finish(self)?;
         }

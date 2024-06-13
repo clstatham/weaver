@@ -2791,9 +2791,7 @@ dependencies = [
 name = "weaver"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "criterion",
- "parking_lot",
  "weaver-app",
  "weaver-asset",
  "weaver-core",
@@ -2804,14 +2802,12 @@ dependencies = [
  "weaver-renderer",
  "weaver-util",
  "weaver-winit",
- "winit",
 ]
 
 [[package]]
 name = "weaver-app"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "crossbeam-channel",
  "log",
  "petgraph",
@@ -2827,10 +2823,6 @@ dependencies = [
 name = "weaver-asset"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
- "gltf",
- "image",
- "tobj",
  "weaver-app",
  "weaver-asset-macros",
  "weaver-ecs",
@@ -2878,7 +2870,6 @@ dependencies = [
 name = "weaver-ecs"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "itertools 0.13.0",
  "log",
  "petgraph",
@@ -2900,9 +2891,6 @@ dependencies = [
 name = "weaver-editor"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "bitflags 2.5.0",
- "bytemuck",
  "env_logger",
  "log",
  "weaver",
@@ -2929,7 +2917,6 @@ dependencies = [
 name = "weaver-event"
 version = "0.1.0"
 dependencies = [
- "crossbeam-channel",
  "weaver-ecs",
  "weaver-util",
 ]
@@ -3004,7 +2991,6 @@ dependencies = [
 name = "weaver-winit"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "weaver-app",
  "weaver-core",
  "weaver-ecs",

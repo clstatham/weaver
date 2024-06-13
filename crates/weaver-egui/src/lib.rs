@@ -1,10 +1,11 @@
-use std::sync::Arc;
-
 use egui::{Context, FullOutput};
 use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::{winit, State};
 use weaver_app::{plugin::Plugin, system::SystemStage, App};
-use weaver_ecs::{component::Res, prelude::Resource, world::World};
+use weaver_ecs::{
+    component::{Res, ResMut},
+    prelude::Resource,
+};
 use weaver_event::EventRx;
 use weaver_renderer::prelude::wgpu;
 use weaver_util::{lock::SharedLock, prelude::Result};
@@ -155,7 +156,7 @@ impl Plugin for EguiPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_system(begin_frame, SystemStage::PreUi)?;
         app.add_system(end_frame, SystemStage::PostUi)?;
-        app.add_system(egui_event_hook, SystemStage::PostUi)?;
+        app.add_system(egui_events, SystemStage::PostUi)?;
         app.add_system(crate::render, SystemStage::RenderUi)?;
 
         Ok(())
@@ -182,16 +183,11 @@ pub fn end_frame(egui_context: Res<EguiContext>) -> Result<()> {
     Ok(())
 }
 
-fn render(world: &Arc<World>) -> Result<()> {
-    let Some(renderer) = world.get_resource::<weaver_renderer::Renderer>() else {
-        return Ok(());
-    };
-    let Some(mut egui_context) = world.get_resource_mut::<EguiContext>() else {
-        return Ok(());
-    };
-    let Some(window) = world.get_resource::<Window>() else {
-        return Ok(());
-    };
+fn render(
+    renderer: Res<weaver_renderer::Renderer>,
+    mut egui_context: ResMut<EguiContext>,
+    window: Res<Window>,
+) -> Result<()> {
     let Some(current_frame) = renderer.current_frame() else {
         return Ok(());
     };
@@ -218,7 +214,7 @@ fn render(world: &Arc<World>) -> Result<()> {
     Ok(())
 }
 
-fn egui_event_hook(
+fn egui_events(
     egui_context: Res<EguiContext>,
     window: Res<Window>,
     rx: EventRx<WinitEvent>,

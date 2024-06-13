@@ -3,7 +3,7 @@ use std::ops::Deref;
 use weaver_app::{plugin::Plugin, prelude::App, system::SystemStage, Runner};
 use weaver_core::input::Input;
 use weaver_ecs::prelude::Resource;
-use weaver_util::lock::Lock;
+use weaver_util::{lock::Lock, prelude::Result};
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -55,7 +55,7 @@ impl Default for WinitPlugin {
 }
 
 impl Plugin for WinitPlugin {
-    fn build(&self, app: &mut App) -> anyhow::Result<()> {
+    fn build(&self, app: &mut App) -> Result<()> {
         let event_loop = winit::event_loop::EventLoop::new()?;
         let window = WindowBuilder::new()
             .with_inner_size(LogicalSize::new(self.initial_size.0, self.initial_size.1))
@@ -76,7 +76,7 @@ struct WinitRunner {
 }
 
 impl Runner for WinitRunner {
-    fn run(&self, app: &mut App) -> anyhow::Result<()> {
+    fn run(&self, app: &mut App) -> Result<()> {
         app.run_systems(SystemStage::PreInit)?;
         app.run_systems(SystemStage::Init)?;
         app.run_systems(SystemStage::PostInit)?;

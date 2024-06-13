@@ -8,6 +8,7 @@ use weaver_ecs::{
     query::{QueryAccess, QueryFetch},
 };
 use weaver_event::{Event, EventRx, EventTx, Events};
+use weaver_util::prelude::{anyhow, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SystemStage {
@@ -54,7 +55,7 @@ impl SystemAccess {
 
 pub trait System: 'static + Send + Sync {
     fn access(&self) -> SystemAccess;
-    fn run(&self, world: &Arc<World>) -> anyhow::Result<()>;
+    fn run(&self, world: &Arc<World>) -> Result<()>;
 }
 
 pub trait SystemParam {
@@ -62,6 +63,19 @@ pub trait SystemParam {
     fn fetch(world: &Arc<World>) -> Option<Self>
     where
         Self: Sized;
+}
+
+impl<T: SystemParam> SystemParam for Option<T> {
+    fn access() -> SystemAccess {
+        T::access()
+    }
+
+    fn fetch(world: &Arc<World>) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        T::fetch(world).map(Some)
+    }
 }
 
 impl<Q> SystemParam for Query<Q>
@@ -174,7 +188,7 @@ macro_rules! impl_function_system {
     ($($param:ident),*) => {
         impl<Func, $($param),*> FunctionSystem<fn($($param),*)> for Func
         where
-            Func: Fn($($param),*) -> anyhow::Result<()> + 'static + Send + Sync,
+            Func: Fn($($param),*) -> Result<()> + 'static + Send + Sync,
             $($param: SystemParam + 'static + Send + Sync),*
         {
 
@@ -187,7 +201,7 @@ macro_rules! impl_function_system {
 
                 impl <Func, $($param),*> System for FunctionSystemImpl<Func, $($param),*>
                 where
-                    Func: Fn($($param),*) -> anyhow::Result<()> + 'static + Send + Sync,
+                    Func: Fn($($param),*) -> Result<()> + 'static + Send + Sync,
                     $($param: SystemParam + 'static + Send + Sync),*
                 {
                     fn access(&self) -> SystemAccess {
@@ -205,8 +219,8 @@ macro_rules! impl_function_system {
                         access
                     }
 
-                    fn run(&self, world: &Arc<World>) -> anyhow::Result<()> {
-                        let ($($param),*) = ($($param::fetch(world).ok_or_else(|| anyhow::anyhow!("Failed to fetch system param"))?),*);
+                    fn run(&self, world: &Arc<World>) -> Result<()> {
+                        let ($($param),*) = ($($param::fetch(world).ok_or_else(|| anyhow!("Failed to fetch system param"))?),*);
                         (self.func)($($param),*)
                     }
                 }
@@ -231,7 +245,7 @@ impl_function_system!(A, B, C, D, E, F, G, H);
 
 impl<Func> FunctionSystem<()> for Func
 where
-    Func: Fn(&Arc<World>) -> anyhow::Result<()> + 'static + Send + Sync,
+    Func: Fn(&Arc<World>) -> Result<()> + 'static + Send + Sync,
 {
     fn into_system(self) -> Arc<dyn System> {
         struct FunctionSystemImpl<Func> {
@@ -240,7 +254,7 @@ where
 
         impl<Func> System for FunctionSystemImpl<Func>
         where
-            Func: Fn(&Arc<World>) -> anyhow::Result<()> + 'static + Send + Sync,
+            Func: Fn(&Arc<World>) -> Result<()> + 'static + Send + Sync,
         {
             fn access(&self) -> SystemAccess {
                 SystemAccess {
@@ -250,7 +264,7 @@ where
                     components_written: Vec::new(),
                 }
             }
-            fn run(&self, world: &Arc<World>) -> anyhow::Result<()> {
+            fn run(&self, world: &Arc<World>) -> Result<()> {
                 (self.func)(world)
             }
         }
@@ -346,9 +360,9 @@ impl SystemGraph {
         layers
     }
 
-    pub fn resolve_dependencies(&mut self, depth: usize) -> anyhow::Result<()> {
+    pub fn resolve_dependencies(&mut self, depth: usize) -> Result<()> {
         if depth == 0 {
-            return Err(anyhow::anyhow!("Cyclic system dependency detected"));
+            return Err(anyhow!("Cyclic system dependency detected"));
         }
         let layers = self.get_layers();
 
@@ -409,7 +423,7 @@ impl SystemGraph {
         Ok(())
     }
 
-    pub fn run(&self, world: &Arc<World>) -> anyhow::Result<()> {
+    pub fn run(&self, world: &Arc<World>) -> Result<()> {
         let mut schedule = petgraph::visit::Topo::new(&self.systems);
         while let Some(node) = schedule.next(&self.systems) {
             let system = self.systems[node].clone();
@@ -418,7 +432,7 @@ impl SystemGraph {
         Ok(())
     }
 
-    pub fn run_concurrent(&self, world: &Arc<World>) -> anyhow::Result<()> {
+    pub fn run_concurrent(&self, world: &Arc<World>) -> Result<()> {
         let layers = self.get_layers();
 
         // run each layer concurrently

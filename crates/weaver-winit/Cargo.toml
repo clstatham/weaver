@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.86"
 winit = "0.29.15"
 
 weaver-app = { path = "../weaver-app" }

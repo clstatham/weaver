@@ -6,11 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.79"
 env_logger = "0.11.0"
 log = "0.4.20"
-bitflags = "2.4"
-bytemuck = "1.14"
 
 weaver-egui = { path = "../weaver-egui" }
 weaver = { path = "../../" }

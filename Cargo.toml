@@ -33,9 +33,6 @@ name = "weaver"
 path = "src/lib.rs"
 
 [dependencies]
-anyhow = "1.0"
-parking_lot = { version = "0.12", features = ["arc_lock"] }
-winit = "0.29.15"
 
 weaver-app = { path = "crates/weaver-app" }
 weaver-util = { path = "crates/weaver-util" }

@@ -19,7 +19,4 @@ pub mod prelude {
     pub use weaver_renderer::prelude::*;
     pub use weaver_util::prelude::*;
     pub use weaver_winit::prelude::*;
-
-    pub use parking_lot::*;
-    pub use winit::window::Window;
 }

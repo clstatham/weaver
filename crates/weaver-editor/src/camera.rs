@@ -119,7 +119,7 @@ pub fn update_camera(world: &Arc<World>) -> Result<()> {
 pub fn update_aspect_ratio(
     camera: Query<&mut FlyCameraController>,
     rx: EventRx<WindowResized>,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     let events: Vec<_> = rx.iter().collect();
     if let Some(event) = events.last() {
         let WindowResized { width, height } = event;
