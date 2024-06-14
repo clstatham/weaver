@@ -22,13 +22,13 @@ pub struct RenderEdge {
 
 pub trait Render: 'static + Send + Sync {
     #[allow(unused_variables)]
-    fn prepare(&self, world: Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
+    fn prepare(&self, world: &Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
         Ok(())
     }
 
     fn render(
         &self,
-        world: Arc<World>,
+        world: &Arc<World>,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>>;
@@ -72,13 +72,13 @@ impl RenderNode {
         self.render_type_id
     }
 
-    pub fn prepare(&self, world: Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn prepare(&self, world: &Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
         self.render.write().prepare(world, renderer)
     }
 
     pub fn render(
         &self,
-        world: Arc<World>,
+        world: &Arc<World>,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>> {
@@ -91,7 +91,7 @@ pub struct StartNode;
 impl Render for StartNode {
     fn render(
         &self,
-        _world: Arc<World>,
+        _world: &Arc<World>,
         renderer: &Renderer,
         _input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>> {
@@ -102,19 +102,6 @@ impl Render for StartNode {
             Slot::Texture(current_frame.color_view),
             Slot::Texture(current_frame.depth_view),
         ])
-    }
-}
-
-pub struct EndNode;
-
-impl Render for EndNode {
-    fn render(
-        &self,
-        _world: Arc<World>,
-        _renderer: &Renderer,
-        input_slots: &[Slot],
-    ) -> anyhow::Result<Vec<Slot>> {
-        Ok(input_slots.to_vec())
     }
 }
 
@@ -130,11 +117,7 @@ impl Default for RenderGraph {
             node_types: HashMap::new(),
         };
 
-        let start_node = graph.add_node(RenderNode::new("Start", StartNode));
-        let end_node = graph.add_node(RenderNode::new("End", EndNode));
-
-        graph.add_edge(start_node, 0, end_node, 0);
-        graph.add_edge(start_node, 1, end_node, 1);
+        graph.add_node(RenderNode::new("Start", StartNode));
 
         graph
     }
@@ -215,16 +198,20 @@ impl RenderGraph {
         self.node_types.get(&TypeId::of::<T>()).copied()
     }
 
-    pub fn prepare(&self, world: Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn has_node<T: Render>(&self) -> bool {
+        self.node_index::<T>().is_some()
+    }
+
+    pub fn prepare(&self, world: &Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
         for node in self.graph.node_indices() {
             let render_node = &self.graph[node];
-            render_node.prepare(world.clone(), renderer)?;
+            render_node.prepare(world, renderer)?;
         }
 
         Ok(())
     }
 
-    pub fn render(&self, world: Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn render(&self, world: &Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
         let mut output_cache: HashMap<NodeIndex, Vec<Slot>> =
             HashMap::with_capacity(self.graph.node_count());
 
@@ -250,7 +237,7 @@ impl RenderGraph {
                 input_slots.push(output_slots[from_slot].clone());
             }
 
-            let output_slots = render_node.render(world.clone(), renderer, &input_slots)?;
+            let output_slots = render_node.render(world, renderer, &input_slots)?;
             output_cache.insert(node, output_slots);
         }
 

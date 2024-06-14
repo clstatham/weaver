@@ -30,7 +30,7 @@ impl Default for ClearColor {
 impl Render for ClearColor {
     fn render(
         &self,
-        _world: Arc<World>,
+        _world: &Arc<World>,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>> {

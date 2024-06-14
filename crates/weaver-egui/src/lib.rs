@@ -7,7 +7,7 @@ use weaver_ecs::{
     prelude::Resource,
 };
 use weaver_event::EventRx;
-use weaver_renderer::prelude::wgpu;
+use weaver_renderer::{prelude::wgpu, texture::format::VIEW_FORMAT};
 use weaver_util::{lock::SharedLock, prelude::Result};
 use weaver_winit::{Window, WinitEvent};
 
@@ -28,7 +28,7 @@ impl EguiContext {
         let ctx = Context::default();
         let viewport_id = ctx.viewport_id();
         let state = State::new(ctx, viewport_id, window, None, None);
-        let renderer = Renderer::new(device, wgpu::TextureFormat::Bgra8Unorm, None, msaa_samples);
+        let renderer = Renderer::new(device, VIEW_FORMAT, None, msaa_samples);
         Self {
             state: SharedLock::new(state),
             renderer: SharedLock::new(renderer),

@@ -4,7 +4,10 @@ use asset::ExtractedRenderAssets;
 use bind_group::ExtractedAssetBindGroups;
 use camera::CameraPlugin;
 use mesh::MeshPlugin;
-use texture::TexturePlugin;
+use texture::{
+    format::{DEPTH_FORMAT, VIEW_FORMAT},
+    TexturePlugin,
+};
 use weaver_app::{plugin::Plugin, system::SystemStage, App};
 use weaver_ecs::{component::Res, prelude::Resource};
 use weaver_event::EventRx;
@@ -24,10 +27,12 @@ pub mod texture;
 pub mod transform;
 
 pub mod prelude {
-    pub use super::camera::{Camera, CameraPlugin};
-    pub use super::extract::RenderComponent;
-    pub use super::graph::{Render, RenderGraph};
-    pub use super::{Renderer, RendererPlugin};
+    pub use super::{
+        camera::{Camera, CameraPlugin},
+        extract::RenderComponent,
+        graph::{Render, RenderGraph, RenderNode, Slot},
+        Renderer, RendererPlugin,
+    };
     pub use wgpu;
 }
 
@@ -125,7 +130,7 @@ impl Renderer {
             &device,
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
-                format: wgpu::TextureFormat::Bgra8Unorm,
+                format: VIEW_FORMAT,
                 width: window.inner_size().width,
                 height: window.inner_size().height,
                 present_mode: wgpu::PresentMode::AutoNoVsync,
@@ -147,7 +152,7 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32Float,
+            format: DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
@@ -170,7 +175,7 @@ impl Renderer {
             device,
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
-                format: wgpu::TextureFormat::Bgra8Unorm,
+                format: VIEW_FORMAT,
                 width,
                 height,
                 present_mode: wgpu::PresentMode::AutoNoVsync,
@@ -194,7 +199,7 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32Float,
+            format: DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
@@ -224,7 +229,7 @@ impl Renderer {
                 .unwrap()
                 .create_view(&wgpu::TextureViewDescriptor {
                     label: Some("Depth Texture View"),
-                    format: Some(wgpu::TextureFormat::Depth32Float),
+                    format: Some(DEPTH_FORMAT),
                     dimension: Some(wgpu::TextureViewDimension::D2),
                     ..Default::default()
                 });

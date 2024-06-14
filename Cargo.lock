@@ -2797,6 +2797,7 @@ dependencies = [
  "weaver-core",
  "weaver-ecs",
  "weaver-event",
+ "weaver-gizmos",
  "weaver-pbr",
  "weaver-renderer",
  "weaver-util",
@@ -2917,6 +2918,20 @@ name = "weaver-event"
 version = "0.1.0"
 dependencies = [
  "weaver-ecs",
+ "weaver-util",
+]
+
+[[package]]
+name = "weaver-gizmos"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "weaver-app",
+ "weaver-asset",
+ "weaver-core",
+ "weaver-ecs",
+ "weaver-pbr",
+ "weaver-renderer",
  "weaver-util",
 ]
 

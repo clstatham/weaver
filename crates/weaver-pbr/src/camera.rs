@@ -7,7 +7,7 @@ use weaver_renderer::{
     bind_group::ComponentBindGroup,
     camera::{Camera, GpuCamera},
     clear_color::ClearColor,
-    graph::{EndNode, Render, RenderNode, Slot, StartNode},
+    graph::{Render, RenderNode, Slot, StartNode},
     Renderer,
 };
 use weaver_util::prelude::Result;
@@ -19,13 +19,13 @@ struct PbrCameraBindGroupNode {
 }
 
 impl Render for PbrCameraBindGroupNode {
-    fn prepare(&self, _world: Arc<World>, _renderer: &Renderer) -> Result<()> {
+    fn prepare(&self, _world: &Arc<World>, _renderer: &Renderer) -> Result<()> {
         Ok(())
     }
 
     fn render(
         &self,
-        world: Arc<World>,
+        world: &Arc<World>,
         _renderer: &Renderer,
         _input_slots: &[Slot],
     ) -> Result<Vec<Slot>> {
@@ -79,7 +79,6 @@ fn prepare_pbr_cameras(world: &Arc<World>) -> Result<()> {
                 let point_light_array_node =
                     graph.add_node(RenderNode::new("PointLightArrayNode", PointLightArrayNode));
                 let start_node = graph.node_index::<StartNode>().unwrap();
-                let end_node = graph.node_index::<EndNode>().unwrap();
 
                 // start:color -> clear:color
                 graph.add_edge(start_node, 0, clear_color_node, 0);
@@ -96,16 +95,11 @@ fn prepare_pbr_cameras(world: &Arc<World>) -> Result<()> {
 
                 // point_light_array -> pbr:point_light_array
                 graph.add_edge(point_light_array_node, 0, pbr_node, 3);
-
-                // pbr:color -> end:color
-                graph.add_edge(pbr_node, 0, end_node, 0);
-                // pbr:depth -> end:depth
-                graph.add_edge(pbr_node, 1, end_node, 1);
             }
 
             drop(base_camera);
             let base_camera = world.get_component::<Camera>(camera_entity).unwrap();
-            base_camera.graph.prepare(world.clone(), &renderer)?;
+            base_camera.graph.prepare(world, &renderer)?;
         }
     }
 
@@ -119,7 +113,7 @@ fn render_pbr_cameras(world: &Arc<World>) -> Result<()> {
         if camera.active() {
             let graph = camera.render_graph_mut();
             let renderer = world.get_resource::<Renderer>().unwrap();
-            graph.render(world.clone(), &renderer)?;
+            graph.render(world, &renderer)?;
         }
     }
 

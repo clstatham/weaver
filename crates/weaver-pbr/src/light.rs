@@ -175,7 +175,7 @@ pub struct PointLightArrayNode;
 impl Render for PointLightArrayNode {
     fn render(
         &self,
-        world: Arc<World>,
+        world: &Arc<World>,
         _renderer: &Renderer,
         _input_slots: &[Slot],
     ) -> Result<Vec<Slot>> {

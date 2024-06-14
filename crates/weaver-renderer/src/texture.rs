@@ -1,10 +1,19 @@
 use std::sync::Arc;
 
+use format::TEXTURE_FORMAT;
 use weaver_app::{plugin::Plugin, prelude::App};
 use weaver_core::texture::Texture;
 use wgpu::util::DeviceExt;
 
 use crate::Renderer;
+
+pub mod format {
+    pub use wgpu::TextureFormat;
+    pub const VIEW_FORMAT: TextureFormat = TextureFormat::Bgra8UnormSrgb;
+    pub const TEXTURE_FORMAT: TextureFormat = TextureFormat::Rgba8UnormSrgb;
+    pub const NORMAL_FORMAT: TextureFormat = TextureFormat::Rgba8UnormSrgb; // todo: change to Rgba8Unorm and remove the gamma correction in the shader
+    pub const DEPTH_FORMAT: TextureFormat = TextureFormat::Depth32Float;
+}
 
 #[derive(Clone)]
 pub struct GpuTexture {
@@ -26,7 +35,7 @@ impl GpuTexture {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                format: TEXTURE_FORMAT,
                 usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             },

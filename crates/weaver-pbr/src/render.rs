@@ -10,6 +10,7 @@ use weaver_renderer::{
     mesh::GpuMesh,
     prelude::*,
     shader::Shader,
+    texture::format::{DEPTH_FORMAT, VIEW_FORMAT},
 };
 use weaver_util::{
     lock::Lock,
@@ -120,7 +121,7 @@ impl PbrNode {
                 module: &shader.module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Bgra8Unorm,
+                    format: VIEW_FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -131,7 +132,7 @@ impl PbrNode {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
+                format: DEPTH_FORMAT,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: wgpu::StencilState::default(),
@@ -146,7 +147,7 @@ impl PbrNode {
 }
 
 impl Render for PbrNode {
-    fn prepare(&self, world: Arc<World>, renderer: &Renderer) -> Result<()> {
+    fn prepare(&self, world: &Arc<World>, renderer: &Renderer) -> Result<()> {
         if self.pipeline.read().is_none() {
             self.init_pipeline(renderer);
         }
@@ -226,7 +227,7 @@ impl Render for PbrNode {
 
     fn render(
         &self,
-        world: Arc<World>,
+        world: &Arc<World>,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> Result<Vec<Slot>> {

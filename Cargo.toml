@@ -22,6 +22,7 @@ members = [
     "crates/weaver-egui",
     "crates/weaver-ecs-macros",
     "crates/weaver-event",
+    "crates/weaver-gizmos",
 ]
 
 [features]
@@ -42,6 +43,7 @@ weaver-pbr = { path = "crates/weaver-pbr" }
 weaver-core = { path = "crates/weaver-core" }
 weaver-asset = { path = "crates/weaver-asset" }
 weaver-event = { path = "crates/weaver-event" }
+weaver-gizmos = { path = "crates/weaver-gizmos" }
 
 [dev-dependencies]
 criterion = "0.5"
