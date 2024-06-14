@@ -11,15 +11,17 @@ pub struct Transform {
 
 impl Default for Transform {
     fn default() -> Self {
-        Self {
-            translation: Vec3::ZERO,
-            rotation: Quat::IDENTITY,
-            scale: Vec3::ONE,
-        }
+        Self::IDENTITY
     }
 }
 
 impl Transform {
+    pub const IDENTITY: Self = Self {
+        translation: Vec3::ZERO,
+        rotation: Quat::IDENTITY,
+        scale: Vec3::ONE,
+    };
+
     pub fn new(translation: Vec3, rotation: Quat, scale: Vec3) -> Self {
         Self {
             translation,
@@ -86,6 +88,10 @@ impl Transform {
             rotation,
             scale,
         }
+    }
+
+    pub fn inverse(&self) -> Self {
+        self.matrix().inverse().into()
     }
 
     pub fn inverse_matrix(&self) -> Mat4 {

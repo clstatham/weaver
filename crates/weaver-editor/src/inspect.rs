@@ -73,24 +73,6 @@ impl InspectUi for Transform {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Rotation");
-            ui.add(
-                egui::DragValue::new(&mut self.rotation.x)
-                    .fixed_decimals(2)
-                    .speed(0.1),
-            );
-            ui.add(
-                egui::DragValue::new(&mut self.rotation.y)
-                    .fixed_decimals(2)
-                    .speed(0.1),
-            );
-            ui.add(
-                egui::DragValue::new(&mut self.rotation.z)
-                    .fixed_decimals(2)
-                    .speed(0.1),
-            );
-        });
-        ui.horizontal(|ui| {
             ui.label("Scale");
             ui.add(
                 egui::DragValue::new(&mut self.scale.x)

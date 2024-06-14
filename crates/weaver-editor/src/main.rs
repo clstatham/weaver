@@ -24,6 +24,18 @@ struct Floor;
 #[derive(Component)]
 struct Object;
 
+#[derive(Component)]
+struct SelectionAabb {
+    pub aabb: Aabb,
+}
+
+impl SelectionAabb {
+    pub fn from_mesh(mesh: &Mesh) -> Self {
+        let aabb = mesh.aabb;
+        Self { aabb }
+    }
+}
+
 #[derive(Resource, Default)]
 struct EditorState {
     pub selected_entity: Option<Entity>,
@@ -57,7 +69,7 @@ fn main() -> Result<()> {
 fn setup(world: &Arc<World>) -> Result<()> {
     let scene = world.root_scene();
 
-    let mut state = EditorState::default();
+    world.insert_resource(EditorState::default());
 
     let _camera = scene.spawn((
         Camera::perspective_lookat(
@@ -83,16 +95,8 @@ fn setup(world: &Arc<World>) -> Result<()> {
 
     let material = assets.load::<Material>("assets/materials/metal.glb")?;
     {
-        let material = assets.get_mut(material).unwrap();
+        let material = &mut assets[material];
         material.texture_scale = 100.0;
-        // material.diffuse = Color::WHITE;
-    }
-
-    let material2 = assets.load::<Material>("assets/materials/metal.glb")?;
-    {
-        let material = assets.get_mut(material2).unwrap();
-        material.texture_scale = 20.0;
-        material.diffuse = Color::RED;
     }
 
     let _ground = scene.spawn((
@@ -104,6 +108,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
             scale: Vec3::new(20.0, 1.0, 20.0),
         },
         Floor,
+        SelectionAabb::from_mesh(&assets[mesh]),
     ));
 
     // circle of lights
@@ -128,8 +133,13 @@ fn setup(world: &Arc<World>) -> Result<()> {
 
     // spawn some meshes
     for i in 0..6 {
+        let material2 = assets.load::<Material>("assets/materials/metal.glb")?;
+        {
+            let material = &mut assets[material2];
+            material.texture_scale = 20.0;
+        }
         let angle = i as f32 / 6.0 * std::f32::consts::PI * 2.0;
-        let mesh = scene.spawn((
+        let _mesh = scene.spawn((
             mesh,
             material2,
             Transform {
@@ -138,19 +148,17 @@ fn setup(world: &Arc<World>) -> Result<()> {
                 scale: Vec3::splat(0.5),
             },
             Object,
+            SelectionAabb::from_mesh(&assets[mesh]),
         ));
-        state.selected_entity = Some(mesh.entity());
     }
-
-    world.insert_resource(state);
 
     Ok(())
 }
 
 fn update(time: Res<Time>, query: Query<&mut Transform, With<Object>>) -> Result<()> {
     for (_entity, mut transform) in query.iter() {
-        let angle = time.total_time * 0.5;
-        transform.rotation = Quat::from_rotation_y(angle);
+        let angle = time.delta_time * 0.5;
+        transform.rotation *= Quat::from_rotation_y(angle);
     }
 
     Ok(())
@@ -195,16 +203,17 @@ fn pick_entity(world: &Arc<World>) -> Result<()> {
         );
         let mut closest_entity = None;
         let mut closest_distance = f32::INFINITY;
-        for (entity, transform) in world.query::<&Transform>().iter() {
-            if let Some(mesh) = world.get_component::<Handle<Mesh>>(entity) {
-                let assets = world.get_resource::<Assets>().unwrap();
-                let mesh = assets.get(*mesh).unwrap();
-                let aabb = mesh.aabb.transform(*transform);
-                if let Some(distance) = ray.intersect(aabb) {
-                    if distance < closest_distance {
-                        closest_distance = distance;
-                        closest_entity = Some(entity);
-                    }
+        for (entity, aabb) in world.query::<&SelectionAabb>().iter() {
+            let bb = if let Some(transform) = world.get_component::<Transform>(entity) {
+                aabb.aabb.transform(*transform)
+            } else {
+                aabb.aabb
+            };
+
+            if let Some(distance) = ray.intersect(bb) {
+                if distance < closest_distance {
+                    closest_distance = distance;
+                    closest_entity = Some(entity);
                 }
             }
         }

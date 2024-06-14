@@ -1,4 +1,8 @@
-use std::{path::Path, sync::atomic::AtomicUsize};
+use std::{
+    ops::{Index, IndexMut},
+    path::Path,
+    sync::atomic::AtomicUsize,
+};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
@@ -144,6 +148,20 @@ impl Assets {
             .remove(handle.id)
             .and_then(|asset| asset.downcast().ok())
             .map(|asset| *asset)
+    }
+}
+
+impl<T: Asset> Index<Handle<T>> for Assets {
+    type Output = T;
+
+    fn index(&self, handle: Handle<T>) -> &Self::Output {
+        self.get(handle).expect("invalid handle")
+    }
+}
+
+impl<T: Asset> IndexMut<Handle<T>> for Assets {
+    fn index_mut(&mut self, handle: Handle<T>) -> &mut Self::Output {
+        self.get_mut(handle).expect("invalid handle")
     }
 }
 

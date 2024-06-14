@@ -8,6 +8,7 @@ pub trait Intersect<Rhs> {
     fn intersect(&self, rhs: Rhs) -> Option<Self::Output>;
 }
 
+/// 3D plane with infinite extent
 #[derive(Clone, Copy, Debug, PartialEq, Reflect)]
 #[repr(C)]
 pub struct Plane {
@@ -27,6 +28,7 @@ impl Plane {
     }
 }
 
+/// 3D ray with origin and direction, and infinite extent
 #[derive(Clone, Copy, Debug, PartialEq, Reflect)]
 #[repr(C)]
 pub struct Ray {
@@ -44,6 +46,7 @@ impl Ray {
     }
 }
 
+/// Axis-aligned bounding box
 #[derive(Clone, Copy, Debug, PartialEq, Reflect)]
 #[repr(C)]
 pub struct Aabb {
@@ -122,6 +125,135 @@ impl Intersect<Aabb> for Ray {
 
 impl Intersect<Ray> for Aabb {
     type Output = <Ray as Intersect<Aabb>>::Output;
+
+    fn intersect(&self, ray: Ray) -> Option<Self::Output> {
+        ray.intersect(*self)
+    }
+}
+
+impl Intersect<Plane> for Ray {
+    type Output = f32;
+
+    fn intersect(&self, plane: Plane) -> Option<Self::Output> {
+        let denom = plane.normal.dot(self.direction);
+
+        if denom.abs() < 1e-6 {
+            return None;
+        }
+
+        let t = (plane.center - self.origin).dot(plane.normal) / denom;
+
+        if t < 0.0 {
+            return None;
+        }
+
+        Some(t)
+    }
+}
+
+impl Intersect<Ray> for Plane {
+    type Output = <Ray as Intersect<Plane>>::Output;
+
+    fn intersect(&self, ray: Ray) -> Option<Self::Output> {
+        ray.intersect(*self)
+    }
+}
+
+/// Oriented bounding box
+#[derive(Clone, Copy, Debug, PartialEq, Reflect)]
+pub struct Obb {
+    pub aabb: Aabb,
+    pub transform: Transform,
+}
+
+impl Obb {
+    pub fn new(aabb: Aabb, transform: Transform) -> Self {
+        Self { aabb, transform }
+    }
+
+    pub fn center(&self) -> Vec3 {
+        self.transform.translation
+    }
+
+    pub fn size(&self) -> Vec3 {
+        self.aabb.size()
+    }
+
+    pub fn half_size(&self) -> Vec3 {
+        self.aabb.half_size()
+    }
+
+    pub fn corners(&self) -> [Vec3; 8] {
+        self.aabb.corners()
+    }
+
+    pub fn transform(&self, transform: Transform) -> Self {
+        let matrix = transform.matrix();
+        let aabb = self.aabb.transform(transform);
+        let transform = Transform::from_matrix(matrix * self.transform.matrix());
+        Self { aabb, transform }
+    }
+}
+
+impl From<Aabb> for Obb {
+    fn from(aabb: Aabb) -> Self {
+        Self {
+            aabb,
+            transform: Transform::IDENTITY,
+        }
+    }
+}
+
+impl Intersect<Obb> for Ray {
+    type Output = f32;
+
+    fn intersect(&self, obb: Obb) -> Option<Self::Output> {
+        let min = obb.aabb.min;
+        let max = obb.aabb.max;
+
+        let matrix = obb.transform.matrix();
+
+        let mut tmin = 0.0f32;
+        let mut tmax = f32::INFINITY;
+
+        let obb_pos_worldspace = matrix.col(3).truncate();
+
+        let delta = obb_pos_worldspace - self.origin;
+
+        for i in 0..3 {
+            let axis = matrix.col(i).truncate();
+            let e = axis.dot(delta);
+            let f = axis.dot(self.direction);
+
+            if f.abs() > 1e-6 {
+                let mut t1 = (e + min[i]) / f;
+                let mut t2 = (e + max[i]) / f;
+
+                if t1 > t2 {
+                    std::mem::swap(&mut t1, &mut t2);
+                }
+
+                tmin = tmin.max(t1);
+                tmax = tmax.min(t2);
+
+                if tmin > tmax {
+                    return None;
+                }
+            } else if -e + min[i] > 0.0 || -e + max[i] < 0.0 {
+                return None;
+            }
+        }
+
+        if tmin < 0.0 {
+            Some(tmax)
+        } else {
+            Some(tmin)
+        }
+    }
+}
+
+impl Intersect<Ray> for Obb {
+    type Output = <Ray as Intersect<Obb>>::Output;
 
     fn intersect(&self, ray: Ray) -> Option<Self::Output> {
         ray.intersect(*self)
