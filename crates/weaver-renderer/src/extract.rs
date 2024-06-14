@@ -11,7 +11,7 @@ use weaver_ecs::{
 use crate::Renderer;
 
 pub trait RenderComponent: Component {
-    type ExtractQuery<'a>: QueryFetch + 'a;
+    type ExtractQuery<'a>: QueryFetch<'a> + 'a;
     fn extract_render_component(entity: Entity, world: &World, renderer: &Renderer) -> Option<Self>
     where
         Self: Sized;
@@ -45,10 +45,11 @@ fn extract_render_components<T: RenderComponent>(world: &Arc<World>) -> anyhow::
         .get_resource::<Renderer>()
         .expect("Renderer resource not present before extracting render components");
 
-    for entity in query.entity_iter() {
+    for (entity, extract_query) in query.iter() {
         if !world.has_component::<T>(entity) {
             if let Some(component) = T::extract_render_component(entity, world, &renderer) {
                 log::debug!("Extracted render component: {:?}", type_name::<T>());
+                drop(extract_query);
                 world.insert_component(entity, component);
             }
         }
@@ -63,7 +64,7 @@ fn update_render_components<T: RenderComponent>(world: &Arc<World>) -> anyhow::R
         .get_resource::<Renderer>()
         .expect("Renderer resource not present before updating render components");
 
-    for entity in query.entity_iter() {
+    for (entity, _) in query.iter() {
         if let Some(mut component) = world.get_component_mut::<T>(entity) {
             component.update_render_component(entity, world, &renderer)?;
         }

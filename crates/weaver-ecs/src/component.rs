@@ -99,13 +99,13 @@ impl Resources {
     pub fn get<T: Resource>(&self) -> Option<Res<T>> {
         self.resources
             .get(&TypeId::of::<T>())
-            .map(|resource| Res::new(resource.read()))
+            .map(|resource| Res::new(resource.read_arc()))
     }
 
     pub fn get_mut<T: Resource>(&self) -> Option<ResMut<T>> {
         self.resources
             .get(&TypeId::of::<T>())
-            .map(|resource| ResMut::new(resource.write()))
+            .map(|resource| ResMut::new(resource.write_arc()))
     }
 
     pub fn remove<T: Resource>(&mut self) -> Option<T> {

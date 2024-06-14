@@ -62,7 +62,7 @@ impl App {
     }
 
     pub fn add_plugin<T: Plugin>(&mut self, plugin: T) -> Result<&mut Self> {
-        if self.plugins.read().contains_key(&TypeId::of::<T>()) {
+        if self.plugins.read_arc().contains_key(&TypeId::of::<T>()) {
             log::warn!("Plugin already added: {:?}", plugin.name());
             return Ok(self);
         }
@@ -72,7 +72,7 @@ impl App {
         plugin.build(self)?;
 
         self.plugins
-            .write()
+            .write_arc()
             .insert(TypeId::of::<T>(), Box::new(plugin));
 
         Ok(self)
@@ -130,7 +130,7 @@ impl App {
         stage: SystemStage,
     ) -> Result<&mut Self> {
         self.systems
-            .write()
+            .write_arc()
             .entry(stage)
             .or_default()
             .add_system(system);
@@ -144,7 +144,7 @@ impl App {
         stage: SystemStage,
     ) -> Result<&mut Self> {
         self.systems
-            .write()
+            .write_arc()
             .entry(stage)
             .or_default()
             .add_system_before(system, before);
@@ -158,7 +158,7 @@ impl App {
         stage: SystemStage,
     ) -> Result<&mut Self> {
         self.systems
-            .write()
+            .write_arc()
             .entry(stage)
             .or_default()
             .add_system_after(system, after);
@@ -166,7 +166,7 @@ impl App {
     }
 
     pub fn run_systems(&self, stage: SystemStage) -> Result<()> {
-        let systems = self.systems.read();
+        let systems = self.systems.read_arc();
         if let Some(systems) = systems.get(&stage) {
             let world = self.world.clone();
             let (tx, rx) = crossbeam_channel::unbounded();
@@ -178,13 +178,13 @@ impl App {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        for plugin in self.plugins.read().values() {
+        for plugin in self.plugins.read_arc().values() {
             plugin.finish(self)?;
         }
         // todo: prevent infinite loop here
         while let Some(plugin) = self
             .plugins
-            .read()
+            .read_arc()
             .values()
             .find(|plugin| !plugin.ready(self))
         {

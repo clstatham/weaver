@@ -93,11 +93,13 @@ impl World {
         self.storage.read().has_component::<T>(entity)
     }
 
-    pub fn query<Q: QueryFetch>(self: &Arc<Self>) -> Query<Q, ()> {
+    pub fn query<'a, Q: QueryFetch<'a>>(self: &Arc<Self>) -> Query<'a, Q, ()> {
         Query::new(self)
     }
 
-    pub fn query_filtered<Q: QueryFetch, F: QueryFilter>(self: &Arc<Self>) -> Query<Q, F> {
+    pub fn query_filtered<'a, Q: QueryFetch<'a>, F: QueryFilter>(
+        self: &Arc<Self>,
+    ) -> Query<'a, Q, F> {
         Query::new(self)
     }
 

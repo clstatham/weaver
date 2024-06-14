@@ -131,14 +131,15 @@ fn setup(world: &Arc<World>) -> Result<()> {
         });
     }
 
+    let material2 = assets.load::<Material>("assets/materials/metal.glb")?;
+    {
+        let material = &mut assets[material2];
+        material.texture_scale = 20.0;
+    }
+
     // spawn some meshes
-    for i in 0..6 {
-        let material2 = assets.load::<Material>("assets/materials/metal.glb")?;
-        {
-            let material = &mut assets[material2];
-            material.texture_scale = 20.0;
-        }
-        let angle = i as f32 / 6.0 * std::f32::consts::PI * 2.0;
+    for i in 0..10 {
+        let angle = i as f32 / 10.0 * std::f32::consts::PI * 2.0;
         let _mesh = scene.spawn((
             mesh,
             material2,

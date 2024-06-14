@@ -1,6 +1,7 @@
 use std::{
     any::TypeId,
     collections::{HashMap, HashSet},
+    ops::Deref,
 };
 
 use weaver_util::lock::{ArcRead, ArcWrite, SharedLock};
@@ -144,12 +145,20 @@ impl<T> SparseSet<T> {
         self.sparse.get(id).copied().flatten().is_some()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.dense.iter()
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> + '_ {
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
         self.dense.iter_mut()
+    }
+
+    pub fn sparse_iter(&self) -> std::slice::Iter<'_, usize> {
+        self.indices.iter()
+    }
+
+    pub fn sparse_index_of(&self, index: usize) -> Option<usize> {
+        self.indices.get(index).copied()
     }
 
     pub fn clear(&mut self) {
@@ -168,44 +177,20 @@ impl<T> SparseSet<T> {
 }
 
 pub struct ColumnRef {
-    column: ArcRead<SparseSet<Data>>,
+    column: SharedLock<SparseSet<Data>>,
 }
 
 impl ColumnRef {
-    pub fn new(column: ArcRead<SparseSet<Data>>) -> Self {
+    pub fn new(column: SharedLock<SparseSet<Data>>) -> Self {
         Self { column }
     }
 }
 
-impl std::ops::Deref for ColumnRef {
-    type Target = SparseSet<Data>;
+impl Deref for ColumnRef {
+    type Target = SharedLock<SparseSet<Data>>;
 
     fn deref(&self) -> &Self::Target {
         &self.column
-    }
-}
-
-pub struct ColumnMut {
-    column: ArcWrite<SparseSet<Data>>,
-}
-
-impl ColumnMut {
-    pub fn new(column: ArcWrite<SparseSet<Data>>) -> Self {
-        Self { column }
-    }
-}
-
-impl std::ops::Deref for ColumnMut {
-    type Target = SparseSet<Data>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.column
-    }
-}
-
-impl std::ops::DerefMut for ColumnMut {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.column
     }
 }
 
@@ -230,7 +215,7 @@ impl Archetype {
         self.entities.insert(entity);
 
         self.columns[&type_id]
-            .write()
+            .write_arc()
             .insert(entity.as_usize(), data);
     }
 
@@ -239,7 +224,7 @@ impl Archetype {
 
         self.columns
             .values()
-            .filter_map(|column| column.write().remove(entity.as_usize()))
+            .filter_map(|column| column.write_arc().remove(entity.as_usize()))
             .collect()
     }
 
@@ -254,16 +239,22 @@ impl Archetype {
     }
 
     pub fn get_by_type_id(&self, entity: Entity, type_id: TypeId) -> Option<DataRef> {
-        if self.columns[&type_id].read().contains(entity.as_usize()) {
-            Some(DataRef::new(entity, self.columns[&type_id].read()))
+        if self.columns[&type_id]
+            .read_arc()
+            .contains(entity.as_usize())
+        {
+            Some(DataRef::new(entity, self.columns[&type_id].read_arc()))
         } else {
             None
         }
     }
 
     pub fn get_by_type_id_mut(&self, entity: Entity, type_id: TypeId) -> Option<DataMut> {
-        if self.columns[&type_id].read().contains(entity.as_usize()) {
-            Some(DataMut::new(entity, self.columns[&type_id].write()))
+        if self.columns[&type_id]
+            .read_arc()
+            .contains(entity.as_usize())
+        {
+            Some(DataMut::new(entity, self.columns[&type_id].write_arc()))
         } else {
             None
         }
@@ -274,17 +265,8 @@ impl Archetype {
         self.get_column_by_type_id(TypeId::of::<T>())
     }
 
-    #[inline]
-    pub fn get_column_mut<T: Component>(&self) -> Option<ColumnMut> {
-        self.get_column_by_type_id_mut(TypeId::of::<T>())
-    }
-
     pub fn get_column_by_type_id(&self, type_id: TypeId) -> Option<ColumnRef> {
-        Some(ColumnRef::new(self.columns[&type_id].read()))
-    }
-
-    pub fn get_column_by_type_id_mut(&self, type_id: TypeId) -> Option<ColumnMut> {
-        Some(ColumnMut::new(self.columns[&type_id].write()))
+        Some(ColumnRef::new(self.columns[&type_id].clone()))
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
@@ -294,7 +276,7 @@ impl Archetype {
     pub fn has_component_by_type_id(&self, entity: Entity, type_id: TypeId) -> bool {
         self.columns
             .get(&type_id)
-            .map(|c| c.read().contains(entity.as_usize()))
+            .map(|c| c.read_arc().contains(entity.as_usize()))
             .unwrap_or(false)
     }
 
@@ -305,7 +287,7 @@ impl Archetype {
     pub fn contains_entity(&self, entity: Entity) -> bool {
         self.columns
             .values()
-            .any(|column| column.read().contains(entity.as_usize()))
+            .any(|column| column.read_arc().contains(entity.as_usize()))
     }
 
     pub fn len(&self) -> usize {
@@ -393,22 +375,18 @@ impl std::ops::DerefMut for DataMut {
 }
 
 pub struct Ref<T: Component> {
-    entity: Entity,
+    dense_index: usize,
     column: ArcRead<SparseSet<Data>>,
     _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: Component> Ref<T> {
-    pub fn new(entity: Entity, column: ArcRead<SparseSet<Data>>) -> Self {
+    pub fn new(dense_index: usize, column: ArcRead<SparseSet<Data>>) -> Self {
         Self {
-            entity,
+            dense_index,
             column,
             _phantom: std::marker::PhantomData,
         }
-    }
-
-    pub fn entity(this: &Self) -> Entity {
-        this.entity
     }
 }
 
@@ -416,31 +394,23 @@ impl<T: Component> std::ops::Deref for Ref<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.column
-            .get(self.entity.as_usize())
-            .unwrap()
-            .downcast_ref()
-            .unwrap()
+        self.column.dense[self.dense_index].downcast_ref().unwrap()
     }
 }
 
 pub struct Mut<T: Component> {
-    entity: Entity,
+    dense_index: usize,
     column: ArcWrite<SparseSet<Data>>,
     _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: Component> Mut<T> {
-    pub fn new(entity: Entity, column: ArcWrite<SparseSet<Data>>) -> Self {
+    pub fn new(dense_index: usize, column: ArcWrite<SparseSet<Data>>) -> Self {
         Self {
-            entity,
+            dense_index,
             column,
             _phantom: std::marker::PhantomData,
         }
-    }
-
-    pub fn entity(this: &Self) -> Entity {
-        this.entity
     }
 }
 
@@ -448,21 +418,13 @@ impl<T: Component> std::ops::Deref for Mut<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.column
-            .get(self.entity.as_usize())
-            .unwrap()
-            .downcast_ref()
-            .unwrap()
+        self.column.dense[self.dense_index].downcast_ref().unwrap()
     }
 }
 
 impl<T: Component> std::ops::DerefMut for Mut<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.column
-            .get_mut(self.entity.as_usize())
-            .unwrap()
-            .downcast_mut()
-            .unwrap()
+        self.column.dense[self.dense_index].downcast_mut().unwrap()
     }
 }
 
@@ -632,13 +594,12 @@ impl Storage {
         if archetype
             .columns
             .get(&TypeId::of::<T>())?
-            .read()
+            .read_arc()
             .contains(entity.as_usize())
         {
-            Some(Ref::new(
-                entity,
-                archetype.columns[&TypeId::of::<T>()].read(),
-            ))
+            let column = archetype.columns[&TypeId::of::<T>()].read_arc();
+            let dense_index = column.dense_index_of(entity.as_usize()).unwrap();
+            Some(Ref::new(dense_index, column))
         } else {
             None
         }
@@ -652,13 +613,12 @@ impl Storage {
         if archetype
             .columns
             .get(&TypeId::of::<T>())?
-            .read()
+            .read_arc()
             .contains(entity.as_usize())
         {
-            Some(Mut::new(
-                entity,
-                archetype.columns[&TypeId::of::<T>()].write(),
-            ))
+            let column = archetype.columns[&TypeId::of::<T>()].write_arc();
+            let dense_index = column.dense_index_of(entity.as_usize()).unwrap();
+            Some(Mut::new(dense_index, column))
         } else {
             None
         }

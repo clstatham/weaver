@@ -1,6 +1,9 @@
 use std::{any::TypeId, marker::PhantomData, sync::Arc};
 
-use crate::prelude::Archetype;
+use itertools::Itertools;
+use weaver_util::lock::SharedLock;
+
+use crate::prelude::{Archetype, ColumnRef, Data, SparseSet, Storage};
 
 use super::{
     component::Component,
@@ -14,17 +17,94 @@ pub enum QueryAccess {
     ReadWrite,
 }
 
+pub struct ColumnIter<T: Component> {
+    column: SharedLock<SparseSet<Data>>,
+    index: usize,
+    _marker: PhantomData<T>,
+}
+
+impl<T: Component> Iterator for ColumnIter<T> {
+    type Item = (Entity, Ref<T>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index == self.column.read().len() {
+            return None;
+        }
+
+        let column = self.column.read_arc();
+        let entity = column.sparse_index_of(self.index)?;
+        let entity = Entity::from_usize(entity);
+        let item = Ref::new(self.index, column);
+
+        self.index += 1;
+
+        Some((entity, item))
+    }
+}
+
+pub struct ColumnMutIter<T: Component> {
+    column: SharedLock<SparseSet<Data>>,
+    index: usize,
+    _marker: PhantomData<T>,
+}
+
+impl<T: Component> Iterator for ColumnMutIter<T> {
+    type Item = (Entity, Mut<T>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index == self.column.read().len() {
+            return None;
+        }
+
+        let column = self.column.write_arc();
+        let entity = column.sparse_index_of(self.index)?;
+        let entity = Entity::from_usize(entity);
+        let item = Mut::new(self.index, column);
+        self.index += 1;
+
+        Some((entity, item))
+    }
+}
+
+pub trait ColumnExt<T: Component> {
+    fn dense_iter(&self) -> ColumnIter<T>;
+    fn dense_iter_mut(&self) -> ColumnMutIter<T>;
+}
+
+impl<T: Component> ColumnExt<T> for ColumnRef {
+    fn dense_iter(&self) -> ColumnIter<T> {
+        ColumnIter {
+            column: (*self).clone(),
+            index: 0,
+            _marker: PhantomData,
+        }
+    }
+
+    fn dense_iter_mut(&self) -> ColumnMutIter<T> {
+        ColumnMutIter {
+            column: (*self).clone(),
+            index: 0,
+            _marker: PhantomData,
+        }
+    }
+}
+
 pub trait QueryFetchParam {
     type Item: Component;
-    type Fetch<'a>;
+    type Column: ColumnExt<Self::Item>;
+    type Fetch;
     fn type_id() -> TypeId;
     fn access() -> QueryAccess;
-    fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>>;
+    fn fetch_columns<F>(storage: &Storage, test_archetype: F) -> Vec<ColumnRef>
+    where
+        F: Fn(&Archetype) -> bool;
+    fn iter(columns: &Self::Column) -> impl Iterator<Item = (Entity, Self::Fetch)>;
 }
 
 impl<T: Component> QueryFetchParam for &T {
     type Item = T;
-    type Fetch<'a> = Ref<T>;
+    type Column = ColumnRef;
+    type Fetch = Ref<T>;
 
     fn type_id() -> TypeId {
         TypeId::of::<T>()
@@ -34,14 +114,31 @@ impl<T: Component> QueryFetchParam for &T {
         QueryAccess::ReadOnly
     }
 
-    fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>> {
-        world.get_component::<T>(entity)
+    fn fetch_columns<'a, F>(storage: &Storage, test_archetype: F) -> Vec<ColumnRef>
+    where
+        F: Fn(&Archetype) -> bool,
+    {
+        let mut columns = Vec::new();
+        for archetype in storage.archetype_iter() {
+            if test_archetype(archetype) {
+                if let Some(column) = archetype.get_column::<T>() {
+                    columns.push(column);
+                }
+            }
+        }
+
+        columns
+    }
+
+    fn iter(columns: &Self::Column) -> impl Iterator<Item = (Entity, Self::Fetch)> {
+        columns.dense_iter()
     }
 }
 
 impl<T: Component> QueryFetchParam for &mut T {
     type Item = T;
-    type Fetch<'a> = Mut<T>;
+    type Column = ColumnRef;
+    type Fetch = Mut<T>;
 
     fn type_id() -> TypeId {
         TypeId::of::<T>()
@@ -51,58 +148,136 @@ impl<T: Component> QueryFetchParam for &mut T {
         QueryAccess::ReadWrite
     }
 
-    fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>> {
-        world.get_component_mut::<T>(entity)
+    fn fetch_columns<'a, F>(storage: &Storage, test_archetype: F) -> Vec<ColumnRef>
+    where
+        F: Fn(&Archetype) -> bool,
+    {
+        let mut columns = Vec::new();
+        for archetype in storage.archetype_iter() {
+            if test_archetype(archetype) {
+                if let Some(column) = archetype.get_column::<T>() {
+                    columns.push(column);
+                }
+            }
+        }
+
+        columns
+    }
+
+    fn iter(columns: &Self::Column) -> impl Iterator<Item = (Entity, Self::Fetch)> {
+        columns.dense_iter_mut()
     }
 }
 
-pub trait QueryFetch {
-    type Fetch<'a>;
+pub trait QueryFetch<'a> {
+    type Columns;
+    type Fetch;
     fn access() -> &'static [(TypeId, QueryAccess)];
-    fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>>;
+    fn fetch_columns<F>(storage: &Storage, test_archetype: &F) -> Vec<Self::Columns>
+    where
+        F: Fn(&Archetype) -> bool;
+    fn iter(columns: &Self::Columns) -> impl Iterator<Item = (Entity, Self::Fetch)>;
     fn test_archetype(archetype: &Archetype) -> bool;
 }
 
-impl<T> QueryFetch for T
-where
-    T: QueryFetchParam,
-{
-    type Fetch<'a> = T::Fetch<'a>;
-
+impl<'a, T: Component> QueryFetch<'a> for &T {
+    type Columns = ColumnRef;
+    type Fetch = Ref<T>;
     fn access() -> &'static [(TypeId, QueryAccess)] {
         static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
-        ACCESS.get_or_init(|| vec![(T::type_id(), T::access())])
+        ACCESS.get_or_init(|| {
+            vec![(
+                <&T as QueryFetchParam>::type_id(),
+                <&T as QueryFetchParam>::access(),
+            )]
+        })
     }
 
-    fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>> {
-        <T as QueryFetchParam>::fetch(world, entity)
+    fn fetch_columns<F>(storage: &Storage, test_archetype: &F) -> Vec<Self::Columns>
+    where
+        F: Fn(&Archetype) -> bool,
+    {
+        <&T as QueryFetchParam>::fetch_columns(storage, test_archetype)
+    }
+
+    fn iter(columns: &Self::Columns) -> impl Iterator<Item = (Entity, Self::Fetch)> {
+        columns.dense_iter()
     }
 
     fn test_archetype(archetype: &Archetype) -> bool {
-        archetype.contains_component_by_type_id(TypeId::of::<T::Item>())
+        archetype.contains_component_by_type_id(TypeId::of::<T>())
+    }
+}
+
+impl<'a, T: Component> QueryFetch<'a> for &mut T {
+    type Columns = ColumnRef;
+    type Fetch = Mut<T>;
+    fn access() -> &'static [(TypeId, QueryAccess)] {
+        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
+        ACCESS.get_or_init(|| {
+            vec![(
+                <&mut T as QueryFetchParam>::type_id(),
+                <&mut T as QueryFetchParam>::access(),
+            )]
+        })
+    }
+
+    fn fetch_columns<F>(storage: &Storage, test_archetype: &F) -> Vec<Self::Columns>
+    where
+        F: Fn(&Archetype) -> bool,
+    {
+        <&T as QueryFetchParam>::fetch_columns(storage, test_archetype)
+    }
+
+    fn iter(columns: &Self::Columns) -> impl Iterator<Item = (Entity, Self::Fetch)> {
+        columns.dense_iter_mut()
+    }
+
+    fn test_archetype(archetype: &Archetype) -> bool {
+        archetype.contains_component_by_type_id(TypeId::of::<T>())
     }
 }
 
 macro_rules! impl_query_fetch {
     ($($param:ident),*) => {
-        impl<$($param: QueryFetchParam),*> QueryFetch for ($($param,)*) {
-            type Fetch<'a> = ($($param::Fetch<'a>,)*);
+        impl<'a, $($param: QueryFetchParam<Column = ColumnRef> + QueryFetch<'a>),*> QueryFetch<'a> for ($($param,)*) {
+            type Columns = ($($param::Column,)*);
+            type Fetch = ($(
+                <$param as QueryFetchParam>::Fetch,
+                )*);
 
             fn access() -> &'static [(TypeId, QueryAccess)] {
                 static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
-                ACCESS.get_or_init(|| vec![$(($param::type_id(), $param::access()),)*])
+                ACCESS.get_or_init(|| vec![$((<$param as QueryFetchParam>::type_id(), <$param as QueryFetchParam>::access()),)*])
             }
 
-            #[allow(non_snake_case)]
-            fn fetch<'a>(world: &World, entity: Entity) -> Option<Self::Fetch<'a>> {
-                let ($($param,)*) = ($($param::fetch(world, entity)?,)*);
-                Some(($($param,)*))
-
+            fn fetch_columns<Test>(storage: &Storage, test_archetype: &Test) -> Vec<Self::Columns>
+            where
+                Test: Fn(&Archetype) -> bool,
+            {
+                itertools::multizip(($(<$param as QueryFetchParam>::fetch_columns(storage, test_archetype).into_iter(),)*)).collect_vec()
             }
+
+            #[allow(non_snake_case, unused)]
+            fn iter(columns: &Self::Columns) -> impl Iterator<Item = (Entity, Self::Fetch)> {
+                let ($($param,)*) = columns;
+                itertools::multizip(($(<$param as QueryFetchParam>::iter($param),)*))
+                .map(|params| {
+                    let ($($param,)*) = params;
+                    $(
+                        let entity = $param.0;
+                    )*
+                    (
+                        entity,
+                        ($($param.1,)*),
+                    )
+                })
+            }
+
 
             fn test_archetype(archetype: &Archetype) -> bool {
                 $(
-                    $param::test_archetype(archetype) &&
+                    <$param as QueryFetch<'a>>::test_archetype(archetype) &&
                 )*
                 true
             }
@@ -131,7 +306,7 @@ impl QueryFilter for () {
 
 macro_rules! impl_query_filter {
     ($($param:ident),*) => {
-        impl<$($param: QueryFetchParam),*> QueryFilter for ($($param,)*) {
+        impl<'a, $($param: QueryFetch<'a>),*> QueryFilter for ($($param,)*) {
             fn test_archetype(archetype: &Archetype) -> bool {
                 $(
                     $param::test_archetype(archetype) &&
@@ -167,118 +342,35 @@ impl<T: Component> QueryFilter for Without<T> {
     }
 }
 
-pub struct Query<Q, F = ()>
+pub struct Query<'a, Q, F = ()>
 where
-    Q: QueryFetch + ?Sized,
+    Q: QueryFetch<'a> + ?Sized,
     F: QueryFilter + ?Sized,
 {
-    world: Arc<World>,
-    entities: Box<[Entity]>,
+    columns: Vec<Q::Columns>,
     _fetch: PhantomData<Q>,
     _filter: PhantomData<F>,
 }
 
-impl<Q, F> Query<Q, F>
+impl<'a, Q, F> Query<'a, Q, F>
 where
-    Q: QueryFetch + ?Sized,
+    Q: QueryFetch<'a> + ?Sized,
     F: QueryFilter + ?Sized,
 {
     pub fn new(world: &Arc<World>) -> Self {
-        let mut entities = Vec::new();
         let storage = world.storage().read();
-
-        for archetype in storage.archetype_iter() {
-            if Q::test_archetype(archetype) && F::test_archetype(archetype) {
-                entities.extend(archetype.entity_iter());
-            }
-        }
-
-        drop(storage);
+        let columns = Q::fetch_columns(&storage, &|archetype| {
+            Q::test_archetype(archetype) && F::test_archetype(archetype)
+        });
 
         Self {
-            world: world.clone(),
-            entities: entities.into_boxed_slice(),
+            columns,
             _fetch: PhantomData,
             _filter: PhantomData,
         }
     }
 
-    pub fn entity_iter(&self) -> impl Iterator<Item = Entity> + '_ {
-        self.entities.iter().copied()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (Entity, Q::Fetch<'_>)> + '_ {
-        self.entities
-            .iter()
-            .filter_map(move |entity| Some((*entity, Q::fetch(&self.world, *entity)?)))
-    }
-
-    pub fn get(&self, entity: Entity) -> Option<Q::Fetch<'_>> {
-        Q::fetch(&self.world, entity)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate as weaver_ecs;
-    use weaver_ecs_macros::Component;
-
-    use super::*;
-
-    #[derive(Debug, Default, PartialEq, Component)]
-    struct Position {
-        x: f32,
-        y: f32,
-    }
-
-    #[derive(Debug, Default, PartialEq, Component)]
-    struct Velocity {
-        x: f32,
-        y: f32,
-    }
-
-    #[derive(Debug, Default, PartialEq, Component)]
-    struct Acceleration {
-        x: f32,
-        y: f32,
-    }
-
-    #[test]
-    fn query() {
-        let world = World::new();
-        let entity1 = world.create_entity();
-        let entity2 = world.create_entity();
-        let entity3 = world.create_entity();
-
-        world.insert_component(entity1, Position { x: 0.0, y: 0.0 });
-        world.insert_component(entity1, Velocity { x: 1.0, y: 1.0 });
-
-        world.insert_component(entity2, Position { x: 0.0, y: 0.0 });
-        world.insert_component(entity2, Acceleration { x: 1.0, y: 1.0 });
-
-        world.insert_component(entity3, Position { x: 0.0, y: 0.0 });
-        world.insert_component(entity3, Velocity { x: 1.0, y: 1.0 });
-        world.insert_component(entity3, Acceleration { x: 1.0, y: 1.0 });
-
-        let results = Query::<(&Position, &Velocity)>::new(&world);
-
-        let entities = results.entity_iter().collect::<Vec<_>>();
-        assert!(entities.contains(&entity1));
-        assert!(!entities.contains(&entity2));
-        assert!(entities.contains(&entity3));
-
-        let Some((position, velocity)) = results.get(entity1) else {
-            panic!("Entity 1 not found");
-        };
-        assert_eq!(*position, Position { x: 0.0, y: 0.0 });
-        assert_eq!(*velocity, Velocity { x: 1.0, y: 1.0 });
-
-        assert!(results.get(entity2).is_none());
-
-        let Some((position, velocity)) = results.get(entity3) else {
-            panic!("Entity 3 not found");
-        };
-        assert_eq!(*position, Position { x: 0.0, y: 0.0 });
-        assert_eq!(*velocity, Velocity { x: 1.0, y: 1.0 });
+    pub fn iter(&self) -> impl Iterator<Item = (Entity, Q::Fetch)> + '_ {
+        self.columns.iter().flat_map(Q::iter)
     }
 }

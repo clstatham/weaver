@@ -337,11 +337,19 @@ impl<T> SharedLock<T> {
         Arc::downgrade(&self.0)
     }
 
-    pub fn read(&self) -> ArcRead<T> {
+    pub fn read(&self) -> Read<'_, T> {
+        Read(self.0.read())
+    }
+
+    pub fn write(&self) -> Write<'_, T> {
+        Write(self.0.write())
+    }
+
+    pub fn read_arc(&self) -> ArcRead<T> {
         ArcRead::new(self)
     }
 
-    pub fn write(&self) -> ArcWrite<T> {
+    pub fn write_arc(&self) -> ArcWrite<T> {
         ArcWrite::new(self)
     }
 
