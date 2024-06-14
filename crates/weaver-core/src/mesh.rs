@@ -102,7 +102,7 @@ pub fn load_obj(path: impl AsRef<Path>) -> Result<Mesh> {
     Ok(Mesh::new(vertices, indices))
 }
 
-fn calculate_tangents(vertices: &mut [Vertex], indices: &[u32]) {
+pub fn calculate_tangents(vertices: &mut [Vertex], indices: &[u32]) {
     for vertex in vertices.iter_mut() {
         vertex.tangent = Vec3::ZERO;
     }

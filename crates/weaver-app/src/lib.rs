@@ -41,7 +41,6 @@ pub struct App {
     systems: SharedLock<FxHashMap<SystemStage, SystemGraph>>,
     plugins: SharedLock<TypeIdMap<Box<dyn Plugin>>>,
     runner: Option<Box<dyn Runner>>,
-    runtime: rayon::ThreadPool,
 }
 
 impl App {
@@ -53,7 +52,6 @@ impl App {
             systems: SharedLock::new(FxHashMap::default()),
             plugins: SharedLock::new(TypeIdMap::default()),
             runner: None,
-            runtime: rayon::ThreadPoolBuilder::new().build().unwrap(),
         };
 
         this.insert_resource(TypeRegistry::new());
@@ -94,7 +92,7 @@ impl App {
             Ok(())
         }
         self.insert_resource(Events::<T>::new());
-        self.add_system(update_events::<T>, SystemStage::EventPump)
+        self.add_system(update_events::<T>, SystemStage::PrepareFrame)
             .unwrap();
         self
     }
@@ -168,11 +166,7 @@ impl App {
     pub fn run_systems(&self, stage: SystemStage) -> Result<()> {
         let systems = self.systems.read_arc();
         if let Some(systems) = systems.get(&stage) {
-            let world = self.world.clone();
-            let (tx, rx) = crossbeam_channel::unbounded();
-            self.runtime
-                .install(move || tx.send(systems.run_concurrent(&world)).unwrap());
-            rx.recv().unwrap()?;
+            systems.run(&self.world)?;
         }
         Ok(())
     }

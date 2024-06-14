@@ -27,11 +27,11 @@ impl<T: Component> Iterator for ColumnIter<T> {
     type Item = (Entity, Ref<T>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index == self.column.read().len() {
+        let column = self.column.read_arc();
+        if self.index == column.len() {
             return None;
         }
 
-        let column = self.column.read_arc();
         let entity = column.sparse_index_of(self.index)?;
         let entity = Entity::from_usize(entity);
         let item = Ref::new(self.index, column);
@@ -93,6 +93,7 @@ pub trait QueryFetchParam {
     type Item: Component;
     type Column: ColumnExt<Self::Item>;
     type Fetch;
+
     fn type_id() -> TypeId;
     fn access() -> QueryAccess;
     fn fetch_columns<F>(storage: &Storage, test_archetype: F) -> Vec<ColumnRef>

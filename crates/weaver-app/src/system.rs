@@ -16,7 +16,7 @@ pub enum SystemStage {
     Init,
     PostInit,
 
-    EventPump,
+    PrepareFrame,
 
     PreUpdate,
     Update,
@@ -31,6 +31,8 @@ pub enum SystemStage {
     Render,
     RenderUi,
     PostRender,
+
+    FinishFrame,
 
     PreShutdown,
     Shutdown,

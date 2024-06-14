@@ -144,7 +144,10 @@ impl Runner for WinitRunner {
                                     // window.pre_present_notify();
                                     app.run_systems(SystemStage::PostRender).unwrap();
 
-                                    app.run_systems(SystemStage::EventPump).unwrap();
+                                    app.run_systems(SystemStage::FinishFrame).unwrap();
+
+                                    // todo: move to the beginning of the frame once it won't break egui for some reason
+                                    app.run_systems(SystemStage::PrepareFrame).unwrap();
                                 }
                                 _ => {}
                             }

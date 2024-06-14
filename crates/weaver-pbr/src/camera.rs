@@ -14,7 +14,7 @@ use weaver_util::prelude::Result;
 
 use crate::{light::PointLightArrayNode, render::PbrNode};
 
-struct PbrCameraBindGroupNode {
+pub struct PbrCameraBindGroupNode {
     camera_entity: Entity,
 }
 

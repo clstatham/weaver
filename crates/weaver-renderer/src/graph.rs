@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use petgraph::prelude::*;
+use petgraph::{prelude::*, visit::Topo};
 use weaver_ecs::world::World;
 use weaver_util::lock::Lock;
 
@@ -215,14 +215,9 @@ impl RenderGraph {
         let mut output_cache: HashMap<NodeIndex, Vec<Slot>> =
             HashMap::with_capacity(self.graph.node_count());
 
-        let mut bfs = Bfs::new(&self.graph, self.node_index::<StartNode>().unwrap());
-        for node in self.graph.externals(Direction::Incoming) {
-            if !bfs.stack.contains(&node) {
-                bfs.stack.push_back(node);
-            }
-        }
+        let mut search = Topo::new(&self.graph);
 
-        while let Some(node) = bfs.next(&self.graph) {
+        while let Some(node) = search.next(&self.graph) {
             let render_node = &self.graph[node];
 
             let mut input_slots = Vec::new();
@@ -233,7 +228,13 @@ impl RenderGraph {
             edges_incoming.sort_by_key(|edge| edge.weight().to_slot);
             for edge in edges_incoming {
                 let from_slot = edge.weight().from_slot;
-                let output_slots = output_cache.get(&edge.source()).unwrap();
+                let Some(output_slots) = output_cache.get(&edge.source()) else {
+                    return Err(anyhow::anyhow!(
+                        "Missing output cache for node {:?} ({:?})",
+                        edge.source(),
+                        self.graph[edge.source()].name()
+                    ));
+                };
                 input_slots.push(output_slots[from_slot].clone());
             }
 

@@ -53,6 +53,7 @@ fn main() -> Result<()> {
         .add_plugin(AssetPlugin)?
         .add_plugin(RendererPlugin)?
         .add_plugin(PbrPlugin)?
+        .add_plugin(GizmoPlugin)?
         .add_plugin(EguiPlugin)?
         .add_plugin(LogFrameTimePlugin {
             log_interval: std::time::Duration::from_secs(1),
@@ -138,8 +139,8 @@ fn setup(world: &Arc<World>) -> Result<()> {
     }
 
     // spawn some meshes
-    for i in 0..10 {
-        let angle = i as f32 / 10.0 * std::f32::consts::PI * 2.0;
+    for i in 0..6 {
+        let angle = i as f32 / 6.0 * std::f32::consts::PI * 2.0;
         let _mesh = scene.spawn((
             mesh,
             material2,
@@ -156,10 +157,25 @@ fn setup(world: &Arc<World>) -> Result<()> {
     Ok(())
 }
 
-fn update(time: Res<Time>, query: Query<&mut Transform, With<Object>>) -> Result<()> {
-    for (_entity, mut transform) in query.iter() {
-        let angle = time.delta_time * 0.5;
-        transform.rotation *= Quat::from_rotation_y(angle);
+fn update(
+    query: Query<(&Transform, &Handle<Mesh>)>,
+    gizmos: Res<Gizmos>,
+    state: Res<EditorState>,
+    assets: Res<Assets>,
+) -> Result<()> {
+    for (entity, (transform, handle)) in query.iter() {
+        if let Some(selected_entity) = state.selected_entity {
+            if selected_entity == entity {
+                let mesh = &assets[*handle];
+                let aabb = mesh.aabb.transform(*transform);
+                let gizmo_transform = Transform::new(
+                    aabb.center(),
+                    Quat::IDENTITY,
+                    aabb.size() * 2.0 + Vec3::splat(0.1),
+                );
+                gizmos.cube(gizmo_transform, Color::GREEN);
+            }
+        }
     }
 
     Ok(())

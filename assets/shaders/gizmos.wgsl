@@ -1,13 +1,13 @@
-#define_import_path weaver::doodads
+#define_import_path weaver::gizmos
 #import weaver::common::{CameraUniform};
 
-struct DoodadVertexInput {
+struct GizmoVertexInput {
     @builtin(instance_index) instance_index: u32,
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
 }
 
-struct DoodadVertexOutput {
+struct GizmoVertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -20,8 +20,8 @@ struct DoodadVertexOutput {
 @group(1) @binding(0) var<uniform> camera: CameraUniform;
 
 @vertex
-fn vs_main(input: DoodadVertexInput) -> DoodadVertexOutput {
-    var output: DoodadVertexOutput;
+fn vs_main(input: GizmoVertexInput) -> GizmoVertexOutput {
+    var output: GizmoVertexOutput;
     let model_transform = model_transforms[input.instance_index];
     output.position = (model_transform * vec4<f32>(input.position, 1.0)).xyz;
     let normal_transform = mat3x3<f32>(
@@ -36,7 +36,7 @@ fn vs_main(input: DoodadVertexInput) -> DoodadVertexOutput {
 }
 
 @fragment
-fn fs_main(input: DoodadVertexOutput) -> @location(0) vec4<f32> {
+fn fs_main(input: GizmoVertexOutput) -> @location(0) vec4<f32> {
     // simple phong lighting
 
     let light_direction = normalize(vec3<f32>(1.0, -1.0, 1.0));
