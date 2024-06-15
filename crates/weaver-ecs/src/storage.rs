@@ -64,7 +64,7 @@ impl Data {
 }
 
 pub struct SparseSet<T> {
-    dense: Vec<T>,
+    pub(crate) dense: Vec<T>,
     sparse: Vec<Option<usize>>,
     indices: Vec<usize>,
 }
@@ -176,6 +176,7 @@ impl<T> SparseSet<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct ColumnRef {
     column: SharedLock<SparseSet<Data>>,
 }

@@ -74,7 +74,7 @@ pub trait ColumnExt<T: Component> {
 impl<T: Component> ColumnExt<T> for ColumnRef {
     fn dense_iter(&self) -> ColumnIter<T> {
         ColumnIter {
-            column: (*self).clone(),
+            column: (**self).clone(),
             index: 0,
             _marker: PhantomData,
         }
@@ -82,7 +82,7 @@ impl<T: Component> ColumnExt<T> for ColumnRef {
 
     fn dense_iter_mut(&self) -> ColumnMutIter<T> {
         ColumnMutIter {
-            column: (*self).clone(),
+            column: (**self).clone(),
             index: 0,
             _marker: PhantomData,
         }
