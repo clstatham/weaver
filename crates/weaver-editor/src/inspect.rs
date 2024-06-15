@@ -16,12 +16,13 @@ pub trait InspectUi {
 impl InspectUi for dyn Reflect {
     fn inspect_ui(&mut self, type_registry: &TypeRegistry, assets: &Assets, ui: &mut egui::Ui) {
         macro_rules! try_downcast {
-            ($($t:ty),+ $(,)?) => {
+            ($($t:ty),*) => {
                 $(
                     if let Some(value) = self.downcast_mut::<$t>() {
-                        return value.inspect_ui(type_registry, assets, ui);
+                        value.inspect_ui(type_registry, assets, ui);
+                        return;
                     }
-                )+
+                )*
             };
         }
         try_downcast!(Color, Handle<Material>, Transform, PointLight);
@@ -50,7 +51,7 @@ impl InspectUi for dyn Struct {
             for field_name in struct_info.field_names.iter() {
                 let field = self.field_mut(field_name).unwrap();
                 ui.vertical(|ui| {
-                    ui.label(field_name.to_string());
+                    ui.label(*field_name);
                     field.inspect_ui(type_registry, assets, ui);
                 });
             }
@@ -78,11 +79,11 @@ impl InspectUi for Handle<Material> {
 impl InspectUi for Material {
     fn inspect_ui(&mut self, type_registry: &TypeRegistry, assets: &Assets, ui: &mut egui::Ui) {
         ui.collapsing(self.reflect_type_name(), |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_top(|ui| {
                 ui.label("Diffuse");
                 self.diffuse.inspect_ui(type_registry, assets, ui);
             });
-            ui.horizontal(|ui| {
+            ui.horizontal_top(|ui| {
                 ui.label("Metallic");
                 ui.add(
                     egui::DragValue::new(&mut self.metallic)
@@ -91,7 +92,7 @@ impl InspectUi for Material {
                         .clamp_range(0.0..=f32::INFINITY),
                 );
             });
-            ui.horizontal(|ui| {
+            ui.horizontal_top(|ui| {
                 ui.label("Roughness");
                 ui.add(
                     egui::DragValue::new(&mut self.roughness)
@@ -100,7 +101,7 @@ impl InspectUi for Material {
                         .clamp_range(0.0..=f32::INFINITY),
                 );
             });
-            ui.horizontal(|ui| {
+            ui.horizontal_top(|ui| {
                 ui.label("Texture Scale");
                 ui.add(
                     egui::DragValue::new(&mut self.texture_scale)
@@ -116,7 +117,7 @@ impl InspectUi for Material {
 impl InspectUi for Transform {
     fn inspect_ui(&mut self, _type_registry: &TypeRegistry, _assets: &Assets, ui: &mut egui::Ui) {
         ui.collapsing(self.reflect_type_name(), |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_top(|ui| {
                 ui.label("Translation");
                 ui.add(
                     egui::DragValue::new(&mut self.translation.x)
@@ -134,7 +135,7 @@ impl InspectUi for Transform {
                         .speed(0.1),
                 );
             });
-            ui.horizontal(|ui| {
+            ui.horizontal_top(|ui| {
                 ui.label("Scale");
                 ui.add(
                     egui::DragValue::new(&mut self.scale.x)
@@ -160,11 +161,11 @@ impl InspectUi for Transform {
 impl InspectUi for PointLight {
     fn inspect_ui(&mut self, type_registry: &TypeRegistry, assets: &Assets, ui: &mut egui::Ui) {
         ui.collapsing(self.reflect_type_name(), |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_top(|ui| {
                 ui.label("Color");
                 self.color.inspect_ui(type_registry, assets, ui);
             });
-            ui.horizontal(|ui| {
+            ui.horizontal_top(|ui| {
                 ui.label("Intensity");
                 ui.add(
                     egui::DragValue::new(&mut self.intensity)
@@ -173,7 +174,7 @@ impl InspectUi for PointLight {
                         .clamp_range(0.0..=f32::INFINITY),
                 );
             });
-            ui.horizontal(|ui| {
+            ui.horizontal_top(|ui| {
                 ui.label("Radius");
                 ui.add(
                     egui::DragValue::new(&mut self.radius)
