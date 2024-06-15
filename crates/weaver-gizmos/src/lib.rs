@@ -70,7 +70,7 @@ impl RenderResource for RenderCubeGizmo {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Hash)]
 pub enum GizmoMode {
     Solid,
     Wireframe,

@@ -1,6 +1,6 @@
 use weaver::{
     weaver_core::{color::Color, transform::Transform},
-    weaver_pbr::material::Material,
+    weaver_pbr::{light::PointLight, material::Material},
 };
 use weaver_egui::prelude::*;
 
@@ -86,6 +86,33 @@ impl InspectUi for Transform {
             );
             ui.add(
                 egui::DragValue::new(&mut self.scale.z)
+                    .fixed_decimals(2)
+                    .speed(0.1)
+                    .clamp_range(0.0..=f32::INFINITY),
+            );
+        });
+    }
+}
+
+impl InspectUi for PointLight {
+    fn inspect_ui(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Color");
+            self.color.inspect_ui(ui);
+        });
+        ui.horizontal(|ui| {
+            ui.label("Intensity");
+            ui.add(
+                egui::DragValue::new(&mut self.intensity)
+                    .fixed_decimals(2)
+                    .speed(0.1)
+                    .clamp_range(0.0..=f32::INFINITY),
+            );
+        });
+        ui.horizontal(|ui| {
+            ui.label("Radius");
+            ui.add(
+                egui::DragValue::new(&mut self.radius)
                     .fixed_decimals(2)
                     .speed(0.1)
                     .clamp_range(0.0..=f32::INFINITY),

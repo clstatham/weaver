@@ -61,7 +61,8 @@ fn main() -> Result<()> {
         .add_system(setup, SystemStage::Init)?
         .add_system(camera::update_camera, SystemStage::Update)?
         .add_system(camera::update_aspect_ratio, SystemStage::Update)?
-        .add_system(update, SystemStage::Update)?
+        .add_system(selection_gizmos, SystemStage::Update)?
+        .add_system(light_gizmos, SystemStage::Update)?
         .add_system(pick_entity, SystemStage::Update)?
         .add_system(ui, SystemStage::Ui)?
         .run()
@@ -124,12 +125,21 @@ fn setup(world: &Arc<World>) -> Result<()> {
 
     for (i, color) in COLORS.iter().enumerate() {
         let angle = i as f32 / (COLORS.len() as f32) * std::f32::consts::PI * 2.0;
-        let _light: Node = scene.spawn(PointLight {
-            color: *color,
-            intensity: 100.0,
-            radius: 100.0,
-            position: Vec3::new(angle.cos() * 10.0, 10.0, angle.sin() * 10.0),
-        });
+        let _light: Node = scene.spawn((
+            PointLight {
+                color: *color,
+                intensity: 100.0,
+                radius: 100.0,
+            },
+            Transform {
+                translation: Vec3::new(angle.cos() * 5.0, 5.0, angle.sin() * 5.0),
+                rotation: Quat::IDENTITY,
+                scale: Vec3::ONE,
+            },
+            SelectionAabb {
+                aabb: Aabb::new(Vec3::splat(-0.1), Vec3::splat(0.1)),
+            },
+        ));
     }
 
     let material2 = assets.load::<Material>("assets/materials/metal.glb")?;
@@ -157,7 +167,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
     Ok(())
 }
 
-fn update(
+fn selection_gizmos(
     query: Query<(&Transform, &Handle<Mesh>)>,
     gizmos: Res<Gizmos>,
     state: Res<EditorState>,
@@ -181,6 +191,24 @@ fn update(
     Ok(())
 }
 
+fn light_gizmos(
+    query: Query<(&PointLight, &Transform, &SelectionAabb)>,
+    gizmos: Res<Gizmos>,
+) -> Result<()> {
+    for (_, (light, transform, aabb)) in query.iter() {
+        gizmos.cube(
+            Transform::new(
+                transform.translation,
+                Quat::IDENTITY,
+                aabb.aabb.size() * 2.0,
+            ),
+            light.color,
+        );
+    }
+
+    Ok(())
+}
+
 fn ui(world: &Arc<World>) -> Result<()> {
     let editor_state = world.get_resource::<EditorState>().unwrap();
     let egui_context = world.get_resource::<EguiContext>().unwrap();
@@ -197,6 +225,11 @@ fn ui(world: &Arc<World>) -> Result<()> {
                 if let Some(mut transform) = world.get_component_mut::<Transform>(entity) {
                     ui.collapsing("Transform", |ui| {
                         transform.inspect_ui(ui);
+                    });
+                }
+                if let Some(mut light) = world.get_component_mut::<PointLight>(entity) {
+                    ui.collapsing("Light", |ui| {
+                        light.inspect_ui(ui);
                     });
                 }
             });

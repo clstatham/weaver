@@ -3,7 +3,7 @@ use std::sync::Arc;
 use weaver_app::{plugin::Plugin, App};
 use wgpu::util::DeviceExt;
 
-use weaver_core::{color::Color, prelude::Vec3};
+use weaver_core::{color::Color, prelude::Vec3, transform::Transform};
 use weaver_ecs::prelude::{Component, Resource, World};
 use weaver_renderer::{
     bind_group::{CreateResourceBindGroup, ResourceBindGroup, ResourceBindGroupPlugin},
@@ -16,7 +16,6 @@ use weaver_util::prelude::Result;
 
 #[derive(Copy, Clone, Debug, Component)]
 pub struct PointLight {
-    pub position: Vec3,
     pub color: Color,
     pub intensity: f32,
     pub radius: f32,
@@ -31,19 +30,6 @@ pub struct PointLightUniform {
     pub intensity: f32,
     pub radius: f32,
     _padding2: [u32; 2],
-}
-
-impl From<PointLight> for PointLightUniform {
-    fn from(point_light: PointLight) -> Self {
-        Self {
-            position: point_light.position,
-            _padding: 0,
-            color: point_light.color,
-            intensity: point_light.intensity,
-            radius: point_light.radius,
-            _padding2: [0; 2],
-        }
-    }
 }
 
 pub const MAX_POINT_LIGHTS: usize = 16;
@@ -87,11 +73,18 @@ impl RenderResource for GpuPointLightArray {
     where
         Self: Sized,
     {
-        let point_lights = world.query::<&PointLight>();
+        let point_lights = world.query::<(&PointLight, &Transform)>();
 
         let point_light_uniforms: Vec<PointLightUniform> = point_lights
             .iter()
-            .map(|(_, point_light)| PointLightUniform::from(*point_light))
+            .map(|(_, (point_light, transform))| PointLightUniform {
+                position: transform.translation,
+                color: point_light.color,
+                intensity: point_light.intensity,
+                radius: point_light.radius,
+                _padding: 0,
+                _padding2: [0; 2],
+            })
             .collect();
 
         let storage_buffer =
@@ -111,11 +104,18 @@ impl RenderResource for GpuPointLightArray {
     }
 
     fn update_render_resource(&mut self, world: &Arc<World>, renderer: &Renderer) -> Result<()> {
-        let point_lights = world.query::<&PointLight>();
+        let point_lights = world.query::<(&PointLight, &Transform)>();
 
         let point_light_uniforms: Vec<PointLightUniform> = point_lights
             .iter()
-            .map(|(_, point_light)| PointLightUniform::from(*point_light))
+            .map(|(_, (point_light, transform))| PointLightUniform {
+                position: transform.translation,
+                color: point_light.color,
+                intensity: point_light.intensity,
+                radius: point_light.radius,
+                _padding: 0,
+                _padding2: [0; 2],
+            })
             .collect();
 
         self.buffer.update(
