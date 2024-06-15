@@ -1,14 +1,17 @@
 use std::sync::Arc;
 
 use weaver_core::color::Color;
-use weaver_ecs::{prelude::Component, world::World};
+use weaver_ecs::{
+    prelude::{Component, Reflect},
+    world::World,
+};
 
 use crate::{
     graph::{Render, Slot},
     Renderer,
 };
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct ClearColor {
     pub color: Color,
 }

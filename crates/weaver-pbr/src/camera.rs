@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use weaver_app::{plugin::Plugin, system::SystemStage, App};
 use weaver_core::color::Color;
-use weaver_ecs::{entity::Entity, prelude::Component, world::World};
+use weaver_ecs::{
+    entity::Entity,
+    prelude::{Component, Reflect},
+    world::World,
+};
 use weaver_renderer::{
     bind_group::ComponentBindGroup,
     camera::{Camera, GpuCamera},
@@ -36,7 +40,7 @@ impl Render for PbrCameraBindGroupNode {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct PbrCamera {
     clear_color: Color,
 }

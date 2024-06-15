@@ -4,7 +4,7 @@ use anyhow::bail;
 use weaver_app::{plugin::Plugin, system::SystemStage, App};
 use weaver_asset::{prelude::Asset, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
-    prelude::{Component, Resource},
+    prelude::{Component, Reflect, Resource},
     world::World,
 };
 
@@ -24,9 +24,11 @@ pub trait CreateResourceBindGroup: Resource {
     fn create_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup;
 }
 
-#[derive(Component, Clone)]
+#[derive(Component, Clone, Reflect)]
 pub struct ComponentBindGroup<T: CreateComponentBindGroup> {
+    #[reflect(ignore)]
     bind_group: Arc<wgpu::BindGroup>,
+    #[reflect(ignore)]
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -222,7 +224,7 @@ fn create_asset_bind_group<T: CreateComponentBindGroup + RenderAsset>(
             world.insert_component(entity, bind_group_handle);
         } else {
             let asset = assets.get::<T>(*handle).unwrap();
-            let bind_group = ComponentBindGroup::new(device, asset);
+            let bind_group = ComponentBindGroup::new(device, &*asset);
             let bind_group_handle = assets.insert(bind_group);
             asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
             drop(handle);

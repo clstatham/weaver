@@ -2,7 +2,11 @@ use weaver_app::{plugin::Plugin, App};
 use wgpu::util::DeviceExt;
 
 use weaver_core::transform::Transform;
-use weaver_ecs::{entity::Entity, prelude::Component, world::World};
+use weaver_ecs::{
+    entity::Entity,
+    prelude::{Component, Reflect},
+    world::World,
+};
 
 use crate::{
     bind_group::{ComponentBindGroupPlugin, CreateComponentBindGroup},
@@ -11,8 +15,9 @@ use crate::{
     Renderer,
 };
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct GpuTransform {
+    #[reflect(ignore)]
     pub buffer: GpuBuffer,
 }
 

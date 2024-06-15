@@ -1,21 +1,25 @@
 use std::{
-    ops::{Index, IndexMut},
+    ops::{Deref, DerefMut},
     path::Path,
     sync::atomic::AtomicUsize,
 };
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
-    prelude::{Component, Reflect, Resource},
+    prelude::{reflect_trait, Component, Reflect, Resource},
     storage::SparseSet,
 };
-use weaver_util::prelude::{anyhow, impl_downcast, DowncastSync, Error, Result};
+use weaver_util::{
+    lock::{ArcRead, ArcWrite, SharedLock},
+    prelude::{anyhow, impl_downcast, DowncastSync, Error, Result},
+};
 
 pub mod prelude {
-    pub use crate::{Asset, AssetPlugin, Assets, Handle};
+    pub use crate::{Asset, AssetPlugin, Assets, Handle, ReflectAsset, UntypedHandle};
     pub use weaver_asset_macros::Asset;
 }
 
+#[reflect_trait]
 pub trait Asset: DowncastSync {
     fn load(assets: &mut Assets, path: &std::path::Path) -> Result<Self>
     where
@@ -103,10 +107,42 @@ impl<T: Asset> TryFrom<UntypedHandle> for Handle<T> {
     }
 }
 
+pub struct AssetRef<T: Asset> {
+    asset: ArcRead<Box<dyn Asset>>,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T: Asset> Deref for AssetRef<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        (**self.asset).downcast_ref().expect("invalid asset")
+    }
+}
+
+pub struct AssetMut<T: Asset> {
+    asset: ArcWrite<Box<dyn Asset>>,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T: Asset> Deref for AssetMut<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        (**self.asset).downcast_ref().expect("invalid asset")
+    }
+}
+
+impl<T: Asset> DerefMut for AssetMut<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        (**self.asset).downcast_mut().expect("invalid asset")
+    }
+}
+
 #[derive(Default, Resource)]
 pub struct Assets {
     next_handle_id: AtomicUsize,
-    storage: SparseSet<Box<dyn Asset>>,
+    storage: SparseSet<SharedLock<Box<dyn Asset>>>,
 }
 
 impl Assets {
@@ -123,7 +159,7 @@ impl Assets {
         let id = self
             .next_handle_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.storage.insert(id, Box::new(asset));
+        self.storage.insert(id, SharedLock::new(Box::new(asset)));
 
         Handle {
             id,
@@ -131,37 +167,31 @@ impl Assets {
         }
     }
 
-    pub fn get<T: Asset>(&self, handle: Handle<T>) -> Option<&T> {
-        self.storage
-            .get(handle.id)
-            .and_then(|asset| (**asset).downcast_ref())
+    pub fn get<T: Asset>(&self, handle: Handle<T>) -> Option<AssetRef<T>> {
+        self.storage.get(handle.id).and_then(|asset| {
+            let asset = asset.read_arc();
+            asset.is::<T>().then(|| AssetRef {
+                asset,
+                _marker: std::marker::PhantomData,
+            })
+        })
     }
 
-    pub fn get_mut<T: Asset>(&mut self, handle: Handle<T>) -> Option<&mut T> {
-        self.storage
-            .get_mut(handle.id)
-            .and_then(|asset| (**asset).downcast_mut())
+    pub fn get_mut<T: Asset>(&self, handle: Handle<T>) -> Option<AssetMut<T>> {
+        self.storage.get(handle.id).and_then(|asset| {
+            let asset = asset.write_arc();
+            asset.is::<T>().then(|| AssetMut {
+                asset,
+                _marker: std::marker::PhantomData,
+            })
+        })
     }
 
     pub fn remove<T: Asset>(&mut self, handle: Handle<T>) -> Option<T> {
         self.storage
             .remove(handle.id)
-            .and_then(|asset| asset.downcast().ok())
+            .and_then(|asset| SharedLock::into_inner(asset).unwrap().downcast().ok())
             .map(|asset| *asset)
-    }
-}
-
-impl<T: Asset> Index<Handle<T>> for Assets {
-    type Output = T;
-
-    fn index(&self, handle: Handle<T>) -> &Self::Output {
-        self.get(handle).expect("invalid handle")
-    }
-}
-
-impl<T: Asset> IndexMut<Handle<T>> for Assets {
-    fn index_mut(&mut self, handle: Handle<T>) -> &mut Self::Output {
-        self.get_mut(handle).expect("invalid handle")
     }
 }
 

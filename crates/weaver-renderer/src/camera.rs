@@ -4,10 +4,7 @@ use weaver_core::geometry::Ray;
 use wgpu::util::DeviceExt;
 
 use weaver_app::plugin::Plugin;
-use weaver_ecs::{
-    prelude::{Component, Entity},
-    world::World,
-};
+use weaver_ecs::prelude::*;
 
 use crate::{
     bind_group::{ComponentBindGroupPlugin, CreateComponentBindGroup},
@@ -47,9 +44,10 @@ impl From<&Camera> for CameraUniform {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct Camera {
     pub active: bool,
+    #[reflect(ignore)]
     pub graph: RenderGraph,
     pub view_matrix: glam::Mat4,
     pub projection_matrix: glam::Mat4,
@@ -139,8 +137,9 @@ impl Default for Camera {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct GpuCamera {
+    #[reflect(ignore)]
     pub uniform_buffer: GpuBuffer,
 }
 

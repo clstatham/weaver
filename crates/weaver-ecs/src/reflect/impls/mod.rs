@@ -1,7 +1,9 @@
 use std::{any::TypeId, collections::HashMap, hash::Hash, sync::OnceLock};
 
+use weaver_util::TypeIdMap;
+
 use crate::reflect::{
-    registry::{ListInfo, MapInfo, TypeInfo, Typed, ValueInfo},
+    registry::{ListInfo, MapInfo, TypeInfo, TypeRegistration, Typed, ValueInfo},
     Reflect,
 };
 
@@ -43,6 +45,15 @@ macro_rules! impl_primitive {
                         type_name: stringify!($t),
                     })
                 })
+            }
+
+            fn get_type_registration() -> TypeRegistration {
+                TypeRegistration {
+                    type_id: TypeId::of::<$t>(),
+                    type_name: Self::type_name(),
+                    type_info: Self::type_info(),
+                    type_aux_data: TypeIdMap::default(),
+                }
             }
         }
     };
@@ -93,6 +104,15 @@ impl<T: Reflect + Typed> Typed for Vec<T> {
     fn type_info() -> &'static TypeInfo {
         static TYPE_INFO: OnceLock<TypeInfo> = OnceLock::new();
         TYPE_INFO.get_or_init(|| TypeInfo::List(ListInfo::new::<Vec<T>, T>()))
+    }
+
+    fn get_type_registration() -> TypeRegistration {
+        TypeRegistration {
+            type_id: TypeId::of::<Vec<T>>(),
+            type_name: Self::type_name(),
+            type_info: Self::type_info(),
+            type_aux_data: TypeIdMap::default(),
+        }
     }
 }
 
@@ -170,6 +190,15 @@ impl<K: Reflect + Typed, V: Reflect + Typed> Typed for HashMap<K, V> {
     fn type_info() -> &'static TypeInfo {
         static TYPE_INFO: OnceLock<TypeInfo> = OnceLock::new();
         TYPE_INFO.get_or_init(|| TypeInfo::Map(MapInfo::new::<HashMap<K, V>, K, V>()))
+    }
+
+    fn get_type_registration() -> TypeRegistration {
+        TypeRegistration {
+            type_id: TypeId::of::<HashMap<K, V>>(),
+            type_name: Self::type_name(),
+            type_info: Self::type_info(),
+            type_aux_data: TypeIdMap::default(),
+        }
     }
 }
 

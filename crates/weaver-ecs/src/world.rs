@@ -6,7 +6,8 @@ use std::sync::{
 use weaver_util::lock::Lock;
 
 use crate::prelude::{
-    Bundle, Query, QueryFetch, QueryFilter, Res, ResMut, Resource, Resources, Scene, Tick,
+    Bundle, Query, QueryBuilder, QueryFetch, QueryFilter, Res, ResMut, Resource, Resources, Scene,
+    Tick,
 };
 
 use super::{
@@ -101,6 +102,10 @@ impl World {
         self: &Arc<Self>,
     ) -> Query<'a, Q, F> {
         Query::new(self)
+    }
+
+    pub fn query_builder(self: &Arc<Self>) -> QueryBuilder {
+        QueryBuilder::new(self)
     }
 
     pub const fn root_scene_entity(&self) -> Entity {

@@ -1,5 +1,3 @@
-#![allow(clippy::multiple_bound_locations)] // downcast-rs thing
-
 pub mod bundle;
 pub mod change;
 pub mod component;
@@ -21,6 +19,7 @@ pub mod prelude {
     pub use crate::entity::*;
     pub use crate::node::*;
     pub use crate::query::*;
+    pub use crate::reflect::{registry::*, *};
     pub use crate::relationship::*;
     pub use crate::scene::*;
     pub use crate::storage::*;

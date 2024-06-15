@@ -299,7 +299,7 @@ impl Render for PbrNode {
                 });
 
                 render_pass.set_pipeline(pipeline);
-                render_pass.set_bind_group(0, material_bind_group, &[]);
+                render_pass.set_bind_group(0, &material_bind_group, &[]);
                 render_pass.set_bind_group(1, camera_bind_group, &[]);
                 render_pass.set_bind_group(2, transform_bind_group, &[]);
                 render_pass.set_bind_group(3, light_bind_group, &[]);

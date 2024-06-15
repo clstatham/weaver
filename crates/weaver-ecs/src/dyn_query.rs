@@ -68,16 +68,16 @@ impl DynFilter {
     }
 }
 
-pub struct QueryBuilder<'a> {
-    world: &'a Arc<World>,
+pub struct QueryBuilder {
+    world: Arc<World>,
     fetch: DynFetch,
     filter: DynFilter,
 }
 
-impl<'a> QueryBuilder<'a> {
-    pub fn new(world: &'a Arc<World>) -> Self {
+impl QueryBuilder {
+    pub fn new(world: &Arc<World>) -> Self {
         Self {
-            world,
+            world: world.clone(),
             fetch: DynFetch::default(),
             filter: DynFilter::default(),
         }
@@ -90,10 +90,20 @@ impl<'a> QueryBuilder<'a> {
         self
     }
 
+    pub fn read_dyn(mut self, type_id: TypeId) -> Self {
+        self.fetch.params.push(QueryFetchParam::Read(type_id));
+        self
+    }
+
     pub fn write<T: Component>(mut self) -> Self {
         self.fetch
             .params
             .push(QueryFetchParam::Write(TypeId::of::<T>()));
+        self
+    }
+
+    pub fn write_dyn(mut self, type_id: TypeId) -> Self {
+        self.fetch.params.push(QueryFetchParam::Write(type_id));
         self
     }
 
@@ -104,10 +114,20 @@ impl<'a> QueryBuilder<'a> {
         self
     }
 
+    pub fn with_dyn(mut self, type_id: TypeId) -> Self {
+        self.filter.params.push(QueryFilterParam::With(type_id));
+        self
+    }
+
     pub fn without<T: Component>(mut self) -> Self {
         self.filter
             .params
             .push(QueryFilterParam::Without(TypeId::of::<T>()));
+        self
+    }
+
+    pub fn without_dyn(mut self, type_id: TypeId) -> Self {
+        self.filter.params.push(QueryFilterParam::Without(type_id));
         self
     }
 

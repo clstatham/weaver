@@ -2,16 +2,24 @@ use std::{any::TypeId, collections::HashMap, sync::Arc};
 
 use crate as weaver_ecs;
 use crate::prelude::Resource;
-use weaver_util::{
-    prelude::{impl_downcast, DowncastSync},
-    TypeIdMap,
-};
+use weaver_util::prelude::{impl_downcast, DowncastSync};
+
+pub use weaver_util::TypeIdMap;
 
 use super::Reflect;
 
 pub trait Typed: Reflect {
     fn type_name() -> &'static str;
     fn type_info() -> &'static TypeInfo;
+    fn get_type_registration() -> TypeRegistration {
+        let type_info = Self::type_info();
+        TypeRegistration {
+            type_id: TypeId::of::<Self>(),
+            type_name: Self::type_name(),
+            type_info,
+            type_aux_data: TypeIdMap::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -251,17 +259,8 @@ impl TypeRegistry {
         if self.types.contains_key(&TypeId::of::<T>()) {
             return;
         }
-        let type_registration = TypeRegistration {
-            type_id: TypeId::of::<T>(),
-            type_name: T::type_name(),
-            type_info: T::type_info(),
-            type_aux_data: TypeIdMap::default(),
-        };
-
-        self.type_names
-            .insert(type_registration.type_name, type_registration.type_id);
-        self.types
-            .insert(type_registration.type_id, type_registration);
+        let type_registration = T::get_type_registration();
+        self.types.insert(TypeId::of::<T>(), type_registration);
     }
 
     pub fn get_type_info<T: Reflect>(&self) -> Option<&TypeRegistration> {

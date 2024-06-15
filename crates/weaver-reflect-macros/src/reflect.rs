@@ -7,6 +7,29 @@ use crate::reflect_module;
 pub fn derive_reflect(input: DeriveInput) -> Result<TokenStream, syn::Error> {
     let name = &input.ident;
 
+    let mut reflected_traits = Vec::new();
+    for attr in &input.attrs {
+        if attr.path().is_ident("reflect") {
+            let meta = &attr.meta;
+            match meta {
+                syn::Meta::List(list) => {
+                    list.parse_nested_meta(|nested_meta| {
+                        if let Some(ident) = nested_meta.path.get_ident() {
+                            // reflected_traits.push(format_ident!("Reflect{}", ident));
+                            reflected_traits.push(ident.clone());
+                            Ok(())
+                        } else {
+                            Err(syn::Error::new_spanned(meta, "Expected an identifier"))
+                        }
+                    })?;
+                }
+                _ => {
+                    return Err(syn::Error::new_spanned(meta, "Expected a list of traits"));
+                }
+            }
+        }
+    }
+
     let expanded = match &input.data {
         syn::Data::Struct(data) => match &data.fields {
             syn::Fields::Named(fields) => {
@@ -23,8 +46,26 @@ pub fn derive_reflect(input: DeriveInput) -> Result<TokenStream, syn::Error> {
                     named: syn::punctuated::Punctuated::from_iter(relected_fields),
                 };
 
-                let reflect_impl = impl_reflect_struct(name, &reflected_fields, &input.generics);
+                let reflect_impl = impl_reflect_struct(
+                    name,
+                    &reflected_fields,
+                    &input.generics,
+                    &reflected_traits,
+                );
                 let struct_impl = impl_struct(name, &reflected_fields, &input.generics);
+                quote! {
+                    #reflect_impl
+                    #struct_impl
+                }
+            }
+            syn::Fields::Unit => {
+                let fields = syn::FieldsNamed {
+                    brace_token: syn::token::Brace::default(),
+                    named: syn::punctuated::Punctuated::new(),
+                };
+                let reflect_impl =
+                    impl_reflect_struct(name, &fields, &input.generics, &reflected_traits);
+                let struct_impl = impl_struct(name, &fields, &input.generics);
                 quote! {
                     #reflect_impl
                     #struct_impl
@@ -61,6 +102,15 @@ pub fn reflect_trait(input: &syn::ItemTrait) -> TokenStream {
             get_mut_func: fn(&mut dyn #reflect_module::Reflect) -> Option<&mut dyn #trait_name>,
         }
 
+        impl Clone for #reflect_trait_name {
+            fn clone(&self) -> Self {
+                Self {
+                    get_func: self.get_func,
+                    get_mut_func: self.get_mut_func,
+                }
+            }
+        }
+
         impl #reflect_trait_name {
             pub fn get<'a>(&self, reflect: &'a dyn #reflect_module::Reflect) -> Option<&'a dyn #trait_name> {
                 (self.get_func)(reflect)
@@ -90,6 +140,7 @@ pub fn impl_reflect_struct(
     name: &syn::Ident,
     fields: &syn::FieldsNamed,
     generics: &syn::Generics,
+    reflected_traits: &[syn::Ident],
 ) -> TokenStream {
     let field_names = fields.named.iter().map(|field| {
         let field_name = field.ident.as_ref().unwrap();
@@ -124,6 +175,21 @@ pub fn impl_reflect_struct(
                         ),*
                     ]))
                 })
+            }
+
+            fn get_type_registration() -> #reflect_module::registry::TypeRegistration {
+                let mut reg = #reflect_module::registry::TypeRegistration {
+                    type_id: std::any::TypeId::of::<#name #ty_generics>(),
+                    type_name: Self::type_name(),
+                    type_info: Self::type_info(),
+                    type_aux_data: #reflect_module::registry::TypeIdMap::default(),
+                };
+
+                #(
+                    reg.type_aux_data.insert(std::any::TypeId::of::<#reflected_traits>(), std::sync::Arc::new(<#reflected_traits as #reflect_module::registry::FromType<#name #ty_generics>>::from_type()));
+                )*
+
+                reg
             }
         }
 

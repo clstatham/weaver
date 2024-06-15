@@ -321,6 +321,12 @@ impl Archetype {
     pub fn entity_iter(&self) -> impl Iterator<Item = Entity> + '_ {
         self.entities.iter().copied()
     }
+
+    pub fn column_iter(&self) -> impl Iterator<Item = (&TypeId, ColumnRef)> + '_ {
+        self.columns
+            .iter()
+            .map(|(type_id, column)| (type_id, ColumnRef::new(column.clone())))
+    }
 }
 
 pub struct DataRef {
@@ -657,23 +663,24 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use weaver_ecs_macros::Component;
+    use weaver_reflect_macros::Reflect;
 
     use super::*;
     use crate as weaver_ecs;
 
-    #[derive(Debug, PartialEq, Clone, Component)]
+    #[derive(Debug, PartialEq, Clone, Component, Reflect)]
     struct Position {
         x: f32,
         y: f32,
     }
 
-    #[derive(Debug, PartialEq, Clone, Component)]
+    #[derive(Debug, PartialEq, Clone, Component, Reflect)]
     struct Velocity {
         dx: f32,
         dy: f32,
     }
 
-    #[derive(Debug, PartialEq, Clone, Component)]
+    #[derive(Debug, PartialEq, Clone, Component, Reflect)]
     struct Acceleration {
         ddx: f32,
         ddy: f32,

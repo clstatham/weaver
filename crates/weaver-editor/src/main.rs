@@ -18,13 +18,13 @@ use weaver_winit::Window;
 pub mod camera;
 pub mod inspect;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 struct Floor;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 struct Object;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 struct SelectionAabb {
     pub aabb: Aabb,
 }
@@ -97,7 +97,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
 
     let material = assets.load::<Material>("assets/materials/metal.glb")?;
     {
-        let material = &mut assets[material];
+        let mut material = assets.get_mut(material).unwrap();
         material.texture_scale = 100.0;
     }
 
@@ -110,7 +110,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
             scale: Vec3::new(20.0, 1.0, 20.0),
         },
         Floor,
-        SelectionAabb::from_mesh(&assets[mesh]),
+        SelectionAabb::from_mesh(&assets.get(mesh).unwrap()),
     ));
 
     // circle of lights
@@ -144,7 +144,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
 
     let material2 = assets.load::<Material>("assets/materials/metal.glb")?;
     {
-        let material = &mut assets[material2];
+        let mut material = assets.get_mut(material2).unwrap();
         material.texture_scale = 20.0;
     }
 
@@ -160,7 +160,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
                 scale: Vec3::splat(0.5),
             },
             Object,
-            SelectionAabb::from_mesh(&assets[mesh]),
+            SelectionAabb::from_mesh(&assets.get(mesh).unwrap()),
         ));
     }
 
@@ -176,7 +176,7 @@ fn selection_gizmos(
     for (entity, (transform, handle)) in query.iter() {
         if let Some(selected_entity) = state.selected_entity {
             if selected_entity == entity {
-                let mesh = &assets[*handle];
+                let mesh = &assets.get(*handle).unwrap();
                 let aabb = mesh.aabb.transform(*transform);
                 let gizmo_transform = Transform::new(
                     aabb.center(),
@@ -212,25 +212,37 @@ fn light_gizmos(
 fn ui(world: &Arc<World>) -> Result<()> {
     let editor_state = world.get_resource::<EditorState>().unwrap();
     let egui_context = world.get_resource::<EguiContext>().unwrap();
+    let type_registry = world.get_resource::<TypeRegistry>().unwrap();
+    let assets = world.get_resource::<Assets>().unwrap();
     egui_context.draw_if_ready(|ctx| {
         if let Some(entity) = editor_state.selected_entity {
             egui::Window::new("Inspector").show(ctx, |ui| {
-                if let Some(handle) = world.get_component::<Handle<Material>>(entity) {
-                    let mut assets = world.get_resource_mut::<Assets>().unwrap();
-                    let material = assets.get_mut(*handle).unwrap();
-                    ui.collapsing("Material", |ui| {
-                        material.inspect_ui(ui);
-                    });
-                }
-                if let Some(mut transform) = world.get_component_mut::<Transform>(entity) {
-                    ui.collapsing("Transform", |ui| {
-                        transform.inspect_ui(ui);
-                    });
-                }
-                if let Some(mut light) = world.get_component_mut::<PointLight>(entity) {
-                    ui.collapsing("Light", |ui| {
-                        light.inspect_ui(ui);
-                    });
+                // if let Some(handle) = world.get_component::<Handle<Material>>(entity) {
+                //     let mut assets = world.get_resource_mut::<Assets>().unwrap();
+                //     let material = assets.get_mut(*handle).unwrap();
+                //     ui.collapsing("Material", |ui| {
+                //         material.inspect_ui(ui);
+                //     });
+                // }
+                // if let Some(mut transform) = world.get_component_mut::<Transform>(entity) {
+                //     ui.collapsing("Transform", |ui| {
+                //         transform.inspect_ui(ui);
+                //     });
+                // }
+                // if let Some(mut light) = world.get_component_mut::<PointLight>(entity) {
+                //     ui.collapsing("Light", |ui| {
+                //         light.inspect_ui(ui);
+                //     });
+                // }
+
+                let storage = world.storage().read();
+                let archetype = storage.get_archetype(entity).unwrap();
+                for (_, column) in archetype.column_iter() {
+                    let mut column = column.write();
+                    let data = column.get_mut(entity.as_usize()).unwrap();
+                    let component = data.get_data_mut();
+                    let reflect = component.as_reflect_mut();
+                    reflect.inspect_ui(&type_registry, &assets, ui);
                 }
             });
         };

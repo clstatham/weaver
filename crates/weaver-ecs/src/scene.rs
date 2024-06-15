@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use petgraph::prelude::*;
 use weaver_ecs_macros::Component;
+use weaver_reflect_macros::Reflect;
 use weaver_util::lock::Lock;
 
 use crate::{
@@ -14,11 +15,15 @@ use crate::{
     world::World,
 };
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct Scene {
+    #[reflect(ignore)]
     world: Arc<World>,
+    #[reflect(ignore)]
     root_entity: Entity,
+    #[reflect(ignore)]
     root: NodeIndex,
+    #[reflect(ignore)]
     graph: Lock<StableDiGraph<Node, RelationshipConnection>>,
 }
 

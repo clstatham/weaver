@@ -4,7 +4,7 @@ use weaver_app::{plugin::Plugin, App};
 use wgpu::util::DeviceExt;
 
 use weaver_core::{color::Color, prelude::Vec3, transform::Transform};
-use weaver_ecs::prelude::{Component, Resource, World};
+use weaver_ecs::prelude::{Component, Reflect, Resource, World};
 use weaver_renderer::{
     bind_group::{CreateResourceBindGroup, ResourceBindGroup, ResourceBindGroupPlugin},
     buffer::GpuBuffer,
@@ -14,7 +14,7 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::Result;
 
-#[derive(Copy, Clone, Debug, Component)]
+#[derive(Copy, Clone, Debug, Component, Reflect)]
 pub struct PointLight {
     pub color: Color,
     pub intensity: f32,

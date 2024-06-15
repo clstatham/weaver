@@ -10,15 +10,14 @@ use weaver_util::{
     TypeIdMap,
 };
 
-use crate::{self as weaver_ecs};
+use crate::{self as weaver_ecs, prelude::Reflect};
 
-#[reflect_trait]
-pub trait Component: DowncastSync {}
-impl_downcast!(sync Component);
+pub trait Component: DowncastSync + Reflect {}
+impl_downcast!(Component);
 
 #[reflect_trait]
 pub trait Resource: DowncastSync {}
-impl_downcast!(sync Resource);
+impl_downcast!(Resource);
 
 pub struct Res<T: Resource> {
     value: ArcRead<Box<dyn Resource>>,

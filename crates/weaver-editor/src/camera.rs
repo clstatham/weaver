@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use weaver::prelude::*;
 
-#[derive(Debug, Clone, Copy, Component)]
+#[derive(Debug, Clone, Copy, Component, Reflect)]
 pub struct FlyCameraController {
     pub speed: f32,
     pub sensitivity: f32,

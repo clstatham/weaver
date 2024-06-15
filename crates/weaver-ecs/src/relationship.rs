@@ -5,7 +5,7 @@ use weaver_util::prelude::{impl_downcast, DowncastSync};
 use super::node::Node;
 
 pub trait Relationship: DowncastSync {}
-impl_downcast!(sync Relationship);
+impl_downcast!(Relationship);
 
 pub struct RelationshipConnection {
     pub from: Node,

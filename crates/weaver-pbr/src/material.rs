@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{prelude::Asset, Assets, Handle};
+use weaver_asset::prelude::*;
 use weaver_core::{color::Color, texture::Texture};
 use weaver_ecs::prelude::{Component, Reflect, World};
 use weaver_renderer::{
@@ -15,6 +15,7 @@ use weaver_util::prelude::*;
 use wgpu::util::DeviceExt;
 
 #[derive(Reflect)]
+#[reflect(ReflectAsset)]
 pub struct Material {
     pub diffuse: Color,
     pub diffuse_texture: Handle<Texture>,
@@ -145,17 +146,26 @@ struct MaterialMetaUniform {
     texture_scale: f32,
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct GpuMaterial {
+    #[reflect(ignore)]
     pub meta: GpuBuffer,
 
+    #[reflect(ignore)]
     pub diffuse_texture: GpuTexture,
+    #[reflect(ignore)]
     pub diffuse_texture_sampler: wgpu::Sampler,
+    #[reflect(ignore)]
     pub normal_texture: GpuTexture,
+    #[reflect(ignore)]
     pub normal_texture_sampler: wgpu::Sampler,
+    #[reflect(ignore)]
     pub metallic_roughness_texture: GpuTexture,
+    #[reflect(ignore)]
     pub metallic_roughness_texture_sampler: wgpu::Sampler,
+    #[reflect(ignore)]
     pub ao_texture: GpuTexture,
+    #[reflect(ignore)]
     pub ao_texture_sampler: wgpu::Sampler,
 }
 
@@ -182,17 +192,17 @@ impl RenderAsset for GpuMaterial {
         let assets = world.get_resource::<Assets>()?;
 
         let diffuse_texture = assets.get(base_asset.diffuse_texture)?;
-        let diffuse_texture = GpuTexture::from_image(renderer, diffuse_texture)?;
+        let diffuse_texture = GpuTexture::from_image(renderer, &diffuse_texture)?;
 
         let normal_texture = assets.get(base_asset.normal_texture)?;
-        let normal_texture = GpuTexture::from_image(renderer, normal_texture)?;
+        let normal_texture = GpuTexture::from_image(renderer, &normal_texture)?;
 
         let metallic_roughness_texture = assets.get(base_asset.metallic_roughness_texture)?;
         let metallic_roughness_texture =
-            GpuTexture::from_image(renderer, metallic_roughness_texture)?;
+            GpuTexture::from_image(renderer, &metallic_roughness_texture)?;
 
         let ao_texture = assets.get(base_asset.ao_texture)?;
-        let ao_texture = GpuTexture::from_image(renderer, ao_texture)?;
+        let ao_texture = GpuTexture::from_image(renderer, &ao_texture)?;
 
         let meta = MaterialMetaUniform {
             diffuse: base_asset.diffuse,
@@ -455,6 +465,7 @@ impl Plugin for MaterialPlugin {
         app.add_plugin(ExtractRenderAssetPlugin::<GpuMaterial>::default())?;
         app.add_plugin(AssetBindGroupPlugin::<GpuMaterial>::default())?;
         app.register_type::<Material>();
+        app.register_type::<Handle<Material>>();
         Ok(())
     }
 }
