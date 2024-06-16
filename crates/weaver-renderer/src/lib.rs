@@ -282,10 +282,10 @@ impl Plugin for RendererPlugin {
         app.add_plugin(MeshPlugin)?;
         app.add_plugin(TexturePlugin)?;
 
-        app.add_system(resize_surface, SystemStage::PreUpdate)?;
+        app.add_system(resize_surface, SystemStage::PreUpdate);
 
-        app.add_system(begin_render, SystemStage::PreRender)?;
-        app.add_system(end_render, SystemStage::PostRender)?;
+        app.add_system(begin_render, SystemStage::PreRender);
+        app.add_system(end_render, SystemStage::PostRender);
 
         Ok(())
     }

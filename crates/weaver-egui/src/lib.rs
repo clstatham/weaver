@@ -158,10 +158,10 @@ pub struct EguiPlugin;
 
 impl Plugin for EguiPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_system(begin_frame, SystemStage::PreUi)?;
-        app.add_system(end_frame, SystemStage::PostUi)?;
-        app.add_system(egui_events, SystemStage::PostUi)?;
-        app.add_system(crate::render, SystemStage::RenderUi)?;
+        app.add_system(begin_frame, SystemStage::PreUi);
+        app.add_system(end_frame, SystemStage::PostUi);
+        app.add_system(egui_events, SystemStage::PostUi);
+        app.add_system(crate::render, SystemStage::RenderUi);
 
         Ok(())
     }

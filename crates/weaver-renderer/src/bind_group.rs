@@ -73,13 +73,13 @@ impl<T: CreateComponentBindGroup> Default for ComponentBindGroupPlugin<T> {
 
 impl<T: CreateComponentBindGroup> Plugin for ComponentBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_system(create_bind_groups::<T>, SystemStage::PreRender)?;
+        app.add_system(create_bind_groups::<T>, SystemStage::PreRender);
         Ok(())
     }
 }
 
-fn create_bind_groups<T: CreateComponentBindGroup>(world: &Arc<World>) -> anyhow::Result<()> {
-    let renderer = world.clone().get_resource::<Renderer>().unwrap();
+fn create_bind_groups<T: CreateComponentBindGroup>(world: &mut World) -> anyhow::Result<()> {
+    let renderer = world.get_resource::<Renderer>().unwrap();
     let device = renderer.device();
 
     let query = world.query::<&T>();
@@ -136,14 +136,12 @@ impl<T: CreateResourceBindGroup> Default for ResourceBindGroupPlugin<T> {
 
 impl<T: CreateResourceBindGroup> Plugin for ResourceBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_system(create_resource_bind_group::<T>, SystemStage::PreRender)?;
+        app.add_system(create_resource_bind_group::<T>, SystemStage::PreRender);
         Ok(())
     }
 }
 
-fn create_resource_bind_group<T: CreateResourceBindGroup>(
-    world: &Arc<World>,
-) -> anyhow::Result<()> {
+fn create_resource_bind_group<T: CreateResourceBindGroup>(world: &mut World) -> anyhow::Result<()> {
     let Some(renderer) = world.get_resource::<Renderer>() else {
         return Ok(());
     };
@@ -193,13 +191,13 @@ impl<T: CreateComponentBindGroup + RenderAsset> Default for AssetBindGroupPlugin
 
 impl<T: CreateComponentBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_system(create_asset_bind_group::<T>, SystemStage::PreRender)?;
+        app.add_system(create_asset_bind_group::<T>, SystemStage::PreRender);
         Ok(())
     }
 }
 
 fn create_asset_bind_group<T: CreateComponentBindGroup + RenderAsset>(
-    world: &Arc<World>,
+    world: &mut World,
 ) -> anyhow::Result<()> {
     let renderer = world.get_resource::<Renderer>().unwrap();
     let device = renderer.device();

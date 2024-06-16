@@ -1,4 +1,4 @@
-use std::{any::TypeId, sync::Arc};
+use std::any::TypeId;
 
 use weaver_util::lock::{ArcRead, ArcWrite};
 
@@ -68,16 +68,16 @@ impl DynFilter {
     }
 }
 
-pub struct QueryBuilder {
-    world: Arc<World>,
+pub struct QueryBuilder<'a> {
+    world: &'a World,
     fetch: DynFetch,
     filter: DynFilter,
 }
 
-impl QueryBuilder {
-    pub fn new(world: &Arc<World>) -> Self {
+impl<'a> QueryBuilder<'a> {
+    pub fn new(world: &'a World) -> Self {
         Self {
-            world: world.clone(),
+            world,
             fetch: DynFetch::default(),
             filter: DynFilter::default(),
         }

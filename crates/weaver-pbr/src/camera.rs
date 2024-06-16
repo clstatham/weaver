@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use weaver_app::{plugin::Plugin, system::SystemStage, App};
 use weaver_core::color::Color;
 use weaver_ecs::{
@@ -23,13 +21,13 @@ pub struct PbrCameraBindGroupNode {
 }
 
 impl Render for PbrCameraBindGroupNode {
-    fn prepare(&self, _world: &Arc<World>, _renderer: &Renderer) -> Result<()> {
+    fn prepare(&self, _world: &mut World, _renderer: &Renderer) -> Result<()> {
         Ok(())
     }
 
     fn render(
         &self,
-        world: &Arc<World>,
+        world: &mut World,
         _renderer: &Renderer,
         _input_slots: &[Slot],
     ) -> Result<Vec<Slot>> {
@@ -55,13 +53,13 @@ pub struct PbrCameraPlugin;
 
 impl Plugin for PbrCameraPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_system(prepare_pbr_cameras, SystemStage::PreRender)?;
-        app.add_system(render_pbr_cameras, SystemStage::Render)?;
+        app.add_system(prepare_pbr_cameras, SystemStage::PreRender);
+        app.add_system(render_pbr_cameras, SystemStage::Render);
         Ok(())
     }
 }
 
-fn prepare_pbr_cameras(world: &Arc<World>) -> Result<()> {
+fn prepare_pbr_cameras(world: &mut World) -> Result<()> {
     let camera_query = world.query::<(&mut Camera, &PbrCamera)>();
 
     for (camera_entity, (mut base_camera, pbr_camera)) in camera_query.iter() {
@@ -110,7 +108,7 @@ fn prepare_pbr_cameras(world: &Arc<World>) -> Result<()> {
     Ok(())
 }
 
-fn render_pbr_cameras(world: &Arc<World>) -> Result<()> {
+fn render_pbr_cameras(world: &mut World) -> Result<()> {
     let camera_query = world.query::<&mut Camera>();
 
     for (_entity, mut camera) in camera_query.iter() {

@@ -24,7 +24,7 @@ impl Plugin for FrameTimePlugin {
             log_interval: std::time::Duration::from_secs(1),
             last_log: std::time::Instant::now(),
         });
-        app.add_system(update_frame_time, SystemStage::PreUpdate)?;
+        app.add_system(update_frame_time, SystemStage::PreUpdate);
 
         Ok(())
     }
@@ -37,7 +37,7 @@ pub struct LogFrameTimePlugin {
 impl Plugin for LogFrameTimePlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_plugin(FrameTimePlugin)?;
-        app.add_system_after(log_frame_time, update_frame_time, SystemStage::PreUpdate)?;
+        app.add_system_after(log_frame_time, update_frame_time, SystemStage::PreUpdate);
 
         Ok(())
     }

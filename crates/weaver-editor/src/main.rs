@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use inspect::InspectUi;
 use weaver::{
     prelude::*,
@@ -43,7 +41,7 @@ struct EditorState {
 
 fn main() -> Result<()> {
     env_logger::init();
-    App::new()?
+    App::new()
         .add_plugin(CoreTypesPlugin)?
         .add_plugin(WinitPlugin {
             initial_size: (1280, 720),
@@ -58,22 +56,19 @@ fn main() -> Result<()> {
         .add_plugin(LogFrameTimePlugin {
             log_interval: std::time::Duration::from_secs(1),
         })?
-        .add_system(setup, SystemStage::Init)?
-        .add_system(camera::update_camera, SystemStage::Update)?
-        .add_system(camera::update_aspect_ratio, SystemStage::Update)?
-        .add_system(selection_gizmos, SystemStage::Update)?
-        .add_system(light_gizmos, SystemStage::Update)?
-        .add_system(pick_entity, SystemStage::Update)?
-        .add_system(ui, SystemStage::Ui)?
+        .insert_resource(EditorState::default())
+        .add_system(setup, SystemStage::Init)
+        .add_system(camera::update_camera, SystemStage::Update)
+        .add_system(camera::update_aspect_ratio, SystemStage::Update)
+        .add_system(selection_gizmos, SystemStage::Update)
+        .add_system(light_gizmos, SystemStage::Update)
+        .add_system(pick_entity, SystemStage::Update)
+        .add_system(ui, SystemStage::Ui)
         .run()
 }
 
-fn setup(world: &Arc<World>) -> Result<()> {
-    let scene = world.root_scene();
-
-    world.insert_resource(EditorState::default());
-
-    let _camera = scene.spawn((
+fn setup(world: &mut World) -> Result<()> {
+    let _camera = world.spawn((
         Camera::perspective_lookat(
             Vec3::new(10.0, 10.0, 10.0),
             Vec3::ZERO,
@@ -101,7 +96,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
         material.texture_scale = 100.0;
     }
 
-    let _ground = scene.spawn((
+    let _ground = world.spawn((
         mesh,
         material,
         Transform {
@@ -125,7 +120,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
 
     for (i, color) in COLORS.iter().enumerate() {
         let angle = i as f32 / (COLORS.len() as f32) * std::f32::consts::PI * 2.0;
-        let _light: Node = scene.spawn((
+        let _light = world.spawn((
             PointLight {
                 color: *color,
                 intensity: 100.0,
@@ -151,7 +146,7 @@ fn setup(world: &Arc<World>) -> Result<()> {
     // spawn some meshes
     for i in 0..6 {
         let angle = i as f32 / 6.0 * std::f32::consts::PI * 2.0;
-        let _mesh = scene.spawn((
+        let _mesh = world.spawn((
             mesh,
             material2,
             Transform {
@@ -209,7 +204,7 @@ fn light_gizmos(
     Ok(())
 }
 
-fn ui(world: &Arc<World>) -> Result<()> {
+fn ui(world: &mut World) -> Result<()> {
     let editor_state = world.get_resource::<EditorState>().unwrap();
     let egui_context = world.get_resource::<EguiContext>().unwrap();
     let type_registry = world.get_resource::<TypeRegistry>().unwrap();
@@ -250,7 +245,7 @@ fn ui(world: &Arc<World>) -> Result<()> {
     Ok(())
 }
 
-fn pick_entity(world: &Arc<World>) -> Result<()> {
+fn pick_entity(world: &mut World) -> Result<()> {
     let input = world.get_resource::<Input>().unwrap();
     let egui_ctx = world.get_resource::<EguiContext>().unwrap();
     if input.mouse_just_pressed(MouseButton::Left) && !egui_ctx.wants_input() {

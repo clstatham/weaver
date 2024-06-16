@@ -7,7 +7,6 @@ pub mod node;
 pub mod query;
 pub mod reflect;
 pub mod relationship;
-pub mod scene;
 pub mod storage;
 pub mod world;
 
@@ -21,7 +20,6 @@ pub mod prelude {
     pub use crate::query::*;
     pub use crate::reflect::{registry::*, *};
     pub use crate::relationship::*;
-    pub use crate::scene::*;
     pub use crate::storage::*;
     pub use crate::world::*;
     pub use weaver_ecs_macros::*;

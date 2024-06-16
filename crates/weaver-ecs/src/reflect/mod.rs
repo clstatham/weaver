@@ -4,7 +4,7 @@ use weaver_util::prelude::{impl_downcast, DowncastSync};
 pub mod impls;
 pub mod registry;
 
-pub trait Reflect: DowncastSync {
+pub trait Reflect: DowncastSync + Typed {
     fn as_reflect(&self) -> &dyn Reflect;
     fn as_reflect_mut(&mut self) -> &mut dyn Reflect;
     fn into_reflect_box(self: Box<Self>) -> Box<dyn Reflect>;

@@ -35,7 +35,7 @@ pub struct TimePlugin;
 impl Plugin for TimePlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.world().insert_resource(Time::new());
-        app.add_system(update_time, SystemStage::PreUpdate)?;
+        app.add_system(update_time, SystemStage::PreUpdate);
         Ok(())
     }
 }

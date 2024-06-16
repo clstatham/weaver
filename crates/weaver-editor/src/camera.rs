@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use weaver::prelude::*;
 
 #[derive(Debug, Clone, Copy, Component, Reflect)]
@@ -105,7 +103,7 @@ impl FlyCameraController {
     }
 }
 
-pub fn update_camera(world: &Arc<World>) -> Result<()> {
+pub fn update_camera(world: &mut World) -> Result<()> {
     let time = world.get_resource::<Time>().unwrap();
     let input = world.get_resource::<Input>().unwrap();
     let query = world.query::<(&mut Camera, &mut FlyCameraController)>();

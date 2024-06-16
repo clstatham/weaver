@@ -1,4 +1,4 @@
-use std::{any::TypeId, marker::PhantomData, sync::Arc};
+use std::{any::TypeId, marker::PhantomData};
 
 use itertools::Itertools;
 use weaver_util::lock::SharedLock;
@@ -358,7 +358,7 @@ where
     Q: QueryFetch<'a> + ?Sized,
     F: QueryFilter + ?Sized,
 {
-    pub fn new(world: &Arc<World>) -> Self {
+    pub fn new(world: &World) -> Self {
         let storage = world.storage().read();
         let columns = Q::fetch_columns(&storage, &|archetype| {
             Q::test_archetype(archetype) && F::test_archetype(archetype)

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use weaver_app::{plugin::Plugin, system::SystemStage, App};
 use weaver_core::{color::Color, transform::Transform};
 use weaver_ecs::{component::Res, prelude::Resource, query::Query, world::World};
@@ -37,7 +35,7 @@ pub struct RenderCubeGizmo {
 }
 
 impl RenderResource for RenderCubeGizmo {
-    fn extract_render_resource(_world: Arc<World>, renderer: &Renderer) -> Option<Self>
+    fn extract_render_resource(_world: &mut World, renderer: &Renderer) -> Option<Self>
     where
         Self: Sized,
     {
@@ -65,7 +63,7 @@ impl RenderResource for RenderCubeGizmo {
         })
     }
 
-    fn update_render_resource(&mut self, _world: &Arc<World>, _renderer: &Renderer) -> Result<()> {
+    fn update_render_resource(&mut self, _world: &mut World, _renderer: &Renderer) -> Result<()> {
         Ok(())
     }
 }
@@ -293,7 +291,7 @@ impl GizmoRenderNode {
 }
 
 impl Render for GizmoRenderNode {
-    fn prepare(&self, world: &Arc<World>, renderer: &Renderer) -> Result<()> {
+    fn prepare(&self, world: &mut World, renderer: &Renderer) -> Result<()> {
         if self.inner.read().is_none() {
             self.init_pipeline(renderer)?;
         }
@@ -327,7 +325,7 @@ impl Render for GizmoRenderNode {
 
     fn render(
         &self,
-        world: &Arc<World>,
+        world: &mut World,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> Result<Vec<Slot>> {
@@ -417,8 +415,8 @@ impl Plugin for GizmoPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.insert_resource(Gizmos::default());
         app.add_plugin(RenderResourcePlugin::<RenderCubeGizmo>::default())?;
-        app.add_system(clear_gizmos, SystemStage::PrepareFrame)?;
-        app.add_system(inject_gizmo_render_node, SystemStage::PreRender)?;
+        app.add_system(clear_gizmos, SystemStage::PrepareFrame);
+        app.add_system(inject_gizmo_render_node, SystemStage::PreRender);
 
         Ok(())
     }

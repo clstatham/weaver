@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use weaver_core::color::Color;
 use weaver_ecs::{
     prelude::{Component, Reflect},
@@ -33,7 +31,7 @@ impl Default for ClearColor {
 impl Render for ClearColor {
     fn render(
         &self,
-        _world: &Arc<World>,
+        _world: &mut World,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>> {

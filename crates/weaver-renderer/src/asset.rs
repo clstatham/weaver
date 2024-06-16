@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use weaver_app::{plugin::Plugin, system::SystemStage, App};
 use weaver_asset::{Asset, Assets, Handle, UntypedHandle};
@@ -56,13 +56,13 @@ impl<T: RenderAsset> Default for ExtractRenderAssetPlugin<T> {
 
 impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
     fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_system(extract_render_asset::<T>, SystemStage::Extract)?;
-        app.add_system(update_render_asset::<T>, SystemStage::PreRender)?;
+        app.add_system(extract_render_asset::<T>, SystemStage::Extract);
+        app.add_system(update_render_asset::<T>, SystemStage::PreRender);
         Ok(())
     }
 }
 
-fn extract_render_asset<T: RenderAsset>(world: &Arc<World>) -> anyhow::Result<()> {
+fn extract_render_asset<T: RenderAsset>(world: &mut World) -> anyhow::Result<()> {
     // query for handles to the base asset
     let query = world.query::<&Handle<T::BaseAsset>>();
 
@@ -112,7 +112,7 @@ fn extract_render_asset<T: RenderAsset>(world: &Arc<World>) -> anyhow::Result<()
     Ok(())
 }
 
-fn update_render_asset<T: RenderAsset>(world: &Arc<World>) -> anyhow::Result<()> {
+fn update_render_asset<T: RenderAsset>(world: &mut World) -> anyhow::Result<()> {
     let query = world.query::<(&Handle<T>, &Handle<T::BaseAsset>)>();
 
     for (_entity, (render_handle, base_handle)) in query.iter() {

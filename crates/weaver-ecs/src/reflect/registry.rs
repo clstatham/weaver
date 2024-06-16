@@ -8,10 +8,17 @@ pub use weaver_util::TypeIdMap;
 
 use super::Reflect;
 
-pub trait Typed: Reflect {
-    fn type_name() -> &'static str;
-    fn type_info() -> &'static TypeInfo;
-    fn get_type_registration() -> TypeRegistration {
+pub trait Typed: 'static {
+    fn type_name() -> &'static str
+    where
+        Self: Sized;
+    fn type_info() -> &'static TypeInfo
+    where
+        Self: Sized;
+    fn get_type_registration() -> TypeRegistration
+    where
+        Self: Sized,
+    {
         let type_info = Self::type_info();
         TypeRegistration {
             type_id: TypeId::of::<Self>(),

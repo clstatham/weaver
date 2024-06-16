@@ -22,13 +22,13 @@ pub struct RenderEdge {
 
 pub trait Render: 'static + Send + Sync {
     #[allow(unused_variables)]
-    fn prepare(&self, world: &Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
+    fn prepare(&self, world: &mut World, renderer: &Renderer) -> anyhow::Result<()> {
         Ok(())
     }
 
     fn render(
         &self,
-        world: &Arc<World>,
+        world: &mut World,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>>;
@@ -72,13 +72,13 @@ impl RenderNode {
         self.render_type_id
     }
 
-    pub fn prepare(&self, world: &Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn prepare(&self, world: &mut World, renderer: &Renderer) -> anyhow::Result<()> {
         self.render.write().prepare(world, renderer)
     }
 
     pub fn render(
         &self,
-        world: &Arc<World>,
+        world: &mut World,
         renderer: &Renderer,
         input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>> {
@@ -91,7 +91,7 @@ pub struct StartNode;
 impl Render for StartNode {
     fn render(
         &self,
-        _world: &Arc<World>,
+        _world: &mut World,
         renderer: &Renderer,
         _input_slots: &[Slot],
     ) -> anyhow::Result<Vec<Slot>> {
@@ -202,7 +202,7 @@ impl RenderGraph {
         self.node_index::<T>().is_some()
     }
 
-    pub fn prepare(&self, world: &Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn prepare(&self, world: &mut World, renderer: &Renderer) -> anyhow::Result<()> {
         for node in self.graph.node_indices() {
             let render_node = &self.graph[node];
             render_node.prepare(world, renderer)?;
@@ -211,7 +211,7 @@ impl RenderGraph {
         Ok(())
     }
 
-    pub fn render(&self, world: &Arc<World>, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn render(&self, world: &mut World, renderer: &Renderer) -> anyhow::Result<()> {
         let mut output_cache: HashMap<NodeIndex, Vec<Slot>> =
             HashMap::with_capacity(self.graph.node_count());
 

@@ -6,8 +6,7 @@ use std::sync::{
 use weaver_util::lock::Lock;
 
 use crate::prelude::{
-    Bundle, Query, QueryBuilder, QueryFetch, QueryFilter, Res, ResMut, Resource, Resources, Scene,
-    Tick,
+    Bundle, Query, QueryBuilder, QueryFetch, QueryFilter, Res, ResMut, Resource, Resources, Tick,
 };
 
 use super::{
@@ -25,25 +24,22 @@ pub struct World {
     update_tick: AtomicU64,
 }
 
-impl World {
-    pub fn new() -> Arc<Self> {
-        let mut world = Self {
+impl Default for World {
+    fn default() -> Self {
+        Self {
             root_scene_entity: Entity::new(1, 0),
             next_entity: AtomicU32::new(0),
             free_entities: Lock::new(Vec::new()),
             storage: Lock::new(Storage::new()),
             resources: Lock::new(Resources::default()),
             update_tick: AtomicU64::new(0),
-        };
+        }
+    }
+}
 
-        world.root_scene_entity = world.create_entity(); // reserve entity 0 for the root scene
-
-        let world = Arc::new(world);
-
-        let root_scene = Scene::new(world.clone());
-        world.insert_component(world.root_scene_entity(), root_scene);
-
-        world
+impl World {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn storage(&self) -> &Lock<Storage> {
@@ -94,7 +90,7 @@ impl World {
         self.storage.read().has_component::<T>(entity)
     }
 
-    pub fn query<'a, Q: QueryFetch<'a>>(self: &Arc<Self>) -> Query<'a, Q, ()> {
+    pub fn query<'a, Q: QueryFetch<'a>>(&self) -> Query<'a, Q, ()> {
         Query::new(self)
     }
 
@@ -104,7 +100,7 @@ impl World {
         Query::new(self)
     }
 
-    pub fn query_builder(self: &Arc<Self>) -> QueryBuilder {
+    pub fn query_builder(&self) -> QueryBuilder {
         QueryBuilder::new(self)
     }
 
@@ -130,11 +126,6 @@ impl World {
 
     pub fn remove_resource<T: Resource>(&self) -> Option<T> {
         self.resources.write().remove::<T>()
-    }
-
-    pub fn root_scene(&self) -> Ref<Scene> {
-        self.get_component::<Scene>(self.root_scene_entity())
-            .unwrap()
     }
 
     pub fn update_tick(&self) -> Tick {

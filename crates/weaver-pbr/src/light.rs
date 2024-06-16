@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use weaver_app::{plugin::Plugin, App};
 use wgpu::util::DeviceExt;
 
@@ -69,7 +67,7 @@ pub struct GpuPointLightArray {
 }
 
 impl RenderResource for GpuPointLightArray {
-    fn extract_render_resource(world: Arc<World>, renderer: &Renderer) -> Option<Self>
+    fn extract_render_resource(world: &mut World, renderer: &Renderer) -> Option<Self>
     where
         Self: Sized,
     {
@@ -103,7 +101,7 @@ impl RenderResource for GpuPointLightArray {
         })
     }
 
-    fn update_render_resource(&mut self, world: &Arc<World>, renderer: &Renderer) -> Result<()> {
+    fn update_render_resource(&mut self, world: &mut World, renderer: &Renderer) -> Result<()> {
         let point_lights = world.query::<(&PointLight, &Transform)>();
 
         let point_light_uniforms: Vec<PointLightUniform> = point_lights
@@ -175,7 +173,7 @@ pub struct PointLightArrayNode;
 impl Render for PointLightArrayNode {
     fn render(
         &self,
-        world: &Arc<World>,
+        world: &mut World,
         _renderer: &Renderer,
         _input_slots: &[Slot],
     ) -> Result<Vec<Slot>> {

@@ -1,6 +1,6 @@
 use std::{any::TypeId, collections::HashSet, sync::Arc};
 
-use petgraph::prelude::*;
+use petgraph::{prelude::*, visit::Topo};
 use rustc_hash::FxHashMap;
 use weaver_ecs::{
     component::{Res, ResMut},
@@ -39,11 +39,13 @@ pub enum SystemStage {
     PostShutdown,
 }
 
+#[derive(Default)]
 pub struct SystemAccess {
     pub resources_read: Vec<TypeId>,
     pub resources_written: Vec<TypeId>,
     pub components_read: Vec<TypeId>,
     pub components_written: Vec<TypeId>,
+    pub exclusive: bool,
 }
 
 impl SystemAccess {
@@ -52,17 +54,18 @@ impl SystemAccess {
         self.resources_written.extend(other.resources_written);
         self.components_read.extend(other.components_read);
         self.components_written.extend(other.components_written);
+        self.exclusive |= other.exclusive;
     }
 }
 
 pub trait System: 'static + Send + Sync {
     fn access(&self) -> SystemAccess;
-    fn run(&self, world: &Arc<World>) -> Result<()>;
+    fn run(&self, world: &mut World) -> Result<()>;
 }
 
 pub trait SystemParam {
     fn access() -> SystemAccess;
-    fn fetch(world: &Arc<World>) -> Option<Self>
+    fn fetch(world: &World) -> Option<Self>
     where
         Self: Sized;
 }
@@ -72,7 +75,7 @@ impl<T: SystemParam> SystemParam for Option<T> {
         T::access()
     }
 
-    fn fetch(world: &Arc<World>) -> Option<Self>
+    fn fetch(world: &World) -> Option<Self>
     where
         Self: Sized,
     {
@@ -87,6 +90,7 @@ where
 {
     fn access() -> SystemAccess {
         SystemAccess {
+            exclusive: false,
             resources_read: Vec::new(),
             resources_written: Vec::new(),
             components_read: Q::access()
@@ -112,7 +116,7 @@ where
         }
     }
 
-    fn fetch(world: &Arc<World>) -> Option<Self> {
+    fn fetch(world: &World) -> Option<Self> {
         Some(Query::new(world))
     }
 }
@@ -120,6 +124,7 @@ where
 impl<T: Resource> SystemParam for Res<T> {
     fn access() -> SystemAccess {
         SystemAccess {
+            exclusive: false,
             resources_read: vec![TypeId::of::<T>()],
             resources_written: Vec::new(),
             components_read: Vec::new(),
@@ -127,7 +132,7 @@ impl<T: Resource> SystemParam for Res<T> {
         }
     }
 
-    fn fetch(world: &Arc<World>) -> Option<Self> {
+    fn fetch(world: &World) -> Option<Self> {
         world.get_resource::<T>()
     }
 }
@@ -135,6 +140,7 @@ impl<T: Resource> SystemParam for Res<T> {
 impl<T: Resource> SystemParam for ResMut<T> {
     fn access() -> SystemAccess {
         SystemAccess {
+            exclusive: false,
             resources_read: Vec::new(),
             resources_written: vec![TypeId::of::<T>()],
             components_read: Vec::new(),
@@ -142,7 +148,7 @@ impl<T: Resource> SystemParam for ResMut<T> {
         }
     }
 
-    fn fetch(world: &Arc<World>) -> Option<Self> {
+    fn fetch(world: &World) -> Option<Self> {
         world.get_resource_mut::<T>()
     }
 }
@@ -150,6 +156,7 @@ impl<T: Resource> SystemParam for ResMut<T> {
 impl<T: Event> SystemParam for EventTx<T> {
     fn access() -> SystemAccess {
         SystemAccess {
+            exclusive: false,
             resources_read: Vec::new(),
             resources_written: vec![TypeId::of::<Events<T>>()],
             components_read: Vec::new(),
@@ -157,7 +164,7 @@ impl<T: Event> SystemParam for EventTx<T> {
         }
     }
 
-    fn fetch(world: &Arc<World>) -> Option<Self>
+    fn fetch(world: &World) -> Option<Self>
     where
         Self: Sized,
     {
@@ -168,6 +175,7 @@ impl<T: Event> SystemParam for EventTx<T> {
 impl<T: Event> SystemParam for EventRx<T> {
     fn access() -> SystemAccess {
         SystemAccess {
+            exclusive: false,
             resources_read: Vec::new(),
             resources_written: vec![TypeId::of::<Events<T>>()],
             components_read: Vec::new(),
@@ -175,7 +183,7 @@ impl<T: Event> SystemParam for EventRx<T> {
         }
     }
 
-    fn fetch(world: &Arc<World>) -> Option<Self>
+    fn fetch(world: &World) -> Option<Self>
     where
         Self: Sized,
     {
@@ -209,6 +217,7 @@ macro_rules! impl_function_system {
                 {
                     fn access(&self) -> SystemAccess {
                         let mut access = SystemAccess {
+                            exclusive: false,
                             resources_read: Vec::new(),
                             resources_written: Vec::new(),
                             components_read: Vec::new(),
@@ -222,7 +231,7 @@ macro_rules! impl_function_system {
                         access
                     }
 
-                    fn run(&self, world: &Arc<World>) -> Result<()> {
+                    fn run(&self, world: &mut World) -> Result<()> {
                         let ($($param),*) = ($($param::fetch(world).ok_or_else(|| anyhow!("Failed to fetch system param"))?),*);
                         (self.func)($($param),*)
                     }
@@ -248,7 +257,7 @@ impl_function_system!(A, B, C, D, E, F, G, H);
 
 impl<Func> FunctionSystem<()> for Func
 where
-    Func: Fn(&Arc<World>) -> Result<()> + 'static + Send + Sync,
+    Func: Fn(&mut World) -> Result<()> + 'static + Send + Sync,
 {
     fn into_system(self) -> Arc<dyn System> {
         struct FunctionSystemImpl<Func> {
@@ -257,17 +266,18 @@ where
 
         impl<Func> System for FunctionSystemImpl<Func>
         where
-            Func: Fn(&Arc<World>) -> Result<()> + 'static + Send + Sync,
+            Func: Fn(&mut World) -> Result<()> + 'static + Send + Sync,
         {
             fn access(&self) -> SystemAccess {
                 SystemAccess {
+                    exclusive: true,
                     resources_read: Vec::new(),
                     resources_written: Vec::new(),
                     components_read: Vec::new(),
                     components_written: Vec::new(),
                 }
             }
-            fn run(&self, world: &Arc<World>) -> Result<()> {
+            fn run(&self, world: &mut World) -> Result<()> {
                 (self.func)(world)
             }
         }
@@ -327,7 +337,7 @@ impl SystemGraph {
     }
 
     pub fn get_layers(&self) -> Vec<Vec<NodeIndex>> {
-        let mut schedule = petgraph::visit::Topo::new(&self.systems);
+        let mut schedule = Topo::new(&self.systems);
 
         let mut seen = HashSet::new();
         let mut layers = Vec::new();
@@ -426,38 +436,12 @@ impl SystemGraph {
         Ok(())
     }
 
-    pub fn run(&self, world: &Arc<World>) -> Result<()> {
-        let mut schedule = petgraph::visit::Topo::new(&self.systems);
+    pub fn run(&self, world: &mut World) -> Result<()> {
+        let mut schedule = Topo::new(&self.systems);
         while let Some(node) = schedule.next(&self.systems) {
             let system = self.systems[node].clone();
             system.run(world)?;
         }
-        Ok(())
-    }
-
-    pub fn run_concurrent(&self, world: &Arc<World>) -> Result<()> {
-        let layers = self.get_layers();
-
-        // run each layer concurrently
-        for layer in layers {
-            let mut rxs = Vec::new();
-
-            for node in layer {
-                let (tx, rx) = crossbeam_channel::unbounded();
-                rxs.push(rx);
-                let world = world.clone();
-                let system = self.systems[node].clone();
-                rayon::spawn(move || {
-                    let result = system.run(&world);
-                    tx.send(result).unwrap();
-                });
-            }
-
-            for rx in rxs {
-                rx.recv()??;
-            }
-        }
-
         Ok(())
     }
 }

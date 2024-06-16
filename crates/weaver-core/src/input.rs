@@ -148,7 +148,7 @@ pub struct InputPlugin;
 impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.world().insert_resource(Input::default());
-        app.add_system(update_input, SystemStage::PostUpdate)?;
+        app.add_system(update_input, SystemStage::PostUpdate);
         Ok(())
     }
 }
