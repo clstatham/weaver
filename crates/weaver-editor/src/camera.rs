@@ -120,8 +120,8 @@ pub fn update_aspect_ratio(
 ) -> Result<()> {
     let events: Vec<_> = rx.iter().collect();
     if let Some(event) = events.last() {
-        let WindowResized { width, height } = event;
-        let aspect = *width as f32 / *height as f32;
+        let WindowResized { width, height } = **event;
+        let aspect = width as f32 / height as f32;
         for (_entity, mut camera) in camera.iter() {
             camera.aspect = aspect;
         }

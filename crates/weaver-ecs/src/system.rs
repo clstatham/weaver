@@ -1,43 +1,16 @@
-use std::{any::TypeId, collections::HashSet, sync::Arc};
+use std::{
+    any::TypeId,
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
-use petgraph::{prelude::*, visit::Topo};
-use rustc_hash::FxHashMap;
-use weaver_ecs::{
+use crate::{
     component::{Res, ResMut},
     prelude::{Query, Resource, World},
     query::{QueryAccess, QueryFetch, QueryFilter},
 };
-use weaver_event::{Event, EventRx, EventTx, Events};
+use petgraph::{prelude::*, visit::Topo};
 use weaver_util::prelude::{anyhow, Result};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SystemStage {
-    PreInit,
-    Init,
-    PostInit,
-
-    PrepareFrame,
-
-    PreUpdate,
-    Update,
-    PostUpdate,
-
-    PreUi,
-    Ui,
-    PostUi,
-
-    Extract,
-    PreRender,
-    Render,
-    RenderUi,
-    PostRender,
-
-    FinishFrame,
-
-    PreShutdown,
-    Shutdown,
-    PostShutdown,
-}
 
 #[derive(Default)]
 pub struct SystemAccess {
@@ -153,44 +126,6 @@ impl<T: Resource> SystemParam for ResMut<T> {
     }
 }
 
-impl<T: Event> SystemParam for EventTx<T> {
-    fn access() -> SystemAccess {
-        SystemAccess {
-            exclusive: false,
-            resources_read: Vec::new(),
-            resources_written: vec![TypeId::of::<Events<T>>()],
-            components_read: Vec::new(),
-            components_written: Vec::new(),
-        }
-    }
-
-    fn fetch(world: &World) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        world.get_resource_mut::<Events<T>>().map(EventTx::new)
-    }
-}
-
-impl<T: Event> SystemParam for EventRx<T> {
-    fn access() -> SystemAccess {
-        SystemAccess {
-            exclusive: false,
-            resources_read: Vec::new(),
-            resources_written: vec![TypeId::of::<Events<T>>()],
-            components_read: Vec::new(),
-            components_written: Vec::new(),
-        }
-    }
-
-    fn fetch(world: &World) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        world.get_resource::<Events<T>>().map(EventRx::new)
-    }
-}
-
 pub trait FunctionSystem<Marker>: 'static + Send + Sync {
     fn into_system(self) -> Arc<dyn System>;
 }
@@ -232,7 +167,7 @@ macro_rules! impl_function_system {
                     }
 
                     fn run(&self, world: &mut World) -> Result<()> {
-                        let ($($param),*) = ($($param::fetch(world).ok_or_else(|| anyhow!("Failed to fetch system param"))?),*);
+                        let ($($param),*) = ($($param::fetch(world).unwrap()),*);
                         (self.func)($($param),*)
                     }
                 }
@@ -289,7 +224,7 @@ where
 #[derive(Default)]
 pub struct SystemGraph {
     systems: StableDiGraph<Arc<dyn System>, ()>,
-    index_cache: FxHashMap<TypeId, NodeIndex>,
+    index_cache: HashMap<TypeId, NodeIndex>,
 }
 
 impl SystemGraph {

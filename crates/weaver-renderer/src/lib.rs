@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 
 use asset::ExtractedRenderAssets;
 use bind_group::ExtractedAssetBindGroups;
@@ -8,10 +11,14 @@ use texture::{
     format::{DEPTH_FORMAT, VIEW_FORMAT},
     TexturePlugin,
 };
-use weaver_app::{plugin::Plugin, system::SystemStage, App};
-use weaver_ecs::{component::Res, prelude::Resource};
-use weaver_event::EventRx;
-use weaver_util::lock::Lock;
+use transform::TransformPlugin;
+use weaver_app::{plugin::Plugin, App, AppLabel, SubApp};
+use weaver_asset::Assets;
+use weaver_ecs::{
+    prelude::Resource, reflect::registry::TypeRegistry, system_schedule::SystemStage, world::World,
+};
+use weaver_event::Events;
+use weaver_util::prelude::Result;
 use weaver_winit::{Window, WindowResized};
 
 pub mod asset;
@@ -36,7 +43,22 @@ pub mod prelude {
     pub use wgpu;
 }
 
-#[derive(Clone)]
+pub struct RenderApp;
+impl AppLabel for RenderApp {}
+
+pub struct Extract;
+impl SystemStage for Extract {}
+
+pub struct PreRender;
+impl SystemStage for PreRender {}
+
+pub struct Render;
+impl SystemStage for Render {}
+
+pub struct PostRender;
+impl SystemStage for PostRender {}
+
+#[derive(Resource)]
 pub struct CurrentFrame {
     pub surface_texture: Arc<wgpu::SurfaceTexture>,
     pub color_view: Arc<wgpu::TextureView>,
@@ -44,135 +66,340 @@ pub struct CurrentFrame {
 }
 
 #[derive(Resource)]
+pub struct WgpuInstance {
+    pub instance: wgpu::Instance,
+}
+
+impl Deref for WgpuInstance {
+    type Target = wgpu::Instance;
+
+    fn deref(&self) -> &Self::Target {
+        &self.instance
+    }
+}
+
+#[derive(Resource)]
+pub struct WgpuAdapter {
+    pub adapter: wgpu::Adapter,
+}
+
+impl Deref for WgpuAdapter {
+    type Target = wgpu::Adapter;
+
+    fn deref(&self) -> &Self::Target {
+        &self.adapter
+    }
+}
+
+#[derive(Resource)]
+pub struct WgpuDevice {
+    pub device: wgpu::Device,
+}
+
+impl Deref for WgpuDevice {
+    type Target = wgpu::Device;
+
+    fn deref(&self) -> &Self::Target {
+        &self.device
+    }
+}
+
+#[derive(Resource)]
+pub struct WgpuQueue {
+    pub queue: wgpu::Queue,
+}
+
+impl Deref for WgpuQueue {
+    type Target = wgpu::Queue;
+
+    fn deref(&self) -> &Self::Target {
+        &self.queue
+    }
+}
+
+#[derive(Resource)]
+pub struct WindowSurface {
+    pub surface: wgpu::Surface<'static>,
+}
+
+impl Deref for WindowSurface {
+    type Target = wgpu::Surface<'static>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.surface
+    }
+}
+
+#[derive(Resource)]
 pub struct Renderer {
-    instance: Option<wgpu::Instance>,
-    adapter: Option<wgpu::Adapter>,
-    window_surface: Option<wgpu::Surface<'static>>,
-    device: Option<Arc<wgpu::Device>>,
-    queue: Option<Arc<wgpu::Queue>>,
-    current_frame: Lock<Option<CurrentFrame>>,
-    depth_texture: Lock<Option<Arc<wgpu::Texture>>>,
-    command_buffers: Lock<Vec<wgpu::CommandBuffer>>,
+    depth_texture: Option<Arc<wgpu::Texture>>,
+    command_buffers: Vec<wgpu::CommandBuffer>,
+}
+
+fn create_surface(render_world: &mut World) -> Result<()> {
+    if render_world.get_resource::<WindowSurface>().is_some() {
+        log::warn!("Surface already created");
+        return Ok(());
+    }
+
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::all(),
+        ..Default::default()
+    });
+
+    let window = render_world.get_resource::<Window>().unwrap();
+
+    let surface = unsafe {
+        instance
+            .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::from_window(&**window).unwrap())?
+    };
+
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: Some(&surface),
+        force_fallback_adapter: false,
+    }))
+    .unwrap();
+
+    let (device, queue) = pollster::block_on(adapter.request_device(
+        &wgpu::DeviceDescriptor {
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
+            label: None,
+        },
+        None,
+    ))
+    .unwrap();
+
+    let caps = surface.get_capabilities(&adapter);
+
+    surface.configure(
+        &device,
+        &wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
+            format: VIEW_FORMAT,
+            width: window.inner_size().width,
+            height: window.inner_size().height,
+            present_mode: wgpu::PresentMode::AutoNoVsync,
+            desired_maximum_frame_latency: 1,
+            alpha_mode: caps.alpha_modes[0],
+            view_formats: vec![],
+        },
+    );
+
+    let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Depth Texture"),
+        size: wgpu::Extent3d {
+            width: window.inner_size().width,
+            height: window.inner_size().height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+
+    render_world.insert_resource(WgpuInstance { instance });
+    render_world.insert_resource(WgpuAdapter { adapter });
+    render_world.insert_resource(WgpuDevice { device });
+    render_world.insert_resource(WgpuQueue { queue });
+    render_world.insert_resource(WindowSurface { surface });
+    render_world.insert_resource(Renderer {
+        depth_texture: Some(Arc::new(depth_texture)),
+        command_buffers: Vec::new(),
+    });
+
+    Ok(())
 }
 
 impl Renderer {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        Self {
-            instance: None,
-            adapter: None,
-            window_surface: None,
-            device: None,
-            queue: None,
-            current_frame: Lock::new(None),
-            depth_texture: Lock::new(None),
-            command_buffers: Lock::new(Vec::new()),
-        }
+    pub fn enqueue_command_buffer(&mut self, command_buffer: wgpu::CommandBuffer) {
+        self.command_buffers.push(command_buffer);
     }
+}
 
-    pub fn ready_to_render(&self) -> bool {
-        self.device.is_some() && self.queue.is_some() && self.window_surface.is_some()
+#[derive(Resource, Default)]
+pub struct ScratchMainWorld(World);
+
+#[derive(Resource)]
+pub struct MainWorld(World);
+
+impl Deref for MainWorld {
+    type Target = World;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
+}
 
-    pub fn device(&self) -> &Arc<wgpu::Device> {
-        self.device.as_ref().unwrap()
+impl DerefMut for MainWorld {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
+}
 
-    pub fn queue(&self) -> &Arc<wgpu::Queue> {
-        self.queue.as_ref().unwrap()
-    }
+pub struct RendererPlugin;
 
-    pub fn window_surface(&self) -> &wgpu::Surface<'static> {
-        self.window_surface.as_ref().unwrap()
-    }
+impl Plugin for RendererPlugin {
+    fn build(&self, main_app: &mut App) -> Result<()> {
+        main_app.insert_resource(ScratchMainWorld::default());
 
-    pub fn current_frame(&self) -> Option<CurrentFrame> {
-        self.current_frame.read().as_ref().cloned()
-    }
+        let mut render_app = SubApp::new();
 
-    pub fn create_surface(&mut self, window: &Window) -> anyhow::Result<()> {
-        if self.window_surface.is_some() {
-            log::warn!("Surface already created");
-            return Ok(());
-        }
+        render_app.insert_resource(TypeRegistry::new());
+        render_app.insert_resource(Assets::new());
 
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
-        });
+        render_app.push_manual_stage::<Extract>();
 
-        let surface = unsafe {
-            instance
-                .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::from_window(&**window).unwrap())?
-        };
+        render_app.push_update_stage::<PreRender>();
+        render_app.push_update_stage::<Render>();
+        render_app.push_update_stage::<PostRender>();
 
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
-        }))
-        .unwrap();
+        render_app.insert_resource(ExtractedRenderAssets::new());
+        render_app.insert_resource(ExtractedAssetBindGroups::new());
 
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                required_features: wgpu::Features::empty(),
-                required_limits:
-                    wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
-                label: None,
-            },
-            None,
-        ))
-        .unwrap();
+        render_app.add_plugin(CameraPlugin)?;
+        render_app.add_plugin(TransformPlugin)?;
+        render_app.add_plugin(MeshPlugin)?;
+        render_app.add_plugin(TexturePlugin)?;
 
-        let caps = surface.get_capabilities(&adapter);
+        render_app.add_system(resize_surface, PreRender);
+        render_app.add_system_after(begin_render, resize_surface, PreRender);
+        render_app.add_system(end_render, PostRender);
 
-        surface.configure(
-            &device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
-                format: VIEW_FORMAT,
-                width: window.inner_size().width,
-                height: window.inner_size().height,
-                present_mode: wgpu::PresentMode::AutoNoVsync,
-                desired_maximum_frame_latency: 1,
-                alpha_mode: caps.alpha_modes[0],
-                view_formats: vec![],
-            },
-        );
+        render_app.set_extract(Box::new(extract::render_extract));
 
-        self.window_surface = Some(surface);
-
-        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Depth Texture"),
-            size: wgpu::Extent3d {
-                width: window.inner_size().width,
-                height: window.inner_size().height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-
-        *self.depth_texture.write() = Some(Arc::new(depth_texture));
-
-        self.instance = Some(instance);
-        self.adapter = Some(adapter);
-        self.device = Some(Arc::new(device));
-        self.queue = Some(Arc::new(queue));
+        main_app.add_sub_app::<RenderApp>(render_app);
 
         Ok(())
     }
 
-    pub fn resize_surface(&self, width: u32, height: u32) -> anyhow::Result<()> {
-        let surface = self.window_surface.as_ref().unwrap();
-        let device = self.device.as_ref().unwrap();
+    fn finish(&self, main_app: &mut App) -> Result<()> {
+        let window = main_app.main_app().get_resource::<Window>().unwrap();
+        let resized_events = main_app
+            .main_app()
+            .get_resource::<Events<WindowResized>>()
+            .unwrap();
+        let render_app = main_app.get_sub_app_mut::<RenderApp>().unwrap();
+        render_app.insert_resource(resized_events.clone());
+        render_app.insert_resource(window.clone());
+        create_surface(render_app.world_mut())?;
+
+        Ok(())
+    }
+}
+
+pub fn begin_render(render_world: &mut World) -> Result<()> {
+    let renderer = render_world.get_resource::<Renderer>().unwrap();
+    if render_world.has_resource::<CurrentFrame>() {
+        log::warn!("Current frame already exists");
+        return Ok(());
+    }
+
+    log::trace!("Begin frame");
+
+    let surface = render_world.get_resource::<WindowSurface>().unwrap();
+    let frame = surface.get_current_texture().unwrap();
+    let color_view = frame
+        .texture
+        .create_view(&wgpu::TextureViewDescriptor::default());
+    let depth_view =
+        renderer
+            .depth_texture
+            .as_ref()
+            .unwrap()
+            .create_view(&wgpu::TextureViewDescriptor {
+                label: Some("Depth Texture View"),
+                format: Some(DEPTH_FORMAT),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                ..Default::default()
+            });
+    let current_frame = CurrentFrame {
+        surface_texture: Arc::new(frame),
+        color_view: Arc::new(color_view),
+        depth_view: Arc::new(depth_view),
+    };
+
+    render_world.insert_resource(current_frame);
+
+    Ok(())
+}
+
+pub fn end_render(render_world: &mut World) -> Result<()> {
+    let Some(current_frame) = render_world.remove_resource::<CurrentFrame>() else {
+        return Ok(());
+    };
+
+    let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
+    let device = render_world.get_resource::<WgpuDevice>().unwrap();
+    let queue = render_world.get_resource::<WgpuQueue>().unwrap();
+
+    log::trace!("End frame");
+
+    let CurrentFrame {
+        surface_texture,
+        color_view,
+        depth_view,
+    } = current_frame;
+
+    let mut command_buffers = renderer.command_buffers.drain(..).collect::<Vec<_>>();
+
+    if command_buffers.is_empty() {
+        // ensure that we have at least some work to do
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Final Encoder"),
+        });
+        {
+            let mut _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Final Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            });
+        }
+        command_buffers.push(encoder.finish());
+    }
+
+    queue.submit(command_buffers);
+
+    let surface_texture = Arc::into_inner(surface_texture).unwrap();
+
+    surface_texture.present();
+
+    Ok(())
+}
+
+fn resize_surface(render_world: &mut World) -> Result<()> {
+    let events = render_world
+        .get_resource::<Events<WindowResized>>()
+        .unwrap();
+    for event in events.iter() {
+        // if multiple events are queued up, only resize the window to the last event's size
+        let WindowResized { width, height } = *event;
+
+        let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+        let surface = render_world.get_resource::<WindowSurface>().unwrap();
 
         surface.configure(
-            device,
+            &device,
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
                 format: VIEW_FORMAT,
@@ -185,7 +412,7 @@ impl Renderer {
             },
         );
 
-        let depth_texture = self.depth_texture.write().take().unwrap();
+        let depth_texture = renderer.depth_texture.take().unwrap();
 
         depth_texture.destroy();
 
@@ -204,119 +431,7 @@ impl Renderer {
             view_formats: &[],
         });
 
-        *self.depth_texture.write() = Some(Arc::new(depth_texture));
-
-        Ok(())
-    }
-
-    pub fn begin_frame(&self) -> anyhow::Result<()> {
-        if self.current_frame.read().is_some() {
-            log::warn!("Current frame already exists");
-            return Ok(());
-        }
-
-        log::trace!("Begin frame");
-
-        let surface = self.window_surface.as_ref().unwrap();
-        let frame = surface.get_current_texture()?;
-        let color_view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let depth_view =
-            self.depth_texture
-                .read()
-                .as_ref()
-                .unwrap()
-                .create_view(&wgpu::TextureViewDescriptor {
-                    label: Some("Depth Texture View"),
-                    format: Some(DEPTH_FORMAT),
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    ..Default::default()
-                });
-        *self.current_frame.write() = Some(CurrentFrame {
-            surface_texture: Arc::new(frame),
-            color_view: Arc::new(color_view),
-            depth_view: Arc::new(depth_view),
-        });
-
-        Ok(())
-    }
-
-    pub fn enqueue_command_buffer(&self, command_buffer: wgpu::CommandBuffer) {
-        self.command_buffers.write().push(command_buffer);
-    }
-
-    pub fn end_frame(&self) -> anyhow::Result<()> {
-        if self.current_frame.read().is_none() {
-            log::warn!("No current frame to end");
-            return Ok(());
-        }
-
-        log::trace!("End frame");
-
-        let CurrentFrame {
-            surface_texture, ..
-        } = self.current_frame.write().take().unwrap();
-
-        let command_buffers = self.command_buffers.write().drain(..).collect::<Vec<_>>();
-        self.queue().submit(command_buffers);
-
-        let surface_texture = Arc::into_inner(surface_texture).unwrap();
-
-        surface_texture.present();
-
-        Ok(())
-    }
-}
-
-pub struct RendererPlugin;
-
-impl Plugin for RendererPlugin {
-    fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.world().insert_resource(Renderer::new());
-        app.world().insert_resource(ExtractedRenderAssets::new());
-        app.world().insert_resource(ExtractedAssetBindGroups::new());
-
-        app.add_plugin(CameraPlugin)?;
-        // app.add_plugin(TransformPlugin)?;
-        app.add_plugin(MeshPlugin)?;
-        app.add_plugin(TexturePlugin)?;
-
-        app.add_system(resize_surface, SystemStage::PreUpdate);
-
-        app.add_system(begin_render, SystemStage::PreRender);
-        app.add_system(end_render, SystemStage::PostRender);
-
-        Ok(())
-    }
-
-    fn finish(&self, app: &mut App) -> anyhow::Result<()> {
-        let mut renderer = app.world().get_resource_mut::<Renderer>().unwrap();
-        let window = app.world().get_resource::<Window>().unwrap();
-        renderer.create_surface(&window)?;
-
-        Ok(())
-    }
-}
-
-pub fn begin_render(renderer: Res<Renderer>) -> anyhow::Result<()> {
-    renderer.begin_frame()?;
-
-    Ok(())
-}
-
-pub fn end_render(renderer: Res<Renderer>) -> anyhow::Result<()> {
-    renderer.end_frame()?;
-
-    Ok(())
-}
-
-fn resize_surface(renderer: Res<Renderer>, rx: EventRx<WindowResized>) -> anyhow::Result<()> {
-    let events: Vec<_> = rx.iter().collect();
-    if let Some(event) = events.last() {
-        // if multiple events are queued up, only resize the window to the last event's size
-        let WindowResized { width, height } = event;
-        renderer.resize_surface(*width, *height)?;
+        renderer.depth_texture = Some(Arc::new(depth_texture));
     }
     Ok(())
 }

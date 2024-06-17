@@ -1,6 +1,6 @@
 use crate::{
     asset::{ExtractRenderAssetPlugin, RenderAsset},
-    Renderer,
+    WgpuDevice,
 };
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{prelude::Asset, Assets};
@@ -26,17 +26,22 @@ impl Asset for GpuMesh {
 impl RenderAsset for GpuMesh {
     type BaseAsset = Mesh;
 
-    fn extract_render_asset(base_asset: &Mesh, _world: &World, renderer: &Renderer) -> Option<Self>
+    fn extract_render_asset(
+        base_asset: &Mesh,
+        _main_world: &mut World,
+        render_world: &mut World,
+    ) -> Option<Self>
     where
         Self: Sized,
     {
-        let vertex_buffer = renderer.device().create_buffer_init(&BufferInitDescriptor {
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(&base_asset.vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let index_buffer = renderer.device().create_buffer_init(&BufferInitDescriptor {
+        let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Index Buffer"),
             contents: bytemuck::cast_slice(&base_asset.indices),
             usage: wgpu::BufferUsages::INDEX,
@@ -52,9 +57,9 @@ impl RenderAsset for GpuMesh {
     fn update_render_asset(
         &self,
         _base_asset: &Self::BaseAsset,
-        _world: &World,
-        _renderer: &Renderer,
-    ) -> anyhow::Result<()>
+        _main_world: &mut World,
+        _render_world: &mut World,
+    ) -> Result<()>
     where
         Self: Sized,
     {

@@ -8,9 +8,12 @@ use std::{
 
 use petgraph::{prelude::*, visit::Topo};
 use weaver_ecs::world::World;
-use weaver_util::lock::Lock;
+use weaver_util::{
+    lock::Lock,
+    prelude::{bail, Result},
+};
 
-use crate::Renderer;
+use crate::CurrentFrame;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RenderEdge {
@@ -22,16 +25,11 @@ pub struct RenderEdge {
 
 pub trait Render: 'static + Send + Sync {
     #[allow(unused_variables)]
-    fn prepare(&self, world: &mut World, renderer: &Renderer) -> anyhow::Result<()> {
+    fn prepare(&self, render_world: &mut World) -> Result<()> {
         Ok(())
     }
 
-    fn render(
-        &self,
-        world: &mut World,
-        renderer: &Renderer,
-        input_slots: &[Slot],
-    ) -> anyhow::Result<Vec<Slot>>;
+    fn render(&self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>>;
 }
 
 #[derive(Clone)]
@@ -72,35 +70,25 @@ impl RenderNode {
         self.render_type_id
     }
 
-    pub fn prepare(&self, world: &mut World, renderer: &Renderer) -> anyhow::Result<()> {
-        self.render.write().prepare(world, renderer)
+    pub fn prepare(&self, render_world: &mut World) -> Result<()> {
+        self.render.write().prepare(render_world)
     }
 
-    pub fn render(
-        &self,
-        world: &mut World,
-        renderer: &Renderer,
-        input_slots: &[Slot],
-    ) -> anyhow::Result<Vec<Slot>> {
-        self.render.write().render(world, renderer, input_slots)
+    pub fn render(&self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>> {
+        self.render.write().render(render_world, input_slots)
     }
 }
 
 pub struct StartNode;
 
 impl Render for StartNode {
-    fn render(
-        &self,
-        _world: &mut World,
-        renderer: &Renderer,
-        _input_slots: &[Slot],
-    ) -> anyhow::Result<Vec<Slot>> {
+    fn render(&self, render_world: &mut World, _input_slots: &[Slot]) -> Result<Vec<Slot>> {
         // todo: don't assume we want to render to the main window (allow input slots to specify target)
-        let current_frame = renderer.current_frame().unwrap();
+        let current_frame = render_world.get_resource::<CurrentFrame>().unwrap();
 
         Ok(vec![
-            Slot::Texture(current_frame.color_view),
-            Slot::Texture(current_frame.depth_view),
+            Slot::Texture(current_frame.color_view.clone()),
+            Slot::Texture(current_frame.depth_view.clone()),
         ])
     }
 }
@@ -202,16 +190,16 @@ impl RenderGraph {
         self.node_index::<T>().is_some()
     }
 
-    pub fn prepare(&self, world: &mut World, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn prepare(&self, render_world: &mut World) -> Result<()> {
         for node in self.graph.node_indices() {
             let render_node = &self.graph[node];
-            render_node.prepare(world, renderer)?;
+            render_node.prepare(render_world)?;
         }
 
         Ok(())
     }
 
-    pub fn render(&self, world: &mut World, renderer: &Renderer) -> anyhow::Result<()> {
+    pub fn render(&self, render_world: &mut World) -> Result<()> {
         let mut output_cache: HashMap<NodeIndex, Vec<Slot>> =
             HashMap::with_capacity(self.graph.node_count());
 
@@ -229,23 +217,23 @@ impl RenderGraph {
             for edge in edges_incoming {
                 let from_slot = edge.weight().from_slot;
                 let Some(output_slots) = output_cache.get(&edge.source()) else {
-                    return Err(anyhow::anyhow!(
+                    bail!(
                         "Missing output cache for node {:?} ({:?})",
                         edge.source(),
                         self.graph[edge.source()].name()
-                    ));
+                    );
                 };
                 input_slots.push(output_slots[from_slot].clone());
             }
 
-            let output_slots = render_node.render(world, renderer, &input_slots)?;
+            let output_slots = render_node.render(render_world, &input_slots)?;
             output_cache.insert(node, output_slots);
         }
 
         Ok(())
     }
 
-    pub fn write_dot(&self, path: &str) -> anyhow::Result<()> {
+    pub fn write_dot(&self, path: &str) -> Result<()> {
         use petgraph::dot::{Config, Dot};
 
         let dot = Dot::with_config(&self.graph, &[Config::EdgeNoLabel]);

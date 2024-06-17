@@ -10,6 +10,7 @@ use weaver_renderer::{
     buffer::GpuBuffer,
     prelude::*,
     texture::GpuTexture,
+    WgpuDevice, WgpuQueue,
 };
 use weaver_util::prelude::*;
 use wgpu::util::DeviceExt;
@@ -183,26 +184,28 @@ impl RenderAsset for GpuMaterial {
 
     fn extract_render_asset(
         base_asset: &Material,
-        world: &World,
-        renderer: &Renderer,
+        main_world: &mut World,
+        render_world: &mut World,
     ) -> Option<Self>
     where
         Self: Sized,
     {
-        let assets = world.get_resource::<Assets>()?;
+        let assets = main_world.get_resource::<Assets>()?;
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+        let queue = render_world.get_resource::<WgpuQueue>().unwrap();
 
         let diffuse_texture = assets.get(base_asset.diffuse_texture)?;
-        let diffuse_texture = GpuTexture::from_image(renderer, &diffuse_texture)?;
+        let diffuse_texture = GpuTexture::from_image(&device, &queue, &diffuse_texture)?;
 
         let normal_texture = assets.get(base_asset.normal_texture)?;
-        let normal_texture = GpuTexture::from_image(renderer, &normal_texture)?;
+        let normal_texture = GpuTexture::from_image(&device, &queue, &normal_texture)?;
 
         let metallic_roughness_texture = assets.get(base_asset.metallic_roughness_texture)?;
         let metallic_roughness_texture =
-            GpuTexture::from_image(renderer, &metallic_roughness_texture)?;
+            GpuTexture::from_image(&device, &queue, &metallic_roughness_texture)?;
 
         let ao_texture = assets.get(base_asset.ao_texture)?;
-        let ao_texture = GpuTexture::from_image(renderer, &ao_texture)?;
+        let ao_texture = GpuTexture::from_image(&device, &queue, &ao_texture)?;
 
         let meta = MaterialMetaUniform {
             diffuse: base_asset.diffuse,
@@ -212,17 +215,15 @@ impl RenderAsset for GpuMaterial {
             texture_scale: base_asset.texture_scale,
         };
 
-        let meta = renderer
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Material Meta Buffer"),
-                contents: bytemuck::cast_slice(&[meta]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            });
+        let meta = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Material Meta Buffer"),
+            contents: bytemuck::cast_slice(&[meta]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
         let meta = GpuBuffer::new(meta);
 
-        let diffuse_texture_sampler = renderer.device().create_sampler(&wgpu::SamplerDescriptor {
+        let diffuse_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Diffuse Texture Sampler"),
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
@@ -233,7 +234,7 @@ impl RenderAsset for GpuMaterial {
             ..Default::default()
         });
 
-        let normal_texture_sampler = renderer.device().create_sampler(&wgpu::SamplerDescriptor {
+        let normal_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Normal Texture Sampler"),
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
@@ -244,19 +245,18 @@ impl RenderAsset for GpuMaterial {
             ..Default::default()
         });
 
-        let metallic_roughness_texture_sampler =
-            renderer.device().create_sampler(&wgpu::SamplerDescriptor {
-                label: Some("Metallic Roughness Texture Sampler"),
-                address_mode_u: wgpu::AddressMode::Repeat,
-                address_mode_v: wgpu::AddressMode::Repeat,
-                address_mode_w: wgpu::AddressMode::Repeat,
-                mag_filter: wgpu::FilterMode::Linear,
-                min_filter: wgpu::FilterMode::Linear,
-                mipmap_filter: wgpu::FilterMode::Linear,
-                ..Default::default()
-            });
+        let metallic_roughness_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Metallic Roughness Texture Sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
 
-        let ao_texture_sampler = renderer.device().create_sampler(&wgpu::SamplerDescriptor {
+        let ao_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("AO Texture Sampler"),
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
@@ -283,8 +283,8 @@ impl RenderAsset for GpuMaterial {
     fn update_render_asset(
         &self,
         base_asset: &Self::BaseAsset,
-        _world: &World,
-        renderer: &Renderer,
+        _main_world: &mut World,
+        render_world: &mut World,
     ) -> Result<()>
     where
         Self: Sized,
@@ -297,8 +297,9 @@ impl RenderAsset for GpuMaterial {
             texture_scale: base_asset.texture_scale,
         };
 
-        self.meta
-            .update(renderer.queue(), bytemuck::cast_slice(&[meta]));
+        let queue = render_world.get_resource::<WgpuQueue>().unwrap();
+
+        self.meta.update(&queue, bytemuck::cast_slice(&[meta]));
 
         Ok(())
     }
@@ -461,11 +462,9 @@ impl CreateComponentBindGroup for GpuMaterial {
 pub struct MaterialPlugin;
 
 impl Plugin for MaterialPlugin {
-    fn build(&self, app: &mut App) -> Result<()> {
-        app.add_plugin(ExtractRenderAssetPlugin::<GpuMaterial>::default())?;
-        app.add_plugin(AssetBindGroupPlugin::<GpuMaterial>::default())?;
-        app.register_type::<Material>();
-        app.register_type::<Handle<Material>>();
+    fn build(&self, render_app: &mut App) -> Result<()> {
+        render_app.add_plugin(ExtractRenderAssetPlugin::<GpuMaterial>::default())?;
+        render_app.add_plugin(AssetBindGroupPlugin::<GpuMaterial>::default())?;
         Ok(())
     }
 }

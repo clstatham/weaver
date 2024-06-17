@@ -1,14 +1,14 @@
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
-use anyhow::bail;
-use weaver_app::{plugin::Plugin, system::SystemStage, App};
+use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{prelude::Asset, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
     prelude::{Component, Reflect, Resource},
     world::World,
 };
+use weaver_util::prelude::{bail, Result};
 
-use crate::{asset::RenderAsset, Renderer};
+use crate::{asset::RenderAsset, Extract, PreRender, WgpuDevice};
 
 pub trait CreateComponentBindGroup: Component {
     fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
@@ -33,7 +33,7 @@ pub struct ComponentBindGroup<T: CreateComponentBindGroup> {
 }
 
 impl<T: CreateComponentBindGroup> Asset for ComponentBindGroup<T> {
-    fn load(_assets: &mut Assets, _path: &std::path::Path) -> anyhow::Result<Self> {
+    fn load(_assets: &mut Assets, _path: &std::path::Path) -> Result<Self> {
         bail!("ComponentBindGroup cannot be loaded from a file")
     }
 }
@@ -72,23 +72,22 @@ impl<T: CreateComponentBindGroup> Default for ComponentBindGroupPlugin<T> {
 }
 
 impl<T: CreateComponentBindGroup> Plugin for ComponentBindGroupPlugin<T> {
-    fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_system(create_bind_groups::<T>, SystemStage::PreRender);
+    fn build(&self, app: &mut App) -> Result<()> {
+        app.add_system(create_bind_groups::<T>, PreRender);
         Ok(())
     }
 }
 
-fn create_bind_groups<T: CreateComponentBindGroup>(world: &mut World) -> anyhow::Result<()> {
-    let renderer = world.get_resource::<Renderer>().unwrap();
-    let device = renderer.device();
+fn create_bind_groups<T: CreateComponentBindGroup>(render_world: &mut World) -> Result<()> {
+    let device = render_world.get_resource::<WgpuDevice>().unwrap();
 
-    let query = world.query::<&T>();
+    let query = render_world.query::<&T>();
 
     for (entity, data) in query.iter() {
-        if !world.has_component::<ComponentBindGroup<T>>(entity) {
-            let bind_group = ComponentBindGroup::new(device, &*data);
+        if !render_world.has_component::<ComponentBindGroup<T>>(entity) {
+            let bind_group = ComponentBindGroup::new(&device, &*data);
             drop(data);
-            world.insert_component(entity, bind_group);
+            render_world.insert_component(entity, bind_group);
         }
     }
 
@@ -135,26 +134,22 @@ impl<T: CreateResourceBindGroup> Default for ResourceBindGroupPlugin<T> {
 }
 
 impl<T: CreateResourceBindGroup> Plugin for ResourceBindGroupPlugin<T> {
-    fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_system(create_resource_bind_group::<T>, SystemStage::PreRender);
+    fn build(&self, app: &mut App) -> Result<()> {
+        app.add_system(create_resource_bind_group::<T>, PreRender);
         Ok(())
     }
 }
 
-fn create_resource_bind_group<T: CreateResourceBindGroup>(world: &mut World) -> anyhow::Result<()> {
-    let Some(renderer) = world.get_resource::<Renderer>() else {
-        return Ok(());
-    };
-    let device = renderer.device();
-
-    if !world.has_resource::<ResourceBindGroup<T>>() {
-        let Some(data) = world.get_resource::<T>() else {
+fn create_resource_bind_group<T: CreateResourceBindGroup>(render_world: &mut World) -> Result<()> {
+    if !render_world.has_resource::<ResourceBindGroup<T>>() {
+        let Some(data) = render_world.get_resource::<T>() else {
             return Ok(());
         };
-        let bind_group = ResourceBindGroup::new(device, &*data);
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+        let bind_group = ResourceBindGroup::new(&device, &*data);
         drop(data);
-        drop(renderer);
-        world.insert_resource(bind_group);
+        drop(device);
+        render_world.insert_resource(bind_group);
     }
 
     Ok(())
@@ -190,28 +185,26 @@ impl<T: CreateComponentBindGroup + RenderAsset> Default for AssetBindGroupPlugin
 }
 
 impl<T: CreateComponentBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
-    fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_system(create_asset_bind_group::<T>, SystemStage::PreRender);
+    fn build(&self, app: &mut App) -> Result<()> {
+        app.add_system(create_asset_bind_group::<T>, Extract);
         Ok(())
     }
 }
 
 fn create_asset_bind_group<T: CreateComponentBindGroup + RenderAsset>(
-    world: &mut World,
-) -> anyhow::Result<()> {
-    let renderer = world.get_resource::<Renderer>().unwrap();
-    let device = renderer.device();
+    render_world: &mut World,
+) -> Result<()> {
+    let device = render_world.get_resource::<WgpuDevice>().unwrap();
+    let mut assets = render_world.get_resource_mut::<Assets>().unwrap();
 
-    let mut assets = world.get_resource_mut::<Assets>().unwrap();
-
-    let query = world.query::<&Handle<T>>();
+    let query = render_world.query::<&Handle<T>>();
 
     for (entity, handle) in query.iter() {
-        if world.has_component::<Handle<ComponentBindGroup<T>>>(entity) {
+        if render_world.has_component::<Handle<ComponentBindGroup<T>>>(entity) {
             continue;
         }
 
-        let mut asset_bind_groups = world
+        let mut asset_bind_groups = render_world
             .get_resource_mut::<ExtractedAssetBindGroups>()
             .unwrap();
 
@@ -219,14 +212,14 @@ fn create_asset_bind_group<T: CreateComponentBindGroup + RenderAsset>(
             let bind_group_handle =
                 Handle::<ComponentBindGroup<T>>::try_from(*bind_group_handle).unwrap();
             drop(handle);
-            world.insert_component(entity, bind_group_handle);
+            render_world.insert_component(entity, bind_group_handle);
         } else {
             let asset = assets.get::<T>(*handle).unwrap();
-            let bind_group = ComponentBindGroup::new(device, &*asset);
+            let bind_group = ComponentBindGroup::new(&device, &*asset);
             let bind_group_handle = assets.insert(bind_group);
             asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
             drop(handle);
-            world.insert_component(entity, bind_group_handle);
+            render_world.insert_component(entity, bind_group_handle);
         }
     }
 

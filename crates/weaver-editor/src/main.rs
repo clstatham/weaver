@@ -1,7 +1,7 @@
 use inspect::InspectUi;
 use weaver::{
     prelude::*,
-    weaver_app::{system::SystemStage, App},
+    weaver_app::App,
     weaver_core::{input::InputPlugin, mesh::Mesh, time::TimePlugin},
     weaver_ecs::world::World,
     weaver_pbr::{camera::PbrCamera, material::Material, PbrPlugin},
@@ -57,13 +57,13 @@ fn main() -> Result<()> {
             log_interval: std::time::Duration::from_secs(1),
         })?
         .insert_resource(EditorState::default())
-        .add_system(setup, SystemStage::Init)
-        .add_system(camera::update_camera, SystemStage::Update)
-        .add_system(camera::update_aspect_ratio, SystemStage::Update)
-        .add_system(selection_gizmos, SystemStage::Update)
-        .add_system(light_gizmos, SystemStage::Update)
-        .add_system(pick_entity, SystemStage::Update)
-        .add_system(ui, SystemStage::Ui)
+        .add_system(setup, Init)
+        .add_system(camera::update_camera, Update)
+        .add_system(camera::update_aspect_ratio, Update)
+        .add_system(selection_gizmos, Update)
+        .add_system(light_gizmos, Update)
+        .add_system(pick_entity, Update)
+        .add_system(ui, Update)
         .run()
 }
 
@@ -212,24 +212,6 @@ fn ui(world: &mut World) -> Result<()> {
     egui_context.draw_if_ready(|ctx| {
         if let Some(entity) = editor_state.selected_entity {
             egui::Window::new("Inspector").show(ctx, |ui| {
-                // if let Some(handle) = world.get_component::<Handle<Material>>(entity) {
-                //     let mut assets = world.get_resource_mut::<Assets>().unwrap();
-                //     let material = assets.get_mut(*handle).unwrap();
-                //     ui.collapsing("Material", |ui| {
-                //         material.inspect_ui(ui);
-                //     });
-                // }
-                // if let Some(mut transform) = world.get_component_mut::<Transform>(entity) {
-                //     ui.collapsing("Transform", |ui| {
-                //         transform.inspect_ui(ui);
-                //     });
-                // }
-                // if let Some(mut light) = world.get_component_mut::<PointLight>(entity) {
-                //     ui.collapsing("Light", |ui| {
-                //         light.inspect_ui(ui);
-                //     });
-                // }
-
                 let storage = world.storage().read();
                 let archetype = storage.get_archetype(entity).unwrap();
                 for (_, column) in archetype.column_iter() {

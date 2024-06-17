@@ -8,6 +8,8 @@ pub mod query;
 pub mod reflect;
 pub mod relationship;
 pub mod storage;
+pub mod system;
+pub mod system_schedule;
 pub mod world;
 
 pub mod prelude {
@@ -21,6 +23,8 @@ pub mod prelude {
     pub use crate::reflect::{registry::*, *};
     pub use crate::relationship::*;
     pub use crate::storage::*;
+    pub use crate::system::*;
+    pub use crate::system_schedule::*;
     pub use crate::world::*;
     pub use weaver_ecs_macros::*;
     pub use weaver_reflect_macros::*;

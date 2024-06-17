@@ -9,6 +9,7 @@ use weaver_renderer::{
     extract::{RenderResource, RenderResourcePlugin},
     graph::Slot,
     prelude::*,
+    WgpuDevice, WgpuQueue,
 };
 use weaver_util::prelude::Result;
 
@@ -67,11 +68,11 @@ pub struct GpuPointLightArray {
 }
 
 impl RenderResource for GpuPointLightArray {
-    fn extract_render_resource(world: &mut World, renderer: &Renderer) -> Option<Self>
+    fn extract_render_resource(main_world: &mut World, render_world: &mut World) -> Option<Self>
     where
         Self: Sized,
     {
-        let point_lights = world.query::<(&PointLight, &Transform)>();
+        let point_lights = main_world.query::<(&PointLight, &Transform)>();
 
         let point_light_uniforms: Vec<PointLightUniform> = point_lights
             .iter()
@@ -85,24 +86,25 @@ impl RenderResource for GpuPointLightArray {
             })
             .collect();
 
-        let storage_buffer =
-            renderer
-                .device()
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Point Light Storage Buffer"),
-                    contents: bytemuck::cast_slice(&[PointLightArrayUniform::from(
-                        point_light_uniforms,
-                    )]),
-                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                });
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+
+        let storage_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Point Light Storage Buffer"),
+            contents: bytemuck::cast_slice(&[PointLightArrayUniform::from(point_light_uniforms)]),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
 
         Some(Self {
             buffer: GpuBuffer::new(storage_buffer),
         })
     }
 
-    fn update_render_resource(&mut self, world: &mut World, renderer: &Renderer) -> Result<()> {
-        let point_lights = world.query::<(&PointLight, &Transform)>();
+    fn update_render_resource(
+        &mut self,
+        main_world: &mut World,
+        render_world: &mut World,
+    ) -> Result<()> {
+        let point_lights = main_world.query::<(&PointLight, &Transform)>();
 
         let point_light_uniforms: Vec<PointLightUniform> = point_lights
             .iter()
@@ -116,8 +118,10 @@ impl RenderResource for GpuPointLightArray {
             })
             .collect();
 
+        let queue = render_world.get_resource::<WgpuQueue>().unwrap();
+
         self.buffer.update(
-            renderer.queue(),
+            &queue,
             bytemuck::cast_slice(&[PointLightArrayUniform::from(point_light_uniforms)]),
         );
 
@@ -160,9 +164,9 @@ impl CreateResourceBindGroup for GpuPointLightArray {
 pub struct PointLightPlugin;
 
 impl Plugin for PointLightPlugin {
-    fn build(&self, app: &mut App) -> Result<()> {
-        app.add_plugin(RenderResourcePlugin::<GpuPointLightArray>::default())?;
-        app.add_plugin(ResourceBindGroupPlugin::<GpuPointLightArray>::default())?;
+    fn build(&self, render_app: &mut App) -> Result<()> {
+        render_app.add_plugin(RenderResourcePlugin::<GpuPointLightArray>::default())?;
+        render_app.add_plugin(ResourceBindGroupPlugin::<GpuPointLightArray>::default())?;
 
         Ok(())
     }
@@ -171,13 +175,8 @@ impl Plugin for PointLightPlugin {
 pub struct PointLightArrayNode;
 
 impl Render for PointLightArrayNode {
-    fn render(
-        &self,
-        world: &mut World,
-        _renderer: &Renderer,
-        _input_slots: &[Slot],
-    ) -> Result<Vec<Slot>> {
-        let bind_group = world
+    fn render(&self, render_world: &mut World, _input_slots: &[Slot]) -> Result<Vec<Slot>> {
+        let bind_group = render_world
             .get_resource::<ResourceBindGroup<GpuPointLightArray>>()
             .expect("Point Light Array Bind Group resource not present");
 

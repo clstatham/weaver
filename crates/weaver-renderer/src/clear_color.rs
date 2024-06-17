@@ -3,10 +3,11 @@ use weaver_ecs::{
     prelude::{Component, Reflect},
     world::World,
 };
+use weaver_util::prelude::{bail, Result};
 
 use crate::{
     graph::{Render, Slot},
-    Renderer,
+    Renderer, WgpuDevice,
 };
 
 #[derive(Component, Reflect)]
@@ -29,21 +30,16 @@ impl Default for ClearColor {
 }
 
 impl Render for ClearColor {
-    fn render(
-        &self,
-        _world: &mut World,
-        renderer: &Renderer,
-        input_slots: &[Slot],
-    ) -> anyhow::Result<Vec<Slot>> {
-        log::trace!("ClearColor::render");
-        let device = renderer.device();
+    fn render(&self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>> {
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+        let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
 
         let Slot::Texture(color_target) = &input_slots[0] else {
-            return Err(anyhow::anyhow!("Expected a texture slot"));
+            bail!("Expected a texture slot");
         };
 
         let Slot::Texture(depth_target) = &input_slots[1] else {
-            return Err(anyhow::anyhow!("Expected a texture slot"));
+            bail!("Expected a texture slot");
         };
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

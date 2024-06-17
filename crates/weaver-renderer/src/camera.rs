@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use weaver_core::geometry::Ray;
+use weaver_util::prelude::Result;
 use wgpu::util::DeviceExt;
 
 use weaver_app::plugin::Plugin;
@@ -10,8 +11,7 @@ use crate::{
     bind_group::{ComponentBindGroupPlugin, CreateComponentBindGroup},
     buffer::GpuBuffer,
     extract::{RenderComponent, RenderComponentPlugin},
-    graph::RenderGraph,
-    Renderer,
+    WgpuDevice, WgpuQueue,
 };
 
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -44,11 +44,9 @@ impl From<&Camera> for CameraUniform {
     }
 }
 
-#[derive(Component, Reflect)]
+#[derive(Component, Reflect, Clone, Copy)]
 pub struct Camera {
     pub active: bool,
-    #[reflect(ignore)]
-    pub graph: RenderGraph,
     pub view_matrix: glam::Mat4,
     pub projection_matrix: glam::Mat4,
 }
@@ -64,11 +62,8 @@ impl Debug for Camera {
 
 impl Camera {
     pub fn new(view_matrix: glam::Mat4, projection_matrix: glam::Mat4) -> Self {
-        let graph = RenderGraph::new();
-
         Self {
             active: true,
-            graph,
             view_matrix,
             projection_matrix,
         }
@@ -105,14 +100,6 @@ impl Camera {
         self.set_active(false);
     }
 
-    pub fn render_graph(&self) -> &RenderGraph {
-        &self.graph
-    }
-
-    pub fn render_graph_mut(&mut self) -> &mut RenderGraph {
-        &mut self.graph
-    }
-
     pub fn screen_to_ray(&self, screen_pos: glam::Vec2, screen_size: glam::Vec2) -> Ray {
         let ndc = glam::Vec2::new(
             (2.0 * screen_pos.x / screen_size.x) - 1.0,
@@ -146,20 +133,23 @@ pub struct GpuCamera {
 impl RenderComponent for GpuCamera {
     type ExtractQuery<'a> = &'a Camera;
 
-    fn extract_render_component(entity: Entity, world: &World, renderer: &Renderer) -> Option<Self>
+    fn extract_render_component(
+        entity: Entity,
+        main_world: &mut World,
+        render_world: &mut World,
+    ) -> Option<Self>
     where
         Self: Sized,
     {
-        let camera = world.get_component::<Camera>(entity)?;
+        let camera = main_world.get_component::<Camera>(entity)?;
 
-        let uniform_buffer =
-            renderer
-                .device()
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Camera Uniform Buffer"),
-                    contents: bytemuck::cast_slice(&[CameraUniform::from(&*camera)]),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                });
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+
+        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[CameraUniform::from(&*camera)]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
         Some(Self {
             uniform_buffer: GpuBuffer::new(uniform_buffer),
@@ -169,13 +159,15 @@ impl RenderComponent for GpuCamera {
     fn update_render_component(
         &mut self,
         entity: Entity,
-        world: &World,
-        renderer: &Renderer,
-    ) -> anyhow::Result<()> {
-        let camera = world.get_component::<Camera>(entity).unwrap();
+        main_world: &mut World,
+        render_world: &mut World,
+    ) -> Result<()> {
+        let camera = main_world.get_component::<Camera>(entity).unwrap();
+
+        let queue = render_world.get_resource::<WgpuQueue>().unwrap();
 
         self.uniform_buffer.update(
-            renderer.queue(),
+            &queue,
             bytemuck::cast_slice(&[CameraUniform::from(&*camera)]),
         );
 
@@ -219,7 +211,7 @@ impl CreateComponentBindGroup for GpuCamera {
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
-    fn build(&self, app: &mut weaver_app::App) -> anyhow::Result<()> {
+    fn build(&self, app: &mut weaver_app::App) -> Result<()> {
         app.add_plugin(RenderComponentPlugin::<GpuCamera>::default())?;
         app.add_plugin(ComponentBindGroupPlugin::<GpuCamera>::default())?;
 

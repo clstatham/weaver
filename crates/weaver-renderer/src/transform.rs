@@ -1,105 +1,45 @@
 use weaver_app::{plugin::Plugin, App};
-use wgpu::util::DeviceExt;
+use weaver_util::prelude::Result;
 
 use weaver_core::transform::Transform;
-use weaver_ecs::{
-    entity::Entity,
-    prelude::{Component, Reflect},
-    world::World,
-};
+use weaver_ecs::{entity::Entity, world::World};
 
-use crate::{
-    bind_group::{ComponentBindGroupPlugin, CreateComponentBindGroup},
-    buffer::GpuBuffer,
-    extract::{RenderComponent, RenderComponentPlugin},
-    Renderer,
-};
+use crate::extract::{RenderComponent, RenderComponentPlugin};
 
-#[derive(Component, Reflect)]
-pub struct GpuTransform {
-    #[reflect(ignore)]
-    pub buffer: GpuBuffer,
-}
-
-impl RenderComponent for GpuTransform {
+impl RenderComponent for Transform {
     type ExtractQuery<'a> = &'a Transform;
 
-    fn extract_render_component(entity: Entity, world: &World, renderer: &Renderer) -> Option<Self>
+    fn extract_render_component(
+        entity: Entity,
+        main_world: &mut World,
+        _render_world: &mut World,
+    ) -> Option<Self>
     where
         Self: Sized,
     {
-        let transform = world.get_component::<Transform>(entity)?;
-
-        let buffer = GpuBuffer::new(renderer.device().create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Transform Buffer"),
-                contents: bytemuck::cast_slice(&[transform.matrix()]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
-        ));
-
-        Some(Self { buffer })
+        main_world
+            .get_component::<Transform>(entity)
+            .as_deref()
+            .copied()
     }
 
     fn update_render_component(
         &mut self,
         entity: Entity,
-        world: &World,
-        renderer: &Renderer,
-    ) -> anyhow::Result<()> {
-        let transform = world.get_component::<Transform>(entity).unwrap();
-
-        self.buffer.update(
-            renderer.queue(),
-            bytemuck::cast_slice(&[transform.matrix()]),
-        );
-
+        main_world: &mut World,
+        _render_world: &mut World,
+    ) -> Result<()> {
+        let transform = main_world.get_component::<Transform>(entity).unwrap();
+        *self = *transform;
         Ok(())
-    }
-}
-
-impl CreateComponentBindGroup for GpuTransform {
-    fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
-    where
-        Self: Sized,
-    {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Transform Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        })
-    }
-
-    fn create_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &Self::bind_group_layout(device),
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &self.buffer,
-                    offset: 0,
-                    size: None,
-                }),
-            }],
-            label: Some("Transform Bind Group"),
-        })
     }
 }
 
 pub struct TransformPlugin;
 
 impl Plugin for TransformPlugin {
-    fn build(&self, app: &mut App) -> anyhow::Result<()> {
-        app.add_plugin(RenderComponentPlugin::<GpuTransform>::default())?;
-        app.add_plugin(ComponentBindGroupPlugin::<GpuTransform>::default())?;
+    fn build(&self, app: &mut App) -> Result<()> {
+        app.add_plugin(RenderComponentPlugin::<Transform>::default())?;
         Ok(())
     }
 }

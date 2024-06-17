@@ -1,4 +1,4 @@
-use weaver_app::{plugin::Plugin, system::SystemStage, App};
+use weaver_app::{plugin::Plugin, App, PreUpdate};
 use weaver_ecs::{component::ResMut, prelude::Resource};
 use weaver_util::prelude::Result;
 
@@ -34,8 +34,8 @@ pub struct TimePlugin;
 
 impl Plugin for TimePlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.world().insert_resource(Time::new());
-        app.add_system(update_time, SystemStage::PreUpdate);
+        app.insert_resource(Time::new());
+        app.add_system(update_time, PreUpdate);
         Ok(())
     }
 }

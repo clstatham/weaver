@@ -1,6 +1,7 @@
 use std::{borrow::Cow, io::Read};
 
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
+use weaver_util::prelude::{bail, Result};
 
 pub struct Shader {
     pub module: wgpu::ShaderModule,
@@ -18,7 +19,7 @@ fn try_every_shader_file(
     for_shader: &str,
     shader_dir: &str,
     max_iters: usize,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     let mut try_again = true;
     let mut iters = 0;
     while try_again {
@@ -59,7 +60,7 @@ fn try_every_shader_file(
         iters += 1;
 
         if iters > max_iters {
-            return Err(anyhow::anyhow!("Max iterations reached"));
+            bail!("Max iterations reached");
         }
     }
 

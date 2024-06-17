@@ -1,13 +1,13 @@
 use egui::{Context, FullOutput};
 use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::{winit, State};
-use weaver_app::{plugin::Plugin, system::SystemStage, App};
-use weaver_ecs::{
-    component::{Res, ResMut},
-    prelude::Resource,
-};
+use weaver_app::{plugin::Plugin, App, PostUpdate, PreUpdate};
+use weaver_ecs::{component::Res, prelude::Resource, system_schedule::SystemStage, world::World};
 use weaver_event::EventRx;
-use weaver_renderer::{prelude::wgpu, texture::format::VIEW_FORMAT};
+use weaver_renderer::{
+    prelude::wgpu, texture::format::VIEW_FORMAT, CurrentFrame, Render, RenderApp, WgpuDevice,
+    WgpuQueue,
+};
 use weaver_util::{lock::SharedLock, prelude::Result};
 use weaver_winit::{Window, WinitEvent};
 
@@ -16,7 +16,7 @@ pub mod prelude {
     pub use egui;
 }
 
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub struct EguiContext {
     state: SharedLock<State>,
     renderer: SharedLock<Renderer>,
@@ -154,37 +154,43 @@ impl EguiContext {
     }
 }
 
+pub struct RenderUi;
+impl SystemStage for RenderUi {}
+
 pub struct EguiPlugin;
 
 impl Plugin for EguiPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_system(begin_frame, SystemStage::PreUi);
-        app.add_system(end_frame, SystemStage::PostUi);
-        app.add_system(egui_events, SystemStage::PostUi);
-        app.add_system(crate::render, SystemStage::RenderUi);
+        app.add_system(begin_frame, PreUpdate);
+        app.add_system(end_frame, PostUpdate);
+        app.add_system(egui_events, PostUpdate);
+        let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
+        render_app.add_update_stage_after::<RenderUi, Render>();
+        render_app.add_system(render, RenderUi);
 
         Ok(())
     }
     fn finish(&self, app: &mut App) -> Result<()> {
-        let Some(renderer) = app.get_resource::<weaver_renderer::Renderer>() else {
+        let Some(window) = app.main_app().get_resource::<Window>() else {
             return Ok(());
         };
-        if !renderer.ready_to_render() {
-            return Ok(());
-        }
-        let Some(window) = app.get_resource::<Window>() else {
+        let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
+        let Some(renderer) = render_app.get_resource::<weaver_renderer::Renderer>() else {
             return Ok(());
         };
-        let egui_context = EguiContext::new(renderer.device(), &window, 1);
+
+        let device = render_app.get_resource::<WgpuDevice>().unwrap();
+        let egui_context = EguiContext::new(&device, &window, 1);
         drop(renderer);
         drop(window);
-        app.world().insert_resource(egui_context);
+        render_app.world().insert_resource(egui_context.clone());
+        app.main_app().world().insert_resource(egui_context);
 
         Ok(())
     }
 
     fn ready(&self, app: &App) -> bool {
-        app.world().has_resource::<EguiContext>()
+        app.main_app().world().has_resource::<EguiContext>()
     }
 }
 
@@ -198,12 +204,12 @@ pub fn end_frame(egui_context: Res<EguiContext>) -> Result<()> {
     Ok(())
 }
 
-fn render(
-    renderer: Res<weaver_renderer::Renderer>,
-    mut egui_context: ResMut<EguiContext>,
-    window: Res<Window>,
-) -> Result<()> {
-    let Some(current_frame) = renderer.current_frame() else {
+fn render(render_world: &mut World) -> Result<()> {
+    let mut egui_context = render_world.get_resource_mut::<EguiContext>().unwrap();
+    let window = render_world.get_resource::<Window>().unwrap();
+    let device = render_world.get_resource::<WgpuDevice>().unwrap();
+    let queue = render_world.get_resource::<WgpuQueue>().unwrap();
+    let Some(current_frame) = render_world.get_resource::<CurrentFrame>() else {
         return Ok(());
     };
     let surface_texture_size = current_frame.surface_texture.texture.size();
@@ -212,19 +218,22 @@ fn render(
         pixels_per_point: 1.0,
         size_in_pixels: [surface_texture_size.width, surface_texture_size.height],
     };
-    let mut encoder = renderer
-        .device()
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Egui command encoder"),
-        });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("Egui command encoder"),
+    });
     egui_context.render(
-        renderer.device(),
-        renderer.queue(),
+        &device,
+        &queue,
         &mut encoder,
         &window,
         &current_frame.color_view,
         &screen_descriptor,
     );
+
+    let mut renderer = render_world
+        .get_resource_mut::<weaver_renderer::Renderer>()
+        .unwrap();
+
     renderer.enqueue_command_buffer(encoder.finish());
     Ok(())
 }

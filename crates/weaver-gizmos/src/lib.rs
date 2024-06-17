@@ -1,7 +1,10 @@
-use weaver_app::{plugin::Plugin, system::SystemStage, App};
+use weaver_app::{plugin::Plugin, App, PrepareFrame};
 use weaver_core::{color::Color, transform::Transform};
 use weaver_ecs::{component::Res, prelude::Resource, query::Query, world::World};
-use weaver_pbr::{camera::PbrCameraBindGroupNode, render::PbrNode};
+use weaver_pbr::{
+    camera::{CameraRenderComponent, PbrCameraBindGroupNode},
+    render::PbrNode,
+};
 use weaver_renderer::{
     bind_group::CreateComponentBindGroup,
     buffer::GpuBuffer,
@@ -11,9 +14,10 @@ use weaver_renderer::{
     prelude::*,
     shader::Shader,
     texture::format::VIEW_FORMAT,
+    PreRender, RenderApp, WgpuDevice, WgpuQueue,
 };
 use weaver_util::{
-    lock::Lock,
+    lock::{Lock, SharedLock},
     prelude::{anyhow, Result},
 };
 
@@ -35,11 +39,11 @@ pub struct RenderCubeGizmo {
 }
 
 impl RenderResource for RenderCubeGizmo {
-    fn extract_render_resource(_world: &mut World, renderer: &Renderer) -> Option<Self>
+    fn extract_render_resource(_main_world: &mut World, render_world: &mut World) -> Option<Self>
     where
         Self: Sized,
     {
-        let device = renderer.device();
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
 
         let cube = CubePrimitive::new(1.0, true);
         let mesh = cube.generate_mesh();
@@ -63,7 +67,11 @@ impl RenderResource for RenderCubeGizmo {
         })
     }
 
-    fn update_render_resource(&mut self, _world: &mut World, _renderer: &Renderer) -> Result<()> {
+    fn update_render_resource(
+        &mut self,
+        _main_world: &mut World,
+        _render_world: &mut World,
+    ) -> Result<()> {
         Ok(())
     }
 }
@@ -100,15 +108,15 @@ impl GizmoInstance {
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub struct Gizmos {
-    pub(crate) gizmos: Lock<Vec<GizmoInstance>>,
+    pub(crate) gizmos: SharedLock<Vec<GizmoInstance>>,
 }
 
 impl Default for Gizmos {
     fn default() -> Self {
         Self {
-            gizmos: Lock::new(Vec::new()),
+            gizmos: SharedLock::new(Vec::new()),
         }
     }
 }
@@ -152,8 +160,8 @@ impl GizmoRenderNode {
         }
     }
 
-    pub fn init_pipeline(&self, renderer: &Renderer) -> Result<()> {
-        let device = renderer.device();
+    pub fn init_pipeline(&self, render_world: &mut World) -> Result<()> {
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
 
         let transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("GizmoTransformBuffer"),
@@ -199,11 +207,11 @@ impl GizmoRenderNode {
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("GizmoPipelineLayout"),
-            bind_group_layouts: &[&bind_group_layout, &GpuCamera::bind_group_layout(device)],
+            bind_group_layouts: &[&bind_group_layout, &GpuCamera::bind_group_layout(&device)],
             push_constant_ranges: &[],
         });
 
-        let shader = Shader::new(device, "assets/shaders/gizmos.wgsl");
+        let shader = Shader::new(&device, "assets/shaders/gizmos.wgsl");
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("GizmoRenderNode"),
             layout: Some(&layout),
@@ -291,12 +299,12 @@ impl GizmoRenderNode {
 }
 
 impl Render for GizmoRenderNode {
-    fn prepare(&self, world: &mut World, renderer: &Renderer) -> Result<()> {
+    fn prepare(&self, render_world: &mut World) -> Result<()> {
         if self.inner.read().is_none() {
-            self.init_pipeline(renderer)?;
+            self.init_pipeline(render_world)?;
         }
 
-        let Some(gizmos) = world.get_resource::<Gizmos>() else {
+        let Some(gizmos) = render_world.get_resource::<Gizmos>() else {
             return Ok(());
         };
 
@@ -315,7 +323,7 @@ impl Render for GizmoRenderNode {
             color_data.extend_from_slice(bytemuck::cast_slice(&[color]));
         }
 
-        let queue = renderer.queue();
+        let queue = render_world.get_resource::<WgpuQueue>().unwrap();
 
         queue.write_buffer(&inner.transform_buffer, 0, &transform_data);
         queue.write_buffer(&inner.color_buffer, 0, &color_data);
@@ -323,13 +331,8 @@ impl Render for GizmoRenderNode {
         Ok(())
     }
 
-    fn render(
-        &self,
-        world: &mut World,
-        renderer: &Renderer,
-        input_slots: &[Slot],
-    ) -> Result<Vec<Slot>> {
-        let Some(gizmos) = world.get_resource::<Gizmos>() else {
+    fn render(&self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>> {
+        let Some(gizmos) = render_world.get_resource::<Gizmos>() else {
             return Ok(input_slots.to_vec());
         };
 
@@ -349,14 +352,13 @@ impl Render for GizmoRenderNode {
             return Err(anyhow!("Expected a bind group slot"));
         };
 
-        let cube_resource = world.get_resource::<RenderCubeGizmo>().unwrap();
+        let cube_resource = render_world.get_resource::<RenderCubeGizmo>().unwrap();
 
-        let mut encoder =
-            renderer
-                .device()
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("GizmoCommandEncoder"),
-                });
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("GizmoCommandEncoder"),
+        });
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -403,6 +405,8 @@ impl Render for GizmoRenderNode {
             }
         }
 
+        let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
+
         renderer.enqueue_command_buffer(encoder.finish());
 
         Ok(input_slots.to_vec())
@@ -413,39 +417,34 @@ pub struct GizmoPlugin;
 
 impl Plugin for GizmoPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.insert_resource(Gizmos::default());
-        app.add_plugin(RenderResourcePlugin::<RenderCubeGizmo>::default())?;
-        app.add_system(clear_gizmos, SystemStage::PrepareFrame);
-        app.add_system(inject_gizmo_render_node, SystemStage::PreRender);
+        let gizmos = Gizmos::default();
+        app.insert_resource(gizmos.clone());
+        app.add_system(clear_gizmos, PrepareFrame);
+
+        let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
+        render_app.insert_resource(gizmos);
+        render_app.add_plugin(RenderResourcePlugin::<RenderCubeGizmo>::default())?;
+        render_app.add_system(inject_gizmo_render_node, PreRender);
 
         Ok(())
     }
 }
 
-fn inject_gizmo_render_node(cameras: Query<&mut Camera>) -> Result<()> {
+fn inject_gizmo_render_node(cameras: Query<&mut CameraRenderComponent>) -> Result<()> {
     for (_, mut camera) in cameras.iter() {
-        if camera.render_graph().has_node::<GizmoRenderNode>() {
+        if camera.graph.has_node::<GizmoRenderNode>() {
             continue;
         }
 
-        if let Some(pbr_node) = camera.render_graph().node_index::<PbrNode>() {
+        if let Some(pbr_node) = camera.graph.node_index::<PbrNode>() {
             let gizmo_node = camera
-                .render_graph_mut()
+                .graph
                 .add_node(RenderNode::new("GizmoRenderNode", GizmoRenderNode::new()));
-            let camera_node = camera
-                .render_graph()
-                .node_index::<PbrCameraBindGroupNode>()
-                .unwrap();
+            let camera_node = camera.graph.node_index::<PbrCameraBindGroupNode>().unwrap();
 
-            camera
-                .render_graph_mut()
-                .add_edge(pbr_node, 0, gizmo_node, 0);
-            camera
-                .render_graph_mut()
-                .add_edge(pbr_node, 1, gizmo_node, 1);
-            camera
-                .render_graph_mut()
-                .add_edge(camera_node, 0, gizmo_node, 2);
+            camera.graph.add_edge(pbr_node, 0, gizmo_node, 0);
+            camera.graph.add_edge(pbr_node, 1, gizmo_node, 1);
+            camera.graph.add_edge(camera_node, 0, gizmo_node, 2);
         }
     }
 

@@ -11,6 +11,7 @@ use weaver_renderer::{
     prelude::*,
     shader::Shader,
     texture::format::{DEPTH_FORMAT, VIEW_FORMAT},
+    WgpuDevice, WgpuQueue,
 };
 use weaver_util::{
     lock::Lock,
@@ -51,8 +52,8 @@ impl PbrNode {
         }
     }
 
-    pub fn init_pipeline(&self, renderer: &Renderer) {
-        let device = renderer.device();
+    pub fn init_pipeline(&self, render_world: &mut World) {
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
 
         let transform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -72,17 +73,17 @@ impl PbrNode {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("PBR Pipeline Layout"),
             bind_group_layouts: &[
-                &GpuMaterial::bind_group_layout(device),
-                &GpuCamera::bind_group_layout(device),
+                &GpuMaterial::bind_group_layout(&device),
+                &GpuCamera::bind_group_layout(&device),
                 &transform_bind_group_layout,
-                &GpuPointLightArray::bind_group_layout(device),
+                &GpuPointLightArray::bind_group_layout(&device),
             ],
             push_constant_ranges: &[],
         });
 
         *self.transform_bind_group_layout.write() = Some(transform_bind_group_layout);
 
-        let shader = Shader::new(renderer.device(), "assets/shaders/pbr.wgsl");
+        let shader = Shader::new(&device, "assets/shaders/pbr.wgsl");
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("PBR Pipeline"),
@@ -147,46 +148,46 @@ impl PbrNode {
 }
 
 impl Render for PbrNode {
-    fn prepare(&self, world: &mut World, renderer: &Renderer) -> Result<()> {
+    fn prepare(&self, render_world: &mut World) -> Result<()> {
         if self.pipeline.read().is_none() {
-            self.init_pipeline(renderer);
+            self.init_pipeline(render_world);
         }
 
         for unique_material_mesh in self.unique_material_meshes.write().values_mut() {
             unique_material_mesh.entities.clear();
         }
 
-        let query = world.query::<(&Handle<ComponentBindGroup<GpuMaterial>>, &Handle<GpuMesh>)>();
+        let query =
+            render_world.query::<(&Handle<ComponentBindGroup<GpuMaterial>>, &Handle<GpuMesh>)>();
 
         for (entity, (material, gpu_mesh)) in query.iter() {
             let mut unique_material_meshes = self.unique_material_meshes.write();
 
+            let device = render_world.get_resource::<WgpuDevice>().unwrap();
+
             let unique_material_mesh = unique_material_meshes
                 .entry((*material, *gpu_mesh))
                 .or_insert_with(|| {
-                    let transform_buffer =
-                        renderer.device().create_buffer(&wgpu::BufferDescriptor {
-                            label: Some("PBR Transform Buffer"),
-                            size: std::mem::size_of::<Mat4>() as u64 * 4096,
-                            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
-                            mapped_at_creation: false,
-                        });
+                    let transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("PBR Transform Buffer"),
+                        size: std::mem::size_of::<Mat4>() as u64 * 4096,
+                        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
+                        mapped_at_creation: false,
+                    });
 
                     let transform_bind_group =
-                        renderer
-                            .device()
-                            .create_bind_group(&wgpu::BindGroupDescriptor {
-                                label: Some("PBR Transform Bind Group"),
-                                layout: self.transform_bind_group_layout.read().as_ref().unwrap(),
-                                entries: &[wgpu::BindGroupEntry {
-                                    binding: 0,
-                                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                                        buffer: &transform_buffer,
-                                        offset: 0,
-                                        size: None,
-                                    }),
-                                }],
-                            });
+                        device.create_bind_group(&wgpu::BindGroupDescriptor {
+                            label: Some("PBR Transform Bind Group"),
+                            layout: self.transform_bind_group_layout.read().as_ref().unwrap(),
+                            entries: &[wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                                    buffer: &transform_buffer,
+                                    offset: 0,
+                                    size: None,
+                                }),
+                            }],
+                        });
 
                     UniqueMaterialMesh {
                         material: *material,
@@ -210,27 +211,22 @@ impl Render for PbrNode {
             let mut transforms = Vec::new();
 
             for entity in entities {
-                let transform = world
+                let transform = render_world
                     .get_component::<Transform>(*entity)
                     .map(|t| *t)
                     .unwrap_or_default();
                 transforms.push(transform.matrix());
             }
 
-            renderer
-                .queue()
-                .write_buffer(transform_buffer, 0, bytemuck::cast_slice(&transforms));
+            let queue = render_world.get_resource::<WgpuQueue>().unwrap();
+
+            queue.write_buffer(transform_buffer, 0, bytemuck::cast_slice(&transforms));
         }
 
         Ok(())
     }
 
-    fn render(
-        &self,
-        world: &mut World,
-        renderer: &Renderer,
-        input_slots: &[Slot],
-    ) -> Result<Vec<Slot>> {
+    fn render(&self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>> {
         let Slot::Texture(color_target) = &input_slots[0] else {
             bail!("PbrNode expected a texture in slot 0");
         };
@@ -252,15 +248,14 @@ impl Render for PbrNode {
 
         log::trace!("PbrNode::render");
 
-        let mut encoder =
-            renderer
-                .device()
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("PBR Command Encoder"),
-                });
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("PBR Command Encoder"),
+        });
 
         for unique_material_mesh in self.unique_material_meshes.read().values() {
-            let assets = world.get_resource::<Assets>().unwrap();
+            let assets = render_world.get_resource::<Assets>().unwrap();
 
             let UniqueMaterialMesh {
                 material,
@@ -310,6 +305,8 @@ impl Render for PbrNode {
                 render_pass.draw_indexed(0..mesh.num_indices, 0, 0..entities.len() as u32);
             }
         }
+
+        let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
 
         renderer.enqueue_command_buffer(encoder.finish());
 

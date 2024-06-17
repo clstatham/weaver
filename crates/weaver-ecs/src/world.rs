@@ -3,10 +3,11 @@ use std::sync::{
     Arc,
 };
 
-use weaver_util::lock::Lock;
+use weaver_util::{lock::Lock, prelude::Result};
 
 use crate::prelude::{
-    Bundle, Query, QueryBuilder, QueryFetch, QueryFilter, Res, ResMut, Resource, Resources, Tick,
+    Bundle, FunctionSystem, Query, QueryBuilder, QueryFetch, QueryFilter, Res, ResMut, Resource,
+    Resources, SystemSchedule, SystemStage, Tick,
 };
 
 use super::{
@@ -22,6 +23,7 @@ pub struct World {
     storage: Lock<Storage>,
     resources: Lock<Resources>,
     update_tick: AtomicU64,
+    systems: SystemSchedule,
 }
 
 impl Default for World {
@@ -33,6 +35,7 @@ impl Default for World {
             storage: Lock::new(Storage::new()),
             resources: Lock::new(Resources::default()),
             update_tick: AtomicU64::new(0),
+            systems: SystemSchedule::default(),
         }
     }
 }
@@ -132,7 +135,82 @@ impl World {
         Tick::new(self.update_tick.load(Ordering::Acquire))
     }
 
-    pub fn update(&self) {
+    pub fn run_stage<S: SystemStage>(&mut self) -> Result<()> {
+        let systems = std::mem::take(&mut self.systems);
+        systems.run_stage::<S>(self)?;
+        self.systems = systems;
+        Ok(())
+    }
+
+    pub fn init(&mut self) -> Result<()> {
+        let systems = std::mem::take(&mut self.systems);
+        systems.run_init(self)?;
+        self.systems = systems;
+        Ok(())
+    }
+
+    pub fn update(&mut self) -> Result<()> {
         self.update_tick.fetch_add(1, Ordering::AcqRel);
+        let systems = std::mem::take(&mut self.systems);
+        systems.run_update(self)?;
+        self.systems = systems;
+        Ok(())
+    }
+
+    pub fn shutdown(&mut self) -> Result<()> {
+        let systems = std::mem::take(&mut self.systems);
+        systems.run_shutdown(self)?;
+        self.systems = systems;
+        Ok(())
+    }
+
+    pub fn push_init_stage<T: SystemStage>(&mut self) {
+        self.systems.push_init_stage::<T>();
+    }
+
+    pub fn push_update_stage<T: SystemStage>(&mut self) {
+        self.systems.push_update_stage::<T>();
+    }
+
+    pub fn push_shutdown_stage<T: SystemStage>(&mut self) {
+        self.systems.push_shutdown_stage::<T>();
+    }
+
+    pub fn push_manual_stage<T: SystemStage>(&mut self) {
+        self.systems.push_manual_stage::<T>();
+    }
+
+    pub fn add_stage_before<T: SystemStage, U: SystemStage>(&mut self) {
+        self.systems.add_stage_before::<T, U>();
+    }
+
+    pub fn add_stage_after<T: SystemStage, U: SystemStage>(&mut self) {
+        self.systems.add_stage_after::<T, U>();
+    }
+
+    pub fn add_system<S: SystemStage, M>(
+        &mut self,
+        system: impl FunctionSystem<M> + 'static,
+        stage: S,
+    ) {
+        self.systems.add_system(system, stage);
+    }
+
+    pub fn add_system_before<S: SystemStage, M1, M2>(
+        &mut self,
+        system: impl FunctionSystem<M1> + 'static,
+        before: impl FunctionSystem<M2> + 'static,
+        stage: S,
+    ) {
+        self.systems.add_system_before(system, before, stage);
+    }
+
+    pub fn add_system_after<S: SystemStage, M1, M2>(
+        &mut self,
+        system: impl FunctionSystem<M1> + 'static,
+        after: impl FunctionSystem<M2> + 'static,
+        stage: S,
+    ) {
+        self.systems.add_system_after(system, after, stage);
     }
 }

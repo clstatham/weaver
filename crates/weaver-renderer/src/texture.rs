@@ -3,9 +3,8 @@ use std::sync::Arc;
 use format::TEXTURE_FORMAT;
 use weaver_app::{plugin::Plugin, prelude::App};
 use weaver_core::texture::Texture;
+use weaver_util::prelude::Result;
 use wgpu::util::DeviceExt;
-
-use crate::Renderer;
 
 pub mod format {
     pub use wgpu::TextureFormat;
@@ -22,9 +21,9 @@ pub struct GpuTexture {
 }
 
 impl GpuTexture {
-    pub fn from_image(renderer: &Renderer, image: &Texture) -> Option<Self> {
-        let texture = renderer.device().create_texture_with_data(
-            renderer.queue(),
+    pub fn from_image(device: &wgpu::Device, queue: &wgpu::Queue, image: &Texture) -> Option<Self> {
+        let texture = device.create_texture_with_data(
+            queue,
             &wgpu::TextureDescriptor {
                 label: Some("Texture"),
                 size: wgpu::Extent3d {
@@ -59,7 +58,7 @@ impl GpuTexture {
 pub struct TexturePlugin;
 
 impl Plugin for TexturePlugin {
-    fn build(&self, _app: &mut App) -> anyhow::Result<()> {
+    fn build(&self, _app: &mut App) -> Result<()> {
         Ok(())
     }
 }

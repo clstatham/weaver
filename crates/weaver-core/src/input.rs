@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use weaver_app::{plugin::Plugin, system::SystemStage, App};
+use weaver_app::{plugin::Plugin, App, PostUpdate};
 use weaver_ecs::{component::ResMut, prelude::Resource};
 use weaver_util::prelude::Result;
 use winit::{
@@ -147,8 +147,8 @@ pub struct InputPlugin;
 
 impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.world().insert_resource(Input::default());
-        app.add_system(update_input, SystemStage::PostUpdate);
+        app.insert_resource(Input::default());
+        app.add_system(update_input, PostUpdate);
         Ok(())
     }
 }

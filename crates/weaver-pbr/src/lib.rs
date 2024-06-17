@@ -2,6 +2,7 @@ use camera::PbrCameraPlugin;
 use light::PointLightPlugin;
 use material::MaterialPlugin;
 use weaver_app::prelude::*;
+use weaver_renderer::RenderApp;
 use weaver_util::prelude::*;
 
 pub mod camera;
@@ -20,9 +21,10 @@ pub struct PbrPlugin;
 
 impl Plugin for PbrPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_plugin(MaterialPlugin)?;
-        app.add_plugin(PbrCameraPlugin)?;
-        app.add_plugin(PointLightPlugin)?;
+        let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
+        render_app.add_plugin(MaterialPlugin)?;
+        render_app.add_plugin(PbrCameraPlugin)?;
+        render_app.add_plugin(PointLightPlugin)?;
 
         Ok(())
     }
