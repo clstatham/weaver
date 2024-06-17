@@ -55,7 +55,7 @@ where
     }
 }
 
-pub type ExtractFn = Box<dyn Fn(&mut World, &mut World) -> Result<()>>;
+pub type ExtractFn = Box<dyn Fn(&mut World, &mut World) -> Result<()> + Send + Sync>;
 
 pub trait AppLabel: 'static {}
 
@@ -253,11 +253,27 @@ impl SubApps {
         }
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, thread_pool: &rayon::ThreadPool) {
         self.main.update();
+        let mut rxs = Vec::new();
         for (_, sub_app) in self.sub_apps.iter_mut() {
             sub_app.extract_from(&mut self.main.world).unwrap();
-            sub_app.update();
+        }
+        thread_pool.install(|| {
+            rayon::scope(|s| {
+                for (_, sub_app) in self.sub_apps.iter_mut() {
+                    let (tx, rx) = crossbeam_channel::unbounded();
+                    rxs.push(rx);
+
+                    s.spawn(move |_| {
+                        sub_app.update();
+                        tx.send(()).unwrap();
+                    });
+                }
+            });
+        });
+        for rx in rxs {
+            rx.recv().unwrap();
         }
     }
 
@@ -273,21 +289,8 @@ pub struct App {
     plugins: SharedLock<Vec<Box<dyn Plugin>>>,
     runner: Option<Box<dyn Runner>>,
     sub_apps: SubApps,
+    thread_pool: Option<rayon::ThreadPool>,
 }
-
-// impl Deref for App {
-//     type Target = SubApp;
-
-//     fn deref(&self) -> &Self::Target {
-//         &self.sub_apps.main
-//     }
-// }
-
-// impl DerefMut for App {
-//     fn deref_mut(&mut self) -> &mut Self::Target {
-//         &mut self.sub_apps.main
-//     }
-// }
 
 impl App {
     pub fn empty() -> Self {
@@ -298,6 +301,7 @@ impl App {
                 main: SubApp::new(),
                 sub_apps: FxHashMap::default(),
             },
+            thread_pool: None,
         }
     }
 
@@ -312,6 +316,7 @@ impl App {
         this.main_app_mut().push_update_stage::<PostUpdate>();
         this.main_app_mut().push_update_stage::<FinishFrame>();
         this.main_app_mut().push_shutdown_stage::<Shutdown>();
+        this.thread_pool = Some(rayon::ThreadPoolBuilder::new().build().unwrap());
         this
     }
 
@@ -414,7 +419,8 @@ impl App {
     }
 
     pub fn update(&mut self) {
-        self.sub_apps.update();
+        let thread_pool = self.thread_pool.as_ref().unwrap();
+        self.sub_apps.update(thread_pool);
     }
 
     pub fn shutdown(&mut self) {
