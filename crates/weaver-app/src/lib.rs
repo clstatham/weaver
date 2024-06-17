@@ -96,7 +96,6 @@ impl SubApp {
     pub fn finish_plugins(&mut self) {
         for plugin in self.plugins.read_arc().iter() {
             self.as_app(|app| {
-                //
                 log::debug!("Finishing plugin: {:?}", plugin.name());
                 plugin.finish(app)
             })

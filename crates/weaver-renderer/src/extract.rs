@@ -7,7 +7,7 @@ use weaver_ecs::{
 };
 use weaver_util::prelude::Result;
 
-use crate::{Extract, MainWorld, ScratchMainWorld};
+use crate::{Extract, ExtractBindGroups, MainWorld, ScratchMainWorld};
 
 pub trait RenderComponent: Component {
     type ExtractQuery<'a>: QueryFetch<'a> + 'a;
@@ -146,6 +146,7 @@ pub fn render_extract(main_world: &mut World, render_world: &mut World) -> Resul
     render_world.insert_resource(MainWorld(inserted_world));
 
     render_world.run_stage::<Extract>()?;
+    render_world.run_stage::<ExtractBindGroups>()?;
 
     let inserted_world = render_world.remove_resource::<MainWorld>().unwrap();
     let scratch_world = std::mem::replace(main_world, inserted_world.0);

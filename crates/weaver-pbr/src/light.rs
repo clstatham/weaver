@@ -4,7 +4,7 @@ use wgpu::util::DeviceExt;
 use weaver_core::{color::Color, prelude::Vec3, transform::Transform};
 use weaver_ecs::prelude::{Component, Reflect, Resource, World};
 use weaver_renderer::{
-    bind_group::{CreateResourceBindGroup, ResourceBindGroup, ResourceBindGroupPlugin},
+    bind_group::{BindGroup, BindGroupLayout, CreateBindGroup, ResourceBindGroupPlugin},
     buffer::GpuBuffer,
     extract::{RenderResource, RenderResourcePlugin},
     graph::Slot,
@@ -129,8 +129,8 @@ impl RenderResource for GpuPointLightArray {
     }
 }
 
-impl CreateResourceBindGroup for GpuPointLightArray {
-    fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
+impl CreateBindGroup for GpuPointLightArray {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
     where
         Self: Sized,
     {
@@ -149,9 +149,13 @@ impl CreateResourceBindGroup for GpuPointLightArray {
         })
     }
 
-    fn create_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup {
+    fn create_bind_group(
+        &self,
+        device: &wgpu::Device,
+        cached_layout: &BindGroupLayout,
+    ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &Self::bind_group_layout(device),
+            layout: cached_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::Buffer(self.buffer.as_entire_buffer_binding()),
@@ -177,7 +181,7 @@ pub struct PointLightArrayNode;
 impl Render for PointLightArrayNode {
     fn render(&self, render_world: &mut World, _input_slots: &[Slot]) -> Result<Vec<Slot>> {
         let bind_group = render_world
-            .get_resource::<ResourceBindGroup<GpuPointLightArray>>()
+            .get_resource::<BindGroup<GpuPointLightArray>>()
             .expect("Point Light Array Bind Group resource not present");
 
         Ok(vec![Slot::BindGroup(bind_group.bind_group().clone())])

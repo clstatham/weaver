@@ -6,7 +6,7 @@ use weaver_pbr::{
     render::PbrNode,
 };
 use weaver_renderer::{
-    bind_group::CreateComponentBindGroup,
+    bind_group::CreateBindGroup,
     buffer::GpuBuffer,
     camera::GpuCamera,
     extract::{RenderResource, RenderResourcePlugin},
@@ -207,7 +207,10 @@ impl GizmoRenderNode {
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("GizmoPipelineLayout"),
-            bind_group_layouts: &[&bind_group_layout, &GpuCamera::bind_group_layout(&device)],
+            bind_group_layouts: &[
+                &bind_group_layout,
+                &GpuCamera::create_bind_group_layout(&device),
+            ],
             push_constant_ranges: &[],
         });
 

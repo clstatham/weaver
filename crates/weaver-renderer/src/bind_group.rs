@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Deref, sync::Arc};
+use std::{any::TypeId, collections::HashMap, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{prelude::Asset, Assets, Handle, UntypedHandle};
@@ -6,41 +6,91 @@ use weaver_ecs::{
     prelude::{Component, Reflect, Resource},
     world::World,
 };
-use weaver_util::prelude::{bail, Result};
+use weaver_util::{
+    prelude::{bail, DowncastSync, Result},
+    TypeIdMap,
+};
 
-use crate::{asset::RenderAsset, Extract, PreRender, WgpuDevice};
+use crate::{asset::RenderAsset, ExtractBindGroups, WgpuDevice};
 
-pub trait CreateComponentBindGroup: Component {
-    fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
-    where
-        Self: Sized;
-    fn create_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup;
+#[derive(Resource, Default)]
+pub struct BindGroupLayoutCache {
+    cache: TypeIdMap<BindGroupLayout>,
 }
 
-pub trait CreateResourceBindGroup: Resource {
-    fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
+impl BindGroupLayoutCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn get_or_create<T>(&mut self, device: &wgpu::Device) -> BindGroupLayout
     where
-        Self: Sized;
-    fn create_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup;
+        T: CreateBindGroup,
+    {
+        if let Some(cached_layout) = self.cache.get(&TypeId::of::<T>()) {
+            cached_layout.clone()
+        } else {
+            let bind_group = T::create_bind_group_layout(device);
+            let cached_layout = BindGroupLayout {
+                bind_group: Arc::new(bind_group),
+            };
+            self.cache.insert(TypeId::of::<T>(), cached_layout.clone());
+            self.cache.get(&TypeId::of::<T>()).unwrap().clone()
+        }
+    }
 }
 
-#[derive(Component, Clone, Reflect)]
-pub struct ComponentBindGroup<T: CreateComponentBindGroup> {
+#[derive(Clone)]
+pub struct BindGroupLayout {
+    bind_group: Arc<wgpu::BindGroupLayout>,
+}
+
+impl BindGroupLayout {
+    pub fn get_or_create<T>(device: &wgpu::Device, cache: &mut BindGroupLayoutCache) -> Self
+    where
+        T: CreateBindGroup,
+    {
+        cache.get_or_create::<T>(device)
+    }
+}
+
+impl Deref for BindGroupLayout {
+    type Target = wgpu::BindGroupLayout;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bind_group
+    }
+}
+
+pub trait CreateBindGroup: DowncastSync {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
+    where
+        Self: Sized;
+    fn create_bind_group(
+        &self,
+        device: &wgpu::Device,
+        cached_layout: &BindGroupLayout,
+    ) -> wgpu::BindGroup;
+}
+
+#[derive(Component, Resource, Clone, Reflect)]
+pub struct BindGroup<T: CreateBindGroup> {
     #[reflect(ignore)]
     bind_group: Arc<wgpu::BindGroup>,
     #[reflect(ignore)]
     _marker: std::marker::PhantomData<T>,
 }
 
-impl<T: CreateComponentBindGroup> Asset for ComponentBindGroup<T> {
+impl<T: CreateBindGroup> Asset for BindGroup<T> {
     fn load(_assets: &mut Assets, _path: &std::path::Path) -> Result<Self> {
         bail!("ComponentBindGroup cannot be loaded from a file")
     }
 }
 
-impl<T: CreateComponentBindGroup> ComponentBindGroup<T> {
-    pub fn new(device: &wgpu::Device, data: &T) -> Self {
-        let bind_group = data.create_bind_group(device);
+impl<T: CreateBindGroup> BindGroup<T> {
+    pub fn new(device: &wgpu::Device, data: &T, cache: &mut BindGroupLayoutCache) -> Self {
+        let cached_layout = BindGroupLayout::get_or_create::<T>(device, cache);
+        let bind_group = data.create_bind_group(device, &cached_layout);
         Self {
             bind_group: Arc::new(bind_group),
             _marker: std::marker::PhantomData,
@@ -52,9 +102,9 @@ impl<T: CreateComponentBindGroup> ComponentBindGroup<T> {
     }
 }
 
-impl<T> Deref for ComponentBindGroup<T>
+impl<T> Deref for BindGroup<T>
 where
-    T: CreateComponentBindGroup,
+    T: CreateBindGroup,
 {
     type Target = wgpu::BindGroup;
 
@@ -63,29 +113,32 @@ where
     }
 }
 
-pub struct ComponentBindGroupPlugin<T: CreateComponentBindGroup>(std::marker::PhantomData<T>);
+pub struct ComponentBindGroupPlugin<T: Component + CreateBindGroup>(std::marker::PhantomData<T>);
 
-impl<T: CreateComponentBindGroup> Default for ComponentBindGroupPlugin<T> {
+impl<T: Component + CreateBindGroup> Default for ComponentBindGroupPlugin<T> {
     fn default() -> Self {
         Self(std::marker::PhantomData)
     }
 }
 
-impl<T: CreateComponentBindGroup> Plugin for ComponentBindGroupPlugin<T> {
+impl<T: Component + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_system(create_bind_groups::<T>, PreRender);
+        app.add_system(create_bind_groups::<T>, ExtractBindGroups);
         Ok(())
     }
 }
 
-fn create_bind_groups<T: CreateComponentBindGroup>(render_world: &mut World) -> Result<()> {
+fn create_bind_groups<T: Component + CreateBindGroup>(render_world: &mut World) -> Result<()> {
     let device = render_world.get_resource::<WgpuDevice>().unwrap();
 
     let query = render_world.query::<&T>();
 
     for (entity, data) in query.iter() {
-        if !render_world.has_component::<ComponentBindGroup<T>>(entity) {
-            let bind_group = ComponentBindGroup::new(&device, &*data);
+        if !render_world.has_component::<BindGroup<T>>(entity) {
+            let mut layout_cache = render_world
+                .get_resource_mut::<BindGroupLayoutCache>()
+                .unwrap();
+            let bind_group = BindGroup::new(&device, &*data, &mut layout_cache);
             drop(data);
             render_world.insert_component(entity, bind_group);
         }
@@ -94,61 +147,36 @@ fn create_bind_groups<T: CreateComponentBindGroup>(render_world: &mut World) -> 
     Ok(())
 }
 
-#[derive(Resource, Clone)]
-pub struct ResourceBindGroup<T: CreateResourceBindGroup> {
-    bind_group: Arc<wgpu::BindGroup>,
-    _marker: std::marker::PhantomData<T>,
-}
+pub struct ResourceBindGroupPlugin<T: Resource + CreateBindGroup>(std::marker::PhantomData<T>);
 
-impl<T: CreateResourceBindGroup> ResourceBindGroup<T> {
-    pub fn new(device: &wgpu::Device, data: &T) -> Self {
-        let bind_group = data.create_bind_group(device);
-        Self {
-            bind_group: Arc::new(bind_group),
-            _marker: std::marker::PhantomData,
-        }
-    }
-
-    pub fn bind_group(&self) -> &Arc<wgpu::BindGroup> {
-        &self.bind_group
-    }
-}
-
-impl<T> Deref for ResourceBindGroup<T>
-where
-    T: CreateResourceBindGroup,
-{
-    type Target = wgpu::BindGroup;
-
-    fn deref(&self) -> &Self::Target {
-        &self.bind_group
-    }
-}
-
-pub struct ResourceBindGroupPlugin<T: CreateResourceBindGroup>(std::marker::PhantomData<T>);
-
-impl<T: CreateResourceBindGroup> Default for ResourceBindGroupPlugin<T> {
+impl<T: Resource + CreateBindGroup> Default for ResourceBindGroupPlugin<T> {
     fn default() -> Self {
         Self(std::marker::PhantomData)
     }
 }
 
-impl<T: CreateResourceBindGroup> Plugin for ResourceBindGroupPlugin<T> {
+impl<T: Resource + CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_system(create_resource_bind_group::<T>, PreRender);
+        app.add_system(create_resource_bind_group::<T>, ExtractBindGroups);
         Ok(())
     }
 }
 
-fn create_resource_bind_group<T: CreateResourceBindGroup>(render_world: &mut World) -> Result<()> {
-    if !render_world.has_resource::<ResourceBindGroup<T>>() {
+fn create_resource_bind_group<T: Resource + CreateBindGroup>(
+    render_world: &mut World,
+) -> Result<()> {
+    if !render_world.has_resource::<BindGroup<T>>() {
         let Some(data) = render_world.get_resource::<T>() else {
             return Ok(());
         };
         let device = render_world.get_resource::<WgpuDevice>().unwrap();
-        let bind_group = ResourceBindGroup::new(&device, &*data);
+        let mut layout_cache = render_world
+            .get_resource_mut::<BindGroupLayoutCache>()
+            .unwrap();
+        let bind_group = BindGroup::new(&device, &*data, &mut layout_cache);
         drop(data);
         drop(device);
+        drop(layout_cache);
         render_world.insert_resource(bind_group);
     }
 
@@ -174,24 +202,22 @@ impl ExtractedAssetBindGroups {
     }
 }
 
-pub struct AssetBindGroupPlugin<T: CreateComponentBindGroup + RenderAsset>(
-    std::marker::PhantomData<T>,
-);
+pub struct AssetBindGroupPlugin<T: CreateBindGroup + RenderAsset>(std::marker::PhantomData<T>);
 
-impl<T: CreateComponentBindGroup + RenderAsset> Default for AssetBindGroupPlugin<T> {
+impl<T: CreateBindGroup + RenderAsset> Default for AssetBindGroupPlugin<T> {
     fn default() -> Self {
         Self(std::marker::PhantomData)
     }
 }
 
-impl<T: CreateComponentBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
+impl<T: CreateBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_system(create_asset_bind_group::<T>, Extract);
+        app.add_system(create_asset_bind_group::<T>, ExtractBindGroups);
         Ok(())
     }
 }
 
-fn create_asset_bind_group<T: CreateComponentBindGroup + RenderAsset>(
+fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
     render_world: &mut World,
 ) -> Result<()> {
     let device = render_world.get_resource::<WgpuDevice>().unwrap();
@@ -200,7 +226,7 @@ fn create_asset_bind_group<T: CreateComponentBindGroup + RenderAsset>(
     let query = render_world.query::<&Handle<T>>();
 
     for (entity, handle) in query.iter() {
-        if render_world.has_component::<Handle<ComponentBindGroup<T>>>(entity) {
+        if render_world.has_component::<Handle<BindGroup<T>>>(entity) {
             continue;
         }
 
@@ -209,13 +235,15 @@ fn create_asset_bind_group<T: CreateComponentBindGroup + RenderAsset>(
             .unwrap();
 
         if let Some(bind_group_handle) = asset_bind_groups.bind_groups.get(&handle.into_untyped()) {
-            let bind_group_handle =
-                Handle::<ComponentBindGroup<T>>::try_from(*bind_group_handle).unwrap();
+            let bind_group_handle = Handle::<BindGroup<T>>::try_from(*bind_group_handle).unwrap();
             drop(handle);
             render_world.insert_component(entity, bind_group_handle);
         } else {
             let asset = assets.get::<T>(*handle).unwrap();
-            let bind_group = ComponentBindGroup::new(&device, &*asset);
+            let mut layout_cache = render_world
+                .get_resource_mut::<BindGroupLayoutCache>()
+                .unwrap();
+            let bind_group = BindGroup::new(&device, &*asset, &mut layout_cache);
             let bind_group_handle = assets.insert(bind_group);
             asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
             drop(handle);

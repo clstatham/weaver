@@ -8,7 +8,7 @@ use weaver_app::plugin::Plugin;
 use weaver_ecs::prelude::*;
 
 use crate::{
-    bind_group::{ComponentBindGroupPlugin, CreateComponentBindGroup},
+    bind_group::{BindGroupLayout, ComponentBindGroupPlugin, CreateBindGroup},
     buffer::GpuBuffer,
     extract::{RenderComponent, RenderComponentPlugin},
     WgpuDevice, WgpuQueue,
@@ -175,10 +175,14 @@ impl RenderComponent for GpuCamera {
     }
 }
 
-impl CreateComponentBindGroup for GpuCamera {
-    fn create_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup {
+impl CreateBindGroup for GpuCamera {
+    fn create_bind_group(
+        &self,
+        device: &wgpu::Device,
+        cached_layout: &BindGroupLayout,
+    ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &Self::bind_group_layout(device),
+            layout: cached_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
@@ -191,7 +195,7 @@ impl CreateComponentBindGroup for GpuCamera {
         })
     }
 
-    fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Camera Bind Group Layout"),
             entries: &[wgpu::BindGroupLayoutEntry {

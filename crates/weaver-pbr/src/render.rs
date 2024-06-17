@@ -4,7 +4,7 @@ use weaver_asset::{Assets, Handle};
 use weaver_core::{prelude::Mat4, transform::Transform};
 use weaver_ecs::{entity::Entity, prelude::World};
 use weaver_renderer::{
-    bind_group::{ComponentBindGroup, CreateComponentBindGroup, CreateResourceBindGroup},
+    bind_group::{BindGroup, BindGroupLayoutCache},
     camera::GpuCamera,
     graph::{Render, Slot},
     mesh::GpuMesh,
@@ -21,7 +21,7 @@ use weaver_util::{
 use crate::{light::GpuPointLightArray, material::GpuMaterial};
 
 struct UniqueMaterialMesh {
-    material: Handle<ComponentBindGroup<GpuMaterial>>,
+    material: Handle<BindGroup<GpuMaterial>>,
     mesh: Handle<GpuMesh>,
     transform_buffer: wgpu::Buffer,
     transform_bind_group: wgpu::BindGroup,
@@ -35,9 +35,8 @@ pub struct PbrNode {
     pipeline: Lock<Option<wgpu::RenderPipeline>>,
 
     #[allow(clippy::type_complexity)]
-    unique_material_meshes: Lock<
-        HashMap<(Handle<ComponentBindGroup<GpuMaterial>>, Handle<GpuMesh>), UniqueMaterialMesh>,
-    >,
+    unique_material_meshes:
+        Lock<HashMap<(Handle<BindGroup<GpuMaterial>>, Handle<GpuMesh>), UniqueMaterialMesh>>,
 
     transform_bind_group_layout: Lock<Option<wgpu::BindGroupLayout>>,
 }
@@ -54,6 +53,9 @@ impl PbrNode {
 
     pub fn init_pipeline(&self, render_world: &mut World) {
         let device = render_world.get_resource::<WgpuDevice>().unwrap();
+        let mut bind_group_layout_cache = render_world
+            .get_resource_mut::<BindGroupLayoutCache>()
+            .unwrap();
 
         let transform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -73,10 +75,10 @@ impl PbrNode {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("PBR Pipeline Layout"),
             bind_group_layouts: &[
-                &GpuMaterial::bind_group_layout(&device),
-                &GpuCamera::bind_group_layout(&device),
+                &bind_group_layout_cache.get_or_create::<GpuMaterial>(&device),
+                &bind_group_layout_cache.get_or_create::<GpuCamera>(&device),
                 &transform_bind_group_layout,
-                &GpuPointLightArray::bind_group_layout(&device),
+                &bind_group_layout_cache.get_or_create::<GpuPointLightArray>(&device),
             ],
             push_constant_ranges: &[],
         });
@@ -157,8 +159,7 @@ impl Render for PbrNode {
             unique_material_mesh.entities.clear();
         }
 
-        let query =
-            render_world.query::<(&Handle<ComponentBindGroup<GpuMaterial>>, &Handle<GpuMesh>)>();
+        let query = render_world.query::<(&Handle<BindGroup<GpuMaterial>>, &Handle<GpuMesh>)>();
 
         for (entity, (material, gpu_mesh)) in query.iter() {
             let mut unique_material_meshes = self.unique_material_meshes.write();
@@ -265,9 +266,7 @@ impl Render for PbrNode {
                 entities,
             } = unique_material_mesh;
 
-            let material_bind_group = assets
-                .get::<ComponentBindGroup<GpuMaterial>>(*material)
-                .unwrap();
+            let material_bind_group = assets.get::<BindGroup<GpuMaterial>>(*material).unwrap();
             let mesh = assets.get::<GpuMesh>(*mesh).unwrap();
 
             {

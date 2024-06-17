@@ -6,7 +6,7 @@ use weaver_ecs::{
     world::World,
 };
 use weaver_renderer::{
-    bind_group::ComponentBindGroup,
+    bind_group::BindGroup,
     camera::{Camera, GpuCamera},
     clear_color::ClearColor,
     extract::{RenderComponent, RenderComponentPlugin},
@@ -68,7 +68,7 @@ impl weaver_renderer::graph::Render for PbrCameraBindGroupNode {
 
     fn render(&self, render_world: &mut World, _input_slots: &[Slot]) -> Result<Vec<Slot>> {
         let bind_group = render_world
-            .get_component::<ComponentBindGroup<GpuCamera>>(self.camera_entity)
+            .get_component::<BindGroup<GpuCamera>>(self.camera_entity)
             .unwrap();
         Ok(vec![Slot::BindGroup(bind_group.bind_group().clone())])
     }

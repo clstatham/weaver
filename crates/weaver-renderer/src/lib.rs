@@ -4,7 +4,7 @@ use std::{
 };
 
 use asset::ExtractedRenderAssets;
-use bind_group::ExtractedAssetBindGroups;
+use bind_group::{BindGroupLayoutCache, ExtractedAssetBindGroups};
 use camera::CameraPlugin;
 use mesh::MeshPlugin;
 use texture::{
@@ -29,6 +29,7 @@ pub mod clear_color;
 pub mod extract;
 pub mod graph;
 pub mod mesh;
+pub mod pipeline;
 pub mod shader;
 pub mod texture;
 pub mod transform;
@@ -48,6 +49,9 @@ impl AppLabel for RenderApp {}
 
 pub struct Extract;
 impl SystemStage for Extract {}
+
+pub struct ExtractBindGroups;
+impl SystemStage for ExtractBindGroups {}
 
 pub struct PreRender;
 impl SystemStage for PreRender {}
@@ -253,11 +257,13 @@ impl Plugin for RendererPlugin {
         render_app.insert_resource(Assets::new());
 
         render_app.push_manual_stage::<Extract>();
+        render_app.push_manual_stage::<ExtractBindGroups>();
 
         render_app.push_update_stage::<PreRender>();
         render_app.push_update_stage::<Render>();
         render_app.push_update_stage::<PostRender>();
 
+        render_app.insert_resource(BindGroupLayoutCache::new());
         render_app.insert_resource(ExtractedRenderAssets::new());
         render_app.insert_resource(ExtractedAssetBindGroups::new());
 

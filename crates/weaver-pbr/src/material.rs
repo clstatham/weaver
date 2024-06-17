@@ -3,10 +3,10 @@ use std::path::Path;
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::prelude::*;
 use weaver_core::{color::Color, texture::Texture};
-use weaver_ecs::prelude::{Component, Reflect, World};
+use weaver_ecs::prelude::{Reflect, World};
 use weaver_renderer::{
     asset::{ExtractRenderAssetPlugin, RenderAsset},
-    bind_group::{AssetBindGroupPlugin, CreateComponentBindGroup},
+    bind_group::{AssetBindGroupPlugin, BindGroupLayout, CreateBindGroup},
     buffer::GpuBuffer,
     prelude::*,
     texture::GpuTexture,
@@ -147,26 +147,16 @@ struct MaterialMetaUniform {
     texture_scale: f32,
 }
 
-#[derive(Component, Reflect)]
 pub struct GpuMaterial {
-    #[reflect(ignore)]
     pub meta: GpuBuffer,
 
-    #[reflect(ignore)]
     pub diffuse_texture: GpuTexture,
-    #[reflect(ignore)]
     pub diffuse_texture_sampler: wgpu::Sampler,
-    #[reflect(ignore)]
     pub normal_texture: GpuTexture,
-    #[reflect(ignore)]
     pub normal_texture_sampler: wgpu::Sampler,
-    #[reflect(ignore)]
     pub metallic_roughness_texture: GpuTexture,
-    #[reflect(ignore)]
     pub metallic_roughness_texture_sampler: wgpu::Sampler,
-    #[reflect(ignore)]
     pub ao_texture: GpuTexture,
-    #[reflect(ignore)]
     pub ao_texture_sampler: wgpu::Sampler,
 }
 
@@ -305,8 +295,8 @@ impl RenderAsset for GpuMaterial {
     }
 }
 
-impl CreateComponentBindGroup for GpuMaterial {
-    fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
+impl CreateBindGroup for GpuMaterial {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
     where
         Self: Sized,
     {
@@ -400,10 +390,14 @@ impl CreateComponentBindGroup for GpuMaterial {
         })
     }
 
-    fn create_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup {
+    fn create_bind_group(
+        &self,
+        device: &wgpu::Device,
+        cached_layout: &BindGroupLayout,
+    ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Material Bind Group"),
-            layout: &Self::bind_group_layout(device),
+            layout: cached_layout,
             entries: &[
                 // Material meta buffer
                 wgpu::BindGroupEntry {
