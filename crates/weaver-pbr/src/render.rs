@@ -1,13 +1,15 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
 use weaver_asset::{Assets, Handle};
 use weaver_core::{prelude::Mat4, transform::Transform};
 use weaver_ecs::{entity::Entity, prelude::World};
 use weaver_renderer::{
-    bind_group::{BindGroup, BindGroupLayoutCache},
+    bind_group::{BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup},
+    buffer::GpuBuffer,
     camera::GpuCamera,
     graph::{Render, Slot},
     mesh::GpuMesh,
+    pipeline::{CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout},
     prelude::*,
     shader::Shader,
     texture::format::{DEPTH_FORMAT, VIEW_FORMAT},
@@ -20,11 +22,61 @@ use weaver_util::{
 
 use crate::{light::GpuPointLightArray, material::GpuMaterial};
 
+pub struct TransformArray {
+    pub buffer: GpuBuffer,
+    pub bind_group: wgpu::BindGroup,
+}
+
+impl TransformArray {
+    pub fn new(buffer: GpuBuffer, bind_group: wgpu::BindGroup) -> Self {
+        Self { buffer, bind_group }
+    }
+}
+
+impl CreateBindGroup for TransformArray {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
+    where
+        Self: Sized,
+    {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Transform Array Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        })
+    }
+
+    fn create_bind_group(
+        &self,
+        device: &wgpu::Device,
+        layout: &BindGroupLayout,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Transform Array Bind Group"),
+            layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &self.buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+        })
+    }
+}
+
 struct UniqueMaterialMesh {
     material: Handle<BindGroup<GpuMaterial>>,
     mesh: Handle<GpuMesh>,
-    transform_buffer: wgpu::Buffer,
-    transform_bind_group: wgpu::BindGroup,
+    transforms: TransformArray,
     entities: Vec<Entity>,
 }
 
@@ -32,31 +84,28 @@ pub struct PbrNode {
     #[allow(unused)]
     camera_entity: Entity, // todo: use for culling
 
-    pipeline: Lock<Option<wgpu::RenderPipeline>>,
-
     #[allow(clippy::type_complexity)]
     unique_material_meshes:
         Lock<HashMap<(Handle<BindGroup<GpuMaterial>>, Handle<GpuMesh>), UniqueMaterialMesh>>,
-
-    transform_bind_group_layout: Lock<Option<wgpu::BindGroupLayout>>,
 }
 
 impl PbrNode {
     pub fn new(camera_entity: Entity) -> Self {
         Self {
             camera_entity,
-            pipeline: Lock::new(None),
             unique_material_meshes: Lock::new(HashMap::new()),
-            transform_bind_group_layout: Lock::new(None),
         }
     }
+}
 
-    pub fn init_pipeline(&self, render_world: &mut World) {
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
-        let mut bind_group_layout_cache = render_world
-            .get_resource_mut::<BindGroupLayoutCache>()
-            .unwrap();
-
+impl CreateRenderPipeline for PbrNode {
+    fn create_render_pipeline_layout(
+        device: &wgpu::Device,
+        bind_group_layout_cache: &mut BindGroupLayoutCache,
+    ) -> RenderPipelineLayout
+    where
+        Self: Sized,
+    {
         let transform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("PBR Transform Storage Bind Group Layout"),
@@ -75,23 +124,31 @@ impl PbrNode {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("PBR Pipeline Layout"),
             bind_group_layouts: &[
-                &bind_group_layout_cache.get_or_create::<GpuMaterial>(&device),
-                &bind_group_layout_cache.get_or_create::<GpuCamera>(&device),
+                &bind_group_layout_cache.get_or_create::<GpuMaterial>(device),
+                &bind_group_layout_cache.get_or_create::<GpuCamera>(device),
                 &transform_bind_group_layout,
-                &bind_group_layout_cache.get_or_create::<GpuPointLightArray>(&device),
+                &bind_group_layout_cache.get_or_create::<GpuPointLightArray>(device),
             ],
             push_constant_ranges: &[],
         });
 
-        *self.transform_bind_group_layout.write() = Some(transform_bind_group_layout);
+        RenderPipelineLayout::new(layout)
+    }
 
-        let shader = Shader::new(&device, "assets/shaders/pbr.wgsl");
+    fn create_render_pipeline(
+        device: &wgpu::Device,
+        cached_layout: &wgpu::PipelineLayout,
+    ) -> RenderPipeline
+    where
+        Self: Sized,
+    {
+        let shader = Shader::new(Path::new("assets/shaders/pbr.wgsl")).create_shader_module(device);
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("PBR Pipeline"),
-            layout: Some(&layout),
+            layout: Some(cached_layout),
             vertex: wgpu::VertexState {
-                module: &shader.module,
+                module: &shader,
                 entry_point: "vs_main",
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: 4 * (3 + 3 + 3 + 2) as u64,
@@ -121,7 +178,7 @@ impl PbrNode {
                 }],
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader.module,
+                module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: VIEW_FORMAT,
@@ -145,41 +202,43 @@ impl PbrNode {
             multiview: None,
         });
 
-        *self.pipeline.write() = Some(pipeline);
+        RenderPipeline::new(pipeline)
     }
 }
 
 impl Render for PbrNode {
-    fn prepare(&self, render_world: &mut World) -> Result<()> {
-        if self.pipeline.read().is_none() {
-            self.init_pipeline(render_world);
-        }
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
 
         for unique_material_mesh in self.unique_material_meshes.write().values_mut() {
             unique_material_mesh.entities.clear();
         }
+
+        let mut bind_group_layout_cache = render_world
+            .get_resource_mut::<BindGroupLayoutCache>()
+            .unwrap();
 
         let query = render_world.query::<(&Handle<BindGroup<GpuMaterial>>, &Handle<GpuMesh>)>();
 
         for (entity, (material, gpu_mesh)) in query.iter() {
             let mut unique_material_meshes = self.unique_material_meshes.write();
 
-            let device = render_world.get_resource::<WgpuDevice>().unwrap();
-
             let unique_material_mesh = unique_material_meshes
                 .entry((*material, *gpu_mesh))
                 .or_insert_with(|| {
-                    let transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                        label: Some("PBR Transform Buffer"),
-                        size: std::mem::size_of::<Mat4>() as u64 * 4096,
-                        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
-                        mapped_at_creation: false,
-                    });
+                    let transform_buffer =
+                        GpuBuffer::from(device.create_buffer(&wgpu::BufferDescriptor {
+                            label: Some("PBR Transform Buffer"),
+                            size: std::mem::size_of::<Mat4>() as u64 * 4096,
+                            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
+                            mapped_at_creation: false,
+                        }));
 
                     let transform_bind_group =
                         device.create_bind_group(&wgpu::BindGroupDescriptor {
                             label: Some("PBR Transform Bind Group"),
-                            layout: self.transform_bind_group_layout.read().as_ref().unwrap(),
+                            layout: &bind_group_layout_cache
+                                .get_or_create::<TransformArray>(&device),
                             entries: &[wgpu::BindGroupEntry {
                                 binding: 0,
                                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
@@ -193,8 +252,7 @@ impl Render for PbrNode {
                     UniqueMaterialMesh {
                         material: *material,
                         mesh: *gpu_mesh,
-                        transform_buffer,
-                        transform_bind_group,
+                        transforms: TransformArray::new(transform_buffer, transform_bind_group),
                         entities: Vec::new(),
                     }
                 });
@@ -204,7 +262,7 @@ impl Render for PbrNode {
 
         for unique_material_mesh in self.unique_material_meshes.read().values() {
             let UniqueMaterialMesh {
-                transform_buffer,
+                transforms: transform_buffer,
                 entities,
                 ..
             } = unique_material_mesh;
@@ -221,13 +279,17 @@ impl Render for PbrNode {
 
             let queue = render_world.get_resource::<WgpuQueue>().unwrap();
 
-            queue.write_buffer(transform_buffer, 0, bytemuck::cast_slice(&transforms));
+            queue.write_buffer(
+                &transform_buffer.buffer,
+                0,
+                bytemuck::cast_slice(&transforms),
+            );
         }
 
         Ok(())
     }
 
-    fn render(&self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>> {
+    fn render(&mut self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>> {
         let Slot::Texture(color_target) = &input_slots[0] else {
             bail!("PbrNode expected a texture in slot 0");
         };
@@ -240,16 +302,22 @@ impl Render for PbrNode {
             bail!("PbrNode expected a bind group in slot 2");
         };
 
-        let Slot::BindGroup(light_bind_group) = &input_slots[3] else {
-            bail!("PbrNode expected a bind group in slot 3");
-        };
-
-        let pipeline = self.pipeline.read();
-        let pipeline = pipeline.as_ref().unwrap();
+        let light_bind_group = render_world
+            .get_resource::<BindGroup<GpuPointLightArray>>()
+            .unwrap();
 
         log::trace!("PbrNode::render");
 
         let device = render_world.get_resource::<WgpuDevice>().unwrap();
+
+        let mut pipeline_cache = render_world
+            .get_resource_mut::<RenderPipelineCache>()
+            .unwrap();
+        let mut bind_group_layout_cache = render_world
+            .get_resource_mut::<BindGroupLayoutCache>()
+            .unwrap();
+        let pipeline =
+            pipeline_cache.get_or_create_pipeline::<Self>(&device, &mut bind_group_layout_cache);
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("PBR Command Encoder"),
@@ -261,8 +329,7 @@ impl Render for PbrNode {
             let UniqueMaterialMesh {
                 material,
                 mesh,
-                transform_buffer: _,
-                transform_bind_group,
+                transforms,
                 entities,
             } = unique_material_mesh;
 
@@ -292,11 +359,11 @@ impl Render for PbrNode {
                     occlusion_query_set: None,
                 });
 
-                render_pass.set_pipeline(pipeline);
+                render_pass.set_pipeline(&pipeline);
                 render_pass.set_bind_group(0, &material_bind_group, &[]);
                 render_pass.set_bind_group(1, camera_bind_group, &[]);
-                render_pass.set_bind_group(2, transform_bind_group, &[]);
-                render_pass.set_bind_group(3, light_bind_group, &[]);
+                render_pass.set_bind_group(2, &transforms.bind_group, &[]);
+                render_pass.set_bind_group(3, &light_bind_group, &[]);
 
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 render_pass

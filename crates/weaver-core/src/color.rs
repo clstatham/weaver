@@ -1,6 +1,7 @@
+use encase::ShaderType;
 use weaver_ecs::prelude::Reflect;
 
-#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Reflect)]
+#[derive(Debug, Clone, Copy, PartialEq, ShaderType, Reflect)]
 #[repr(C)]
 pub struct Color {
     pub r: f32,

@@ -10,6 +10,7 @@ image = "0.25.1"
 winit = "0.29.15"
 tobj = "4.0.2"
 gltf = "1.4.1"
+encase = { version = "0.8", features = ["glam"] }
 
 weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }

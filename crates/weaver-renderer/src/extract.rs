@@ -37,7 +37,11 @@ impl<T: RenderComponent> Default for RenderComponentPlugin<T> {
 impl<T: RenderComponent> Plugin for RenderComponentPlugin<T> {
     fn build(&self, render_app: &mut App) -> Result<()> {
         render_app.add_system(extract_render_components::<T>, Extract);
-        render_app.add_system(update_render_components::<T>, Extract);
+        render_app.add_system_after(
+            update_render_components::<T>,
+            extract_render_components::<T>,
+            Extract,
+        );
         Ok(())
     }
 }
@@ -104,7 +108,11 @@ impl<T: RenderResource> Default for RenderResourcePlugin<T> {
 impl<T: RenderResource> Plugin for RenderResourcePlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_system(extract_render_resource::<T>, Extract);
-        app.add_system(update_render_resource::<T>, Extract);
+        app.add_system_after(
+            update_render_resource::<T>,
+            extract_render_resource::<T>,
+            Extract,
+        );
         Ok(())
     }
 }

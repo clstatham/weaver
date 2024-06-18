@@ -108,6 +108,34 @@ fn setup(world: &mut World) -> Result<()> {
         SelectionAabb::from_mesh(&assets.get(mesh).unwrap()),
     ));
 
+    // circle of lights
+    const COLORS: &[Color] = &[
+        Color::RED,
+        Color::GREEN,
+        Color::BLUE,
+        Color::YELLOW,
+        Color::CYAN,
+        Color::MAGENTA,
+    ];
+    for (i, color) in COLORS.iter().enumerate() {
+        let angle = i as f32 / COLORS.len() as f32 * std::f32::consts::PI * 2.0;
+        let _light = world.spawn((
+            PointLight {
+                color: *color,
+                intensity: 100.0,
+                radius: 100.0,
+            },
+            Transform {
+                translation: Vec3::new(angle.cos() * 5.0, 5.0, angle.sin() * 5.0),
+                rotation: Quat::IDENTITY,
+                scale: Vec3::ONE,
+            },
+            SelectionAabb {
+                aabb: Aabb::new(Vec3::splat(-0.1), Vec3::splat(0.1)),
+            },
+        ));
+    }
+
     world.spawn((
         PointLight {
             color: Color::WHITE,
@@ -123,6 +151,7 @@ fn setup(world: &mut World) -> Result<()> {
             aabb: Aabb::new(Vec3::splat(-0.1), Vec3::splat(0.1)),
         },
     ));
+
     let material2 = assets.load::<Material>("assets/materials/metal.glb")?;
     {
         let mut material = assets.get_mut(material2).unwrap();
@@ -163,7 +192,7 @@ fn selection_gizmos(
                 let gizmo_transform = Transform::new(
                     aabb.center(),
                     Quat::IDENTITY,
-                    aabb.size() * 2.0 + Vec3::splat(0.1),
+                    aabb.size() + Vec3::splat(0.1),
                 );
                 gizmos.cube(gizmo_transform, Color::GREEN);
             }

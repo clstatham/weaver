@@ -361,6 +361,10 @@ impl App {
         self.sub_apps.sub_apps.get_mut(&TypeId::of::<T>())
     }
 
+    pub fn remove_sub_app<T: AppLabel>(&mut self) -> Option<SubApp> {
+        self.sub_apps.sub_apps.remove(&TypeId::of::<T>())
+    }
+
     pub fn insert_resource<T: Resource>(&mut self, resource: T) -> &mut Self {
         self.main_app().insert_resource(resource);
         self

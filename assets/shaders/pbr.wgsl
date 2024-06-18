@@ -6,14 +6,7 @@ struct PointLight {
     color: vec4<f32>,
     intensity: f32,
     radius: f32,
-    _padding: array<f32, 2u>,
 };
-
-struct PointLights {
-    count: u32,
-    _padding: array<u32, 3u>,
-    lights: array<PointLight, 16u>,
-}
 
 // material information
 @group(0) @binding(0) var<uniform> material: MaterialUniform;
@@ -33,7 +26,7 @@ struct PointLights {
 @group(2) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
 
 // lights information
-@group(3) @binding(0) var<storage> point_lights: PointLights;
+@group(3) @binding(0) var<storage> point_lights: array<PointLight>;
 
 fn saturate(x: f32) -> f32 {
     return clamp(x, 0.0, 1.0);
@@ -152,8 +145,9 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     var tex_normal = textureSample(normal_tex, normal_sampler, uv).rgb;
     tex_normal = pow(tex_normal, vec3(1.0 / 2.2));
     tex_normal = normalize(tex_normal * 2.0 - 1.0);
-    let TBN = mat3x3<f32>(vertex.world_tangent, vertex.world_binormal, vertex.world_normal);
-    let N = normalize(TBN * tex_normal);
+    let N = normalize(
+        vertex.world_tangent * tex_normal.r + vertex.world_binormal * tex_normal.g + vertex.world_normal * tex_normal.b
+    );
 
     let V = normalize(camera.camera_position - vertex.world_position);
 
@@ -163,8 +157,8 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     var illumination = vec3(0.0);
 
-    for (var i = 0u; i < point_lights.count; i = i + 1u) {
-        let light = point_lights.lights[i];
+    for (var i = 0u; i < arrayLength(&point_lights); i = i + 1u) {
+        let light = point_lights[i];
         let light_pos = light.position.xyz;
         let L = normalize(light_pos - vertex.world_position);
 

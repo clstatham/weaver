@@ -1,23 +1,29 @@
+use std::path::Path;
+
 use weaver_app::{plugin::Plugin, App, PrepareFrame};
-use weaver_core::{color::Color, transform::Transform};
+use weaver_core::{color::Color, prelude::Mat4, transform::Transform};
 use weaver_ecs::{component::Res, prelude::Resource, query::Query, world::World};
 use weaver_pbr::{
     camera::{CameraRenderComponent, PbrCameraBindGroupNode},
     render::PbrNode,
 };
 use weaver_renderer::{
-    bind_group::CreateBindGroup,
-    buffer::GpuBuffer,
+    bind_group::{BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup},
+    buffer::{GpuBuffer, GpuBufferVec},
     camera::GpuCamera,
     extract::{RenderResource, RenderResourcePlugin},
     mesh::primitive::{CubePrimitive, Primitive},
+    pipeline::{
+        CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout,
+        RenderPipelinePlugin,
+    },
     prelude::*,
     shader::Shader,
     texture::format::VIEW_FORMAT,
     PreRender, RenderApp, WgpuDevice, WgpuQueue,
 };
 use weaver_util::{
-    lock::{Lock, SharedLock},
+    lock::SharedLock,
     prelude::{anyhow, Result},
 };
 
@@ -61,8 +67,8 @@ impl RenderResource for RenderCubeGizmo {
         });
 
         Some(Self {
-            vertex_buffer: GpuBuffer::new(vertex_buffer),
-            index_buffer: GpuBuffer::new(index_buffer),
+            vertex_buffer: GpuBuffer::from(vertex_buffer),
+            index_buffer: GpuBuffer::from(index_buffer),
             num_indices: mesh.indices.len(),
         })
     }
@@ -141,43 +147,54 @@ impl Gizmos {
     }
 }
 
-struct GizmoRenderNodeInner {
-    pipeline: wgpu::RenderPipeline,
-    transform_buffer: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
-    color_buffer: wgpu::Buffer,
-}
-
 pub struct GizmoRenderNode {
-    inner: Lock<Option<GizmoRenderNodeInner>>,
+    transform_buffer: GpuBufferVec<Mat4>,
+    color_buffer: GpuBufferVec<Color>,
+    bind_group: Option<BindGroup<GizmoRenderNode>>,
 }
 
 impl GizmoRenderNode {
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let mut transform_buffer =
+            GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
+        transform_buffer.reserve(1, device);
+        let mut color_buffer =
+            GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
+        color_buffer.reserve(1, device);
+
         Self {
-            inner: Lock::new(None),
+            transform_buffer,
+            color_buffer,
+            bind_group: None,
         }
     }
+}
 
-    pub fn init_pipeline(&self, render_world: &mut World) -> Result<()> {
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+impl CreateBindGroup for GizmoRenderNode {
+    fn create_bind_group(
+        &self,
+        device: &wgpu::Device,
+        cached_layout: &BindGroupLayout,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("GizmoBindGroup"),
+            layout: cached_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.transform_buffer.binding().unwrap(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.color_buffer.binding().unwrap(),
+                },
+            ],
+        })
+    }
 
-        let transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("GizmoTransformBuffer"),
-            size: std::mem::size_of::<Transform>() as u64 * 1024,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let color_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("GizmoColorBuffer"),
-            size: std::mem::size_of::<Color>() as u64 * 1024,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("GizmoTransformBindGroupLayout"),
             entries: &[
                 // transform
@@ -203,143 +220,135 @@ impl GizmoRenderNode {
                     count: None,
                 },
             ],
-        });
+        })
+    }
+}
 
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("GizmoPipelineLayout"),
-            bind_group_layouts: &[
-                &bind_group_layout,
-                &GpuCamera::create_bind_group_layout(&device),
-            ],
-            push_constant_ranges: &[],
-        });
+impl CreateRenderPipeline for GizmoRenderNode {
+    fn create_render_pipeline_layout(
+        device: &wgpu::Device,
+        bind_group_layout_cache: &mut BindGroupLayoutCache,
+    ) -> weaver_renderer::pipeline::RenderPipelineLayout
+    where
+        Self: Sized,
+    {
+        let bind_group_layout = bind_group_layout_cache.get_or_create::<Self>(device);
 
-        let shader = Shader::new(&device, "assets/shaders/gizmos.wgsl");
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("GizmoRenderNode"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &shader.module,
-                entry_point: "vs_main",
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: 4 * (3 + 3 + 3 + 2) as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x3,
-                            offset: 0,
-                            shader_location: 0,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x3,
-                            offset: 4 * 3,
-                            shader_location: 1,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x3,
-                            offset: 4 * 6,
-                            shader_location: 2,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x2,
-                            offset: 4 * 9,
-                            shader_location: 3,
-                        },
-                    ],
-                }],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader.module,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: VIEW_FORMAT,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+        RenderPipelineLayout::new(
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("GizmoPipelineLayout"),
+                bind_group_layouts: &[
+                    &bind_group_layout,
+                    &GpuCamera::create_bind_group_layout(device),
+                ],
+                push_constant_ranges: &[],
             }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::LineList,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
+        )
+    }
+
+    fn create_render_pipeline(
+        device: &wgpu::Device,
+        cached_layout: &wgpu::PipelineLayout,
+    ) -> RenderPipeline {
+        let shader =
+            Shader::new(Path::new("assets/shaders/gizmos.wgsl")).create_shader_module(device);
+        RenderPipeline::new(
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("GizmoRenderNode"),
+                layout: Some(cached_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "vs_main",
+                    buffers: &[wgpu::VertexBufferLayout {
+                        array_stride: 4 * (3 + 3 + 3 + 2) as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32x3,
+                                offset: 0,
+                                shader_location: 0,
+                            },
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32x3,
+                                offset: 4 * 3,
+                                shader_location: 1,
+                            },
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32x3,
+                                offset: 4 * 6,
+                                shader_location: 2,
+                            },
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32x2,
+                                offset: 4 * 9,
+                                shader_location: 3,
+                            },
+                        ],
+                    }],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "fs_main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: VIEW_FORMAT,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::LineList,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
             }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("GizmoTransformBindGroup"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: transform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: color_buffer.as_entire_binding(),
-                },
-            ],
-        });
-
-        *self.inner.write() = Some(GizmoRenderNodeInner {
-            pipeline,
-            transform_buffer,
-            bind_group,
-            color_buffer,
-        });
-
-        Ok(())
+        )
     }
 }
 
 impl Render for GizmoRenderNode {
-    fn prepare(&self, render_world: &mut World) -> Result<()> {
-        if self.inner.read().is_none() {
-            self.init_pipeline(render_world)?;
-        }
-
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
         let Some(gizmos) = render_world.get_resource::<Gizmos>() else {
             return Ok(());
         };
 
-        let Some(inner) = &*self.inner.read() else {
-            return Ok(());
-        };
-
-        let mut transform_data: Vec<u8> = Vec::new();
-        let mut color_data: Vec<u8> = Vec::new();
+        self.transform_buffer.clear();
+        self.color_buffer.clear();
 
         for gizmo in gizmos.gizmos.read().iter() {
-            let transform = gizmo.transform;
-            transform_data.extend_from_slice(bytemuck::cast_slice(&[transform.matrix()]));
-
-            let color = gizmo.color;
-            color_data.extend_from_slice(bytemuck::cast_slice(&[color]));
+            self.transform_buffer.push(gizmo.transform.matrix());
+            self.color_buffer.push(gizmo.color);
         }
 
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
         let queue = render_world.get_resource::<WgpuQueue>().unwrap();
 
-        queue.write_buffer(&inner.transform_buffer, 0, &transform_data);
-        queue.write_buffer(&inner.color_buffer, 0, &color_data);
+        self.transform_buffer.enqueue_update(&device, &queue);
+        self.color_buffer.enqueue_update(&device, &queue);
+
+        if self.bind_group.is_none() {
+            let mut layout_cache = render_world
+                .get_resource_mut::<BindGroupLayoutCache>()
+                .unwrap();
+            let bind_group = BindGroup::new(&device, self, &mut layout_cache);
+            self.bind_group = Some(bind_group);
+        }
 
         Ok(())
     }
 
-    fn render(&self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>> {
+    fn render(&mut self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>> {
         let Some(gizmos) = render_world.get_resource::<Gizmos>() else {
-            return Ok(input_slots.to_vec());
-        };
-
-        let Some(inner) = &*self.inner.read() else {
             return Ok(input_slots.to_vec());
         };
 
@@ -358,6 +367,18 @@ impl Render for GizmoRenderNode {
         let cube_resource = render_world.get_resource::<RenderCubeGizmo>().unwrap();
 
         let device = render_world.get_resource::<WgpuDevice>().unwrap();
+
+        let mut bind_group_layout_cache = render_world
+            .get_resource_mut::<BindGroupLayoutCache>()
+            .unwrap();
+
+        let mut pipeline_cache = render_world
+            .get_resource_mut::<RenderPipelineCache>()
+            .unwrap();
+        let pipeline =
+            pipeline_cache.get_or_create_pipeline::<Self>(&device, &mut bind_group_layout_cache);
+
+        let bind_group = self.bind_group.as_ref().unwrap().bind_group();
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("GizmoCommandEncoder"),
@@ -386,8 +407,8 @@ impl Render for GizmoRenderNode {
                 occlusion_query_set: None,
             });
 
-            render_pass.set_pipeline(&inner.pipeline);
-            render_pass.set_bind_group(0, &inner.bind_group, &[]);
+            render_pass.set_pipeline(&pipeline);
+            render_pass.set_bind_group(0, bind_group, &[]);
             render_pass.set_bind_group(1, camera_bind_group, &[]);
 
             for (i, gizmo) in gizmos.gizmos.read().iter().enumerate() {
@@ -426,6 +447,7 @@ impl Plugin for GizmoPlugin {
 
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.insert_resource(gizmos);
+        render_app.add_plugin(RenderPipelinePlugin::<GizmoRenderNode>::default())?;
         render_app.add_plugin(RenderResourcePlugin::<RenderCubeGizmo>::default())?;
         render_app.add_system(inject_gizmo_render_node, PreRender);
 
@@ -433,16 +455,20 @@ impl Plugin for GizmoPlugin {
     }
 }
 
-fn inject_gizmo_render_node(cameras: Query<&mut CameraRenderComponent>) -> Result<()> {
+fn inject_gizmo_render_node(
+    cameras: Query<&mut CameraRenderComponent>,
+    device: Res<WgpuDevice>,
+) -> Result<()> {
     for (_, mut camera) in cameras.iter() {
         if camera.graph.has_node::<GizmoRenderNode>() {
             continue;
         }
 
         if let Some(pbr_node) = camera.graph.node_index::<PbrNode>() {
-            let gizmo_node = camera
-                .graph
-                .add_node(RenderNode::new("GizmoRenderNode", GizmoRenderNode::new()));
+            let gizmo_node = camera.graph.add_node(RenderNode::new(
+                "GizmoRenderNode",
+                GizmoRenderNode::new(&device),
+            ));
             let camera_node = camera.graph.node_index::<PbrCameraBindGroupNode>().unwrap();
 
             camera.graph.add_edge(pbr_node, 0, gizmo_node, 0);

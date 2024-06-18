@@ -30,7 +30,7 @@ impl Default for ClearColor {
 }
 
 impl Render for ClearColor {
-    fn render(&self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>> {
+    fn render(&mut self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>> {
         let device = render_world.get_resource::<WgpuDevice>().unwrap();
         let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
 

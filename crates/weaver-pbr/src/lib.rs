@@ -1,8 +1,9 @@
 use camera::PbrCameraPlugin;
 use light::PointLightPlugin;
 use material::MaterialPlugin;
+use render::PbrNode;
 use weaver_app::prelude::*;
-use weaver_renderer::RenderApp;
+use weaver_renderer::{pipeline::RenderPipelinePlugin, RenderApp};
 use weaver_util::prelude::*;
 
 pub mod camera;
@@ -25,6 +26,7 @@ impl Plugin for PbrPlugin {
         render_app.add_plugin(MaterialPlugin)?;
         render_app.add_plugin(PbrCameraPlugin)?;
         render_app.add_plugin(PointLightPlugin)?;
+        render_app.add_plugin(RenderPipelinePlugin::<PbrNode>::default())?;
 
         Ok(())
     }

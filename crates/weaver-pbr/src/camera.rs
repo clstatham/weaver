@@ -62,11 +62,11 @@ pub struct PbrCameraBindGroupNode {
 }
 
 impl weaver_renderer::graph::Render for PbrCameraBindGroupNode {
-    fn prepare(&self, _render_world: &mut World) -> Result<()> {
+    fn prepare(&mut self, _render_world: &mut World) -> Result<()> {
         Ok(())
     }
 
-    fn render(&self, render_world: &mut World, _input_slots: &[Slot]) -> Result<Vec<Slot>> {
+    fn render(&mut self, render_world: &mut World, _input_slots: &[Slot]) -> Result<Vec<Slot>> {
         let bind_group = render_world
             .get_component::<BindGroup<GpuCamera>>(self.camera_entity)
             .unwrap();
@@ -116,8 +116,6 @@ fn prepare_pbr_cameras(render_world: &mut World) -> Result<()> {
                     "ClearColor",
                     ClearColor::new(pbr_camera.clear_color),
                 ));
-                let point_light_array_node =
-                    graph.add_node(RenderNode::new("PointLightArrayNode", PointLightArrayNode));
                 let start_node = graph.node_index::<StartNode>().unwrap();
 
                 // start:color -> clear:color
@@ -132,9 +130,6 @@ fn prepare_pbr_cameras(render_world: &mut World) -> Result<()> {
 
                 // camera:bind_group -> pbr:camera_bind_group
                 graph.add_edge(camera_bind_group_node, 0, pbr_node, 2);
-
-                // point_light_array -> pbr:point_light_array
-                graph.add_edge(point_light_array_node, 0, pbr_node, 3);
             }
 
             drop(camera_render_component);

@@ -55,7 +55,7 @@ impl RenderAsset for GpuMesh {
     }
 
     fn update_render_asset(
-        &self,
+        &mut self,
         _base_asset: &Self::BaseAsset,
         _main_world: &mut World,
         _render_world: &mut World,

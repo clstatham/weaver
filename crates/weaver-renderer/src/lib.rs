@@ -7,6 +7,7 @@ use asset::ExtractedRenderAssets;
 use bind_group::{BindGroupLayoutCache, ExtractedAssetBindGroups};
 use camera::CameraPlugin;
 use mesh::MeshPlugin;
+use pipeline::RenderPipelineCache;
 use texture::{
     format::{DEPTH_FORMAT, VIEW_FORMAT},
     TexturePlugin,
@@ -41,6 +42,7 @@ pub mod prelude {
         graph::{Render, RenderGraph, RenderNode, Slot},
         Renderer, RendererPlugin,
     };
+    pub use encase;
     pub use wgpu;
 }
 
@@ -263,6 +265,7 @@ impl Plugin for RendererPlugin {
         render_app.push_update_stage::<Render>();
         render_app.push_update_stage::<PostRender>();
 
+        render_app.insert_resource(RenderPipelineCache::new());
         render_app.insert_resource(BindGroupLayoutCache::new());
         render_app.insert_resource(ExtractedRenderAssets::new());
         render_app.insert_resource(ExtractedAssetBindGroups::new());

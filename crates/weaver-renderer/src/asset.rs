@@ -19,7 +19,7 @@ pub trait RenderAsset: Asset {
         Self: Sized;
 
     fn update_render_asset(
-        &self,
+        &mut self,
         base_asset: &Self::BaseAsset,
         main_world: &mut World,
         render_world: &mut World,
@@ -58,7 +58,7 @@ impl<T: RenderAsset> Default for ExtractRenderAssetPlugin<T> {
 impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
     fn build(&self, render_app: &mut App) -> Result<()> {
         render_app.add_system(extract_render_asset::<T>, Extract);
-        render_app.add_system(update_render_asset::<T>, Extract);
+        render_app.add_system_after(update_render_asset::<T>, extract_render_asset::<T>, Extract);
         Ok(())
     }
 }
@@ -124,7 +124,7 @@ fn update_render_asset<T: RenderAsset>(render_world: &mut World) -> Result<()> {
     for (_entity, (render_handle, base_handle)) in query.iter() {
         let main_assets = main_world.get_resource::<Assets>().unwrap();
         let render_assets = render_world.get_resource::<Assets>().unwrap();
-        let render_asset = render_assets.get::<T>(*render_handle).unwrap();
+        let mut render_asset = render_assets.get_mut::<T>(*render_handle).unwrap();
         let base_asset = main_assets.get::<T::BaseAsset>(*base_handle).unwrap();
         render_asset.update_render_asset(&base_asset, &mut main_world, render_world)?;
     }

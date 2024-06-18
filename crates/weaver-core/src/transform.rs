@@ -76,7 +76,11 @@ impl Transform {
     }
 
     pub fn matrix(&self) -> Mat4 {
-        Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.translation)
+        Mat4::from_scale_rotation_translation(
+            self.scale,
+            Quat::from_array(self.rotation.to_array()),
+            self.translation,
+        )
     }
 
     pub fn from_matrix(matrix: Mat4) -> Self {

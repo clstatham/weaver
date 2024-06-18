@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use encase::ShaderType;
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::prelude::*;
 use weaver_core::{color::Color, texture::Texture};
@@ -7,13 +8,12 @@ use weaver_ecs::prelude::{Reflect, World};
 use weaver_renderer::{
     asset::{ExtractRenderAssetPlugin, RenderAsset},
     bind_group::{AssetBindGroupPlugin, BindGroupLayout, CreateBindGroup},
-    buffer::GpuBuffer,
+    buffer::GpuBufferVec,
     prelude::*,
     texture::GpuTexture,
     WgpuDevice, WgpuQueue,
 };
 use weaver_util::prelude::*;
-use wgpu::util::DeviceExt;
 
 #[derive(Reflect)]
 #[reflect(ReflectAsset)]
@@ -137,7 +137,7 @@ impl Asset for Material {
     }
 }
 
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, ShaderType)]
 #[repr(C)]
 struct MaterialMetaUniform {
     diffuse: Color,
@@ -148,7 +148,7 @@ struct MaterialMetaUniform {
 }
 
 pub struct GpuMaterial {
-    pub meta: GpuBuffer,
+    meta: GpuBufferVec<MaterialMetaUniform>,
 
     pub diffuse_texture: GpuTexture,
     pub diffuse_texture_sampler: wgpu::Sampler,
@@ -197,21 +197,7 @@ impl RenderAsset for GpuMaterial {
         let ao_texture = assets.get(base_asset.ao_texture)?;
         let ao_texture = GpuTexture::from_image(&device, &queue, &ao_texture)?;
 
-        let meta = MaterialMetaUniform {
-            diffuse: base_asset.diffuse,
-            metallic: base_asset.metallic,
-            roughness: base_asset.roughness,
-            ao: base_asset.ao,
-            texture_scale: base_asset.texture_scale,
-        };
-
-        let meta = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Material Meta Buffer"),
-            contents: bytemuck::cast_slice(&[meta]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let meta = GpuBuffer::new(meta);
+        let meta = GpuBufferVec::new(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
 
         let diffuse_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Diffuse Texture Sampler"),
@@ -271,7 +257,7 @@ impl RenderAsset for GpuMaterial {
     }
 
     fn update_render_asset(
-        &self,
+        &mut self,
         base_asset: &Self::BaseAsset,
         _main_world: &mut World,
         render_world: &mut World,
@@ -287,9 +273,13 @@ impl RenderAsset for GpuMaterial {
             texture_scale: base_asset.texture_scale,
         };
 
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
         let queue = render_world.get_resource::<WgpuQueue>().unwrap();
 
-        self.meta.update(&queue, bytemuck::cast_slice(&[meta]));
+        self.meta.clear();
+        self.meta.push(meta);
+
+        self.meta.enqueue_update(&device, &queue);
 
         Ok(())
     }
@@ -402,7 +392,7 @@ impl CreateBindGroup for GpuMaterial {
                 // Material meta buffer
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: self.meta.as_entire_binding(),
+                    resource: self.meta.binding().unwrap(),
                 },
                 // Diffuse texture
                 wgpu::BindGroupEntry {

@@ -25,11 +25,11 @@ pub struct RenderEdge {
 
 pub trait Render: 'static + Send + Sync {
     #[allow(unused_variables)]
-    fn prepare(&self, render_world: &mut World) -> Result<()> {
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
         Ok(())
     }
 
-    fn render(&self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>>;
+    fn render(&mut self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>>;
 }
 
 #[derive(Clone)]
@@ -82,7 +82,7 @@ impl RenderNode {
 pub struct StartNode;
 
 impl Render for StartNode {
-    fn render(&self, render_world: &mut World, _input_slots: &[Slot]) -> Result<Vec<Slot>> {
+    fn render(&mut self, render_world: &mut World, _input_slots: &[Slot]) -> Result<Vec<Slot>> {
         // todo: don't assume we want to render to the main window (allow input slots to specify target)
         let current_frame = render_world.get_resource::<CurrentFrame>().unwrap();
 

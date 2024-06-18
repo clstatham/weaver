@@ -1,4 +1,4 @@
-use weaver_core::mesh::{calculate_tangents, Mesh, Vertex};
+use weaver_core::mesh::{Mesh, Vertex};
 
 pub trait Primitive {
     fn generate_mesh(&self) -> Mesh;
@@ -156,7 +156,7 @@ impl Primitive for CubePrimitive {
     fn generate_mesh(&self) -> Mesh {
         let mut vertices = Vec::with_capacity(CUBE_VERTICES.len());
         for i in 0..CUBE_VERTICES.len() {
-            let position = CUBE_VERTICES[i] * self.side_length * 0.5;
+            let position = CUBE_VERTICES[i] * self.side_length;
             let normal = CUBE_NORMALS[i];
             let tangent = glam::Vec3::ZERO;
             let tex_coords = CUBE_TEX_COORDS[i];
@@ -175,7 +175,7 @@ impl Primitive for CubePrimitive {
             CUBE_INDICES.to_vec()
         };
 
-        calculate_tangents(&mut vertices, &indices);
+        // calculate_tangents(&mut vertices, &indices);
 
         Mesh::new(vertices, indices)
     }

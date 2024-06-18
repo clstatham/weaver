@@ -1,20 +1,20 @@
 use std::fmt::Debug;
 
+use encase::ShaderType;
 use weaver_core::geometry::Ray;
 use weaver_util::prelude::Result;
-use wgpu::util::DeviceExt;
 
 use weaver_app::plugin::Plugin;
 use weaver_ecs::prelude::*;
 
 use crate::{
     bind_group::{BindGroupLayout, ComponentBindGroupPlugin, CreateBindGroup},
-    buffer::GpuBuffer,
+    buffer::GpuBufferVec,
     extract::{RenderComponent, RenderComponentPlugin},
     WgpuDevice, WgpuQueue,
 };
 
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, ShaderType)]
 #[repr(C)]
 pub struct CameraUniform {
     pub view: glam::Mat4,
@@ -127,7 +127,7 @@ impl Default for Camera {
 #[derive(Component, Reflect)]
 pub struct GpuCamera {
     #[reflect(ignore)]
-    pub uniform_buffer: GpuBuffer,
+    pub uniform_buffer: GpuBufferVec<CameraUniform>,
 }
 
 impl RenderComponent for GpuCamera {
@@ -136,24 +136,18 @@ impl RenderComponent for GpuCamera {
     fn extract_render_component(
         entity: Entity,
         main_world: &mut World,
-        render_world: &mut World,
+        _render_world: &mut World,
     ) -> Option<Self>
     where
         Self: Sized,
     {
         let camera = main_world.get_component::<Camera>(entity)?;
 
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+        let mut uniform_buffer =
+            GpuBufferVec::new(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
+        uniform_buffer.push(CameraUniform::from(&*camera));
 
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[CameraUniform::from(&*camera)]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        Some(Self {
-            uniform_buffer: GpuBuffer::new(uniform_buffer),
-        })
+        Some(Self { uniform_buffer })
     }
 
     fn update_render_component(
@@ -164,12 +158,13 @@ impl RenderComponent for GpuCamera {
     ) -> Result<()> {
         let camera = main_world.get_component::<Camera>(entity).unwrap();
 
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
         let queue = render_world.get_resource::<WgpuQueue>().unwrap();
 
-        self.uniform_buffer.update(
-            &queue,
-            bytemuck::cast_slice(&[CameraUniform::from(&*camera)]),
-        );
+        self.uniform_buffer.clear();
+        self.uniform_buffer.push(CameraUniform::from(&*camera));
+
+        self.uniform_buffer.enqueue_update(&device, &queue);
 
         Ok(())
     }
@@ -186,7 +181,7 @@ impl CreateBindGroup for GpuCamera {
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &self.uniform_buffer,
+                    buffer: self.uniform_buffer.buffer().unwrap(),
                     offset: 0,
                     size: None,
                 }),

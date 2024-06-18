@@ -1,16 +1,41 @@
-use std::{borrow::Cow, io::Read};
+use std::{
+    borrow::Cow,
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
+use weaver_asset::{Asset, Assets};
 use weaver_util::prelude::{bail, Result};
 
 pub struct Shader {
-    pub module: wgpu::ShaderModule,
+    pub path: PathBuf,
+    pub module: wgpu::ShaderSource<'static>,
 }
 
 impl Shader {
-    pub fn new(device: &wgpu::Device, path: &'static str) -> Self {
-        let module = device.create_shader_module(preprocess_shader(path, "assets/shaders/"));
-        Self { module }
+    pub fn new(path: &Path) -> Self {
+        let module = preprocess_shader(path.to_str().unwrap(), "assets/shaders/");
+        Self {
+            path: path.into(),
+            module,
+        }
+    }
+
+    pub fn create_shader_module(&self, device: &wgpu::Device) -> wgpu::ShaderModule {
+        device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some(self.path.to_str().unwrap()),
+            source: self.module.clone(),
+        })
+    }
+}
+
+impl Asset for Shader {
+    fn load(_assets: &mut Assets, path: &Path) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self::new(path))
     }
 }
 
@@ -68,9 +93,9 @@ fn try_every_shader_file(
 }
 
 pub fn preprocess_shader(
-    file_path: &'static str,
+    file_path: &str,
     base_include_path: &'static str,
-) -> wgpu::ShaderModuleDescriptor<'static> {
+) -> wgpu::ShaderSource<'static> {
     let mut composer = Composer::non_validating();
 
     let shader = std::fs::read_to_string(file_path).unwrap();
@@ -88,8 +113,5 @@ pub fn preprocess_shader(
             panic!("{}", e.inner);
         });
 
-    wgpu::ShaderModuleDescriptor {
-        label: Some(file_path),
-        source: wgpu::ShaderSource::Naga(Cow::Owned(module)),
-    }
+    wgpu::ShaderSource::Naga(Cow::Owned(module))
 }
