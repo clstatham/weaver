@@ -209,3 +209,13 @@ impl World {
         self.systems.add_system_after(system, after, stage);
     }
 }
+
+pub trait FromWorld {
+    fn from_world(world: &World) -> Self;
+}
+
+impl<T: Default> FromWorld for T {
+    fn from_world(_: &World) -> Self {
+        T::default()
+    }
+}

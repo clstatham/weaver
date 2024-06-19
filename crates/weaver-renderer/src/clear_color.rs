@@ -1,11 +1,56 @@
+use weaver_app::{plugin::Plugin, App};
 use weaver_core::color::Color;
-use weaver_ecs::{storage::Ref, world::World};
+use weaver_ecs::{prelude::Resource, storage::Ref, world::World};
 use weaver_util::prelude::Result;
 
 use crate::{
     camera::ViewTarget,
-    graph::{RenderCtx, RenderGraphCtx, RenderLabel, ViewNode},
+    extract::{RenderResource, RenderResourcePlugin},
+    graph::{RenderCtx, RenderGraphCtx, ViewNode},
+    RenderApp, RenderLabel,
 };
+
+#[derive(Resource, Clone, Copy)]
+pub struct ClearColor(pub Color);
+
+impl RenderResource for ClearColor {
+    fn extract_render_resource(main_world: &mut World, _render_world: &mut World) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        main_world.get_resource::<Self>().as_deref().cloned()
+    }
+
+    fn update_render_resource(
+        &mut self,
+        main_world: &mut World,
+        _render_world: &mut World,
+    ) -> Result<()> {
+        if let Some(clear_color) = main_world.get_resource::<ClearColor>() {
+            self.0 = clear_color.0;
+        }
+        Ok(())
+    }
+}
+
+pub struct ClearColorPlugin(pub Color);
+
+impl Default for ClearColorPlugin {
+    fn default() -> Self {
+        Self(Color::BLACK)
+    }
+}
+
+impl Plugin for ClearColorPlugin {
+    fn build(&self, app: &mut App) -> Result<()> {
+        app.insert_resource(ClearColor(self.0));
+        let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
+        render_app
+            .add_plugin(RenderResourcePlugin::<ClearColor>::default())
+            .unwrap();
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct ClearColorLabel;
@@ -32,6 +77,13 @@ impl Default for ClearColorNode {
 impl ViewNode for ClearColorNode {
     type ViewQueryFetch = &'static ViewTarget;
     type ViewQueryFilter = ();
+
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
+        if let Some(clear_color) = render_world.get_resource::<ClearColor>() {
+            self.color = clear_color.0;
+        }
+        Ok(())
+    }
 
     fn run(
         &self,

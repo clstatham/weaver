@@ -126,6 +126,44 @@ impl<T: Resource> SystemParam for ResMut<T> {
     }
 }
 
+macro_rules! impl_system_param_tuple {
+    ($($param:ident),*) => {
+        #[allow(unused)]
+        impl<$($param),*> SystemParam for ($($param),*)
+        where
+            $($param: SystemParam),*
+        {
+            fn access() -> SystemAccess {
+                let mut access = SystemAccess {
+                    exclusive: false,
+                    resources_read: Vec::new(),
+                    resources_written: Vec::new(),
+                    components_read: Vec::new(),
+                    components_written: Vec::new(),
+                };
+
+                $(
+                    access.extend($param::access());
+                )*
+
+                access
+            }
+
+            fn fetch(world: &World) -> Option<Self> {
+                Some(($($param::fetch(world)?),*))
+            }
+        }
+    };
+}
+
+impl_system_param_tuple!(A, B);
+impl_system_param_tuple!(A, B, C);
+impl_system_param_tuple!(A, B, C, D);
+impl_system_param_tuple!(A, B, C, D, E);
+impl_system_param_tuple!(A, B, C, D, E, F);
+impl_system_param_tuple!(A, B, C, D, E, F, G);
+impl_system_param_tuple!(A, B, C, D, E, F, G, H);
+
 pub trait FunctionSystem<Marker>: 'static + Send + Sync {
     fn into_system(self) -> Arc<dyn System>;
 }

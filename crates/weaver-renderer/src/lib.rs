@@ -1,11 +1,15 @@
 use std::{
+    any::{Any, TypeId},
+    fmt::Debug,
+    hash::Hash,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
 
 use asset::ExtractedRenderAssets;
 use bind_group::{BindGroupLayoutCache, ExtractedAssetBindGroups};
-use camera::CameraPlugin;
+use camera::{CameraPlugin, ViewTarget};
+use graph::RenderGraph;
 use mesh::MeshPlugin;
 use pipeline::RenderPipelineCache;
 use texture::{
@@ -27,10 +31,12 @@ pub mod bind_group;
 pub mod buffer;
 pub mod camera;
 pub mod clear_color;
+pub mod draw_fn;
 pub mod extract;
 pub mod graph;
 pub mod mesh;
 pub mod pipeline;
+pub mod render_command;
 pub mod shader;
 pub mod texture;
 pub mod transform;
@@ -38,12 +44,54 @@ pub mod transform;
 pub mod prelude {
     pub use super::{
         camera::{Camera, CameraPlugin},
+        draw_fn::{AddDrawFn, DrawFn, DrawFunctions},
         extract::RenderComponent,
-        graph::{DrawFn, RenderGraph, RenderNode, Slot},
+        graph::{RenderGraph, RenderNode, Slot},
         Renderer, RendererPlugin,
     };
     pub use encase;
     pub use wgpu;
+}
+
+#[derive(Clone, Copy)]
+pub struct RenderId {
+    pub id: TypeId,
+    pub name: &'static str,
+}
+
+impl RenderId {
+    pub fn of<T: RenderLabel>(label: T) -> Self {
+        Self {
+            id: TypeId::of::<T>(),
+            name: label.name(),
+        }
+    }
+}
+
+impl Debug for RenderId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("RenderId").field(&self.name).finish()
+    }
+}
+
+impl PartialEq for RenderId {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for RenderId {}
+
+impl Hash for RenderId {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+pub trait RenderLabel: Any + Clone + Copy {
+    fn name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
 }
 
 pub struct RenderApp;
@@ -265,6 +313,10 @@ impl Plugin for RendererPlugin {
         render_app.push_update_stage::<Render>();
         render_app.push_update_stage::<PostRender>();
 
+        let mut render_graph = RenderGraph::new();
+        render_graph.set_inputs(vec![]).unwrap();
+        render_app.insert_resource(render_graph);
+
         render_app.insert_resource(RenderPipelineCache::new());
         render_app.insert_resource(BindGroupLayoutCache::new());
         render_app.insert_resource(ExtractedRenderAssets::new());
@@ -272,6 +324,7 @@ impl Plugin for RendererPlugin {
 
         render_app.add_system(resize_surface, PreRender);
         render_app.add_system_after(begin_render, resize_surface, PreRender);
+        render_app.add_system(render_system, Render);
         render_app.add_system(end_render, PostRender);
 
         render_app.add_plugin(CameraPlugin)?;
@@ -442,5 +495,24 @@ fn resize_surface(render_world: &mut World) -> Result<()> {
 
         renderer.depth_texture = Some(Arc::new(depth_texture));
     }
+    Ok(())
+}
+
+pub fn render_system(render_world: &mut World) -> Result<()> {
+    let mut render_graph = render_world.get_resource_mut::<RenderGraph>().unwrap();
+    let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
+    let device = render_world.get_resource::<WgpuDevice>().unwrap();
+    let queue = render_world.get_resource::<WgpuQueue>().unwrap();
+
+    render_graph.prepare(render_world).unwrap();
+
+    // todo: don't assume every camera wants to run the whole main render graph
+    let view_targets = render_world.query::<&ViewTarget>();
+    for entity in view_targets.entity_iter() {
+        render_graph
+            .run(&device, &queue, &mut renderer, render_world, entity)
+            .unwrap();
+    }
+
     Ok(())
 }

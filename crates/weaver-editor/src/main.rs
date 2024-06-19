@@ -4,14 +4,14 @@ use weaver::{
     weaver_app::App,
     weaver_core::{input::InputPlugin, mesh::Mesh, time::TimePlugin},
     weaver_ecs::world::World,
-    weaver_pbr::{camera::PbrCamera, material::Material, PbrPlugin},
+    weaver_pbr::{material::Material, PbrPlugin},
     weaver_renderer::{camera::Camera, RendererPlugin},
     weaver_winit::WinitPlugin,
 };
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_egui::prelude::*;
-use weaver_renderer::camera::PrimaryCamera;
+use weaver_renderer::{camera::PrimaryCamera, clear_color::ClearColorPlugin};
 use weaver_winit::Window;
 
 pub mod camera;
@@ -57,6 +57,7 @@ fn main() -> Result<()> {
         .add_plugin(LogFrameTimePlugin {
             log_interval: std::time::Duration::from_secs(1),
         })?
+        .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
         .insert_resource(EditorState::default())
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)
@@ -79,7 +80,6 @@ fn setup(world: &mut World) -> Result<()> {
             0.1,
             100.0,
         ),
-        PbrCamera::new(Color::new(0.1, 0.1, 0.1, 1.0)),
         *camera::FlyCameraController {
             aspect: 1280.0 / 720.0,
             ..Default::default()

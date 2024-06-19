@@ -7,13 +7,13 @@ use weaver_renderer::{
     bind_group::{BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup},
     buffer::GpuBuffer,
     camera::{GpuCamera, ViewTarget},
-    graph::{RenderCtx, RenderGraphCtx, RenderLabel, ViewNode},
+    graph::{RenderCtx, RenderGraphCtx, ViewNode},
     mesh::GpuMesh,
     pipeline::{CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout},
     prelude::*,
     shader::Shader,
     texture::format::{DEPTH_FORMAT, VIEW_FORMAT},
-    WgpuDevice, WgpuQueue,
+    RenderLabel, WgpuDevice, WgpuQueue,
 };
 use weaver_util::{lock::Lock, prelude::Result};
 
@@ -82,20 +82,22 @@ pub struct PbrNodeLabel;
 impl RenderLabel for PbrNodeLabel {}
 
 pub struct PbrNode {
-    #[allow(unused)]
-    camera_entity: Entity, // todo: use for culling
-
     #[allow(clippy::type_complexity)]
     unique_material_meshes:
         Lock<HashMap<(Handle<BindGroup<GpuMaterial>>, Handle<GpuMesh>), UniqueMaterialMesh>>,
 }
 
-impl PbrNode {
-    pub fn new(camera_entity: Entity) -> Self {
+impl Default for PbrNode {
+    fn default() -> Self {
         Self {
-            camera_entity,
             unique_material_meshes: Lock::new(HashMap::new()),
         }
+    }
+}
+
+impl PbrNode {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 

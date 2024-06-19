@@ -13,7 +13,6 @@ use crate::{
     buffer::GpuBufferVec,
     end_render,
     extract::{RenderComponent, RenderComponentPlugin},
-    graph::RenderGraph,
     CurrentFrame, PostRender, PreRender, WgpuDevice, WgpuQueue,
 };
 
@@ -174,6 +173,7 @@ impl Default for Camera {
 
 #[derive(Component, Reflect)]
 pub struct GpuCamera {
+    pub camera: Camera,
     #[reflect(ignore)]
     pub uniform_buffer: GpuBufferVec<CameraUniform>,
 }
@@ -195,7 +195,10 @@ impl RenderComponent for GpuCamera {
             GpuBufferVec::new(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
         uniform_buffer.push(CameraUniform::from(&*camera));
 
-        Some(Self { uniform_buffer })
+        Some(Self {
+            camera: *camera,
+            uniform_buffer,
+        })
     }
 
     fn update_render_component(
@@ -208,6 +211,8 @@ impl RenderComponent for GpuCamera {
 
         let device = render_world.get_resource::<WgpuDevice>().unwrap();
         let queue = render_world.get_resource::<WgpuQueue>().unwrap();
+
+        self.camera = *camera;
 
         self.uniform_buffer.clear();
         self.uniform_buffer.push(CameraUniform::from(&*camera));
@@ -255,68 +260,11 @@ impl CreateBindGroup for GpuCamera {
     }
 }
 
-#[derive(Component, Reflect)]
-pub struct CameraRenderGraph {
-    #[reflect(ignore)]
-    render_graph: RenderGraph,
-    #[reflect(ignore)]
-    camera_entity: Entity,
-}
-
-impl CameraRenderGraph {
-    pub fn new(camera_entity: Entity) -> Self {
-        let mut render_graph = RenderGraph::new();
-        render_graph.set_inputs(vec![]).unwrap();
-        Self {
-            render_graph,
-            camera_entity,
-        }
-    }
-
-    pub fn render_graph(&self) -> &RenderGraph {
-        &self.render_graph
-    }
-
-    pub fn render_graph_mut(&mut self) -> &mut RenderGraph {
-        &mut self.render_graph
-    }
-
-    pub fn camera_entity(&self) -> Entity {
-        self.camera_entity
-    }
-}
-
-impl RenderComponent for CameraRenderGraph {
-    type ExtractQuery<'a> = &'a Camera;
-
-    fn extract_render_component(
-        entity: Entity,
-        _main_world: &mut World,
-        _render_world: &mut World,
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        Some(Self::new(entity))
-    }
-
-    fn update_render_component(
-        &mut self,
-        entity: Entity,
-        _main_world: &mut World,
-        _render_world: &mut World,
-    ) -> Result<()> {
-        self.camera_entity = entity;
-        Ok(())
-    }
-}
-
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut weaver_app::App) -> Result<()> {
         app.add_plugin(RenderComponentPlugin::<GpuCamera>::default())?;
-        app.add_plugin(RenderComponentPlugin::<CameraRenderGraph>::default())?;
         app.add_plugin(RenderComponentPlugin::<PrimaryCamera>::default())?;
         app.add_plugin(ComponentBindGroupPlugin::<GpuCamera>::default())?;
 

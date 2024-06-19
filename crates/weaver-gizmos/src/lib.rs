@@ -2,14 +2,19 @@ use std::path::Path;
 
 use weaver_app::{plugin::Plugin, App, PrepareFrame};
 use weaver_core::{color::Color, prelude::Mat4, transform::Transform};
-use weaver_ecs::{component::Res, prelude::Resource, storage::Ref, world::World};
-use weaver_pbr::render::PbrNodeLabel;
+use weaver_ecs::{
+    component::Res,
+    prelude::Resource,
+    storage::Ref,
+    world::{FromWorld, World},
+};
+use weaver_pbr::PbrSubGraph;
 use weaver_renderer::{
     bind_group::{BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup},
     buffer::{GpuBuffer, GpuBufferVec},
-    camera::{CameraRenderGraph, GpuCamera, ViewTarget},
+    camera::{GpuCamera, ViewTarget},
     extract::{RenderResource, RenderResourcePlugin},
-    graph::{RenderLabel, ViewNode, ViewNodeRunner},
+    graph::{RenderGraphApp, ViewNode, ViewNodeRunner},
     mesh::primitive::{CubePrimitive, Primitive},
     pipeline::{
         CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout,
@@ -18,7 +23,7 @@ use weaver_renderer::{
     prelude::*,
     shader::Shader,
     texture::format::VIEW_FORMAT,
-    PreRender, RenderApp, WgpuDevice, WgpuQueue,
+    RenderApp, RenderLabel, WgpuDevice, WgpuQueue,
 };
 use weaver_util::{lock::SharedLock, prelude::Result};
 
@@ -143,6 +148,10 @@ impl Gizmos {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct GizmoSubGraph;
+impl RenderLabel for GizmoSubGraph {}
+
+#[derive(Debug, Clone, Copy)]
 pub struct GizmoNodeLabel;
 impl RenderLabel for GizmoNodeLabel {}
 
@@ -167,6 +176,13 @@ impl GizmoRenderNode {
             color_buffer,
             bind_group: None,
         }
+    }
+}
+
+impl FromWorld for GizmoRenderNode {
+    fn from_world(world: &World) -> Self {
+        let device = world.get_resource::<WgpuDevice>().unwrap();
+        Self::new(&device)
     }
 }
 
@@ -440,37 +456,23 @@ impl Plugin for GizmoPlugin {
         render_app.insert_resource(gizmos);
         render_app.add_plugin(RenderPipelinePlugin::<GizmoRenderNode>::default())?;
         render_app.add_plugin(RenderResourcePlugin::<RenderCubeGizmo>::default())?;
-        render_app.add_system(inject_gizmo_render_node, PreRender);
 
         Ok(())
     }
-}
 
-fn inject_gizmo_render_node(render_world: &mut World) -> Result<()> {
-    let cameras = render_world.query::<&mut CameraRenderGraph>();
-    for (_, mut graph) in cameras.iter() {
-        if graph.render_graph().has_node(GizmoNodeLabel) {
-            continue;
-        }
+    fn finish(&self, app: &mut App) -> Result<()> {
+        let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
 
-        if graph.render_graph().has_node(PbrNodeLabel) {
-            let device = render_world.get_resource::<WgpuDevice>().unwrap();
-            graph
-                .render_graph_mut()
-                .add_node(
-                    GizmoNodeLabel,
-                    ViewNodeRunner::new(GizmoRenderNode::new(&device), render_world),
-                )
-                .unwrap();
+        render_app.add_render_sub_graph(GizmoSubGraph, vec![]);
+        render_app.add_render_sub_graph_node::<ViewNodeRunner<GizmoRenderNode>>(
+            GizmoSubGraph,
+            GizmoNodeLabel,
+        );
 
-            graph
-                .render_graph_mut()
-                .try_add_node_edge(PbrNodeLabel, GizmoNodeLabel)
-                .unwrap();
-        }
+        render_app.add_render_main_graph_edge(PbrSubGraph, GizmoSubGraph);
+
+        Ok(())
     }
-
-    Ok(())
 }
 
 fn clear_gizmos(gizmos: Res<Gizmos>) -> Result<()> {

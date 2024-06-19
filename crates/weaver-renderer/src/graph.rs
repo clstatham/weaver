@@ -1,155 +1,16 @@
-use std::{
-    any::{Any, TypeId},
-    collections::HashMap,
-    fmt::Debug,
-    hash::Hash,
-    sync::Arc,
-};
+use std::{collections::HashMap, fmt::Debug, hash::Hash, sync::Arc};
 
 use petgraph::{prelude::*, visit::Topo};
+use weaver_app::SubApp;
 use weaver_ecs::{
     entity::Entity,
     prelude::Resource,
     query::{Query, QueryFetch, QueryFilter},
-    world::World,
+    world::{FromWorld, World},
 };
-use weaver_util::{
-    lock::{Lock, Read, Write},
-    prelude::{anyhow, bail, impl_downcast, DowncastSync, Result},
-    TypeIdMap,
-};
+use weaver_util::prelude::{anyhow, bail, impl_downcast, DowncastSync, Result};
 
-use crate::Renderer;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct DrawFnId(u32);
-
-impl DrawFnId {
-    pub fn new(id: u32) -> Self {
-        Self(id)
-    }
-
-    pub fn id(&self) -> u32 {
-        self.0
-    }
-}
-
-pub trait DrawItem: Send + Sync + 'static {
-    fn entity(&self) -> Entity;
-    fn draw_fn(&self) -> DrawFnId;
-}
-
-pub trait DrawFn<T: DrawItem>: 'static + Send + Sync {
-    #[allow(unused_variables)]
-    fn prepare(&mut self, render_world: &World) -> Result<()> {
-        Ok(())
-    }
-
-    fn draw(
-        &mut self,
-        render_world: &World,
-        render_pass: wgpu::RenderPass<'_>,
-        view_entity: Entity,
-        item: &T,
-    ) -> Result<()>;
-}
-
-pub struct DrawFunctionsInner<T: DrawItem> {
-    functions: Vec<Box<dyn DrawFn<T>>>,
-    indices: TypeIdMap<DrawFnId>,
-}
-
-impl<T: DrawItem> DrawFunctionsInner<T> {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        Self {
-            functions: Vec::new(),
-            indices: TypeIdMap::default(),
-        }
-    }
-
-    pub fn add<F: DrawFn<T> + 'static>(&mut self, function: F) -> DrawFnId {
-        let id = DrawFnId::new(self.functions.len() as u32);
-        self.functions.push(Box::new(function));
-        self.indices.insert(TypeId::of::<F>(), id);
-        id
-    }
-
-    pub fn get(&self, id: DrawFnId) -> Option<&dyn DrawFn<T>> {
-        self.functions.get(id.id() as usize).map(|f| f.as_ref())
-    }
-
-    pub fn get_mut(&mut self, id: DrawFnId) -> Option<&mut dyn DrawFn<T>> {
-        self.functions.get_mut(id.id() as usize).map(|f| f.as_mut())
-    }
-
-    pub fn get_id<F: DrawFn<T>>(&self) -> Option<DrawFnId> {
-        self.indices.get(&TypeId::of::<F>()).copied()
-    }
-}
-
-#[derive(Resource)]
-pub struct DrawFunctions<T: DrawItem> {
-    inner: Lock<DrawFunctionsInner<T>>,
-}
-
-impl<T: DrawItem> DrawFunctions<T> {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        Self {
-            inner: Lock::new(DrawFunctionsInner::new()),
-        }
-    }
-
-    pub fn read(&self) -> Read<'_, DrawFunctionsInner<T>> {
-        self.inner.read()
-    }
-
-    pub fn write(&self) -> Write<'_, DrawFunctionsInner<T>> {
-        self.inner.write()
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct RenderId {
-    pub id: TypeId,
-    pub name: &'static str,
-}
-
-impl RenderId {
-    pub fn of<T: RenderLabel>(label: T) -> Self {
-        Self {
-            id: TypeId::of::<T>(),
-            name: label.name(),
-        }
-    }
-}
-
-impl Debug for RenderId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("RenderId").field(&self.name).finish()
-    }
-}
-
-impl PartialEq for RenderId {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for RenderId {}
-
-impl Hash for RenderId {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
-}
-
-pub trait RenderLabel: Any + Debug + Clone + Copy {
-    fn name(&self) -> &'static str {
-        std::any::type_name::<Self>()
-    }
-}
+use crate::{RenderId, RenderLabel, Renderer};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RenderEdge {
@@ -277,12 +138,17 @@ impl<T: ViewNode> RenderNode for ViewNodeRunner<T> {
         render_ctx: &mut RenderCtx,
     ) -> Result<()> {
         let Some(view_query) = self.view_query.get(graph_ctx.view_entity) else {
-            log::warn!("View query not found");
             return Ok(());
         };
 
         self.node
             .run(render_world, graph_ctx, render_ctx, &view_query)
+    }
+}
+
+impl<T: ViewNode + FromWorld> FromWorld for ViewNodeRunner<T> {
+    fn from_world(world: &World) -> Self {
+        Self::new(T::from_world(world), world)
     }
 }
 
@@ -397,14 +263,20 @@ impl RenderNodeState {
 pub struct RenderCtx<'a> {
     pub device: &'a wgpu::Device,
     pub queue: &'a wgpu::Queue,
+    pub renderer: &'a mut Renderer,
     command_encoder: Option<wgpu::CommandEncoder>,
 }
 
 impl<'a> RenderCtx<'a> {
-    pub fn new(device: &'a wgpu::Device, queue: &'a wgpu::Queue) -> Self {
+    pub fn new(
+        device: &'a wgpu::Device,
+        queue: &'a wgpu::Queue,
+        renderer: &'a mut Renderer,
+    ) -> Self {
         Self {
             device,
             queue,
+            renderer,
             command_encoder: None,
         }
     }
@@ -418,8 +290,10 @@ impl<'a> RenderCtx<'a> {
         })
     }
 
-    pub fn end(&mut self) -> Option<wgpu::CommandBuffer> {
-        self.command_encoder.take().map(|encoder| encoder.finish())
+    pub fn end(&mut self) {
+        if let Some(buffer) = self.command_encoder.take().map(|encoder| encoder.finish()) {
+            self.renderer.enqueue_command_buffer(buffer);
+        }
     }
 
     pub fn begin_render_pass<'b, 't: 'b>(
@@ -483,6 +357,78 @@ impl RenderNode for GraphInputNode {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct GraphOutputLabel;
+impl RenderLabel for GraphOutputLabel {}
+
+pub struct GraphOutputNode {
+    pub outputs: Vec<SlotType>,
+}
+
+impl RenderNode for GraphOutputNode {
+    fn input_slots(&self) -> Vec<SlotType> {
+        self.outputs.clone()
+    }
+
+    fn output_slots(&self) -> Vec<SlotType> {
+        self.outputs.clone()
+    }
+
+    fn run(
+        &self,
+        _render_world: &World,
+        graph_ctx: &mut RenderGraphCtx,
+        _render_ctx: &mut RenderCtx,
+    ) -> Result<()> {
+        for i in 0..self.outputs.len() {
+            graph_ctx.set_output(i, graph_ctx.input(i).clone());
+        }
+
+        Ok(())
+    }
+}
+
+pub struct SubGraphNode {
+    pub sub_graph_id: RenderId,
+    pub sub_graph: RenderGraph,
+}
+
+impl RenderNode for SubGraphNode {
+    fn input_slots(&self) -> Vec<SlotType> {
+        self.sub_graph
+            .get_node_state(GraphInputLabel)
+            .map(|node| node.input_slots.clone())
+            .unwrap_or_default()
+    }
+
+    fn output_slots(&self) -> Vec<SlotType> {
+        self.sub_graph
+            .get_node_state(GraphInputLabel)
+            .map(|node| node.output_slots.clone())
+            .unwrap_or_default()
+    }
+
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
+        self.sub_graph.prepare(render_world)
+    }
+
+    fn run(
+        &self,
+        render_world: &World,
+        graph_ctx: &mut RenderGraphCtx,
+        render_ctx: &mut RenderCtx,
+    ) -> Result<()> {
+        self.sub_graph.run(
+            render_ctx.device,
+            render_ctx.queue,
+            render_ctx.renderer,
+            render_world,
+            graph_ctx.view_entity,
+        )
+    }
+}
+
+#[derive(Resource)]
 pub struct RenderGraph {
     graph: StableDiGraph<RenderNodeState, ()>,
     node_ids: HashMap<RenderId, NodeIndex>,
@@ -743,11 +689,13 @@ impl RenderGraph {
         render_world: &World,
         view_entity: Entity,
     ) -> Result<()> {
+        self.validate()?;
+
         let mut search = Topo::new(&self.graph);
 
         let mut output_cache: HashMap<RenderId, Vec<Slot>> = HashMap::new();
 
-        let mut render_ctx = RenderCtx::new(device, queue);
+        let mut render_ctx = RenderCtx::new(device, queue, renderer);
 
         while let Some(node) = search.next(&self.graph) {
             let node_state = &self.graph[node];
@@ -814,10 +762,104 @@ impl RenderGraph {
             output_cache.insert(node_state.node_id, outputs);
         }
 
-        if let Some(commands) = render_ctx.end() {
-            renderer.enqueue_command_buffer(commands);
-        }
+        render_ctx.end();
 
         Ok(())
+    }
+}
+
+pub trait RenderGraphApp {
+    fn add_render_main_graph_node<T: RenderNode + FromWorld>(
+        &mut self,
+        label: impl RenderLabel,
+    ) -> &mut Self;
+    fn add_render_main_graph_edge(
+        &mut self,
+        from: impl RenderLabel,
+        to: impl RenderLabel,
+    ) -> &mut Self;
+
+    fn add_render_sub_graph(&mut self, graph: impl RenderLabel, inputs: Vec<SlotType>)
+        -> &mut Self;
+    fn add_render_sub_graph_node<T: RenderNode + FromWorld>(
+        &mut self,
+        sub_graph: impl RenderLabel,
+        label: impl RenderLabel,
+    ) -> &mut Self;
+    fn add_render_sub_graph_edge(
+        &mut self,
+        sub_graph: impl RenderLabel,
+        from: impl RenderLabel,
+        to: impl RenderLabel,
+    ) -> &mut Self;
+}
+
+impl RenderGraphApp for SubApp {
+    fn add_render_main_graph_node<T: RenderNode + FromWorld>(
+        &mut self,
+        label: impl RenderLabel,
+    ) -> &mut Self {
+        let node = T::from_world(self.world());
+        let mut render_graph = self.world_mut().get_resource_mut::<RenderGraph>().unwrap();
+        render_graph.add_node(label, node).unwrap();
+        self
+    }
+
+    fn add_render_main_graph_edge(
+        &mut self,
+        from: impl RenderLabel,
+        to: impl RenderLabel,
+    ) -> &mut Self {
+        let mut render_graph = self.world_mut().get_resource_mut::<RenderGraph>().unwrap();
+        render_graph.try_add_node_edge(from, to).unwrap();
+        self
+    }
+
+    fn add_render_sub_graph(
+        &mut self,
+        graph: impl RenderLabel,
+        inputs: Vec<SlotType>,
+    ) -> &mut Self {
+        let mut render_graph = self.world_mut().get_resource_mut::<RenderGraph>().unwrap();
+        let mut sub_graph = RenderGraph::new();
+        sub_graph.set_inputs(inputs).unwrap();
+        render_graph
+            .add_node(
+                graph,
+                SubGraphNode {
+                    sub_graph_id: RenderId::of(graph),
+                    sub_graph,
+                },
+            )
+            .unwrap();
+        self
+    }
+
+    fn add_render_sub_graph_node<T: RenderNode + FromWorld>(
+        &mut self,
+        sub_graph: impl RenderLabel,
+        label: impl RenderLabel,
+    ) -> &mut Self {
+        let node = T::from_world(self.world());
+        let mut render_graph = self.world_mut().get_resource_mut::<RenderGraph>().unwrap();
+        let sub_graph = render_graph
+            .get_node_mut::<SubGraphNode>(sub_graph)
+            .unwrap();
+        sub_graph.sub_graph.add_node(label, node).unwrap();
+        self
+    }
+
+    fn add_render_sub_graph_edge(
+        &mut self,
+        sub_graph: impl RenderLabel,
+        from: impl RenderLabel,
+        to: impl RenderLabel,
+    ) -> &mut Self {
+        let mut render_graph = self.world_mut().get_resource_mut::<RenderGraph>().unwrap();
+        let sub_graph = render_graph
+            .get_node_mut::<SubGraphNode>(sub_graph)
+            .unwrap();
+        sub_graph.sub_graph.try_add_node_edge(from, to).unwrap();
+        self
     }
 }

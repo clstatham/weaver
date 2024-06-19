@@ -12,6 +12,7 @@ use super::{
     world::World,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueryAccess {
     ReadOnly,
     ReadWrite,
@@ -181,6 +182,30 @@ pub trait QueryFetch: Send + Sync {
     fn test_archetype(archetype: &Archetype) -> bool;
 }
 
+impl QueryFetch for () {
+    type Columns = ();
+    type Fetch = ();
+    fn access() -> &'static [(TypeId, QueryAccess)] {
+        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
+        ACCESS.get_or_init(Vec::new)
+    }
+
+    fn fetch_columns<F>(_: &Storage, _: &F) -> Vec<Self::Columns>
+    where
+        F: Fn(&Archetype) -> bool,
+    {
+        Vec::new()
+    }
+
+    fn iter(_: &Self::Columns) -> impl Iterator<Item = (Entity, Self::Fetch)> {
+        std::iter::empty()
+    }
+
+    fn test_archetype(_: &Archetype) -> bool {
+        true
+    }
+}
+
 impl<T: Component> QueryFetch for &T {
     type Columns = ColumnRef;
     type Fetch = Ref<T>;
@@ -241,28 +266,28 @@ impl<T: Component> QueryFetch for &mut T {
 
 macro_rules! impl_query_fetch {
     ($($param:ident),*) => {
-        impl<$($param: QueryFetchParam<Column = ColumnRef> + QueryFetch),*> QueryFetch for ($($param,)*) {
-            type Columns = ($($param::Column,)*);
+        impl<$($param: QueryFetch),*> QueryFetch for ($($param,)*) {
+            type Columns = ($($param::Columns,)*);
             type Fetch = ($(
-                <$param as QueryFetchParam>::Fetch,
+                <$param as QueryFetch>::Fetch,
                 )*);
 
             fn access() -> &'static [(TypeId, QueryAccess)] {
                 static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
-                ACCESS.get_or_init(|| vec![$((<$param as QueryFetchParam>::type_id(), <$param as QueryFetchParam>::access()),)*])
+                ACCESS.get_or_init(|| vec![$($param::access(),)*].concat())
             }
 
             fn fetch_columns<Test>(storage: &Storage, test_archetype: &Test) -> Vec<Self::Columns>
             where
                 Test: Fn(&Archetype) -> bool,
             {
-                itertools::multizip(($(<$param as QueryFetchParam>::fetch_columns(storage, test_archetype).into_iter(),)*)).collect_vec()
+                itertools::multizip(($(<$param as QueryFetch>::fetch_columns(storage, test_archetype).into_iter(),)*)).collect_vec()
             }
 
             #[allow(non_snake_case, unused)]
             fn iter(columns: &Self::Columns) -> impl Iterator<Item = (Entity, Self::Fetch)> {
                 let ($($param,)*) = columns;
-                itertools::multizip(($(<$param as QueryFetchParam>::iter($param),)*))
+                itertools::multizip(($(<$param as QueryFetch>::iter($param),)*))
                 .map(|params| {
                     let ($($param,)*) = params;
                     $(
@@ -274,7 +299,6 @@ macro_rules! impl_query_fetch {
                     )
                 })
             }
-
 
             fn test_archetype(archetype: &Archetype) -> bool {
                 $(
@@ -307,7 +331,7 @@ impl QueryFilter for () {
 
 macro_rules! impl_query_filter {
     ($($param:ident),*) => {
-        impl<$($param: QueryFetch),*> QueryFilter for ($($param,)*) {
+        impl<$($param: QueryFilter),*> QueryFilter for ($($param,)*) {
             fn test_archetype(archetype: &Archetype) -> bool {
                 $(
                     $param::test_archetype(archetype) &&
@@ -380,6 +404,15 @@ where
         }
 
         None
+    }
+
+    pub fn entity_iter(&self) -> impl Iterator<Item = Entity> + '_ {
+        self.iter().map(|(entity, item)| {
+            // paranoid drop the item so that the column doesn't stay locked
+            // todo: remove?
+            drop(item);
+            entity
+        })
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Entity, Q::Fetch)> + '_ {
