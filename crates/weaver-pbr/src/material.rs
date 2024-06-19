@@ -139,7 +139,7 @@ impl Asset for Material {
 
 #[derive(Debug, Copy, Clone, ShaderType)]
 #[repr(C)]
-struct MaterialMetaUniform {
+pub struct MaterialMetaUniform {
     diffuse: Color,
     metallic: f32,
     roughness: f32,
@@ -148,7 +148,7 @@ struct MaterialMetaUniform {
 }
 
 pub struct GpuMaterial {
-    meta: GpuBufferVec<MaterialMetaUniform>,
+    pub meta: GpuBufferVec<MaterialMetaUniform>,
 
     pub diffuse_texture: GpuTexture,
     pub diffuse_texture_sampler: wgpu::Sampler,

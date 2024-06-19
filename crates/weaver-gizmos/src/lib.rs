@@ -2,16 +2,14 @@ use std::path::Path;
 
 use weaver_app::{plugin::Plugin, App, PrepareFrame};
 use weaver_core::{color::Color, prelude::Mat4, transform::Transform};
-use weaver_ecs::{component::Res, prelude::Resource, query::Query, world::World};
-use weaver_pbr::{
-    camera::{CameraRenderComponent, PbrCameraBindGroupNode},
-    render::PbrNode,
-};
+use weaver_ecs::{component::Res, prelude::Resource, storage::Ref, world::World};
+use weaver_pbr::render::PbrNodeLabel;
 use weaver_renderer::{
     bind_group::{BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup},
     buffer::{GpuBuffer, GpuBufferVec},
-    camera::GpuCamera,
+    camera::{CameraRenderGraph, GpuCamera, ViewTarget},
     extract::{RenderResource, RenderResourcePlugin},
+    graph::{RenderLabel, ViewNode, ViewNodeRunner},
     mesh::primitive::{CubePrimitive, Primitive},
     pipeline::{
         CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout,
@@ -22,10 +20,7 @@ use weaver_renderer::{
     texture::format::VIEW_FORMAT,
     PreRender, RenderApp, WgpuDevice, WgpuQueue,
 };
-use weaver_util::{
-    lock::SharedLock,
-    prelude::{anyhow, Result},
-};
+use weaver_util::{lock::SharedLock, prelude::Result};
 
 use wgpu::util::DeviceExt;
 
@@ -146,6 +141,10 @@ impl Gizmos {
         ));
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct GizmoNodeLabel;
+impl RenderLabel for GizmoNodeLabel {}
 
 pub struct GizmoRenderNode {
     transform_buffer: GpuBufferVec<Mat4>,
@@ -316,7 +315,10 @@ impl CreateRenderPipeline for GizmoRenderNode {
     }
 }
 
-impl Render for GizmoRenderNode {
+impl ViewNode for GizmoRenderNode {
+    type ViewQueryFetch = &'static ViewTarget;
+    type ViewQueryFilter = ();
+
     fn prepare(&mut self, render_world: &mut World) -> Result<()> {
         let Some(gizmos) = render_world.get_resource::<Gizmos>() else {
             return Ok(());
@@ -344,51 +346,44 @@ impl Render for GizmoRenderNode {
             self.bind_group = Some(bind_group);
         }
 
+        let mut pipeline_cache = render_world
+            .get_resource_mut::<RenderPipelineCache>()
+            .unwrap();
+        let mut bind_group_layout_cache = render_world
+            .get_resource_mut::<BindGroupLayoutCache>()
+            .unwrap();
+        pipeline_cache.get_or_create_pipeline::<Self>(&device, &mut bind_group_layout_cache);
+
         Ok(())
     }
 
-    fn render(&mut self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>> {
+    fn run(
+        &self,
+        render_world: &World,
+        graph_ctx: &mut weaver_renderer::graph::RenderGraphCtx,
+        render_ctx: &mut weaver_renderer::graph::RenderCtx,
+        view_query: &Ref<ViewTarget>,
+    ) -> Result<()> {
         let Some(gizmos) = render_world.get_resource::<Gizmos>() else {
-            return Ok(input_slots.to_vec());
-        };
-
-        let Slot::Texture(color_target) = &input_slots[0] else {
-            return Err(anyhow!("Expected a texture slot"));
-        };
-
-        let Slot::Texture(depth_target) = &input_slots[1] else {
-            return Err(anyhow!("Expected a texture slot"));
-        };
-
-        let Slot::BindGroup(camera_bind_group) = &input_slots[2] else {
-            return Err(anyhow!("Expected a bind group slot"));
+            return Ok(());
         };
 
         let cube_resource = render_world.get_resource::<RenderCubeGizmo>().unwrap();
 
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+        let pipeline_cache = render_world.get_resource::<RenderPipelineCache>().unwrap();
+        let pipeline = pipeline_cache.get_pipeline::<Self>().unwrap();
 
-        let mut bind_group_layout_cache = render_world
-            .get_resource_mut::<BindGroupLayoutCache>()
+        let camera_bind_group = render_world
+            .get_component::<BindGroup<GpuCamera>>(graph_ctx.view_entity)
             .unwrap();
 
-        let mut pipeline_cache = render_world
-            .get_resource_mut::<RenderPipelineCache>()
-            .unwrap();
-        let pipeline =
-            pipeline_cache.get_or_create_pipeline::<Self>(&device, &mut bind_group_layout_cache);
-
-        let bind_group = self.bind_group.as_ref().unwrap().bind_group();
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("GizmoCommandEncoder"),
-        });
+        let gizmo_bind_group = self.bind_group.as_ref().unwrap().bind_group();
 
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = render_ctx.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("GizmoRenderPass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_target,
+                    view: &view_query.color_target,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -396,7 +391,7 @@ impl Render for GizmoRenderNode {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth_target,
+                    view: &view_query.depth_target,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -407,9 +402,9 @@ impl Render for GizmoRenderNode {
                 occlusion_query_set: None,
             });
 
-            render_pass.set_pipeline(&pipeline);
-            render_pass.set_bind_group(0, bind_group, &[]);
-            render_pass.set_bind_group(1, camera_bind_group, &[]);
+            render_pass.set_pipeline(pipeline);
+            render_pass.set_bind_group(0, gizmo_bind_group, &[]);
+            render_pass.set_bind_group(1, &camera_bind_group, &[]);
 
             for (i, gizmo) in gizmos.gizmos.read().iter().enumerate() {
                 match gizmo.gizmo {
@@ -429,11 +424,7 @@ impl Render for GizmoRenderNode {
             }
         }
 
-        let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
-
-        renderer.enqueue_command_buffer(encoder.finish());
-
-        Ok(input_slots.to_vec())
+        Ok(())
     }
 }
 
@@ -455,25 +446,27 @@ impl Plugin for GizmoPlugin {
     }
 }
 
-fn inject_gizmo_render_node(
-    cameras: Query<&mut CameraRenderComponent>,
-    device: Res<WgpuDevice>,
-) -> Result<()> {
-    for (_, mut camera) in cameras.iter() {
-        if camera.graph.has_node::<GizmoRenderNode>() {
+fn inject_gizmo_render_node(render_world: &mut World) -> Result<()> {
+    let cameras = render_world.query::<&mut CameraRenderGraph>();
+    for (_, mut graph) in cameras.iter() {
+        if graph.render_graph().has_node(GizmoNodeLabel) {
             continue;
         }
 
-        if let Some(pbr_node) = camera.graph.node_index::<PbrNode>() {
-            let gizmo_node = camera.graph.add_node(RenderNode::new(
-                "GizmoRenderNode",
-                GizmoRenderNode::new(&device),
-            ));
-            let camera_node = camera.graph.node_index::<PbrCameraBindGroupNode>().unwrap();
+        if graph.render_graph().has_node(PbrNodeLabel) {
+            let device = render_world.get_resource::<WgpuDevice>().unwrap();
+            graph
+                .render_graph_mut()
+                .add_node(
+                    GizmoNodeLabel,
+                    ViewNodeRunner::new(GizmoRenderNode::new(&device), render_world),
+                )
+                .unwrap();
 
-            camera.graph.add_edge(pbr_node, 0, gizmo_node, 0);
-            camera.graph.add_edge(pbr_node, 1, gizmo_node, 1);
-            camera.graph.add_edge(camera_node, 0, gizmo_node, 2);
+            graph
+                .render_graph_mut()
+                .try_add_node_edge(PbrNodeLabel, GizmoNodeLabel)
+                .unwrap();
         }
     }
 

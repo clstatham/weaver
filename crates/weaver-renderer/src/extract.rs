@@ -10,7 +10,7 @@ use weaver_util::prelude::Result;
 use crate::{Extract, ExtractBindGroups, MainWorld, ScratchMainWorld};
 
 pub trait RenderComponent: Component {
-    type ExtractQuery<'a>: QueryFetch<'a> + 'a;
+    type ExtractQuery<'a>: QueryFetch + 'a;
     fn extract_render_component(
         entity: Entity,
         main_world: &mut World,

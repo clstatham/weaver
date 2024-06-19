@@ -1,27 +1,27 @@
 use weaver_core::color::Color;
-use weaver_ecs::{
-    prelude::{Component, Reflect},
-    world::World,
-};
-use weaver_util::prelude::{bail, Result};
+use weaver_ecs::{storage::Ref, world::World};
+use weaver_util::prelude::Result;
 
 use crate::{
-    graph::{Render, Slot},
-    Renderer, WgpuDevice,
+    camera::ViewTarget,
+    graph::{RenderCtx, RenderGraphCtx, RenderLabel, ViewNode},
 };
 
-#[derive(Component, Reflect)]
-pub struct ClearColor {
+#[derive(Debug, Clone, Copy)]
+pub struct ClearColorLabel;
+impl RenderLabel for ClearColorLabel {}
+
+pub struct ClearColorNode {
     pub color: Color,
 }
 
-impl ClearColor {
+impl ClearColorNode {
     pub fn new(color: Color) -> Self {
         Self { color }
     }
 }
 
-impl Default for ClearColor {
+impl Default for ClearColorNode {
     fn default() -> Self {
         Self {
             color: Color::BLACK,
@@ -29,59 +29,47 @@ impl Default for ClearColor {
     }
 }
 
-impl Render for ClearColor {
-    fn render(&mut self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>> {
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
-        let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
+impl ViewNode for ClearColorNode {
+    type ViewQueryFetch = &'static ViewTarget;
+    type ViewQueryFilter = ();
 
-        let Slot::Texture(color_target) = &input_slots[0] else {
-            bail!("Expected a texture slot");
+    fn run(
+        &self,
+        _render_world: &World,
+        _graph_ctx: &mut RenderGraphCtx,
+        render_ctx: &mut RenderCtx,
+        view_query: &Ref<ViewTarget>,
+    ) -> Result<()> {
+        let color = self.color;
+        let color = wgpu::Color {
+            r: color.r as f64,
+            g: color.g as f64,
+            b: color.b as f64,
+            a: color.a as f64,
         };
 
-        let Slot::Texture(depth_target) = &input_slots[1] else {
-            bail!("Expected a texture slot");
-        };
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        let _pass = render_ctx.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("clear_color"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view_query.color_target,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(color),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &view_query.depth_target,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
         });
 
-        let color = wgpu::Color {
-            r: self.color.r as f64,
-            g: self.color.g as f64,
-            b: self.color.b as f64,
-            a: self.color.a as f64,
-        };
-
-        {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("clear_color"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_target,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth_target,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-        }
-
-        renderer.enqueue_command_buffer(encoder.finish());
-
-        Ok(vec![
-            Slot::Texture(color_target.clone()),
-            Slot::Texture(depth_target.clone()),
-        ])
+        Ok(())
     }
 }

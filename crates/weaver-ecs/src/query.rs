@@ -170,8 +170,8 @@ impl<T: Component> QueryFetchParam for &mut T {
     }
 }
 
-pub trait QueryFetch<'a> {
-    type Columns;
+pub trait QueryFetch: Send + Sync {
+    type Columns: Send + Sync;
     type Fetch;
     fn access() -> &'static [(TypeId, QueryAccess)];
     fn fetch_columns<F>(storage: &Storage, test_archetype: &F) -> Vec<Self::Columns>
@@ -181,7 +181,7 @@ pub trait QueryFetch<'a> {
     fn test_archetype(archetype: &Archetype) -> bool;
 }
 
-impl<'a, T: Component> QueryFetch<'a> for &T {
+impl<T: Component> QueryFetch for &T {
     type Columns = ColumnRef;
     type Fetch = Ref<T>;
     fn access() -> &'static [(TypeId, QueryAccess)] {
@@ -210,7 +210,7 @@ impl<'a, T: Component> QueryFetch<'a> for &T {
     }
 }
 
-impl<'a, T: Component> QueryFetch<'a> for &mut T {
+impl<T: Component> QueryFetch for &mut T {
     type Columns = ColumnRef;
     type Fetch = Mut<T>;
     fn access() -> &'static [(TypeId, QueryAccess)] {
@@ -241,7 +241,7 @@ impl<'a, T: Component> QueryFetch<'a> for &mut T {
 
 macro_rules! impl_query_fetch {
     ($($param:ident),*) => {
-        impl<'a, $($param: QueryFetchParam<Column = ColumnRef> + QueryFetch<'a>),*> QueryFetch<'a> for ($($param,)*) {
+        impl<$($param: QueryFetchParam<Column = ColumnRef> + QueryFetch),*> QueryFetch for ($($param,)*) {
             type Columns = ($($param::Column,)*);
             type Fetch = ($(
                 <$param as QueryFetchParam>::Fetch,
@@ -278,7 +278,7 @@ macro_rules! impl_query_fetch {
 
             fn test_archetype(archetype: &Archetype) -> bool {
                 $(
-                    <$param as QueryFetch<'a>>::test_archetype(archetype) &&
+                    <$param as QueryFetch>::test_archetype(archetype) &&
                 )*
                 true
             }
@@ -295,7 +295,7 @@ impl_query_fetch!(A, B, C, D, E, F);
 impl_query_fetch!(A, B, C, D, E, F, G);
 impl_query_fetch!(A, B, C, D, E, F, G, H);
 
-pub trait QueryFilter {
+pub trait QueryFilter: Send + Sync {
     fn test_archetype(archetype: &Archetype) -> bool;
 }
 
@@ -307,7 +307,7 @@ impl QueryFilter for () {
 
 macro_rules! impl_query_filter {
     ($($param:ident),*) => {
-        impl<'a, $($param: QueryFetch<'a>),*> QueryFilter for ($($param,)*) {
+        impl<$($param: QueryFetch),*> QueryFilter for ($($param,)*) {
             fn test_archetype(archetype: &Archetype) -> bool {
                 $(
                     $param::test_archetype(archetype) &&
@@ -343,9 +343,9 @@ impl<T: Component> QueryFilter for Without<T> {
     }
 }
 
-pub struct Query<'a, Q, F = ()>
+pub struct Query<Q, F = ()>
 where
-    Q: QueryFetch<'a> + ?Sized,
+    Q: QueryFetch + ?Sized,
     F: QueryFilter + ?Sized,
 {
     columns: Vec<Q::Columns>,
@@ -353,9 +353,9 @@ where
     _filter: PhantomData<F>,
 }
 
-impl<'a, Q, F> Query<'a, Q, F>
+impl<Q, F> Query<Q, F>
 where
-    Q: QueryFetch<'a> + ?Sized,
+    Q: QueryFetch + ?Sized,
     F: QueryFilter + ?Sized,
 {
     pub fn new(world: &World) -> Self {
@@ -369,6 +369,17 @@ where
             _fetch: PhantomData,
             _filter: PhantomData,
         }
+    }
+
+    pub fn get(&self, entity: Entity) -> Option<Q::Fetch> {
+        for columns in &self.columns {
+            let mut iter = Q::iter(columns);
+            if let Some((_, fetch)) = iter.find(|(e, _)| *e == entity) {
+                return Some(fetch);
+            }
+        }
+
+        None
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Entity, Q::Fetch)> + '_ {

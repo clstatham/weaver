@@ -1,7 +1,4 @@
-use std::sync::{
-    atomic::{AtomicU32, AtomicU64, Ordering},
-    Arc,
-};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use weaver_util::{lock::Lock, prelude::Result};
 
@@ -93,13 +90,11 @@ impl World {
         self.storage.read().has_component::<T>(entity)
     }
 
-    pub fn query<'a, Q: QueryFetch<'a>>(&self) -> Query<'a, Q, ()> {
+    pub fn query<Q: QueryFetch>(&self) -> Query<Q, ()> {
         Query::new(self)
     }
 
-    pub fn query_filtered<'a, Q: QueryFetch<'a>, F: QueryFilter>(
-        self: &Arc<Self>,
-    ) -> Query<'a, Q, F> {
+    pub fn query_filtered<Q: QueryFetch, F: QueryFilter>(&self) -> Query<Q, F> {
         Query::new(self)
     }
 

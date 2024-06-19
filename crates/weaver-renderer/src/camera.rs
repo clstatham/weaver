@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 
 use encase::ShaderType;
 use weaver_core::geometry::Ray;
@@ -8,11 +8,59 @@ use weaver_app::plugin::Plugin;
 use weaver_ecs::prelude::*;
 
 use crate::{
+    begin_render,
     bind_group::{BindGroupLayout, ComponentBindGroupPlugin, CreateBindGroup},
     buffer::GpuBufferVec,
+    end_render,
     extract::{RenderComponent, RenderComponentPlugin},
-    WgpuDevice, WgpuQueue,
+    graph::RenderGraph,
+    CurrentFrame, PostRender, PreRender, WgpuDevice, WgpuQueue,
 };
+
+#[derive(Component, Reflect, Clone, Copy)]
+pub struct PrimaryCamera;
+
+impl RenderComponent for PrimaryCamera {
+    type ExtractQuery<'a> = &'a Self;
+
+    fn extract_render_component(
+        entity: Entity,
+        main_world: &mut World,
+        _render_world: &mut World,
+    ) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        let camera = main_world.get_component::<PrimaryCamera>(entity)?;
+        Some(*camera)
+    }
+
+    fn update_render_component(
+        &mut self,
+        _entity: Entity,
+        _main_world: &mut World,
+        _render_world: &mut World,
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Component, Reflect)]
+pub struct ViewTarget {
+    #[reflect(ignore)]
+    pub color_target: Arc<wgpu::TextureView>,
+    #[reflect(ignore)]
+    pub depth_target: Arc<wgpu::TextureView>,
+}
+
+impl From<&CurrentFrame> for ViewTarget {
+    fn from(current_frame: &CurrentFrame) -> Self {
+        Self {
+            color_target: current_frame.color_view.clone(),
+            depth_target: current_frame.depth_view.clone(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, ShaderType)]
 #[repr(C)]
@@ -207,13 +255,99 @@ impl CreateBindGroup for GpuCamera {
     }
 }
 
+#[derive(Component, Reflect)]
+pub struct CameraRenderGraph {
+    #[reflect(ignore)]
+    render_graph: RenderGraph,
+    #[reflect(ignore)]
+    camera_entity: Entity,
+}
+
+impl CameraRenderGraph {
+    pub fn new(camera_entity: Entity) -> Self {
+        let mut render_graph = RenderGraph::new();
+        render_graph.set_inputs(vec![]).unwrap();
+        Self {
+            render_graph,
+            camera_entity,
+        }
+    }
+
+    pub fn render_graph(&self) -> &RenderGraph {
+        &self.render_graph
+    }
+
+    pub fn render_graph_mut(&mut self) -> &mut RenderGraph {
+        &mut self.render_graph
+    }
+
+    pub fn camera_entity(&self) -> Entity {
+        self.camera_entity
+    }
+}
+
+impl RenderComponent for CameraRenderGraph {
+    type ExtractQuery<'a> = &'a Camera;
+
+    fn extract_render_component(
+        entity: Entity,
+        _main_world: &mut World,
+        _render_world: &mut World,
+    ) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        Some(Self::new(entity))
+    }
+
+    fn update_render_component(
+        &mut self,
+        entity: Entity,
+        _main_world: &mut World,
+        _render_world: &mut World,
+    ) -> Result<()> {
+        self.camera_entity = entity;
+        Ok(())
+    }
+}
+
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut weaver_app::App) -> Result<()> {
         app.add_plugin(RenderComponentPlugin::<GpuCamera>::default())?;
+        app.add_plugin(RenderComponentPlugin::<CameraRenderGraph>::default())?;
+        app.add_plugin(RenderComponentPlugin::<PrimaryCamera>::default())?;
         app.add_plugin(ComponentBindGroupPlugin::<GpuCamera>::default())?;
+
+        app.add_system_after(insert_view_target, begin_render, PreRender);
+        app.add_system_before(remove_view_target, end_render, PostRender);
 
         Ok(())
     }
+}
+
+fn insert_view_target(render_world: &mut World) -> Result<()> {
+    if let Some(current_frame) = render_world.get_resource::<CurrentFrame>() {
+        let query = render_world.query::<&PrimaryCamera>();
+        for (gpu_camera, primary_camera) in query.iter() {
+            let view_target = ViewTarget::from(&*current_frame);
+            drop(primary_camera);
+            render_world.insert_component(gpu_camera, view_target);
+        }
+    } else {
+        log::warn!("CurrentFrame resource not found");
+    }
+
+    Ok(())
+}
+
+fn remove_view_target(render_world: &mut World) -> Result<()> {
+    let query = render_world.query_filtered::<&PrimaryCamera, With<ViewTarget>>();
+    for (gpu_camera, primary_camera) in query.iter() {
+        drop(primary_camera);
+        render_world.remove_component::<ViewTarget>(gpu_camera);
+    }
+
+    Ok(())
 }

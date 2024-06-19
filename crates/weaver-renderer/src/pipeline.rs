@@ -20,6 +20,20 @@ impl RenderPipelineCache {
         Self::default()
     }
 
+    pub fn get_layout<T>(&self) -> Option<&RenderPipelineLayout>
+    where
+        T: CreateRenderPipeline,
+    {
+        self.layout_cache.get(&TypeId::of::<T>())
+    }
+
+    pub fn get_pipeline<T>(&self) -> Option<&RenderPipeline>
+    where
+        T: CreateRenderPipeline,
+    {
+        self.pipeline_cache.get(&TypeId::of::<T>())
+    }
+
     pub fn get_or_create_layout<T>(
         &mut self,
         device: &wgpu::Device,

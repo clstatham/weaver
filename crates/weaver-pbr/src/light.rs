@@ -4,10 +4,9 @@ use weaver_app::{plugin::Plugin, App};
 use weaver_core::{color::Color, prelude::Vec3, transform::Transform};
 use weaver_ecs::prelude::{Component, Reflect, Resource, World};
 use weaver_renderer::{
-    bind_group::{BindGroup, BindGroupLayout, CreateBindGroup, ResourceBindGroupPlugin},
+    bind_group::{BindGroupLayout, CreateBindGroup, ResourceBindGroupPlugin},
     buffer::GpuBufferVec,
     extract::{RenderResource, RenderResourcePlugin},
-    graph::Slot,
     prelude::*,
     WgpuDevice, WgpuQueue,
 };
@@ -116,17 +115,5 @@ impl Plugin for PointLightPlugin {
         render_app.add_plugin(ResourceBindGroupPlugin::<GpuPointLightArray>::default())?;
 
         Ok(())
-    }
-}
-
-pub struct PointLightArrayNode;
-
-impl Render for PointLightArrayNode {
-    fn render(&mut self, render_world: &mut World, _input_slots: &[Slot]) -> Result<Vec<Slot>> {
-        let bind_group = render_world
-            .get_resource::<BindGroup<GpuPointLightArray>>()
-            .expect("Point Light Array Bind Group resource not present");
-
-        Ok(vec![Slot::BindGroup(bind_group.bind_group().clone())])
     }
 }

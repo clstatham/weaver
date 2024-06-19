@@ -39,7 +39,7 @@ pub mod prelude {
     pub use super::{
         camera::{Camera, CameraPlugin},
         extract::RenderComponent,
-        graph::{Render, RenderGraph, RenderNode, Slot},
+        graph::{DrawFn, RenderGraph, RenderNode, Slot},
         Renderer, RendererPlugin,
     };
     pub use encase;
@@ -270,14 +270,14 @@ impl Plugin for RendererPlugin {
         render_app.insert_resource(ExtractedRenderAssets::new());
         render_app.insert_resource(ExtractedAssetBindGroups::new());
 
+        render_app.add_system(resize_surface, PreRender);
+        render_app.add_system_after(begin_render, resize_surface, PreRender);
+        render_app.add_system(end_render, PostRender);
+
         render_app.add_plugin(CameraPlugin)?;
         render_app.add_plugin(TransformPlugin)?;
         render_app.add_plugin(MeshPlugin)?;
         render_app.add_plugin(TexturePlugin)?;
-
-        render_app.add_system(resize_surface, PreRender);
-        render_app.add_system_after(begin_render, resize_surface, PreRender);
-        render_app.add_system(end_render, PostRender);
 
         render_app.set_extract(Box::new(extract::render_extract));
 

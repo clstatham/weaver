@@ -11,6 +11,7 @@ use weaver::{
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_egui::prelude::*;
+use weaver_renderer::camera::PrimaryCamera;
 use weaver_winit::Window;
 
 pub mod camera;
@@ -84,6 +85,7 @@ fn setup(world: &mut World) -> Result<()> {
             ..Default::default()
         }
         .look_at(Vec3::new(10.0, 10.0, 10.0), Vec3::ZERO, Vec3::Y),
+        PrimaryCamera,
     ));
 
     let mut assets = world.get_resource_mut::<Assets>().unwrap();

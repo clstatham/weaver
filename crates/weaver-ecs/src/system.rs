@@ -56,9 +56,9 @@ impl<T: SystemParam> SystemParam for Option<T> {
     }
 }
 
-impl<'a, Q, F> SystemParam for Query<'a, Q, F>
+impl<Q, F> SystemParam for Query<Q, F>
 where
-    Q: QueryFetch<'a>,
+    Q: QueryFetch,
     F: QueryFilter,
 {
     fn access() -> SystemAccess {

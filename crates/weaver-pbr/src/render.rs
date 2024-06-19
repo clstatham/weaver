@@ -2,12 +2,12 @@ use std::{collections::HashMap, path::Path};
 
 use weaver_asset::{Assets, Handle};
 use weaver_core::{prelude::Mat4, transform::Transform};
-use weaver_ecs::{entity::Entity, prelude::World};
+use weaver_ecs::{entity::Entity, prelude::World, storage::Ref};
 use weaver_renderer::{
     bind_group::{BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup},
     buffer::GpuBuffer,
-    camera::GpuCamera,
-    graph::{Render, Slot},
+    camera::{GpuCamera, ViewTarget},
+    graph::{RenderCtx, RenderGraphCtx, RenderLabel, ViewNode},
     mesh::GpuMesh,
     pipeline::{CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout},
     prelude::*,
@@ -15,10 +15,7 @@ use weaver_renderer::{
     texture::format::{DEPTH_FORMAT, VIEW_FORMAT},
     WgpuDevice, WgpuQueue,
 };
-use weaver_util::{
-    lock::Lock,
-    prelude::{bail, Result},
-};
+use weaver_util::{lock::Lock, prelude::Result};
 
 use crate::{light::GpuPointLightArray, material::GpuMaterial};
 
@@ -79,6 +76,10 @@ struct UniqueMaterialMesh {
     transforms: TransformArray,
     entities: Vec<Entity>,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct PbrNodeLabel;
+impl RenderLabel for PbrNodeLabel {}
 
 pub struct PbrNode {
     #[allow(unused)]
@@ -206,7 +207,10 @@ impl CreateRenderPipeline for PbrNode {
     }
 }
 
-impl Render for PbrNode {
+impl ViewNode for PbrNode {
+    type ViewQueryFetch = &'static ViewTarget;
+    type ViewQueryFilter = ();
+
     fn prepare(&mut self, render_world: &mut World) -> Result<()> {
         let device = render_world.get_resource::<WgpuDevice>().unwrap();
 
@@ -286,42 +290,33 @@ impl Render for PbrNode {
             );
         }
 
+        let mut pipeline_cache = render_world
+            .get_resource_mut::<RenderPipelineCache>()
+            .unwrap();
+        pipeline_cache.get_or_create_pipeline::<Self>(&device, &mut bind_group_layout_cache);
+
         Ok(())
     }
 
-    fn render(&mut self, render_world: &mut World, input_slots: &[Slot]) -> Result<Vec<Slot>> {
-        let Slot::Texture(color_target) = &input_slots[0] else {
-            bail!("PbrNode expected a texture in slot 0");
-        };
-
-        let Slot::Texture(depth_target) = &input_slots[1] else {
-            bail!("PbrNode expected a texture in slot 1");
-        };
-
-        let Slot::BindGroup(camera_bind_group) = &input_slots[2] else {
-            bail!("PbrNode expected a bind group in slot 2");
-        };
-
+    fn run(
+        &self,
+        render_world: &World,
+        graph_ctx: &mut RenderGraphCtx,
+        render_ctx: &mut RenderCtx,
+        view_target: &Ref<ViewTarget>,
+    ) -> Result<()> {
         let light_bind_group = render_world
             .get_resource::<BindGroup<GpuPointLightArray>>()
             .unwrap();
 
+        let camera_bind_group = render_world
+            .get_component::<BindGroup<GpuCamera>>(graph_ctx.view_entity)
+            .unwrap();
+
         log::trace!("PbrNode::render");
 
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
-
-        let mut pipeline_cache = render_world
-            .get_resource_mut::<RenderPipelineCache>()
-            .unwrap();
-        let mut bind_group_layout_cache = render_world
-            .get_resource_mut::<BindGroupLayoutCache>()
-            .unwrap();
-        let pipeline =
-            pipeline_cache.get_or_create_pipeline::<Self>(&device, &mut bind_group_layout_cache);
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("PBR Command Encoder"),
-        });
+        let pipeline_cache = render_world.get_resource::<RenderPipelineCache>().unwrap();
+        let pipeline = pipeline_cache.get_pipeline::<Self>().unwrap();
 
         for unique_material_mesh in self.unique_material_meshes.read().values() {
             let assets = render_world.get_resource::<Assets>().unwrap();
@@ -337,10 +332,10 @@ impl Render for PbrNode {
             let mesh = assets.get::<GpuMesh>(*mesh).unwrap();
 
             {
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                let mut render_pass = render_ctx.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("PBR Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: color_target,
+                        view: &view_target.color_target,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -348,7 +343,7 @@ impl Render for PbrNode {
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: depth_target,
+                        view: &view_target.depth_target,
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -359,9 +354,9 @@ impl Render for PbrNode {
                     occlusion_query_set: None,
                 });
 
-                render_pass.set_pipeline(&pipeline);
+                render_pass.set_pipeline(pipeline);
                 render_pass.set_bind_group(0, &material_bind_group, &[]);
-                render_pass.set_bind_group(1, camera_bind_group, &[]);
+                render_pass.set_bind_group(1, &camera_bind_group, &[]);
                 render_pass.set_bind_group(2, &transforms.bind_group, &[]);
                 render_pass.set_bind_group(3, &light_bind_group, &[]);
 
@@ -372,13 +367,6 @@ impl Render for PbrNode {
             }
         }
 
-        let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
-
-        renderer.enqueue_command_buffer(encoder.finish());
-
-        Ok(vec![
-            Slot::Texture(color_target.clone()),
-            Slot::Texture(depth_target.clone()),
-        ])
+        Ok(())
     }
 }

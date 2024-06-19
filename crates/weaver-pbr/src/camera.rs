@@ -7,22 +7,20 @@ use weaver_ecs::{
 };
 use weaver_renderer::{
     bind_group::BindGroup,
-    camera::{Camera, GpuCamera},
-    clear_color::ClearColor,
+    camera::{Camera, CameraRenderGraph, GpuCamera},
+    clear_color::{ClearColorLabel, ClearColorNode},
     extract::{RenderComponent, RenderComponentPlugin},
-    graph::{RenderGraph, RenderNode, Slot, StartNode},
-    CurrentFrame, PreRender, Render,
+    graph::{GraphInputLabel, RenderLabel, RenderNode, Slot, ViewNodeRunner},
+    PreRender, Render,
 };
 use weaver_util::prelude::Result;
 
-use crate::{light::PointLightArrayNode, render::PbrNode};
+use crate::render::{PbrNode, PbrNodeLabel};
 
 #[derive(Component, Reflect)]
 pub struct CameraRenderComponent {
     pub camera: Camera,
     pub pbr_camera: PbrCamera,
-    #[reflect(ignore)]
-    pub graph: RenderGraph,
 }
 
 impl RenderComponent for CameraRenderComponent {
@@ -35,11 +33,9 @@ impl RenderComponent for CameraRenderComponent {
     ) -> Option<Self> {
         let camera = main_world.get_component::<Camera>(entity).unwrap();
         let pbr_camera = main_world.get_component::<PbrCamera>(entity).unwrap();
-        let graph = RenderGraph::new();
         Some(Self {
             camera: *camera,
             pbr_camera: *pbr_camera,
-            graph,
         })
     }
 
@@ -61,18 +57,25 @@ pub struct PbrCameraBindGroupNode {
     camera_entity: Entity,
 }
 
-impl weaver_renderer::graph::Render for PbrCameraBindGroupNode {
-    fn prepare(&mut self, _render_world: &mut World) -> Result<()> {
-        Ok(())
-    }
-
-    fn render(&mut self, render_world: &mut World, _input_slots: &[Slot]) -> Result<Vec<Slot>> {
+impl RenderNode for PbrCameraBindGroupNode {
+    fn run(
+        &self,
+        render_world: &World,
+        graph_ctx: &mut weaver_renderer::graph::RenderGraphCtx,
+        _render_ctx: &mut weaver_renderer::graph::RenderCtx,
+    ) -> Result<()> {
         let bind_group = render_world
             .get_component::<BindGroup<GpuCamera>>(self.camera_entity)
             .unwrap();
-        Ok(vec![Slot::BindGroup(bind_group.bind_group().clone())])
+        let bind_group = bind_group.bind_group().clone();
+        graph_ctx.set_output(0, Slot::BindGroup(bind_group));
+        Ok(())
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct PbrCameraBindGroupLabel;
+impl RenderLabel for PbrCameraBindGroupLabel {}
 
 #[derive(Component, Reflect, Clone, Copy)]
 pub struct PbrCamera {
@@ -90,53 +93,45 @@ pub struct PbrCameraPlugin;
 impl Plugin for PbrCameraPlugin {
     fn build(&self, render_app: &mut App) -> Result<()> {
         render_app.add_plugin(RenderComponentPlugin::<CameraRenderComponent>::default())?;
-        render_app.add_system(prepare_pbr_cameras, PreRender);
+        render_app.add_system(setup_pbr_render_graphs, PreRender);
         render_app.add_system(render_pbr_cameras, Render);
         Ok(())
     }
 }
 
-fn prepare_pbr_cameras(render_world: &mut World) -> Result<()> {
-    let camera_query = render_world.query::<&mut CameraRenderComponent>();
+fn setup_pbr_render_graphs(render_world: &mut World) -> Result<()> {
+    let camera_query = render_world.query::<(&CameraRenderComponent, &mut CameraRenderGraph)>();
 
-    for (camera_entity, mut camera_render_component) in camera_query.iter() {
+    for (camera_entity, (camera_render_component, mut graph)) in camera_query.iter() {
         let base_camera = camera_render_component.camera;
         let pbr_camera = camera_render_component.pbr_camera;
         if base_camera.active() {
-            let graph = &mut camera_render_component.graph;
+            let graph = graph.render_graph_mut();
+            if !graph.has_node(PbrNodeLabel) {
+                graph
+                    .add_node(
+                        PbrNodeLabel,
+                        ViewNodeRunner::new(PbrNode::new(camera_entity), render_world),
+                    )
+                    .unwrap();
+                graph
+                    .add_node(
+                        ClearColorLabel,
+                        ViewNodeRunner::new(
+                            ClearColorNode::new(pbr_camera.clear_color),
+                            render_world,
+                        ),
+                    )
+                    .unwrap();
 
-            if graph.node_index::<PbrNode>().is_none() {
-                let camera_bind_group_node = graph.add_node(RenderNode::new(
-                    "PbrCameraBindGroupNode",
-                    PbrCameraBindGroupNode { camera_entity },
-                ));
-                let pbr_node =
-                    graph.add_node(RenderNode::new("PbrNode", PbrNode::new(camera_entity)));
-                let clear_color_node = graph.add_node(RenderNode::new(
-                    "ClearColor",
-                    ClearColor::new(pbr_camera.clear_color),
-                ));
-                let start_node = graph.node_index::<StartNode>().unwrap();
+                graph
+                    .try_add_node_edge(GraphInputLabel, ClearColorLabel)
+                    .unwrap();
 
-                // start:color -> clear:color
-                graph.add_edge(start_node, 0, clear_color_node, 0);
-                // start:depth -> clear:depth
-                graph.add_edge(start_node, 1, clear_color_node, 1);
-
-                // clear:color -> pbr:color
-                graph.add_edge(clear_color_node, 0, pbr_node, 0);
-                // clear:depth -> pbr:depth
-                graph.add_edge(clear_color_node, 1, pbr_node, 1);
-
-                // camera:bind_group -> pbr:camera_bind_group
-                graph.add_edge(camera_bind_group_node, 0, pbr_node, 2);
+                graph
+                    .try_add_node_edge(ClearColorLabel, PbrNodeLabel)
+                    .unwrap();
             }
-
-            drop(camera_render_component);
-            let camera_render_component = render_world
-                .get_component::<CameraRenderComponent>(camera_entity)
-                .unwrap();
-            camera_render_component.graph.prepare(render_world)?;
         }
     }
 
@@ -144,11 +139,23 @@ fn prepare_pbr_cameras(render_world: &mut World) -> Result<()> {
 }
 
 fn render_pbr_cameras(render_world: &mut World) -> Result<()> {
-    let camera_query = render_world.query::<&CameraRenderComponent>();
+    let camera_query = render_world.query::<(&CameraRenderComponent, &mut CameraRenderGraph)>();
 
-    for (_entity, camera) in camera_query.iter() {
-        if camera.camera.active() && render_world.has_resource::<CurrentFrame>() {
-            camera.graph.render(render_world)?;
+    for (entity, (camera, mut graph)) in camera_query.iter() {
+        if camera.camera.active() {
+            let mut renderer = render_world
+                .get_resource_mut::<weaver_renderer::Renderer>()
+                .unwrap();
+            let device = render_world
+                .get_resource::<weaver_renderer::WgpuDevice>()
+                .unwrap();
+            let queue = render_world
+                .get_resource::<weaver_renderer::WgpuQueue>()
+                .unwrap();
+            graph.render_graph_mut().prepare(render_world)?;
+            graph
+                .render_graph()
+                .run(&device, &queue, &mut renderer, render_world, entity)?;
         }
     }
 

@@ -5,12 +5,46 @@ use encase::{
     ShaderSize, ShaderType,
 };
 
+pub enum BufferOffset {
+    Zero,
+    ByteOffset(u64),
+    Index(u64),
+}
+
+impl BufferOffset {
+    pub fn calculate<T: ShaderType>(self) -> u64 {
+        match self {
+            BufferOffset::Zero => 0,
+            BufferOffset::ByteOffset(offset) => offset,
+            BufferOffset::Index(index) => index * u64::from(T::min_size()),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct GpuBuffer {
     gpu_buffer: Arc<wgpu::Buffer>,
 }
 
-impl GpuBuffer {}
+impl GpuBuffer {
+    pub fn clone_inner(&self) -> Arc<wgpu::Buffer> {
+        self.gpu_buffer.clone()
+    }
+
+    pub fn enqueue_update<T: ShaderType + WriteInto>(
+        &self,
+        data: T,
+        offset: BufferOffset,
+        queue: &wgpu::Queue,
+    ) {
+        let mut buf = Vec::<u8>::new();
+        data.write_into(&mut Writer::new(&data, &mut buf, 0).unwrap());
+
+        let offset = offset.calculate::<T>();
+
+        queue.write_buffer(&self.gpu_buffer, offset, &buf);
+    }
+}
 
 impl From<wgpu::Buffer> for GpuBuffer {
     fn from(buffer: wgpu::Buffer) -> Self {
@@ -28,7 +62,6 @@ impl std::ops::Deref for GpuBuffer {
     }
 }
 
-// this is shamelessly copied from bevy, mostly
 pub struct GpuBufferVec<T: ShaderType + WriteInto> {
     buffer: Option<GpuBuffer>,
     data: Vec<u8>,
@@ -53,9 +86,10 @@ impl<T: ShaderType + WriteInto> GpuBufferVec<T> {
     }
 
     pub fn binding(&self) -> Option<wgpu::BindingResource> {
-        self.buffer
-            .as_ref()
-            .map(|buffer| wgpu::BindingResource::Buffer(buffer.as_entire_buffer_binding()))
+        let buffer = self.buffer()?;
+        Some(wgpu::BindingResource::Buffer(
+            buffer.as_entire_buffer_binding(),
+        ))
     }
 
     pub fn capacity(&self) -> usize {
