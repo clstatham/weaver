@@ -23,7 +23,7 @@ use weaver_renderer::{
     },
     prelude::*,
     shader::Shader,
-    texture::texture_format::{self, VIEW_FORMAT},
+    texture::texture_format::{self},
     RenderApp, RenderLabel, WgpuDevice, WgpuQueue,
 };
 use weaver_util::{lock::SharedLock, prelude::Result};

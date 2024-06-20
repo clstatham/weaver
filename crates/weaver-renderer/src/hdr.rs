@@ -169,7 +169,7 @@ impl CreateRenderPipeline for HdrNode {
                 module: &shader_module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: texture_format::SDR_FORMAT,
+                    format: texture_format::VIEW_FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],

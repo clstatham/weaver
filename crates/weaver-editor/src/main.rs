@@ -91,16 +91,17 @@ fn setup(world: &mut World) -> Result<()> {
 
     let mut assets = world.get_resource_mut::<Assets>().unwrap();
 
-    let mesh = assets.load::<Mesh>("assets/meshes/cube.obj")?;
+    let cube_mesh = assets.load::<Mesh>("assets/meshes/cube.obj")?;
+    let monkey_mesh = assets.load::<Mesh>("assets/meshes/monkey_2x.obj")?;
 
-    let material = assets.load::<Material>("assets/materials/metal.glb")?;
+    let material = assets.load::<Material>("assets/materials/wood_tiles.glb")?;
     {
         let mut material = assets.get_mut(material).unwrap();
         material.texture_scale = 100.0;
     }
 
     let _ground = world.spawn((
-        mesh,
+        cube_mesh,
         material,
         Transform {
             translation: Vec3::new(0.0, -1.0, 0.0),
@@ -108,7 +109,7 @@ fn setup(world: &mut World) -> Result<()> {
             scale: Vec3::new(20.0, 1.0, 20.0),
         },
         Floor,
-        SelectionAabb::from_mesh(&assets.get(mesh).unwrap()),
+        SelectionAabb::from_mesh(&assets.get(cube_mesh).unwrap()),
     ));
 
     // circle of lights
@@ -125,8 +126,8 @@ fn setup(world: &mut World) -> Result<()> {
         let _light = world.spawn((
             PointLight {
                 color: *color,
-                intensity: 100.0,
-                radius: 100.0,
+                intensity: 10.0,
+                radius: 10.0,
             },
             Transform {
                 translation: Vec3::new(angle.cos() * 5.0, 5.0, angle.sin() * 5.0),
@@ -166,15 +167,15 @@ fn setup(world: &mut World) -> Result<()> {
     for i in 0..count {
         let angle = i as f32 / count as f32 * std::f32::consts::PI * 2.0;
         let _mesh = world.spawn((
-            mesh,
+            monkey_mesh,
             material2,
             Transform {
                 translation: Vec3::new(angle.cos() * 5.0, 2.0, angle.sin() * 5.0),
                 rotation: Quat::IDENTITY,
-                scale: Vec3::splat(0.5),
+                scale: Vec3::splat(1.0),
             },
             Object,
-            SelectionAabb::from_mesh(&assets.get(mesh).unwrap()),
+            SelectionAabb::from_mesh(&assets.get(cube_mesh).unwrap()),
         ));
     }
 
