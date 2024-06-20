@@ -10,10 +10,11 @@ use asset::ExtractedRenderAssets;
 use bind_group::{BindGroupLayoutCache, ExtractedAssetBindGroups};
 use camera::{CameraPlugin, ViewTarget};
 use graph::RenderGraph;
+use hdr::HdrPlugin;
 use mesh::MeshPlugin;
 use pipeline::RenderPipelineCache;
 use texture::{
-    format::{DEPTH_FORMAT, VIEW_FORMAT},
+    texture_format::{DEPTH_FORMAT, VIEW_FORMAT},
     TexturePlugin,
 };
 use transform::TransformPlugin;
@@ -34,6 +35,7 @@ pub mod clear_color;
 pub mod draw_fn;
 pub mod extract;
 pub mod graph;
+pub mod hdr;
 pub mod mesh;
 pub mod pipeline;
 pub mod render_command;
@@ -332,6 +334,7 @@ impl Plugin for RendererPlugin {
         render_app.add_plugin(TransformPlugin)?;
         render_app.add_plugin(MeshPlugin)?;
         render_app.add_plugin(TexturePlugin)?;
+        render_app.add_plugin(HdrPlugin)?;
 
         render_app.set_extract(Box::new(extract::render_extract));
 

@@ -1,4 +1,5 @@
 use std::{
+    fmt::Debug,
     ops::{Deref, DerefMut},
     path::Path,
     sync::atomic::AtomicUsize,
@@ -27,7 +28,7 @@ pub trait Asset: DowncastSync {
 }
 impl_downcast!(Asset);
 
-#[derive(Debug, Component, Reflect)]
+#[derive(Component, Reflect)]
 pub struct Handle<T: Asset> {
     id: usize,
     #[reflect(ignore)]
@@ -48,6 +49,14 @@ impl<T: Asset> Handle<T> {
             id,
             _marker: std::marker::PhantomData,
         }
+    }
+}
+
+impl<T: Asset> Debug for Handle<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple(&format!("Handle<{}>", std::any::type_name::<T>()))
+            .field(&self.id)
+            .finish()
     }
 }
 

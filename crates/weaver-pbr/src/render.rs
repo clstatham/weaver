@@ -16,13 +16,14 @@ use weaver_renderer::{
     bind_group::{BindGroup, BindGroupLayoutCache},
     camera::{GpuCamera, ViewTarget},
     graph::{RenderCtx, RenderGraphCtx, ViewNode},
+    hdr::HdrRenderTarget,
     mesh::GpuMesh,
     pipeline::{CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout},
     prelude::*,
     render_command::RenderCommand,
     render_phase::{BatchedInstanceBuffer, BinnedRenderPhases, GetBatchData},
     shader::Shader,
-    texture::format::{DEPTH_FORMAT, VIEW_FORMAT},
+    texture::texture_format::{self, DEPTH_FORMAT, VIEW_FORMAT},
     RenderLabel,
 };
 use weaver_util::prelude::Result;
@@ -158,7 +159,7 @@ impl CreateRenderPipeline for PbrNode {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: VIEW_FORMAT,
+                    format: texture_format::HDR_FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -231,6 +232,7 @@ impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
         Res<RenderPipelineCache>,
         Res<BindGroup<BatchedInstanceBuffer<PbrMeshInstances>>>,
         Res<BindGroup<GpuPointLightArray>>,
+        Res<HdrRenderTarget>,
     );
 
     type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<GpuCamera>);
@@ -248,7 +250,8 @@ impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
         param: Self::Param,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<()> {
-        let (assets, pipeline_cache, mesh_transforms_bind_group, lights_bind_group) = param;
+        let (assets, pipeline_cache, mesh_transforms_bind_group, lights_bind_group, hdr_target) =
+            param;
         let (view_target, camera_bind_group) = view_query;
         let mesh = assets.get::<GpuMesh>(item.key.mesh).unwrap();
         let material_bind_group = assets
@@ -259,7 +262,7 @@ impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("PBR Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view_target.color_target,
+                view: hdr_target.color_target(),
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,

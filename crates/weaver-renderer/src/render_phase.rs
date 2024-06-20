@@ -74,9 +74,9 @@ impl<T: BinnedDrawItem> BinnedRenderPhase<T> {
                     batch.batch_range.clone(),
                 );
                 if let Some(draw_fn) = draw_functions.get_mut(item.draw_fn()) {
-                    draw_fn
-                        .draw(render_world, encoder, view_entity, &item)
-                        .unwrap();
+                    draw_fn.draw(render_world, encoder, view_entity, &item)?;
+                } else {
+                    log::warn!("Draw function not found for key: {:?}", key);
                 }
             }
         }

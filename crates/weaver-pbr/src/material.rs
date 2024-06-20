@@ -10,7 +10,7 @@ use weaver_renderer::{
     bind_group::{AssetBindGroupPlugin, BindGroupLayout, CreateBindGroup},
     buffer::GpuBufferVec,
     prelude::*,
-    texture::GpuTexture,
+    texture::{texture_format, GpuTexture},
     WgpuDevice, WgpuQueue,
 };
 use weaver_util::prelude::*;
@@ -185,17 +185,32 @@ impl RenderAsset for GpuMaterial {
         let queue = render_world.get_resource::<WgpuQueue>().unwrap();
 
         let diffuse_texture = assets.get(base_asset.diffuse_texture)?;
-        let diffuse_texture = GpuTexture::from_image(&device, &queue, &diffuse_texture)?;
+        let diffuse_texture = GpuTexture::from_image(
+            &device,
+            &queue,
+            &diffuse_texture,
+            texture_format::SDR_FORMAT,
+        )?;
 
         let normal_texture = assets.get(base_asset.normal_texture)?;
-        let normal_texture = GpuTexture::from_image(&device, &queue, &normal_texture)?;
+        let normal_texture = GpuTexture::from_image(
+            &device,
+            &queue,
+            &normal_texture,
+            texture_format::NORMAL_FORMAT,
+        )?;
 
         let metallic_roughness_texture = assets.get(base_asset.metallic_roughness_texture)?;
-        let metallic_roughness_texture =
-            GpuTexture::from_image(&device, &queue, &metallic_roughness_texture)?;
+        let metallic_roughness_texture = GpuTexture::from_image(
+            &device,
+            &queue,
+            &metallic_roughness_texture,
+            texture_format::SDR_FORMAT,
+        )?;
 
         let ao_texture = assets.get(base_asset.ao_texture)?;
-        let ao_texture = GpuTexture::from_image(&device, &queue, &ao_texture)?;
+        let ao_texture =
+            GpuTexture::from_image(&device, &queue, &ao_texture, texture_format::SDR_FORMAT)?;
 
         let meta = GpuBufferVec::new(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
 

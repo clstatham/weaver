@@ -1,4 +1,4 @@
-use std::{any::TypeId, hash::Hash, ops::Range};
+use std::{any::TypeId, fmt::Debug, hash::Hash, ops::Range};
 
 use weaver_app::{App, SubApp};
 use weaver_ecs::{entity::Entity, prelude::Resource, query::QueryFetch, world::World};
@@ -38,7 +38,7 @@ pub trait FromDrawItemQuery<T: DrawItem> {
 }
 
 pub trait BinnedDrawItem: DrawItem + Sized {
-    type Key: Clone + Send + Sync + Eq + Ord + Hash + FromDrawItemQuery<Self>;
+    type Key: Debug + Clone + Send + Sync + Eq + Ord + Hash + FromDrawItemQuery<Self>;
     type Instances: GetBatchData + Resource;
 
     fn new(key: Self::Key, entity: Entity, batch_range: Range<u32>) -> Self;

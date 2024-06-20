@@ -143,7 +143,7 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     let albedo = pow(tex_color, vec3(2.2));
 
     var tex_normal = textureSample(normal_tex, normal_sampler, uv).rgb;
-    tex_normal = pow(tex_normal, vec3(1.0 / 2.2));
+    // tex_normal = pow(tex_normal, vec3(1.0 / 2.2));
     tex_normal = normalize(tex_normal * 2.0 - 1.0);
     let N = normalize(
         vertex.world_tangent * tex_normal.r + vertex.world_binormal * tex_normal.g + vertex.world_normal * tex_normal.b

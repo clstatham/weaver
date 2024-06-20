@@ -140,12 +140,14 @@ impl InspectUi for Transform {
                 ui.add(
                     egui::DragValue::new(&mut self.scale.x)
                         .fixed_decimals(2)
-                        .speed(0.1),
+                        .speed(0.1)
+                        .clamp_range(0.0..=f32::INFINITY),
                 );
                 ui.add(
                     egui::DragValue::new(&mut self.scale.y)
                         .fixed_decimals(2)
-                        .speed(0.1),
+                        .speed(0.1)
+                        .clamp_range(0.0..=f32::INFINITY),
                 );
                 ui.add(
                     egui::DragValue::new(&mut self.scale.z)

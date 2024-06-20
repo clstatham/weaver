@@ -15,6 +15,7 @@ use weaver_renderer::{
     camera::{GpuCamera, ViewTarget},
     extract::{RenderResource, RenderResourcePlugin},
     graph::{RenderGraphApp, ViewNode, ViewNodeRunner},
+    hdr::HdrRenderTarget,
     mesh::primitive::{CubePrimitive, Primitive},
     pipeline::{
         CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout,
@@ -22,7 +23,7 @@ use weaver_renderer::{
     },
     prelude::*,
     shader::Shader,
-    texture::format::VIEW_FORMAT,
+    texture::texture_format::{self, VIEW_FORMAT},
     RenderApp, RenderLabel, WgpuDevice, WgpuQueue,
 };
 use weaver_util::{lock::SharedLock, prelude::Result};
@@ -305,7 +306,7 @@ impl CreateRenderPipeline for GizmoRenderNode {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: VIEW_FORMAT,
+                        format: texture_format::HDR_FORMAT,
                         blend: Some(wgpu::BlendState::REPLACE),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -395,6 +396,8 @@ impl ViewNode for GizmoRenderNode {
 
         let gizmo_bind_group = self.bind_group.as_ref().unwrap().bind_group();
 
+        let hdr_target = render_world.get_resource::<HdrRenderTarget>().unwrap();
+
         {
             let mut render_pass =
                 render_ctx
@@ -402,7 +405,7 @@ impl ViewNode for GizmoRenderNode {
                     .begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("GizmoRenderPass"),
                         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &view_query.color_target,
+                            view: hdr_target.color_target(),
                             resolve_target: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Load,

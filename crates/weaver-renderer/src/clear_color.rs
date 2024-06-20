@@ -7,6 +7,7 @@ use crate::{
     camera::ViewTarget,
     extract::{RenderResource, RenderResourcePlugin},
     graph::{RenderCtx, RenderGraphCtx, ViewNode},
+    hdr::HdrRenderTarget,
     RenderApp, RenderLabel,
 };
 
@@ -87,7 +88,7 @@ impl ViewNode for ClearColorNode {
 
     fn run(
         &self,
-        _render_world: &World,
+        render_world: &World,
         _graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
         view_query: &Ref<ViewTarget>,
@@ -100,12 +101,14 @@ impl ViewNode for ClearColorNode {
             a: color.a as f64,
         };
 
+        let hdr_target = render_world.get_resource::<HdrRenderTarget>().unwrap();
+
         let _pass = render_ctx
             .command_encoder()
             .begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear_color"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view_query.color_target,
+                    view: hdr_target.color_target(),
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(color),

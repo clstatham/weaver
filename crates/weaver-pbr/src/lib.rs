@@ -14,6 +14,7 @@ use weaver_renderer::{
     draw_fn::{BinnedDrawItem, DrawFnId, DrawFnsApp, DrawItem, FromDrawItemQuery},
     extract::extract_render_component,
     graph::{RenderGraphApp, ViewNodeRunner},
+    hdr::HdrNodeLabel,
     mesh::GpuMesh,
     pipeline::RenderPipelinePlugin,
     render_command::RenderCommandState,
@@ -40,7 +41,7 @@ pub struct PbrDrawItem {
     pub batch_range: Range<u32>,
 }
 
-#[derive(Clone, Eq, Hash, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Eq, Hash, PartialEq, PartialOrd, Ord, Debug)]
 pub struct PbrBinKey {
     pub mesh: Handle<GpuMesh>,
     pub material: Handle<BindGroup<GpuMaterial>>,
@@ -132,6 +133,7 @@ impl Plugin for PbrPlugin {
         );
         render_app.add_render_sub_graph_node::<ViewNodeRunner<PbrNode>>(PbrSubGraph, PbrNodeLabel);
         render_app.add_render_sub_graph_edge(PbrSubGraph, ClearColorLabel, PbrNodeLabel);
+        render_app.add_render_main_graph_edge(PbrSubGraph, HdrNodeLabel);
 
         Ok(())
     }

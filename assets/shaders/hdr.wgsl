@@ -31,8 +31,9 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
     return out;
 }
 
-@group(0) @binding(0) var hdr_sampler: sampler;
-@group(1) @binding(0) var hdr_image: texture_2d<f32>;
+@group(0) @binding(0) var hdr_image: texture_2d<f32>;
+@group(0) @binding(1) var hdr_sampler: sampler;
+
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {

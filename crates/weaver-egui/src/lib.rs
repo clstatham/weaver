@@ -5,7 +5,7 @@ use weaver_app::{plugin::Plugin, App, PostUpdate, PreUpdate};
 use weaver_ecs::{component::Res, prelude::Resource, system_schedule::SystemStage, world::World};
 use weaver_event::EventRx;
 use weaver_renderer::{
-    prelude::wgpu, texture::format::VIEW_FORMAT, CurrentFrame, Render, RenderApp, WgpuDevice,
+    prelude::wgpu, texture::texture_format::VIEW_FORMAT, CurrentFrame, Render, RenderApp, WgpuDevice,
     WgpuQueue,
 };
 use weaver_util::{lock::SharedLock, prelude::Result};
