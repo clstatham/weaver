@@ -77,6 +77,19 @@ impl<T: Asset> std::hash::Hash for Handle<T> {
     }
 }
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
+impl<T: Asset> PartialOrd for Handle<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.id.partial_cmp(&other.id)
+    }
+}
+
+impl<T: Asset> Ord for Handle<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id.cmp(&other.id)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UntypedHandle {
     id: usize,

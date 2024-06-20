@@ -252,27 +252,11 @@ impl SubApps {
         }
     }
 
-    pub fn update(&mut self, thread_pool: &rayon::ThreadPool) {
+    pub fn update(&mut self) {
         self.main.update();
-        let mut rxs = Vec::new();
         for (_, sub_app) in self.sub_apps.iter_mut() {
             sub_app.extract_from(&mut self.main.world).unwrap();
-        }
-        thread_pool.install(|| {
-            rayon::scope(|s| {
-                for (_, sub_app) in self.sub_apps.iter_mut() {
-                    let (tx, rx) = crossbeam_channel::unbounded();
-                    rxs.push(rx);
-
-                    s.spawn(move |_| {
-                        sub_app.update();
-                        tx.send(()).unwrap();
-                    });
-                }
-            });
-        });
-        for rx in rxs {
-            rx.recv().unwrap();
+            sub_app.update();
         }
     }
 
@@ -422,8 +406,7 @@ impl App {
     }
 
     pub fn update(&mut self) {
-        let thread_pool = self.thread_pool.as_ref().unwrap();
-        self.sub_apps.update(thread_pool);
+        self.sub_apps.update();
     }
 
     pub fn shutdown(&mut self) {

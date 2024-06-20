@@ -100,27 +100,29 @@ impl ViewNode for ClearColorNode {
             a: color.a as f64,
         };
 
-        let _pass = render_ctx.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("clear_color"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view_query.color_target,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(color),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &view_query.depth_target,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
+        let _pass = render_ctx
+            .command_encoder()
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("clear_color"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view_query.color_target,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(color),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &view_query.depth_target,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
                 }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
 
         Ok(())
     }

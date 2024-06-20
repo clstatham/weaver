@@ -126,9 +126,9 @@ impl<T: ShaderType + WriteInto> GpuBufferVec<T> {
         value.write_into(&mut Writer::new(&value, &mut dest, 0).unwrap());
     }
 
-    pub fn reserve(&mut self, capacity: usize, device: &wgpu::Device) {
+    pub fn reserve(&mut self, capacity: usize, device: &wgpu::Device) -> bool {
         if capacity <= self.capacity {
-            return;
+            return false;
         }
 
         self.capacity = capacity;
@@ -141,17 +141,22 @@ impl<T: ShaderType + WriteInto> GpuBufferVec<T> {
                 mapped_at_creation: false,
             },
         )));
+        true
     }
 
-    pub fn enqueue_update(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+    /// WARNING: This function may recreate the underlying GPU buffer.
+    /// Rebuild your bind groups if the buffer's capacity changes after calling this!
+    /// Returns true if the buffer was recreated.
+    pub fn enqueue_update(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) -> bool {
         if self.data.is_empty() {
-            return;
+            return false;
         }
 
-        self.reserve(self.data.len() / u64::from(T::min_size()) as usize, device);
+        let stale = self.reserve(self.data.len() / u64::from(T::min_size()) as usize, device);
         if let Some(buffer) = self.buffer.as_ref() {
             queue.write_buffer(buffer, 0, &self.data);
         }
+        stale
     }
 
     pub fn clear(&mut self) {
@@ -187,6 +192,14 @@ impl<T: GpuArrayBufferable> GpuArrayBuffer<T> {
         self.storage_buffer.buffer()
     }
 
+    pub fn capacity(&self) -> usize {
+        self.storage_buffer.capacity()
+    }
+
+    pub fn reserve(&mut self, capacity: usize, device: &wgpu::Device) {
+        self.storage_buffer.reserve(capacity, device);
+    }
+
     pub fn push(&mut self, value: T) -> GpuArrayBufferIndex<T> {
         let index = self.storage_buffer.push(value) as u32;
         GpuArrayBufferIndex {
@@ -195,8 +208,11 @@ impl<T: GpuArrayBufferable> GpuArrayBuffer<T> {
         }
     }
 
-    pub fn euqueue_update(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        self.storage_buffer.enqueue_update(device, queue);
+    /// WARNING: This function may recreate the underlying GPU buffer.
+    /// Rebuild your bind groups if the buffer's capacity changes after calling this!
+    /// Returns true if the buffer was recreated.
+    pub fn enqueue_update(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) -> bool {
+        self.storage_buffer.enqueue_update(device, queue)
     }
 
     pub fn clear(&mut self) {

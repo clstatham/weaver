@@ -396,27 +396,30 @@ impl ViewNode for GizmoRenderNode {
         let gizmo_bind_group = self.bind_group.as_ref().unwrap().bind_group();
 
         {
-            let mut render_pass = render_ctx.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("GizmoRenderPass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view_query.color_target,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &view_query.depth_target,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+            let mut render_pass =
+                render_ctx
+                    .command_encoder()
+                    .begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("GizmoRenderPass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &view_query.color_target,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                            view: &view_query.depth_target,
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            }),
+                            stencil_ops: None,
+                        }),
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
 
             render_pass.set_pipeline(pipeline);
             render_pass.set_bind_group(0, gizmo_bind_group, &[]);
@@ -463,7 +466,7 @@ impl Plugin for GizmoPlugin {
     fn finish(&self, app: &mut App) -> Result<()> {
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
 
-        render_app.add_render_sub_graph(GizmoSubGraph, vec![]);
+        render_app.add_render_sub_graph(GizmoSubGraph);
         render_app.add_render_sub_graph_node::<ViewNodeRunner<GizmoRenderNode>>(
             GizmoSubGraph,
             GizmoNodeLabel,

@@ -43,6 +43,22 @@ pub trait SystemParam {
         Self: Sized;
 }
 
+impl SystemParam for () {
+    fn access() -> SystemAccess {
+        SystemAccess {
+            exclusive: false,
+            resources_read: Vec::new(),
+            resources_written: Vec::new(),
+            components_read: Vec::new(),
+            components_written: Vec::new(),
+        }
+    }
+
+    fn fetch(_world: &World) -> Option<Self> {
+        Some(())
+    }
+}
+
 impl<T: SystemParam> SystemParam for Option<T> {
     fn access() -> SystemAccess {
         T::access()

@@ -58,6 +58,7 @@ fn main() -> Result<()> {
             log_interval: std::time::Duration::from_secs(1),
         })?
         .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
+        // .add_plugin(ClearColorPlugin::default())?
         .insert_resource(EditorState::default())
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)

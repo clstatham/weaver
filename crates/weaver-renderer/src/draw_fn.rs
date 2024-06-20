@@ -1,22 +1,16 @@
-use std::any::TypeId;
+use std::{any::TypeId, hash::Hash, ops::Range};
 
-use weaver_app::{plugin::Plugin, App, SubApp};
-use weaver_ecs::{
-    entity::Entity,
-    prelude::Resource,
-    query::{QueryFetch, QueryFilter},
-    system::SystemParam,
-    world::World,
-};
+use weaver_app::{App, SubApp};
+use weaver_ecs::{entity::Entity, prelude::Resource, query::QueryFetch, world::World};
 use weaver_util::{
-    lock::{Lock, Read, Write},
+    lock::{ArcRead, ArcWrite, Read, SharedLock, Write},
     prelude::Result,
     TypeIdMap,
 };
 
-use crate::pipeline::CreateRenderPipeline;
+use crate::render_phase::GetBatchData;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DrawFnId(u32);
 
 impl DrawFnId {
@@ -30,18 +24,25 @@ impl DrawFnId {
 }
 
 pub trait DrawItem: Send + Sync + 'static {
-    type Param: SystemParam;
-    type ViewQueryFetch: QueryFetch;
-    type ViewQueryFilter: QueryFilter;
-    type ItemQueryFetch: QueryFetch;
-    type ItemQueryFilter: QueryFilter;
+    type QueryFetch: QueryFetch + 'static;
 
     fn entity(&self) -> Entity;
     fn draw_fn(&self) -> DrawFnId;
 }
 
-pub trait RenderPipelinedDrawItem: CreateRenderPipeline + DrawItem {}
-impl<T: CreateRenderPipeline + DrawItem> RenderPipelinedDrawItem for T {}
+pub trait FromDrawItemQuery<T: DrawItem> {
+    fn from_draw_item_query(
+        query: <T::QueryFetch as QueryFetch>::Fetch,
+        draw_fn_id: DrawFnId,
+    ) -> Self;
+}
+
+pub trait BinnedDrawItem: DrawItem + Sized {
+    type Key: Clone + Send + Sync + Eq + Ord + Hash + FromDrawItemQuery<Self>;
+    type Instances: GetBatchData + Resource;
+
+    fn new(key: Self::Key, entity: Entity, batch_range: Range<u32>) -> Self;
+}
 
 pub trait DrawFn<T: DrawItem>: 'static + Send + Sync {
     #[allow(unused_variables)]
@@ -49,10 +50,10 @@ pub trait DrawFn<T: DrawItem>: 'static + Send + Sync {
         Ok(())
     }
 
-    fn draw<'w>(
-        &'w mut self,
+    fn draw(
+        &mut self,
         render_world: &World,
-        render_pass: &mut wgpu::RenderPass<'w>,
+        encoder: &mut wgpu::CommandEncoder,
         view_entity: Entity,
         item: &T,
     ) -> Result<()>;
@@ -70,6 +71,13 @@ impl<T: DrawItem> DrawFunctionsInner<T> {
             functions: Vec::new(),
             indices: TypeIdMap::default(),
         }
+    }
+
+    pub fn prepare(&mut self, render_world: &World) -> Result<()> {
+        for function in self.functions.iter_mut() {
+            function.prepare(render_world)?;
+        }
+        Ok(())
     }
 
     pub fn add<F: DrawFn<T> + 'static>(&mut self, function: F) -> DrawFnId {
@@ -94,14 +102,14 @@ impl<T: DrawItem> DrawFunctionsInner<T> {
 
 #[derive(Resource)]
 pub struct DrawFunctions<T: DrawItem> {
-    inner: Lock<DrawFunctionsInner<T>>,
+    inner: SharedLock<DrawFunctionsInner<T>>,
 }
 
 impl<T: DrawItem> DrawFunctions<T> {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
-            inner: Lock::new(DrawFunctionsInner::new()),
+            inner: SharedLock::new(DrawFunctionsInner::new()),
         }
     }
 
@@ -112,30 +120,21 @@ impl<T: DrawItem> DrawFunctions<T> {
     pub fn write(&self) -> Write<'_, DrawFunctionsInner<T>> {
         self.inner.write()
     }
-}
 
-pub struct DrawFunctionsPlugin<T: DrawItem>(std::marker::PhantomData<T>);
-impl<T: DrawItem> Default for DrawFunctionsPlugin<T> {
-    fn default() -> Self {
-        Self(std::marker::PhantomData)
+    pub fn read_arc(&self) -> ArcRead<DrawFunctionsInner<T>> {
+        self.inner.read_arc()
+    }
+
+    pub fn write_arc(&self) -> ArcWrite<DrawFunctionsInner<T>> {
+        self.inner.write_arc()
     }
 }
 
-impl<T: DrawItem> Plugin for DrawFunctionsPlugin<T> {
-    fn build(&self, app: &mut App) -> Result<()> {
-        app.main_app()
-            .world()
-            .insert_resource(DrawFunctions::<T>::new());
-
-        Ok(())
-    }
-}
-
-pub trait AddDrawFn {
+pub trait DrawFnsApp {
     fn add_draw_fn<F: DrawFn<T> + 'static, T: DrawItem>(&mut self, function: F) -> &mut Self;
 }
 
-impl AddDrawFn for SubApp {
+impl DrawFnsApp for SubApp {
     fn add_draw_fn<F: DrawFn<T> + 'static, T: DrawItem>(&mut self, function: F) -> &mut Self {
         if !self.world().has_resource::<DrawFunctions<T>>() {
             self.world().insert_resource(DrawFunctions::<T>::new());
@@ -149,7 +148,7 @@ impl AddDrawFn for SubApp {
     }
 }
 
-impl AddDrawFn for App {
+impl DrawFnsApp for App {
     fn add_draw_fn<F: DrawFn<T> + 'static, T: DrawItem>(&mut self, function: F) -> &mut Self {
         self.main_app_mut().add_draw_fn::<F, T>(function);
         self

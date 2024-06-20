@@ -513,10 +513,20 @@ impl Storage {
     }
 
     pub fn insert_component<T: Component>(&mut self, entity: Entity, component: T) {
+        if self.has_component::<T>(entity) {
+            panic!(
+                "entity already has component: {}",
+                std::any::type_name::<T>()
+            );
+        }
         self.insert_components(entity, component);
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {
+        if !self.has_component::<T>(entity) {
+            return None;
+        }
+
         // remove the entity from its current archetype
         let old_archetype_id = self.entity_archetype.remove(&entity)?;
         let old_archetype = self.archetypes.get_mut(&old_archetype_id)?;

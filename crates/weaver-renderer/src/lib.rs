@@ -37,6 +37,7 @@ pub mod graph;
 pub mod mesh;
 pub mod pipeline;
 pub mod render_command;
+pub mod render_phase;
 pub mod shader;
 pub mod texture;
 pub mod transform;
@@ -44,7 +45,7 @@ pub mod transform;
 pub mod prelude {
     pub use super::{
         camera::{Camera, CameraPlugin},
-        draw_fn::{AddDrawFn, DrawFn, DrawFunctions},
+        draw_fn::{DrawFn, DrawFnsApp, DrawFunctions},
         extract::RenderComponent,
         graph::{RenderGraph, RenderNode, Slot},
         Renderer, RendererPlugin,

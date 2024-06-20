@@ -295,12 +295,11 @@ impl<'a> RenderCtx<'a> {
             self.renderer.enqueue_command_buffer(buffer);
         }
     }
+}
 
-    pub fn begin_render_pass<'b, 't: 'b>(
-        &'b mut self,
-        pass_descriptor: &wgpu::RenderPassDescriptor<'t, '_>,
-    ) -> wgpu::RenderPass<'b> {
-        self.command_encoder().begin_render_pass(pass_descriptor)
+impl Drop for RenderCtx<'_> {
+    fn drop(&mut self) {
+        self.end();
     }
 }
 
@@ -779,8 +778,7 @@ pub trait RenderGraphApp {
         to: impl RenderLabel,
     ) -> &mut Self;
 
-    fn add_render_sub_graph(&mut self, graph: impl RenderLabel, inputs: Vec<SlotType>)
-        -> &mut Self;
+    fn add_render_sub_graph(&mut self, graph: impl RenderLabel) -> &mut Self;
     fn add_render_sub_graph_node<T: RenderNode + FromWorld>(
         &mut self,
         sub_graph: impl RenderLabel,
@@ -815,14 +813,9 @@ impl RenderGraphApp for SubApp {
         self
     }
 
-    fn add_render_sub_graph(
-        &mut self,
-        graph: impl RenderLabel,
-        inputs: Vec<SlotType>,
-    ) -> &mut Self {
+    fn add_render_sub_graph(&mut self, graph: impl RenderLabel) -> &mut Self {
         let mut render_graph = self.world_mut().get_resource_mut::<RenderGraph>().unwrap();
-        let mut sub_graph = RenderGraph::new();
-        sub_graph.set_inputs(inputs).unwrap();
+        let sub_graph = RenderGraph::new();
         render_graph
             .add_node(
                 graph,

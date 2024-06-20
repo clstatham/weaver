@@ -36,17 +36,17 @@ impl<T: RenderComponent> Default for RenderComponentPlugin<T> {
 
 impl<T: RenderComponent> Plugin for RenderComponentPlugin<T> {
     fn build(&self, render_app: &mut App) -> Result<()> {
-        render_app.add_system(extract_render_components::<T>, Extract);
+        render_app.add_system(extract_render_component::<T>, Extract);
         render_app.add_system_after(
-            update_render_components::<T>,
-            extract_render_components::<T>,
+            update_render_component::<T>,
+            extract_render_component::<T>,
             Extract,
         );
         Ok(())
     }
 }
 
-fn extract_render_components<T: RenderComponent>(render_world: &mut World) -> Result<()> {
+pub fn extract_render_component<T: RenderComponent>(render_world: &mut World) -> Result<()> {
     let mut main_world = render_world.get_resource_mut::<MainWorld>().unwrap();
     let query = main_world.query::<T::ExtractQuery<'_>>();
 
@@ -73,7 +73,7 @@ fn extract_render_components<T: RenderComponent>(render_world: &mut World) -> Re
     Ok(())
 }
 
-fn update_render_components<T: RenderComponent>(render_world: &mut World) -> Result<()> {
+pub fn update_render_component<T: RenderComponent>(render_world: &mut World) -> Result<()> {
     let mut main_world = render_world.get_resource_mut::<MainWorld>().unwrap();
     let query = main_world.query::<T::ExtractQuery<'_>>();
 
@@ -117,7 +117,7 @@ impl<T: RenderResource> Plugin for RenderResourcePlugin<T> {
     }
 }
 
-fn extract_render_resource<T: RenderResource>(render_world: &mut World) -> Result<()> {
+pub fn extract_render_resource<T: RenderResource>(render_world: &mut World) -> Result<()> {
     if !render_world.has_resource::<T>() {
         let mut main_world = render_world.get_resource_mut::<MainWorld>().unwrap();
 
@@ -139,7 +139,7 @@ fn extract_render_resource<T: RenderResource>(render_world: &mut World) -> Resul
     Ok(())
 }
 
-fn update_render_resource<T: RenderResource>(render_world: &mut World) -> Result<()> {
+pub fn update_render_resource<T: RenderResource>(render_world: &mut World) -> Result<()> {
     if let Some(mut resource) = render_world.get_resource_mut::<T>() {
         let mut main_world = render_world.get_resource_mut::<MainWorld>().unwrap();
         resource.update_render_resource(&mut main_world, render_world)?;
