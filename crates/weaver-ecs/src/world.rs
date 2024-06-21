@@ -110,6 +110,12 @@ impl WorldLock {
 
 pub struct ReadWorld(ArcRead<World>);
 
+impl ReadWorld {
+    pub fn world_lock(&self) -> WorldLock {
+        WorldLock(ArcRead::get_lock(&self.0))
+    }
+}
+
 impl Deref for ReadWorld {
     type Target = World;
 
@@ -119,6 +125,12 @@ impl Deref for ReadWorld {
 }
 
 pub struct WriteWorld(ArcWrite<World>);
+
+impl WriteWorld {
+    pub fn world_lock(&self) -> WorldLock {
+        WorldLock(ArcWrite::get_lock(&self.0))
+    }
+}
 
 impl Deref for WriteWorld {
     type Target = World;
@@ -135,7 +147,6 @@ impl DerefMut for WriteWorld {
 }
 
 pub struct World {
-    root_scene_entity: Entity,
     next_entity: AtomicU32,
     free_entities: Lock<Vec<Entity>>,
     storage: Storage,
@@ -148,7 +159,6 @@ pub struct World {
 impl Default for World {
     fn default() -> Self {
         Self {
-            root_scene_entity: Entity::new(1, 0),
             next_entity: AtomicU32::new(0),
             free_entities: Lock::new(Vec::new()),
             storage: Storage::new(),
@@ -235,10 +245,6 @@ impl World {
 
     pub fn query_builder(&self) -> QueryBuilder {
         QueryBuilder::new(self)
-    }
-
-    pub const fn root_scene_entity(&self) -> Entity {
-        self.root_scene_entity
     }
 
     pub fn get_resource<T: Resource>(&self) -> Option<Res<T>> {

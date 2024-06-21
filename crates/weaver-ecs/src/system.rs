@@ -32,12 +32,11 @@ impl SystemAccess {
 
 pub trait System: 'static + Send + Sync {
     fn access(&self) -> SystemAccess;
-    fn run(&mut self, world: &WorldLock) -> Result<()>;
+    #[allow(unused)]
+    fn initialize(&mut self, world: &WorldLock) {}
+    fn apply_deferred_mutations(&mut self, world: &mut World);
+    fn run_locked(&mut self, world: &WorldLock) -> Result<()>;
 }
-
-// NOTE: Not marking this as unsafe, unlike Bevy, since we don't actually violate memory safety in our implementation
-// (Weaver lacks any form of `UnsafeWorldCell`)
-pub trait ReadOnlySystem: System {}
 
 pub trait IntoSystem<Marker>: Sized {
     type System: System;
@@ -61,7 +60,7 @@ impl<P: SystemParam> SystemState<P> {
 }
 
 pub trait SystemParam: Sized {
-    type State: Send + Sync + 'static;
+    type State: Send + Sync;
     type Fetch<'w, 's>: SystemParam<State = Self::State>;
 
     fn access() -> SystemAccess;
@@ -347,7 +346,7 @@ impl_system_param_tuple!(A, B, C, D, E, F, G);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H);
 
 pub trait SystemParamFunction<M>: Send + Sync + 'static {
-    type Param: SystemParam;
+    type Param: SystemParam + 'static;
 
     fn run(&mut self, param: SystemParamFetch<Self::Param>) -> Result<()>;
 }
@@ -356,9 +355,39 @@ pub struct FunctionSystem<M, F>
 where
     F: SystemParamFunction<M>,
 {
+    param_state: Option<SystemState<F::Param>>,
     access: SystemAccess,
     func: F,
     _marker: std::marker::PhantomData<fn() -> M>,
+}
+
+impl<M, F> System for FunctionSystem<M, F>
+where
+    M: 'static,
+    F: SystemParamFunction<M>,
+{
+    fn initialize(&mut self, world: &WorldLock) {
+        let param_state = SystemState {
+            access: F::Param::access(),
+            state: F::Param::init_state(world),
+        };
+        self.param_state = Some(param_state);
+    }
+
+    fn access(&self) -> SystemAccess {
+        self.access.clone()
+    }
+
+    fn apply_deferred_mutations(&mut self, world: &mut World) {
+        let param_state = self.param_state.as_mut().unwrap();
+        F::Param::apply_deferred_mutations(&mut param_state.state, world);
+    }
+
+    fn run_locked(&mut self, world: &WorldLock) -> Result<()> {
+        let param_state = self.param_state.as_mut().unwrap();
+        let fetch = F::Param::fetch(&mut param_state.state, world);
+        self.func.run(fetch)
+    }
 }
 
 impl<M, F> IntoSystem<M> for F
@@ -369,37 +398,13 @@ where
     type System = FunctionSystem<M, F>;
 
     fn into_system(self) -> Self::System {
-        let access = F::Param::access();
         FunctionSystem {
-            access,
+            param_state: None,
+            access: F::Param::access(),
             func: self,
             _marker: std::marker::PhantomData,
         }
     }
-}
-
-impl<M, F> System for FunctionSystem<M, F>
-where
-    M: 'static,
-    F: SystemParamFunction<M>,
-{
-    fn access(&self) -> SystemAccess {
-        self.access.clone()
-    }
-
-    fn run(&mut self, world: &WorldLock) -> Result<()> {
-        let mut param = F::Param::init_state(world);
-        let fetch = F::Param::fetch(&mut param, world);
-        self.func.run(fetch)
-    }
-}
-
-impl<M, F> ReadOnlySystem for FunctionSystem<M, F>
-where
-    M: 'static,
-    F: SystemParamFunction<M>,
-    <F as SystemParamFunction<M>>::Param: ReadOnlySystemParam,
-{
 }
 
 macro_rules! impl_function_system {
@@ -409,7 +414,7 @@ macro_rules! impl_function_system {
         where for<'a> &'a mut Func:
             FnMut($($param),*) -> Result<()>
             + FnMut($(SystemParamFetch<$param>),*) -> Result<()>,
-            $($param: SystemParam),*,
+            $($param: SystemParam + 'static),*,
             Func: Send + Sync + 'static,
         {
             type Param = ($($param),*);
@@ -590,11 +595,23 @@ impl SystemGraph {
     }
 
     pub fn run(&mut self, world: &WorldLock) -> Result<()> {
+        let mut systems_pending_deferred_mutations = Vec::new();
+
         let mut schedule = Topo::new(&self.systems);
         while let Some(node) = schedule.next(&self.systems) {
             let system = &mut self.systems[node];
-            system.run(world)?;
+            system.initialize(world);
+            system.run_locked(world)?;
+            if !system.access().exclusive {
+                systems_pending_deferred_mutations.push(node);
+            }
         }
+
+        for node in systems_pending_deferred_mutations {
+            let system = &mut self.systems[node];
+            system.apply_deferred_mutations(&mut world.write());
+        }
+
         Ok(())
     }
 }

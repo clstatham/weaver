@@ -1,8 +1,8 @@
-use weaver_util::prelude::{impl_downcast, Downcast};
+use weaver_util::prelude::{impl_downcast, DowncastSync};
 
 use crate::prelude::Component;
 
-pub trait Bundle: Downcast {
+pub trait Bundle: DowncastSync {
     fn into_components(self) -> Vec<Box<dyn Component>>;
 }
 impl_downcast!(Bundle);

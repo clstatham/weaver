@@ -287,6 +287,10 @@ impl<T: ?Sized> ArcRead<T> {
     pub fn into_inner(self) -> ArcRwLockReadGuard<RawRwLock, T> {
         self.0
     }
+
+    pub fn get_lock(this: &Self) -> SharedLock<T> {
+        SharedLock(ArcRwLockReadGuard::rwlock(&this.0).clone())
+    }
 }
 
 impl<T: ?Sized> Deref for ArcRead<T> {
@@ -307,6 +311,10 @@ impl<T: ?Sized> ArcWrite<T> {
 
     pub fn into_inner(self) -> ArcRwLockWriteGuard<RawRwLock, T> {
         self.0
+    }
+
+    pub fn get_lock(this: &Self) -> SharedLock<T> {
+        SharedLock(ArcRwLockWriteGuard::rwlock(&this.0).clone())
     }
 }
 

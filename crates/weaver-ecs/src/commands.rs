@@ -1,22 +1,22 @@
-use crate::prelude::World;
-use weaver_util::prelude::Result;
+use crate::prelude::{SystemAccess, SystemParam, World, WorldLock};
+use weaver_util::lock::SharedLock;
 
-pub trait Command: 'static {
-    fn execute(&self, world: &mut World) -> Result<()>;
+pub trait Command: Send + Sync + 'static {
+    fn execute(self: Box<Self>, world: &mut World);
 }
 
-impl<T> Command for T
+impl<F> Command for F
 where
-    T: Fn(&mut World) -> Result<()> + Send + Sync + 'static,
+    F: FnOnce(&mut World) + Send + Sync + 'static,
 {
-    fn execute(&self, world: &mut World) -> Result<()> {
-        self(world)
+    fn execute(self: Box<Self>, world: &mut World) {
+        self(world);
     }
 }
 
 #[derive(Default)]
 pub struct Commands {
-    commands: Vec<Box<dyn Command>>,
+    commands: SharedLock<Vec<Box<dyn Command>>>,
 }
 
 impl Commands {
@@ -24,18 +24,48 @@ impl Commands {
         Self::default()
     }
 
-    pub fn add<T>(&mut self, command: T)
+    pub fn add<C>(&self, command: C)
     where
-        T: Command,
+        C: Command,
     {
-        self.commands.push(Box::new(command));
+        self.commands.write().push(Box::new(command));
     }
 
-    pub fn execute(&self, world: &mut World) -> Result<()> {
-        for command in &self.commands {
-            command.execute(world)?;
+    pub fn execute(&self, world: &mut World) {
+        for command in self.commands.write().drain(..) {
+            command.execute(world);
         }
+    }
+}
 
-        Ok(())
+impl SystemParam for Commands {
+    type State = SharedLock<Vec<Box<dyn Command>>>;
+    type Fetch<'w, 's> = Self;
+
+    fn access() -> crate::prelude::SystemAccess {
+        SystemAccess {
+            resources_read: Vec::new(),
+            resources_written: Vec::new(),
+            components_read: Vec::new(),
+            components_written: Vec::new(),
+            exclusive: false,
+        }
+    }
+
+    fn init_state(_world: &WorldLock) -> Self::State {
+        SharedLock::new(Vec::new())
+    }
+
+    fn fetch<'w, 's>(state: &'s mut Self::State, _world: &WorldLock) -> Self::Fetch<'w, 's> {
+        Self {
+            commands: state.clone(),
+        }
+    }
+
+    fn apply_deferred_mutations(state: &mut Self::State, world: &mut World) {
+        let commands = Commands {
+            commands: state.clone(),
+        };
+        commands.execute(world);
     }
 }
