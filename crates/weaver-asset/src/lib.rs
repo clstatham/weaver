@@ -7,6 +7,7 @@ use std::{
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
+    change::{ComponentTicks, Tick},
     prelude::{reflect_trait, Component, Reflect, Resource},
     storage::SparseSet,
 };
@@ -181,7 +182,11 @@ impl Assets {
         let id = self
             .next_handle_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.storage.insert(id, SharedLock::new(Box::new(asset)));
+        self.storage.insert(
+            id,
+            SharedLock::new(Box::new(asset)),
+            ComponentTicks::new(Tick::MAX), // todo: change detection for assets
+        );
 
         Handle {
             id,
@@ -212,7 +217,7 @@ impl Assets {
     pub fn remove<T: Asset>(&mut self, handle: Handle<T>) -> Option<T> {
         self.storage
             .remove(handle.id)
-            .and_then(|asset| SharedLock::into_inner(asset).unwrap().downcast().ok())
+            .and_then(|asset| SharedLock::into_inner(asset.0).unwrap().downcast().ok())
             .map(|asset| *asset)
     }
 }

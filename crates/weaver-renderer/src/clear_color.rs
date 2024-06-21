@@ -15,6 +15,8 @@ use crate::{
 pub struct ClearColor(pub Color);
 
 impl RenderResource for ClearColor {
+    type UpdateQuery = ();
+
     fn extract_render_resource(main_world: &mut World, _render_world: &mut World) -> Option<Self>
     where
         Self: Sized,

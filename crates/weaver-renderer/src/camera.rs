@@ -184,16 +184,21 @@ impl RenderComponent for GpuCamera {
     fn extract_render_component(
         entity: Entity,
         main_world: &mut World,
-        _render_world: &mut World,
+        render_world: &mut World,
     ) -> Option<Self>
     where
         Self: Sized,
     {
         let camera = main_world.get_component::<Camera>(entity)?;
 
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+        let queue = render_world.get_resource::<WgpuQueue>().unwrap();
+
         let mut uniform_buffer =
             GpuBufferVec::new(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
         uniform_buffer.push(CameraUniform::from(&*camera));
+
+        uniform_buffer.enqueue_update(&device, &queue);
 
         Some(Self {
             camera: *camera,

@@ -46,6 +46,8 @@ pub struct RenderCubeGizmo {
 }
 
 impl RenderResource for RenderCubeGizmo {
+    type UpdateQuery = ();
+
     fn extract_render_resource(_main_world: &mut World, render_world: &mut World) -> Option<Self>
     where
         Self: Sized,

@@ -3,6 +3,7 @@ use std::{any::TypeId, collections::HashMap, ops::Deref, sync::Arc};
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{prelude::Asset, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
+    change::ChangeDetection,
     prelude::{Component, Reflect, Resource},
     world::World,
 };
@@ -181,7 +182,7 @@ fn create_resource_bind_group<T: Resource + CreateBindGroup>(
     let Some(mut data) = render_world.get_resource_mut::<T>() else {
         return Ok(());
     };
-    if data.bind_group_stale() {
+    if data.is_changed() || data.bind_group_stale() {
         render_world.remove_resource::<BindGroup<T>>();
     }
     if !render_world.has_resource::<BindGroup<T>>() {

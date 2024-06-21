@@ -32,6 +32,8 @@ impl HdrRenderTarget {
 }
 
 impl RenderResource for HdrRenderTarget {
+    type UpdateQuery = (); // todo: set to `&'static Window` when window resize is implemented
+
     fn extract_render_resource(main_world: &mut World, render_world: &mut World) -> Option<Self>
     where
         Self: Sized,

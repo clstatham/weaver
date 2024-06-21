@@ -23,7 +23,7 @@ use weaver_renderer::{
     render_command::RenderCommand,
     render_phase::{BatchedInstanceBuffer, BinnedRenderPhases, GetBatchData},
     shader::Shader,
-    texture::texture_format::{self, DEPTH_FORMAT, VIEW_FORMAT},
+    texture::texture_format,
     RenderLabel,
 };
 use weaver_util::prelude::Result;
@@ -56,6 +56,11 @@ impl DerefMut for PbrMeshInstances {
 impl GetBatchData for PbrMeshInstances {
     type Param = Res<PbrMeshInstances>;
     type BufferData = Mat4;
+    type UpdateQuery = (
+        &'static Handle<GpuMesh>,
+        &'static Handle<BindGroup<GpuMaterial>>,
+        &'static Transform,
+    );
 
     fn update_from_world(&mut self, render_world: &World) {
         self.0.clear();
@@ -104,7 +109,7 @@ impl CreateRenderPipeline for PbrNode {
                 &bind_group_layout_cache.get_or_create::<GpuMaterial>(device),
                 &bind_group_layout_cache.get_or_create::<GpuCamera>(device),
                 &bind_group_layout_cache
-                    .get_or_create::<BatchedInstanceBuffer<PbrMeshInstances>>(device),
+                    .get_or_create::<BatchedInstanceBuffer<PbrDrawItem, PbrRenderCommand>>(device),
                 &bind_group_layout_cache.get_or_create::<GpuPointLightArray>(device),
             ],
             push_constant_ranges: &[],
@@ -170,7 +175,7 @@ impl CreateRenderPipeline for PbrNode {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
+                format: texture_format::DEPTH_FORMAT,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: wgpu::StencilState::default(),
@@ -230,7 +235,7 @@ impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
     type Param = (
         Res<Assets>,
         Res<RenderPipelineCache>,
-        Res<BindGroup<BatchedInstanceBuffer<PbrMeshInstances>>>,
+        Res<BindGroup<BatchedInstanceBuffer<PbrDrawItem, PbrRenderCommand>>>,
         Res<BindGroup<GpuPointLightArray>>,
         Res<HdrRenderTarget>,
     );

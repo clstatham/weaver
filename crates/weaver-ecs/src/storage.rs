@@ -6,7 +6,9 @@ use std::{
 
 use weaver_util::lock::{ArcRead, ArcWrite, SharedLock};
 
-use crate::prelude::Bundle;
+use crate::prelude::{
+    Bundle, ChangeDetection, ChangeDetectionMut, ComponentTicks, Tick, Ticks, TicksMut,
+};
 
 use super::{component::Component, entity::Entity};
 
@@ -65,6 +67,8 @@ impl Data {
 
 pub struct SparseSet<T> {
     pub(crate) dense: Vec<T>,
+    pub(crate) dense_added_ticks: Vec<SharedLock<Tick>>,
+    pub(crate) dense_changed_ticks: Vec<SharedLock<Tick>>,
     sparse: Vec<Option<usize>>,
     indices: Vec<usize>,
 }
@@ -73,6 +77,8 @@ impl<T> Default for SparseSet<T> {
     fn default() -> Self {
         Self {
             dense: Vec::new(),
+            dense_added_ticks: Vec::new(),
+            dense_changed_ticks: Vec::new(),
             sparse: Vec::new(),
             indices: Vec::new(),
         }
@@ -88,14 +94,21 @@ impl<T> SparseSet<T> {
         self.sparse.get(id).copied().flatten()
     }
 
-    pub fn insert(&mut self, id: usize, data: T) {
+    pub fn insert(&mut self, id: usize, data: T, ticks: ComponentTicks) {
         match self.dense_index_of(id) {
             Some(index) => {
                 self.dense[index] = data;
+                *self.dense_added_ticks[index].write() = ticks.added;
+                *self.dense_changed_ticks[index].write() = ticks.changed;
             }
             None => {
                 let index = self.dense.len();
+
                 self.dense.push(data);
+                self.dense_added_ticks.push(SharedLock::new(ticks.added));
+                self.dense_changed_ticks
+                    .push(SharedLock::new(ticks.changed));
+
                 if id >= self.sparse.len() {
                     self.sparse.resize(id + 1, None);
                 }
@@ -105,7 +118,7 @@ impl<T> SparseSet<T> {
         }
     }
 
-    pub fn remove(&mut self, id: usize) -> Option<T> {
+    pub fn remove(&mut self, id: usize) -> Option<(T, ComponentTicks)> {
         if id >= self.sparse.len() {
             return None;
         }
@@ -120,7 +133,13 @@ impl<T> SparseSet<T> {
             self.sparse[swapped] = Some(index);
         }
 
-        Some(value)
+        Some((
+            value,
+            ComponentTicks {
+                added: *self.dense_added_ticks[index].read(),
+                changed: *self.dense_changed_ticks[index].read(),
+            },
+        ))
     }
 
     pub fn get(&self, id: usize) -> Option<&T> {
@@ -132,12 +151,15 @@ impl<T> SparseSet<T> {
         self.dense.get(dense_index)
     }
 
-    pub fn get_mut(&mut self, id: usize) -> Option<&mut T> {
+    pub fn get_mut(&mut self, id: usize, change_tick: Tick) -> Option<&mut T> {
         if id >= self.sparse.len() {
             return None;
         }
 
         let dense_index = self.sparse[id]?;
+
+        *self.dense_changed_ticks[dense_index].write() = change_tick;
+
         self.dense.get_mut(dense_index)
     }
 
@@ -173,6 +195,18 @@ impl<T> SparseSet<T> {
 
     pub fn is_empty(&self) -> bool {
         self.dense.is_empty()
+    }
+
+    pub fn get_ticks(&self, id: usize) -> Option<ComponentTicks> {
+        if id >= self.sparse.len() {
+            return None;
+        }
+
+        let dense_index = self.sparse[id]?;
+        Some(ComponentTicks {
+            added: *self.dense_added_ticks[dense_index].read(),
+            changed: *self.dense_changed_ticks[dense_index].read(),
+        })
     }
 }
 
@@ -210,55 +244,23 @@ impl Archetype {
         self.columns.keys().copied().collect::<Vec<_>>()
     }
 
-    pub fn insert(&mut self, entity: Entity, data: Data) {
+    pub fn insert(&mut self, entity: Entity, data: Data, ticks: ComponentTicks) {
         let type_id = data.type_id();
 
         self.entities.insert(entity);
 
         self.columns[&type_id]
             .write_arc()
-            .insert(entity.as_usize(), data);
+            .insert(entity.as_usize(), data, ticks);
     }
 
-    pub fn remove(&mut self, entity: Entity) -> Vec<Data> {
+    pub fn remove(&mut self, entity: Entity) -> Vec<(Data, ComponentTicks)> {
         self.entities.remove(&entity);
 
         self.columns
             .values()
             .filter_map(|column| column.write_arc().remove(entity.as_usize()))
             .collect()
-    }
-
-    #[inline]
-    pub fn get<T: Component>(&self, entity: Entity) -> Option<DataRef> {
-        self.get_by_type_id(entity, TypeId::of::<T>())
-    }
-
-    #[inline]
-    pub fn get_mut<T: Component>(&self, entity: Entity) -> Option<DataMut> {
-        self.get_by_type_id_mut(entity, TypeId::of::<T>())
-    }
-
-    pub fn get_by_type_id(&self, entity: Entity, type_id: TypeId) -> Option<DataRef> {
-        if self.columns[&type_id]
-            .read_arc()
-            .contains(entity.as_usize())
-        {
-            Some(DataRef::new(entity, self.columns[&type_id].read_arc()))
-        } else {
-            None
-        }
-    }
-
-    pub fn get_by_type_id_mut(&self, entity: Entity, type_id: TypeId) -> Option<DataMut> {
-        if self.columns[&type_id]
-            .read_arc()
-            .contains(entity.as_usize())
-        {
-            Some(DataMut::new(entity, self.columns[&type_id].write_arc()))
-        } else {
-            None
-        }
     }
 
     #[inline]
@@ -328,70 +330,19 @@ impl Archetype {
             .map(|(type_id, column)| (type_id, ColumnRef::new(column.clone())))
     }
 }
-
-pub struct DataRef {
-    entity: Entity,
-    column: ArcRead<SparseSet<Data>>,
-}
-
-impl DataRef {
-    pub fn new(entity: Entity, column: ArcRead<SparseSet<Data>>) -> Self {
-        Self { entity, column }
-    }
-
-    pub fn entity(this: &Self) -> Entity {
-        this.entity
-    }
-}
-
-impl std::ops::Deref for DataRef {
-    type Target = Data;
-
-    fn deref(&self) -> &Self::Target {
-        self.column.get(self.entity.as_usize()).unwrap()
-    }
-}
-
-pub struct DataMut {
-    entity: Entity,
-    column: ArcWrite<SparseSet<Data>>,
-}
-
-impl DataMut {
-    pub fn new(entity: Entity, column: ArcWrite<SparseSet<Data>>) -> Self {
-        Self { entity, column }
-    }
-
-    pub fn entity(this: &Self) -> Entity {
-        this.entity
-    }
-}
-
-impl std::ops::Deref for DataMut {
-    type Target = Data;
-
-    fn deref(&self) -> &Self::Target {
-        self.column.get(self.entity.as_usize()).unwrap()
-    }
-}
-
-impl std::ops::DerefMut for DataMut {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.column.get_mut(self.entity.as_usize()).unwrap()
-    }
-}
-
 pub struct Ref<T: Component> {
     dense_index: usize,
     column: ArcRead<SparseSet<Data>>,
+    ticks: Ticks,
     _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: Component> Ref<T> {
-    pub fn new(dense_index: usize, column: ArcRead<SparseSet<Data>>) -> Self {
+    pub(crate) fn new(dense_index: usize, column: ArcRead<SparseSet<Data>>, ticks: Ticks) -> Self {
         Self {
             dense_index,
             column,
+            ticks,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -405,17 +356,41 @@ impl<T: Component> std::ops::Deref for Ref<T> {
     }
 }
 
+impl<T: Component> ChangeDetection for Ref<T> {
+    fn is_added(&self) -> bool {
+        self.ticks
+            .added
+            .is_newer_than(self.ticks.last_run, self.ticks.this_run)
+    }
+
+    fn is_changed(&self) -> bool {
+        self.ticks
+            .changed
+            .is_newer_than(self.ticks.last_run, self.ticks.this_run)
+    }
+
+    fn last_changed(&self) -> Tick {
+        *self.ticks.changed
+    }
+}
+
 pub struct Mut<T: Component> {
     dense_index: usize,
     column: ArcWrite<SparseSet<Data>>,
+    ticks: TicksMut,
     _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: Component> Mut<T> {
-    pub fn new(dense_index: usize, column: ArcWrite<SparseSet<Data>>) -> Self {
+    pub(crate) fn new(
+        dense_index: usize,
+        column: ArcWrite<SparseSet<Data>>,
+        ticks: TicksMut,
+    ) -> Self {
         Self {
             dense_index,
             column,
+            ticks,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -431,7 +406,38 @@ impl<T: Component> std::ops::Deref for Mut<T> {
 
 impl<T: Component> std::ops::DerefMut for Mut<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        self.set_changed();
         self.column.dense[self.dense_index].downcast_mut().unwrap()
+    }
+}
+
+impl<T: Component> ChangeDetection for Mut<T> {
+    fn is_added(&self) -> bool {
+        self.ticks
+            .added
+            .is_newer_than(self.ticks.last_run, self.ticks.this_run)
+    }
+
+    fn is_changed(&self) -> bool {
+        self.ticks
+            .changed
+            .is_newer_than(self.ticks.last_run, self.ticks.this_run)
+    }
+
+    fn last_changed(&self) -> Tick {
+        *self.ticks.changed
+    }
+}
+
+impl<T: Component> ChangeDetectionMut for Mut<T> {
+    type Inner = T;
+
+    fn bypass_change_detection(&mut self) -> &mut Self::Inner {
+        self.column.dense[self.dense_index].downcast_mut().unwrap()
+    }
+
+    fn set_changed(&mut self) {
+        *self.ticks.changed = self.ticks.this_run;
     }
 }
 
@@ -450,14 +456,14 @@ impl Storage {
         Self::default()
     }
 
-    pub fn insert_components<T: Bundle>(&mut self, entity: Entity, bundle: T) {
+    pub fn insert_components<T: Bundle>(&mut self, entity: Entity, bundle: T, change_tick: Tick) {
         let old_archetype_id = self.entity_archetype.remove(&entity);
         let old_archetype = old_archetype_id.and_then(|id| self.archetypes.get_mut(&id));
 
         let components = bundle.into_components();
         let mut data = components
             .into_iter()
-            .map(Data::new_dynamic)
+            .map(|c| (Data::new_dynamic(c), ComponentTicks::new(change_tick)))
             .collect::<Vec<_>>();
 
         if let Some(old_archetype) = old_archetype {
@@ -473,7 +479,7 @@ impl Storage {
                 archetype.exclusively_contains_types(
                     &data
                         .iter()
-                        .map(|component| component.type_id())
+                        .map(|component| component.0.type_id())
                         .collect::<Vec<_>>(),
                 )
             })
@@ -489,7 +495,7 @@ impl Storage {
 
             archetype.columns = data
                 .iter()
-                .map(|data| (data.type_id(), SharedLock::new(SparseSet::new())))
+                .map(|data| (data.0.type_id(), SharedLock::new(SparseSet::new())))
                 .collect();
 
             self.archetypes.insert(archetype_id, archetype);
@@ -499,8 +505,8 @@ impl Storage {
             (archetype, archetype_id)
         };
 
-        for data in data {
-            archetype.insert(entity, data);
+        for (data, ticks) in data {
+            archetype.insert(entity, data, ticks);
         }
 
         self.entity_archetype.insert(entity, archetype_id);
@@ -512,14 +518,19 @@ impl Storage {
         }
     }
 
-    pub fn insert_component<T: Component>(&mut self, entity: Entity, component: T) {
+    pub fn insert_component<T: Component>(
+        &mut self,
+        entity: Entity,
+        component: T,
+        change_tick: Tick,
+    ) {
         if self.has_component::<T>(entity) {
             panic!(
                 "entity already has component: {}",
                 std::any::type_name::<T>()
             );
         }
-        self.insert_components(entity, component);
+        self.insert_components(entity, component, change_tick);
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {
@@ -540,7 +551,8 @@ impl Storage {
         self.entity_archetype.remove(&entity);
 
         // remove the component from the data
-        let component = data.remove(data.iter().position(|data| data.is::<T>())?);
+        let (component, _component_ticks) =
+            data.remove(data.iter().position(|data| data.0.is::<T>())?);
 
         // find the new archetype for the entity
         let new_archetype = self
@@ -548,7 +560,7 @@ impl Storage {
             .iter_mut()
             .find(|(_, archetype)| {
                 archetype.exclusively_contains_types(
-                    &data.iter().map(|data| data.type_id()).collect::<Vec<_>>(),
+                    &data.iter().map(|data| data.0.type_id()).collect::<Vec<_>>(),
                 )
             })
             .map(|(id, archetype)| (archetype, *id));
@@ -564,7 +576,7 @@ impl Storage {
 
                 archetype.columns = data
                     .iter()
-                    .map(|data| (data.type_id(), SharedLock::new(SparseSet::new())))
+                    .map(|data| (data.0.type_id(), SharedLock::new(SparseSet::new())))
                     .collect();
 
                 self.archetypes.insert(archetype_id, archetype);
@@ -574,8 +586,8 @@ impl Storage {
                 (archetype, archetype_id)
             };
 
-        for data in data {
-            new_archetype.insert(entity, data);
+        for (data, ticks) in data {
+            new_archetype.insert(entity, data, ticks);
         }
 
         self.entity_archetype.insert(entity, new_archetype_id);
@@ -587,7 +599,7 @@ impl Storage {
         Some(*component)
     }
 
-    pub fn remove_entity(&mut self, entity: Entity) -> Option<Vec<Data>> {
+    pub fn remove_entity(&mut self, entity: Entity) -> Option<Vec<(Data, ComponentTicks)>> {
         let archetype_id = self.entity_archetype.get(&entity)?;
 
         let archetype = self.archetypes.get_mut(archetype_id)?;
@@ -603,7 +615,12 @@ impl Storage {
         Some(data)
     }
 
-    pub fn get_component<T: Component>(&self, entity: Entity) -> Option<Ref<T>> {
+    pub fn get_component<T: Component>(
+        &self,
+        entity: Entity,
+        last_run: Tick,
+        this_run: Tick,
+    ) -> Option<Ref<T>> {
         let archetype_id = self.entity_archetype.get(&entity)?;
 
         let archetype = self.archetypes.get(archetype_id)?;
@@ -616,13 +633,24 @@ impl Storage {
         {
             let column = archetype.columns[&TypeId::of::<T>()].read_arc();
             let dense_index = column.dense_index_of(entity.as_usize()).unwrap();
-            Some(Ref::new(dense_index, column))
+            let ticks = Ticks {
+                added: column.dense_added_ticks[dense_index].read_arc(),
+                changed: column.dense_changed_ticks[dense_index].read_arc(),
+                last_run,
+                this_run,
+            };
+            Some(Ref::new(dense_index, column, ticks))
         } else {
             None
         }
     }
 
-    pub fn get_component_mut<T: Component>(&self, entity: Entity) -> Option<Mut<T>> {
+    pub fn get_component_mut<T: Component>(
+        &self,
+        entity: Entity,
+        last_run: Tick,
+        this_run: Tick,
+    ) -> Option<Mut<T>> {
         let archetype_id = self.entity_archetype.get(&entity)?;
 
         let archetype = self.archetypes.get(archetype_id)?;
@@ -635,7 +663,13 @@ impl Storage {
         {
             let column = archetype.columns[&TypeId::of::<T>()].write_arc();
             let dense_index = column.dense_index_of(entity.as_usize()).unwrap();
-            Some(Mut::new(dense_index, column))
+            let ticks = TicksMut {
+                added: column.dense_added_ticks[dense_index].write_arc(),
+                changed: column.dense_changed_ticks[dense_index].write_arc(),
+                last_run,
+                this_run,
+            };
+            Some(Mut::new(dense_index, column, ticks))
         } else {
             None
         }
@@ -667,203 +701,5 @@ impl Storage {
         self.entity_archetype
             .get(&entity)
             .and_then(|archetype_id| self.archetypes.get(archetype_id))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use weaver_ecs_macros::Component;
-    use weaver_reflect_macros::Reflect;
-
-    use super::*;
-    use crate as weaver_ecs;
-
-    #[derive(Debug, PartialEq, Clone, Component, Reflect)]
-    struct Position {
-        x: f32,
-        y: f32,
-    }
-
-    #[derive(Debug, PartialEq, Clone, Component, Reflect)]
-    struct Velocity {
-        dx: f32,
-        dy: f32,
-    }
-
-    #[derive(Debug, PartialEq, Clone, Component, Reflect)]
-    struct Acceleration {
-        ddx: f32,
-        ddy: f32,
-    }
-
-    #[test]
-    fn test_insert_component() {
-        let mut storage = Storage::new();
-
-        let entity = Entity::new(0, 0);
-
-        storage.insert_component(entity, Position { x: 0.0, y: 0.0 });
-        storage.insert_component(entity, Velocity { dx: 1.0, dy: 1.0 });
-
-        assert_eq!(
-            storage.get_component::<Position>(entity).map(|data| data.x),
-            Some(0.0)
-        );
-        assert_eq!(
-            storage
-                .get_component::<Velocity>(entity)
-                .map(|data| data.dx),
-            Some(1.0)
-        );
-    }
-
-    #[test]
-    fn test_remove_component() {
-        let mut storage = Storage::new();
-
-        let entity = Entity::new(0, 0);
-
-        storage.insert_component(entity, Position { x: 0.0, y: 0.0 });
-        storage.insert_component(entity, Velocity { dx: 1.0, dy: 1.0 });
-
-        assert_eq!(
-            storage.get_component::<Position>(entity).map(|data| data.x),
-            Some(0.0)
-        );
-        assert_eq!(
-            storage
-                .get_component::<Velocity>(entity)
-                .map(|data| data.dx),
-            Some(1.0)
-        );
-
-        storage.remove_component::<Position>(entity);
-
-        assert_eq!(storage.get_component::<Position>(entity).as_deref(), None);
-        assert_eq!(
-            storage
-                .get_component::<Velocity>(entity)
-                .map(|data| data.dx),
-            Some(1.0)
-        );
-    }
-
-    #[test]
-    fn test_remove_entity() {
-        let mut storage = Storage::new();
-
-        let entity = Entity::new(0, 0);
-
-        storage.insert_component(entity, Position { x: 0.0, y: 0.0 });
-        storage.insert_component(entity, Velocity { dx: 1.0, dy: 1.0 });
-
-        assert_eq!(
-            storage.get_component::<Position>(entity).map(|data| data.x),
-            Some(0.0)
-        );
-        assert_eq!(
-            storage
-                .get_component::<Velocity>(entity)
-                .map(|data| data.dx),
-            Some(1.0)
-        );
-
-        let data = storage.remove_entity(entity).unwrap();
-
-        assert_eq!(data.len(), 2);
-
-        assert_eq!(storage.get_component::<Position>(entity).as_deref(), None);
-        assert_eq!(storage.get_component::<Velocity>(entity).as_deref(), None);
-    }
-
-    #[test]
-    fn test_get() {
-        let mut storage = Storage::new();
-
-        let entity = Entity::new(0, 0);
-
-        storage.insert_component(entity, Position { x: 0.0, y: 0.0 });
-        storage.insert_component(entity, Velocity { dx: 1.0, dy: 1.0 });
-
-        assert_eq!(
-            storage.get_component::<Position>(entity).map(|data| data.x),
-            Some(0.0)
-        );
-        assert_eq!(
-            storage
-                .get_component::<Velocity>(entity)
-                .map(|data| data.dx),
-            Some(1.0)
-        );
-        assert_eq!(
-            storage.get_component::<Acceleration>(entity).as_deref(),
-            None
-        );
-    }
-
-    #[test]
-    fn test_contains() {
-        let mut storage = Storage::new();
-
-        let entity = Entity::new(0, 0);
-
-        storage.insert_component(entity, Position { x: 0.0, y: 0.0 });
-        storage.insert_component(entity, Velocity { dx: 1.0, dy: 1.0 });
-
-        assert!(storage.has_component::<Position>(entity));
-        assert!(storage.has_component::<Velocity>(entity));
-        assert!(!storage.has_component::<Acceleration>(entity));
-    }
-
-    #[test]
-    fn test_entity_iter() {
-        let mut storage = Storage::new();
-
-        let entity1 = Entity::new(0, 0);
-        let entity2 = Entity::new(1, 0);
-        let entity3 = Entity::new(2, 0);
-
-        storage.insert_component(entity1, Position { x: 0.0, y: 0.0 });
-        storage.insert_component(entity2, Position { x: 0.0, y: 0.0 });
-        storage.insert_component(entity3, Position { x: 0.0, y: 0.0 });
-
-        let entities = storage.entity_iter().collect::<Vec<_>>();
-
-        assert_eq!(entities.len(), 3);
-        assert!(entities.contains(&entity1));
-        assert!(entities.contains(&entity2));
-        assert!(entities.contains(&entity3));
-    }
-
-    #[test]
-    fn test_archetype_iter() {
-        let mut storage = Storage::new();
-
-        let entity1 = Entity::new(0, 0);
-        let entity2 = Entity::new(1, 0);
-        let entity3 = Entity::new(2, 0);
-
-        storage.insert_component(entity1, Position { x: 0.0, y: 0.0 });
-        storage.insert_component(entity2, Position { x: 0.0, y: 0.0 });
-        storage.insert_component(entity3, Position { x: 0.0, y: 0.0 });
-
-        let archetypes = storage.archetype_iter().collect::<Vec<_>>();
-
-        assert_eq!(archetypes.len(), 1);
-        assert_eq!(archetypes[0].len(), 3);
-    }
-
-    #[test]
-    fn test_get_archetype() {
-        let mut storage = Storage::new();
-
-        let entity = Entity::new(0, 0);
-
-        storage.insert_component(entity, Position { x: 0.0, y: 0.0 });
-        storage.insert_component(entity, Velocity { dx: 1.0, dy: 1.0 });
-
-        let archetype = storage.get_archetype(entity).unwrap();
-
-        assert_eq!(archetype.len(), 1);
     }
 }

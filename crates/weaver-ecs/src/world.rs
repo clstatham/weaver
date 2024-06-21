@@ -19,7 +19,8 @@ pub struct World {
     free_entities: Lock<Vec<Entity>>,
     storage: Lock<Storage>,
     resources: Lock<Resources>,
-    update_tick: AtomicU64,
+    change_tick: AtomicU64,
+    last_change_tick: Tick,
     systems: SystemSchedule,
 }
 
@@ -31,7 +32,8 @@ impl Default for World {
             free_entities: Lock::new(Vec::new()),
             storage: Lock::new(Storage::new()),
             resources: Lock::new(Resources::default()),
-            update_tick: AtomicU64::new(0),
+            change_tick: AtomicU64::new(0),
+            last_change_tick: Tick::new(0),
             systems: SystemSchedule::default(),
         }
     }
@@ -57,7 +59,9 @@ impl World {
 
     pub fn spawn<T: Bundle>(&self, bundle: T) -> Entity {
         let entity = self.create_entity();
-        self.storage().write().insert_components(entity, bundle);
+        self.storage()
+            .write()
+            .insert_components(entity, bundle, self.read_change_tick());
         entity
     }
 
@@ -67,11 +71,15 @@ impl World {
     }
 
     pub fn insert_component<T: Component>(&self, entity: Entity, component: T) {
-        self.storage.write().insert_component(entity, component)
+        self.storage
+            .write()
+            .insert_component(entity, component, self.read_change_tick())
     }
 
     pub fn insert_components<T: Bundle>(&self, entity: Entity, bundle: T) {
-        self.storage.write().insert_components(entity, bundle)
+        self.storage
+            .write()
+            .insert_components(entity, bundle, self.read_change_tick())
     }
 
     pub fn remove_component<T: Component>(&self, entity: Entity) -> Option<T> {
@@ -79,11 +87,19 @@ impl World {
     }
 
     pub fn get_component<T: Component>(&self, entity: Entity) -> Option<Ref<T>> {
-        self.storage.read().get_component::<T>(entity)
+        self.storage.read().get_component::<T>(
+            entity,
+            self.last_change_tick(),
+            self.read_change_tick(),
+        )
     }
 
     pub fn get_component_mut<T: Component>(&self, entity: Entity) -> Option<Mut<T>> {
-        self.storage.read().get_component_mut::<T>(entity)
+        self.storage.read().get_component_mut::<T>(
+            entity,
+            self.last_change_tick(),
+            self.read_change_tick(),
+        )
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
@@ -111,7 +127,9 @@ impl World {
     }
 
     pub fn get_resource_mut<T: Resource>(&self) -> Option<ResMut<T>> {
-        self.resources.read().get_mut::<T>()
+        self.resources
+            .read()
+            .get_mut::<T>(self.last_change_tick, self.read_change_tick())
     }
 
     pub fn has_resource<T: Resource>(&self) -> bool {
@@ -119,15 +137,32 @@ impl World {
     }
 
     pub fn insert_resource<T: Resource>(&self, component: T) {
-        self.resources.write().insert(component)
+        self.resources
+            .write()
+            .insert(component, self.read_change_tick())
     }
 
     pub fn remove_resource<T: Resource>(&self) -> Option<T> {
-        self.resources.write().remove::<T>()
+        self.resources
+            .write()
+            .remove::<T>()
+            .map(|(resource, _)| resource)
     }
 
-    pub fn update_tick(&self) -> Tick {
-        Tick::new(self.update_tick.load(Ordering::Acquire))
+    pub fn increment_change_tick(&mut self) {
+        self.last_change_tick = Tick::new(self.change_tick.fetch_add(1, Ordering::AcqRel));
+    }
+
+    pub fn read_change_tick(&self) -> Tick {
+        Tick::new(self.change_tick.load(Ordering::Acquire))
+    }
+
+    pub fn change_tick(&mut self) -> Tick {
+        Tick::new(*self.change_tick.get_mut())
+    }
+
+    pub fn last_change_tick(&self) -> Tick {
+        self.last_change_tick
     }
 
     pub fn run_stage<S: SystemStage>(&mut self) -> Result<()> {
@@ -145,7 +180,6 @@ impl World {
     }
 
     pub fn update(&mut self) -> Result<()> {
-        self.update_tick.fetch_add(1, Ordering::AcqRel);
         let systems = std::mem::take(&mut self.systems);
         systems.run_update(self)?;
         self.systems = systems;

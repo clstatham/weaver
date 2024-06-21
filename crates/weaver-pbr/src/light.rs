@@ -35,11 +35,32 @@ pub struct GpuPointLightArray {
 }
 
 impl RenderResource for GpuPointLightArray {
-    fn extract_render_resource(_main_world: &mut World, _render_world: &mut World) -> Option<Self>
+    type UpdateQuery = (&'static PointLight, &'static Transform);
+
+    fn extract_render_resource(main_world: &mut World, render_world: &mut World) -> Option<Self>
     where
         Self: Sized,
     {
-        let buffer = GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
+        let device = render_world.get_resource::<WgpuDevice>().unwrap();
+        let queue = render_world.get_resource::<WgpuQueue>().unwrap();
+        let mut buffer =
+            GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
+
+        let point_lights = main_world.query::<(&PointLight, &Transform)>();
+
+        for (_entity, (point_light, transform)) in point_lights.iter() {
+            let uniform = PointLightUniform {
+                position: transform.translation,
+                color: point_light.color,
+                intensity: point_light.intensity,
+                radius: point_light.radius,
+                _padding: 0,
+            };
+            buffer.push(uniform);
+        }
+
+        buffer.enqueue_update(&device, &queue);
+
         Some(Self { buffer })
     }
 

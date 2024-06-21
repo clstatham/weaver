@@ -77,7 +77,7 @@ pub fn update_render_component<T: RenderComponent>(render_world: &mut World) -> 
     let mut main_world = render_world.get_resource_mut::<MainWorld>().unwrap();
     let query = main_world.query::<T::ExtractQuery<'_>>();
 
-    for (entity, _) in query.iter() {
+    for (entity, _) in query.iter_changed() {
         if let Some(mut component) = render_world.get_component_mut::<T>(entity) {
             component.update_render_component(entity, &mut main_world, render_world)?;
         }
@@ -87,6 +87,8 @@ pub fn update_render_component<T: RenderComponent>(render_world: &mut World) -> 
 }
 
 pub trait RenderResource: Resource {
+    type UpdateQuery: QueryFetch + 'static;
+
     fn extract_render_resource(main_world: &mut World, render_world: &mut World) -> Option<Self>
     where
         Self: Sized;
@@ -121,13 +123,13 @@ pub fn extract_render_resource<T: RenderResource>(render_world: &mut World) -> R
     if !render_world.has_resource::<T>() {
         let mut main_world = render_world.get_resource_mut::<MainWorld>().unwrap();
 
-        if let Some(component) = T::extract_render_resource(&mut main_world, render_world) {
+        if let Some(resource) = T::extract_render_resource(&mut main_world, render_world) {
             log::debug!(
                 "Extracted render resource: {:?}",
                 std::any::type_name::<T>()
             );
             drop(main_world);
-            render_world.insert_resource(component);
+            render_world.insert_resource(resource);
         } else {
             log::warn!(
                 "Failed to extract render resource: {:?}",
@@ -141,6 +143,10 @@ pub fn extract_render_resource<T: RenderResource>(render_world: &mut World) -> R
 
 pub fn update_render_resource<T: RenderResource>(render_world: &mut World) -> Result<()> {
     if let Some(mut resource) = render_world.get_resource_mut::<T>() {
+        // let query = render_world.query::<T::UpdateQuery>();
+        // if query.iter_changed().next().is_none() {
+        //     return Ok(());
+        // }
         let mut main_world = render_world.get_resource_mut::<MainWorld>().unwrap();
         resource.update_render_resource(&mut main_world, render_world)?;
     }

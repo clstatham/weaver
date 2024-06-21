@@ -257,7 +257,9 @@ impl SubApps {
         for (_, sub_app) in self.sub_apps.iter_mut() {
             sub_app.extract_from(&mut self.main.world).unwrap();
             sub_app.update();
+            sub_app.world_mut().increment_change_tick();
         }
+        self.main.world_mut().increment_change_tick()
     }
 
     pub fn shutdown(&mut self) {

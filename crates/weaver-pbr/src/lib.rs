@@ -107,7 +107,8 @@ impl Plugin for PbrPlugin {
         render_app.add_plugin(PointLightPlugin)?;
         render_app.add_plugin(RenderPipelinePlugin::<PbrNode>::default())?;
 
-        render_app.add_plugin(BatchedInstanceBufferPlugin::<PbrMeshInstances>::default())?;
+        render_app
+            .add_plugin(BatchedInstanceBufferPlugin::<PbrDrawItem, PbrRenderCommand>::default())?;
         render_app.insert_resource(PbrMeshInstances::default());
 
         let pbr_draw_fn =

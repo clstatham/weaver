@@ -236,7 +236,9 @@ fn ui(world: &mut World) -> Result<()> {
                 let archetype = storage.get_archetype(entity).unwrap();
                 for (_, column) in archetype.column_iter() {
                     let mut column = column.write();
-                    let data = column.get_mut(entity.as_usize()).unwrap();
+                    let data = column
+                        .get_mut(entity.as_usize(), world.read_change_tick())
+                        .unwrap();
                     let component = data.get_data_mut();
                     let reflect = component.as_reflect_mut();
                     reflect.inspect_ui(&type_registry, &assets, ui);
