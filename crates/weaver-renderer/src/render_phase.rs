@@ -5,7 +5,11 @@ use std::{
 
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
-    entity::Entity, prelude::Resource, query::QueryFetch, system::SystemParam, world::World,
+    entity::Entity,
+    prelude::Resource,
+    query::QueryFetch,
+    system::SystemParam,
+    world::{World, WorldLock},
 };
 use weaver_util::{lock::Write, prelude::Result};
 
@@ -62,7 +66,7 @@ impl<T: BinnedDrawItem> BinnedRenderPhase<T> {
 
     pub fn render<'w>(
         &self,
-        render_world: &'w World,
+        render_world: &'w WorldLock,
         encoder: &mut wgpu::CommandEncoder,
         view_entity: Entity,
         draw_functions: &mut Write<'w, DrawFunctionsInner<T>>,
@@ -145,14 +149,18 @@ pub trait GetBatchData: Send + Sync + 'static {
 
     fn update_from_world(&mut self, render_world: &World);
 
-    fn get_batch_data(param: &Self::Param, query_item: Entity) -> Option<Self::BufferData>;
+    fn get_batch_data(
+        param: &<Self::Param as SystemParam>::Fetch<'_, '_>,
+        query_item: Entity,
+    ) -> Option<Self::BufferData>;
 }
 
 pub type BinnedInstances<I> = <I as BinnedDrawItem>::Instances;
 
 pub type BinnedBatchData<I> = <BinnedInstances<I> as GetBatchData>::BufferData;
 
-pub type BinnedBatchDataParam<I> = <BinnedInstances<I> as GetBatchData>::Param;
+pub type BinnedBatchDataParam<'w, 's, I> =
+    <<BinnedInstances<I> as GetBatchData>::Param as SystemParam>::Fetch<'w, 's>;
 
 #[derive(Resource)]
 pub struct BatchedInstanceBuffer<I: BinnedDrawItem, C: RenderCommand<I>> {
@@ -266,13 +274,17 @@ impl<I: BinnedDrawItem, C: RenderCommand<I>> Plugin for BatchedInstanceBufferPlu
 }
 
 pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
-    render_world: &mut World,
+    render_world: WorldLock,
 ) -> Result<()> {
     let mut binned_phases = render_world
+        .read()
         .get_resource_mut::<BinnedRenderPhases<I>>()
         .unwrap();
 
-    let draw_fns = render_world.get_resource::<DrawFunctions<I>>().unwrap();
+    let draw_fns = render_world
+        .read()
+        .get_resource::<DrawFunctions<I>>()
+        .unwrap();
 
     let draw_fn_id = draw_fns
         .read()
@@ -293,17 +305,22 @@ pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
         }
     }
 
-    let mut pbr_mesh_instances = render_world.get_resource_mut::<I::Instances>().unwrap();
-    pbr_mesh_instances.update_from_world(render_world);
+    let mut pbr_mesh_instances = render_world
+        .read()
+        .get_resource_mut::<I::Instances>()
+        .unwrap();
+    pbr_mesh_instances.update_from_world(&render_world.read());
     drop(pbr_mesh_instances);
 
     let mut batched_instance_buffer = render_world
+        .read()
         .get_resource_mut::<BatchedInstanceBuffer<I, C>>()
         .unwrap();
 
     batched_instance_buffer.clear();
 
-    let param = <I::Instances as GetBatchData>::Param::fetch(render_world).unwrap();
+    let mut state = <I::Instances as GetBatchData>::Param::init_state(&render_world);
+    let param = <I::Instances as GetBatchData>::Param::fetch(&mut state, &render_world);
 
     for phase in binned_phases.values_mut() {
         for key in &phase.batch_keys {

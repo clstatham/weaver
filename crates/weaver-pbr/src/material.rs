@@ -212,7 +212,8 @@ impl RenderAsset for GpuMaterial {
         let ao_texture =
             GpuTexture::from_image(&device, &queue, &ao_texture, texture_format::SDR_FORMAT)?;
 
-        let meta = GpuBufferVec::new(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
+        let mut meta =
+            GpuBufferVec::new(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
 
         let diffuse_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Diffuse Texture Sampler"),
@@ -257,6 +258,16 @@ impl RenderAsset for GpuMaterial {
             mipmap_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+
+        let meta_uniform = MaterialMetaUniform {
+            diffuse: base_asset.diffuse,
+            metallic: base_asset.metallic,
+            roughness: base_asset.roughness,
+            ao: base_asset.ao,
+            texture_scale: base_asset.texture_scale,
+        };
+        meta.push(meta_uniform);
+        meta.enqueue_update(&device, &queue);
 
         Some(Self {
             meta,

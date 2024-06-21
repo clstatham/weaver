@@ -132,7 +132,7 @@ impl<'a> QueryBuilder<'a> {
     }
 
     pub fn build(self) -> DynQuery {
-        let storage = self.world.storage().read();
+        let storage = self.world.storage();
 
         let mut columns = Vec::new();
         for archetype in storage.archetype_iter() {

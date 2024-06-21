@@ -6,7 +6,7 @@ use weaver_ecs::{
     component::Res,
     prelude::Resource,
     storage::Ref,
-    world::{FromWorld, World},
+    world::{FromWorld, World, WorldLock},
 };
 use weaver_pbr::PbrSubGraph;
 use weaver_renderer::{
@@ -338,7 +338,7 @@ impl ViewNode for GizmoRenderNode {
     type ViewQueryFetch = &'static ViewTarget;
     type ViewQueryFilter = ();
 
-    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
+    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
         let Some(gizmos) = render_world.get_resource::<Gizmos>() else {
             return Ok(());
         };
@@ -378,7 +378,7 @@ impl ViewNode for GizmoRenderNode {
 
     fn run(
         &self,
-        render_world: &World,
+        render_world: &WorldLock,
         graph_ctx: &mut weaver_renderer::graph::RenderGraphCtx,
         render_ctx: &mut weaver_renderer::graph::RenderCtx,
         view_query: &Ref<ViewTarget>,

@@ -1,6 +1,10 @@
 use weaver_app::{plugin::Plugin, App};
 use weaver_core::color::Color;
-use weaver_ecs::{prelude::Resource, storage::Ref, world::World};
+use weaver_ecs::{
+    prelude::Resource,
+    storage::Ref,
+    world::{World, WorldLock},
+};
 use weaver_util::prelude::Result;
 
 use crate::{
@@ -81,7 +85,7 @@ impl ViewNode for ClearColorNode {
     type ViewQueryFetch = &'static ViewTarget;
     type ViewQueryFilter = ();
 
-    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
+    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
         if let Some(clear_color) = render_world.get_resource::<ClearColor>() {
             self.color = clear_color.0;
         }
@@ -90,7 +94,7 @@ impl ViewNode for ClearColorNode {
 
     fn run(
         &self,
-        render_world: &World,
+        render_world: &WorldLock,
         _graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
         view_query: &Ref<ViewTarget>,

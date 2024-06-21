@@ -1,7 +1,7 @@
 use std::{any::TypeId, fmt::Debug, hash::Hash, ops::Range};
 
 use weaver_app::{App, SubApp};
-use weaver_ecs::{entity::Entity, prelude::Resource, query::QueryFetch, world::World};
+use weaver_ecs::{entity::Entity, prelude::Resource, query::QueryFetch, world::WorldLock};
 use weaver_util::{
     lock::{ArcRead, ArcWrite, Read, SharedLock, Write},
     prelude::Result,
@@ -46,13 +46,13 @@ pub trait BinnedDrawItem: DrawItem + Sized {
 
 pub trait DrawFn<T: DrawItem>: 'static + Send + Sync {
     #[allow(unused_variables)]
-    fn prepare(&mut self, render_world: &World) -> Result<()> {
+    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
         Ok(())
     }
 
     fn draw(
         &mut self,
-        render_world: &World,
+        render_world: &WorldLock,
         encoder: &mut wgpu::CommandEncoder,
         view_entity: Entity,
         item: &T,
@@ -73,7 +73,7 @@ impl<T: DrawItem> DrawFunctionsInner<T> {
         }
     }
 
-    pub fn prepare(&mut self, render_world: &World) -> Result<()> {
+    pub fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
         for function in self.functions.iter_mut() {
             function.prepare(render_world)?;
         }
@@ -136,11 +136,10 @@ pub trait DrawFnsApp {
 
 impl DrawFnsApp for SubApp {
     fn add_draw_fn<F: DrawFn<T> + 'static, T: DrawItem>(&mut self, function: F) -> &mut Self {
-        if !self.world().has_resource::<DrawFunctions<T>>() {
-            self.world().insert_resource(DrawFunctions::<T>::new());
+        if !self.has_resource::<DrawFunctions<T>>() {
+            self.insert_resource(DrawFunctions::<T>::new());
         }
-        self.world()
-            .get_resource_mut::<DrawFunctions<T>>()
+        self.get_resource_mut::<DrawFunctions<T>>()
             .unwrap()
             .write()
             .add(function);

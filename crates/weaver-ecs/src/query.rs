@@ -453,8 +453,8 @@ where
     F: QueryFilter + ?Sized,
 {
     pub fn new(world: &World) -> Self {
-        let storage = world.storage().read();
-        let columns = Q::fetch_columns(&storage, &|archetype| {
+        let storage = world.storage();
+        let columns = Q::fetch_columns(storage, &|archetype| {
             Q::test_archetype(archetype) && F::test_archetype(archetype)
         });
 

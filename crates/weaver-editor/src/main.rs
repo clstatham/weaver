@@ -3,7 +3,6 @@ use weaver::{
     prelude::*,
     weaver_app::App,
     weaver_core::{input::InputPlugin, mesh::Mesh, time::TimePlugin},
-    weaver_ecs::world::World,
     weaver_pbr::{material::Material, PbrPlugin},
     weaver_renderer::{camera::Camera, RendererPlugin},
     weaver_winit::WinitPlugin,
@@ -70,7 +69,7 @@ fn main() -> Result<()> {
         .run()
 }
 
-fn setup(world: &mut World) -> Result<()> {
+fn setup(mut world: WriteWorld) -> Result<()> {
     let _camera = world.spawn((
         Camera::perspective_lookat(
             Vec3::new(10.0, 10.0, 10.0),
@@ -224,7 +223,7 @@ fn light_gizmos(
     Ok(())
 }
 
-fn ui(world: &mut World) -> Result<()> {
+fn ui(world: ReadWorld) -> Result<()> {
     let editor_state = world.get_resource::<EditorState>().unwrap();
     let egui_context = world.get_resource::<EguiContext>().unwrap();
     let type_registry = world.get_resource::<TypeRegistry>().unwrap();
@@ -232,7 +231,7 @@ fn ui(world: &mut World) -> Result<()> {
     egui_context.draw_if_ready(|ctx| {
         if let Some(entity) = editor_state.selected_entity {
             egui::Window::new("Inspector").show(ctx, |ui| {
-                let storage = world.storage().read();
+                let storage = world.storage();
                 let archetype = storage.get_archetype(entity).unwrap();
                 for (_, column) in archetype.column_iter() {
                     let mut column = column.write();
@@ -249,7 +248,7 @@ fn ui(world: &mut World) -> Result<()> {
     Ok(())
 }
 
-fn pick_entity(world: &mut World) -> Result<()> {
+fn pick_entity(world: ReadWorld) -> Result<()> {
     let input = world.get_resource::<Input>().unwrap();
     let egui_ctx = world.get_resource::<EguiContext>().unwrap();
     if input.mouse_just_pressed(MouseButton::Left) && !egui_ctx.wants_input() {

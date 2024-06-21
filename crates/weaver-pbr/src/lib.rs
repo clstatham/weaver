@@ -6,7 +6,7 @@ use render::{PbrMeshInstances, PbrNode, PbrNodeLabel, PbrRenderCommand};
 use weaver_app::prelude::*;
 use weaver_asset::Handle;
 use weaver_core::transform::Transform;
-use weaver_ecs::{entity::Entity, storage::Ref, world::World};
+use weaver_ecs::{entity::Entity, storage::Ref, world::ReadWorld};
 use weaver_renderer::{
     bind_group::BindGroup,
     camera::GpuCamera,
@@ -112,7 +112,7 @@ impl Plugin for PbrPlugin {
         render_app.insert_resource(PbrMeshInstances::default());
 
         let pbr_draw_fn =
-            RenderCommandState::<PbrDrawItem, PbrRenderCommand>::new(render_app.world_mut());
+            RenderCommandState::<PbrDrawItem, PbrRenderCommand>::new(&render_app.read_world());
         render_app.add_draw_fn(pbr_draw_fn);
 
         render_app.add_plugin(BinnedRenderPhasePlugin::<PbrDrawItem>::default())?;
@@ -140,7 +140,7 @@ impl Plugin for PbrPlugin {
     }
 }
 
-fn extract_pbr_camera_phase(render_world: &mut World) -> Result<()> {
+fn extract_pbr_camera_phase(render_world: ReadWorld) -> Result<()> {
     let mut binned_phases = render_world
         .get_resource_mut::<BinnedRenderPhases<PbrDrawItem>>()
         .unwrap();

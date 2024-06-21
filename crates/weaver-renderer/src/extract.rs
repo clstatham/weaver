@@ -3,7 +3,7 @@ use weaver_ecs::{
     component::{Component, Resource},
     entity::Entity,
     query::QueryFetch,
-    world::World,
+    world::{World, WorldLock, WriteWorld},
 };
 use weaver_util::prelude::Result;
 
@@ -46,14 +46,14 @@ impl<T: RenderComponent> Plugin for RenderComponentPlugin<T> {
     }
 }
 
-pub fn extract_render_component<T: RenderComponent>(render_world: &mut World) -> Result<()> {
-    let mut main_world = render_world.get_resource_mut::<MainWorld>().unwrap();
+pub fn extract_render_component<T: RenderComponent>(mut render_world: WriteWorld) -> Result<()> {
+    let main_world = render_world.get_resource::<MainWorld>().unwrap();
     let query = main_world.query::<T::ExtractQuery<'_>>();
 
     for (entity, extract_query) in query.iter() {
         if !render_world.has_component::<T>(entity) {
             if let Some(component) =
-                T::extract_render_component(entity, &mut main_world, render_world)
+                T::extract_render_component(entity, &mut main_world.write(), &mut render_world)
             {
                 log::debug!(
                     "Extracted render component: {:?}",
@@ -73,13 +73,17 @@ pub fn extract_render_component<T: RenderComponent>(render_world: &mut World) ->
     Ok(())
 }
 
-pub fn update_render_component<T: RenderComponent>(render_world: &mut World) -> Result<()> {
-    let mut main_world = render_world.get_resource_mut::<MainWorld>().unwrap();
+pub fn update_render_component<T: RenderComponent>(mut render_world: WriteWorld) -> Result<()> {
+    let main_world = render_world.get_resource::<MainWorld>().unwrap();
     let query = main_world.query::<T::ExtractQuery<'_>>();
 
     for (entity, _) in query.iter_changed() {
         if let Some(mut component) = render_world.get_component_mut::<T>(entity) {
-            component.update_render_component(entity, &mut main_world, render_world)?;
+            component.update_render_component(
+                entity,
+                &mut main_world.write(),
+                &mut render_world,
+            )?;
         }
     }
 
@@ -119,11 +123,13 @@ impl<T: RenderResource> Plugin for RenderResourcePlugin<T> {
     }
 }
 
-pub fn extract_render_resource<T: RenderResource>(render_world: &mut World) -> Result<()> {
+pub fn extract_render_resource<T: RenderResource>(mut render_world: WriteWorld) -> Result<()> {
     if !render_world.has_resource::<T>() {
-        let mut main_world = render_world.get_resource_mut::<MainWorld>().unwrap();
+        let main_world = render_world.get_resource::<MainWorld>().unwrap();
 
-        if let Some(resource) = T::extract_render_resource(&mut main_world, render_world) {
+        if let Some(resource) =
+            T::extract_render_resource(&mut main_world.write(), &mut render_world)
+        {
             log::debug!(
                 "Extracted render resource: {:?}",
                 std::any::type_name::<T>()
@@ -141,20 +147,20 @@ pub fn extract_render_resource<T: RenderResource>(render_world: &mut World) -> R
     Ok(())
 }
 
-pub fn update_render_resource<T: RenderResource>(render_world: &mut World) -> Result<()> {
+pub fn update_render_resource<T: RenderResource>(mut render_world: WriteWorld) -> Result<()> {
     if let Some(mut resource) = render_world.get_resource_mut::<T>() {
         // let query = render_world.query::<T::UpdateQuery>();
         // if query.iter_changed().next().is_none() {
         //     return Ok(());
         // }
-        let mut main_world = render_world.get_resource_mut::<MainWorld>().unwrap();
-        resource.update_render_resource(&mut main_world, render_world)?;
+        let main_world = render_world.get_resource::<MainWorld>().unwrap();
+        resource.update_render_resource(&mut main_world.write(), &mut render_world)?;
     }
 
     Ok(())
 }
 
-pub fn render_extract(main_world: &mut World, render_world: &mut World) -> Result<()> {
+pub fn render_extract(main_world: &mut WorldLock, render_world: &mut WorldLock) -> Result<()> {
     let scratch_world = main_world.remove_resource::<ScratchMainWorld>().unwrap();
     let inserted_world = std::mem::replace(main_world, scratch_world.0);
     render_world.insert_resource(MainWorld(inserted_world));

@@ -21,7 +21,10 @@ use transform::TransformPlugin;
 use weaver_app::{plugin::Plugin, App, AppLabel, SubApp};
 use weaver_asset::Assets;
 use weaver_ecs::{
-    prelude::Resource, reflect::registry::TypeRegistry, system_schedule::SystemStage, world::World,
+    prelude::Resource,
+    reflect::registry::TypeRegistry,
+    system_schedule::SystemStage,
+    world::{ReadWorld, World, WorldLock, WriteWorld},
 };
 use weaver_event::Events;
 use weaver_util::prelude::Result;
@@ -279,13 +282,13 @@ impl Renderer {
 }
 
 #[derive(Resource, Default)]
-pub struct ScratchMainWorld(World);
+pub struct ScratchMainWorld(WorldLock);
 
 #[derive(Resource)]
-pub struct MainWorld(World);
+pub struct MainWorld(WorldLock);
 
 impl Deref for MainWorld {
-    type Target = World;
+    type Target = WorldLock;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -352,13 +355,13 @@ impl Plugin for RendererPlugin {
         let render_app = main_app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.insert_resource(resized_events.clone());
         render_app.insert_resource(window.clone());
-        create_surface(render_app.world_mut())?;
+        create_surface(&mut render_app.write_world())?;
 
         Ok(())
     }
 }
 
-pub fn begin_render(render_world: &mut World) -> Result<()> {
+pub fn begin_render(mut render_world: WriteWorld) -> Result<()> {
     let renderer = render_world.get_resource::<Renderer>().unwrap();
     if render_world.has_resource::<CurrentFrame>() {
         log::warn!("Current frame already exists");
@@ -394,7 +397,7 @@ pub fn begin_render(render_world: &mut World) -> Result<()> {
     Ok(())
 }
 
-pub fn end_render(render_world: &mut World) -> Result<()> {
+pub fn end_render(mut render_world: WriteWorld) -> Result<()> {
     let Some(current_frame) = render_world.remove_resource::<CurrentFrame>() else {
         return Ok(());
     };
@@ -452,7 +455,7 @@ pub fn end_render(render_world: &mut World) -> Result<()> {
     Ok(())
 }
 
-fn resize_surface(render_world: &mut World) -> Result<()> {
+fn resize_surface(render_world: ReadWorld) -> Result<()> {
     let events = render_world
         .get_resource::<Events<WindowResized>>()
         .unwrap();
@@ -502,19 +505,19 @@ fn resize_surface(render_world: &mut World) -> Result<()> {
     Ok(())
 }
 
-pub fn render_system(render_world: &mut World) -> Result<()> {
+pub fn render_system(render_world: WorldLock) -> Result<()> {
     let mut render_graph = render_world.get_resource_mut::<RenderGraph>().unwrap();
     let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
     let device = render_world.get_resource::<WgpuDevice>().unwrap();
     let queue = render_world.get_resource::<WgpuQueue>().unwrap();
 
-    render_graph.prepare(render_world).unwrap();
+    render_graph.prepare(&render_world).unwrap();
 
     // todo: don't assume every camera wants to run the whole main render graph
     let view_targets = render_world.query::<&ViewTarget>();
     for entity in view_targets.entity_iter() {
         render_graph
-            .run(&device, &queue, &mut renderer, render_world, entity)
+            .run(&device, &queue, &mut renderer, &render_world, entity)
             .unwrap();
     }
 

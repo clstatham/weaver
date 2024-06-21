@@ -5,7 +5,7 @@ use weaver_asset::{prelude::Asset, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
     change::ChangeDetection,
     prelude::{Component, Reflect, Resource},
-    world::World,
+    world::WriteWorld,
 };
 use weaver_util::{
     prelude::{bail, DowncastSync, Result},
@@ -137,7 +137,7 @@ impl<T: Component + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
 }
 
 fn create_component_bind_group<T: Component + CreateBindGroup>(
-    render_world: &mut World,
+    mut render_world: WriteWorld,
 ) -> Result<()> {
     let device = render_world.get_resource::<WgpuDevice>().unwrap();
 
@@ -177,7 +177,7 @@ impl<T: Resource + CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
 }
 
 fn create_resource_bind_group<T: Resource + CreateBindGroup>(
-    render_world: &mut World,
+    mut render_world: WriteWorld,
 ) -> Result<()> {
     let Some(mut data) = render_world.get_resource_mut::<T>() else {
         return Ok(());
@@ -236,7 +236,7 @@ impl<T: CreateBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
 }
 
 fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
-    render_world: &mut World,
+    mut render_world: WriteWorld,
 ) -> Result<()> {
     let device = render_world.get_resource::<WgpuDevice>().unwrap();
     let mut assets = render_world.get_resource_mut::<Assets>().unwrap();

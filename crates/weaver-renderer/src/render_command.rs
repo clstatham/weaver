@@ -2,8 +2,8 @@ use weaver_app::{App, SubApp};
 use weaver_ecs::{
     entity::Entity,
     query::{Query, QueryFetch, QueryFilter},
-    system::SystemParam,
-    world::World,
+    system::{SystemParam, SystemParamFetch},
+    world::{World, WorldLock},
 };
 use weaver_util::prelude::Result;
 
@@ -23,7 +23,7 @@ pub trait RenderCommand<T: DrawItem>: 'static + Send + Sync {
         item: &T,
         view_query: <Self::ViewQueryFetch as QueryFetch>::Fetch,
         item_query: Option<<Self::ItemQueryFetch as QueryFetch>::Fetch>,
-        param: Self::Param,
+        param: SystemParamFetch<Self::Param>,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<()>;
 }
@@ -34,7 +34,7 @@ pub struct RenderCommandState<T: DrawItem, C: RenderCommand<T>> {
 }
 
 impl<T: DrawItem, C: RenderCommand<T>> RenderCommandState<T, C> {
-    pub fn new(render_world: &mut World) -> Self {
+    pub fn new(render_world: &World) -> Self {
         Self {
             view_query: render_world.query_filtered(),
             item_query: render_world.query_filtered(),
@@ -43,7 +43,7 @@ impl<T: DrawItem, C: RenderCommand<T>> RenderCommandState<T, C> {
 }
 
 impl<T: DrawItem, C: RenderCommand<T>> DrawFn<T> for RenderCommandState<T, C> {
-    fn prepare(&mut self, render_world: &World) -> Result<()> {
+    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
         self.view_query = render_world.query_filtered();
         self.item_query = render_world.query_filtered();
         Ok(())
@@ -51,14 +51,15 @@ impl<T: DrawItem, C: RenderCommand<T>> DrawFn<T> for RenderCommandState<T, C> {
 
     fn draw(
         &mut self,
-        render_world: &World,
+        render_world: &WorldLock,
         encoder: &mut wgpu::CommandEncoder,
         view_entity: Entity,
         item: &T,
     ) -> Result<()> {
         let view_query = self.view_query.get(view_entity).unwrap();
         let item_query = self.item_query.get(item.entity());
-        let param = C::Param::fetch(render_world).unwrap();
+        let mut state = C::Param::init_state(render_world);
+        let param = C::Param::fetch(&mut state, render_world);
 
         <C as RenderCommand<T>>::render(item, view_query, item_query, param, encoder)
     }
@@ -70,11 +71,8 @@ pub trait AddRenderCommand {
 
 impl AddRenderCommand for SubApp {
     fn add_render_command<T: DrawItem, C: RenderCommand<T>>(&mut self) -> &mut Self {
-        let draw_fn = RenderCommandState::<T, C>::new(self.world_mut());
-        let draw_fns = self
-            .world_mut()
-            .get_resource_mut::<DrawFunctions<T>>()
-            .unwrap();
+        let draw_fn = RenderCommandState::<T, C>::new(&self.read_world());
+        let draw_fns = self.get_resource_mut::<DrawFunctions<T>>().unwrap();
         draw_fns.write().add(draw_fn);
         self
     }

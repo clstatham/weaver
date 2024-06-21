@@ -1,7 +1,7 @@
 use std::{any::TypeId, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{prelude::Resource, world::World};
+use weaver_ecs::{prelude::Resource, world::ReadWorld};
 use weaver_util::{
     prelude::{DowncastSync, Result},
     TypeIdMap,
@@ -164,7 +164,7 @@ impl<T: CreateRenderPipeline> Plugin for RenderPipelinePlugin<T> {
     }
 }
 
-fn extract_render_pipeline<T: CreateRenderPipeline>(render_world: &mut World) -> Result<()> {
+fn extract_render_pipeline<T: CreateRenderPipeline>(render_world: ReadWorld) -> Result<()> {
     let device = render_world.get_resource::<WgpuDevice>().unwrap();
     let mut pipeline_cache = render_world
         .get_resource_mut::<RenderPipelineCache>()

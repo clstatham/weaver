@@ -11,6 +11,7 @@ use weaver_ecs::{
     entity::Entity,
     prelude::{Resource, World},
     storage::Ref,
+    world::WorldLock,
 };
 use weaver_renderer::{
     bind_group::{BindGroup, BindGroupLayoutCache},
@@ -195,7 +196,7 @@ impl ViewNode for PbrNode {
 
     fn run(
         &self,
-        render_world: &World,
+        render_world: &WorldLock,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
         _view_target: &Ref<ViewTarget>,

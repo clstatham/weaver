@@ -2,11 +2,13 @@ use egui::{Context, FullOutput};
 use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::{winit, State};
 use weaver_app::{plugin::Plugin, App, PostUpdate, PreUpdate};
-use weaver_ecs::{component::Res, prelude::Resource, system_schedule::SystemStage, world::World};
+use weaver_ecs::{
+    component::Res, prelude::Resource, system_schedule::SystemStage, world::ReadWorld,
+};
 use weaver_event::EventRx;
 use weaver_renderer::{
-    prelude::wgpu, texture::texture_format::VIEW_FORMAT, CurrentFrame, Render, RenderApp, WgpuDevice,
-    WgpuQueue,
+    prelude::wgpu, texture::texture_format::VIEW_FORMAT, CurrentFrame, Render, RenderApp,
+    WgpuDevice, WgpuQueue,
 };
 use weaver_util::{lock::SharedLock, prelude::Result};
 use weaver_winit::{Window, WinitEvent};
@@ -183,14 +185,14 @@ impl Plugin for EguiPlugin {
         let egui_context = EguiContext::new(&device, &window, 1);
         drop(renderer);
         drop(window);
-        render_app.world().insert_resource(egui_context.clone());
-        app.main_app().world().insert_resource(egui_context);
+        render_app.insert_resource(egui_context.clone());
+        app.main_app().insert_resource(egui_context);
 
         Ok(())
     }
 
     fn ready(&self, app: &App) -> bool {
-        app.main_app().world().has_resource::<EguiContext>()
+        app.main_app().has_resource::<EguiContext>()
     }
 }
 
@@ -204,7 +206,7 @@ pub fn end_frame(egui_context: Res<EguiContext>) -> Result<()> {
     Ok(())
 }
 
-fn render(render_world: &mut World) -> Result<()> {
+fn render(render_world: ReadWorld) -> Result<()> {
     let mut egui_context = render_world.get_resource_mut::<EguiContext>().unwrap();
     let window = render_world.get_resource::<Window>().unwrap();
     let device = render_world.get_resource::<WgpuDevice>().unwrap();

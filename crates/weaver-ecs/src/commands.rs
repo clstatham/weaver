@@ -1,4 +1,4 @@
-use weaver_ecs::prelude::World;
+use crate::prelude::World;
 use weaver_util::prelude::Result;
 
 pub trait Command: 'static {

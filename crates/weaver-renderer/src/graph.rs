@@ -6,7 +6,7 @@ use weaver_ecs::{
     entity::Entity,
     prelude::Resource,
     query::{Query, QueryFetch, QueryFilter},
-    world::{FromWorld, World},
+    world::{FromWorld, World, WorldLock},
 };
 use weaver_util::prelude::{anyhow, bail, impl_downcast, DowncastSync, Result};
 
@@ -65,13 +65,13 @@ pub trait RenderNode: DowncastSync {
     }
 
     #[allow(unused)]
-    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
+    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
         Ok(())
     }
 
     fn run(
         &self,
-        render_world: &World,
+        render_world: &WorldLock,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
     ) -> Result<()>;
@@ -90,13 +90,13 @@ pub trait ViewNode: Send + Sync + 'static {
     }
 
     #[allow(unused)]
-    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
+    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
         Ok(())
     }
 
     fn run(
         &self,
-        render_world: &World,
+        render_world: &WorldLock,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
         view_query: &<Self::ViewQueryFetch as QueryFetch>::Fetch,
@@ -126,14 +126,14 @@ impl<T: ViewNode> RenderNode for ViewNodeRunner<T> {
         self.node.output_slots()
     }
 
-    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
+    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
         self.view_query = render_world.query_filtered();
         self.node.prepare(render_world)
     }
 
     fn run(
         &self,
-        render_world: &World,
+        render_world: &WorldLock,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
     ) -> Result<()> {
@@ -344,7 +344,7 @@ impl RenderNode for GraphInputNode {
 
     fn run(
         &self,
-        _render_world: &World,
+        _render_world: &WorldLock,
         graph_ctx: &mut RenderGraphCtx,
         _render_ctx: &mut RenderCtx,
     ) -> Result<()> {
@@ -375,7 +375,7 @@ impl RenderNode for GraphOutputNode {
 
     fn run(
         &self,
-        _render_world: &World,
+        _render_world: &WorldLock,
         graph_ctx: &mut RenderGraphCtx,
         _render_ctx: &mut RenderCtx,
     ) -> Result<()> {
@@ -407,13 +407,13 @@ impl RenderNode for SubGraphNode {
             .unwrap_or_default()
     }
 
-    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
+    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
         self.sub_graph.prepare(render_world)
     }
 
     fn run(
         &self,
-        render_world: &World,
+        render_world: &WorldLock,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
     ) -> Result<()> {
@@ -471,7 +471,7 @@ impl RenderGraph {
         self.get_node_state_mut(label)?.node_mut::<T>()
     }
 
-    pub fn prepare(&mut self, render_world: &mut World) -> Result<()> {
+    pub fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
         let mut search = Topo::new(&self.graph);
 
         while let Some(node) = search.next(&self.graph) {
@@ -685,7 +685,7 @@ impl RenderGraph {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         renderer: &mut Renderer,
-        render_world: &World,
+        render_world: &WorldLock,
         view_entity: Entity,
     ) -> Result<()> {
         self.validate()?;
@@ -797,8 +797,8 @@ impl RenderGraphApp for SubApp {
         &mut self,
         label: impl RenderLabel,
     ) -> &mut Self {
-        let node = T::from_world(self.world());
-        let mut render_graph = self.world_mut().get_resource_mut::<RenderGraph>().unwrap();
+        let node = T::from_world(&self.read_world());
+        let mut render_graph = self.get_resource_mut::<RenderGraph>().unwrap();
         render_graph.add_node(label, node).unwrap();
         self
     }
@@ -808,13 +808,13 @@ impl RenderGraphApp for SubApp {
         from: impl RenderLabel,
         to: impl RenderLabel,
     ) -> &mut Self {
-        let mut render_graph = self.world_mut().get_resource_mut::<RenderGraph>().unwrap();
+        let mut render_graph = self.get_resource_mut::<RenderGraph>().unwrap();
         render_graph.try_add_node_edge(from, to).unwrap();
         self
     }
 
     fn add_render_sub_graph(&mut self, graph: impl RenderLabel) -> &mut Self {
-        let mut render_graph = self.world_mut().get_resource_mut::<RenderGraph>().unwrap();
+        let mut render_graph = self.get_resource_mut::<RenderGraph>().unwrap();
         let sub_graph = RenderGraph::new();
         render_graph
             .add_node(
@@ -833,8 +833,8 @@ impl RenderGraphApp for SubApp {
         sub_graph: impl RenderLabel,
         label: impl RenderLabel,
     ) -> &mut Self {
-        let node = T::from_world(self.world());
-        let mut render_graph = self.world_mut().get_resource_mut::<RenderGraph>().unwrap();
+        let node = T::from_world(&self.read_world());
+        let mut render_graph = self.get_resource_mut::<RenderGraph>().unwrap();
         let sub_graph = render_graph
             .get_node_mut::<SubGraphNode>(sub_graph)
             .unwrap();
@@ -848,7 +848,7 @@ impl RenderGraphApp for SubApp {
         from: impl RenderLabel,
         to: impl RenderLabel,
     ) -> &mut Self {
-        let mut render_graph = self.world_mut().get_resource_mut::<RenderGraph>().unwrap();
+        let mut render_graph = self.get_resource_mut::<RenderGraph>().unwrap();
         let sub_graph = render_graph
             .get_node_mut::<SubGraphNode>(sub_graph)
             .unwrap();

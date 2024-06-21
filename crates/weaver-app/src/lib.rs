@@ -6,14 +6,13 @@ use rustc_hash::FxHashMap;
 use weaver_ecs::{
     component::{Res, ResMut, Resource},
     reflect::registry::{TypeRegistry, Typed},
-    system::FunctionSystem,
+    system::IntoSystem,
     system_schedule::SystemStage,
-    world::World,
+    world::{ReadWorld, World, WorldLock, WriteWorld},
 };
 use weaver_event::{Event, Events};
 use weaver_util::{lock::SharedLock, prelude::Result};
 
-pub mod commands;
 pub mod plugin;
 
 pub mod prelude {
@@ -55,12 +54,12 @@ where
     }
 }
 
-pub type ExtractFn = Box<dyn Fn(&mut World, &mut World) -> Result<()> + Send + Sync>;
+pub type ExtractFn = Box<dyn Fn(&mut WorldLock, &mut WorldLock) -> Result<()> + Send + Sync>;
 
 pub trait AppLabel: 'static {}
 
 pub struct SubApp {
-    world: World,
+    world: WorldLock,
     plugins: SharedLock<Vec<Box<dyn Plugin>>>,
     extract_fn: Option<ExtractFn>,
 }
@@ -70,7 +69,7 @@ impl Default for SubApp {
         let world = World::new();
 
         Self {
-            world,
+            world: world.into_world_lock(),
             plugins: SharedLock::new(Vec::default()),
             extract_fn: None,
         }
@@ -116,6 +115,10 @@ impl SubApp {
         self.world.get_resource_mut::<T>()
     }
 
+    pub fn has_resource<T: Resource>(&self) -> bool {
+        self.world.has_resource::<T>()
+    }
+
     pub fn add_plugin<T: Plugin>(&mut self, plugin: T) -> Result<&mut Self> {
         if self
             .plugins
@@ -136,61 +139,61 @@ impl SubApp {
     }
 
     pub fn push_init_stage<T: SystemStage>(&mut self) -> &mut Self {
-        self.world.push_init_stage::<T>();
+        self.world.write().push_init_stage::<T>();
         self
     }
 
     pub fn push_update_stage<T: SystemStage>(&mut self) -> &mut Self {
-        self.world.push_update_stage::<T>();
+        self.world.write().push_update_stage::<T>();
         self
     }
 
     pub fn push_shutdown_stage<T: SystemStage>(&mut self) -> &mut Self {
-        self.world.push_shutdown_stage::<T>();
+        self.world.write().push_shutdown_stage::<T>();
         self
     }
 
     pub fn push_manual_stage<T: SystemStage>(&mut self) -> &mut Self {
-        self.world.push_manual_stage::<T>();
+        self.world.write().push_manual_stage::<T>();
         self
     }
 
     pub fn add_update_stage_before<T: SystemStage, U: SystemStage>(&mut self) -> &mut Self {
-        self.world.add_stage_before::<T, U>();
+        self.world.write().add_stage_before::<T, U>();
         self
     }
 
     pub fn add_update_stage_after<T: SystemStage, U: SystemStage>(&mut self) -> &mut Self {
-        self.world.add_stage_after::<T, U>();
+        self.world.write().add_stage_after::<T, U>();
         self
     }
 
     pub fn add_system<S: SystemStage, M>(
         &mut self,
-        system: impl FunctionSystem<M> + 'static,
+        system: impl IntoSystem<M> + 'static,
         stage: S,
     ) -> &mut Self {
-        self.world.add_system(system, stage);
+        self.world.write().add_system(system, stage);
         self
     }
 
     pub fn add_system_before<S: SystemStage, M1, M2>(
         &mut self,
-        system: impl FunctionSystem<M1> + 'static,
-        before: impl FunctionSystem<M2> + 'static,
+        system: impl IntoSystem<M1> + 'static,
+        before: impl IntoSystem<M2> + 'static,
         stage: S,
     ) -> &mut Self {
-        self.world.add_system_before(system, before, stage);
+        self.world.write().add_system_before(system, before, stage);
         self
     }
 
     pub fn add_system_after<S: SystemStage, M1, M2>(
         &mut self,
-        system: impl FunctionSystem<M1> + 'static,
-        after: impl FunctionSystem<M2> + 'static,
+        system: impl IntoSystem<M1> + 'static,
+        after: impl IntoSystem<M2> + 'static,
         stage: S,
     ) -> &mut Self {
-        self.world.add_system_after(system, after, stage);
+        self.world.write().add_system_after(system, after, stage);
         self
     }
 
@@ -203,15 +206,15 @@ impl SubApp {
         self.extract_fn.as_ref()
     }
 
-    pub fn world(&self) -> &World {
-        &self.world
+    pub fn read_world(&self) -> ReadWorld {
+        self.world.read()
     }
 
-    pub fn world_mut(&mut self) -> &mut World {
-        &mut self.world
+    pub fn write_world(&self) -> WriteWorld {
+        self.world.write()
     }
 
-    pub fn extract_from(&mut self, from: &mut World) -> Result<()> {
+    pub fn extract_from(&mut self, from: &mut WorldLock) -> Result<()> {
         if let Some(extract_fn) = self.extract_fn.as_mut() {
             extract_fn(from, &mut self.world)
         } else {
@@ -257,9 +260,9 @@ impl SubApps {
         for (_, sub_app) in self.sub_apps.iter_mut() {
             sub_app.extract_from(&mut self.main.world).unwrap();
             sub_app.update();
-            sub_app.world_mut().increment_change_tick();
+            sub_app.write_world().increment_change_tick();
         }
-        self.main.world_mut().increment_change_tick()
+        self.main.write_world().increment_change_tick()
     }
 
     pub fn shutdown(&mut self) {
@@ -376,7 +379,7 @@ impl App {
 
     pub fn add_system<S: SystemStage, M>(
         &mut self,
-        system: impl FunctionSystem<M> + 'static,
+        system: impl IntoSystem<M> + 'static,
         stage: S,
     ) -> &mut Self {
         self.main_app_mut().add_system(system, stage);
@@ -385,8 +388,8 @@ impl App {
 
     pub fn add_system_before<S: SystemStage, M1, M2>(
         &mut self,
-        system: impl FunctionSystem<M1> + 'static,
-        before: impl FunctionSystem<M2> + 'static,
+        system: impl IntoSystem<M1> + 'static,
+        before: impl IntoSystem<M2> + 'static,
         stage: S,
     ) -> &mut Self {
         self.main_app_mut().add_system_before(system, before, stage);
@@ -395,8 +398,8 @@ impl App {
 
     pub fn add_system_after<S: SystemStage, M1, M2>(
         &mut self,
-        system: impl FunctionSystem<M1> + 'static,
-        after: impl FunctionSystem<M2> + 'static,
+        system: impl IntoSystem<M1> + 'static,
+        after: impl IntoSystem<M2> + 'static,
         stage: S,
     ) -> &mut Self {
         self.main_app_mut().add_system_after(system, after, stage);

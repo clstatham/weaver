@@ -280,7 +280,7 @@ impl Plugin for CameraPlugin {
     }
 }
 
-fn insert_view_target(render_world: &mut World) -> Result<()> {
+fn insert_view_target(mut render_world: WriteWorld) -> Result<()> {
     if let Some(current_frame) = render_world.get_resource::<CurrentFrame>() {
         let query = render_world.query::<&PrimaryCamera>();
         for (gpu_camera, primary_camera) in query.iter() {
@@ -295,7 +295,7 @@ fn insert_view_target(render_world: &mut World) -> Result<()> {
     Ok(())
 }
 
-fn remove_view_target(render_world: &mut World) -> Result<()> {
+fn remove_view_target(mut render_world: WriteWorld) -> Result<()> {
     let query = render_world.query_filtered::<&PrimaryCamera, With<ViewTarget>>();
     for (gpu_camera, primary_camera) in query.iter() {
         drop(primary_camera);

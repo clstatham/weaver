@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{Asset, Assets, Handle, UntypedHandle};
-use weaver_ecs::{prelude::Resource, world::World};
+use weaver_ecs::{
+    prelude::Resource,
+    world::{World, WriteWorld},
+};
 use weaver_util::prelude::Result;
 
 use crate::{Extract, MainWorld};
@@ -63,8 +66,8 @@ impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
     }
 }
 
-fn extract_render_asset<T: RenderAsset>(render_world: &mut World) -> Result<()> {
-    let mut main_world = render_world.get_resource_mut::<MainWorld>().unwrap();
+fn extract_render_asset<T: RenderAsset>(mut render_world: WriteWorld) -> Result<()> {
+    let main_world = render_world.get_resource::<MainWorld>().unwrap();
     // query for handles to the base asset
     let query = main_world.query::<&Handle<T::BaseAsset>>();
 
@@ -79,7 +82,6 @@ fn extract_render_asset<T: RenderAsset>(render_world: &mut World) -> Result<()> 
                 drop(handle);
                 let render_handle = Handle::<T>::try_from(render_handle).unwrap();
 
-                main_world.insert_component(entity, render_handle);
                 render_world.insert_component(entity, render_handle);
             }
         } else {
@@ -87,7 +89,7 @@ fn extract_render_asset<T: RenderAsset>(render_world: &mut World) -> Result<()> 
             let assets = main_world.get_resource::<Assets>().unwrap();
             let base_asset = assets.get::<T::BaseAsset>(*handle).unwrap();
             if let Some(render_asset) =
-                T::extract_render_asset(&base_asset, &mut main_world, render_world)
+                T::extract_render_asset(&base_asset, &mut main_world.write(), &mut render_world)
             {
                 log::debug!("Extracted render asset: {:?}", std::any::type_name::<T>());
 
@@ -100,7 +102,6 @@ fn extract_render_asset<T: RenderAsset>(render_world: &mut World) -> Result<()> 
                 drop(handle);
 
                 // insert the render asset handle into the entity
-                main_world.insert_component(entity, render_handle);
                 render_world.insert_component(entity, render_handle);
 
                 // mark the original asset as extracted
@@ -117,16 +118,32 @@ fn extract_render_asset<T: RenderAsset>(render_world: &mut World) -> Result<()> 
     Ok(())
 }
 
-fn update_render_asset<T: RenderAsset>(render_world: &mut World) -> Result<()> {
-    let mut main_world = render_world.get_resource_mut::<MainWorld>().unwrap();
-    let query = main_world.query::<(&Handle<T>, &Handle<T::BaseAsset>)>();
+fn update_render_asset<T: RenderAsset>(mut render_world: WriteWorld) -> Result<()> {
+    let main_world = render_world.get_resource::<MainWorld>().unwrap();
+    let query = main_world.query::<&Handle<T::BaseAsset>>();
 
-    for (_entity, (render_handle, base_handle)) in query.iter() {
+    let extracted_handles = render_world
+        .get_resource::<ExtractedRenderAssets>()
+        .unwrap();
+
+    for (_entity, base_handle) in query.iter() {
         let main_assets = main_world.get_resource::<Assets>().unwrap();
+
+        let render_handle = extracted_handles
+            .assets
+            .get(&base_handle.into_untyped())
+            .unwrap();
+        let render_handle = Handle::<T>::try_from(*render_handle).unwrap();
+
         let render_assets = render_world.get_resource::<Assets>().unwrap();
-        let mut render_asset = render_assets.get_mut::<T>(*render_handle).unwrap();
+        let mut render_asset = render_assets.get_mut::<T>(render_handle).unwrap();
         let base_asset = main_assets.get::<T::BaseAsset>(*base_handle).unwrap();
-        render_asset.update_render_asset(&base_asset, &mut main_world, render_world)?;
+
+        render_asset.update_render_asset(
+            &base_asset,
+            &mut main_world.write(),
+            &mut render_world,
+        )?;
     }
 
     Ok(())

@@ -4,7 +4,7 @@ use weaver_ecs::{
     component::{Res, ResMut},
     prelude::Resource,
     system::{SystemAccess, SystemParam},
-    world::World,
+    world::WorldLock,
 };
 use weaver_util::lock::{ArcRead, SharedLock};
 
@@ -133,6 +133,9 @@ impl<'a, T: Event> Iterator for EventIter<'a, T> {
 }
 
 impl<T: Event> SystemParam for EventTx<T> {
+    type State = ();
+    type Fetch<'w, 's> = Self;
+
     fn access() -> SystemAccess {
         SystemAccess {
             exclusive: false,
@@ -143,15 +146,19 @@ impl<T: Event> SystemParam for EventTx<T> {
         }
     }
 
-    fn fetch(world: &World) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        world.get_resource_mut::<Events<T>>().map(EventTx::new)
+    fn init_state(_: &WorldLock) -> Self::State {}
+
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
+        EventTx::new(world.get_resource_mut::<Events<T>>().unwrap())
     }
 }
 
 impl<T: Event> SystemParam for EventRx<T> {
+    type State = ();
+    type Fetch<'w, 's> = Self;
+
+    fn init_state(_: &WorldLock) -> Self::State {}
+
     fn access() -> SystemAccess {
         SystemAccess {
             exclusive: false,
@@ -162,10 +169,7 @@ impl<T: Event> SystemParam for EventRx<T> {
         }
     }
 
-    fn fetch(world: &World) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        world.get_resource::<Events<T>>().map(EventRx::new)
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
+        EventRx::new(world.get_resource::<Events<T>>().unwrap())
     }
 }

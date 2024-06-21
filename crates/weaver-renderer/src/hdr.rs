@@ -1,7 +1,10 @@
 use std::{path::Path, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::prelude::{Resource, World};
+use weaver_ecs::{
+    prelude::{Resource, World},
+    world::WorldLock,
+};
 use weaver_util::prelude::Result;
 use weaver_winit::Window;
 
@@ -192,7 +195,7 @@ impl CreateRenderPipeline for HdrNode {
 impl RenderNode for HdrNode {
     fn run(
         &self,
-        render_world: &World,
+        render_world: &WorldLock,
         graph_ctx: &mut crate::graph::RenderGraphCtx,
         render_ctx: &mut crate::graph::RenderCtx,
     ) -> Result<()> {

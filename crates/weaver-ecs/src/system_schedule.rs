@@ -3,8 +3,8 @@ use std::{any::TypeId, collections::HashMap};
 use weaver_util::prelude::Result;
 
 use crate::{
-    prelude::World,
-    system::{FunctionSystem, SystemGraph},
+    prelude::{IntoSystem, WorldLock},
+    system::SystemGraph,
 };
 
 pub trait SystemStage: 'static {}
@@ -65,7 +65,11 @@ impl SystemSchedule {
             .insert(TypeId::of::<T>(), SystemGraph::default());
     }
 
-    pub fn add_system<S: SystemStage, M>(&mut self, system: impl FunctionSystem<M>, _stage: S) {
+    pub fn add_system<S: SystemStage, M>(
+        &mut self,
+        system: impl IntoSystem<M> + 'static,
+        _stage: S,
+    ) {
         self.systems
             .get_mut(&TypeId::of::<S>())
             .expect("System stage not found")
@@ -74,8 +78,8 @@ impl SystemSchedule {
 
     pub fn add_system_before<S: SystemStage, M1, M2>(
         &mut self,
-        system: impl FunctionSystem<M1>,
-        before: impl FunctionSystem<M2>,
+        system: impl IntoSystem<M1> + 'static,
+        before: impl IntoSystem<M2> + 'static,
         _stage: S,
     ) {
         self.systems
@@ -86,8 +90,8 @@ impl SystemSchedule {
 
     pub fn add_system_after<S: SystemStage, M1, M2>(
         &mut self,
-        system: impl FunctionSystem<M1>,
-        after: impl FunctionSystem<M2>,
+        system: impl IntoSystem<M1> + 'static,
+        after: impl IntoSystem<M2> + 'static,
         _stage: S,
     ) {
         self.systems
@@ -96,37 +100,37 @@ impl SystemSchedule {
             .add_system_after(system, after);
     }
 
-    pub fn run_stage<S: SystemStage>(&self, world: &mut World) -> Result<()> {
+    pub fn run_stage<S: SystemStage>(&mut self, world: &WorldLock) -> Result<()> {
         self.systems
-            .get(&TypeId::of::<S>())
+            .get_mut(&TypeId::of::<S>())
             .expect("System stage not found")
             .run(world)
     }
 
-    pub fn run_init(&self, world: &mut World) -> Result<()> {
+    pub fn run_init(&mut self, world: &WorldLock) -> Result<()> {
         for stage in &self.init_stages {
             self.systems
-                .get(stage)
+                .get_mut(stage)
                 .expect("System stage not found")
                 .run(world)?;
         }
         Ok(())
     }
 
-    pub fn run_shutdown(&self, world: &mut World) -> Result<()> {
+    pub fn run_shutdown(&mut self, world: &WorldLock) -> Result<()> {
         for stage in &self.shutdown_stages {
             self.systems
-                .get(stage)
+                .get_mut(stage)
                 .expect("System stage not found")
                 .run(world)?;
         }
         Ok(())
     }
 
-    pub fn run_update(&self, world: &mut World) -> Result<()> {
+    pub fn run_update(&mut self, world: &WorldLock) -> Result<()> {
         for stage in &self.update_stages {
             self.systems
-                .get(stage)
+                .get_mut(stage)
                 .expect("System stage not found")
                 .run(world)?;
         }
