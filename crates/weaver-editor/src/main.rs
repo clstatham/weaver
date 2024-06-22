@@ -41,6 +41,7 @@ struct EditorState {
 
 fn main() -> Result<()> {
     env_logger::init();
+
     App::new()
         .add_plugin(CoreTypesPlugin)?
         .add_plugin(WinitPlugin {
@@ -70,7 +71,9 @@ fn main() -> Result<()> {
 }
 
 fn setup(mut world: WriteWorld) -> Result<()> {
-    let _camera = world.spawn((
+    let mut assets = world.get_resource_mut::<Assets>().unwrap();
+
+    world.spawn((
         Camera::perspective_lookat(
             Vec3::new(10.0, 10.0, 10.0),
             Vec3::ZERO,
@@ -88,8 +91,6 @@ fn setup(mut world: WriteWorld) -> Result<()> {
         PrimaryCamera,
     ));
 
-    let mut assets = world.get_resource_mut::<Assets>().unwrap();
-
     let cube_mesh = assets.load::<Mesh>("assets/meshes/cube.obj")?;
     let monkey_mesh = assets.load::<Mesh>("assets/meshes/monkey_2x.obj")?;
 
@@ -99,7 +100,7 @@ fn setup(mut world: WriteWorld) -> Result<()> {
         material.texture_scale = 100.0;
     }
 
-    let _ground = world.spawn((
+    world.spawn((
         cube_mesh,
         material,
         Transform {
@@ -122,7 +123,7 @@ fn setup(mut world: WriteWorld) -> Result<()> {
     ];
     for (i, color) in COLORS.iter().enumerate() {
         let angle = i as f32 / COLORS.len() as f32 * std::f32::consts::PI * 2.0;
-        let _light = world.spawn((
+        world.spawn((
             PointLight {
                 color: *color,
                 intensity: 10.0,
@@ -165,7 +166,7 @@ fn setup(mut world: WriteWorld) -> Result<()> {
     let count = 10;
     for i in 0..count {
         let angle = i as f32 / count as f32 * std::f32::consts::PI * 2.0;
-        let _mesh = world.spawn((
+        world.spawn((
             monkey_mesh,
             material2,
             Transform {
@@ -223,11 +224,13 @@ fn light_gizmos(
     Ok(())
 }
 
-fn ui(world: ReadWorld) -> Result<()> {
-    let editor_state = world.get_resource::<EditorState>().unwrap();
-    let egui_context = world.get_resource::<EguiContext>().unwrap();
-    let type_registry = world.get_resource::<TypeRegistry>().unwrap();
-    let assets = world.get_resource::<Assets>().unwrap();
+fn ui(
+    editor_state: Res<EditorState>,
+    egui_context: Res<EguiContext>,
+    type_registry: Res<TypeRegistry>,
+    assets: Res<Assets>,
+    world: ReadWorld,
+) -> Result<()> {
     egui_context.draw_if_ready(|ctx| {
         if let Some(entity) = editor_state.selected_entity {
             egui::Window::new("Inspector").show(ctx, |ui| {
@@ -248,14 +251,18 @@ fn ui(world: ReadWorld) -> Result<()> {
     Ok(())
 }
 
-fn pick_entity(world: ReadWorld) -> Result<()> {
-    let input = world.get_resource::<Input>().unwrap();
-    let egui_ctx = world.get_resource::<EguiContext>().unwrap();
+fn pick_entity(
+    window: Res<Window>,
+    input: Res<Input>,
+    egui_ctx: Res<EguiContext>,
+    mut editor_state: ResMut<EditorState>,
+    camera_query: Query<&Camera>,
+    aabb_transform_query: Query<(&SelectionAabb, Option<&Transform>)>,
+) -> Result<()> {
     if input.mouse_just_pressed(MouseButton::Left) && !egui_ctx.wants_input() {
         let cursor_pos = input.mouse_pos();
         let cursor_pos = Vec2::new(cursor_pos.0, cursor_pos.1);
-        let (_, camera) = world.query::<&Camera>().iter().next().unwrap();
-        let window = world.get_resource::<Window>().unwrap();
+        let (_, camera) = camera_query.iter().next().unwrap();
         let window_size = window.inner_size();
         let ray = camera.screen_to_ray(
             cursor_pos,
@@ -263,8 +270,8 @@ fn pick_entity(world: ReadWorld) -> Result<()> {
         );
         let mut closest_entity = None;
         let mut closest_distance = f32::INFINITY;
-        for (entity, aabb) in world.query::<&SelectionAabb>().iter() {
-            let bb = if let Some(transform) = world.get_component::<Transform>(entity) {
+        for (entity, (aabb, transform)) in aabb_transform_query.iter() {
+            let bb = if let Some(transform) = transform {
                 aabb.aabb.transform(*transform)
             } else {
                 aabb.aabb
@@ -278,7 +285,6 @@ fn pick_entity(world: ReadWorld) -> Result<()> {
             }
         }
 
-        let mut editor_state = world.get_resource_mut::<EditorState>().unwrap();
         editor_state.selected_entity = closest_entity;
     }
 

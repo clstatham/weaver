@@ -103,10 +103,11 @@ impl FlyCameraController {
     }
 }
 
-pub fn update_camera(world: ReadWorld) -> Result<()> {
-    let time = world.get_resource::<Time>().unwrap();
-    let input = world.get_resource::<Input>().unwrap();
-    let query = world.query::<(&mut Camera, &mut FlyCameraController)>();
+pub fn update_camera(
+    time: Res<Time>,
+    input: Res<Input>,
+    query: Query<(&mut Camera, &mut FlyCameraController)>,
+) -> Result<()> {
     for (_entity, (mut camera, mut controller)) in query.iter() {
         controller.update(&input, time.delta_time, &mut camera);
     }

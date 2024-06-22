@@ -407,15 +407,24 @@ impl App {
     }
 
     pub fn init(&mut self) {
-        self.sub_apps.init();
+        let thread_pool = self.thread_pool.as_ref().unwrap();
+        thread_pool.install(|| {
+            self.sub_apps.init();
+        });
     }
 
     pub fn update(&mut self) {
-        self.sub_apps.update();
+        let thread_pool = self.thread_pool.as_ref().unwrap();
+        thread_pool.install(|| {
+            self.sub_apps.update();
+        });
     }
 
     pub fn shutdown(&mut self) {
-        self.sub_apps.shutdown();
+        let thread_pool = self.thread_pool.as_ref().unwrap();
+        thread_pool.install(|| {
+            self.sub_apps.shutdown();
+        });
     }
 
     pub fn run(&mut self) -> Result<()> {

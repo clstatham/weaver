@@ -201,15 +201,18 @@ impl ViewNode for PbrNode {
         render_ctx: &mut RenderCtx,
         _view_target: &Ref<ViewTarget>,
     ) -> Result<()> {
-        let binned_phases = render_world
-            .get_resource::<BinnedRenderPhases<PbrDrawItem>>()
-            .unwrap();
+        let Some(binned_phases) = render_world.get_resource::<BinnedRenderPhases<PbrDrawItem>>()
+        else {
+            return Ok(());
+        };
 
-        let phase = binned_phases.get(&graph_ctx.view_entity).unwrap();
+        let Some(phase) = binned_phases.get(&graph_ctx.view_entity) else {
+            return Ok(());
+        };
 
-        let draw_functions = render_world
-            .get_resource::<DrawFunctions<PbrDrawItem>>()
-            .unwrap();
+        let Some(draw_functions) = render_world.get_resource::<DrawFunctions<PbrDrawItem>>() else {
+            return Ok(());
+        };
         let mut draw_functions = draw_functions.write();
         draw_functions.prepare(render_world).unwrap();
 

@@ -2959,6 +2959,7 @@ dependencies = [
  "itertools 0.13.0",
  "log",
  "petgraph",
+ "rayon",
  "static_assertions",
  "weaver-ecs-macros",
  "weaver-reflect-macros",

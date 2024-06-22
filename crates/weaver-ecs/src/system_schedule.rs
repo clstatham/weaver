@@ -104,7 +104,7 @@ impl SystemSchedule {
         self.systems
             .get_mut(&TypeId::of::<S>())
             .expect("System stage not found")
-            .run(world)
+            .run_parallel(world)
     }
 
     pub fn run_init(&mut self, world: &WorldLock) -> Result<()> {
@@ -112,7 +112,7 @@ impl SystemSchedule {
             self.systems
                 .get_mut(stage)
                 .expect("System stage not found")
-                .run(world)?;
+                .run_parallel(world)?;
         }
         Ok(())
     }
@@ -122,7 +122,7 @@ impl SystemSchedule {
             self.systems
                 .get_mut(stage)
                 .expect("System stage not found")
-                .run(world)?;
+                .run_parallel(world)?;
         }
         Ok(())
     }
@@ -132,7 +132,7 @@ impl SystemSchedule {
             self.systems
                 .get_mut(stage)
                 .expect("System stage not found")
-                .run(world)?;
+                .run_parallel(world)?;
         }
         Ok(())
     }

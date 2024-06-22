@@ -6,7 +6,9 @@ use render::{PbrMeshInstances, PbrNode, PbrNodeLabel, PbrRenderCommand};
 use weaver_app::prelude::*;
 use weaver_asset::Handle;
 use weaver_core::transform::Transform;
-use weaver_ecs::{entity::Entity, storage::Ref, world::ReadWorld};
+use weaver_ecs::{
+    component::ResMut, entity::Entity, query::Query, storage::Ref, system::ExclusiveSystemMarker,
+};
 use weaver_renderer::{
     bind_group::BindGroup,
     camera::GpuCamera,
@@ -140,13 +142,11 @@ impl Plugin for PbrPlugin {
     }
 }
 
-fn extract_pbr_camera_phase(render_world: ReadWorld) -> Result<()> {
-    let mut binned_phases = render_world
-        .get_resource_mut::<BinnedRenderPhases<PbrDrawItem>>()
-        .unwrap();
-
-    let cameras = render_world.query::<&GpuCamera>();
-
+fn extract_pbr_camera_phase(
+    mut binned_phases: ResMut<BinnedRenderPhases<PbrDrawItem>>,
+    cameras: Query<&GpuCamera>,
+    _marker: ExclusiveSystemMarker,
+) -> Result<()> {
     let mut live_entities = HashSet::new();
 
     for (entity, camera) in cameras.iter() {

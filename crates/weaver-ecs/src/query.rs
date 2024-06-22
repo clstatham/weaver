@@ -286,6 +286,40 @@ impl<T: Component> QueryFetch for &T {
     }
 }
 
+impl<T: QueryFetch> QueryFetch for Option<T> {
+    type Columns = T::Columns;
+    type Fetch = Option<T::Fetch>;
+    fn access() -> &'static [(TypeId, QueryAccess)] {
+        T::access()
+    }
+
+    fn fetch_columns<F>(storage: &Storage, test_archetype: &F) -> Vec<Self::Columns>
+    where
+        F: Fn(&Archetype) -> bool,
+    {
+        T::fetch_columns(storage, test_archetype)
+    }
+
+    fn iter(
+        columns: &Self::Columns,
+        last_run: Tick,
+        this_run: Tick,
+    ) -> impl Iterator<Item = (Entity, Self::Fetch)> {
+        T::iter(columns, last_run, this_run).map(|(entity, fetch)| (entity, Some(fetch)))
+    }
+
+    fn test_archetype(archetype: &Archetype) -> bool {
+        T::test_archetype(archetype)
+    }
+
+    fn any_changed(fetch: &Self::Fetch) -> bool {
+        match fetch {
+            Some(fetch) => T::any_changed(fetch),
+            None => false,
+        }
+    }
+}
+
 impl<T: Component> QueryFetch for &mut T {
     type Columns = ColumnRef;
     type Fetch = Mut<T>;

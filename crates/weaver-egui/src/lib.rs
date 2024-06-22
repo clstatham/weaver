@@ -3,7 +3,9 @@ use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::{winit, State};
 use weaver_app::{plugin::Plugin, App, PostUpdate, PreUpdate};
 use weaver_ecs::{
-    component::Res, prelude::Resource, system_schedule::SystemStage, world::ReadWorld,
+    component::{Res, ResMut},
+    prelude::Resource,
+    system_schedule::SystemStage,
 };
 use weaver_event::EventRx;
 use weaver_renderer::{
@@ -206,14 +208,14 @@ pub fn end_frame(egui_context: Res<EguiContext>) -> Result<()> {
     Ok(())
 }
 
-fn render(render_world: ReadWorld) -> Result<()> {
-    let mut egui_context = render_world.get_resource_mut::<EguiContext>().unwrap();
-    let window = render_world.get_resource::<Window>().unwrap();
-    let device = render_world.get_resource::<WgpuDevice>().unwrap();
-    let queue = render_world.get_resource::<WgpuQueue>().unwrap();
-    let Some(current_frame) = render_world.get_resource::<CurrentFrame>() else {
-        return Ok(());
-    };
+fn render(
+    window: Res<Window>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
+    current_frame: Res<CurrentFrame>,
+    mut egui_context: ResMut<EguiContext>,
+    mut renderer: ResMut<weaver_renderer::Renderer>,
+) -> Result<()> {
     let surface_texture_size = current_frame.surface_texture.texture.size();
 
     let screen_descriptor = ScreenDescriptor {
@@ -231,10 +233,6 @@ fn render(render_world: ReadWorld) -> Result<()> {
         &current_frame.color_view,
         &screen_descriptor,
     );
-
-    let mut renderer = render_world
-        .get_resource_mut::<weaver_renderer::Renderer>()
-        .unwrap();
 
     renderer.enqueue_command_buffer(encoder.finish());
     Ok(())

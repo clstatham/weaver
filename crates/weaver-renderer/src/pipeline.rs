@@ -1,7 +1,10 @@
 use std::{any::TypeId, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{prelude::Resource, world::ReadWorld};
+use weaver_ecs::{
+    component::{Res, ResMut},
+    prelude::Resource,
+};
 use weaver_util::{
     prelude::{DowncastSync, Result},
     TypeIdMap,
@@ -164,15 +167,11 @@ impl<T: CreateRenderPipeline> Plugin for RenderPipelinePlugin<T> {
     }
 }
 
-fn extract_render_pipeline<T: CreateRenderPipeline>(render_world: ReadWorld) -> Result<()> {
-    let device = render_world.get_resource::<WgpuDevice>().unwrap();
-    let mut pipeline_cache = render_world
-        .get_resource_mut::<RenderPipelineCache>()
-        .unwrap();
-    let mut bind_group_layout_cache = render_world
-        .get_resource_mut::<BindGroupLayoutCache>()
-        .unwrap();
-
+fn extract_render_pipeline<T: CreateRenderPipeline>(
+    device: Res<WgpuDevice>,
+    mut pipeline_cache: ResMut<RenderPipelineCache>,
+    mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,
+) -> Result<()> {
     pipeline_cache.get_or_create_pipeline::<T>(&device, &mut bind_group_layout_cache);
 
     Ok(())

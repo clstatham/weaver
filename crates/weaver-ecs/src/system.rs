@@ -5,11 +5,14 @@ use std::{
 
 use crate::{
     component::{Res, ResMut},
-    prelude::{Query, ReadWorld, Resource, World, WorldLock, WriteWorld},
+    prelude::{Query, ReadWorld, Resource, WorldLock, WriteWorld},
     query::{QueryAccess, QueryFetch, QueryFilter},
 };
 use petgraph::{prelude::*, visit::Topo};
-use weaver_util::prelude::{anyhow, Result};
+use weaver_util::{
+    lock::SharedLock,
+    prelude::{anyhow, Result},
+};
 
 #[derive(Default, Clone)]
 pub struct SystemAccess {
@@ -31,14 +34,23 @@ impl SystemAccess {
 }
 
 pub trait System: 'static + Send + Sync {
+    fn name(&self) -> &str {
+        std::any::type_name::<Self>()
+    }
+    fn type_id(&self) -> TypeId {
+        TypeId::of::<Self>()
+    }
     fn access(&self) -> SystemAccess;
     #[allow(unused)]
     fn initialize(&mut self, world: &WorldLock) {}
-    fn apply_deferred_mutations(&mut self, world: &mut World);
     fn run_locked(&mut self, world: &WorldLock) -> Result<()>;
+    #[allow(unused)]
+    fn can_run(&self, world: &WorldLock) -> bool {
+        true
+    }
 }
 
-pub trait IntoSystem<Marker>: Sized {
+pub trait IntoSystem<Marker> {
     type System: System;
 
     fn into_system(self) -> Self::System;
@@ -59,7 +71,7 @@ impl<P: SystemParam> SystemState<P> {
     }
 }
 
-pub trait SystemParam: Sized {
+pub trait SystemParam {
     type State: Send + Sync;
     type Fetch<'w, 's>: SystemParam<State = Self::State>;
 
@@ -67,10 +79,12 @@ pub trait SystemParam: Sized {
 
     fn init_state(world: &WorldLock) -> Self::State;
 
-    #[allow(unused)]
-    fn apply_deferred_mutations(state: &mut Self::State, world: &mut World) {}
-
     fn fetch<'w, 's>(state: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's>;
+
+    #[allow(unused)]
+    fn can_run(world: &WorldLock) -> bool {
+        true
+    }
 }
 
 // NOTE: Not marking this as unsafe, unlike Bevy, since we don't actually violate memory safety in our implementation
@@ -108,6 +122,10 @@ impl<'w2, 's2, T: SystemParam> SystemParam for ParamSet<'w2, 's2, T> {
     fn fetch<'w, 's>(state: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
         T::fetch(state, world)
     }
+
+    fn can_run(world: &WorldLock) -> bool {
+        T::can_run(world)
+    }
 }
 
 impl SystemParam for () {
@@ -127,6 +145,10 @@ impl SystemParam for () {
     }
 
     fn fetch<'w, 's>(_: &'s mut Self::State, _world: &WorldLock) -> Self::Fetch<'w, 's> {}
+
+    fn can_run(_: &WorldLock) -> bool {
+        true
+    }
 }
 
 impl ReadOnlySystemParam for () {}
@@ -172,6 +194,10 @@ where
     fn fetch<'w, 's>(_state: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
         world.query_filtered()
     }
+
+    fn can_run(_world: &WorldLock) -> bool {
+        true
+    }
 }
 
 impl<Q, F> ReadOnlySystemParam for Query<Q, F>
@@ -200,6 +226,14 @@ impl<T: Resource> SystemParam for Res<T> {
     fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
         world.get_resource::<T>().unwrap()
     }
+
+    fn can_run(world: &WorldLock) -> bool {
+        if !world.has_resource::<T>() {
+            log::warn!("Missing resource: {}", std::any::type_name::<T>());
+            return false;
+        }
+        true
+    }
 }
 
 impl<T: Resource> ReadOnlySystemParam for Res<T> {}
@@ -223,6 +257,14 @@ impl<T: Resource> SystemParam for ResMut<T> {
     fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
         world.get_resource_mut::<T>().unwrap()
     }
+
+    fn can_run(world: &WorldLock) -> bool {
+        if !world.has_resource::<T>() {
+            log::warn!("Missing resource: {}", std::any::type_name::<T>());
+            return false;
+        }
+        true
+    }
 }
 
 impl<T: Resource> ReadOnlySystemParam for ResMut<T> {}
@@ -235,7 +277,7 @@ impl SystemParam for WorldLock {
 
     fn access() -> SystemAccess {
         SystemAccess {
-            exclusive: false,
+            exclusive: true,
             resources_read: Vec::new(),
             resources_written: Vec::new(),
             components_read: Vec::new(),
@@ -245,6 +287,10 @@ impl SystemParam for WorldLock {
 
     fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
         world.clone()
+    }
+
+    fn can_run(_world: &WorldLock) -> bool {
+        true
     }
 }
 
@@ -266,6 +312,10 @@ impl SystemParam for ReadWorld {
 
     fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
         world.read()
+    }
+
+    fn can_run(_world: &WorldLock) -> bool {
+        true
     }
 }
 
@@ -289,6 +339,38 @@ impl SystemParam for WriteWorld {
 
     fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
         world.write()
+    }
+
+    fn can_run(_world: &WorldLock) -> bool {
+        true
+    }
+}
+
+#[derive(Default)]
+pub struct ExclusiveSystemMarker;
+
+impl SystemParam for ExclusiveSystemMarker {
+    type State = ();
+    type Fetch<'w, 's> = ExclusiveSystemMarker;
+
+    fn init_state(_: &WorldLock) -> Self::State {}
+
+    fn access() -> SystemAccess {
+        SystemAccess {
+            exclusive: true,
+            resources_read: Vec::new(),
+            resources_written: Vec::new(),
+            components_read: Vec::new(),
+            components_written: Vec::new(),
+        }
+    }
+
+    fn fetch<'w, 's>(_: &'s mut Self::State, _world: &WorldLock) -> Self::Fetch<'w, 's> {
+        ExclusiveSystemMarker
+    }
+
+    fn can_run(_world: &WorldLock) -> bool {
+        true
     }
 }
 
@@ -326,6 +408,16 @@ macro_rules! impl_system_param_tuple {
                 let ($($param),*) = state;
                 ($($param::fetch($param, world)),*)
             }
+
+            fn can_run(world: &WorldLock) -> bool {
+                $(
+                    if !$param::can_run(world) {
+                        return false;
+                    }
+                )*
+
+                true
+            }
         }
 
         #[allow(unused)]
@@ -356,7 +448,6 @@ where
     F: SystemParamFunction<M>,
 {
     param_state: Option<SystemState<F::Param>>,
-    access: SystemAccess,
     func: F,
     _marker: std::marker::PhantomData<fn() -> M>,
 }
@@ -375,18 +466,17 @@ where
     }
 
     fn access(&self) -> SystemAccess {
-        self.access.clone()
-    }
-
-    fn apply_deferred_mutations(&mut self, world: &mut World) {
-        let param_state = self.param_state.as_mut().unwrap();
-        F::Param::apply_deferred_mutations(&mut param_state.state, world);
+        F::Param::access()
     }
 
     fn run_locked(&mut self, world: &WorldLock) -> Result<()> {
         let param_state = self.param_state.as_mut().unwrap();
         let fetch = F::Param::fetch(&mut param_state.state, world);
         self.func.run(fetch)
+    }
+
+    fn can_run(&self, world: &WorldLock) -> bool {
+        F::Param::can_run(world)
     }
 }
 
@@ -400,7 +490,6 @@ where
     fn into_system(self) -> Self::System {
         FunctionSystem {
             param_state: None,
-            access: F::Param::access(),
             func: self,
             _marker: std::marker::PhantomData,
         }
@@ -446,7 +535,7 @@ impl_function_system!(A, B, C, D, E, F, G, H);
 
 #[derive(Default)]
 pub struct SystemGraph {
-    systems: StableDiGraph<Box<dyn System>, ()>,
+    systems: StableDiGraph<SharedLock<Box<dyn System>>, ()>,
     index_cache: HashMap<TypeId, NodeIndex>,
 }
 
@@ -455,9 +544,10 @@ impl SystemGraph {
     where
         S: IntoSystem<M> + 'static,
     {
-        let node = self.systems.add_node(Box::new(system.into_system()));
+        let node = self
+            .systems
+            .add_node(SharedLock::new(Box::new(system.into_system())));
         self.index_cache.insert(TypeId::of::<S>(), node);
-        self.resolve_dependencies(100).unwrap();
         node
     }
 
@@ -469,7 +559,6 @@ impl SystemGraph {
         let parent = self.index_cache[&TypeId::of::<S1>()];
         let child = self.index_cache[&TypeId::of::<S2>()];
         self.systems.add_edge(parent, child, ());
-        self.resolve_dependencies(100).unwrap();
     }
 
     pub fn add_system_after<M1, M2, S1, S2>(&mut self, system: S1, _after: S2)
@@ -480,7 +569,6 @@ impl SystemGraph {
         let node = self.add_system(system);
         let parent = self.index_cache[&TypeId::of::<S2>()];
         self.systems.add_edge(parent, node, ());
-        self.resolve_dependencies(100).unwrap();
     }
 
     pub fn add_system_before<M1, M2, S1, S2>(&mut self, system: S1, _before: S2)
@@ -491,7 +579,6 @@ impl SystemGraph {
         let node = self.add_system(system);
         let child = self.index_cache[&TypeId::of::<S2>()];
         self.systems.add_edge(node, child, ());
-        self.resolve_dependencies(100).unwrap();
     }
 
     pub fn get_layers(&self) -> Vec<Vec<NodeIndex>> {
@@ -506,6 +593,13 @@ impl SystemGraph {
             }
             seen.insert(node);
             current_layer.push(node);
+
+            if self.systems[node].read().access().exclusive {
+                layers.push(current_layer);
+                current_layer = Vec::new();
+                continue;
+            }
+
             if self
                 .systems
                 .neighbors_directed(node, Direction::Incoming)
@@ -514,6 +608,7 @@ impl SystemGraph {
             {
                 layers.push(current_layer);
                 current_layer = Vec::new();
+                continue;
             }
 
             for child in self.systems.neighbors_directed(node, Direction::Outgoing) {
@@ -545,8 +640,8 @@ impl SystemGraph {
                 for j in 0..i {
                     let system_i = &self.systems[layer[i]];
                     let system_j = &self.systems[layer[j]];
-                    let access_i = system_i.access();
-                    let access_j = system_j.access();
+                    let access_i = system_i.read().access();
+                    let access_j = system_j.read().access();
 
                     for resource_i in &access_i.resources_written {
                         if access_j.resources_read.contains(resource_i)
@@ -595,21 +690,48 @@ impl SystemGraph {
     }
 
     pub fn run(&mut self, world: &WorldLock) -> Result<()> {
-        let mut systems_pending_deferred_mutations = Vec::new();
-
         let mut schedule = Topo::new(&self.systems);
         while let Some(node) = schedule.next(&self.systems) {
             let system = &mut self.systems[node];
-            system.initialize(world);
-            system.run_locked(world)?;
-            if !system.access().exclusive {
-                systems_pending_deferred_mutations.push(node);
-            }
+            system.write().initialize(world);
+            system.write().run_locked(world)?;
         }
 
-        for node in systems_pending_deferred_mutations {
-            let system = &mut self.systems[node];
-            system.apply_deferred_mutations(&mut world.write());
+        Ok(())
+    }
+
+    pub fn run_parallel(&mut self, world: &WorldLock) -> Result<()> {
+        self.resolve_dependencies(100).unwrap();
+        let layers = self.get_layers();
+        for (i, layer) in layers.iter().enumerate() {
+            let mut systems_can_run = HashSet::new();
+            for &node in layer {
+                let system = &self.systems[node];
+                if system.read().can_run(world) {
+                    systems_can_run.insert(node);
+                }
+            }
+
+            for &node in layer.iter().filter(|&node| systems_can_run.contains(node)) {
+                let system = &mut self.systems[node];
+                system.write().initialize(world);
+            }
+
+            if layer.len() == 1 && systems_can_run.contains(&layer[0]) {
+                let system = &mut self.systems[layer[0]];
+                system.write().run_locked(world)?;
+                continue;
+            }
+
+            log::trace!("Layer {i}: Running {} systems in parallel.", layer.len());
+
+            rayon::scope(|s| {
+                for &node in layer.iter().filter(|&node| systems_can_run.contains(node)) {
+                    let world = world.clone();
+                    let system = self.systems[node].clone();
+                    s.spawn(move |_| system.write().run_locked(&world).unwrap());
+                }
+            });
         }
 
         Ok(())

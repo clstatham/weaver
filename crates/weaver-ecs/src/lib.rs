@@ -2,7 +2,6 @@
 
 pub mod bundle;
 pub mod change;
-pub mod commands;
 pub mod component;
 pub mod dyn_query;
 pub mod entity;
@@ -16,7 +15,6 @@ pub mod world;
 pub mod prelude {
     pub use crate::bundle::*;
     pub use crate::change::*;
-    pub use crate::commands::*;
     pub use crate::component::*;
     pub use crate::dyn_query::*;
     pub use crate::entity::*;
