@@ -256,13 +256,13 @@ impl SubApps {
     }
 
     pub fn update(&mut self) {
+        self.main.write_world().increment_change_tick();
         self.main.update();
         for (_, sub_app) in self.sub_apps.iter_mut() {
             sub_app.extract_from(&mut self.main.world).unwrap();
-            sub_app.update();
             sub_app.write_world().increment_change_tick();
+            sub_app.update();
         }
-        self.main.write_world().increment_change_tick()
     }
 
     pub fn shutdown(&mut self) {
@@ -368,12 +368,12 @@ impl App {
     }
 
     pub fn add_event<T: Event>(&mut self) -> &mut Self {
-        fn clear_events<T: Event>(events: Res<Events<T>>) -> Result<()> {
-            events.clear();
+        fn clear_events<T: Event>(events: Res<Events<T>>, world: ReadWorld) -> Result<()> {
+            events.update(world.read_change_tick());
             Ok(())
         }
         self.insert_resource(Events::<T>::new());
-        self.add_system(clear_events::<T>, FinishFrame);
+        self.add_system(clear_events::<T>, PrepareFrame);
         self
     }
 

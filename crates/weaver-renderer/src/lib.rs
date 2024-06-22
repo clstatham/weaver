@@ -21,12 +21,14 @@ use transform::TransformPlugin;
 use weaver_app::{plugin::Plugin, App, AppLabel, SubApp};
 use weaver_asset::Assets;
 use weaver_ecs::{
+    component::{Res, ResMut},
     prelude::Resource,
+    query::Query,
     reflect::registry::TypeRegistry,
     system_schedule::SystemStage,
     world::{ReadWorld, World, WorldLock, WriteWorld},
 };
-use weaver_event::Events;
+use weaver_event::{EventRx, Events};
 use weaver_util::prelude::Result;
 use weaver_winit::{Window, WindowResized};
 
@@ -455,10 +457,7 @@ pub fn end_render(mut render_world: WriteWorld) -> Result<()> {
     Ok(())
 }
 
-fn resize_surface(render_world: ReadWorld) -> Result<()> {
-    let events = render_world
-        .get_resource::<Events<WindowResized>>()
-        .unwrap();
+fn resize_surface(render_world: ReadWorld, events: EventRx<WindowResized>) -> Result<()> {
     for event in events.iter() {
         // if multiple events are queued up, only resize the window to the last event's size
         let WindowResized { width, height } = *event;
@@ -505,16 +504,17 @@ fn resize_surface(render_world: ReadWorld) -> Result<()> {
     Ok(())
 }
 
-pub fn render_system(render_world: WorldLock) -> Result<()> {
-    let mut render_graph = render_world.get_resource_mut::<RenderGraph>().unwrap();
-    let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
-    let device = render_world.get_resource::<WgpuDevice>().unwrap();
-    let queue = render_world.get_resource::<WgpuQueue>().unwrap();
-
+pub fn render_system(
+    render_world: WorldLock,
+    mut render_graph: ResMut<RenderGraph>,
+    mut renderer: ResMut<Renderer>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
+    view_targets: Query<&ViewTarget>,
+) -> Result<()> {
     render_graph.prepare(&render_world).unwrap();
 
     // todo: don't assume every camera wants to run the whole main render graph
-    let view_targets = render_world.query::<&ViewTarget>();
     for entity in view_targets.entity_iter() {
         render_graph
             .run(&device, &queue, &mut renderer, &render_world, entity)
@@ -522,4 +522,20 @@ pub fn render_system(render_world: WorldLock) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[doc(hidden)]
+#[allow(unused)]
+mod hidden {
+    use super::*;
+    use weaver_ecs::system::assert_is_non_exclusive_system;
+
+    fn system_assertions() {
+        // uncomment these lines periodically to check make sure the assertions fail
+        // (they should cause compiler errors)
+
+        // assert_is_non_exclusive_system(begin_render);
+        // assert_is_non_exclusive_system(end_render);
+        // assert_is_non_exclusive_system(render_system);
+    }
 }

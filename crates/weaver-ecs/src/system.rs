@@ -452,6 +452,19 @@ where
     _marker: std::marker::PhantomData<fn() -> M>,
 }
 
+impl<M, F> FunctionSystem<M, F>
+where
+    F: SystemParamFunction<M>,
+{
+    pub const fn new(func: F) -> Self {
+        Self {
+            param_state: None,
+            func,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<M, F> System for FunctionSystem<M, F>
 where
     M: 'static,
@@ -532,6 +545,16 @@ impl_function_system!(A, B, C, D, E);
 impl_function_system!(A, B, C, D, E, F);
 impl_function_system!(A, B, C, D, E, F, G);
 impl_function_system!(A, B, C, D, E, F, G, H);
+
+pub fn assert_is_system<Marker>(_: impl IntoSystem<Marker>) {}
+pub fn assert_is_non_exclusive_system<Marker, S>(system: S)
+where
+    Marker: 'static,
+    S: SystemParamFunction<Marker>,
+    S::Param: ReadOnlySystemParam,
+{
+    assert_is_system(system)
+}
 
 #[derive(Default)]
 pub struct SystemGraph {
