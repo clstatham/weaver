@@ -9,7 +9,7 @@ use weaver_ecs::{
     system::SystemParamItem,
     world::{FromWorld, World, WorldLock},
 };
-use weaver_pbr::PbrSubGraph;
+use weaver_pbr::render::PbrNodeLabel;
 use weaver_renderer::{
     bind_group::{BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup},
     buffer::{GpuBuffer, GpuBufferVec},
@@ -472,7 +472,7 @@ impl Plugin for GizmoPlugin {
             GizmoNodeLabel,
         );
 
-        render_app.add_render_main_graph_edge(PbrSubGraph, GizmoSubGraph);
+        render_app.add_render_main_graph_edge(PbrNodeLabel, GizmoSubGraph);
 
         Ok(())
     }

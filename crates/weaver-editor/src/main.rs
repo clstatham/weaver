@@ -73,6 +73,8 @@ fn main() -> Result<()> {
 fn setup(mut world: WriteWorld) -> Result<()> {
     let mut assets = world.get_resource_mut::<Assets>().unwrap();
 
+    let skybox = assets.load::<Skybox>("assets/sky_2k.hdr")?;
+
     world.spawn((
         Camera::perspective_lookat(
             Vec3::new(10.0, 10.0, 10.0),
@@ -89,6 +91,7 @@ fn setup(mut world: WriteWorld) -> Result<()> {
         }
         .look_at(Vec3::new(10.0, 10.0, 10.0), Vec3::ZERO, Vec3::Y),
         PrimaryCamera,
+        skybox,
     ));
 
     let cube_mesh = assets.load::<Mesh>("assets/meshes/cube.obj")?;

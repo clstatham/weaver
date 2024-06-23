@@ -354,6 +354,10 @@ impl App {
         self.sub_apps.sub_apps.remove(&TypeId::of::<T>())
     }
 
+    pub fn has_resource<T: Resource>(&self) -> bool {
+        self.main_app().has_resource::<T>()
+    }
+
     pub fn insert_resource<T: Resource>(&mut self, resource: T) -> &mut Self {
         self.main_app().insert_resource(resource);
         self

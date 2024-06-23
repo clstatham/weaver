@@ -55,6 +55,10 @@ pub mod prelude {
         draw_fn::{DrawFn, DrawFnsApp, DrawFunctions},
         extract::RenderComponent,
         graph::{RenderGraph, RenderNode, Slot},
+        pipeline::{
+            ComputePipeline, ComputePipelineLayout, ComputePipelinePlugin, CreateComputePipeline,
+            CreateRenderPipeline, RenderPipeline, RenderPipelineLayout, RenderPipelinePlugin,
+        },
         Renderer, RendererPlugin,
     };
     pub use encase;

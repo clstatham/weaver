@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, hash::Hash, sync::Arc};
 
 use petgraph::{prelude::*, visit::Topo};
-use weaver_app::SubApp;
+use weaver_app::{App, SubApp};
 use weaver_ecs::{
     entity::Entity,
     prelude::Resource,
@@ -859,6 +859,51 @@ impl RenderGraphApp for SubApp {
             .get_node_mut::<SubGraphNode>(sub_graph)
             .unwrap();
         sub_graph.sub_graph.try_add_node_edge(from, to).unwrap();
+        self
+    }
+}
+
+impl RenderGraphApp for App {
+    fn add_render_main_graph_edge(
+        &mut self,
+        from: impl RenderLabel,
+        to: impl RenderLabel,
+    ) -> &mut Self {
+        self.main_app_mut().add_render_main_graph_edge(from, to);
+        self
+    }
+
+    fn add_render_main_graph_node<T: RenderNode + FromWorld>(
+        &mut self,
+        label: impl RenderLabel,
+    ) -> &mut Self {
+        self.main_app_mut().add_render_main_graph_node::<T>(label);
+        self
+    }
+
+    fn add_render_sub_graph(&mut self, graph: impl RenderLabel) -> &mut Self {
+        self.main_app_mut().add_render_sub_graph(graph);
+        self
+    }
+
+    fn add_render_sub_graph_node<T: RenderNode + FromWorld>(
+        &mut self,
+        sub_graph: impl RenderLabel,
+        label: impl RenderLabel,
+    ) -> &mut Self {
+        self.main_app_mut()
+            .add_render_sub_graph_node::<T>(sub_graph, label);
+        self
+    }
+
+    fn add_render_sub_graph_edge(
+        &mut self,
+        sub_graph: impl RenderLabel,
+        from: impl RenderLabel,
+        to: impl RenderLabel,
+    ) -> &mut Self {
+        self.main_app_mut()
+            .add_render_sub_graph_edge(sub_graph, from, to);
         self
     }
 }

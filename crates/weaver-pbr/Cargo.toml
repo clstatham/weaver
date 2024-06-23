@@ -8,6 +8,7 @@ log = "0.4.14"
 gltf = "1.4.1"
 bytemuck = "1.7.0"
 encase = "0.8.0"
+image = "0.24"
 
 weaver-util = { path = "../weaver-util" }
 weaver-renderer = { path = "../weaver-renderer" }

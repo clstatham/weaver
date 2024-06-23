@@ -15,13 +15,9 @@ var env_map: texture_cube<f32>;
 
 @group(0)
 @binding(1)
-var irradiance_map: texture_cube<f32>;
-
-@group(1)
-@binding(0)
 var env_sampler: sampler;
 
-@group(2) @binding(0)
+@group(1) @binding(0)
 var<uniform> camera: Camera;
 
 struct VertexOutput {

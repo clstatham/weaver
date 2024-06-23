@@ -176,3 +176,170 @@ fn extract_render_pipeline<T: CreateRenderPipeline>(
 
     Ok(())
 }
+
+#[derive(Resource, Default)]
+pub struct ComputePipelineCache {
+    layout_cache: TypeIdMap<ComputePipelineLayout>,
+    pipeline_cache: TypeIdMap<ComputePipeline>,
+}
+
+impl ComputePipelineCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn get_layout<T>(&self) -> Option<&ComputePipelineLayout>
+    where
+        T: CreateComputePipeline,
+    {
+        self.layout_cache.get(&TypeId::of::<T>())
+    }
+
+    pub fn get_pipeline<T>(&self) -> Option<&ComputePipeline>
+    where
+        T: CreateComputePipeline,
+    {
+        self.pipeline_cache.get(&TypeId::of::<T>())
+    }
+
+    pub fn get_or_create_layout<T>(
+        &mut self,
+        device: &wgpu::Device,
+        bind_group_layout_cache: &mut BindGroupLayoutCache,
+    ) -> ComputePipelineLayout
+    where
+        T: CreateComputePipeline,
+    {
+        if let Some(cached_layout) = self.layout_cache.get(&TypeId::of::<T>()) {
+            cached_layout.clone()
+        } else {
+            let layout = T::create_compute_pipeline_layout(device, bind_group_layout_cache);
+            self.layout_cache.insert(TypeId::of::<T>(), layout.clone());
+            self.layout_cache.get(&TypeId::of::<T>()).unwrap().clone()
+        }
+    }
+
+    pub fn get_or_create_pipeline<T>(
+        &mut self,
+        device: &wgpu::Device,
+        bind_group_layout_cache: &mut BindGroupLayoutCache,
+    ) -> ComputePipeline
+    where
+        T: CreateComputePipeline,
+    {
+        if let Some(cached_pipeline) = self.pipeline_cache.get(&TypeId::of::<T>()) {
+            cached_pipeline.clone()
+        } else {
+            let layout = self.get_or_create_layout::<T>(device, bind_group_layout_cache);
+            let pipeline = T::create_compute_pipeline(device, &layout);
+            self.pipeline_cache.insert(TypeId::of::<T>(), pipeline);
+            self.pipeline_cache.get(&TypeId::of::<T>()).unwrap().clone()
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ComputePipelineLayout {
+    layout: Arc<wgpu::PipelineLayout>,
+}
+
+impl ComputePipelineLayout {
+    pub fn new(layout: wgpu::PipelineLayout) -> Self {
+        Self {
+            layout: Arc::new(layout),
+        }
+    }
+
+    pub fn get_or_create<T>(
+        device: &wgpu::Device,
+        pipeline_cache: &mut ComputePipelineCache,
+        bind_group_layout_cache: &mut BindGroupLayoutCache,
+    ) -> Self
+    where
+        T: CreateComputePipeline,
+    {
+        pipeline_cache.get_or_create_layout::<T>(device, bind_group_layout_cache)
+    }
+}
+
+impl Deref for ComputePipelineLayout {
+    type Target = wgpu::PipelineLayout;
+
+    fn deref(&self) -> &Self::Target {
+        &self.layout
+    }
+}
+
+#[derive(Clone)]
+pub struct ComputePipeline {
+    pipeline: Arc<wgpu::ComputePipeline>,
+}
+
+impl ComputePipeline {
+    pub fn new(pipeline: wgpu::ComputePipeline) -> Self {
+        Self {
+            pipeline: Arc::new(pipeline),
+        }
+    }
+
+    pub fn get_or_create<T>(
+        device: &wgpu::Device,
+        pipeline_cache: &mut ComputePipelineCache,
+        bind_group_layout_cache: &mut BindGroupLayoutCache,
+    ) -> Self
+    where
+        T: CreateComputePipeline,
+    {
+        pipeline_cache.get_or_create_pipeline::<T>(device, bind_group_layout_cache)
+    }
+}
+
+impl Deref for ComputePipeline {
+    type Target = wgpu::ComputePipeline;
+
+    fn deref(&self) -> &Self::Target {
+        &self.pipeline
+    }
+}
+
+pub trait CreateComputePipeline: DowncastSync {
+    fn create_compute_pipeline_layout(
+        device: &wgpu::Device,
+        bind_group_layout_cache: &mut BindGroupLayoutCache,
+    ) -> ComputePipelineLayout
+    where
+        Self: Sized;
+    fn create_compute_pipeline(
+        device: &wgpu::Device,
+        cached_layout: &wgpu::PipelineLayout,
+    ) -> ComputePipeline
+    where
+        Self: Sized;
+}
+
+pub struct ComputePipelinePlugin<T: CreateComputePipeline>(std::marker::PhantomData<T>);
+impl<T: CreateComputePipeline> Default for ComputePipelinePlugin<T> {
+    fn default() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl<T: CreateComputePipeline> Plugin for ComputePipelinePlugin<T> {
+    fn build(&self, render_app: &mut App) -> Result<()> {
+        if !render_app.has_resource::<ComputePipelineCache>() {
+            render_app.insert_resource(ComputePipelineCache::new());
+        }
+        render_app.add_system(extract_compute_pipeline::<T>, Extract);
+        Ok(())
+    }
+}
+
+fn extract_compute_pipeline<T: CreateComputePipeline>(
+    device: Res<WgpuDevice>,
+    mut pipeline_cache: ResMut<ComputePipelineCache>,
+    mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,
+) -> Result<()> {
+    pipeline_cache.get_or_create_pipeline::<T>(&device, &mut bind_group_layout_cache);
+
+    Ok(())
+}

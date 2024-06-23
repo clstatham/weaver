@@ -3,6 +3,7 @@ use std::{collections::HashSet, ops::Range};
 use light::PointLightPlugin;
 use material::{GpuMaterial, MaterialPlugin};
 use render::{PbrMeshInstances, PbrNode, PbrNodeLabel, PbrRenderCommand};
+use skybox::{SkyboxNodeLabel, SkyboxPlugin, SkyboxRenderPlugin};
 use weaver_app::prelude::*;
 use weaver_asset::Handle;
 use weaver_core::transform::Transform;
@@ -13,7 +14,7 @@ use weaver_renderer::{
     bind_group::BindGroup,
     camera::GpuCamera,
     clear_color::{ClearColorLabel, ClearColorNode},
-    draw_fn::{BinnedDrawItem, DrawFnId, DrawFnsApp, DrawItem, FromDrawItemQuery},
+    draw_fn::{BinnedDrawItem, DrawFnId, DrawItem, FromDrawItemQuery},
     extract::extract_render_component,
     graph::{RenderGraphApp, ViewNodeRunner},
     hdr::HdrNodeLabel,
@@ -23,17 +24,19 @@ use weaver_renderer::{
     render_phase::{
         batch_and_prepare, BatchedInstanceBufferPlugin, BinnedRenderPhasePlugin, BinnedRenderPhases,
     },
-    Extract, PreRender, RenderApp, RenderLabel,
+    Extract, PreRender, RenderApp,
 };
 use weaver_util::prelude::*;
 
 pub mod light;
 pub mod material;
 pub mod render;
+pub mod skybox;
 
 pub mod prelude {
     pub use crate::light::*;
     pub use crate::material::*;
+    pub use crate::skybox::*;
     pub use crate::PbrPlugin;
 }
 
@@ -97,10 +100,6 @@ impl BinnedDrawItem for PbrDrawItem {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct PbrSubGraph;
-impl RenderLabel for PbrSubGraph {}
-
 pub struct PbrPlugin;
 
 impl Plugin for PbrPlugin {
@@ -108,6 +107,8 @@ impl Plugin for PbrPlugin {
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.add_plugin(MaterialPlugin)?;
         render_app.add_plugin(PointLightPlugin)?;
+        render_app.add_plugin(SkyboxPlugin)?;
+        render_app.add_plugin(SkyboxRenderPlugin)?;
         render_app.add_plugin(RenderPipelinePlugin::<PbrNode>::default())?;
 
         render_app.add_plugin(BatchedInstanceBufferPlugin::<_, PbrRenderCommand>::default())?;
@@ -127,14 +128,11 @@ impl Plugin for PbrPlugin {
             PreRender,
         );
 
-        render_app.add_render_sub_graph(PbrSubGraph);
-        render_app.add_render_sub_graph_node::<ViewNodeRunner<ClearColorNode>>(
-            PbrSubGraph,
-            ClearColorLabel,
-        );
-        render_app.add_render_sub_graph_node::<ViewNodeRunner<PbrNode>>(PbrSubGraph, PbrNodeLabel);
-        render_app.add_render_sub_graph_edge(PbrSubGraph, ClearColorLabel, PbrNodeLabel);
-        render_app.add_render_main_graph_edge(PbrSubGraph, HdrNodeLabel);
+        render_app.add_render_main_graph_node::<ViewNodeRunner<ClearColorNode>>(ClearColorLabel);
+        render_app.add_render_main_graph_node::<ViewNodeRunner<PbrNode>>(PbrNodeLabel);
+        render_app.add_render_main_graph_edge(ClearColorLabel, PbrNodeLabel);
+        render_app.add_render_main_graph_edge(PbrNodeLabel, SkyboxNodeLabel);
+        render_app.add_render_main_graph_edge(SkyboxNodeLabel, HdrNodeLabel);
 
         Ok(())
     }
