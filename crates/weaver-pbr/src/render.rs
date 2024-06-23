@@ -11,6 +11,7 @@ use weaver_ecs::{
     entity::Entity,
     prelude::{Resource, World},
     storage::Ref,
+    system::SystemParamItem,
     world::WorldLock,
 };
 use weaver_renderer::{
@@ -191,6 +192,10 @@ impl CreateRenderPipeline for PbrNode {
 }
 
 impl ViewNode for PbrNode {
+    type Param = (
+        Res<BinnedRenderPhases<PbrDrawItem>>,
+        Res<DrawFunctions<PbrDrawItem>>,
+    );
     type ViewQueryFetch = &'static ViewTarget;
     type ViewQueryFilter = ();
 
@@ -199,20 +204,13 @@ impl ViewNode for PbrNode {
         render_world: &WorldLock,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
+        (binned_phases, draw_functions): &SystemParamItem<Self::Param>,
         _view_target: &Ref<ViewTarget>,
     ) -> Result<()> {
-        let Some(binned_phases) = render_world.get_resource::<BinnedRenderPhases<PbrDrawItem>>()
-        else {
-            return Ok(());
-        };
-
         let Some(phase) = binned_phases.get(&graph_ctx.view_entity) else {
             return Ok(());
         };
 
-        let Some(draw_functions) = render_world.get_resource::<DrawFunctions<PbrDrawItem>>() else {
-            return Ok(());
-        };
         let mut draw_functions = draw_functions.write();
         draw_functions.prepare(render_world).unwrap();
 
@@ -254,8 +252,8 @@ impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
 
     fn render(
         item: &PbrDrawItem,
-        view_query: <Self::ViewQueryFetch as weaver_ecs::prelude::QueryFetch>::Fetch,
-        _item_query: Option<<Self::ItemQueryFetch as weaver_ecs::prelude::QueryFetch>::Fetch>,
+        view_query: <Self::ViewQueryFetch as weaver_ecs::prelude::QueryFetch>::Item,
+        _item_query: Option<<Self::ItemQueryFetch as weaver_ecs::prelude::QueryFetch>::Item>,
         param: Self::Param,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<()> {

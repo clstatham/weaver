@@ -181,7 +181,7 @@ impl<'a, T: Event> Iterator for EventIter<'a, T> {
 
 impl<T: Event> SystemParam for EventTx<T> {
     type State = ();
-    type Fetch<'w, 's> = Self;
+    type Item<'w, 's> = Self;
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -195,7 +195,7 @@ impl<T: Event> SystemParam for EventTx<T> {
 
     fn init_state(_: &WorldLock) -> Self::State {}
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
         if let Some(events) = world.get_resource::<Events<T>>() {
             EventTx::new(events.clone())
         } else if let Some(manual_events) = world.get_resource::<ManuallyUpdatedEvents<T>>() {
@@ -208,7 +208,7 @@ impl<T: Event> SystemParam for EventTx<T> {
 
 impl<T: Event> SystemParam for EventRx<T> {
     type State = ();
-    type Fetch<'w, 's> = Self;
+    type Item<'w, 's> = Self;
 
     fn init_state(_: &WorldLock) -> Self::State {}
 
@@ -222,7 +222,7 @@ impl<T: Event> SystemParam for EventRx<T> {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
         if let Some(events) = world.get_resource::<Events<T>>() {
             EventRx::new(
                 events.clone(),

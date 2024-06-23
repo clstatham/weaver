@@ -2,7 +2,10 @@ use std::{path::Path, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
+    component::Res,
     prelude::{Resource, World},
+    storage::Ref,
+    system::SystemParamItem,
     world::WorldLock,
 };
 use weaver_util::prelude::Result;
@@ -12,7 +15,7 @@ use crate::{
     bind_group::{BindGroup, BindGroupLayoutCache, CreateBindGroup, ResourceBindGroupPlugin},
     camera::ViewTarget,
     extract::{RenderResource, RenderResourcePlugin},
-    graph::{RenderGraphApp, RenderNode},
+    graph::{RenderGraphApp, ViewNode, ViewNodeRunner},
     pipeline::{
         CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout,
         RenderPipelinePlugin,
@@ -81,7 +84,6 @@ impl RenderResource for HdrRenderTarget {
         _main_world: &mut World,
         _render_world: &mut World,
     ) -> Result<()> {
-        // todo: recreate if window resized
         Ok(())
     }
 }
@@ -203,21 +205,20 @@ impl CreateRenderPipeline for HdrNode {
     }
 }
 
-impl RenderNode for HdrNode {
+impl ViewNode for HdrNode {
+    type Param = (Res<RenderPipelineCache>, Res<BindGroup<HdrRenderTarget>>);
+    type ViewQueryFetch = &'static ViewTarget;
+    type ViewQueryFilter = ();
+
     fn run(
         &self,
-        render_world: &WorldLock,
-        graph_ctx: &mut crate::graph::RenderGraphCtx,
+        _render_world: &WorldLock,
+        _graph_ctx: &mut crate::graph::RenderGraphCtx,
         render_ctx: &mut crate::graph::RenderCtx,
+        (pipeline_cache, bind_group): &SystemParamItem<Self::Param>,
+        view_target: &Ref<ViewTarget>,
     ) -> Result<()> {
-        let pipeline_cache = render_world.get_resource::<RenderPipelineCache>().unwrap();
         let pipeline = pipeline_cache.get_pipeline::<HdrNode>().unwrap();
-        let bind_group = render_world
-            .get_resource::<BindGroup<HdrRenderTarget>>()
-            .unwrap();
-        let view_target = render_world
-            .get_component::<ViewTarget>(graph_ctx.view_entity)
-            .unwrap();
         {
             let mut render_pass =
                 render_ctx
@@ -238,7 +239,7 @@ impl RenderNode for HdrNode {
                     });
 
             render_pass.set_pipeline(pipeline);
-            render_pass.set_bind_group(0, &bind_group, &[]);
+            render_pass.set_bind_group(0, bind_group, &[]);
             render_pass.draw(0..3, 0..1);
         }
 
@@ -255,7 +256,7 @@ impl Plugin for HdrPlugin {
         app.add_plugin(ResourceBindGroupPlugin::<HdrRenderTarget>::default())?;
 
         app.main_app_mut()
-            .add_render_main_graph_node::<HdrNode>(HdrNodeLabel);
+            .add_render_main_graph_node::<ViewNodeRunner<HdrNode>>(HdrNodeLabel);
         Ok(())
     }
 }

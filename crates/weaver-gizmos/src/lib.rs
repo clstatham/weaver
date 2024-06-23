@@ -5,7 +5,8 @@ use weaver_core::{color::Color, prelude::Mat4, transform::Transform};
 use weaver_ecs::{
     component::Res,
     prelude::Resource,
-    storage::Ref,
+    query::QueryFetchItem,
+    system::SystemParamItem,
     world::{FromWorld, World, WorldLock},
 };
 use weaver_pbr::PbrSubGraph;
@@ -335,7 +336,13 @@ impl CreateRenderPipeline for GizmoRenderNode {
 }
 
 impl ViewNode for GizmoRenderNode {
-    type ViewQueryFetch = &'static ViewTarget;
+    type Param = (
+        Res<Gizmos>,
+        Res<RenderCubeGizmo>,
+        Res<RenderPipelineCache>,
+        Res<HdrRenderTarget>,
+    );
+    type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<GpuCamera>);
     type ViewQueryFilter = ();
 
     fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
@@ -378,27 +385,15 @@ impl ViewNode for GizmoRenderNode {
 
     fn run(
         &self,
-        render_world: &WorldLock,
-        graph_ctx: &mut weaver_renderer::graph::RenderGraphCtx,
+        _render_world: &WorldLock,
+        _graph_ctx: &mut weaver_renderer::graph::RenderGraphCtx,
         render_ctx: &mut weaver_renderer::graph::RenderCtx,
-        view_query: &Ref<ViewTarget>,
+        (gizmos, cube_resource, pipeline_cache, hdr_target): &SystemParamItem<Self::Param>,
+        (view_target, camera_bind_group): &QueryFetchItem<Self::ViewQueryFetch>,
     ) -> Result<()> {
-        let Some(gizmos) = render_world.get_resource::<Gizmos>() else {
-            return Ok(());
-        };
-
-        let cube_resource = render_world.get_resource::<RenderCubeGizmo>().unwrap();
-
-        let pipeline_cache = render_world.get_resource::<RenderPipelineCache>().unwrap();
         let pipeline = pipeline_cache.get_pipeline::<Self>().unwrap();
 
-        let camera_bind_group = render_world
-            .get_component::<BindGroup<GpuCamera>>(graph_ctx.view_entity)
-            .unwrap();
-
         let gizmo_bind_group = self.bind_group.as_ref().unwrap().bind_group();
-
-        let hdr_target = render_world.get_resource::<HdrRenderTarget>().unwrap();
 
         {
             let mut render_pass =
@@ -415,7 +410,7 @@ impl ViewNode for GizmoRenderNode {
                             },
                         })],
                         depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: &view_query.depth_target,
+                            view: &view_target.depth_target,
                             depth_ops: Some(wgpu::Operations {
                                 load: wgpu::LoadOp::Load,
                                 store: wgpu::StoreOp::Store,
@@ -428,7 +423,7 @@ impl ViewNode for GizmoRenderNode {
 
             render_pass.set_pipeline(pipeline);
             render_pass.set_bind_group(0, gizmo_bind_group, &[]);
-            render_pass.set_bind_group(1, &camera_bind_group, &[]);
+            render_pass.set_bind_group(1, camera_bind_group, &[]);
 
             for (i, gizmo) in gizmos.gizmos.read().iter().enumerate() {
                 match gizmo.gizmo {

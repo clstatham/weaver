@@ -67,20 +67,20 @@ impl<P: SystemParam> SystemState<P> {
         &self.access
     }
 
-    pub fn get<'w, 's>(&'s mut self, world: &WorldLock) -> SystemParamFetch<'w, 's, P> {
+    pub fn get<'w, 's>(&'s mut self, world: &WorldLock) -> SystemParamItem<'w, 's, P> {
         P::fetch(&mut self.state, world)
     }
 }
 
 pub trait SystemParam {
     type State: Send + Sync;
-    type Fetch<'w, 's>: SystemParam<State = Self::State>;
+    type Item<'w, 's>: SystemParam<State = Self::State>;
 
     fn access() -> SystemAccess;
 
     fn init_state(world: &WorldLock) -> Self::State;
 
-    fn fetch<'w, 's>(state: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's>;
+    fn fetch<'w, 's>(state: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's>;
 
     #[allow(unused)]
     fn can_run(world: &WorldLock) -> bool {
@@ -92,7 +92,7 @@ pub trait SystemParam {
 // (Weaver lacks any form of `UnsafeWorldCell`)
 pub trait ReadOnlySystemParam: SystemParam {}
 
-pub type SystemParamFetch<'w, 's, P> = <P as SystemParam>::Fetch<'w, 's>;
+pub type SystemParamItem<'w, 's, P> = <P as SystemParam>::Item<'w, 's>;
 
 pub struct ParamSet<'w, 's, T: SystemParam> {
     pub state: &'s mut T::State,
@@ -110,7 +110,7 @@ impl<'w, 's, T: SystemParam> ParamSet<'w, 's, T> {
 
 impl<'w2, 's2, T: SystemParam> SystemParam for ParamSet<'w2, 's2, T> {
     type State = T::State;
-    type Fetch<'w, 's> = T::Fetch<'w, 's>;
+    type Item<'w, 's> = T::Item<'w, 's>;
 
     fn access() -> SystemAccess {
         T::access()
@@ -120,7 +120,7 @@ impl<'w2, 's2, T: SystemParam> SystemParam for ParamSet<'w2, 's2, T> {
         T::init_state(world)
     }
 
-    fn fetch<'w, 's>(state: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
+    fn fetch<'w, 's>(state: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
         T::fetch(state, world)
     }
 
@@ -131,7 +131,7 @@ impl<'w2, 's2, T: SystemParam> SystemParam for ParamSet<'w2, 's2, T> {
 
 impl SystemParam for () {
     type State = ();
-    type Fetch<'w, 's> = ();
+    type Item<'w, 's> = ();
 
     fn init_state(_: &WorldLock) -> Self::State {}
 
@@ -145,7 +145,7 @@ impl SystemParam for () {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, _world: &WorldLock) -> Self::Fetch<'w, 's> {}
+    fn fetch<'w, 's>(_: &'s mut Self::State, _world: &WorldLock) -> Self::Item<'w, 's> {}
 
     fn can_run(_: &WorldLock) -> bool {
         true
@@ -160,7 +160,7 @@ where
     F: QueryFilter,
 {
     type State = ();
-    type Fetch<'w, 's> = Query<Q, F>;
+    type Item<'w, 's> = Query<Q, F>;
 
     fn init_state(_: &WorldLock) -> Self::State {}
 
@@ -192,7 +192,7 @@ where
         }
     }
 
-    fn fetch<'w, 's>(_state: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
+    fn fetch<'w, 's>(_state: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
         world.query_filtered()
     }
 
@@ -210,7 +210,7 @@ where
 
 impl<T: Resource> SystemParam for Res<T> {
     type State = ();
-    type Fetch<'w, 's> = Res<T>;
+    type Item<'w, 's> = Res<T>;
 
     fn init_state(_: &WorldLock) -> Self::State {}
 
@@ -224,7 +224,7 @@ impl<T: Resource> SystemParam for Res<T> {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
         world.get_resource::<T>().unwrap()
     }
 
@@ -241,7 +241,7 @@ impl<T: Resource> ReadOnlySystemParam for Res<T> {}
 
 impl<T: Resource> SystemParam for ResMut<T> {
     type State = ();
-    type Fetch<'w, 's> = ResMut<T>;
+    type Item<'w, 's> = ResMut<T>;
 
     fn init_state(_: &WorldLock) -> Self::State {}
 
@@ -255,7 +255,7 @@ impl<T: Resource> SystemParam for ResMut<T> {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
         world.get_resource_mut::<T>().unwrap()
     }
 
@@ -272,7 +272,7 @@ impl<T: Resource> ReadOnlySystemParam for ResMut<T> {}
 
 impl SystemParam for WorldLock {
     type State = ();
-    type Fetch<'w, 's> = WorldLock;
+    type Item<'w, 's> = WorldLock;
 
     fn init_state(_: &WorldLock) -> Self::State {}
 
@@ -286,7 +286,7 @@ impl SystemParam for WorldLock {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
         world.clone()
     }
 
@@ -297,7 +297,7 @@ impl SystemParam for WorldLock {
 
 impl SystemParam for ReadWorld {
     type State = ();
-    type Fetch<'w, 's> = Self;
+    type Item<'w, 's> = Self;
 
     fn init_state(_: &WorldLock) -> Self::State {}
 
@@ -311,7 +311,7 @@ impl SystemParam for ReadWorld {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
         world.read()
     }
 
@@ -324,7 +324,7 @@ impl ReadOnlySystemParam for ReadWorld {}
 
 impl SystemParam for WriteWorld {
     type State = ();
-    type Fetch<'w, 's> = Self;
+    type Item<'w, 's> = Self;
 
     fn init_state(_: &WorldLock) -> Self::State {}
 
@@ -338,7 +338,7 @@ impl SystemParam for WriteWorld {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
         world.write()
     }
 
@@ -352,7 +352,7 @@ pub struct ExclusiveSystemMarker;
 
 impl SystemParam for ExclusiveSystemMarker {
     type State = ();
-    type Fetch<'w, 's> = ExclusiveSystemMarker;
+    type Item<'w, 's> = ExclusiveSystemMarker;
 
     fn init_state(_: &WorldLock) -> Self::State {}
 
@@ -366,7 +366,7 @@ impl SystemParam for ExclusiveSystemMarker {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, _world: &WorldLock) -> Self::Fetch<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, _world: &WorldLock) -> Self::Item<'w, 's> {
         ExclusiveSystemMarker
     }
 
@@ -383,7 +383,7 @@ macro_rules! impl_system_param_tuple {
             $($param: SystemParam),*
         {
             type State = ($($param::State),*);
-            type Fetch<'w, 's> = ($($param::Fetch<'w, 's>),*);
+            type Item<'w, 's> = ($($param::Item<'w, 's>),*);
 
             fn init_state(world: &WorldLock) -> Self::State {
                 ($($param::init_state(world)),*)
@@ -405,7 +405,7 @@ macro_rules! impl_system_param_tuple {
                 access
             }
 
-            fn fetch<'w, 's>(state: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
+            fn fetch<'w, 's>(state: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
                 let ($($param),*) = state;
                 ($($param::fetch($param, world)),*)
             }
@@ -441,7 +441,7 @@ impl_system_param_tuple!(A, B, C, D, E, F, G, H);
 pub trait SystemParamFunction<M>: Send + Sync + 'static {
     type Param: SystemParam + 'static;
 
-    fn run(&mut self, param: SystemParamFetch<Self::Param>) -> Result<()>;
+    fn run(&mut self, param: SystemParamItem<Self::Param>) -> Result<()>;
 }
 
 pub struct FunctionSystem<M, F>
@@ -516,13 +516,13 @@ macro_rules! impl_function_system {
         impl<Func, $($param,)*> SystemParamFunction<fn($($param,)*)> for Func
         where for<'a> &'a mut Func:
             FnMut($($param),*) -> Result<()>
-            + FnMut($(SystemParamFetch<$param>),*) -> Result<()>,
+            + FnMut($(SystemParamItem<$param>),*) -> Result<()>,
             $($param: SystemParam + 'static),*,
             Func: Send + Sync + 'static,
         {
             type Param = ($($param),*);
 
-            fn run(&mut self, param: SystemParamFetch<Self::Param>) -> Result<()> {
+            fn run(&mut self, param: SystemParamItem<Self::Param>) -> Result<()> {
                 fn inner<$($param,)*>(
                     mut func: impl FnMut($($param),*) -> Result<()>,
                     param: ($($param),*),

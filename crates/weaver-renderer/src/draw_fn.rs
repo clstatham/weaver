@@ -32,7 +32,7 @@ pub trait DrawItem: Send + Sync + 'static {
 
 pub trait FromDrawItemQuery<T: DrawItem> {
     fn from_draw_item_query(
-        query: <T::QueryFetch as QueryFetch>::Fetch,
+        query: <T::QueryFetch as QueryFetch>::Item,
         draw_fn_id: DrawFnId,
     ) -> Self;
 }

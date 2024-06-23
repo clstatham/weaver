@@ -207,7 +207,7 @@ impl<T: Component> QueryFetchParam for &mut T {
 
 pub trait QueryFetch: Send + Sync {
     type Columns: Send + Sync;
-    type Fetch;
+    type Item;
     fn access() -> &'static [(TypeId, QueryAccess)];
     fn fetch_columns<F>(storage: &Storage, test_archetype: &F) -> Vec<Self::Columns>
     where
@@ -216,14 +216,16 @@ pub trait QueryFetch: Send + Sync {
         columns: &Self::Columns,
         last_run: Tick,
         this_run: Tick,
-    ) -> impl Iterator<Item = (Entity, Self::Fetch)>;
+    ) -> impl Iterator<Item = (Entity, Self::Item)>;
     fn test_archetype(archetype: &Archetype) -> bool;
-    fn any_changed(fetch: &Self::Fetch) -> bool;
+    fn any_changed(fetch: &Self::Item) -> bool;
 }
+
+pub type QueryFetchItem<T> = <T as QueryFetch>::Item;
 
 impl QueryFetch for () {
     type Columns = ();
-    type Fetch = ();
+    type Item = ();
     fn access() -> &'static [(TypeId, QueryAccess)] {
         static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
         ACCESS.get_or_init(Vec::new)
@@ -236,7 +238,7 @@ impl QueryFetch for () {
         Vec::new()
     }
 
-    fn iter(_: &Self::Columns, _: Tick, _: Tick) -> impl Iterator<Item = (Entity, Self::Fetch)> {
+    fn iter(_: &Self::Columns, _: Tick, _: Tick) -> impl Iterator<Item = (Entity, Self::Item)> {
         std::iter::empty()
     }
 
@@ -244,14 +246,14 @@ impl QueryFetch for () {
         true
     }
 
-    fn any_changed(_: &Self::Fetch) -> bool {
+    fn any_changed(_: &Self::Item) -> bool {
         false
     }
 }
 
 impl<T: Component> QueryFetch for &T {
     type Columns = ColumnRef;
-    type Fetch = Ref<T>;
+    type Item = Ref<T>;
     fn access() -> &'static [(TypeId, QueryAccess)] {
         static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
         ACCESS.get_or_init(|| {
@@ -273,7 +275,7 @@ impl<T: Component> QueryFetch for &T {
         columns: &Self::Columns,
         last_run: Tick,
         this_run: Tick,
-    ) -> impl Iterator<Item = (Entity, Self::Fetch)> {
+    ) -> impl Iterator<Item = (Entity, Self::Item)> {
         columns.dense_iter(last_run, this_run)
     }
 
@@ -281,14 +283,14 @@ impl<T: Component> QueryFetch for &T {
         archetype.contains_component_by_type_id(TypeId::of::<T>())
     }
 
-    fn any_changed(fetch: &Self::Fetch) -> bool {
+    fn any_changed(fetch: &Self::Item) -> bool {
         fetch.is_changed() || fetch.is_added()
     }
 }
 
 impl<T: QueryFetch> QueryFetch for Option<T> {
     type Columns = T::Columns;
-    type Fetch = Option<T::Fetch>;
+    type Item = Option<T::Item>;
     fn access() -> &'static [(TypeId, QueryAccess)] {
         T::access()
     }
@@ -304,7 +306,7 @@ impl<T: QueryFetch> QueryFetch for Option<T> {
         columns: &Self::Columns,
         last_run: Tick,
         this_run: Tick,
-    ) -> impl Iterator<Item = (Entity, Self::Fetch)> {
+    ) -> impl Iterator<Item = (Entity, Self::Item)> {
         T::iter(columns, last_run, this_run).map(|(entity, fetch)| (entity, Some(fetch)))
     }
 
@@ -312,7 +314,7 @@ impl<T: QueryFetch> QueryFetch for Option<T> {
         T::test_archetype(archetype)
     }
 
-    fn any_changed(fetch: &Self::Fetch) -> bool {
+    fn any_changed(fetch: &Self::Item) -> bool {
         match fetch {
             Some(fetch) => T::any_changed(fetch),
             None => false,
@@ -322,7 +324,7 @@ impl<T: QueryFetch> QueryFetch for Option<T> {
 
 impl<T: Component> QueryFetch for &mut T {
     type Columns = ColumnRef;
-    type Fetch = Mut<T>;
+    type Item = Mut<T>;
     fn access() -> &'static [(TypeId, QueryAccess)] {
         static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
         ACCESS.get_or_init(|| {
@@ -344,7 +346,7 @@ impl<T: Component> QueryFetch for &mut T {
         columns: &Self::Columns,
         last_run: Tick,
         this_run: Tick,
-    ) -> impl Iterator<Item = (Entity, Self::Fetch)> {
+    ) -> impl Iterator<Item = (Entity, Self::Item)> {
         columns.dense_iter_mut(last_run, this_run)
     }
 
@@ -352,7 +354,7 @@ impl<T: Component> QueryFetch for &mut T {
         archetype.contains_component_by_type_id(TypeId::of::<T>())
     }
 
-    fn any_changed(fetch: &Self::Fetch) -> bool {
+    fn any_changed(fetch: &Self::Item) -> bool {
         fetch.is_changed() || fetch.is_added()
     }
 }
@@ -361,8 +363,8 @@ macro_rules! impl_query_fetch {
     ($($param:ident),*) => {
         impl<$($param: QueryFetch),*> QueryFetch for ($($param,)*) {
             type Columns = ($($param::Columns,)*);
-            type Fetch = ($(
-                <$param as QueryFetch>::Fetch,
+            type Item = ($(
+                <$param as QueryFetch>::Item,
                 )*);
 
             fn access() -> &'static [(TypeId, QueryAccess)] {
@@ -378,7 +380,7 @@ macro_rules! impl_query_fetch {
             }
 
             #[allow(non_snake_case, unused)]
-            fn iter(columns: &Self::Columns, last_run: Tick, this_run: Tick) -> impl Iterator<Item = (Entity, Self::Fetch)> {
+            fn iter(columns: &Self::Columns, last_run: Tick, this_run: Tick) -> impl Iterator<Item = (Entity, Self::Item)> {
                 let ($($param,)*) = columns;
                 itertools::multizip(($(<$param as QueryFetch>::iter($param, last_run, this_run),)*))
                 .map(|params| {
@@ -401,7 +403,7 @@ macro_rules! impl_query_fetch {
             }
 
             #[allow(non_snake_case)]
-            fn any_changed(fetch: &Self::Fetch) -> bool {
+            fn any_changed(fetch: &Self::Item) -> bool {
                 let ($($param,)*) = fetch;
                 $(
                     <$param as QueryFetch>::any_changed($param) ||
@@ -501,7 +503,7 @@ where
         }
     }
 
-    pub fn get(&self, entity: Entity) -> Option<Q::Fetch> {
+    pub fn get(&self, entity: Entity) -> Option<Q::Item> {
         for columns in &self.columns {
             let mut iter = Q::iter(columns, self.last_run, self.this_run);
             if let Some((_, fetch)) = iter.find(|(e, _)| *e == entity) {
@@ -521,13 +523,13 @@ where
         })
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (Entity, Q::Fetch)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (Entity, Q::Item)> + '_ {
         self.columns
             .iter()
             .flat_map(|col| Q::iter(col, self.last_run, self.this_run))
     }
 
-    pub fn iter_changed(&self) -> impl Iterator<Item = (Entity, Q::Fetch)> + '_ {
+    pub fn iter_changed(&self) -> impl Iterator<Item = (Entity, Q::Item)> + '_ {
         self.iter().filter(|(_, fetch)| Q::any_changed(fetch))
     }
 }

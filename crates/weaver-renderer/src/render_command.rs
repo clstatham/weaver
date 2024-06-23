@@ -2,7 +2,7 @@ use weaver_app::{App, SubApp};
 use weaver_ecs::{
     entity::Entity,
     query::{Query, QueryFetch, QueryFilter},
-    system::{SystemParam, SystemParamFetch},
+    system::{SystemParam, SystemParamItem},
     world::{World, WorldLock},
 };
 use weaver_util::prelude::Result;
@@ -21,9 +21,9 @@ pub trait RenderCommand<T: DrawItem>: 'static + Send + Sync {
 
     fn render(
         item: &T,
-        view_query: <Self::ViewQueryFetch as QueryFetch>::Fetch,
-        item_query: Option<<Self::ItemQueryFetch as QueryFetch>::Fetch>,
-        param: SystemParamFetch<Self::Param>,
+        view_query: <Self::ViewQueryFetch as QueryFetch>::Item,
+        item_query: Option<<Self::ItemQueryFetch as QueryFetch>::Item>,
+        param: SystemParamItem<Self::Param>,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<()>;
 }

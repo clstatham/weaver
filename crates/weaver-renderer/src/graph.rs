@@ -5,7 +5,8 @@ use weaver_app::SubApp;
 use weaver_ecs::{
     entity::Entity,
     prelude::Resource,
-    query::{Query, QueryFetch, QueryFilter},
+    query::{Query, QueryFetch, QueryFetchItem, QueryFilter},
+    system::{SystemParam, SystemParamItem},
     world::{FromWorld, World, WorldLock},
 };
 use weaver_util::prelude::{anyhow, bail, impl_downcast, DowncastSync, Result};
@@ -79,6 +80,7 @@ pub trait RenderNode: DowncastSync {
 impl_downcast!(RenderNode);
 
 pub trait ViewNode: Send + Sync + 'static {
+    type Param: SystemParam;
     type ViewQueryFetch: QueryFetch;
     type ViewQueryFilter: QueryFilter;
 
@@ -99,7 +101,8 @@ pub trait ViewNode: Send + Sync + 'static {
         render_world: &WorldLock,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
-        view_query: &<Self::ViewQueryFetch as QueryFetch>::Fetch,
+        param: &SystemParamItem<Self::Param>,
+        view_query: &QueryFetchItem<Self::ViewQueryFetch>,
     ) -> Result<()>;
 }
 
@@ -141,8 +144,11 @@ impl<T: ViewNode> RenderNode for ViewNodeRunner<T> {
             return Ok(());
         };
 
+        let mut state = T::Param::init_state(render_world);
+        let param = T::Param::fetch(&mut state, render_world);
+
         self.node
-            .run(render_world, graph_ctx, render_ctx, &view_query)
+            .run(render_world, graph_ctx, render_ctx, &param, &view_query)
     }
 }
 

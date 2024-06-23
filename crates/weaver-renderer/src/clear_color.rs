@@ -1,8 +1,10 @@
 use weaver_app::{plugin::Plugin, App};
 use weaver_core::color::Color;
 use weaver_ecs::{
+    component::Res,
     prelude::Resource,
     storage::Ref,
+    system::SystemParamItem,
     world::{World, WorldLock},
 };
 use weaver_util::prelude::Result;
@@ -82,6 +84,7 @@ impl Default for ClearColorNode {
 }
 
 impl ViewNode for ClearColorNode {
+    type Param = Res<HdrRenderTarget>;
     type ViewQueryFetch = &'static ViewTarget;
     type ViewQueryFilter = ();
 
@@ -94,9 +97,10 @@ impl ViewNode for ClearColorNode {
 
     fn run(
         &self,
-        render_world: &WorldLock,
+        _render_world: &WorldLock,
         _graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
+        hdr_target: &SystemParamItem<Self::Param>,
         view_query: &Ref<ViewTarget>,
     ) -> Result<()> {
         let color = self.color;
@@ -106,8 +110,6 @@ impl ViewNode for ClearColorNode {
             b: color.b as f64,
             a: color.a as f64,
         };
-
-        let hdr_target = render_world.get_resource::<HdrRenderTarget>().unwrap();
 
         let _pass = render_ctx
             .command_encoder()

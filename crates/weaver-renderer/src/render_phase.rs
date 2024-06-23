@@ -150,7 +150,7 @@ pub trait GetBatchData: Send + Sync + 'static {
     fn update_from_world(&mut self, render_world: &World);
 
     fn get_batch_data(
-        param: &<Self::Param as SystemParam>::Fetch<'_, '_>,
+        param: &<Self::Param as SystemParam>::Item<'_, '_>,
         query_item: Entity,
     ) -> Option<Self::BufferData>;
 }
@@ -160,7 +160,7 @@ pub type BinnedInstances<I> = <I as BinnedDrawItem>::Instances;
 pub type BinnedBatchData<I> = <BinnedInstances<I> as GetBatchData>::BufferData;
 
 pub type BinnedBatchDataParam<'w, 's, I> =
-    <<BinnedInstances<I> as GetBatchData>::Param as SystemParam>::Fetch<'w, 's>;
+    <<BinnedInstances<I> as GetBatchData>::Param as SystemParam>::Item<'w, 's>;
 
 #[derive(Resource)]
 pub struct BatchedInstanceBuffer<I: BinnedDrawItem, C: RenderCommand<I>> {
