@@ -297,8 +297,8 @@ impl<'a> RenderCtx<'a> {
     }
 
     pub fn end(&mut self) {
-        if let Some(buffer) = self.command_encoder.take().map(|encoder| encoder.finish()) {
-            self.renderer.enqueue_command_buffer(buffer);
+        if let Some(encoder) = self.command_encoder.take() {
+            self.renderer.enqueue_command_buffer(encoder.finish());
         }
     }
 }

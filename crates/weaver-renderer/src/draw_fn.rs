@@ -1,7 +1,12 @@
 use std::{any::TypeId, fmt::Debug, hash::Hash, ops::Range};
 
 use weaver_app::{App, SubApp};
-use weaver_ecs::{entity::Entity, prelude::Resource, query::QueryFetch, world::WorldLock};
+use weaver_ecs::{
+    entity::Entity,
+    prelude::Resource,
+    query::{QueryFetch, QueryFilter},
+    world::WorldLock,
+};
 use weaver_util::{
     lock::{ArcRead, ArcWrite, Read, SharedLock, Write},
     prelude::Result,
@@ -25,6 +30,7 @@ impl DrawFnId {
 
 pub trait DrawItem: Send + Sync + 'static {
     type QueryFetch: QueryFetch + 'static;
+    type QueryFilter: QueryFilter + 'static;
 
     fn entity(&self) -> Entity;
     fn draw_fn(&self) -> DrawFnId;

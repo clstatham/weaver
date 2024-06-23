@@ -83,8 +83,11 @@ impl GetBatchData for PbrMeshInstances {
         }
     }
 
-    fn get_batch_data(param: &Self::Param, query_item: Entity) -> Option<Self::BufferData> {
-        param
+    fn get_batch_data(
+        instances: &Res<PbrMeshInstances>,
+        query_item: Entity,
+    ) -> Option<Self::BufferData> {
+        instances
             .get(&query_item)
             .map(|instance| instance.transform.matrix())
     }

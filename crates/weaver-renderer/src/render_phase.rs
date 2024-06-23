@@ -8,7 +8,7 @@ use weaver_ecs::{
     entity::Entity,
     prelude::Resource,
     query::QueryFetch,
-    system::SystemParam,
+    system::{SystemParam, SystemParamItem},
     world::{World, WorldLock},
 };
 use weaver_util::{lock::Write, prelude::Result};
@@ -150,7 +150,7 @@ pub trait GetBatchData: Send + Sync + 'static {
     fn update_from_world(&mut self, render_world: &World);
 
     fn get_batch_data(
-        param: &<Self::Param as SystemParam>::Item<'_, '_>,
+        param: &SystemParamItem<Self::Param>,
         query_item: Entity,
     ) -> Option<Self::BufferData>;
 }
@@ -277,14 +277,10 @@ pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
     render_world: WorldLock,
 ) -> Result<()> {
     let mut binned_phases = render_world
-        .read()
         .get_resource_mut::<BinnedRenderPhases<I>>()
         .unwrap();
 
-    let draw_fns = render_world
-        .read()
-        .get_resource::<DrawFunctions<I>>()
-        .unwrap();
+    let draw_fns = render_world.get_resource::<DrawFunctions<I>>().unwrap();
 
     let draw_fn_id = draw_fns
         .read()
@@ -295,7 +291,7 @@ pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
         phase.clear();
     }
 
-    let pbrs_query = render_world.query::<I::QueryFetch>();
+    let pbrs_query = render_world.query_filtered::<I::QueryFetch, I::QueryFilter>();
 
     for (entity, query_fetch) in pbrs_query.iter() {
         let key = <I::Key as FromDrawItemQuery<I>>::from_draw_item_query(query_fetch, draw_fn_id);
@@ -305,15 +301,12 @@ pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
         }
     }
 
-    let mut pbr_mesh_instances = render_world
-        .read()
+    render_world
         .get_resource_mut::<I::Instances>()
-        .unwrap();
-    pbr_mesh_instances.update_from_world(&render_world.read());
-    drop(pbr_mesh_instances);
+        .unwrap()
+        .update_from_world(&render_world.read());
 
     let mut batched_instance_buffer = render_world
-        .read()
         .get_resource_mut::<BatchedInstanceBuffer<I, C>>()
         .unwrap();
 

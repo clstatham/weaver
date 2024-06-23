@@ -5,7 +5,10 @@ use weaver_ecs::{
     system::{SystemParam, SystemParamItem},
     world::{World, WorldLock},
 };
-use weaver_util::prelude::Result;
+use weaver_util::{
+    error_once,
+    prelude::{bail, Result},
+};
 
 use crate::{
     draw_fn::DrawItem,
@@ -56,7 +59,13 @@ impl<T: DrawItem, C: RenderCommand<T>> DrawFn<T> for RenderCommandState<T, C> {
         view_entity: Entity,
         item: &T,
     ) -> Result<()> {
-        let view_query = self.view_query.get(view_entity).unwrap();
+        let Some(view_query) = self.view_query.get(view_entity) else {
+            error_once!(
+                "View query not found for RenderCommand {:?}",
+                std::any::type_name::<C>()
+            );
+            bail!("View query not found for RenderCommand");
+        };
         let item_query = self.item_query.get(item.entity());
         let mut state = C::Param::init_state(render_world);
         let param = C::Param::fetch(&mut state, render_world);
@@ -72,8 +81,14 @@ pub trait AddRenderCommand {
 impl AddRenderCommand for SubApp {
     fn add_render_command<T: DrawItem, C: RenderCommand<T>>(&mut self) -> &mut Self {
         let draw_fn = RenderCommandState::<T, C>::new(&self.read_world());
-        let draw_fns = self.get_resource_mut::<DrawFunctions<T>>().unwrap();
-        draw_fns.write().add(draw_fn);
+        if let Some(draw_fns) = self.get_resource::<DrawFunctions<T>>() {
+            draw_fns.write().add(draw_fn);
+        } else {
+            let draw_fns = DrawFunctions::<T>::new();
+            draw_fns.write().add(draw_fn);
+            self.insert_resource(draw_fns);
+        }
+
         self
     }
 }

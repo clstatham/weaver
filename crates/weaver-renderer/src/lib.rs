@@ -568,13 +568,11 @@ pub fn render_system(
     queue: Res<WgpuQueue>,
     view_targets: Query<&ViewTarget>,
 ) -> Result<()> {
-    render_graph.prepare(&render_world).unwrap();
+    render_graph.prepare(&render_world)?;
 
     // todo: don't assume every camera wants to run the whole main render graph
     for entity in view_targets.entity_iter() {
-        render_graph
-            .run(&device, &queue, &mut renderer, &render_world, entity)
-            .unwrap();
+        render_graph.run(&device, &queue, &mut renderer, &render_world, entity)?;
     }
 
     Ok(())
@@ -593,5 +591,6 @@ mod hidden {
         // assert_is_non_exclusive_system(begin_render);
         // assert_is_non_exclusive_system(end_render);
         // assert_is_non_exclusive_system(render_system);
+        // assert_is_non_exclusive_system(resize_surface);
     }
 }

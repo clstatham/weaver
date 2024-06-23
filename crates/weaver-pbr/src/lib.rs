@@ -19,7 +19,7 @@ use weaver_renderer::{
     hdr::HdrNodeLabel,
     mesh::GpuMesh,
     pipeline::RenderPipelinePlugin,
-    render_command::RenderCommandState,
+    render_command::AddRenderCommand,
     render_phase::{
         batch_and_prepare, BatchedInstanceBufferPlugin, BinnedRenderPhasePlugin, BinnedRenderPhases,
     },
@@ -73,6 +73,7 @@ impl DrawItem for PbrDrawItem {
         &'static Handle<BindGroup<GpuMaterial>>,
         &'static Transform,
     );
+    type QueryFilter = ();
 
     fn entity(&self) -> Entity {
         self.entity
@@ -109,13 +110,10 @@ impl Plugin for PbrPlugin {
         render_app.add_plugin(PointLightPlugin)?;
         render_app.add_plugin(RenderPipelinePlugin::<PbrNode>::default())?;
 
-        render_app
-            .add_plugin(BatchedInstanceBufferPlugin::<PbrDrawItem, PbrRenderCommand>::default())?;
+        render_app.add_plugin(BatchedInstanceBufferPlugin::<_, PbrRenderCommand>::default())?;
         render_app.insert_resource(PbrMeshInstances::default());
 
-        let pbr_draw_fn =
-            RenderCommandState::<PbrDrawItem, PbrRenderCommand>::new(&render_app.read_world());
-        render_app.add_draw_fn(pbr_draw_fn);
+        render_app.add_render_command::<_, PbrRenderCommand>();
 
         render_app.add_plugin(BinnedRenderPhasePlugin::<PbrDrawItem>::default())?;
 
