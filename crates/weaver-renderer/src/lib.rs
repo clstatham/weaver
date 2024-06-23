@@ -10,7 +10,7 @@ use asset::ExtractedRenderAssets;
 use bind_group::{BindGroupLayoutCache, ExtractedAssetBindGroups};
 use camera::{CameraPlugin, ViewTarget};
 use graph::RenderGraph;
-use hdr::HdrPlugin;
+use hdr::{HdrPlugin, HdrRenderTarget};
 use mesh::MeshPlugin;
 use pipeline::RenderPipelineCache;
 use texture::{
@@ -26,10 +26,10 @@ use weaver_ecs::{
     query::Query,
     reflect::registry::TypeRegistry,
     system_schedule::SystemStage,
-    world::{ReadWorld, World, WorldLock, WriteWorld},
+    world::{World, WorldLock, WriteWorld},
 };
-use weaver_event::{EventRx, Events};
-use weaver_util::prelude::Result;
+use weaver_event::{EventRx, ManuallyUpdatedEvents};
+use weaver_util::{prelude::Result, warn_once};
 use weaver_winit::{Window, WindowResized};
 
 pub mod asset;
@@ -352,7 +352,7 @@ impl Plugin for RendererPlugin {
         let window = main_app.main_app().get_resource::<Window>().unwrap();
         let resized_events = main_app
             .main_app()
-            .get_resource::<Events<WindowResized>>()
+            .get_resource::<ManuallyUpdatedEvents<WindowResized>>()
             .unwrap();
         let render_app = main_app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.insert_resource(resized_events.clone());
@@ -370,10 +370,14 @@ pub fn begin_render(mut render_world: WriteWorld) -> Result<()> {
         return Ok(());
     }
 
+    let surface = render_world.get_resource::<WindowSurface>().unwrap();
+    let Ok(frame) = surface.get_current_texture() else {
+        warn_once!("Failed to get current frame");
+        return Ok(());
+    };
+
     log::trace!("Begin frame");
 
-    let surface = render_world.get_resource::<WindowSurface>().unwrap();
-    let frame = surface.get_current_texture().unwrap();
     let color_view = frame
         .texture
         .create_view(&wgpu::TextureViewDescriptor::default());
@@ -400,13 +404,13 @@ pub fn begin_render(mut render_world: WriteWorld) -> Result<()> {
 }
 
 pub fn end_render(mut render_world: WriteWorld) -> Result<()> {
-    let Some(current_frame) = render_world.remove_resource::<CurrentFrame>() else {
-        return Ok(());
-    };
-
     let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
     let device = render_world.get_resource::<WgpuDevice>().unwrap();
     let queue = render_world.get_resource::<WgpuQueue>().unwrap();
+
+    let Some(current_frame) = render_world.remove_resource::<CurrentFrame>() else {
+        return Ok(());
+    };
 
     log::trace!("End frame");
 
@@ -457,10 +461,26 @@ pub fn end_render(mut render_world: WriteWorld) -> Result<()> {
     Ok(())
 }
 
-fn resize_surface(render_world: ReadWorld, events: EventRx<WindowResized>) -> Result<()> {
+fn resize_surface(
+    events: EventRx<WindowResized>,
+    view_targets: Query<&ViewTarget>,
+    mut render_world: WriteWorld,
+) -> Result<()> {
     for event in events.iter() {
-        // if multiple events are queued up, only resize the window to the last event's size
+        let mut has_current_frame = false;
+        let mut view_target_entities = Vec::new();
+        if render_world.remove_resource::<CurrentFrame>().is_some() {
+            has_current_frame = true;
+
+            for entity in view_targets.entity_iter() {
+                render_world.remove_component::<ViewTarget>(entity).unwrap();
+                view_target_entities.push(entity);
+            }
+        }
+
         let WindowResized { width, height } = *event;
+
+        log::trace!("Resizing surface to {}x{}", width, height);
 
         let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
         let device = render_world.get_resource::<WgpuDevice>().unwrap();
@@ -500,7 +520,43 @@ fn resize_surface(render_world: ReadWorld, events: EventRx<WindowResized>) -> Re
         });
 
         renderer.depth_texture = Some(Arc::new(depth_texture));
+
+        if has_current_frame {
+            let surface_texture = surface.get_current_texture().unwrap();
+            let color_view = surface_texture
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            let depth_view = renderer.depth_texture.as_ref().unwrap().create_view(
+                &wgpu::TextureViewDescriptor {
+                    label: Some("Depth Texture View"),
+                    format: Some(DEPTH_FORMAT),
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    ..Default::default()
+                },
+            );
+
+            let current_frame = CurrentFrame {
+                surface_texture: Arc::new(surface_texture),
+                color_view: Arc::new(color_view),
+                depth_view: Arc::new(depth_view),
+            };
+
+            render_world.insert_resource(current_frame);
+            let current_frame = render_world.get_resource::<CurrentFrame>().unwrap();
+
+            for view_target_entity in view_target_entities {
+                render_world
+                    .insert_component(view_target_entity, ViewTarget::from(&*current_frame));
+            }
+        }
+
+        if let Some(mut hdr_target) = render_world.get_resource_mut::<HdrRenderTarget>() {
+            hdr_target.resize(&device, width, height);
+        }
     }
+
+    events.clear();
+
     Ok(())
 }
 

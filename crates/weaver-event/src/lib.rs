@@ -1,8 +1,11 @@
-use std::{any::TypeId, collections::VecDeque, ops::Deref};
+use std::{
+    any::TypeId,
+    collections::VecDeque,
+    ops::{Deref, DerefMut},
+};
 
 use weaver_ecs::{
     change::Tick,
-    component::{Res, ResMut},
     prelude::Resource,
     system::{SystemAccess, SystemParam},
     world::WorldLock,
@@ -66,11 +69,11 @@ impl<T: Event> Events<T> {
     }
 
     pub fn update(&self, change_tick: Tick) {
+        *self.updated_tick.write() = change_tick;
         self.back_buffer.write().clear();
         self.back_buffer
             .write()
             .extend(&mut self.front_buffer.write().drain(..));
-        *self.updated_tick.write() = change_tick;
     }
 
     pub fn send(&self, event: T) {
@@ -79,11 +82,11 @@ impl<T: Event> Events<T> {
 }
 
 pub struct EventTx<T: Event> {
-    events: ResMut<Events<T>>,
+    events: Events<T>,
 }
 
 impl<T: Event> EventTx<T> {
-    pub fn new(events: ResMut<Events<T>>) -> Self {
+    pub fn new(events: Events<T>) -> Self {
         Self { events }
     }
 
@@ -93,12 +96,12 @@ impl<T: Event> EventTx<T> {
 }
 
 pub struct EventRx<T: Event> {
-    events: Res<Events<T>>,
+    events: Events<T>,
     include_back_buffer: bool,
 }
 
 impl<T: Event> EventRx<T> {
-    pub fn new(events: Res<Events<T>>, last_run: Tick, this_run: Tick) -> Self {
+    pub fn new(events: Events<T>, last_run: Tick, this_run: Tick) -> Self {
         // if the tick that the events were last updated on, older than the tick that the system is running on, then include the back buffer
         let include_back_buffer = !events.updated_tick.read().is_newer_than(last_run, this_run);
         Self {
@@ -119,6 +122,10 @@ impl<T: Event> EventRx<T> {
         self.len() == 0
     }
 
+    pub fn clear(&self) {
+        self.events.clear();
+    }
+
     pub fn iter(&self) -> EventIter<'_, T> {
         EventIter {
             events: &self.events,
@@ -131,7 +138,7 @@ impl<T: Event> EventRx<T> {
 }
 
 pub struct EventIter<'a, T: Event> {
-    events: &'a Res<Events<T>>,
+    events: &'a Events<T>,
     unread: usize,
     index: usize,
     include_back_buffer: bool,
@@ -189,7 +196,13 @@ impl<T: Event> SystemParam for EventTx<T> {
     fn init_state(_: &WorldLock) -> Self::State {}
 
     fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
-        EventTx::new(world.get_resource_mut::<Events<T>>().unwrap())
+        if let Some(events) = world.get_resource::<Events<T>>() {
+            EventTx::new(events.clone())
+        } else if let Some(manual_events) = world.get_resource::<ManuallyUpdatedEvents<T>>() {
+            EventTx::new(manual_events.events.clone())
+        } else {
+            panic!("Events resource not found");
+        }
     }
 }
 
@@ -210,11 +223,46 @@ impl<T: Event> SystemParam for EventRx<T> {
     }
 
     fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Fetch<'w, 's> {
-        EventRx::new(
-            world.get_resource::<Events<T>>().unwrap(),
-            world.read().last_change_tick(),
-            world.read().read_change_tick(),
-        )
+        if let Some(events) = world.get_resource::<Events<T>>() {
+            EventRx::new(
+                events.clone(),
+                world.read().last_change_tick(),
+                world.read().read_change_tick(),
+            )
+        } else if let Some(manual_events) = world.get_resource::<ManuallyUpdatedEvents<T>>() {
+            EventRx::new(
+                manual_events.events.clone(),
+                world.read().last_change_tick(),
+                world.read().read_change_tick(),
+            )
+        } else {
+            panic!("Events resource not found");
+        }
+    }
+}
+
+#[derive(Resource)]
+pub struct ManuallyUpdatedEvents<T: Event> {
+    events: Events<T>,
+}
+
+impl<T: Event> ManuallyUpdatedEvents<T> {
+    pub fn new(events: Events<T>) -> Self {
+        Self { events }
+    }
+}
+
+impl<T: Event> Deref for ManuallyUpdatedEvents<T> {
+    type Target = Events<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.events
+    }
+}
+
+impl<T: Event> DerefMut for ManuallyUpdatedEvents<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.events
     }
 }
 
@@ -222,7 +270,7 @@ impl<T: Event> SystemParam for EventRx<T> {
 mod tests {
     use super::*;
     use weaver_ecs::prelude::*;
-    use weaver_util::prelude::Result;
+    use weaver_util::prelude::{anyhow, Result};
 
     #[derive(Debug, PartialEq)]
     struct TestEvent(i32);
@@ -247,10 +295,18 @@ mod tests {
 
     fn receiver_system(event_rx: EventRx<TestEvent>) -> Result<()> {
         let mut iter = event_rx.iter();
-        assert_eq!(*iter.next().unwrap(), TestEvent(1));
-        assert_eq!(*iter.next().unwrap(), TestEvent(2));
-        assert_eq!(*iter.next().unwrap(), TestEvent(3));
-        assert!(iter.next().is_none());
+        if iter.next().is_none() {
+            return Err(anyhow!("No events (1)"));
+        }
+        if iter.next().is_none() {
+            return Err(anyhow!("No events (2)"));
+        }
+        if iter.next().is_none() {
+            return Err(anyhow!("No events (3)"));
+        }
+        if iter.next().is_some() {
+            return Err(anyhow!("Too many events"));
+        }
         Ok(())
     }
 
@@ -348,10 +404,12 @@ mod tests {
         world.write().push_update_stage::<After>();
 
         world.write().add_system(update_events_system, First);
-        world.write().add_system(receiver_system, After);
-        world.write().add_system(sender_system, Before);
+        world.write().add_system(receiver_system, Before);
+        world.write().add_system(sender_system, After);
 
-        world.update().unwrap();
+        world
+            .update()
+            .expect_err("Expected 1-frame delay in events");
         world.update().unwrap();
         world.update().unwrap();
     }

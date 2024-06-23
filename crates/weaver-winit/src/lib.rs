@@ -68,7 +68,7 @@ impl Plugin for WinitPlugin {
             event_loop: Lock::new(Some(event_loop)),
         });
         app.add_event::<WinitEvent>();
-        app.add_event::<WindowResized>();
+        app.add_manually_updated_event::<WindowResized>();
         Ok(())
     }
 }
@@ -85,6 +85,7 @@ impl Runner for WinitRunner {
 
         event_loop.run(move |event, event_loop_window| {
             event_loop_window.set_control_flow(ControlFlow::Poll);
+
             if let Some(tx) = app
                 .main_app()
                 .get_resource::<weaver_event::Events<WinitEvent>>()
@@ -93,27 +94,28 @@ impl Runner for WinitRunner {
                     event: event.clone(),
                 });
             }
-            match event {
+
+            match &event {
                 Event::DeviceEvent { event, .. } => {
                     if let Some(mut input) = app.main_app().get_resource_mut::<Input>() {
-                        input.update_device(&event);
+                        input.update_device(event);
                     }
                 }
                 Event::WindowEvent { event, window_id } => {
                     if let Some(window) = app.main_app().get_resource::<Window>() {
-                        if window.id() == window_id {
+                        if window.id() == *window_id {
                             window.request_redraw();
                             drop(window);
 
                             if let Some(mut input) = app.main_app().get_resource_mut::<Input>() {
-                                input.update_window(&event);
+                                input.update_window(event);
                             }
 
                             match event {
                                 WindowEvent::Resized(size) => {
                                     let tx = app
                                         .main_app()
-                                        .get_resource::<weaver_event::Events<WindowResized>>()
+                                        .get_resource::<weaver_event::ManuallyUpdatedEvents<WindowResized>>()
                                         .unwrap();
                                     tx.send(WindowResized {
                                         width: size.width,
@@ -134,6 +136,8 @@ impl Runner for WinitRunner {
                 }
                 _ => (),
             }
+
+            
         })?;
 
         Ok(())

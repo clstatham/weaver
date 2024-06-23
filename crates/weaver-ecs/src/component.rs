@@ -85,6 +85,10 @@ impl<T: Resource> ResMut<T> {
             _marker: std::marker::PhantomData,
         }
     }
+
+    pub fn downgrade(this: &Self) -> Res<T> {
+        Res::new(ArcWrite::downgrade(&this.value), this.ticks.downgrade())
+    }
 }
 
 impl<T> Deref for ResMut<T>

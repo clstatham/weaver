@@ -284,12 +284,13 @@ fn insert_view_target(mut render_world: WriteWorld) -> Result<()> {
     if let Some(current_frame) = render_world.get_resource::<CurrentFrame>() {
         let query = render_world.query::<&PrimaryCamera>();
         for (gpu_camera, primary_camera) in query.iter() {
+            if render_world.has_component::<ViewTarget>(gpu_camera) {
+                continue;
+            }
             let view_target = ViewTarget::from(&*current_frame);
             drop(primary_camera);
             render_world.insert_component(gpu_camera, view_target);
         }
-    } else {
-        log::warn!("CurrentFrame resource not found");
     }
 
     Ok(())

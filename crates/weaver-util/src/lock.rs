@@ -316,6 +316,10 @@ impl<T: ?Sized> ArcWrite<T> {
     pub fn get_lock(this: &Self) -> SharedLock<T> {
         SharedLock(ArcRwLockWriteGuard::rwlock(&this.0).clone())
     }
+
+    pub fn downgrade(this: &Self) -> ArcRead<T> {
+        ArcRead::new(&Self::get_lock(this))
+    }
 }
 
 impl<T: ?Sized> Deref for ArcWrite<T> {

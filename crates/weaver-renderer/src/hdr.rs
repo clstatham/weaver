@@ -32,6 +32,17 @@ impl HdrRenderTarget {
     pub fn color_target(&self) -> &wgpu::TextureView {
         &self.texture.view
     }
+
+    pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
+        self.texture = GpuTexture::new(
+            device,
+            Some("Hdr Render Target"),
+            width,
+            height,
+            texture_format::HDR_FORMAT,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        );
+    }
 }
 
 impl RenderResource for HdrRenderTarget {

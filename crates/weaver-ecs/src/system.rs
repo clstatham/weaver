@@ -12,6 +12,7 @@ use petgraph::{prelude::*, visit::Topo};
 use weaver_util::{
     lock::SharedLock,
     prelude::{anyhow, Result},
+    warn_once,
 };
 
 #[derive(Default, Clone)]
@@ -229,7 +230,7 @@ impl<T: Resource> SystemParam for Res<T> {
 
     fn can_run(world: &WorldLock) -> bool {
         if !world.has_resource::<T>() {
-            log::warn!("Missing resource: {}", std::any::type_name::<T>());
+            warn_once!("Res: Missing resource: {}", std::any::type_name::<T>());
             return false;
         }
         true
@@ -260,7 +261,7 @@ impl<T: Resource> SystemParam for ResMut<T> {
 
     fn can_run(world: &WorldLock) -> bool {
         if !world.has_resource::<T>() {
-            log::warn!("Missing resource: {}", std::any::type_name::<T>());
+            warn_once!("ResMut: Missing resource: {}", std::any::type_name::<T>());
             return false;
         }
         true

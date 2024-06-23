@@ -54,6 +54,17 @@ pub(crate) struct TicksMut {
     pub(crate) this_run: Tick,
 }
 
+impl TicksMut {
+    pub fn downgrade(&self) -> Ticks {
+        Ticks {
+            added: ArcWrite::downgrade(&self.added),
+            changed: ArcWrite::downgrade(&self.changed),
+            last_run: self.last_run,
+            this_run: self.this_run,
+        }
+    }
+}
+
 pub trait ChangeDetection {
     fn is_added(&self) -> bool;
     fn is_changed(&self) -> bool;

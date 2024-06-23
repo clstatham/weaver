@@ -10,7 +10,7 @@ use weaver_ecs::{
     system_schedule::SystemStage,
     world::{ReadWorld, World, WorldLock, WriteWorld},
 };
-use weaver_event::{Event, Events};
+use weaver_event::{Event, Events, ManuallyUpdatedEvents};
 use weaver_util::{lock::SharedLock, prelude::Result};
 
 pub mod plugin;
@@ -256,13 +256,13 @@ impl SubApps {
     }
 
     pub fn update(&mut self) {
-        self.main.write_world().increment_change_tick();
         self.main.update();
         for (_, sub_app) in self.sub_apps.iter_mut() {
             sub_app.extract_from(&mut self.main.world).unwrap();
-            sub_app.write_world().increment_change_tick();
             sub_app.update();
+            sub_app.write_world().increment_change_tick();
         }
+        self.main.write_world().increment_change_tick();
     }
 
     pub fn shutdown(&mut self) {
@@ -373,7 +373,12 @@ impl App {
             Ok(())
         }
         self.insert_resource(Events::<T>::new());
-        self.add_system(clear_events::<T>, PrepareFrame);
+        self.add_system(clear_events::<T>, FinishFrame);
+        self
+    }
+
+    pub fn add_manually_updated_event<T: Event>(&mut self) -> &mut Self {
+        self.insert_resource(ManuallyUpdatedEvents::<T>::new(Events::<T>::new()));
         self
     }
 
