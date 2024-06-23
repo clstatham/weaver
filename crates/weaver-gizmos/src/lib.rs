@@ -16,7 +16,7 @@ use weaver_renderer::{
     camera::{GpuCamera, ViewTarget},
     extract::{RenderResource, RenderResourcePlugin},
     graph::{RenderGraphApp, ViewNode, ViewNodeRunner},
-    hdr::HdrRenderTarget,
+    hdr::{HdrNodeLabel, HdrRenderTarget},
     mesh::primitive::{CubePrimitive, Primitive},
     pipeline::{
         CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout,
@@ -24,7 +24,7 @@ use weaver_renderer::{
     },
     prelude::*,
     shader::Shader,
-    texture::texture_format::{self},
+    texture::texture_format,
     RenderApp, RenderLabel, WgpuDevice, WgpuQueue,
 };
 use weaver_util::{lock::SharedLock, prelude::Result};
@@ -324,7 +324,7 @@ impl CreateRenderPipeline for GizmoRenderNode {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
                     depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_compare: wgpu::CompareFunction::LessEqual,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -466,13 +466,9 @@ impl Plugin for GizmoPlugin {
     fn finish(&self, app: &mut App) -> Result<()> {
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
 
-        render_app.add_render_sub_graph(GizmoSubGraph);
-        render_app.add_render_sub_graph_node::<ViewNodeRunner<GizmoRenderNode>>(
-            GizmoSubGraph,
-            GizmoNodeLabel,
-        );
-
-        render_app.add_render_main_graph_edge(PbrNodeLabel, GizmoSubGraph);
+        render_app.add_render_main_graph_node::<ViewNodeRunner<GizmoRenderNode>>(GizmoNodeLabel);
+        render_app.add_render_main_graph_edge(PbrNodeLabel, GizmoNodeLabel);
+        render_app.add_render_main_graph_edge(GizmoNodeLabel, HdrNodeLabel);
 
         Ok(())
     }
