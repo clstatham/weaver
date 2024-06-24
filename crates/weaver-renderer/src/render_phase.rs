@@ -215,6 +215,7 @@ impl<I: BinnedDrawItem, C: RenderCommand<I>> CreateBindGroup for BatchedInstance
 
     fn create_bind_group(
         &self,
+        _render_world: &World,
         device: &wgpu::Device,
         cached_layout: &BindGroupLayout,
     ) -> wgpu::BindGroup {

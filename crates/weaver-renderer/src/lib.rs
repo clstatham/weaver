@@ -115,6 +115,9 @@ impl SystemStage for Extract {}
 pub struct ExtractBindGroups;
 impl SystemStage for ExtractBindGroups {}
 
+pub struct ExtractPipelines;
+impl SystemStage for ExtractPipelines {}
+
 pub struct PreRender;
 impl SystemStage for PreRender {}
 
@@ -320,6 +323,7 @@ impl Plugin for RendererPlugin {
 
         render_app.push_manual_stage::<Extract>();
         render_app.push_manual_stage::<ExtractBindGroups>();
+        render_app.push_manual_stage::<ExtractPipelines>();
 
         render_app.push_update_stage::<PreRender>();
         render_app.push_update_stage::<Render>();

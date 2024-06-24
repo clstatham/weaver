@@ -19,7 +19,7 @@ struct PointLight {
 @group(0) @binding(7) var          ao_tex: texture_2d<f32>;
 @group(0) @binding(8) var          ao_sampler: sampler;
 
-// environment information
+// camera information
 @group(1) @binding(0) var<uniform> camera: CameraUniform;
 
 // model information
@@ -27,6 +27,8 @@ struct PointLight {
 
 // lights information
 @group(3) @binding(0) var<storage> point_lights: array<PointLight>;
+@group(3) @binding(1) var          env_map: texture_cube<f32>;
+@group(3) @binding(2) var          env_map_sampler: sampler;
 
 fn saturate(x: f32) -> f32 {
     return clamp(x, 0.0, 1.0);
@@ -67,6 +69,32 @@ fn cooktorrance_brdf(NdL: f32, NdV: f32, NdH: f32, F: vec3<f32>, roughness: f32)
     return num / denom;
 }
 
+fn importance_sample_ggx(uv: vec2<f32>, N: vec3<f32>, roughness: f32) -> vec3<f32> {
+    let a = roughness * roughness;
+
+    let phi = 2.0 * PI * uv.x;
+    let cos_theta = sqrt((1.0 - uv.y) / (1.0 + (a * a - 1.0) * uv.y));
+    let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+
+    let H = vec3<f32>(
+        sin_theta * cos(phi),
+        sin_theta * sin(phi),
+        cos_theta,
+    );
+
+    var up: vec3<f32>;
+    if abs(N.z) < 0.999 {
+        up = vec3<f32>(0.0, 0.0, 1.0);
+    } else {
+        up = vec3<f32>(1.0, 0.0, 0.0);
+    }
+    let tangent = normalize(cross(up, N));
+    let bitangent = cross(N, tangent);
+
+    let sample = tangent * H.x + bitangent * H.y + N * H.z;
+    return normalize(sample);
+}
+
 fn calculate_lighting(
     albedo: vec3<f32>,
     roughness: f32,
@@ -94,6 +122,25 @@ fn calculate_lighting(
     kD *= 1.0 - metallic;
 
     return (kD * albedo / PI + specular) * light_color * attenuation * NdL;
+}
+
+fn calculate_ibl(
+    albedo: vec3<f32>,
+    roughness: f32,
+    metallic: f32,
+    N: vec3<f32>,
+    V: vec3<f32>,
+) -> vec3<f32> {
+    let NdotV = saturate(dot(N, V));
+    let R = reflect(-V, N);
+
+    let kS = fresnel_schlick(vec3(0.04), NdotV, roughness);
+    var kD = vec3(1.0) - kS;
+    kD *= 1.0 - metallic;
+    let irradiance = textureSample(env_map, env_map_sampler, N).rgb;
+    let diffuse = irradiance * albedo;
+
+    return kD * diffuse;
 }
 
 
@@ -143,7 +190,6 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     let albedo = pow(tex_color, vec3(2.2));
 
     var tex_normal = textureSample(normal_tex, normal_sampler, uv).rgb;
-    // tex_normal = pow(tex_normal, vec3(1.0 / 2.2));
     tex_normal = normalize(tex_normal * 2.0 - 1.0);
     let N = normalize(
         vertex.world_tangent * tex_normal.r + vertex.world_binormal * tex_normal.g + vertex.world_normal * tex_normal.b
@@ -159,6 +205,10 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     for (var i = 0u; i < arrayLength(&point_lights); i = i + 1u) {
         let light = point_lights[i];
+        if light.intensity == 0.0 {
+            continue;
+        }
+
         let light_pos = light.position.xyz;
         let L = normalize(light_pos - vertex.world_position);
 
@@ -169,8 +219,9 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     }
 
     let tex_ao = textureSample(ao_tex, ao_sampler, uv).r * material.properties.z;
+    let ibl = calculate_ibl(albedo, roughness, metallic, N, V);
 
-    var out_color = illumination * tex_ao;
+    var out_color = ibl + illumination;
 
     // tone mapping
     out_color = out_color / (out_color + vec3(1.0));

@@ -2,7 +2,7 @@ use std::{collections::HashSet, ops::Range};
 
 use light::PointLightPlugin;
 use material::{GpuMaterial, MaterialPlugin};
-use render::{PbrMeshInstances, PbrNode, PbrNodeLabel, PbrRenderCommand};
+use render::{PbrLightingInformation, PbrMeshInstances, PbrNode, PbrNodeLabel, PbrRenderCommand};
 use skybox::{SkyboxNodeLabel, SkyboxPlugin, SkyboxRenderPlugin};
 use weaver_app::prelude::*;
 use weaver_asset::Handle;
@@ -11,11 +11,11 @@ use weaver_ecs::{
     component::ResMut, entity::Entity, query::Query, storage::Ref, system::ExclusiveSystemMarker,
 };
 use weaver_renderer::{
-    bind_group::BindGroup,
+    bind_group::{BindGroup, ResourceBindGroupPlugin},
     camera::GpuCamera,
     clear_color::{ClearColorLabel, ClearColorNode},
     draw_fn::{BinnedDrawItem, DrawFnId, DrawItem, FromDrawItemQuery},
-    extract::extract_render_component,
+    extract::{extract_render_component, RenderResourcePlugin},
     graph::{RenderGraphApp, ViewNodeRunner},
     hdr::HdrNodeLabel,
     mesh::GpuMesh,
@@ -109,6 +109,11 @@ impl Plugin for PbrPlugin {
         render_app.add_plugin(PointLightPlugin)?;
         render_app.add_plugin(SkyboxPlugin)?;
         render_app.add_plugin(SkyboxRenderPlugin)?;
+
+        render_app.insert_resource(PbrLightingInformation);
+        render_app.add_plugin(RenderResourcePlugin::<PbrLightingInformation>::default())?;
+        render_app.add_plugin(ResourceBindGroupPlugin::<PbrLightingInformation>::default())?;
+
         render_app.add_plugin(RenderPipelinePlugin::<PbrNode>::default())?;
 
         render_app.add_plugin(BatchedInstanceBufferPlugin::<_, PbrRenderCommand>::default())?;

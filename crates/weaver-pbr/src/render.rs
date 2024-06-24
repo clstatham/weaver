@@ -15,8 +15,9 @@ use weaver_ecs::{
     world::WorldLock,
 };
 use weaver_renderer::{
-    bind_group::{BindGroup, BindGroupLayoutCache},
+    bind_group::{BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup},
     camera::{GpuCamera, ViewTarget},
+    extract::RenderResource,
     graph::{RenderCtx, RenderGraphCtx, ViewNode},
     hdr::HdrRenderTarget,
     mesh::GpuMesh,
@@ -30,7 +31,7 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::Result;
 
-use crate::{light::GpuPointLightArray, material::GpuMaterial, PbrDrawItem};
+use crate::{light::GpuPointLightArray, material::GpuMaterial, prelude::GpuSkybox, PbrDrawItem};
 
 pub struct PbrMeshInstance {
     pub mesh: Handle<GpuMesh>,
@@ -93,6 +94,100 @@ impl GetBatchData for PbrMeshInstances {
     }
 }
 
+/// Combined bind group for PBR light arrays and environment maps.
+#[derive(Resource)]
+pub(crate) struct PbrLightingInformation;
+
+impl CreateBindGroup for PbrLightingInformation {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
+    where
+        Self: Sized,
+    {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("PBR Lighting Information Bind Group Layout"),
+            entries: &[
+                // Point lights
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Environment map
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // Environment map sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        })
+    }
+
+    fn create_bind_group(
+        &self,
+        render_world: &World,
+        device: &wgpu::Device,
+        cached_layout: &BindGroupLayout,
+    ) -> wgpu::BindGroup {
+        let point_lights = render_world.get_resource::<GpuPointLightArray>().unwrap();
+        let env_map = render_world.get_resource::<GpuSkybox>().unwrap();
+
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("PBR Lighting Information Bind Group"),
+            layout: cached_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: point_lights.buffer.binding().unwrap(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&env_map.cube_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&env_map.sampler),
+                },
+            ],
+        })
+    }
+}
+
+impl RenderResource for PbrLightingInformation {
+    type UpdateQuery = ();
+
+    fn extract_render_resource(_main_world: &mut World, _render_world: &mut World) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        Some(Self)
+    }
+
+    fn update_render_resource(
+        &mut self,
+        _main_world: &mut World,
+        _render_world: &mut World,
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct PbrNodeLabel;
 impl RenderLabel for PbrNodeLabel {}
@@ -115,7 +210,9 @@ impl CreateRenderPipeline for PbrNode {
                 &bind_group_layout_cache.get_or_create::<GpuCamera>(device),
                 &bind_group_layout_cache
                     .get_or_create::<BatchedInstanceBuffer<PbrDrawItem, PbrRenderCommand>>(device),
-                &bind_group_layout_cache.get_or_create::<GpuPointLightArray>(device),
+                bind_group_layout_cache
+                    .get::<PbrLightingInformation>()
+                    .unwrap(),
             ],
             push_constant_ranges: &[],
         });
@@ -234,14 +331,14 @@ impl ViewNode for PbrNode {
     }
 }
 
-pub struct PbrRenderCommand;
+pub(crate) struct PbrRenderCommand;
 
 impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
     type Param = (
         Res<Assets>,
         Res<RenderPipelineCache>,
         Res<BindGroup<BatchedInstanceBuffer<PbrDrawItem, PbrRenderCommand>>>,
-        Res<BindGroup<GpuPointLightArray>>,
+        Res<BindGroup<PbrLightingInformation>>,
         Res<HdrRenderTarget>,
     );
 

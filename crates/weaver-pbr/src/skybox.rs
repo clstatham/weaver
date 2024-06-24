@@ -7,17 +7,16 @@ use std::{
 
 use image::codecs::hdr::HdrDecoder;
 use weaver_app::plugin::Plugin;
-use weaver_asset::{Asset, Assets, Handle};
 use weaver_ecs::{
     component::Res,
-    prelude::{QueryFetchItem, SystemParamItem, World, WorldLock},
+    prelude::{QueryFetchItem, Resource, SystemParamItem, World, WorldLock},
 };
 use weaver_renderer::{
-    asset::{ExtractRenderAssetPlugin, RenderAsset},
     bind_group::{
-        AssetBindGroupPlugin, BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup,
+        BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup, ResourceBindGroupPlugin,
     },
     camera::{GpuCamera, ViewTarget},
+    extract::{RenderResource, RenderResourcePlugin},
     graph::{RenderCtx, RenderGraphApp, RenderGraphCtx, ViewNode, ViewNodeRunner},
     hdr::HdrRenderTarget,
     pipeline::{
@@ -29,10 +28,11 @@ use weaver_renderer::{
     texture::{texture_format, GpuTexture},
     RenderLabel, WgpuDevice, WgpuQueue,
 };
-use weaver_util::prelude::{bail, Result};
+use weaver_util::prelude::Result;
 
-pub const SKYBOX_CUBEMAP_SIZE: u32 = 2048;
+pub const SKYBOX_CUBEMAP_SIZE: u32 = 1024;
 
+#[derive(Resource)]
 pub struct Skybox {
     pub path: PathBuf,
 }
@@ -40,15 +40,6 @@ pub struct Skybox {
 impl Skybox {
     pub fn new(path: &Path) -> Self {
         Self { path: path.into() }
-    }
-}
-
-impl Asset for Skybox {
-    fn load(_assets: &mut Assets, path: &Path) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        Ok(Self::new(path))
     }
 }
 
@@ -76,7 +67,12 @@ impl CreateBindGroup for GpuSkyboxSrc {
         })
     }
 
-    fn create_bind_group(&self, device: &wgpu::Device, layout: &BindGroupLayout) -> wgpu::BindGroup
+    fn create_bind_group(
+        &self,
+        _render_world: &World,
+        device: &wgpu::Device,
+        layout: &BindGroupLayout,
+    ) -> wgpu::BindGroup
     where
         Self: Sized,
     {
@@ -95,12 +91,12 @@ pub(crate) struct GpuSkyboxDst {
     dst_texture: GpuTexture,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Resource)]
 pub(crate) struct GpuSkybox {
     #[allow(unused)]
-    texture: GpuTexture,
-    cube_view: Arc<wgpu::TextureView>,
-    sampler: Arc<wgpu::Sampler>,
+    pub(crate) texture: GpuTexture,
+    pub(crate) cube_view: Arc<wgpu::TextureView>,
+    pub(crate) sampler: Arc<wgpu::Sampler>,
 }
 
 impl CreateComputePipeline for GpuSkybox {
@@ -164,7 +160,12 @@ impl CreateBindGroup for GpuSkyboxDst {
         })
     }
 
-    fn create_bind_group(&self, device: &wgpu::Device, layout: &BindGroupLayout) -> wgpu::BindGroup
+    fn create_bind_group(
+        &self,
+        _render_world: &World,
+        device: &wgpu::Device,
+        layout: &BindGroupLayout,
+    ) -> wgpu::BindGroup
     where
         Self: Sized,
     {
@@ -179,27 +180,15 @@ impl CreateBindGroup for GpuSkyboxDst {
     }
 }
 
-impl Asset for GpuSkybox {
-    fn load(_assets: &mut Assets, _path: &Path) -> Result<Self>
+impl RenderResource for GpuSkybox {
+    type UpdateQuery = ();
+
+    fn extract_render_resource(main_world: &mut World, render_world: &mut World) -> Option<Self>
     where
         Self: Sized,
     {
-        bail!("GpuSkybox assets cannot be loaded directly; use a Skybox instead")
-    }
-}
-
-impl RenderAsset for GpuSkybox {
-    type BaseAsset = Skybox;
-
-    fn extract_render_asset(
-        base_asset: &Self::BaseAsset,
-        _main_world: &mut World,
-        render_world: &mut World,
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        let mut file = File::open(&base_asset.path).unwrap();
+        let skybox = main_world.get_resource::<Skybox>().unwrap();
+        let mut file = File::open(&skybox.path).unwrap();
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).unwrap();
         drop(file);
@@ -291,6 +280,7 @@ impl RenderAsset for GpuSkybox {
         };
 
         let src_bind_group = skybox_src.create_bind_group(
+            render_world,
             &device,
             &BindGroupLayout::get_or_create::<GpuSkyboxSrc>(&device, &mut bind_group_layout_cache),
         );
@@ -306,6 +296,7 @@ impl RenderAsset for GpuSkybox {
             .get_or_create_pipeline::<GpuSkybox>(&device, &mut bind_group_layout_cache);
 
         let dst_bind_group = dst.create_bind_group(
+            render_world,
             &device,
             &BindGroupLayout::get_or_create::<GpuSkyboxDst>(&device, &mut bind_group_layout_cache),
         );
@@ -354,15 +345,11 @@ impl RenderAsset for GpuSkybox {
         })
     }
 
-    fn update_render_asset(
+    fn update_render_resource(
         &mut self,
-        _base_asset: &Self::BaseAsset,
         _main_world: &mut World,
         _render_world: &mut World,
-    ) -> Result<()>
-    where
-        Self: Sized,
-    {
+    ) -> Result<()> {
         Ok(())
     }
 }
@@ -397,7 +384,12 @@ impl CreateBindGroup for GpuSkybox {
         })
     }
 
-    fn create_bind_group(&self, device: &wgpu::Device, layout: &BindGroupLayout) -> wgpu::BindGroup
+    fn create_bind_group(
+        &self,
+        _render_world: &World,
+        device: &wgpu::Device,
+        layout: &BindGroupLayout,
+    ) -> wgpu::BindGroup
     where
         Self: Sized,
     {
@@ -493,13 +485,13 @@ impl CreateRenderPipeline for SkyboxNode {
 }
 
 impl ViewNode for SkyboxNode {
-    type Param = (Res<Assets>, Res<RenderPipelineCache>, Res<HdrRenderTarget>);
-
-    type ViewQueryFetch = (
-        &'static ViewTarget,
-        &'static Handle<BindGroup<GpuSkybox>>,
-        &'static BindGroup<GpuCamera>,
+    type Param = (
+        Res<RenderPipelineCache>,
+        Res<HdrRenderTarget>,
+        Res<BindGroup<GpuSkybox>>,
     );
+
+    type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<GpuCamera>);
 
     type ViewQueryFilter = ();
 
@@ -508,10 +500,9 @@ impl ViewNode for SkyboxNode {
         _render_world: &WorldLock,
         _graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
-        (assets, render_pipeline_cache, hdr_target): &SystemParamItem<Self::Param>,
-        (view_target, skybox_handle, camera_bind_group): &QueryFetchItem<Self::ViewQueryFetch>,
+        (render_pipeline_cache, hdr_target, skybox_bind_group): &SystemParamItem<Self::Param>,
+        (view_target, camera_bind_group): &QueryFetchItem<Self::ViewQueryFetch>,
     ) -> Result<()> {
-        let skybox_bind_group = assets.get(**skybox_handle).unwrap();
         let skybox_pipeline = render_pipeline_cache.get_pipeline::<SkyboxNode>().unwrap();
 
         {
@@ -541,7 +532,7 @@ impl ViewNode for SkyboxNode {
                     });
 
             rpass.set_pipeline(skybox_pipeline);
-            rpass.set_bind_group(0, &skybox_bind_group, &[]);
+            rpass.set_bind_group(0, skybox_bind_group, &[]);
             rpass.set_bind_group(1, camera_bind_group, &[]);
             rpass.draw(0..3, 0..1);
         }
@@ -555,8 +546,8 @@ pub struct SkyboxPlugin;
 impl Plugin for SkyboxPlugin {
     fn build(&self, render_app: &mut weaver_app::App) -> Result<()> {
         render_app.add_plugin(ComputePipelinePlugin::<GpuSkybox>::default())?;
-        render_app.add_plugin(AssetBindGroupPlugin::<GpuSkybox>::default())?;
-        render_app.add_plugin(ExtractRenderAssetPlugin::<GpuSkybox>::default())?;
+        render_app.add_plugin(ResourceBindGroupPlugin::<GpuSkybox>::default())?;
+        render_app.add_plugin(RenderResourcePlugin::<GpuSkybox>::default())?;
 
         Ok(())
     }

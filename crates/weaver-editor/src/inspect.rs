@@ -164,6 +164,10 @@ impl InspectUi for PointLight {
     fn inspect_ui(&mut self, type_registry: &TypeRegistry, assets: &Assets, ui: &mut egui::Ui) {
         ui.collapsing(self.reflect_type_name(), |ui| {
             ui.horizontal_top(|ui| {
+                ui.label("Enabled");
+                ui.checkbox(&mut self.enabled, "");
+            });
+            ui.horizontal_top(|ui| {
                 ui.label("Color");
                 self.color.inspect_ui(type_registry, assets, ui);
             });

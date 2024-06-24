@@ -17,6 +17,7 @@ pub struct PointLight {
     pub color: Color,
     pub intensity: f32,
     pub radius: f32,
+    pub enabled: bool,
 }
 
 #[derive(Copy, Clone, Debug, Default, ShaderType)]
@@ -46,13 +47,19 @@ impl RenderResource for GpuPointLightArray {
         let mut buffer =
             GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
 
+        buffer.reserve(1, &device);
+
         let point_lights = main_world.query::<(&PointLight, &Transform)>();
 
         for (_entity, (point_light, transform)) in point_lights.iter() {
             let uniform = PointLightUniform {
                 position: transform.translation,
                 color: point_light.color,
-                intensity: point_light.intensity,
+                intensity: if point_light.enabled {
+                    point_light.intensity
+                } else {
+                    0.0
+                },
                 radius: point_light.radius,
                 _padding: 0,
             };
@@ -79,7 +86,11 @@ impl RenderResource for GpuPointLightArray {
             let uniform = PointLightUniform {
                 position: transform.translation,
                 color: point_light.color,
-                intensity: point_light.intensity,
+                intensity: if point_light.enabled {
+                    point_light.intensity
+                } else {
+                    0.0
+                },
                 radius: point_light.radius,
                 _padding: 0,
             };
@@ -114,6 +125,7 @@ impl CreateBindGroup for GpuPointLightArray {
 
     fn create_bind_group(
         &self,
+        _render_world: &World,
         device: &wgpu::Device,
         cached_layout: &BindGroupLayout,
     ) -> wgpu::BindGroup {

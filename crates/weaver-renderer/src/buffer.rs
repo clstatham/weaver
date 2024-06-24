@@ -152,10 +152,12 @@ impl<T: ShaderType + WriteInto> GpuBufferVec<T> {
             return false;
         }
 
-        let stale = self.reserve(self.data.len() / u64::from(T::min_size()) as usize, device);
+        let capacity = self.data.len() / u64::from(T::min_size()) as usize;
+        let stale = self.reserve(capacity, device);
         if let Some(buffer) = self.buffer.as_ref() {
             queue.write_buffer(buffer, 0, &self.data);
         }
+
         stale
     }
 

@@ -29,6 +29,12 @@ pub trait Asset: DowncastSync {
 }
 impl_downcast!(Asset);
 
+impl Asset for () {
+    fn load(_assets: &mut Assets, _path: &Path) -> Result<Self> {
+        Ok(())
+    }
+}
+
 #[derive(Component, Reflect)]
 pub struct Handle<T: Asset> {
     id: usize,

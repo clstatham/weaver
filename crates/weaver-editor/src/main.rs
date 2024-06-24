@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use inspect::InspectUi;
 use weaver::{
     prelude::*,
@@ -59,6 +61,7 @@ fn main() -> Result<()> {
         })?
         .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
         // .add_plugin(ClearColorPlugin::default())?
+        .insert_resource(Skybox::new(Path::new("assets/sky_2k.hdr")))
         .insert_resource(EditorState::default())
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)
@@ -72,8 +75,6 @@ fn main() -> Result<()> {
 
 fn setup(mut world: WriteWorld) -> Result<()> {
     let mut assets = world.get_resource_mut::<Assets>().unwrap();
-
-    let skybox = assets.load::<Skybox>("assets/sky_2k.hdr")?;
 
     world.spawn((
         Camera::perspective_lookat(
@@ -91,7 +92,6 @@ fn setup(mut world: WriteWorld) -> Result<()> {
         }
         .look_at(Vec3::new(10.0, 10.0, 10.0), Vec3::ZERO, Vec3::Y),
         PrimaryCamera,
-        skybox,
     ));
 
     let cube_mesh = assets.load::<Mesh>("assets/meshes/cube.obj")?;
@@ -115,39 +115,40 @@ fn setup(mut world: WriteWorld) -> Result<()> {
         SelectionAabb::from_mesh(&assets.get(cube_mesh).unwrap()),
     ));
 
-    // circle of lights
-    const COLORS: &[Color] = &[
-        Color::RED,
-        Color::GREEN,
-        Color::BLUE,
-        Color::YELLOW,
-        Color::CYAN,
-        Color::MAGENTA,
-    ];
-    for (i, color) in COLORS.iter().enumerate() {
-        let angle = i as f32 / COLORS.len() as f32 * std::f32::consts::PI * 2.0;
-        world.spawn((
-            PointLight {
-                color: *color,
-                intensity: 10.0,
-                radius: 10.0,
-            },
-            Transform {
-                translation: Vec3::new(angle.cos() * 5.0, 5.0, angle.sin() * 5.0),
-                rotation: Quat::IDENTITY,
-                scale: Vec3::ONE,
-            },
-            SelectionAabb {
-                aabb: Aabb::new(Vec3::splat(-0.1), Vec3::splat(0.1)),
-            },
-        ));
-    }
+    // // circle of lights
+    // const COLORS: &[Color] = &[
+    //     Color::RED,
+    //     Color::GREEN,
+    //     Color::BLUE,
+    //     Color::YELLOW,
+    //     Color::CYAN,
+    //     Color::MAGENTA,
+    // ];
+    // for (i, color) in COLORS.iter().enumerate() {
+    //     let angle = i as f32 / COLORS.len() as f32 * std::f32::consts::PI * 2.0;
+    //     world.spawn((
+    //         PointLight {
+    //             color: *color,
+    //             intensity: 10.0,
+    //             radius: 10.0,
+    //         },
+    //         Transform {
+    //             translation: Vec3::new(angle.cos() * 5.0, 5.0, angle.sin() * 5.0),
+    //             rotation: Quat::IDENTITY,
+    //             scale: Vec3::ONE,
+    //         },
+    //         SelectionAabb {
+    //             aabb: Aabb::new(Vec3::splat(-0.1), Vec3::splat(0.1)),
+    //         },
+    //     ));
+    // }
 
     world.spawn((
         PointLight {
             color: Color::WHITE,
             intensity: 100.0,
             radius: 100.0,
+            enabled: true,
         },
         Transform {
             translation: Vec3::new(0.0, 5.0, 0.0),

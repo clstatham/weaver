@@ -5,7 +5,7 @@ use weaver_asset::{prelude::Asset, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
     change::ChangeDetection,
     prelude::{Component, Reflect, Resource},
-    world::WriteWorld,
+    world::{World, WriteWorld},
 };
 use weaver_util::{
     prelude::{bail, DowncastSync, Result},
@@ -22,6 +22,14 @@ pub struct BindGroupLayoutCache {
 impl BindGroupLayoutCache {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn insert<T: DowncastSync>(&mut self, layout: BindGroupLayout) {
+        self.cache.insert(TypeId::of::<T>(), layout);
+    }
+
+    pub fn get<T: DowncastSync>(&self) -> Option<&BindGroupLayout> {
+        self.cache.get(&TypeId::of::<T>())
     }
 
     pub fn get_or_create<T>(&mut self, device: &wgpu::Device) -> BindGroupLayout
@@ -53,6 +61,12 @@ impl BindGroupLayout {
     {
         cache.get_or_create::<T>(device)
     }
+
+    pub fn from_raw(bind_group: wgpu::BindGroupLayout) -> Self {
+        Self {
+            bind_group: Arc::new(bind_group),
+        }
+    }
 }
 
 impl Deref for BindGroupLayout {
@@ -69,6 +83,7 @@ pub trait CreateBindGroup: DowncastSync {
         Self: Sized;
     fn create_bind_group(
         &self,
+        render_world: &World,
         device: &wgpu::Device,
         cached_layout: &BindGroupLayout,
     ) -> wgpu::BindGroup;
@@ -82,7 +97,7 @@ pub trait CreateBindGroup: DowncastSync {
 }
 
 #[derive(Component, Resource, Clone, Reflect)]
-pub struct BindGroup<T: CreateBindGroup> {
+pub struct BindGroup<T: DowncastSync> {
     #[reflect(ignore)]
     bind_group: Arc<wgpu::BindGroup>,
     #[reflect(ignore)]
@@ -96,9 +111,22 @@ impl<T: CreateBindGroup> Asset for BindGroup<T> {
 }
 
 impl<T: CreateBindGroup> BindGroup<T> {
-    pub fn new(device: &wgpu::Device, data: &T, cache: &mut BindGroupLayoutCache) -> Self {
+    pub fn new(
+        render_world: &World,
+        device: &wgpu::Device,
+        data: &T,
+        cache: &mut BindGroupLayoutCache,
+    ) -> Self {
         let cached_layout = BindGroupLayout::get_or_create::<T>(device, cache);
-        let bind_group = data.create_bind_group(device, &cached_layout);
+        let bind_group = data.create_bind_group(render_world, device, &cached_layout);
+        Self {
+            bind_group: Arc::new(bind_group),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+impl<T: DowncastSync> BindGroup<T> {
+    pub fn from_raw(bind_group: wgpu::BindGroup) -> Self {
         Self {
             bind_group: Arc::new(bind_group),
             _marker: std::marker::PhantomData,
@@ -151,7 +179,7 @@ fn create_component_bind_group<T: Component + CreateBindGroup>(
             let mut layout_cache = render_world
                 .get_resource_mut::<BindGroupLayoutCache>()
                 .unwrap();
-            let bind_group = BindGroup::new(&device, &*data, &mut layout_cache);
+            let bind_group = BindGroup::new(&render_world, &device, &*data, &mut layout_cache);
             data.set_bind_group_stale(false);
             drop(data);
             render_world.insert_component(entity, bind_group);
@@ -190,7 +218,7 @@ fn create_resource_bind_group<T: Resource + CreateBindGroup>(
         let mut layout_cache = render_world
             .get_resource_mut::<BindGroupLayoutCache>()
             .unwrap();
-        let bind_group = BindGroup::new(&device, &*data, &mut layout_cache);
+        let bind_group = BindGroup::new(&render_world, &device, &*data, &mut layout_cache);
         data.set_bind_group_stale(false);
         drop(data);
         drop(device);
@@ -270,7 +298,7 @@ fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
                 .get_resource_mut::<BindGroupLayoutCache>()
                 .unwrap();
             asset.set_bind_group_stale(false);
-            let bind_group = BindGroup::new(&device, &*asset, &mut layout_cache);
+            let bind_group = BindGroup::new(&render_world, &device, &*asset, &mut layout_cache);
             let bind_group_handle = assets.insert(bind_group);
             asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
             drop(handle);

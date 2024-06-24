@@ -193,6 +193,7 @@ impl FromWorld for GizmoRenderNode {
 impl CreateBindGroup for GizmoRenderNode {
     fn create_bind_group(
         &self,
+        _render_world: &World,
         device: &wgpu::Device,
         cached_layout: &BindGroupLayout,
     ) -> wgpu::BindGroup {
@@ -368,7 +369,7 @@ impl ViewNode for GizmoRenderNode {
             let mut layout_cache = render_world
                 .get_resource_mut::<BindGroupLayoutCache>()
                 .unwrap();
-            let bind_group = BindGroup::new(&device, self, &mut layout_cache);
+            let bind_group = BindGroup::new(&render_world.read(), &device, self, &mut layout_cache);
             self.bind_group = Some(bind_group);
         }
 

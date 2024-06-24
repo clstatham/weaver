@@ -10,7 +10,7 @@ use weaver_util::{
     TypeIdMap,
 };
 
-use crate::{bind_group::BindGroupLayoutCache, Extract, WgpuDevice};
+use crate::{bind_group::BindGroupLayoutCache, ExtractPipelines, WgpuDevice};
 
 #[derive(Resource, Default)]
 pub struct RenderPipelineCache {
@@ -162,7 +162,7 @@ impl<T: CreateRenderPipeline> Default for RenderPipelinePlugin<T> {
 
 impl<T: CreateRenderPipeline> Plugin for RenderPipelinePlugin<T> {
     fn build(&self, render_app: &mut App) -> Result<()> {
-        render_app.add_system(extract_render_pipeline::<T>, Extract);
+        render_app.add_system(extract_render_pipeline::<T>, ExtractPipelines);
         Ok(())
     }
 }
@@ -329,7 +329,7 @@ impl<T: CreateComputePipeline> Plugin for ComputePipelinePlugin<T> {
         if !render_app.has_resource::<ComputePipelineCache>() {
             render_app.insert_resource(ComputePipelineCache::new());
         }
-        render_app.add_system(extract_compute_pipeline::<T>, Extract);
+        render_app.add_system(extract_compute_pipeline::<T>, ExtractPipelines);
         Ok(())
     }
 }

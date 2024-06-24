@@ -118,6 +118,7 @@ impl CreateBindGroup for HdrRenderTarget {
 
     fn create_bind_group(
         &self,
+        _render_world: &World,
         device: &wgpu::Device,
         cached_layout: &crate::bind_group::BindGroupLayout,
     ) -> wgpu::BindGroup {
