@@ -277,7 +277,6 @@ pub struct App {
     plugins: SharedLock<Vec<Box<dyn Plugin>>>,
     runner: Option<Box<dyn Runner>>,
     sub_apps: SubApps,
-    thread_pool: Option<rayon::ThreadPool>,
 }
 
 impl App {
@@ -289,7 +288,6 @@ impl App {
                 main: SubApp::new(),
                 sub_apps: FxHashMap::default(),
             },
-            thread_pool: None,
         }
     }
 
@@ -304,7 +302,7 @@ impl App {
         this.main_app_mut().push_update_stage::<PostUpdate>();
         this.main_app_mut().push_update_stage::<FinishFrame>();
         this.main_app_mut().push_shutdown_stage::<Shutdown>();
-        this.thread_pool = Some(rayon::ThreadPoolBuilder::new().build().unwrap());
+
         this
     }
 
@@ -416,24 +414,15 @@ impl App {
     }
 
     pub fn init(&mut self) {
-        let thread_pool = self.thread_pool.as_ref().unwrap();
-        thread_pool.install(|| {
-            self.sub_apps.init();
-        });
+        self.sub_apps.init();
     }
 
     pub fn update(&mut self) {
-        let thread_pool = self.thread_pool.as_ref().unwrap();
-        thread_pool.install(|| {
-            self.sub_apps.update();
-        });
+        self.sub_apps.update();
     }
 
     pub fn shutdown(&mut self) {
-        let thread_pool = self.thread_pool.as_ref().unwrap();
-        thread_pool.install(|| {
-            self.sub_apps.shutdown();
-        });
+        self.sub_apps.shutdown();
     }
 
     pub fn run(&mut self) -> Result<()> {

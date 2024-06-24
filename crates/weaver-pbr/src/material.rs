@@ -83,7 +83,10 @@ impl Asset for Material {
                 diffuse_texture.width,
                 diffuse_texture.height,
             ),
-            _ => bail!("Diffuse texture must be in RGB8 or RGBA8 format"),
+            format => bail!(
+                "Diffuse texture must be in RGB8 or RGBA8 format (got {:?})",
+                format
+            ),
         };
         let normal_texture = match normal_texture.format {
             gltf::image::Format::R8G8B8 => Texture::from_rgb8(
@@ -96,7 +99,10 @@ impl Asset for Material {
                 normal_texture.width,
                 normal_texture.height,
             ),
-            _ => bail!("Normal texture must be in RGB8 or RGBA8 format"),
+            format => bail!(
+                "Normal texture must be in RGB8 or RGBA8 format (got {:?})",
+                format
+            ),
         };
         let metallic_roughness_texture = match metallic_roughness_texture.format {
             gltf::image::Format::R8G8B8 => Texture::from_rgb8(
@@ -109,7 +115,10 @@ impl Asset for Material {
                 metallic_roughness_texture.width,
                 metallic_roughness_texture.height,
             ),
-            _ => bail!("Metallic roughness texture must be in RGB8 or RGBA8 format"),
+            format => bail!(
+                "Metallic/Roughness texture must be in RGB8 or RGBA8 format (got {:?})",
+                format
+            ),
         };
         let ao_texture = match ao_texture.format {
             gltf::image::Format::R8G8B8 => {
@@ -118,7 +127,10 @@ impl Asset for Material {
             gltf::image::Format::R8G8B8A8 => {
                 Texture::from_rgba8(&ao_texture.pixels, ao_texture.width, ao_texture.height)
             }
-            _ => bail!("AO texture must be in RGB8 or RGBA8 format"),
+            format => bail!(
+                "Ambient Occlusion texture must be in RGB8 or RGBA8 format (got {:?})",
+                format
+            ),
         };
 
         let material = Material {

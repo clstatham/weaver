@@ -93,9 +93,9 @@ fn setup(mut world: WriteWorld) -> Result<()> {
     ));
 
     let cube_mesh = assets.load::<Mesh>("assets/meshes/cube.obj")?;
-    let monkey_mesh = assets.load::<Mesh>("assets/meshes/monkey_2x.obj")?;
+    let monkey_mesh = assets.load::<Mesh>("assets/meshes/sphere.obj")?;
 
-    let material = assets.load::<Material>("assets/materials/wood.glb")?;
+    let material = assets.load::<Material>("assets/materials/wood_tiles.glb")?;
     {
         let mut material = assets.get_mut(material).unwrap();
         material.texture_scale = 100.0;
