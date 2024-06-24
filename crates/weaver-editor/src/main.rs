@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use inspect::InspectUi;
 use weaver::{
     prelude::*,
@@ -61,7 +59,7 @@ fn main() -> Result<()> {
         })?
         .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
         // .add_plugin(ClearColorPlugin::default())?
-        .insert_resource(Skybox::new(Path::new("assets/sky_2k.hdr")))
+        .insert_resource(Skybox::new("assets/sky_2k.hdr"))
         .insert_resource(EditorState::default())
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)
@@ -95,7 +93,7 @@ fn setup(mut world: WriteWorld) -> Result<()> {
     ));
 
     let cube_mesh = assets.load::<Mesh>("assets/meshes/cube.obj")?;
-    let monkey_mesh = assets.load::<Mesh>("assets/meshes/monkey_2x.obj")?;
+    let monkey_mesh = assets.load::<Mesh>("assets/meshes/sphere.obj")?;
 
     let material = assets.load::<Material>("assets/materials/wood_tiles.glb")?;
     {

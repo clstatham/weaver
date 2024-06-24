@@ -3,7 +3,7 @@ use std::{collections::HashSet, ops::Range};
 use light::PointLightPlugin;
 use material::{GpuMaterial, MaterialPlugin};
 use render::{PbrLightingInformation, PbrMeshInstances, PbrNode, PbrNodeLabel, PbrRenderCommand};
-use skybox::{SkyboxNodeLabel, SkyboxPlugin, SkyboxRenderPlugin};
+use skybox::{SkyboxNodeLabel, SkyboxNodePlugin, SkyboxPlugin};
 use weaver_app::prelude::*;
 use weaver_asset::Handle;
 use weaver_core::transform::Transform;
@@ -108,7 +108,7 @@ impl Plugin for PbrPlugin {
         render_app.add_plugin(MaterialPlugin)?;
         render_app.add_plugin(PointLightPlugin)?;
         render_app.add_plugin(SkyboxPlugin)?;
-        render_app.add_plugin(SkyboxRenderPlugin)?;
+        render_app.add_plugin(SkyboxNodePlugin)?;
 
         render_app.insert_resource(PbrLightingInformation);
         render_app.add_plugin(RenderResourcePlugin::<PbrLightingInformation>::default())?;

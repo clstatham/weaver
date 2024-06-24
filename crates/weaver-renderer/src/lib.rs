@@ -232,7 +232,7 @@ fn create_surface(render_world: &mut World) -> Result<()> {
 
     let (device, queue) = pollster::block_on(adapter.request_device(
         &wgpu::DeviceDescriptor {
-            required_features: wgpu::Features::empty(),
+            required_features: wgpu::Features::MULTIVIEW,
             required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
             label: None,
         },

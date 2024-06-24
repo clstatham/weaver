@@ -31,7 +31,10 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::Result;
 
-use crate::{light::GpuPointLightArray, material::GpuMaterial, prelude::GpuSkybox, PbrDrawItem};
+use crate::{
+    light::GpuPointLightArray, material::GpuMaterial, prelude::irradiance::GpuSkyboxIrradiance,
+    PbrDrawItem,
+};
 
 pub struct PbrMeshInstance {
     pub mesh: Handle<GpuMesh>,
@@ -146,7 +149,7 @@ impl CreateBindGroup for PbrLightingInformation {
         cached_layout: &BindGroupLayout,
     ) -> wgpu::BindGroup {
         let point_lights = render_world.get_resource::<GpuPointLightArray>().unwrap();
-        let env_map = render_world.get_resource::<GpuSkybox>().unwrap();
+        let env_map = render_world.get_resource::<GpuSkyboxIrradiance>().unwrap();
 
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("PBR Lighting Information Bind Group"),

@@ -6,6 +6,7 @@ use std::{
 };
 
 use image::codecs::hdr::HdrDecoder;
+use irradiance::{GpuSkyboxIrradiance, SkyboxIrradiancePlugin};
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
     component::Res,
@@ -30,6 +31,8 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::Result;
 
+pub mod irradiance;
+
 pub const SKYBOX_CUBEMAP_SIZE: u32 = 1024;
 
 #[derive(Resource)]
@@ -38,8 +41,10 @@ pub struct Skybox {
 }
 
 impl Skybox {
-    pub fn new(path: &Path) -> Self {
-        Self { path: path.into() }
+    pub fn new(path: impl AsRef<Path>) -> Self {
+        Self {
+            path: path.as_ref().into(),
+        }
     }
 }
 
@@ -551,11 +556,17 @@ impl Plugin for SkyboxPlugin {
 
         Ok(())
     }
+
+    fn finish(&self, app: &mut weaver_app::App) -> Result<()> {
+        app.add_plugin(SkyboxIrradiancePlugin)?;
+
+        Ok(())
+    }
 }
 
-pub struct SkyboxRenderPlugin;
+pub struct SkyboxNodePlugin;
 
-impl Plugin for SkyboxRenderPlugin {
+impl Plugin for SkyboxNodePlugin {
     fn build(&self, render_app: &mut weaver_app::App) -> Result<()> {
         render_app.add_plugin(RenderPipelinePlugin::<SkyboxNode>::default())?;
         render_app.add_render_main_graph_node::<ViewNodeRunner<SkyboxNode>>(SkyboxNodeLabel);

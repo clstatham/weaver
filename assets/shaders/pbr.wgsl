@@ -223,9 +223,6 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     var out_color = ibl + illumination;
 
-    // tone mapping
-    out_color = out_color / (out_color + vec3(1.0));
-
     // gamma correction
     out_color = pow(out_color, vec3(1.0 / 2.2));
 

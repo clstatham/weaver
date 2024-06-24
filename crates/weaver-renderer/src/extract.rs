@@ -123,6 +123,32 @@ impl<T: RenderResource> Plugin for RenderResourcePlugin<T> {
     }
 }
 
+pub struct RenderResourceDependencyPlugin<T: RenderResource, Dep: RenderResource>(
+    std::marker::PhantomData<(T, Dep)>,
+);
+
+impl<T: RenderResource, Dep: RenderResource> Default for RenderResourceDependencyPlugin<T, Dep> {
+    fn default() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl<T: RenderResource, Dep: RenderResource> Plugin for RenderResourceDependencyPlugin<T, Dep> {
+    fn build(&self, app: &mut App) -> Result<()> {
+        app.add_system_after(
+            extract_render_resource::<T>,
+            extract_render_resource::<Dep>,
+            Extract,
+        );
+        app.add_system_after(
+            update_render_resource::<T>,
+            extract_render_resource::<Dep>,
+            Extract,
+        );
+        Ok(())
+    }
+}
+
 pub fn extract_render_resource<T: RenderResource>(mut render_world: WriteWorld) -> Result<()> {
     if !render_world.has_resource::<T>() {
         let main_world = render_world.get_resource::<MainWorld>().unwrap();

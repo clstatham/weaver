@@ -61,11 +61,9 @@ impl InspectUi for dyn Struct {
 
 impl InspectUi for Color {
     fn inspect_ui(&mut self, _type_registry: &TypeRegistry, _assets: &Assets, ui: &mut egui::Ui) {
-        ui.collapsing(self.reflect_type_name(), |ui| {
-            let mut color = self.to_rgb();
-            ui.color_edit_button_rgb(&mut color);
-            *self = Color::from_rgb(color);
-        });
+        let mut color = self.to_rgb();
+        ui.color_edit_button_rgb(&mut color);
+        *self = Color::from_rgb(color);
     }
 }
 
@@ -89,7 +87,7 @@ impl InspectUi for Material {
                     egui::DragValue::new(&mut self.metallic)
                         .fixed_decimals(2)
                         .speed(0.01)
-                        .clamp_range(0.0..=f32::INFINITY),
+                        .clamp_range(0.0..=1.0),
                 );
             });
             ui.horizontal_top(|ui| {
@@ -98,7 +96,7 @@ impl InspectUi for Material {
                     egui::DragValue::new(&mut self.roughness)
                         .fixed_decimals(2)
                         .speed(0.01)
-                        .clamp_range(0.0..=f32::INFINITY),
+                        .clamp_range(0.0..=1.0),
                 );
             });
             ui.horizontal_top(|ui| {
