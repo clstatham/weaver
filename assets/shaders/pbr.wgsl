@@ -134,9 +134,9 @@ fn calculate_ibl(
     V: vec3<f32>,
 ) -> vec3<f32> {
     let NdotV = saturate(dot(N, V));
-    let R = reflect(V, N);
+    let R = reflect(-V, N);
 
-    let kS = fresnel_schlick(vec3(0.04), NdotV, roughness);
+    let kS = fresnel_schlick(vec3(0.001), NdotV, roughness);
     var kD = vec3(1.0) - kS;
     kD *= 1.0 - metallic;
     let irradiance = textureSample(env_map_diffuse, env_map_sampler, N).rgb;

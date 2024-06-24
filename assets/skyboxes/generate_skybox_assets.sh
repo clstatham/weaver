@@ -2,8 +2,7 @@
 
 set -e
 
-ASSETS_DIR=$(dirname $0)
-SKYBOX_DIR=$ASSETS_DIR/skyboxes
+SKYBOX_DIR=$(dirname $0)
 INFILE=$1
 if [ -z $INFILE ]; then
     echo "Usage: $0 <input_file>"
