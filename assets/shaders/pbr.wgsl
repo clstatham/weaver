@@ -27,8 +27,10 @@ struct PointLight {
 
 // lights information
 @group(3) @binding(0) var<storage> point_lights: array<PointLight>;
-@group(3) @binding(1) var          env_map: texture_cube<f32>;
-@group(3) @binding(2) var          env_map_sampler: sampler;
+@group(3) @binding(1) var          env_map_diffuse: texture_cube<f32>;
+@group(3) @binding(2) var          env_map_specular: texture_cube<f32>;
+@group(3) @binding(3) var          env_map_brdf: texture_2d<f32>;
+@group(3) @binding(4) var          env_map_sampler: sampler;
 
 fn saturate(x: f32) -> f32 {
     return clamp(x, 0.0, 1.0);
@@ -132,15 +134,19 @@ fn calculate_ibl(
     V: vec3<f32>,
 ) -> vec3<f32> {
     let NdotV = saturate(dot(N, V));
-    let R = reflect(-V, N);
+    let R = reflect(V, N);
 
     let kS = fresnel_schlick(vec3(0.04), NdotV, roughness);
     var kD = vec3(1.0) - kS;
     kD *= 1.0 - metallic;
-    let irradiance = textureSample(env_map, env_map_sampler, N).rgb;
+    let irradiance = textureSample(env_map_diffuse, env_map_sampler, N).rgb;
     let diffuse = irradiance * albedo;
 
-    return kD * diffuse;
+    let prefiltered_color = textureSampleLevel(env_map_specular, env_map_sampler, R, roughness * f32(textureNumLevels(env_map_specular))).rgb;
+    let brdf = textureSample(env_map_brdf, env_map_sampler, vec2(NdotV, roughness)).rg;
+    let specular = prefiltered_color * (kS * brdf.x + brdf.y);
+
+    return kD * diffuse + specular;
 }
 
 

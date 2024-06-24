@@ -6,7 +6,7 @@ use std::{
 };
 
 use image::codecs::hdr::HdrDecoder;
-use irradiance::{GpuSkyboxIrradiance, SkyboxIrradiancePlugin};
+use irradiance::SkyboxIrradiancePlugin;
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
     component::Res,
@@ -38,12 +38,30 @@ pub const SKYBOX_CUBEMAP_SIZE: u32 = 1024;
 #[derive(Resource)]
 pub struct Skybox {
     pub path: PathBuf,
+    pub diffuse_path: PathBuf,
+    pub specular_path: PathBuf,
+    pub brdf_lut_path: PathBuf,
 }
 
 impl Skybox {
     pub fn new(path: impl AsRef<Path>) -> Self {
+        let path = path.as_ref().to_path_buf();
+        let file_stem = path.file_stem().unwrap().to_str().unwrap().to_owned();
+        let diffuse_path = path
+            .with_file_name(file_stem.clone() + "_diffuse")
+            .with_extension("ktx2");
+        let specular_path = path
+            .with_file_name(file_stem.clone() + "_specular")
+            .with_extension("ktx2");
+        let brdf_lut_path = path
+            .with_file_name(file_stem.clone() + "_LUT")
+            .with_extension("png");
+
         Self {
-            path: path.as_ref().into(),
+            path,
+            diffuse_path,
+            specular_path,
+            brdf_lut_path,
         }
     }
 }
@@ -131,8 +149,8 @@ impl CreateComputePipeline for GpuSkybox {
     where
         Self: Sized,
     {
-        let module =
-            Shader::new(Path::new("assets/shaders/hdr_loader.wgsl")).create_shader_module(device);
+        let module = Shader::new(Path::new("assets/shaders/skybox_loader.wgsl"))
+            .create_shader_module(device);
 
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("Skybox Compute Pipeline"),

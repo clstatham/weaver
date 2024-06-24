@@ -45,6 +45,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let view_ray_direction = view_pos_homogeneous.xyz / view_pos_homogeneous.w;
     var ray_direction = normalize((camera.inv_view * vec4(view_ray_direction, 0.0)).xyz);
 
-    let sample = textureSample(env_map, env_sampler, ray_direction);
+    let sample = textureSampleLevel(env_map, env_sampler, ray_direction, 0.0);
     return sample;
 }

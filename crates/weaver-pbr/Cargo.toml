@@ -10,6 +10,7 @@ bytemuck = "1.7.0"
 encase = "0.8.0"
 image = "0.24"
 glam = { version = "0.28", features = ["bytemuck"] }
+ktx2 = "0.3.0"
 
 weaver-util = { path = "../weaver-util" }
 weaver-renderer = { path = "../weaver-renderer" }
