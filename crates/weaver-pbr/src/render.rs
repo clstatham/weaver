@@ -328,6 +328,7 @@ impl ViewNode for PbrNode {
     type Param = (
         Res<BinnedRenderPhases<PbrDrawItem>>,
         Res<DrawFunctions<PbrDrawItem>>,
+        Res<HdrRenderTarget>,
     );
     type ViewQueryFetch = &'static ViewTarget;
     type ViewQueryFilter = ();
@@ -337,27 +338,48 @@ impl ViewNode for PbrNode {
         render_world: &WorldLock,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
-        (binned_phases, draw_functions): &SystemParamItem<Self::Param>,
-        _view_target: &Ref<ViewTarget>,
+        (binned_phases, draw_functions, hdr_target): &SystemParamItem<Self::Param>,
+        view_target: &Ref<ViewTarget>,
     ) -> Result<()> {
         let Some(phase) = binned_phases.get(&graph_ctx.view_entity) else {
             return Ok(());
         };
 
-        let mut draw_functions = draw_functions.write();
+        let mut draw_functions = draw_functions.write_arc();
         draw_functions.prepare(render_world).unwrap();
 
-        {
-            if !phase.is_empty() {
-                phase
-                    .render(
-                        render_world,
-                        render_ctx.command_encoder(),
-                        graph_ctx.view_entity,
-                        &mut draw_functions,
-                    )
-                    .unwrap();
-            }
+        if !phase.is_empty() {
+            let encoder = render_ctx.command_encoder();
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("PBR Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: hdr_target.color_target(),
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &view_target.depth_target,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            phase
+                .render(
+                    render_world,
+                    &mut render_pass,
+                    graph_ctx.view_entity,
+                    &mut draw_functions,
+                )
+                .unwrap();
         }
 
         Ok(())
@@ -372,10 +394,9 @@ impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
         Res<RenderPipelineCache>,
         Res<BindGroup<BatchedInstanceBuffer<PbrDrawItem, PbrRenderCommand>>>,
         Res<BindGroup<PbrLightingInformation>>,
-        Res<HdrRenderTarget>,
     );
 
-    type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<GpuCamera>);
+    type ViewQueryFetch = &'static BindGroup<GpuCamera>;
 
     type ViewQueryFilter = ();
 
@@ -383,43 +404,20 @@ impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
 
     type ItemQueryFilter = ();
 
-    fn render(
-        item: &PbrDrawItem,
+    fn render<'w>(
+        item: PbrDrawItem,
         view_query: <Self::ViewQueryFetch as weaver_ecs::prelude::QueryFetch>::Item,
         _item_query: Option<<Self::ItemQueryFetch as weaver_ecs::prelude::QueryFetch>::Item>,
-        param: Self::Param,
-        encoder: &mut wgpu::CommandEncoder,
+        param: SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut wgpu::RenderPass<'w>,
     ) -> Result<()> {
-        let (assets, pipeline_cache, mesh_transforms_bind_group, lights_bind_group, hdr_target) =
-            param;
-        let (view_target, camera_bind_group) = view_query;
+        let (assets, pipeline_cache, mesh_transforms_bind_group, lights_bind_group) = param;
+        let camera_bind_group = view_query;
         let mesh = assets.get::<GpuMesh>(item.key.mesh).unwrap();
         let material_bind_group = assets
             .get::<BindGroup<GpuMaterial>>(item.key.material)
             .unwrap();
         let pipeline = pipeline_cache.get_pipeline::<PbrNode>().unwrap();
-
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("PBR Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: hdr_target.color_target(),
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &view_target.depth_target,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
 
         pass.set_pipeline(pipeline);
         pass.set_bind_group(0, material_bind_group.bind_group(), &[]);

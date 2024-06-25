@@ -11,7 +11,10 @@ use weaver_ecs::{
     system::{SystemParam, SystemParamItem},
     world::{World, WorldLock},
 };
-use weaver_util::{lock::Write, prelude::Result};
+use weaver_util::{
+    lock::{ArcWrite, Write},
+    prelude::Result,
+};
 
 use crate::{
     bind_group::{BindGroupLayout, CreateBindGroup, ResourceBindGroupPlugin},
@@ -65,11 +68,11 @@ impl<T: BinnedDrawItem> BinnedRenderPhase<T> {
     }
 
     pub fn render<'w>(
-        &self,
+        &'w self,
         render_world: &'w WorldLock,
-        encoder: &mut wgpu::CommandEncoder,
+        render_pass: &mut wgpu::RenderPass<'w>,
         view_entity: Entity,
-        draw_functions: &mut Write<'w, DrawFunctionsInner<T>>,
+        draw_functions: &'w mut ArcWrite<DrawFunctionsInner<T>>,
     ) -> Result<()> {
         debug_assert_eq!(self.batch_keys.len(), self.batch_sets.len());
         for (key, batch_set) in self.batch_keys.iter().zip(&self.batch_sets) {
@@ -80,7 +83,7 @@ impl<T: BinnedDrawItem> BinnedRenderPhase<T> {
                     batch.batch_range.clone(),
                 );
                 if let Some(draw_fn) = draw_functions.get_mut(item.draw_fn()) {
-                    draw_fn.draw(render_world, encoder, view_entity, &item)?;
+                    draw_fn.draw(render_world, render_pass, view_entity, item)?;
                 } else {
                     log::warn!("Draw function not found for key: {:?}", key);
                 }

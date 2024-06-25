@@ -30,6 +30,7 @@ use weaver_util::prelude::*;
 
 pub mod light;
 pub mod material;
+pub mod prepass;
 pub mod render;
 pub mod skybox;
 

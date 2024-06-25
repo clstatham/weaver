@@ -195,7 +195,7 @@ impl<T: Event> SystemParam for EventTx<T> {
 
     fn init_state(_: &WorldLock) -> Self::State {}
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
         if let Some(events) = world.get_resource::<Events<T>>() {
             EventTx::new(events.clone())
         } else if let Some(manual_events) = world.get_resource::<ManuallyUpdatedEvents<T>>() {
@@ -222,7 +222,7 @@ impl<T: Event> SystemParam for EventRx<T> {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
         if let Some(events) = world.get_resource::<Events<T>>() {
             EventRx::new(
                 events.clone(),

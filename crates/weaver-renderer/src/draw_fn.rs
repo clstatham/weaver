@@ -56,12 +56,12 @@ pub trait DrawFn<T: DrawItem>: 'static + Send + Sync {
         Ok(())
     }
 
-    fn draw(
+    fn draw<'w>(
         &mut self,
-        render_world: &WorldLock,
-        encoder: &mut wgpu::CommandEncoder,
+        render_world: &'w WorldLock,
+        render_pass: &mut wgpu::RenderPass<'w>,
         view_entity: Entity,
-        item: &T,
+        item: T,
     ) -> Result<()>;
 }
 

@@ -63,11 +63,18 @@ pub struct SystemState<P: SystemParam + 'static> {
 }
 
 impl<P: SystemParam> SystemState<P> {
+    pub fn new(world: &WorldLock) -> Self {
+        Self {
+            access: P::access(),
+            state: P::init_state(world),
+        }
+    }
+
     pub fn access(&self) -> &SystemAccess {
         &self.access
     }
 
-    pub fn get<'w, 's>(&'s mut self, world: &WorldLock) -> SystemParamItem<'w, 's, P> {
+    pub fn get<'w, 's>(&'s mut self, world: &'w WorldLock) -> SystemParamItem<'w, 's, P> {
         P::fetch(&mut self.state, world)
     }
 }
@@ -80,7 +87,7 @@ pub trait SystemParam {
 
     fn init_state(world: &WorldLock) -> Self::State;
 
-    fn fetch<'w, 's>(state: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's>;
+    fn fetch<'w, 's>(state: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's>;
 
     #[allow(unused)]
     fn can_run(world: &WorldLock) -> bool {
@@ -120,7 +127,7 @@ impl<'w2, 's2, T: SystemParam> SystemParam for ParamSet<'w2, 's2, T> {
         T::init_state(world)
     }
 
-    fn fetch<'w, 's>(state: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
+    fn fetch<'w, 's>(state: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
         T::fetch(state, world)
     }
 
@@ -145,7 +152,7 @@ impl SystemParam for () {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, _world: &WorldLock) -> Self::Item<'w, 's> {}
+    fn fetch<'w, 's>(_: &'s mut Self::State, _world: &'w WorldLock) -> Self::Item<'w, 's> {}
 
     fn can_run(_: &WorldLock) -> bool {
         true
@@ -192,7 +199,7 @@ where
         }
     }
 
-    fn fetch<'w, 's>(_state: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
+    fn fetch<'w, 's>(_state: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
         world.query_filtered()
     }
 
@@ -224,7 +231,7 @@ impl<T: Resource> SystemParam for Res<T> {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
         world.get_resource::<T>().unwrap()
     }
 
@@ -255,7 +262,7 @@ impl<T: Resource> SystemParam for ResMut<T> {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
         world.get_resource_mut::<T>().unwrap()
     }
 
@@ -286,7 +293,7 @@ impl SystemParam for WorldLock {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
         world.clone()
     }
 
@@ -311,7 +318,7 @@ impl SystemParam for ReadWorld {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
         world.read()
     }
 
@@ -338,7 +345,7 @@ impl SystemParam for WriteWorld {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
         world.write()
     }
 
@@ -366,7 +373,7 @@ impl SystemParam for ExclusiveSystemMarker {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, _world: &WorldLock) -> Self::Item<'w, 's> {
+    fn fetch<'w, 's>(_: &'s mut Self::State, _world: &'w WorldLock) -> Self::Item<'w, 's> {
         ExclusiveSystemMarker
     }
 
@@ -405,7 +412,7 @@ macro_rules! impl_system_param_tuple {
                 access
             }
 
-            fn fetch<'w, 's>(state: &'s mut Self::State, world: &WorldLock) -> Self::Item<'w, 's> {
+            fn fetch<'w, 's>(state: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
                 let ($($param),*) = state;
                 ($($param::fetch($param, world)),*)
             }
