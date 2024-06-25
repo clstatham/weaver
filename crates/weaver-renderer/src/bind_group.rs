@@ -4,8 +4,10 @@ use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{prelude::Asset, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
     change::ChangeDetection,
+    commands::Commands,
+    component::{Res, ResMut},
     prelude::{Component, Reflect, Resource},
-    world::{World, WriteWorld},
+    query::Query,
 };
 use weaver_util::{
     prelude::{bail, DowncastSync, Result},
@@ -83,7 +85,6 @@ pub trait CreateBindGroup: DowncastSync {
         Self: Sized;
     fn create_bind_group(
         &self,
-        render_world: &World,
         device: &wgpu::Device,
         cached_layout: &BindGroupLayout,
     ) -> wgpu::BindGroup;
@@ -96,8 +97,8 @@ pub trait CreateBindGroup: DowncastSync {
     fn set_bind_group_stale(&mut self, stale: bool) {}
 }
 
-#[derive(Component, Resource, Clone, Reflect)]
-pub struct BindGroup<T: DowncastSync> {
+#[derive(Component, Resource, Reflect)]
+pub struct BindGroup<T: CreateBindGroup> {
     #[reflect(ignore)]
     bind_group: Arc<wgpu::BindGroup>,
     #[reflect(ignore)]
@@ -111,22 +112,9 @@ impl<T: CreateBindGroup> Asset for BindGroup<T> {
 }
 
 impl<T: CreateBindGroup> BindGroup<T> {
-    pub fn new(
-        render_world: &World,
-        device: &wgpu::Device,
-        data: &T,
-        cache: &mut BindGroupLayoutCache,
-    ) -> Self {
+    pub fn new(device: &wgpu::Device, data: &T, cache: &mut BindGroupLayoutCache) -> Self {
         let cached_layout = BindGroupLayout::get_or_create::<T>(device, cache);
-        let bind_group = data.create_bind_group(render_world, device, &cached_layout);
-        Self {
-            bind_group: Arc::new(bind_group),
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-impl<T: DowncastSync> BindGroup<T> {
-    pub fn from_raw(bind_group: wgpu::BindGroup) -> Self {
+        let bind_group = data.create_bind_group(device, &cached_layout);
         Self {
             bind_group: Arc::new(bind_group),
             _marker: std::marker::PhantomData,
@@ -165,24 +153,23 @@ impl<T: Component + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
 }
 
 fn create_component_bind_group<T: Component + CreateBindGroup>(
-    mut render_world: WriteWorld,
+    commands: Commands,
+    device: Res<WgpuDevice>,
+    mut layout_cache: ResMut<BindGroupLayoutCache>,
+    item_query: Query<&mut T>,
+    bind_group_query: Query<&BindGroup<T>>,
 ) -> Result<()> {
-    let device = render_world.get_resource::<WgpuDevice>().unwrap();
-
-    let query = render_world.query::<&mut T>();
-
-    for (entity, mut data) in query.iter() {
-        if data.bind_group_stale() {
-            render_world.remove_component::<BindGroup<T>>(entity);
+    for (entity, mut item) in item_query.iter() {
+        let mut stale = false;
+        if item.bind_group_stale() {
+            commands.remove_component::<BindGroup<T>>(entity);
+            stale = true;
         }
-        if !render_world.has_component::<BindGroup<T>>(entity) {
-            let mut layout_cache = render_world
-                .get_resource_mut::<BindGroupLayoutCache>()
-                .unwrap();
-            let bind_group = BindGroup::new(&render_world, &device, &*data, &mut layout_cache);
-            data.set_bind_group_stale(false);
-            drop(data);
-            render_world.insert_component(entity, bind_group);
+        if stale || bind_group_query.get(entity).is_none() {
+            let bind_group = BindGroup::new(&device, &*item, &mut layout_cache);
+            item.set_bind_group_stale(false);
+            drop(item);
+            commands.insert_component(entity, bind_group);
         }
     }
 
@@ -205,25 +192,21 @@ impl<T: Resource + CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
 }
 
 fn create_resource_bind_group<T: Resource + CreateBindGroup>(
-    mut render_world: WriteWorld,
+    commands: Commands,
+    mut data: ResMut<T>,
+    bind_group: Option<Res<BindGroup<T>>>,
+    device: Res<WgpuDevice>,
+    mut layout_cache: ResMut<BindGroupLayoutCache>,
 ) -> Result<()> {
-    let Some(mut data) = render_world.get_resource_mut::<T>() else {
-        return Ok(());
-    };
+    let mut stale = false;
     if data.is_changed() || data.bind_group_stale() {
-        render_world.remove_resource::<BindGroup<T>>();
+        commands.remove_resource::<BindGroup<T>>();
+        stale = true;
     }
-    if !render_world.has_resource::<BindGroup<T>>() {
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
-        let mut layout_cache = render_world
-            .get_resource_mut::<BindGroupLayoutCache>()
-            .unwrap();
-        let bind_group = BindGroup::new(&render_world, &device, &*data, &mut layout_cache);
+    if stale || bind_group.is_none() {
+        let bind_group = BindGroup::new(&device, &*data, &mut layout_cache);
         data.set_bind_group_stale(false);
-        drop(data);
-        drop(device);
-        drop(layout_cache);
-        render_world.insert_resource(bind_group);
+        commands.insert_resource(bind_group);
     }
 
     Ok(())
@@ -264,45 +247,41 @@ impl<T: CreateBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
 }
 
 fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
-    mut render_world: WriteWorld,
+    commands: Commands,
+    device: Res<WgpuDevice>,
+    mut assets: ResMut<Assets>,
+    query: Query<&Handle<T>>,
+    mut asset_bind_groups: ResMut<ExtractedAssetBindGroups>,
+    mut layout_cache: ResMut<BindGroupLayoutCache>,
+    bind_group_handle_query: Query<&Handle<BindGroup<T>>>,
 ) -> Result<()> {
-    let device = render_world.get_resource::<WgpuDevice>().unwrap();
-    let mut assets = render_world.get_resource_mut::<Assets>().unwrap();
-
-    let query = render_world.query::<&Handle<T>>();
-
     for (entity, handle) in query.iter() {
-        let mut asset_bind_groups = render_world
-            .get_resource_mut::<ExtractedAssetBindGroups>()
-            .unwrap();
-
         // check for bind group staleness
+        let mut stale = false;
         if let Some(asset) = assets.get(*handle) {
             if asset.bind_group_stale() {
-                render_world.remove_component::<Handle<BindGroup<T>>>(entity);
+                commands.remove_component::<Handle<BindGroup<T>>>(entity);
                 asset_bind_groups.bind_groups.remove(&handle.into_untyped());
+                stale = true;
             }
         }
 
-        if render_world.has_component::<Handle<BindGroup<T>>>(entity) {
+        if bind_group_handle_query.get(entity).is_some() && !stale {
             continue;
         }
 
         if let Some(bind_group_handle) = asset_bind_groups.bind_groups.get(&handle.into_untyped()) {
             let bind_group_handle = Handle::<BindGroup<T>>::try_from(*bind_group_handle).unwrap();
             drop(handle);
-            render_world.insert_component(entity, bind_group_handle);
+            commands.insert_component(entity, bind_group_handle);
         } else {
             let mut asset = assets.get_mut::<T>(*handle).unwrap();
-            let mut layout_cache = render_world
-                .get_resource_mut::<BindGroupLayoutCache>()
-                .unwrap();
             asset.set_bind_group_stale(false);
-            let bind_group = BindGroup::new(&render_world, &device, &*asset, &mut layout_cache);
+            let bind_group = BindGroup::new(&device, &*asset, &mut layout_cache);
             let bind_group_handle = assets.insert(bind_group);
             asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
             drop(handle);
-            render_world.insert_component(entity, bind_group_handle);
+            commands.insert_component(entity, bind_group_handle);
         }
     }
 

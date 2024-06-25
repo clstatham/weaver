@@ -21,12 +21,7 @@ use transform::TransformPlugin;
 use weaver_app::{plugin::Plugin, App, AppLabel, SubApp};
 use weaver_asset::Assets;
 use weaver_ecs::{
-    component::{Res, ResMut},
-    prelude::Resource,
-    query::Query,
-    reflect::registry::TypeRegistry,
-    system_schedule::SystemStage,
-    world::{World, WorldLock, WriteWorld},
+    prelude::Resource, reflect::registry::TypeRegistry, system_schedule::SystemStage, world::World,
 };
 use weaver_event::{EventRx, ManuallyUpdatedEvents};
 use weaver_util::{prelude::Result, warn_once};
@@ -206,7 +201,7 @@ pub struct Renderer {
 }
 
 fn create_surface(render_world: &mut World) -> Result<()> {
-    if render_world.get_resource::<WindowSurface>().is_some() {
+    if render_world.get_resource_mut::<WindowSurface>().is_some() {
         log::warn!("Surface already created");
         return Ok(());
     }
@@ -216,7 +211,7 @@ fn create_surface(render_world: &mut World) -> Result<()> {
         ..Default::default()
     });
 
-    let window = render_world.get_resource::<Window>().unwrap();
+    let window = render_world.get_resource_mut::<Window>().unwrap();
 
     let surface = unsafe {
         instance
@@ -291,13 +286,13 @@ impl Renderer {
 }
 
 #[derive(Resource, Default)]
-pub struct ScratchMainWorld(WorldLock);
+pub struct ScratchMainWorld(World);
 
 #[derive(Resource)]
-pub struct MainWorld(WorldLock);
+pub struct MainWorld(World);
 
 impl Deref for MainWorld {
-    type Target = WorldLock;
+    type Target = World;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -357,28 +352,33 @@ impl Plugin for RendererPlugin {
     }
 
     fn finish(&self, main_app: &mut App) -> Result<()> {
-        let window = main_app.main_app().get_resource::<Window>().unwrap();
-        let resized_events = main_app
-            .main_app()
-            .get_resource::<ManuallyUpdatedEvents<WindowResized>>()
+        let window = main_app
+            .main_app_mut()
+            .get_resource_mut::<Window>()
             .unwrap();
+        let window = window.clone();
+        let resized_events = main_app
+            .main_app_mut()
+            .get_resource_mut::<ManuallyUpdatedEvents<WindowResized>>()
+            .unwrap();
+        let resized_events = resized_events.clone();
         let render_app = main_app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.insert_resource(resized_events.clone());
         render_app.insert_resource(window.clone());
-        create_surface(&mut render_app.write_world())?;
+        create_surface(render_app.write_world())?;
 
         Ok(())
     }
 }
 
-pub fn begin_render(mut render_world: WriteWorld) -> Result<()> {
-    let renderer = render_world.get_resource::<Renderer>().unwrap();
+pub fn begin_render(render_world: &mut World) -> Result<()> {
+    let renderer = unsafe { render_world.get_resource_mut_unsafe::<Renderer>().unwrap() };
     if render_world.has_resource::<CurrentFrame>() {
         log::warn!("Current frame already exists");
         return Ok(());
     }
 
-    let surface = render_world.get_resource::<WindowSurface>().unwrap();
+    let surface = unsafe { render_world.get_resource_unsafe::<WindowSurface>().unwrap() };
     let Ok(frame) = surface.get_current_texture() else {
         warn_once!("Failed to get current frame");
         return Ok(());
@@ -411,14 +411,14 @@ pub fn begin_render(mut render_world: WriteWorld) -> Result<()> {
     Ok(())
 }
 
-pub fn end_render(mut render_world: WriteWorld) -> Result<()> {
-    let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
-    let device = render_world.get_resource::<WgpuDevice>().unwrap();
-    let queue = render_world.get_resource::<WgpuQueue>().unwrap();
-
+pub fn end_render(render_world: &mut World) -> Result<()> {
     let Some(current_frame) = render_world.remove_resource::<CurrentFrame>() else {
         return Ok(());
     };
+
+    let mut renderer = unsafe { render_world.get_resource_mut_unsafe::<Renderer>().unwrap() };
+    let device = unsafe { render_world.get_resource_unsafe::<WgpuDevice>().unwrap() };
+    let queue = unsafe { render_world.get_resource_unsafe::<WgpuQueue>().unwrap() };
 
     log::trace!("End frame");
 
@@ -469,18 +469,24 @@ pub fn end_render(mut render_world: WriteWorld) -> Result<()> {
     Ok(())
 }
 
-fn resize_surface(
-    events: EventRx<WindowResized>,
-    view_targets: Query<&ViewTarget>,
-    mut render_world: WriteWorld,
-) -> Result<()> {
+fn resize_surface(render_world: &mut World) -> Result<()> {
+    let events = render_world
+        .get_resource::<ManuallyUpdatedEvents<WindowResized>>()
+        .unwrap();
+    let events = EventRx::new(
+        events.clone(),
+        render_world.last_change_tick(),
+        render_world.change_tick(),
+    );
     for event in events.iter() {
         let mut has_current_frame = false;
         let mut view_target_entities = Vec::new();
+        let view_targets = render_world.query::<&ViewTarget>();
+        let view_targets = view_targets.entity_iter(render_world).collect::<Vec<_>>();
         if render_world.remove_resource::<CurrentFrame>().is_some() {
             has_current_frame = true;
 
-            for entity in view_targets.entity_iter() {
+            for entity in view_targets {
                 render_world.remove_component::<ViewTarget>(entity).unwrap();
                 view_target_entities.push(entity);
             }
@@ -490,9 +496,9 @@ fn resize_surface(
 
         log::trace!("Resizing surface to {}x{}", width, height);
 
-        let mut renderer = render_world.get_resource_mut::<Renderer>().unwrap();
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
-        let surface = render_world.get_resource::<WindowSurface>().unwrap();
+        let mut renderer = unsafe { render_world.get_resource_mut_unsafe::<Renderer>().unwrap() };
+        let device = unsafe { render_world.get_resource_unsafe::<WgpuDevice>().unwrap() };
+        let surface = unsafe { render_world.get_resource_unsafe::<WindowSurface>().unwrap() };
 
         surface.configure(
             &device,
@@ -549,16 +555,20 @@ fn resize_surface(
                 depth_view: Arc::new(depth_view),
             };
 
-            render_world.insert_resource(current_frame);
-            let current_frame = render_world.get_resource::<CurrentFrame>().unwrap();
+            drop((surface, device, renderer));
 
+            render_world.insert_resource(current_frame);
+            let current_frame = render_world.get_resource_mut::<CurrentFrame>().unwrap();
+            let view_target = ViewTarget::from(&*current_frame);
             for view_target_entity in view_target_entities {
-                render_world
-                    .insert_component(view_target_entity, ViewTarget::from(&*current_frame));
+                render_world.insert_component(view_target_entity, view_target.clone());
             }
         }
 
-        if let Some(mut hdr_target) = render_world.get_resource_mut::<HdrRenderTarget>() {
+        if let Some(mut hdr_target) =
+            unsafe { render_world.get_resource_mut_unsafe::<HdrRenderTarget>() }
+        {
+            let device = unsafe { render_world.get_resource_unsafe::<WgpuDevice>().unwrap() };
             hdr_target.resize(&device, width, height);
         }
     }
@@ -568,20 +578,21 @@ fn resize_surface(
     Ok(())
 }
 
-pub fn render_system(
-    render_world: WorldLock,
-    mut render_graph: ResMut<RenderGraph>,
-    mut renderer: ResMut<Renderer>,
-    device: Res<WgpuDevice>,
-    queue: Res<WgpuQueue>,
-    view_targets: Query<&ViewTarget>,
-) -> Result<()> {
-    render_graph.prepare(&render_world)?;
+pub fn render_system(render_world: &mut World) -> Result<()> {
+    let mut render_graph = render_world.remove_resource::<RenderGraph>().unwrap();
+    render_graph.prepare(render_world)?;
 
+    let mut renderer = unsafe { render_world.get_resource_mut_unsafe::<Renderer>().unwrap() };
+    let device = unsafe { render_world.get_resource_unsafe::<WgpuDevice>().unwrap() };
+    let queue = unsafe { render_world.get_resource_unsafe::<WgpuQueue>().unwrap() };
+    let view_targets = render_world.query::<&ViewTarget>();
+    let view_targets = view_targets.entity_iter(render_world).collect::<Vec<_>>();
     // todo: don't assume every camera wants to run the whole main render graph
-    for entity in view_targets.entity_iter() {
-        render_graph.run(&device, &queue, &mut renderer, &render_world, entity)?;
+    for entity in view_targets {
+        render_graph.run(&device, &queue, &mut renderer, render_world, entity)?;
     }
+
+    render_world.insert_resource(render_graph);
 
     Ok(())
 }

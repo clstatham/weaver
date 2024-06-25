@@ -4,11 +4,12 @@ use plugin::Plugin;
 use rustc_hash::FxHashMap;
 
 use weaver_ecs::{
+    change::WorldTicks,
     component::{Res, ResMut, Resource},
     reflect::registry::{TypeRegistry, Typed},
     system::IntoSystem,
     system_schedule::SystemStage,
-    world::{ReadWorld, World, WorldLock, WriteWorld},
+    world::World,
 };
 use weaver_event::{Event, Events, ManuallyUpdatedEvents};
 use weaver_util::{lock::SharedLock, prelude::Result};
@@ -54,12 +55,12 @@ where
     }
 }
 
-pub type ExtractFn = Box<dyn Fn(&mut WorldLock, &mut WorldLock) -> Result<()> + Send + Sync>;
+pub type ExtractFn = Box<dyn Fn(&mut World, &mut World) -> Result<()> + Send + Sync>;
 
 pub trait AppLabel: 'static {}
 
 pub struct SubApp {
-    world: WorldLock,
+    world: World,
     plugins: SharedLock<Vec<Box<dyn Plugin>>>,
     extract_fn: Option<ExtractFn>,
 }
@@ -69,7 +70,7 @@ impl Default for SubApp {
         let world = World::new();
 
         Self {
-            world: world.into_world_lock(),
+            world,
             plugins: SharedLock::new(Vec::default()),
             extract_fn: None,
         }
@@ -102,16 +103,30 @@ impl SubApp {
         }
     }
 
-    pub fn insert_resource<T: Resource>(&self, resource: T) -> &Self {
+    pub fn insert_resource<T: Resource>(&mut self, resource: T) -> &Self {
         self.world.insert_resource(resource);
         self
     }
 
-    pub fn get_resource<T: Resource>(&self) -> Option<Res<T>> {
+    /// # Safety
+    ///
+    /// Caller ensures that there are no mutable references to the resource.
+    pub unsafe fn get_resource_unsafe<T: Resource>(&self) -> Option<Res<T>> {
+        unsafe { self.world.get_resource_unsafe::<T>() }
+    }
+
+    /// # Safety
+    ///
+    /// Caller ensures that there are no references to the resource, mutable or otherwise.
+    pub unsafe fn get_resource_mut_unsafe<T: Resource>(&self) -> Option<ResMut<T>> {
+        unsafe { self.world.get_resource_mut_unsafe::<T>() }
+    }
+
+    pub fn get_resource<T: Resource>(&mut self) -> Option<Res<T>> {
         self.world.get_resource::<T>()
     }
 
-    pub fn get_resource_mut<T: Resource>(&self) -> Option<ResMut<T>> {
+    pub fn get_resource_mut<T: Resource>(&mut self) -> Option<ResMut<T>> {
         self.world.get_resource_mut::<T>()
     }
 
@@ -139,32 +154,32 @@ impl SubApp {
     }
 
     pub fn push_init_stage<T: SystemStage>(&mut self) -> &mut Self {
-        self.world.write().push_init_stage::<T>();
+        self.world.push_init_stage::<T>();
         self
     }
 
     pub fn push_update_stage<T: SystemStage>(&mut self) -> &mut Self {
-        self.world.write().push_update_stage::<T>();
+        self.world.push_update_stage::<T>();
         self
     }
 
     pub fn push_shutdown_stage<T: SystemStage>(&mut self) -> &mut Self {
-        self.world.write().push_shutdown_stage::<T>();
+        self.world.push_shutdown_stage::<T>();
         self
     }
 
     pub fn push_manual_stage<T: SystemStage>(&mut self) -> &mut Self {
-        self.world.write().push_manual_stage::<T>();
+        self.world.push_manual_stage::<T>();
         self
     }
 
     pub fn add_update_stage_before<T: SystemStage, U: SystemStage>(&mut self) -> &mut Self {
-        self.world.write().add_stage_before::<T, U>();
+        self.world.add_stage_before::<T, U>();
         self
     }
 
     pub fn add_update_stage_after<T: SystemStage, U: SystemStage>(&mut self) -> &mut Self {
-        self.world.write().add_stage_after::<T, U>();
+        self.world.add_stage_after::<T, U>();
         self
     }
 
@@ -173,7 +188,7 @@ impl SubApp {
         system: impl IntoSystem<M> + 'static,
         stage: S,
     ) -> &mut Self {
-        self.world.write().add_system(system, stage);
+        self.world.add_system(system, stage);
         self
     }
 
@@ -183,7 +198,7 @@ impl SubApp {
         before: impl IntoSystem<M2> + 'static,
         stage: S,
     ) -> &mut Self {
-        self.world.write().add_system_before(system, before, stage);
+        self.world.add_system_before(system, before, stage);
         self
     }
 
@@ -193,7 +208,7 @@ impl SubApp {
         after: impl IntoSystem<M2> + 'static,
         stage: S,
     ) -> &mut Self {
-        self.world.write().add_system_after(system, after, stage);
+        self.world.add_system_after(system, after, stage);
         self
     }
 
@@ -206,15 +221,15 @@ impl SubApp {
         self.extract_fn.as_ref()
     }
 
-    pub fn read_world(&self) -> ReadWorld {
-        self.world.read()
+    pub fn read_world(&self) -> &World {
+        &self.world
     }
 
-    pub fn write_world(&self) -> WriteWorld {
-        self.world.write()
+    pub fn write_world(&mut self) -> &mut World {
+        &mut self.world
     }
 
-    pub fn extract_from(&mut self, from: &mut WorldLock) -> Result<()> {
+    pub fn extract_from(&mut self, from: &mut World) -> Result<()> {
         if let Some(extract_fn) = self.extract_fn.as_mut() {
             extract_fn(from, &mut self.world)
         } else {
@@ -357,7 +372,7 @@ impl App {
     }
 
     pub fn insert_resource<T: Resource>(&mut self, resource: T) -> &mut Self {
-        self.main_app().insert_resource(resource);
+        self.main_app_mut().insert_resource(resource);
         self
     }
 
@@ -370,8 +385,8 @@ impl App {
     }
 
     pub fn add_event<T: Event>(&mut self) -> &mut Self {
-        fn clear_events<T: Event>(events: Res<Events<T>>, world: ReadWorld) -> Result<()> {
-            events.update(world.read_change_tick());
+        fn clear_events<T: Event>(events: Res<Events<T>>, world_ticks: WorldTicks) -> Result<()> {
+            events.update(world_ticks.change_tick);
             Ok(())
         }
         self.insert_resource(Events::<T>::new());

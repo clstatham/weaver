@@ -87,8 +87,8 @@ impl Runner for WinitRunner {
             event_loop_window.set_control_flow(ControlFlow::Poll);
 
             if let Some(tx) = app
-                .main_app()
-                .get_resource::<weaver_event::Events<WinitEvent>>()
+                .main_app_mut()
+                .get_resource_mut::<weaver_event::Events<WinitEvent>>()
             {
                 tx.send(WinitEvent {
                     event: event.clone(),
@@ -97,25 +97,25 @@ impl Runner for WinitRunner {
 
             match &event {
                 Event::DeviceEvent { event, .. } => {
-                    if let Some(mut input) = app.main_app().get_resource_mut::<Input>() {
+                    if let Some(mut input) = app.main_app_mut().get_resource_mut::<Input>() {
                         input.update_device(event);
                     }
                 }
                 Event::WindowEvent { event, window_id } => {
-                    if let Some(window) = app.main_app().get_resource::<Window>() {
+                    if let Some(window) = app.main_app_mut().get_resource_mut::<Window>() {
                         if window.id() == *window_id {
                             window.request_redraw();
                             drop(window);
 
-                            if let Some(mut input) = app.main_app().get_resource_mut::<Input>() {
+                            if let Some(mut input) = app.main_app_mut().get_resource_mut::<Input>() {
                                 input.update_window(event);
                             }
 
                             match event {
                                 WindowEvent::Resized(size) => {
                                     let tx = app
-                                        .main_app()
-                                        .get_resource::<weaver_event::ManuallyUpdatedEvents<WindowResized>>()
+                                        .main_app_mut()
+                                        .get_resource_mut::<weaver_event::ManuallyUpdatedEvents<WindowResized>>()
                                         .unwrap();
                                     tx.send(WindowResized {
                                         width: size.width,

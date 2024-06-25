@@ -1,11 +1,12 @@
 use std::{
     any::TypeId,
+    cell::UnsafeCell,
     ops::{Deref, DerefMut},
 };
 
 use weaver_reflect_macros::reflect_trait;
 use weaver_util::{
-    lock::{ArcRead, ArcWrite, SharedLock},
+    lock::SharedLock,
     prelude::{impl_downcast, DowncastSync},
     TypeIdMap,
 };
@@ -24,36 +25,33 @@ impl_downcast!(Component);
 pub trait Resource: DowncastSync {}
 impl_downcast!(Resource);
 
-pub struct Res<T: Resource> {
-    value: ArcRead<Box<dyn Resource>>,
+pub struct Res<'w, T: Resource> {
+    value: &'w T,
     ticks: Ticks,
-    _marker: std::marker::PhantomData<T>,
 }
 
-impl<T: Resource> Res<T> {
-    pub(crate) fn new(value: ArcRead<Box<dyn Resource>>, ticks: Ticks) -> Self {
-        Self {
-            value,
-            ticks,
-            _marker: std::marker::PhantomData,
-        }
+impl<'w, T: Resource> Res<'w, T> {
+    pub(crate) fn new(value: &'w T, ticks: Ticks) -> Self {
+        Self { value, ticks }
+    }
+
+    pub fn into_inner(self) -> &'w T {
+        self.value
     }
 }
 
-impl<T> Deref for Res<T>
+impl<'w, T> Deref for Res<'w, T>
 where
     T: Resource,
 {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        (**self.value)
-            .downcast_ref()
-            .expect("Failed to downcast resource")
+        self.value
     }
 }
 
-impl<T: Resource> ChangeDetection for Res<T> {
+impl<'w, T: Resource> ChangeDetection for Res<'w, T> {
     fn is_added(&self) -> bool {
         self.ticks
             .added
@@ -71,52 +69,47 @@ impl<T: Resource> ChangeDetection for Res<T> {
     }
 }
 
-pub struct ResMut<T: Resource> {
-    value: ArcWrite<Box<dyn Resource>>,
+pub struct ResMut<'w, T: Resource> {
+    value: &'w mut T,
     ticks: TicksMut,
-    _marker: std::marker::PhantomData<T>,
 }
 
-impl<T: Resource> ResMut<T> {
-    pub(crate) fn new(value: ArcWrite<Box<dyn Resource>>, ticks: TicksMut) -> Self {
-        Self {
-            value,
-            ticks,
-            _marker: std::marker::PhantomData,
-        }
+impl<'w, T: Resource> ResMut<'w, T> {
+    pub(crate) fn new(value: &'w mut T, ticks: TicksMut) -> Self {
+        Self { value, ticks }
     }
 
     pub fn downgrade(this: &Self) -> Res<T> {
-        Res::new(ArcWrite::downgrade(&this.value), this.ticks.downgrade())
+        Res::new(this.value, this.ticks.downgrade())
+    }
+
+    pub fn into_inner(self) -> &'w mut T {
+        self.value
     }
 }
 
-impl<T> Deref for ResMut<T>
+impl<'w, T> Deref for ResMut<'w, T>
 where
     T: Resource,
 {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        (**self.value)
-            .downcast_ref()
-            .expect("Failed to downcast resource")
+        self.value
     }
 }
 
-impl<T> DerefMut for ResMut<T>
+impl<'w, T> DerefMut for ResMut<'w, T>
 where
     T: Resource,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.set_changed();
-        (**self.value)
-            .downcast_mut()
-            .expect("Failed to downcast resource")
+        self.value
     }
 }
 
-impl<T> ChangeDetection for ResMut<T>
+impl<'w, T> ChangeDetection for ResMut<'w, T>
 where
     T: Resource,
 {
@@ -137,16 +130,14 @@ where
     }
 }
 
-impl<T> ChangeDetectionMut for ResMut<T>
+impl<'w, T> ChangeDetectionMut for ResMut<'w, T>
 where
     T: Resource,
 {
     type Inner = T;
 
     fn bypass_change_detection(&mut self) -> &mut Self::Inner {
-        (**self.value)
-            .downcast_mut()
-            .expect("Failed to downcast resource")
+        self.value
     }
 
     fn set_changed(&mut self) {
@@ -155,10 +146,13 @@ where
 }
 
 pub struct ResourceData {
-    data: SharedLock<Box<dyn Resource>>,
+    data: UnsafeCell<Box<dyn Resource>>,
     added_tick: SharedLock<Tick>,
     changed_tick: SharedLock<Tick>,
 }
+
+// SAFETY: Resources are Sync and we validate access to them before using them.
+unsafe impl Sync for ResourceData {}
 
 #[derive(Default)]
 pub struct Resources {
@@ -169,12 +163,12 @@ impl Resources {
     pub fn insert<T: Resource>(&mut self, resource: T, change_tick: Tick) {
         let type_id = TypeId::of::<T>();
         if let Some(data) = self.resources.get_mut(&type_id) {
-            let _ = std::mem::replace(&mut *data.data.write(), Box::new(resource));
+            let _ = std::mem::replace(&mut data.data, UnsafeCell::new(Box::new(resource)));
         } else {
             self.resources.insert(
                 type_id,
                 ResourceData {
-                    data: SharedLock::new(Box::new(resource)),
+                    data: UnsafeCell::new(Box::new(resource)),
                     added_tick: SharedLock::new(change_tick),
                     changed_tick: SharedLock::new(change_tick),
                 },
@@ -183,10 +177,13 @@ impl Resources {
         *self.resources.get(&type_id).unwrap().changed_tick.write() = change_tick;
     }
 
-    pub fn get<T: Resource>(&self) -> Option<Res<T>> {
+    /// # Safety
+    ///
+    /// Caller ensures that there are no mutable references to the resource.
+    pub unsafe fn get_unsafe<T: Resource>(&self) -> Option<Res<T>> {
         self.resources.get(&TypeId::of::<T>()).map(|resource| {
             Res::new(
-                resource.data.read_arc(),
+                unsafe { &*resource.data.get() }.downcast_ref().unwrap(),
                 Ticks {
                     added: resource.added_tick.read_arc(),
                     changed: resource.changed_tick.read_arc(),
@@ -197,10 +194,45 @@ impl Resources {
         })
     }
 
-    pub fn get_mut<T: Resource>(&self, last_run: Tick, this_run: Tick) -> Option<ResMut<T>> {
+    pub fn get<T: Resource>(&mut self) -> Option<Res<T>> {
+        self.resources.get_mut(&TypeId::of::<T>()).map(|resource| {
+            Res::new(
+                unsafe { &*resource.data.get() }.downcast_ref().unwrap(),
+                Ticks {
+                    added: resource.added_tick.read_arc(),
+                    changed: resource.changed_tick.read_arc(),
+                    last_run: Tick::new(0),
+                    this_run: Tick::new(0),
+                },
+            )
+        })
+    }
+
+    /// # Safety
+    ///
+    /// Caller ensures that there are no references to the resource, mutable or otherwise.
+    pub unsafe fn get_mut_unsafe<T: Resource>(
+        &self,
+        last_run: Tick,
+        this_run: Tick,
+    ) -> Option<ResMut<T>> {
         self.resources.get(&TypeId::of::<T>()).map(|resource| {
             ResMut::new(
-                resource.data.write_arc(),
+                unsafe { &mut *resource.data.get() }.downcast_mut().unwrap(),
+                TicksMut {
+                    added: resource.added_tick.write_arc(),
+                    changed: resource.changed_tick.write_arc(),
+                    last_run,
+                    this_run,
+                },
+            )
+        })
+    }
+
+    pub fn get_mut<T: Resource>(&mut self, last_run: Tick, this_run: Tick) -> Option<ResMut<T>> {
+        self.resources.get_mut(&TypeId::of::<T>()).map(|resource| {
+            ResMut::new(
+                unsafe { &mut *resource.data.get() }.downcast_mut().unwrap(),
                 TicksMut {
                     added: resource.added_tick.write_arc(),
                     changed: resource.changed_tick.write_arc(),
@@ -213,11 +245,10 @@ impl Resources {
 
     pub fn remove<T: Resource>(&mut self) -> Option<(T, ComponentTicks)> {
         self.resources.remove(&TypeId::of::<T>()).map(|resource| {
-            let data = resource.data.into_inner().unwrap();
             let added_tick = *resource.added_tick.read();
             let changed_tick = *resource.changed_tick.read();
             (
-                *data.downcast().unwrap_or_else(|_| {
+                *resource.data.into_inner().downcast().unwrap_or_else(|_| {
                     panic!(
                         "Failed to downcast resource: {}",
                         std::any::type_name::<T>()

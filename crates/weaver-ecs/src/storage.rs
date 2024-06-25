@@ -1,10 +1,11 @@
 use std::{
     any::TypeId,
+    cell::UnsafeCell,
     collections::{HashMap, HashSet},
     ops::Deref,
 };
 
-use weaver_util::lock::{ArcRead, ArcWrite, SharedLock};
+use weaver_util::lock::SharedLock;
 
 use crate::prelude::{
     Bundle, ChangeDetection, ChangeDetectionMut, ComponentTicks, Tick, Ticks, TicksMut,
@@ -175,8 +176,30 @@ impl<T> SparseSet<T> {
         self.dense.iter_mut()
     }
 
+    pub fn iter_with_ticks(
+        &self,
+    ) -> impl Iterator<Item = (&T, SharedLock<Tick>, SharedLock<Tick>)> + '_ {
+        self.dense
+            .iter()
+            .zip(self.dense_added_ticks.iter())
+            .zip(self.dense_changed_ticks.iter())
+            .map(|((data, added), changed)| (data, added.clone(), changed.clone()))
+    }
+
     pub fn sparse_iter(&self) -> std::slice::Iter<'_, usize> {
         self.indices.iter()
+    }
+
+    pub fn sparse_iter_with_ticks(
+        &self,
+    ) -> impl Iterator<Item = (usize, SharedLock<Tick>, SharedLock<Tick>)> + '_ {
+        self.indices.iter().map(move |&index| {
+            (
+                index,
+                self.dense_added_ticks[index].clone(),
+                self.dense_changed_ticks[index].clone(),
+            )
+        })
     }
 
     pub fn sparse_index_of(&self, index: usize) -> Option<usize> {
@@ -211,27 +234,34 @@ impl<T> SparseSet<T> {
 }
 
 #[derive(Clone)]
-pub struct ColumnRef {
-    column: SharedLock<SparseSet<Data>>,
+pub struct ColumnRef<'w> {
+    column: &'w SparseSet<UnsafeCell<Data>>,
 }
 
-impl ColumnRef {
-    pub fn new(column: SharedLock<SparseSet<Data>>) -> Self {
+unsafe impl Send for ColumnRef<'_> {}
+unsafe impl Sync for ColumnRef<'_> {}
+
+impl<'w> ColumnRef<'w> {
+    pub fn new(column: &'w SparseSet<UnsafeCell<Data>>) -> Self {
         Self { column }
+    }
+
+    pub fn into_inner(self) -> &'w SparseSet<UnsafeCell<Data>> {
+        self.column
     }
 }
 
-impl Deref for ColumnRef {
-    type Target = SharedLock<SparseSet<Data>>;
+impl<'w> Deref for ColumnRef<'w> {
+    type Target = SparseSet<UnsafeCell<Data>>;
 
     fn deref(&self) -> &Self::Target {
-        &self.column
+        self.column
     }
 }
 
 #[derive(Default)]
 pub struct Archetype {
-    columns: HashMap<TypeId, SharedLock<SparseSet<Data>>>,
+    columns: HashMap<TypeId, SparseSet<UnsafeCell<Data>>>,
     entities: HashSet<Entity>,
 }
 
@@ -249,27 +279,33 @@ impl Archetype {
 
         self.entities.insert(entity);
 
-        self.columns[&type_id]
-            .write_arc()
-            .insert(entity.as_usize(), data, ticks);
+        self.columns.get_mut(&type_id).unwrap().insert(
+            entity.as_usize(),
+            UnsafeCell::new(data),
+            ticks,
+        );
     }
 
     pub fn remove(&mut self, entity: Entity) -> Vec<(Data, ComponentTicks)> {
         self.entities.remove(&entity);
 
         self.columns
-            .values()
-            .filter_map(|column| column.write_arc().remove(entity.as_usize()))
+            .values_mut()
+            .filter_map(|column| {
+                column
+                    .remove(entity.as_usize())
+                    .map(|(data, ticks)| (data.into_inner(), ticks))
+            })
             .collect()
     }
 
     #[inline]
-    pub fn get_column<T: Component>(&self) -> Option<ColumnRef> {
+    pub fn get_column<T: Component>(&self) -> Option<ColumnRef<'_>> {
         self.get_column_by_type_id(TypeId::of::<T>())
     }
 
-    pub fn get_column_by_type_id(&self, type_id: TypeId) -> Option<ColumnRef> {
-        Some(ColumnRef::new(self.columns[&type_id].clone()))
+    pub fn get_column_by_type_id(&self, type_id: TypeId) -> Option<ColumnRef<'_>> {
+        Some(ColumnRef::new(self.columns.get(&type_id)?))
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
@@ -279,7 +315,7 @@ impl Archetype {
     pub fn has_component_by_type_id(&self, entity: Entity, type_id: TypeId) -> bool {
         self.columns
             .get(&type_id)
-            .map(|c| c.read_arc().contains(entity.as_usize()))
+            .map(|c| c.contains(entity.as_usize()))
             .unwrap_or(false)
     }
 
@@ -290,7 +326,7 @@ impl Archetype {
     pub fn contains_entity(&self, entity: Entity) -> bool {
         self.columns
             .values()
-            .any(|column| column.read_arc().contains(entity.as_usize()))
+            .any(|column| column.contains(entity.as_usize()))
     }
 
     pub fn len(&self) -> usize {
@@ -327,36 +363,40 @@ impl Archetype {
     pub fn column_iter(&self) -> impl Iterator<Item = (&TypeId, ColumnRef)> + '_ {
         self.columns
             .iter()
-            .map(|(type_id, column)| (type_id, ColumnRef::new(column.clone())))
+            .map(|(type_id, column)| (type_id, ColumnRef::new(column)))
+    }
+
+    pub fn column_iter_mut(&mut self) -> impl Iterator<Item = (&TypeId, ColumnRef)> + '_ {
+        self.columns
+            .iter_mut()
+            .map(|(type_id, column)| (type_id, ColumnRef::new(column)))
     }
 }
-pub struct Ref<T: Component> {
-    dense_index: usize,
-    column: ArcRead<SparseSet<Data>>,
+pub struct Ref<'w, T: Component> {
+    data: &'w T,
     ticks: Ticks,
-    _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: Component> Ref<T> {
-    pub(crate) fn new(dense_index: usize, column: ArcRead<SparseSet<Data>>, ticks: Ticks) -> Self {
-        Self {
-            dense_index,
-            column,
-            ticks,
-            _phantom: std::marker::PhantomData,
-        }
+impl<'w, T: Component> Ref<'w, T> {
+    pub(crate) fn new(data: &'w T, ticks: Ticks) -> Self {
+        Self { data, ticks }
+    }
+
+    pub fn into_inner(self) -> &'w T {
+        self.data
     }
 }
 
-impl<T: Component> std::ops::Deref for Ref<T> {
+impl<'w, T: Component> std::ops::Deref for Ref<'w, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.column.dense[self.dense_index].downcast_ref().unwrap()
+        // self.column.dense[self.dense_index].downcast_ref().unwrap()
+        self.data
     }
 }
 
-impl<T: Component> ChangeDetection for Ref<T> {
+impl<'w, T: Component> ChangeDetection for Ref<'w, T> {
     fn is_added(&self) -> bool {
         self.ticks
             .added
@@ -374,44 +414,39 @@ impl<T: Component> ChangeDetection for Ref<T> {
     }
 }
 
-pub struct Mut<T: Component> {
-    dense_index: usize,
-    column: ArcWrite<SparseSet<Data>>,
+pub struct Mut<'w, T: Component> {
+    data: &'w mut T,
     ticks: TicksMut,
-    _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: Component> Mut<T> {
-    pub(crate) fn new(
-        dense_index: usize,
-        column: ArcWrite<SparseSet<Data>>,
-        ticks: TicksMut,
-    ) -> Self {
-        Self {
-            dense_index,
-            column,
-            ticks,
-            _phantom: std::marker::PhantomData,
-        }
+impl<'w, T: Component> Mut<'w, T> {
+    pub(crate) fn new(data: &'w mut T, ticks: TicksMut) -> Self {
+        Self { data, ticks }
+    }
+
+    pub fn into_inner(self) -> &'w mut T {
+        self.data
     }
 }
 
-impl<T: Component> std::ops::Deref for Mut<T> {
+impl<'w, T: Component> std::ops::Deref for Mut<'w, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.column.dense[self.dense_index].downcast_ref().unwrap()
+        // self.column.dense[self.dense_index].downcast_ref().unwrap()
+        self.data
     }
 }
 
-impl<T: Component> std::ops::DerefMut for Mut<T> {
+impl<'w, T: Component> std::ops::DerefMut for Mut<'w, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.set_changed();
-        self.column.dense[self.dense_index].downcast_mut().unwrap()
+        // self.column.dense[self.dense_index].downcast_mut().unwrap()
+        self.data
     }
 }
 
-impl<T: Component> ChangeDetection for Mut<T> {
+impl<'w, T: Component> ChangeDetection for Mut<'w, T> {
     fn is_added(&self) -> bool {
         self.ticks
             .added
@@ -429,11 +464,12 @@ impl<T: Component> ChangeDetection for Mut<T> {
     }
 }
 
-impl<T: Component> ChangeDetectionMut for Mut<T> {
+impl<'w, T: Component> ChangeDetectionMut for Mut<'w, T> {
     type Inner = T;
 
     fn bypass_change_detection(&mut self) -> &mut Self::Inner {
-        self.column.dense[self.dense_index].downcast_mut().unwrap()
+        // self.column.dense[self.dense_index].downcast_mut().unwrap()
+        self.data
     }
 
     fn set_changed(&mut self) {
@@ -495,7 +531,7 @@ impl Storage {
 
             archetype.columns = data
                 .iter()
-                .map(|data| (data.0.type_id(), SharedLock::new(SparseSet::new())))
+                .map(|data| (data.0.type_id(), SparseSet::new()))
                 .collect();
 
             self.archetypes.insert(archetype_id, archetype);
@@ -576,7 +612,7 @@ impl Storage {
 
                 archetype.columns = data
                     .iter()
-                    .map(|data| (data.0.type_id(), SharedLock::new(SparseSet::new())))
+                    .map(|data| (data.0.type_id(), SparseSet::new()))
                     .collect();
 
                 self.archetypes.insert(archetype_id, archetype);
@@ -628,10 +664,9 @@ impl Storage {
         if archetype
             .columns
             .get(&TypeId::of::<T>())?
-            .read_arc()
             .contains(entity.as_usize())
         {
-            let column = archetype.columns[&TypeId::of::<T>()].read_arc();
+            let column = &archetype.columns[&TypeId::of::<T>()];
             let dense_index = column.dense_index_of(entity.as_usize()).unwrap();
             let ticks = Ticks {
                 added: column.dense_added_ticks[dense_index].read_arc(),
@@ -639,7 +674,12 @@ impl Storage {
                 last_run,
                 this_run,
             };
-            Some(Ref::new(dense_index, column, ticks))
+            let data = unsafe {
+                (*column.dense[dense_index].get())
+                    .downcast_ref::<T>()
+                    .unwrap()
+            };
+            Some(Ref::new(data, ticks))
         } else {
             None
         }
@@ -658,10 +698,9 @@ impl Storage {
         if archetype
             .columns
             .get(&TypeId::of::<T>())?
-            .read_arc()
             .contains(entity.as_usize())
         {
-            let column = archetype.columns[&TypeId::of::<T>()].write_arc();
+            let column = archetype.columns.get(&TypeId::of::<T>()).unwrap();
             let dense_index = column.dense_index_of(entity.as_usize()).unwrap();
             let ticks = TicksMut {
                 added: column.dense_added_ticks[dense_index].write_arc(),
@@ -669,7 +708,12 @@ impl Storage {
                 last_run,
                 this_run,
             };
-            Some(Mut::new(dense_index, column, ticks))
+            let data = unsafe {
+                (*column.dense[dense_index].get())
+                    .downcast_mut::<T>()
+                    .unwrap()
+            };
+            Some(Mut::new(data, ticks))
         } else {
             None
         }
@@ -701,5 +745,11 @@ impl Storage {
         self.entity_archetype
             .get(&entity)
             .and_then(|archetype_id| self.archetypes.get(archetype_id))
+    }
+
+    pub fn get_archetype_mut(&mut self, entity: Entity) -> Option<&mut Archetype> {
+        self.entity_archetype
+            .get(&entity)
+            .and_then(|archetype_id| self.archetypes.get_mut(archetype_id))
     }
 }

@@ -1,20 +1,25 @@
 use weaver_app::{plugin::Plugin, prelude::App};
 use weaver_ecs::{
-    component::{Component, Resource},
+    commands::Commands,
+    component::{Component, Res, ResMut, Resource},
     entity::Entity,
-    query::QueryFetch,
-    world::{World, WorldLock, WriteWorld},
+    query::{Query, QueryFetch},
+    world::World,
 };
 use weaver_util::prelude::Result;
 
-use crate::{Extract, ExtractBindGroups, ExtractPipelines, MainWorld, ScratchMainWorld};
+use crate::{
+    Extract, ExtractBindGroups, ExtractPipelines, MainWorld, ScratchMainWorld, WgpuDevice,
+    WgpuQueue,
+};
 
 pub trait RenderComponent: Component {
     type ExtractQuery<'a>: QueryFetch + 'a;
     fn extract_render_component(
         entity: Entity,
         main_world: &mut World,
-        render_world: &mut World,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
     ) -> Option<Self>
     where
         Self: Sized;
@@ -22,7 +27,8 @@ pub trait RenderComponent: Component {
         &mut self,
         entity: Entity,
         main_world: &mut World,
-        render_world: &mut World,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
     ) -> Result<()>;
 }
 
@@ -46,21 +52,25 @@ impl<T: RenderComponent> Plugin for RenderComponentPlugin<T> {
     }
 }
 
-pub fn extract_render_component<T: RenderComponent>(mut render_world: WriteWorld) -> Result<()> {
-    let main_world = render_world.get_resource::<MainWorld>().unwrap();
+pub fn extract_render_component<T: RenderComponent>(
+    commands: Commands,
+    mut main_world: ResMut<MainWorld>,
+    render_query: Query<&T>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
+) -> Result<()> {
     let query = main_world.query::<T::ExtractQuery<'_>>();
-
-    for (entity, extract_query) in query.iter() {
-        if !render_world.has_component::<T>(entity) {
+    let entities = query.entity_iter(&main_world).collect::<Vec<_>>();
+    for entity in entities {
+        if render_query.get(entity).is_none() {
             if let Some(component) =
-                T::extract_render_component(entity, &mut main_world.write(), &mut render_world)
+                T::extract_render_component(entity, &mut main_world, &device, &queue)
             {
                 log::debug!(
                     "Extracted render component: {:?}",
                     std::any::type_name::<T>()
                 );
-                drop(extract_query);
-                render_world.insert_component(entity, component);
+                commands.insert_component(entity, component);
             } else {
                 log::warn!(
                     "Failed to extract render component: {:?}",
@@ -73,17 +83,19 @@ pub fn extract_render_component<T: RenderComponent>(mut render_world: WriteWorld
     Ok(())
 }
 
-pub fn update_render_component<T: RenderComponent>(mut render_world: WriteWorld) -> Result<()> {
-    let main_world = render_world.get_resource::<MainWorld>().unwrap();
+pub fn update_render_component<T: RenderComponent>(
+    mut main_world: ResMut<MainWorld>,
+    render_query: Query<&mut T>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
+) -> Result<()> {
     let query = main_world.query::<T::ExtractQuery<'_>>();
 
-    for (entity, _) in query.iter_changed() {
-        if let Some(mut component) = render_world.get_component_mut::<T>(entity) {
-            component.update_render_component(
-                entity,
-                &mut main_world.write(),
-                &mut render_world,
-            )?;
+    let entities = query.entity_iter(&main_world).collect::<Vec<_>>();
+
+    for entity in entities {
+        if let Some(mut component) = render_query.get(entity) {
+            component.update_render_component(entity, &mut main_world, &device, &queue)?;
         }
     }
 
@@ -91,15 +103,18 @@ pub fn update_render_component<T: RenderComponent>(mut render_world: WriteWorld)
 }
 
 pub trait RenderResource: Resource {
-    type UpdateQuery: QueryFetch + 'static;
-
-    fn extract_render_resource(main_world: &mut World, render_world: &mut World) -> Option<Self>
+    fn extract_render_resource(
+        main_world: &mut World,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<Self>
     where
         Self: Sized;
     fn update_render_resource(
         &mut self,
         main_world: &mut World,
-        render_world: &mut World,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
     ) -> Result<()>;
 }
 
@@ -149,19 +164,21 @@ impl<T: RenderResource, Dep: RenderResource> Plugin for RenderResourceDependency
     }
 }
 
-pub fn extract_render_resource<T: RenderResource>(mut render_world: WriteWorld) -> Result<()> {
-    if !render_world.has_resource::<T>() {
-        let main_world = render_world.get_resource::<MainWorld>().unwrap();
-
-        if let Some(resource) =
-            T::extract_render_resource(&mut main_world.write(), &mut render_world)
-        {
+pub fn extract_render_resource<T: RenderResource>(
+    commands: Commands,
+    mut main_world: ResMut<MainWorld>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
+    resource: Option<Res<T>>,
+) -> Result<()> {
+    if resource.is_none() {
+        if let Some(resource) = T::extract_render_resource(&mut main_world, &device, &queue) {
             log::debug!(
                 "Extracted render resource: {:?}",
                 std::any::type_name::<T>()
             );
             drop(main_world);
-            render_world.insert_resource(resource);
+            commands.insert_resource(resource);
         } else {
             log::warn!(
                 "Failed to extract render resource: {:?}",
@@ -173,20 +190,18 @@ pub fn extract_render_resource<T: RenderResource>(mut render_world: WriteWorld) 
     Ok(())
 }
 
-pub fn update_render_resource<T: RenderResource>(mut render_world: WriteWorld) -> Result<()> {
-    if let Some(mut resource) = render_world.get_resource_mut::<T>() {
-        // let query = render_world.query::<T::UpdateQuery>();
-        // if query.iter_changed().next().is_none() {
-        //     return Ok(());
-        // }
-        let main_world = render_world.get_resource::<MainWorld>().unwrap();
-        resource.update_render_resource(&mut main_world.write(), &mut render_world)?;
-    }
+pub fn update_render_resource<T: RenderResource>(
+    mut resource: ResMut<T>,
+    mut main_world: ResMut<MainWorld>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
+) -> Result<()> {
+    resource.update_render_resource(&mut main_world, &device, &queue)?;
 
     Ok(())
 }
 
-pub fn render_extract(main_world: &mut WorldLock, render_world: &mut WorldLock) -> Result<()> {
+pub fn render_extract(main_world: &mut World, render_world: &mut World) -> Result<()> {
     let scratch_world = main_world.remove_resource::<ScratchMainWorld>().unwrap();
     let inserted_world = std::mem::replace(main_world, scratch_world.0);
     render_world.insert_resource(MainWorld(inserted_world));

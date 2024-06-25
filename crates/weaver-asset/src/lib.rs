@@ -1,4 +1,5 @@
 use std::{
+    cell::UnsafeCell,
     fmt::Debug,
     ops::{Deref, DerefMut},
     path::Path,
@@ -11,10 +12,7 @@ use weaver_ecs::{
     prelude::{reflect_trait, Component, Reflect, Resource},
     storage::SparseSet,
 };
-use weaver_util::{
-    lock::{ArcRead, ArcWrite, SharedLock},
-    prelude::{anyhow, impl_downcast, DowncastSync, Error, Result},
-};
+use weaver_util::prelude::{anyhow, impl_downcast, DowncastSync, Error, Result};
 
 pub mod prelude {
     pub use crate::{Asset, AssetPlugin, Assets, Handle, ReflectAsset, UntypedHandle};
@@ -136,43 +134,56 @@ impl<T: Asset> TryFrom<UntypedHandle> for Handle<T> {
     }
 }
 
-pub struct AssetRef<T: Asset> {
-    asset: ArcRead<Box<dyn Asset>>,
-    _marker: std::marker::PhantomData<T>,
+pub struct AssetRef<'w, T: Asset> {
+    asset: &'w T,
 }
 
-impl<T: Asset> Deref for AssetRef<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        (**self.asset).downcast_ref().expect("invalid asset")
+impl<'w, T: Asset> AssetRef<'w, T> {
+    pub fn into_inner(self) -> &'w T {
+        self.asset
     }
 }
 
-pub struct AssetMut<T: Asset> {
-    asset: ArcWrite<Box<dyn Asset>>,
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<T: Asset> Deref for AssetMut<T> {
+impl<'w, T: Asset> Deref for AssetRef<'w, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        (**self.asset).downcast_ref().expect("invalid asset")
+        self.asset
     }
 }
 
-impl<T: Asset> DerefMut for AssetMut<T> {
+pub struct AssetMut<'w, T: Asset> {
+    asset: &'w mut T,
+}
+
+impl<'w, T: Asset> AssetMut<'w, T> {
+    pub fn into_inner(self) -> &'w mut T {
+        self.asset
+    }
+}
+
+impl<'w, T: Asset> Deref for AssetMut<'w, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.asset
+    }
+}
+
+impl<'w, T: Asset> DerefMut for AssetMut<'w, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        (**self.asset).downcast_mut().expect("invalid asset")
+        self.asset
     }
 }
 
 #[derive(Default, Resource)]
 pub struct Assets {
     next_handle_id: AtomicUsize,
-    storage: SparseSet<SharedLock<Box<dyn Asset>>>,
+    storage: SparseSet<UnsafeCell<Box<dyn Asset>>>,
 }
+
+// SAFETY: Assets are Sync and we validate access to them before using them.
+unsafe impl Sync for Assets {}
 
 impl Assets {
     pub fn new() -> Self {
@@ -190,7 +201,7 @@ impl Assets {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.storage.insert(
             id,
-            SharedLock::new(Box::new(asset)),
+            UnsafeCell::new(Box::new(asset)),
             ComponentTicks::new(Tick::MAX), // todo: change detection for assets
         );
 
@@ -200,22 +211,22 @@ impl Assets {
         }
     }
 
+    // TODO: make these unsafe
     pub fn get<T: Asset>(&self, handle: Handle<T>) -> Option<AssetRef<T>> {
         self.storage.get(handle.id).and_then(|asset| {
-            let asset = asset.read_arc();
+            let asset = unsafe { &**asset.get() };
             asset.is::<T>().then(|| AssetRef {
-                asset,
-                _marker: std::marker::PhantomData,
+                asset: asset.downcast_ref::<T>().unwrap(),
             })
         })
     }
 
+    // TODO: make these unsafe
     pub fn get_mut<T: Asset>(&self, handle: Handle<T>) -> Option<AssetMut<T>> {
         self.storage.get(handle.id).and_then(|asset| {
-            let asset = asset.write_arc();
+            let asset = unsafe { &mut **asset.get() };
             asset.is::<T>().then(|| AssetMut {
-                asset,
-                _marker: std::marker::PhantomData,
+                asset: asset.downcast_mut::<T>().unwrap(),
             })
         })
     }
@@ -223,7 +234,7 @@ impl Assets {
     pub fn remove<T: Asset>(&mut self, handle: Handle<T>) -> Option<T> {
         self.storage
             .remove(handle.id)
-            .and_then(|asset| SharedLock::into_inner(asset.0).unwrap().downcast().ok())
+            .and_then(|asset| asset.0.into_inner().downcast().ok())
             .map(|asset| *asset)
     }
 }

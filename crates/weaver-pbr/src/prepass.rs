@@ -5,14 +5,10 @@ use weaver_asset::Handle;
 use weaver_core::{prelude::Mat4, transform::Transform};
 use weaver_ecs::{
     component::Res,
-    prelude::{
-        Component, Entity, QueryFetchItem, Reflect, Resource, SystemParamItem, World, WorldLock,
-    },
-    storage::Ref,
+    prelude::{Component, Entity, QueryFetchItem, Reflect, Resource, SystemParamItem, World},
 };
 use weaver_renderer::{
     bind_group::BindGroup,
-    camera::ViewTarget,
     draw_fn::{BinnedDrawItem, DrawFnId, DrawFunctions, DrawItem, FromDrawItemQuery},
     graph::{RenderCtx, RenderGraphCtx, ViewNode},
     mesh::GpuMesh,
@@ -106,7 +102,7 @@ pub struct PrepassMeshInstances {
 }
 
 impl GetBatchData for PrepassMeshInstances {
-    type Param = Res<PrepassMeshInstances>;
+    type Param = Res<'static, PrepassMeshInstances>;
     type BufferData = Mat4;
     type UpdateQuery = (
         &'static Handle<GpuMesh>,
@@ -117,7 +113,7 @@ impl GetBatchData for PrepassMeshInstances {
     fn update_from_world(&mut self, render_world: &World) {
         self.instances.clear();
         let query = render_world.query::<Self::UpdateQuery>();
-        for (entity, (mesh, material, transform)) in query.iter() {
+        for (entity, (mesh, material, transform)) in query.iter(render_world) {
             self.instances.insert(
                 entity,
                 PrepassMeshInstance {
@@ -162,34 +158,41 @@ pub struct PrepassNode;
 
 impl ViewNode for PrepassNode {
     type Param = (
-        Res<BinnedRenderPhases<PrepassDrawItem>>,
-        Res<DrawFunctions<PrepassDrawItem>>,
-        Res<PrepassMeshInstances>,
+        Res<'static, BinnedRenderPhases<PrepassDrawItem>>,
+        Res<'static, DrawFunctions<PrepassDrawItem>>,
     );
 
     type ViewQueryFetch = (
-        &'static ViewTarget,
         &'static PrepassTextures,
         Option<&'static DepthPrepass>,
         Option<&'static NormalPrepass>,
     );
     type ViewQueryFilter = ();
 
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
+        let draw_fns = {
+            render_world
+                .remove_resource::<DrawFunctions<PrepassDrawItem>>()
+                .unwrap()
+        };
+        let mut draw_fns_lock = draw_fns.write();
+        draw_fns_lock.prepare(render_world)?;
+        drop(draw_fns_lock);
+        render_world.insert_resource(draw_fns);
+        Ok(())
+    }
+
     fn run(
         &self,
-        render_world: &WorldLock,
+        render_world: &World,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
-        (binned_render_phases, draw_fns, prepass_mesh_instances): &SystemParamItem<Self::Param>,
-        (view_target, prepass_textures, depth_prepass, normal_prepass): &QueryFetchItem<
-            Self::ViewQueryFetch,
-        >,
+        (binned_render_phases, draw_fns): &SystemParamItem<Self::Param>,
+        (prepass_textures, _, _): &QueryFetchItem<Self::ViewQueryFetch>,
     ) -> Result<()> {
         let Some(phase) = binned_render_phases.get(&graph_ctx.view_entity) else {
             return Ok(());
         };
-
-        draw_fns.write().prepare(render_world).unwrap();
 
         let depth_stencil_attachment =
             prepass_textures
@@ -215,7 +218,7 @@ impl ViewNode for PrepassNode {
                     },
                 });
 
-        let color_attachments = vec![normal_attachment.map(|a| a.into())];
+        let color_attachments = vec![normal_attachment];
 
         if !phase.is_empty() {
             let encoder = render_ctx.command_encoder();
@@ -231,7 +234,7 @@ impl ViewNode for PrepassNode {
             });
 
             phase.render(
-                &render_world,
+                render_world,
                 &mut render_pass,
                 graph_ctx.view_entity,
                 &mut draw_fns,
@@ -248,7 +251,7 @@ impl ViewNode for PrepassNode {
 pub struct PrepassPlugin;
 
 impl Plugin for PrepassPlugin {
-    fn build(&self, render_app: &mut weaver_app::App) -> Result<()> {
+    fn build(&self, _render_app: &mut weaver_app::App) -> Result<()> {
         Ok(())
     }
 }

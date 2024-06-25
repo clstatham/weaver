@@ -6,7 +6,6 @@ use weaver_ecs::{
     prelude::{Resource, World},
     storage::Ref,
     system::SystemParamItem,
-    world::WorldLock,
 };
 use weaver_util::prelude::Result;
 use weaver_winit::Window;
@@ -22,7 +21,7 @@ use crate::{
     },
     shader::Shader,
     texture::{texture_format, GpuTexture},
-    RenderLabel, WgpuDevice,
+    RenderLabel,
 };
 
 #[derive(Resource)]
@@ -49,16 +48,17 @@ impl HdrRenderTarget {
 }
 
 impl RenderResource for HdrRenderTarget {
-    type UpdateQuery = (); // todo: set to `&'static Window` when window resize is implemented
-
-    fn extract_render_resource(main_world: &mut World, render_world: &mut World) -> Option<Self>
+    fn extract_render_resource(
+        main_world: &mut World,
+        device: &wgpu::Device,
+        _queue: &wgpu::Queue,
+    ) -> Option<Self>
     where
         Self: Sized,
     {
-        let window = main_world.get_resource::<Window>()?;
-        let device = render_world.get_resource::<WgpuDevice>()?;
+        let window = main_world.get_resource_mut::<Window>()?;
         let texture = GpuTexture::new(
-            &device,
+            device,
             Some("Hdr Render Target"),
             window.inner_size().width,
             window.inner_size().height,
@@ -82,7 +82,8 @@ impl RenderResource for HdrRenderTarget {
     fn update_render_resource(
         &mut self,
         _main_world: &mut World,
-        _render_world: &mut World,
+        _device: &wgpu::Device,
+        _queue: &wgpu::Queue,
     ) -> Result<()> {
         Ok(())
     }
@@ -118,7 +119,6 @@ impl CreateBindGroup for HdrRenderTarget {
 
     fn create_bind_group(
         &self,
-        _render_world: &World,
         device: &wgpu::Device,
         cached_layout: &crate::bind_group::BindGroupLayout,
     ) -> wgpu::BindGroup {
@@ -207,13 +207,16 @@ impl CreateRenderPipeline for HdrNode {
 }
 
 impl ViewNode for HdrNode {
-    type Param = (Res<RenderPipelineCache>, Res<BindGroup<HdrRenderTarget>>);
+    type Param = (
+        Res<'static, RenderPipelineCache>,
+        Res<'static, BindGroup<HdrRenderTarget>>,
+    );
     type ViewQueryFetch = &'static ViewTarget;
     type ViewQueryFilter = ();
 
     fn run(
         &self,
-        _render_world: &WorldLock,
+        _render_world: &World,
         _graph_ctx: &mut crate::graph::RenderGraphCtx,
         render_ctx: &mut crate::graph::RenderCtx,
         (pipeline_cache, bind_group): &SystemParamItem<Self::Param>,

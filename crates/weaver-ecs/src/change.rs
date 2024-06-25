@@ -1,5 +1,7 @@
 use weaver_util::lock::{ArcRead, ArcWrite};
 
+use crate::prelude::{SystemAccess, SystemParam};
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Tick {
     tick: u64,
@@ -129,5 +131,38 @@ impl ComponentTicks {
 
     pub fn set_changed(&mut self, tick: Tick) {
         self.changed = tick;
+    }
+}
+
+pub struct WorldTicks {
+    pub change_tick: Tick,
+    pub last_change_tick: Tick,
+}
+
+impl SystemParam for WorldTicks {
+    type State = ();
+    type Item<'w, 's> = Self;
+
+    fn validate_access(_access: &SystemAccess) -> bool {
+        true
+    }
+
+    fn access() -> crate::prelude::SystemAccess {
+        SystemAccess {
+            exclusive: false,
+            ..Default::default()
+        }
+    }
+
+    fn init_state(_world: &mut crate::prelude::World) -> Self::State {}
+
+    unsafe fn fetch<'w, 's>(
+        _state: &'s mut Self::State,
+        world: &'w crate::prelude::World,
+    ) -> Self::Item<'w, 's> {
+        Self {
+            change_tick: world.read_change_tick(),
+            last_change_tick: world.last_change_tick(),
+        }
     }
 }

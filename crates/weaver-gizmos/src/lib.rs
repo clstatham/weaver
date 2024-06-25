@@ -7,7 +7,7 @@ use weaver_ecs::{
     prelude::Resource,
     query::QueryFetchItem,
     system::SystemParamItem,
-    world::{FromWorld, World, WorldLock},
+    world::{FromWorld, World},
 };
 use weaver_pbr::render::PbrNodeLabel;
 use weaver_renderer::{
@@ -47,14 +47,14 @@ pub struct RenderCubeGizmo {
 }
 
 impl RenderResource for RenderCubeGizmo {
-    type UpdateQuery = ();
-
-    fn extract_render_resource(_main_world: &mut World, render_world: &mut World) -> Option<Self>
+    fn extract_render_resource(
+        _main_world: &mut World,
+        device: &wgpu::Device,
+        _queue: &wgpu::Queue,
+    ) -> Option<Self>
     where
         Self: Sized,
     {
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
-
         let cube = CubePrimitive::new(1.0, true);
         let mesh = cube.generate_mesh();
 
@@ -80,7 +80,8 @@ impl RenderResource for RenderCubeGizmo {
     fn update_render_resource(
         &mut self,
         _main_world: &mut World,
-        _render_world: &mut World,
+        _device: &wgpu::Device,
+        _queue: &wgpu::Queue,
     ) -> Result<()> {
         Ok(())
     }
@@ -185,7 +186,7 @@ impl GizmoRenderNode {
 
 impl FromWorld for GizmoRenderNode {
     fn from_world(world: &World) -> Self {
-        let device = world.get_resource::<WgpuDevice>().unwrap();
+        let device = unsafe { world.get_resource_unsafe::<WgpuDevice>().unwrap() };
         Self::new(&device)
     }
 }
@@ -193,7 +194,6 @@ impl FromWorld for GizmoRenderNode {
 impl CreateBindGroup for GizmoRenderNode {
     fn create_bind_group(
         &self,
-        _render_world: &World,
         device: &wgpu::Device,
         cached_layout: &BindGroupLayout,
     ) -> wgpu::BindGroup {
@@ -338,18 +338,19 @@ impl CreateRenderPipeline for GizmoRenderNode {
 
 impl ViewNode for GizmoRenderNode {
     type Param = (
-        Res<Gizmos>,
-        Res<RenderCubeGizmo>,
-        Res<RenderPipelineCache>,
-        Res<HdrRenderTarget>,
+        Res<'static, Gizmos>,
+        Res<'static, RenderCubeGizmo>,
+        Res<'static, RenderPipelineCache>,
+        Res<'static, HdrRenderTarget>,
     );
     type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<GpuCamera>);
     type ViewQueryFilter = ();
 
-    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
         let Some(gizmos) = render_world.get_resource::<Gizmos>() else {
             return Ok(());
         };
+        let gizmos = gizmos.into_inner();
 
         self.transform_buffer.clear();
         self.color_buffer.clear();
@@ -359,34 +360,40 @@ impl ViewNode for GizmoRenderNode {
             self.color_buffer.push(gizmo.color);
         }
 
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
-        let queue = render_world.get_resource::<WgpuQueue>().unwrap();
+        let device = unsafe { render_world.get_resource_unsafe::<WgpuDevice>().unwrap() };
+        let device = device.into_inner();
+        let queue = unsafe { render_world.get_resource_unsafe::<WgpuQueue>().unwrap() };
+        let queue = queue.into_inner();
 
-        self.transform_buffer.enqueue_update(&device, &queue);
-        self.color_buffer.enqueue_update(&device, &queue);
+        self.transform_buffer.enqueue_update(device, queue);
+        self.color_buffer.enqueue_update(device, queue);
+
+        let layout_cache = unsafe {
+            render_world
+                .get_resource_mut_unsafe::<BindGroupLayoutCache>()
+                .unwrap()
+        };
+        let layout_cache = layout_cache.into_inner();
 
         if self.bind_group.is_none() {
-            let mut layout_cache = render_world
-                .get_resource_mut::<BindGroupLayoutCache>()
-                .unwrap();
-            let bind_group = BindGroup::new(&render_world.read(), &device, self, &mut layout_cache);
+            let bind_group = BindGroup::new(device, self, layout_cache);
             self.bind_group = Some(bind_group);
         }
 
-        let mut pipeline_cache = render_world
-            .get_resource_mut::<RenderPipelineCache>()
-            .unwrap();
-        let mut bind_group_layout_cache = render_world
-            .get_resource_mut::<BindGroupLayoutCache>()
-            .unwrap();
-        pipeline_cache.get_or_create_pipeline::<Self>(&device, &mut bind_group_layout_cache);
+        let pipeline_cache = unsafe {
+            render_world
+                .get_resource_mut_unsafe::<RenderPipelineCache>()
+                .unwrap()
+        };
+        let pipeline_cache = pipeline_cache.into_inner();
+        pipeline_cache.get_or_create_pipeline::<Self>(device, layout_cache);
 
         Ok(())
     }
 
     fn run(
         &self,
-        _render_world: &WorldLock,
+        _render_world: &World,
         _graph_ctx: &mut weaver_renderer::graph::RenderGraphCtx,
         render_ctx: &mut weaver_renderer::graph::RenderCtx,
         (gizmos, cube_resource, pipeline_cache, hdr_target): &SystemParamItem<Self::Param>,

@@ -7,9 +7,7 @@ use skybox::{SkyboxNodeLabel, SkyboxNodePlugin, SkyboxPlugin};
 use weaver_app::prelude::*;
 use weaver_asset::Handle;
 use weaver_core::transform::Transform;
-use weaver_ecs::{
-    component::ResMut, entity::Entity, query::Query, storage::Ref, system::ExclusiveSystemMarker,
-};
+use weaver_ecs::{component::ResMut, entity::Entity, query::Query, storage::Ref};
 use weaver_renderer::{
     bind_group::{BindGroup, ResourceBindGroupPlugin},
     camera::GpuCamera,
@@ -111,7 +109,6 @@ impl Plugin for PbrPlugin {
         render_app.add_plugin(SkyboxPlugin)?;
         render_app.add_plugin(SkyboxNodePlugin)?;
 
-        render_app.insert_resource(PbrLightingInformation);
         render_app.add_plugin(RenderResourcePlugin::<PbrLightingInformation>::default())?;
         render_app.add_plugin(ResourceBindGroupPlugin::<PbrLightingInformation>::default())?;
 
@@ -142,12 +139,15 @@ impl Plugin for PbrPlugin {
 
         Ok(())
     }
+
+    fn finish(&self, app: &mut App) -> Result<()> {
+        Ok(())
+    }
 }
 
 fn extract_pbr_camera_phase(
     mut binned_phases: ResMut<BinnedRenderPhases<PbrDrawItem>>,
     cameras: Query<&GpuCamera>,
-    _marker: ExclusiveSystemMarker,
 ) -> Result<()> {
     let mut live_entities = HashSet::new();
 

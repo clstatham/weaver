@@ -12,7 +12,8 @@ impl RenderComponent for Transform {
     fn extract_render_component(
         entity: Entity,
         main_world: &mut World,
-        _render_world: &mut World,
+        _device: &wgpu::Device,
+        _queue: &wgpu::Queue,
     ) -> Option<Self>
     where
         Self: Sized,
@@ -27,7 +28,8 @@ impl RenderComponent for Transform {
         &mut self,
         entity: Entity,
         main_world: &mut World,
-        _render_world: &mut World,
+        _device: &wgpu::Device,
+        _queue: &wgpu::Queue,
     ) -> Result<()> {
         let transform = main_world.get_component::<Transform>(entity).unwrap();
         *self = *transform;

@@ -4,14 +4,13 @@ use encase::ShaderType;
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::prelude::*;
 use weaver_core::{color::Color, texture::Texture};
-use weaver_ecs::prelude::{Reflect, World};
+use weaver_ecs::prelude::Reflect;
 use weaver_renderer::{
     asset::{ExtractRenderAssetPlugin, RenderAsset},
     bind_group::{AssetBindGroupPlugin, BindGroupLayout, CreateBindGroup},
     buffer::GpuBufferVec,
     prelude::*,
     texture::{texture_format, GpuTexture},
-    WgpuDevice, WgpuQueue,
 };
 use weaver_util::prelude::*;
 
@@ -186,43 +185,36 @@ impl RenderAsset for GpuMaterial {
 
     fn extract_render_asset(
         base_asset: &Material,
-        main_world: &mut World,
-        render_world: &mut World,
+        assets: &Assets,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
     ) -> Option<Self>
     where
         Self: Sized,
     {
-        let assets = main_world.get_resource::<Assets>()?;
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
-        let queue = render_world.get_resource::<WgpuQueue>().unwrap();
-
         let diffuse_texture = assets.get(base_asset.diffuse_texture)?;
-        let diffuse_texture = GpuTexture::from_image(
-            &device,
-            &queue,
-            &diffuse_texture,
-            texture_format::SDR_FORMAT,
-        )?;
+        let diffuse_texture =
+            GpuTexture::from_image(device, queue, &diffuse_texture, texture_format::SDR_FORMAT)?;
 
         let normal_texture = assets.get(base_asset.normal_texture)?;
         let normal_texture = GpuTexture::from_image(
-            &device,
-            &queue,
+            device,
+            queue,
             &normal_texture,
             texture_format::NORMAL_FORMAT,
         )?;
 
         let metallic_roughness_texture = assets.get(base_asset.metallic_roughness_texture)?;
         let metallic_roughness_texture = GpuTexture::from_image(
-            &device,
-            &queue,
+            device,
+            queue,
             &metallic_roughness_texture,
             texture_format::SDR_FORMAT,
         )?;
 
         let ao_texture = assets.get(base_asset.ao_texture)?;
         let ao_texture =
-            GpuTexture::from_image(&device, &queue, &ao_texture, texture_format::SDR_FORMAT)?;
+            GpuTexture::from_image(device, queue, &ao_texture, texture_format::SDR_FORMAT)?;
 
         let mut meta =
             GpuBufferVec::new(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
@@ -279,7 +271,7 @@ impl RenderAsset for GpuMaterial {
             texture_scale: base_asset.texture_scale,
         };
         meta.push(meta_uniform);
-        meta.enqueue_update(&device, &queue);
+        meta.enqueue_update(device, queue);
 
         Some(Self {
             meta,
@@ -297,8 +289,9 @@ impl RenderAsset for GpuMaterial {
     fn update_render_asset(
         &mut self,
         base_asset: &Self::BaseAsset,
-        _main_world: &mut World,
-        render_world: &mut World,
+        _main_world_assets: &Assets,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
     ) -> Result<()>
     where
         Self: Sized,
@@ -311,13 +304,10 @@ impl RenderAsset for GpuMaterial {
             texture_scale: base_asset.texture_scale,
         };
 
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
-        let queue = render_world.get_resource::<WgpuQueue>().unwrap();
-
         self.meta.clear();
         self.meta.push(meta);
 
-        self.meta.enqueue_update(&device, &queue);
+        self.meta.enqueue_update(device, queue);
 
         Ok(())
     }
@@ -420,7 +410,6 @@ impl CreateBindGroup for GpuMaterial {
 
     fn create_bind_group(
         &self,
-        _render_world: &World,
         device: &wgpu::Device,
         cached_layout: &BindGroupLayout,
     ) -> wgpu::BindGroup {

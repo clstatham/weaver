@@ -3,7 +3,7 @@ use std::{any::TypeId, collections::HashMap};
 use weaver_util::prelude::Result;
 
 use crate::{
-    prelude::{IntoSystem, WorldLock},
+    prelude::{IntoSystem, World},
     system::SystemGraph,
 };
 
@@ -100,39 +100,39 @@ impl SystemSchedule {
             .add_system_after(system, after);
     }
 
-    pub fn run_stage<S: SystemStage>(&mut self, world: &WorldLock) -> Result<()> {
+    pub fn run_stage<S: SystemStage>(&mut self, world: &mut World) -> Result<()> {
         self.systems
             .get_mut(&TypeId::of::<S>())
             .expect("System stage not found")
-            .run_parallel(world)
+            .run(world)
     }
 
-    pub fn run_init(&mut self, world: &WorldLock) -> Result<()> {
+    pub fn run_init(&mut self, world: &mut World) -> Result<()> {
         for stage in &self.init_stages {
             self.systems
                 .get_mut(stage)
                 .expect("System stage not found")
-                .run_parallel(world)?;
+                .run(world)?;
         }
         Ok(())
     }
 
-    pub fn run_shutdown(&mut self, world: &WorldLock) -> Result<()> {
+    pub fn run_shutdown(&mut self, world: &mut World) -> Result<()> {
         for stage in &self.shutdown_stages {
             self.systems
                 .get_mut(stage)
                 .expect("System stage not found")
-                .run_parallel(world)?;
+                .run(world)?;
         }
         Ok(())
     }
 
-    pub fn run_update(&mut self, world: &WorldLock) -> Result<()> {
+    pub fn run_update(&mut self, world: &mut World) -> Result<()> {
         for stage in &self.update_stages {
             self.systems
                 .get_mut(stage)
                 .expect("System stage not found")
-                .run_parallel(world)?;
+                .run(world)?;
         }
         Ok(())
     }

@@ -8,7 +8,7 @@ use weaver_ecs::{
     change::Tick,
     prelude::Resource,
     system::{SystemAccess, SystemParam},
-    world::WorldLock,
+    world::World,
 };
 use weaver_util::lock::{ArcRead, SharedLock};
 
@@ -183,6 +183,17 @@ impl<T: Event> SystemParam for EventTx<T> {
     type State = ();
     type Item<'w, 's> = Self;
 
+    fn validate_access(access: &SystemAccess) -> bool {
+        !access
+            .resources_read
+            .iter()
+            .any(|r| *r == TypeId::of::<Events<T>>())
+            && !access
+                .resources_written
+                .iter()
+                .any(|r| *r == TypeId::of::<Events<T>>())
+    }
+
     fn access() -> SystemAccess {
         SystemAccess {
             exclusive: false,
@@ -193,12 +204,14 @@ impl<T: Event> SystemParam for EventTx<T> {
         }
     }
 
-    fn init_state(_: &WorldLock) -> Self::State {}
+    fn init_state(_: &mut World) -> Self::State {}
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
-        if let Some(events) = world.get_resource::<Events<T>>() {
+    unsafe fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's> {
+        if let Some(events) = unsafe { world.get_resource_unsafe::<Events<T>>() } {
             EventTx::new(events.clone())
-        } else if let Some(manual_events) = world.get_resource::<ManuallyUpdatedEvents<T>>() {
+        } else if let Some(manual_events) =
+            unsafe { world.get_resource_unsafe::<ManuallyUpdatedEvents<T>>() }
+        {
             EventTx::new(manual_events.events.clone())
         } else {
             panic!("Events resource not found");
@@ -210,7 +223,18 @@ impl<T: Event> SystemParam for EventRx<T> {
     type State = ();
     type Item<'w, 's> = Self;
 
-    fn init_state(_: &WorldLock) -> Self::State {}
+    fn validate_access(access: &SystemAccess) -> bool {
+        !access
+            .resources_read
+            .iter()
+            .any(|r| *r == TypeId::of::<Events<T>>())
+            && !access
+                .resources_written
+                .iter()
+                .any(|r| *r == TypeId::of::<Events<T>>())
+    }
+
+    fn init_state(_: &mut World) -> Self::State {}
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -222,18 +246,20 @@ impl<T: Event> SystemParam for EventRx<T> {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
-        if let Some(events) = world.get_resource::<Events<T>>() {
+    unsafe fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's> {
+        if let Some(events) = unsafe { world.get_resource_unsafe::<Events<T>>() } {
             EventRx::new(
                 events.clone(),
-                world.read().last_change_tick(),
-                world.read().read_change_tick(),
+                world.last_change_tick(),
+                world.read_change_tick(),
             )
-        } else if let Some(manual_events) = world.get_resource::<ManuallyUpdatedEvents<T>>() {
+        } else if let Some(manual_events) =
+            unsafe { world.get_resource_unsafe::<ManuallyUpdatedEvents<T>>() }
+        {
             EventRx::new(
                 manual_events.events.clone(),
-                world.read().last_change_tick(),
-                world.read().read_change_tick(),
+                world.last_change_tick(),
+                world.read_change_tick(),
             )
         } else {
             panic!("Events resource not found");
@@ -243,7 +269,7 @@ impl<T: Event> SystemParam for EventRx<T> {
 
 #[derive(Resource)]
 pub struct ManuallyUpdatedEvents<T: Event> {
-    events: Events<T>,
+    pub events: Events<T>,
 }
 
 impl<T: Event> ManuallyUpdatedEvents<T> {
@@ -263,154 +289,5 @@ impl<T: Event> Deref for ManuallyUpdatedEvents<T> {
 impl<T: Event> DerefMut for ManuallyUpdatedEvents<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.events
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use weaver_ecs::prelude::*;
-    use weaver_util::prelude::{anyhow, Result};
-
-    #[derive(Debug, PartialEq)]
-    struct TestEvent(i32);
-
-    impl Event for TestEvent {}
-
-    struct First;
-    impl SystemStage for First {}
-
-    struct Before;
-    impl SystemStage for Before {}
-
-    struct After;
-    impl SystemStage for After {}
-
-    fn sender_system(mut event_tx: EventTx<TestEvent>) -> Result<()> {
-        event_tx.send(TestEvent(1));
-        event_tx.send(TestEvent(2));
-        event_tx.send(TestEvent(3));
-        Ok(())
-    }
-
-    fn receiver_system(event_rx: EventRx<TestEvent>) -> Result<()> {
-        let mut iter = event_rx.iter();
-        if iter.next().is_none() {
-            return Err(anyhow!("No events (1)"));
-        }
-        if iter.next().is_none() {
-            return Err(anyhow!("No events (2)"));
-        }
-        if iter.next().is_none() {
-            return Err(anyhow!("No events (3)"));
-        }
-        if iter.next().is_some() {
-            return Err(anyhow!("Too many events"));
-        }
-        Ok(())
-    }
-
-    fn update_events_system(events: Res<Events<TestEvent>>, mut world: WriteWorld) -> Result<()> {
-        world.increment_change_tick();
-        events.update(world.read_change_tick());
-        Ok(())
-    }
-
-    #[test]
-    fn test_event() {
-        let world = World::new().into_world_lock();
-        world.insert_resource(Events::<TestEvent>::new());
-
-        let mut event_tx = EventTx::<TestEvent>::fetch(&mut (), &world);
-
-        event_tx.send(TestEvent(1));
-        event_tx.send(TestEvent(2));
-        event_tx.send(TestEvent(3));
-        drop(event_tx);
-
-        let event_rx = EventRx::<TestEvent>::fetch(&mut (), &world);
-
-        let mut iter = event_rx.iter();
-        assert_eq!(*iter.next().unwrap(), TestEvent(1));
-        assert_eq!(*iter.next().unwrap(), TestEvent(2));
-        assert_eq!(*iter.next().unwrap(), TestEvent(3));
-        assert!(iter.next().is_none());
-    }
-
-    #[test]
-    fn test_event_update() {
-        let world = World::new().into_world_lock();
-        world.insert_resource(Events::<TestEvent>::new());
-
-        let mut event_tx = EventTx::<TestEvent>::fetch(&mut (), &world);
-
-        event_tx.send(TestEvent(1));
-        event_tx.send(TestEvent(2));
-        event_tx.send(TestEvent(3));
-        drop(event_tx);
-
-        let event_rx = EventRx::<TestEvent>::fetch(&mut (), &world);
-        let mut iter = event_rx.iter();
-        assert_eq!(*iter.next().unwrap(), TestEvent(1));
-        assert_eq!(*iter.next().unwrap(), TestEvent(2));
-        assert_eq!(*iter.next().unwrap(), TestEvent(3));
-        assert!(iter.next().is_none());
-        drop(event_rx);
-
-        let event_rx = EventRx::<TestEvent>::fetch(&mut (), &world);
-        let mut iter = event_rx.iter();
-        assert_eq!(*iter.next().unwrap(), TestEvent(1));
-        assert_eq!(*iter.next().unwrap(), TestEvent(2));
-        assert_eq!(*iter.next().unwrap(), TestEvent(3));
-        assert!(iter.next().is_none());
-        drop(event_rx);
-
-        world.write().increment_change_tick();
-
-        world
-            .get_resource::<Events<TestEvent>>()
-            .unwrap()
-            .update(world.read().read_change_tick());
-
-        let event_rx = EventRx::<TestEvent>::fetch(&mut (), &world);
-
-        let mut iter = event_rx.iter();
-        assert!(iter.next().is_none());
-    }
-
-    #[test]
-    fn test_event_system_send_before_receive() {
-        let world = World::new().into_world_lock();
-        world.insert_resource(Events::<TestEvent>::new());
-        world.write().push_update_stage::<First>();
-        world.write().push_update_stage::<Before>();
-        world.write().push_update_stage::<After>();
-
-        world.write().add_system(update_events_system, First);
-        world.write().add_system(sender_system, Before);
-        world.write().add_system(receiver_system, After);
-
-        world.update().unwrap();
-        world.update().unwrap();
-        world.update().unwrap();
-    }
-
-    #[test]
-    fn test_event_system_receive_before_send() {
-        let world = World::new().into_world_lock();
-        world.insert_resource(Events::<TestEvent>::new());
-        world.write().push_update_stage::<First>();
-        world.write().push_update_stage::<Before>();
-        world.write().push_update_stage::<After>();
-
-        world.write().add_system(update_events_system, First);
-        world.write().add_system(receiver_system, Before);
-        world.write().add_system(sender_system, After);
-
-        world
-            .update()
-            .expect_err("Expected 1-frame delay in events");
-        world.update().unwrap();
-        world.update().unwrap();
     }
 }

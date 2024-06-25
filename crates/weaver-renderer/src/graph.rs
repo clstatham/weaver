@@ -5,11 +5,14 @@ use weaver_app::{App, SubApp};
 use weaver_ecs::{
     entity::Entity,
     prelude::Resource,
-    query::{Query, QueryFetch, QueryFetchItem, QueryFilter},
-    system::{SystemParam, SystemParamItem},
-    world::{FromWorld, World, WorldLock},
+    query::{QueryFetch, QueryFetchItem, QueryFilter, QueryState},
+    system::{SystemParam, SystemParamItem, SystemState},
+    world::{FromWorld, World},
 };
-use weaver_util::prelude::{anyhow, bail, impl_downcast, DowncastSync, Result};
+use weaver_util::{
+    lock::Lock,
+    prelude::{anyhow, bail, impl_downcast, DowncastSync, Result},
+};
 
 use crate::{RenderId, RenderLabel, Renderer};
 
@@ -66,13 +69,13 @@ pub trait RenderNode: DowncastSync {
     }
 
     #[allow(unused)]
-    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
         Ok(())
     }
 
     fn run(
         &self,
-        render_world: &WorldLock,
+        render_world: &World,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
     ) -> Result<()>;
@@ -92,13 +95,13 @@ pub trait ViewNode: Send + Sync + 'static {
     }
 
     #[allow(unused)]
-    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
         Ok(())
     }
 
     fn run(
         &self,
-        render_world: &WorldLock,
+        render_world: &World,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
         param: &SystemParamItem<Self::Param>,
@@ -108,7 +111,8 @@ pub trait ViewNode: Send + Sync + 'static {
 
 pub struct ViewNodeRunner<T: ViewNode> {
     pub node: T,
-    pub view_query: Query<T::ViewQueryFetch, T::ViewQueryFilter>,
+    pub view_query: QueryState<T::ViewQueryFetch, T::ViewQueryFilter>,
+    pub state: Lock<Option<SystemState<T::Param>>>,
 }
 
 impl<T: ViewNode> ViewNodeRunner<T> {
@@ -116,6 +120,7 @@ impl<T: ViewNode> ViewNodeRunner<T> {
         Self {
             node,
             view_query: render_world.query_filtered(),
+            state: Lock::new(None),
         }
     }
 }
@@ -129,23 +134,26 @@ impl<T: ViewNode> RenderNode for ViewNodeRunner<T> {
         self.node.output_slots()
     }
 
-    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
         self.view_query = render_world.query_filtered();
-        self.node.prepare(render_world)
+        *self.state.write() = Some(SystemState::new(render_world));
+        self.node.prepare(render_world)?;
+        Ok(())
     }
 
     fn run(
         &self,
-        render_world: &WorldLock,
+        render_world: &World,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
     ) -> Result<()> {
-        let Some(view_query) = self.view_query.get(graph_ctx.view_entity) else {
+        let Some(view_query) = self.view_query.get(render_world, graph_ctx.view_entity) else {
             return Ok(());
         };
 
-        let mut state = T::Param::init_state(render_world);
-        let param = T::Param::fetch(&mut state, render_world);
+        let mut state = self.state.write();
+        let state = state.as_mut().unwrap();
+        let param = state.get(render_world);
 
         self.node
             .run(render_world, graph_ctx, render_ctx, &param, &view_query)
@@ -350,7 +358,7 @@ impl RenderNode for GraphInputNode {
 
     fn run(
         &self,
-        _render_world: &WorldLock,
+        _render_world: &World,
         graph_ctx: &mut RenderGraphCtx,
         _render_ctx: &mut RenderCtx,
     ) -> Result<()> {
@@ -381,7 +389,7 @@ impl RenderNode for GraphOutputNode {
 
     fn run(
         &self,
-        _render_world: &WorldLock,
+        _render_world: &World,
         graph_ctx: &mut RenderGraphCtx,
         _render_ctx: &mut RenderCtx,
     ) -> Result<()> {
@@ -413,13 +421,13 @@ impl RenderNode for SubGraphNode {
             .unwrap_or_default()
     }
 
-    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
         self.sub_graph.prepare(render_world)
     }
 
     fn run(
         &self,
-        render_world: &WorldLock,
+        render_world: &World,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
     ) -> Result<()> {
@@ -477,7 +485,7 @@ impl RenderGraph {
         self.get_node_state_mut(label)?.node_mut::<T>()
     }
 
-    pub fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
+    pub fn prepare(&mut self, render_world: &mut World) -> Result<()> {
         let mut search = Topo::new(&self.graph);
 
         while let Some(node) = search.next(&self.graph) {
@@ -691,7 +699,7 @@ impl RenderGraph {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         renderer: &mut Renderer,
-        render_world: &WorldLock,
+        render_world: &World,
         view_entity: Entity,
     ) -> Result<()> {
         self.validate()?;
@@ -803,7 +811,7 @@ impl RenderGraphApp for SubApp {
         &mut self,
         label: impl RenderLabel,
     ) -> &mut Self {
-        let node = T::from_world(&self.read_world());
+        let node = T::from_world(self.read_world());
         let mut render_graph = self.get_resource_mut::<RenderGraph>().unwrap();
         render_graph.add_node(label, node).unwrap();
         self
@@ -839,7 +847,7 @@ impl RenderGraphApp for SubApp {
         sub_graph: impl RenderLabel,
         label: impl RenderLabel,
     ) -> &mut Self {
-        let node = T::from_world(&self.read_world());
+        let node = T::from_world(self.read_world());
         let mut render_graph = self.get_resource_mut::<RenderGraph>().unwrap();
         let sub_graph = render_graph
             .get_node_mut::<SubGraphNode>(sub_graph)

@@ -10,14 +10,13 @@ use irradiance::SkyboxIrradiancePlugin;
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
     component::Res,
-    prelude::{QueryFetchItem, Resource, SystemParamItem, World, WorldLock},
+    prelude::{QueryFetchItem, Resource, SystemParamItem, World},
 };
 use weaver_renderer::{
     bind_group::{
         BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup, ResourceBindGroupPlugin,
     },
     camera::{GpuCamera, ViewTarget},
-    extract::{RenderResource, RenderResourcePlugin},
     graph::{RenderCtx, RenderGraphApp, RenderGraphCtx, ViewNode, ViewNodeRunner},
     hdr::HdrRenderTarget,
     pipeline::{
@@ -27,7 +26,7 @@ use weaver_renderer::{
     prelude::{wgpu, ComputePipeline, ComputePipelineLayout},
     shader::Shader,
     texture::{texture_format, GpuTexture},
-    RenderLabel, WgpuDevice, WgpuQueue,
+    RenderLabel,
 };
 use weaver_util::prelude::Result;
 
@@ -90,12 +89,7 @@ impl CreateBindGroup for GpuSkyboxSrc {
         })
     }
 
-    fn create_bind_group(
-        &self,
-        _render_world: &World,
-        device: &wgpu::Device,
-        layout: &BindGroupLayout,
-    ) -> wgpu::BindGroup
+    fn create_bind_group(&self, device: &wgpu::Device, layout: &BindGroupLayout) -> wgpu::BindGroup
     where
         Self: Sized,
     {
@@ -122,95 +116,13 @@ pub(crate) struct GpuSkybox {
     pub(crate) sampler: Arc<wgpu::Sampler>,
 }
 
-impl CreateComputePipeline for GpuSkybox {
-    fn create_compute_pipeline_layout(
+impl GpuSkybox {
+    pub fn new(
+        render_world: &mut World,
+        skybox: &Skybox,
         device: &wgpu::Device,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> ComputePipelineLayout
-    where
-        Self: Sized,
-    {
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Skybox Pipeline Layout"),
-            bind_group_layouts: &[
-                &bind_group_layout_cache.get_or_create::<GpuSkyboxSrc>(device),
-                &bind_group_layout_cache.get_or_create::<GpuSkyboxDst>(device),
-            ],
-            push_constant_ranges: &[],
-        });
-
-        ComputePipelineLayout::new(layout)
-    }
-
-    fn create_compute_pipeline(
-        device: &wgpu::Device,
-        cached_layout: &wgpu::PipelineLayout,
-    ) -> ComputePipeline
-    where
-        Self: Sized,
-    {
-        let module = Shader::new(Path::new("assets/shaders/skybox_loader.wgsl"))
-            .create_shader_module(device);
-
-        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Skybox Compute Pipeline"),
-            layout: Some(cached_layout),
-            module: &module,
-            entry_point: "load",
-        });
-
-        ComputePipeline::new(pipeline)
-    }
-}
-
-impl CreateBindGroup for GpuSkyboxDst {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
-    where
-        Self: Sized,
-    {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Skybox Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::StorageTexture {
-                    access: wgpu::StorageTextureAccess::WriteOnly,
-                    format: texture_format::HDR_FORMAT,
-                    view_dimension: wgpu::TextureViewDimension::D2Array,
-                },
-                count: None,
-            }],
-        })
-    }
-
-    fn create_bind_group(
-        &self,
-        _render_world: &World,
-        device: &wgpu::Device,
-        layout: &BindGroupLayout,
-    ) -> wgpu::BindGroup
-    where
-        Self: Sized,
-    {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Skybox Aux Bind Group"),
-            layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&self.dst_texture.view),
-            }],
-        })
-    }
-}
-
-impl RenderResource for GpuSkybox {
-    type UpdateQuery = ();
-
-    fn extract_render_resource(main_world: &mut World, render_world: &mut World) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        let skybox = main_world.get_resource::<Skybox>().unwrap();
+        queue: &wgpu::Queue,
+    ) -> Self {
         let mut file = File::open(&skybox.path).unwrap();
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).unwrap();
@@ -229,14 +141,16 @@ impl RenderResource for GpuSkybox {
             )
             .unwrap();
 
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
-        let queue = render_world.get_resource::<WgpuQueue>().unwrap();
-        let mut bind_group_layout_cache = render_world
-            .get_resource_mut::<BindGroupLayoutCache>()
-            .unwrap();
-        let mut pipeline_cache = render_world
-            .get_resource_mut::<ComputePipelineCache>()
-            .unwrap();
+        let mut bind_group_layout_cache = unsafe {
+            render_world
+                .get_resource_mut_unsafe::<BindGroupLayoutCache>()
+                .unwrap()
+        };
+        let mut pipeline_cache = unsafe {
+            render_world
+                .get_resource_mut_unsafe::<ComputePipelineCache>()
+                .unwrap()
+        };
 
         let src = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Skybox Source Texture"),
@@ -303,9 +217,8 @@ impl RenderResource for GpuSkybox {
         };
 
         let src_bind_group = skybox_src.create_bind_group(
-            render_world,
-            &device,
-            &BindGroupLayout::get_or_create::<GpuSkyboxSrc>(&device, &mut bind_group_layout_cache),
+            device,
+            &BindGroupLayout::get_or_create::<GpuSkyboxSrc>(device, &mut bind_group_layout_cache),
         );
 
         let dst = GpuSkyboxDst {
@@ -316,12 +229,11 @@ impl RenderResource for GpuSkybox {
         };
 
         let pipeline = pipeline_cache
-            .get_or_create_pipeline::<GpuSkybox>(&device, &mut bind_group_layout_cache);
+            .get_or_create_pipeline::<GpuSkybox>(device, &mut bind_group_layout_cache);
 
         let dst_bind_group = dst.create_bind_group(
-            render_world,
-            &device,
-            &BindGroupLayout::get_or_create::<GpuSkyboxDst>(&device, &mut bind_group_layout_cache),
+            device,
+            &BindGroupLayout::get_or_create::<GpuSkyboxDst>(device, &mut bind_group_layout_cache),
         );
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -361,19 +273,87 @@ impl RenderResource for GpuSkybox {
                 ..Default::default()
             });
 
-        Some(Self {
+        Self {
             texture: dst_texture,
             cube_view: Arc::new(cube_view),
             sampler: Arc::new(sampler),
+        }
+    }
+}
+
+impl CreateComputePipeline for GpuSkybox {
+    fn create_compute_pipeline_layout(
+        device: &wgpu::Device,
+        bind_group_layout_cache: &mut BindGroupLayoutCache,
+    ) -> ComputePipelineLayout
+    where
+        Self: Sized,
+    {
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Skybox Pipeline Layout"),
+            bind_group_layouts: &[
+                &bind_group_layout_cache.get_or_create::<GpuSkyboxSrc>(device),
+                &bind_group_layout_cache.get_or_create::<GpuSkyboxDst>(device),
+            ],
+            push_constant_ranges: &[],
+        });
+
+        ComputePipelineLayout::new(layout)
+    }
+
+    fn create_compute_pipeline(
+        device: &wgpu::Device,
+        cached_layout: &wgpu::PipelineLayout,
+    ) -> ComputePipeline
+    where
+        Self: Sized,
+    {
+        let module = Shader::new(Path::new("assets/shaders/skybox_loader.wgsl"))
+            .create_shader_module(device);
+
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Skybox Compute Pipeline"),
+            layout: Some(cached_layout),
+            module: &module,
+            entry_point: "load",
+        });
+
+        ComputePipeline::new(pipeline)
+    }
+}
+
+impl CreateBindGroup for GpuSkyboxDst {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
+    where
+        Self: Sized,
+    {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Skybox Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::WriteOnly,
+                    format: texture_format::HDR_FORMAT,
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                },
+                count: None,
+            }],
         })
     }
 
-    fn update_render_resource(
-        &mut self,
-        _main_world: &mut World,
-        _render_world: &mut World,
-    ) -> Result<()> {
-        Ok(())
+    fn create_bind_group(&self, device: &wgpu::Device, layout: &BindGroupLayout) -> wgpu::BindGroup
+    where
+        Self: Sized,
+    {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Skybox Aux Bind Group"),
+            layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&self.dst_texture.view),
+            }],
+        })
     }
 }
 
@@ -407,12 +387,7 @@ impl CreateBindGroup for GpuSkybox {
         })
     }
 
-    fn create_bind_group(
-        &self,
-        _render_world: &World,
-        device: &wgpu::Device,
-        layout: &BindGroupLayout,
-    ) -> wgpu::BindGroup
+    fn create_bind_group(&self, device: &wgpu::Device, layout: &BindGroupLayout) -> wgpu::BindGroup
     where
         Self: Sized,
     {
@@ -509,9 +484,9 @@ impl CreateRenderPipeline for SkyboxNode {
 
 impl ViewNode for SkyboxNode {
     type Param = (
-        Res<RenderPipelineCache>,
-        Res<HdrRenderTarget>,
-        Res<BindGroup<GpuSkybox>>,
+        Res<'static, RenderPipelineCache>,
+        Res<'static, HdrRenderTarget>,
+        Res<'static, BindGroup<GpuSkybox>>,
     );
 
     type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<GpuCamera>);
@@ -520,7 +495,7 @@ impl ViewNode for SkyboxNode {
 
     fn run(
         &self,
-        _render_world: &WorldLock,
+        _render_world: &World,
         _graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
         (render_pipeline_cache, hdr_target, skybox_bind_group): &SystemParamItem<Self::Param>,
@@ -570,7 +545,6 @@ impl Plugin for SkyboxPlugin {
     fn build(&self, render_app: &mut weaver_app::App) -> Result<()> {
         render_app.add_plugin(ComputePipelinePlugin::<GpuSkybox>::default())?;
         render_app.add_plugin(ResourceBindGroupPlugin::<GpuSkybox>::default())?;
-        render_app.add_plugin(RenderResourcePlugin::<GpuSkybox>::default())?;
 
         Ok(())
     }

@@ -1,4 +1,3 @@
-use inspect::InspectUi;
 use weaver::{
     prelude::*,
     weaver_app::App,
@@ -67,14 +66,11 @@ fn main() -> Result<()> {
         .add_system(selection_gizmos, Update)
         .add_system(light_gizmos, Update)
         .add_system(pick_entity, Update)
-        .add_system(ui, Update)
         .run()
 }
 
-fn setup(mut world: WriteWorld) -> Result<()> {
-    let mut assets = world.get_resource_mut::<Assets>().unwrap();
-
-    world.spawn((
+fn setup(commands: Commands, mut assets: ResMut<Assets>) -> Result<()> {
+    commands.spawn((
         Camera::perspective_lookat(
             Vec3::new(10.0, 10.0, 10.0),
             Vec3::ZERO,
@@ -101,7 +97,7 @@ fn setup(mut world: WriteWorld) -> Result<()> {
         material.texture_scale = 100.0;
     }
 
-    world.spawn((
+    commands.spawn((
         cube_mesh,
         material,
         Transform {
@@ -141,7 +137,7 @@ fn setup(mut world: WriteWorld) -> Result<()> {
     //     ));
     // }
 
-    world.spawn((
+    commands.spawn((
         PointLight {
             color: Color::WHITE,
             intensity: 100.0,
@@ -168,7 +164,7 @@ fn setup(mut world: WriteWorld) -> Result<()> {
     let count = 10;
     for i in 0..count {
         let angle = i as f32 / count as f32 * std::f32::consts::PI * 2.0;
-        world.spawn((
+        commands.spawn((
             monkey_mesh,
             material2,
             Transform {
@@ -223,33 +219,6 @@ fn light_gizmos(
         );
     }
 
-    Ok(())
-}
-
-fn ui(
-    editor_state: Res<EditorState>,
-    egui_context: Res<EguiContext>,
-    type_registry: Res<TypeRegistry>,
-    assets: Res<Assets>,
-    world: ReadWorld,
-) -> Result<()> {
-    egui_context.draw_if_ready(|ctx| {
-        if let Some(entity) = editor_state.selected_entity {
-            egui::Window::new("Inspector").show(ctx, |ui| {
-                let storage = world.storage();
-                let archetype = storage.get_archetype(entity).unwrap();
-                for (_, column) in archetype.column_iter() {
-                    let mut column = column.write();
-                    let data = column
-                        .get_mut(entity.as_usize(), world.read_change_tick())
-                        .unwrap();
-                    let component = data.get_data_mut();
-                    let reflect = component.as_reflect_mut();
-                    reflect.inspect_ui(&type_registry, &assets, ui);
-                }
-            });
-        };
-    });
     Ok(())
 }
 

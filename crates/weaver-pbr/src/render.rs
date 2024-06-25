@@ -9,10 +9,9 @@ use weaver_core::{prelude::Mat4, transform::Transform};
 use weaver_ecs::{
     component::Res,
     entity::Entity,
-    prelude::{Resource, World},
+    prelude::{QueryFetch, Resource, World},
     storage::Ref,
     system::SystemParamItem,
-    world::WorldLock,
 };
 use weaver_renderer::{
     bind_group::{BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup},
@@ -60,7 +59,7 @@ impl DerefMut for PbrMeshInstances {
 }
 
 impl GetBatchData for PbrMeshInstances {
-    type Param = Res<PbrMeshInstances>;
+    type Param = Res<'static, PbrMeshInstances>;
     type BufferData = Mat4;
     type UpdateQuery = (
         &'static Handle<GpuMesh>,
@@ -75,7 +74,7 @@ impl GetBatchData for PbrMeshInstances {
             &Handle<BindGroup<GpuMaterial>>,
             &Transform,
         )>();
-        for (entity, (mesh, material, transform)) in query.iter() {
+        for (entity, (mesh, material, transform)) in query.iter(render_world) {
             self.0.insert(
                 entity,
                 PbrMeshInstance {
@@ -98,8 +97,45 @@ impl GetBatchData for PbrMeshInstances {
 }
 
 /// Combined bind group for PBR light arrays and environment maps.
-#[derive(Resource)]
-pub(crate) struct PbrLightingInformation;
+#[derive(Resource, Default)]
+pub(crate) struct PbrLightingInformation {
+    pub point_lights: GpuPointLightArray,
+    pub env_map: Option<GpuSkyboxIrradiance>,
+}
+
+impl RenderResource for PbrLightingInformation {
+    fn extract_render_resource(
+        main_world: &mut World,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        let mut this = Self::default();
+
+        this.point_lights.buffer.reserve(1, device);
+        this.point_lights.buffer.enqueue_update(device, queue);
+
+        this.env_map = GpuSkyboxIrradiance::extract_render_resource(main_world, device, queue);
+
+        Some(this)
+    }
+
+    fn update_render_resource(
+        &mut self,
+        main_world: &mut World,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<()> {
+        self.point_lights
+            .update_render_resource(main_world, device, queue)?;
+        if let Some(env_map) = &mut self.env_map {
+            env_map.update_render_resource(main_world, device, queue)?;
+        }
+        Ok(())
+    }
+}
 
 impl CreateBindGroup for PbrLightingInformation {
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
@@ -166,20 +202,17 @@ impl CreateBindGroup for PbrLightingInformation {
 
     fn create_bind_group(
         &self,
-        render_world: &World,
         device: &wgpu::Device,
         cached_layout: &BindGroupLayout,
     ) -> wgpu::BindGroup {
-        let point_lights = render_world.get_resource::<GpuPointLightArray>().unwrap();
-        let env_map = render_world.get_resource::<GpuSkyboxIrradiance>().unwrap();
-
+        let env_map = self.env_map.as_ref().unwrap();
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("PBR Lighting Information Bind Group"),
             layout: cached_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: point_lights.buffer.binding().unwrap(),
+                    resource: self.point_lights.buffer.binding().unwrap(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -199,25 +232,6 @@ impl CreateBindGroup for PbrLightingInformation {
                 },
             ],
         })
-    }
-}
-
-impl RenderResource for PbrLightingInformation {
-    type UpdateQuery = ();
-
-    fn extract_render_resource(_main_world: &mut World, _render_world: &mut World) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        Some(Self)
-    }
-
-    fn update_render_resource(
-        &mut self,
-        _main_world: &mut World,
-        _render_world: &mut World,
-    ) -> Result<()> {
-        Ok(())
     }
 }
 
@@ -326,16 +340,27 @@ impl CreateRenderPipeline for PbrNode {
 
 impl ViewNode for PbrNode {
     type Param = (
-        Res<BinnedRenderPhases<PbrDrawItem>>,
-        Res<DrawFunctions<PbrDrawItem>>,
-        Res<HdrRenderTarget>,
+        Res<'static, BinnedRenderPhases<PbrDrawItem>>,
+        Res<'static, DrawFunctions<PbrDrawItem>>,
+        Res<'static, HdrRenderTarget>,
     );
     type ViewQueryFetch = &'static ViewTarget;
     type ViewQueryFilter = ();
 
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
+        let draw_fns = render_world
+            .remove_resource::<DrawFunctions<PbrDrawItem>>()
+            .unwrap();
+        let mut draw_fns_lock = draw_fns.write();
+        draw_fns_lock.prepare(render_world).unwrap();
+        drop(draw_fns_lock);
+        render_world.insert_resource(draw_fns);
+        Ok(())
+    }
+
     fn run(
         &self,
-        render_world: &WorldLock,
+        render_world: &World,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
         (binned_phases, draw_functions, hdr_target): &SystemParamItem<Self::Param>,
@@ -345,8 +370,7 @@ impl ViewNode for PbrNode {
             return Ok(());
         };
 
-        let mut draw_functions = draw_functions.write_arc();
-        draw_functions.prepare(render_world).unwrap();
+        let mut draw_functions_lock = draw_functions.write_arc();
 
         if !phase.is_empty() {
             let encoder = render_ctx.command_encoder();
@@ -377,7 +401,7 @@ impl ViewNode for PbrNode {
                     render_world,
                     &mut render_pass,
                     graph_ctx.view_entity,
-                    &mut draw_functions,
+                    &mut draw_functions_lock,
                 )
                 .unwrap();
         }
@@ -390,10 +414,10 @@ pub(crate) struct PbrRenderCommand;
 
 impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
     type Param = (
-        Res<Assets>,
-        Res<RenderPipelineCache>,
-        Res<BindGroup<BatchedInstanceBuffer<PbrDrawItem, PbrRenderCommand>>>,
-        Res<BindGroup<PbrLightingInformation>>,
+        Res<'static, Assets>,
+        Res<'static, RenderPipelineCache>,
+        Res<'static, BindGroup<BatchedInstanceBuffer<PbrDrawItem, PbrRenderCommand>>>,
+        Res<'static, BindGroup<PbrLightingInformation>>,
     );
 
     type ViewQueryFetch = &'static BindGroup<GpuCamera>;
@@ -406,17 +430,28 @@ impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
 
     fn render<'w>(
         item: PbrDrawItem,
-        view_query: <Self::ViewQueryFetch as weaver_ecs::prelude::QueryFetch>::Item,
-        _item_query: Option<<Self::ItemQueryFetch as weaver_ecs::prelude::QueryFetch>::Item>,
+        view_query: <Self::ViewQueryFetch as QueryFetch>::Item<'w>,
+        _item_query: Option<<Self::ItemQueryFetch as QueryFetch>::Item<'w>>,
         param: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut wgpu::RenderPass<'w>,
     ) -> Result<()> {
         let (assets, pipeline_cache, mesh_transforms_bind_group, lights_bind_group) = param;
+        let assets = assets.into_inner();
+        let pipeline_cache = pipeline_cache.into_inner();
+        let mesh_transforms_bind_group = mesh_transforms_bind_group.into_inner();
+        let lights_bind_group = lights_bind_group.into_inner();
+
         let camera_bind_group = view_query;
+        let camera_bind_group = camera_bind_group.into_inner();
+
         let mesh = assets.get::<GpuMesh>(item.key.mesh).unwrap();
+        let mesh = mesh.into_inner();
+
         let material_bind_group = assets
             .get::<BindGroup<GpuMaterial>>(item.key.material)
             .unwrap();
+        let material_bind_group = material_bind_group.into_inner();
+
         let pipeline = pipeline_cache.get_pipeline::<PbrNode>().unwrap();
 
         pass.set_pipeline(pipeline);

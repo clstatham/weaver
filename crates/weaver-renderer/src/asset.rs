@@ -3,20 +3,23 @@ use std::collections::HashMap;
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{Asset, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
+    commands::Commands,
+    component::{Res, ResMut},
     prelude::Resource,
-    world::{World, WriteWorld},
+    query::Query,
 };
 use weaver_util::prelude::Result;
 
-use crate::{Extract, MainWorld};
+use crate::{Extract, MainWorld, WgpuDevice, WgpuQueue};
 
 pub trait RenderAsset: Asset {
     type BaseAsset: Asset;
 
     fn extract_render_asset(
         base_asset: &Self::BaseAsset,
-        main_world: &mut World,
-        render_world: &mut World,
+        main_world_assets: &Assets,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
     ) -> Option<Self>
     where
         Self: Sized;
@@ -24,8 +27,9 @@ pub trait RenderAsset: Asset {
     fn update_render_asset(
         &mut self,
         base_asset: &Self::BaseAsset,
-        main_world: &mut World,
-        render_world: &mut World,
+        main_world_assets: &Assets,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
     ) -> Result<()>
     where
         Self: Sized;
@@ -66,43 +70,45 @@ impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
     }
 }
 
-fn extract_render_asset<T: RenderAsset>(mut render_world: WriteWorld) -> Result<()> {
-    let main_world = render_world.get_resource::<MainWorld>().unwrap();
+fn extract_render_asset<T: RenderAsset>(
+    commands: Commands,
+    main_world: Res<MainWorld>,
+    mut extracted_assets: ResMut<ExtractedRenderAssets>,
+    render_handles: Query<&Handle<T>>,
+    mut render_assets: ResMut<Assets>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
+) -> Result<()> {
     // query for handles to the base asset
     let query = main_world.query::<&Handle<T::BaseAsset>>();
 
-    for (entity, handle) in query.iter() {
-        let mut extracted_assets = render_world
-            .get_resource_mut::<ExtractedRenderAssets>()
-            .unwrap();
+    for (entity, handle) in query.iter(&main_world) {
         if extracted_assets.contains(&handle.into_untyped()) {
-            if !render_world.has_component::<Handle<T>>(entity) {
+            if render_handles.get(entity).is_none() {
                 // if the asset has already been extracted, insert the render asset handle into the entity
                 let render_handle = *extracted_assets.assets.get(&handle.into_untyped()).unwrap();
                 drop(handle);
                 let render_handle = Handle::<T>::try_from(render_handle).unwrap();
-
-                render_world.insert_component(entity, render_handle);
+                commands.insert_component(entity, render_handle);
             }
         } else {
             // if the asset has not been extracted yet, extract it
-            let assets = main_world.get_resource::<Assets>().unwrap();
-            let base_asset = assets.get::<T::BaseAsset>(*handle).unwrap();
+
+            let main_world_assets = unsafe { main_world.get_resource_unsafe::<Assets>().unwrap() };
+            let base_asset = main_world_assets.get::<T::BaseAsset>(*handle).unwrap();
             if let Some(render_asset) =
-                T::extract_render_asset(&base_asset, &mut main_world.write(), &mut render_world)
+                T::extract_render_asset(&base_asset, &main_world_assets, &device, &queue)
             {
                 log::debug!("Extracted render asset: {:?}", std::any::type_name::<T>());
 
                 // insert the render asset into the asset storage
-                drop(assets);
-                let mut assets = render_world.get_resource_mut::<Assets>().unwrap();
-                let render_handle = assets.insert(render_asset);
+                let render_handle = render_assets.insert(render_asset);
 
                 let untyped_handle = handle.into_untyped();
                 drop(handle);
 
                 // insert the render asset handle into the entity
-                render_world.insert_component(entity, render_handle);
+                commands.insert_component(entity, render_handle);
 
                 // mark the original asset as extracted
                 extracted_assets.insert(untyped_handle, render_handle.into_untyped());
@@ -118,16 +124,17 @@ fn extract_render_asset<T: RenderAsset>(mut render_world: WriteWorld) -> Result<
     Ok(())
 }
 
-fn update_render_asset<T: RenderAsset>(mut render_world: WriteWorld) -> Result<()> {
-    let main_world = render_world.get_resource::<MainWorld>().unwrap();
+fn update_render_asset<T: RenderAsset>(
+    main_world: Res<MainWorld>,
+    extracted_handles: Res<ExtractedRenderAssets>,
+    render_assets: Res<Assets>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
+) -> Result<()> {
     let query = main_world.query::<&Handle<T::BaseAsset>>();
 
-    let extracted_handles = render_world
-        .get_resource::<ExtractedRenderAssets>()
-        .unwrap();
-
-    for (_entity, base_handle) in query.iter() {
-        let main_assets = main_world.get_resource::<Assets>().unwrap();
+    for (_entity, base_handle) in query.iter(&main_world) {
+        let main_assets = unsafe { main_world.get_resource_mut_unsafe::<Assets>().unwrap() };
 
         let render_handle = extracted_handles
             .assets
@@ -135,15 +142,10 @@ fn update_render_asset<T: RenderAsset>(mut render_world: WriteWorld) -> Result<(
             .unwrap();
         let render_handle = Handle::<T>::try_from(*render_handle).unwrap();
 
-        let render_assets = render_world.get_resource::<Assets>().unwrap();
         let mut render_asset = render_assets.get_mut::<T>(render_handle).unwrap();
         let base_asset = main_assets.get::<T::BaseAsset>(*base_handle).unwrap();
 
-        render_asset.update_render_asset(
-            &base_asset,
-            &mut main_world.write(),
-            &mut render_world,
-        )?;
+        render_asset.update_render_asset(&base_asset, &main_assets, &device, &queue)?;
     }
 
     Ok(())

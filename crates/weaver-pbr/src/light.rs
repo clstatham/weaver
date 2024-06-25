@@ -8,7 +8,6 @@ use weaver_renderer::{
     buffer::GpuBufferVec,
     extract::{RenderResource, RenderResourcePlugin},
     prelude::*,
-    WgpuDevice, WgpuQueue,
 };
 use weaver_util::prelude::Result;
 
@@ -35,54 +34,42 @@ pub struct GpuPointLightArray {
     pub buffer: GpuBufferVec<PointLightUniform>,
 }
 
-impl RenderResource for GpuPointLightArray {
-    type UpdateQuery = (&'static PointLight, &'static Transform);
+impl Default for GpuPointLightArray {
+    fn default() -> Self {
+        Self {
+            buffer: GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST),
+        }
+    }
+}
 
-    fn extract_render_resource(main_world: &mut World, render_world: &mut World) -> Option<Self>
+impl RenderResource for GpuPointLightArray {
+    fn extract_render_resource(
+        _main_world: &mut World,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<Self>
     where
         Self: Sized,
     {
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
-        let queue = render_world.get_resource::<WgpuQueue>().unwrap();
-        let mut buffer =
-            GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
+        let mut this = Self::default();
 
-        buffer.reserve(1, &device);
+        this.buffer.reserve(1, device);
 
-        let point_lights = main_world.query::<(&PointLight, &Transform)>();
+        this.buffer.enqueue_update(device, queue);
 
-        for (_entity, (point_light, transform)) in point_lights.iter() {
-            let uniform = PointLightUniform {
-                position: transform.translation,
-                color: point_light.color,
-                intensity: if point_light.enabled {
-                    point_light.intensity
-                } else {
-                    0.0
-                },
-                radius: point_light.radius,
-                _padding: 0,
-            };
-            buffer.push(uniform);
-        }
-
-        buffer.enqueue_update(&device, &queue);
-
-        Some(Self { buffer })
+        Some(this)
     }
 
     fn update_render_resource(
         &mut self,
         main_world: &mut World,
-        render_world: &mut World,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
     ) -> Result<()> {
         let point_lights = main_world.query::<(&PointLight, &Transform)>();
 
-        let device = render_world.get_resource::<WgpuDevice>().unwrap();
-        let queue = render_world.get_resource::<WgpuQueue>().unwrap();
-
         self.buffer.clear();
-        for (_entity, (point_light, transform)) in point_lights.iter() {
+        for (_entity, (point_light, transform)) in point_lights.iter(main_world) {
             let uniform = PointLightUniform {
                 position: transform.translation,
                 color: point_light.color,
@@ -97,7 +84,7 @@ impl RenderResource for GpuPointLightArray {
             self.buffer.push(uniform);
         }
 
-        self.buffer.enqueue_update(&device, &queue);
+        self.buffer.enqueue_update(device, queue);
 
         Ok(())
     }
@@ -125,7 +112,6 @@ impl CreateBindGroup for GpuPointLightArray {
 
     fn create_bind_group(
         &self,
-        _render_world: &World,
         device: &wgpu::Device,
         cached_layout: &BindGroupLayout,
     ) -> wgpu::BindGroup {

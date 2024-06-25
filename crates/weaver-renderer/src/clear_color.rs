@@ -1,11 +1,7 @@
 use weaver_app::{plugin::Plugin, App};
 use weaver_core::color::Color;
 use weaver_ecs::{
-    component::Res,
-    prelude::Resource,
-    storage::Ref,
-    system::SystemParamItem,
-    world::{World, WorldLock},
+    component::Res, prelude::Resource, storage::Ref, system::SystemParamItem, world::World,
 };
 use weaver_util::prelude::Result;
 
@@ -21,21 +17,24 @@ use crate::{
 pub struct ClearColor(pub Color);
 
 impl RenderResource for ClearColor {
-    type UpdateQuery = ();
-
-    fn extract_render_resource(main_world: &mut World, _render_world: &mut World) -> Option<Self>
+    fn extract_render_resource(
+        main_world: &mut World,
+        _device: &wgpu::Device,
+        _queue: &wgpu::Queue,
+    ) -> Option<Self>
     where
         Self: Sized,
     {
-        main_world.get_resource::<Self>().as_deref().cloned()
+        main_world.get_resource_mut::<Self>().as_deref().cloned()
     }
 
     fn update_render_resource(
         &mut self,
         main_world: &mut World,
-        _render_world: &mut World,
+        _device: &wgpu::Device,
+        _queue: &wgpu::Queue,
     ) -> Result<()> {
-        if let Some(clear_color) = main_world.get_resource::<ClearColor>() {
+        if let Some(clear_color) = main_world.get_resource_mut::<ClearColor>() {
             self.0 = clear_color.0;
         }
         Ok(())
@@ -84,12 +83,12 @@ impl Default for ClearColorNode {
 }
 
 impl ViewNode for ClearColorNode {
-    type Param = Res<HdrRenderTarget>;
+    type Param = Res<'static, HdrRenderTarget>;
     type ViewQueryFetch = &'static ViewTarget;
     type ViewQueryFilter = ();
 
-    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
-        if let Some(clear_color) = render_world.get_resource::<ClearColor>() {
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
+        if let Some(clear_color) = render_world.get_resource_mut::<ClearColor>() {
             self.color = clear_color.0;
         }
         Ok(())
@@ -97,7 +96,7 @@ impl ViewNode for ClearColorNode {
 
     fn run(
         &self,
-        _render_world: &WorldLock,
+        _render_world: &World,
         _graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
         hdr_target: &SystemParamItem<Self::Param>,

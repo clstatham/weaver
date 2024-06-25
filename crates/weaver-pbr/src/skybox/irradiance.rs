@@ -3,14 +3,11 @@ use std::{path::Path, sync::Arc};
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::prelude::{Resource, World};
 use weaver_renderer::{
-    extract::{RenderResource, RenderResourceDependencyPlugin},
+    extract::{RenderResource, RenderResourcePlugin},
     prelude::wgpu,
-    WgpuDevice, WgpuQueue,
 };
 use weaver_util::prelude::Result;
 use wgpu::util::DeviceExt;
-
-use crate::prelude::GpuSkybox;
 
 use super::Skybox;
 
@@ -111,15 +108,14 @@ pub(crate) struct GpuSkyboxIrradiance {
 }
 
 impl RenderResource for GpuSkyboxIrradiance {
-    type UpdateQuery = ();
-
-    fn extract_render_resource(main_world: &mut World, render_world: &mut World) -> Option<Self>
+    fn extract_render_resource(
+        main_world: &mut World,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<Self>
     where
         Self: Sized,
     {
-        let device = render_world.get_resource::<WgpuDevice>()?;
-        let queue = render_world.get_resource::<WgpuQueue>()?;
-
         let skybox = main_world.get_resource::<Skybox>()?;
         let Skybox {
             diffuse_path,
@@ -128,9 +124,9 @@ impl RenderResource for GpuSkyboxIrradiance {
             ..
         } = &*skybox;
 
-        let diffuse = load_ktx(diffuse_path, &device, &queue).unwrap();
-        let specular = load_ktx(specular_path, &device, &queue).unwrap();
-        let brdf_lut_texture = load_png(brdf_lut_path, &device, &queue).unwrap();
+        let diffuse = load_ktx(diffuse_path, device, queue).unwrap();
+        let specular = load_ktx(specular_path, device, queue).unwrap();
+        let brdf_lut_texture = load_png(brdf_lut_path, device, queue).unwrap();
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("skybox_sampler"),
@@ -175,7 +171,8 @@ impl RenderResource for GpuSkyboxIrradiance {
     fn update_render_resource(
         &mut self,
         _main_world: &mut World,
-        _render_world: &mut World,
+        _device: &wgpu::Device,
+        _queue: &wgpu::Queue,
     ) -> Result<()> {
         Ok(())
     }
@@ -185,10 +182,7 @@ pub struct SkyboxIrradiancePlugin;
 
 impl Plugin for SkyboxIrradiancePlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_plugin(RenderResourceDependencyPlugin::<
-            GpuSkyboxIrradiance,
-            GpuSkybox,
-        >::default())?;
+        app.add_plugin(RenderResourcePlugin::<GpuSkyboxIrradiance>::default())?;
 
         Ok(())
     }

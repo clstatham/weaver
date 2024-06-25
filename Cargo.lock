@@ -217,6 +217,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "atomic_refcell"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41e67cd8309bbd06cd603a9e693a784ac2e5d1e955f11286e355089fcab3047c"
+
+[[package]]
 name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2947,6 +2953,7 @@ dependencies = [
 name = "weaver-asset"
 version = "0.1.0"
 dependencies = [
+ "atomic_refcell",
  "weaver-app",
  "weaver-asset-macros",
  "weaver-ecs",
@@ -2994,6 +3001,7 @@ dependencies = [
 name = "weaver-ecs"
 version = "0.1.0"
 dependencies = [
+ "atomic_refcell",
  "glam 0.27.0",
  "itertools 0.13.0",
  "log",

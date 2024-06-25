@@ -5,11 +5,11 @@ use weaver_ecs::{
     entity::Entity,
     prelude::Resource,
     query::{QueryFetch, QueryFilter},
-    world::WorldLock,
+    world::World,
 };
 use weaver_util::{
     lock::{ArcRead, ArcWrite, Read, SharedLock, Write},
-    prelude::Result,
+    prelude::{impl_downcast, DowncastSync, Result},
     TypeIdMap,
 };
 
@@ -38,7 +38,7 @@ pub trait DrawItem: Send + Sync + 'static {
 
 pub trait FromDrawItemQuery<T: DrawItem> {
     fn from_draw_item_query(
-        query: <T::QueryFetch as QueryFetch>::Item,
+        query: <T::QueryFetch as QueryFetch>::Item<'_>,
         draw_fn_id: DrawFnId,
     ) -> Self;
 }
@@ -50,20 +50,21 @@ pub trait BinnedDrawItem: DrawItem + Sized {
     fn new(key: Self::Key, entity: Entity, batch_range: Range<u32>) -> Self;
 }
 
-pub trait DrawFn<T: DrawItem>: 'static + Send + Sync {
+pub trait DrawFn<T: DrawItem>: DowncastSync {
     #[allow(unused_variables)]
-    fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
+    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
         Ok(())
     }
 
     fn draw<'w>(
         &mut self,
-        render_world: &'w WorldLock,
+        render_world: &'w World,
         render_pass: &mut wgpu::RenderPass<'w>,
         view_entity: Entity,
         item: T,
     ) -> Result<()>;
 }
+impl_downcast!(DrawFn<T> where T: DrawItem);
 
 pub struct DrawFunctionsInner<T: DrawItem> {
     functions: Vec<Box<dyn DrawFn<T>>>,
@@ -79,7 +80,7 @@ impl<T: DrawItem> DrawFunctionsInner<T> {
         }
     }
 
-    pub fn prepare(&mut self, render_world: &WorldLock) -> Result<()> {
+    pub fn prepare(&mut self, render_world: &mut World) -> Result<()> {
         for function in self.functions.iter_mut() {
             function.prepare(render_world)?;
         }
@@ -93,11 +94,11 @@ impl<T: DrawItem> DrawFunctionsInner<T> {
         id
     }
 
-    pub fn get(&self, id: DrawFnId) -> Option<&dyn DrawFn<T>> {
+    pub fn get(&self, id: DrawFnId) -> Option<&'_ dyn DrawFn<T>> {
         self.functions.get(id.id() as usize).map(|f| f.as_ref())
     }
 
-    pub fn get_mut(&mut self, id: DrawFnId) -> Option<&mut dyn DrawFn<T>> {
+    pub fn get_mut(&mut self, id: DrawFnId) -> Option<&'_ mut dyn DrawFn<T>> {
         self.functions.get_mut(id.id() as usize).map(|f| f.as_mut())
     }
 

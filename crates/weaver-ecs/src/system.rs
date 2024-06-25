@@ -5,8 +5,7 @@ use std::{
 
 use crate::{
     component::{Res, ResMut},
-    prelude::{Query, ReadWorld, Resource, WorldLock, WriteWorld},
-    query::{QueryAccess, QueryFetch, QueryFilter},
+    prelude::{Resource, World},
 };
 use petgraph::{prelude::*, visit::Topo};
 use weaver_util::{
@@ -43,10 +42,10 @@ pub trait System: 'static + Send + Sync {
     }
     fn access(&self) -> SystemAccess;
     #[allow(unused)]
-    fn initialize(&mut self, world: &WorldLock) {}
-    fn run_locked(&mut self, world: &WorldLock) -> Result<()>;
+    fn initialize(&mut self, world: &mut World) {}
+    fn run_locked(&mut self, world: &mut World) -> Result<()>;
     #[allow(unused)]
-    fn can_run(&self, world: &WorldLock) -> bool {
+    fn can_run(&self, world: &World) -> bool {
         true
     }
 }
@@ -63,7 +62,7 @@ pub struct SystemState<P: SystemParam + 'static> {
 }
 
 impl<P: SystemParam> SystemState<P> {
-    pub fn new(world: &WorldLock) -> Self {
+    pub fn new(world: &mut World) -> Self {
         Self {
             access: P::access(),
             state: P::init_state(world),
@@ -74,8 +73,76 @@ impl<P: SystemParam> SystemState<P> {
         &self.access
     }
 
-    pub fn get<'w, 's>(&'s mut self, world: &'w WorldLock) -> SystemParamItem<'w, 's, P> {
-        P::fetch(&mut self.state, world)
+    pub fn get<'w, 's>(&'s mut self, world: &'w World) -> SystemParamItem<'w, 's, P> {
+        // validate access
+        self.access();
+        unsafe { P::fetch(&mut self.state, world) }
+    }
+}
+
+impl<P: SystemParam> SystemParam for SystemState<P> {
+    type State = P::State;
+    type Item<'w, 's> = P::Item<'w, 's>;
+
+    fn validate_access(access: &SystemAccess) -> bool {
+        P::validate_access(access)
+    }
+
+    fn access() -> SystemAccess {
+        P::access()
+    }
+
+    fn init_state(world: &mut World) -> Self::State {
+        P::init_state(world)
+    }
+
+    unsafe fn fetch<'w, 's>(state: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's> {
+        // validate access
+        P::access();
+        unsafe { P::fetch(state, world) }
+    }
+
+    fn can_run(world: &World) -> bool {
+        P::can_run(world)
+    }
+}
+
+pub struct SystemParamWrapper<'w, 's, P: SystemParam> {
+    item: SystemParamItem<'w, 's, P>,
+}
+
+impl<'w, 's, P: SystemParam> SystemParamWrapper<'w, 's, P> {
+    pub fn item(&self) -> &P::Item<'w, 's> {
+        &self.item
+    }
+
+    pub fn into_inner(self) -> P::Item<'w, 's> {
+        self.item
+    }
+}
+
+impl<'w2, 's2, P: SystemParam> SystemParam for SystemParamWrapper<'w2, 's2, P> {
+    type State = P::State;
+    type Item<'w, 's> = P::Item<'w, 's>;
+
+    fn validate_access(access: &SystemAccess) -> bool {
+        P::validate_access(access)
+    }
+
+    fn access() -> SystemAccess {
+        P::access()
+    }
+
+    fn init_state(world: &mut World) -> Self::State {
+        P::init_state(world)
+    }
+
+    unsafe fn fetch<'w, 's>(state: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's> {
+        unsafe { P::fetch(state, world) }
+    }
+
+    fn can_run(world: &World) -> bool {
+        P::can_run(world)
     }
 }
 
@@ -83,14 +150,22 @@ pub trait SystemParam {
     type State: Send + Sync;
     type Item<'w, 's>: SystemParam<State = Self::State>;
 
+    fn validate_access(access: &SystemAccess) -> bool;
+
     fn access() -> SystemAccess;
 
-    fn init_state(world: &WorldLock) -> Self::State;
+    fn init_state(world: &mut World) -> Self::State;
 
-    fn fetch<'w, 's>(state: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's>;
+    /// # Safety
+    ///
+    /// Caller must ensure that all system params being used are valid for simultaneous access.
+    unsafe fn fetch<'w, 's>(state: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's>;
 
     #[allow(unused)]
-    fn can_run(world: &WorldLock) -> bool {
+    fn apply(state: &mut Self::State, world: &mut World) {}
+
+    #[allow(unused)]
+    fn can_run(world: &World) -> bool {
         true
     }
 }
@@ -115,23 +190,27 @@ impl<'w, 's, T: SystemParam> ParamSet<'w, 's, T> {
     }
 }
 
-impl<'w2, 's2, T: SystemParam> SystemParam for ParamSet<'w2, 's2, T> {
+impl<T: SystemParam> SystemParam for ParamSet<'_, '_, T> {
     type State = T::State;
     type Item<'w, 's> = T::Item<'w, 's>;
+
+    fn validate_access(access: &SystemAccess) -> bool {
+        T::validate_access(access)
+    }
 
     fn access() -> SystemAccess {
         T::access()
     }
 
-    fn init_state(world: &WorldLock) -> Self::State {
+    fn init_state(world: &mut World) -> Self::State {
         T::init_state(world)
     }
 
-    fn fetch<'w, 's>(state: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
-        T::fetch(state, world)
+    unsafe fn fetch<'w, 's>(state: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's> {
+        unsafe { T::fetch(state, world) }
     }
 
-    fn can_run(world: &WorldLock) -> bool {
+    fn can_run(world: &World) -> bool {
         T::can_run(world)
     }
 }
@@ -140,7 +219,11 @@ impl SystemParam for () {
     type State = ();
     type Item<'w, 's> = ();
 
-    fn init_state(_: &WorldLock) -> Self::State {}
+    fn validate_access(_access: &SystemAccess) -> bool {
+        true
+    }
+
+    fn init_state(_: &mut World) -> Self::State {}
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -152,74 +235,27 @@ impl SystemParam for () {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, _world: &'w WorldLock) -> Self::Item<'w, 's> {}
+    unsafe fn fetch<'w, 's>(_: &'s mut Self::State, _world: &'w World) -> Self::Item<'w, 's> {}
 
-    fn can_run(_: &WorldLock) -> bool {
+    fn can_run(_: &World) -> bool {
         true
     }
 }
 
 impl ReadOnlySystemParam for () {}
 
-impl<Q, F> SystemParam for Query<Q, F>
-where
-    Q: QueryFetch,
-    F: QueryFilter,
-{
+impl<T: Resource> SystemParam for Res<'_, T> {
     type State = ();
-    type Item<'w, 's> = Query<Q, F>;
+    type Item<'w, 's> = Res<'w, T>;
 
-    fn init_state(_: &WorldLock) -> Self::State {}
-
-    fn access() -> SystemAccess {
-        SystemAccess {
-            exclusive: false,
-            resources_read: Vec::new(),
-            resources_written: Vec::new(),
-            components_read: Q::access()
-                .iter()
-                .filter_map(|(ty, access)| {
-                    if let QueryAccess::ReadOnly = access {
-                        Some(*ty)
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
-            components_written: Q::access()
-                .iter()
-                .filter_map(|(ty, access)| {
-                    if let QueryAccess::ReadWrite = access {
-                        Some(*ty)
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
+    fn validate_access(access: &SystemAccess) -> bool {
+        if access.resources_written.contains(&TypeId::of::<T>()) {
+            return false;
         }
-    }
-
-    fn fetch<'w, 's>(_state: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
-        world.query_filtered()
-    }
-
-    fn can_run(_world: &WorldLock) -> bool {
         true
     }
-}
 
-impl<Q, F> ReadOnlySystemParam for Query<Q, F>
-where
-    Q: QueryFetch,
-    F: QueryFilter,
-{
-}
-
-impl<T: Resource> SystemParam for Res<T> {
-    type State = ();
-    type Item<'w, 's> = Res<T>;
-
-    fn init_state(_: &WorldLock) -> Self::State {}
+    fn init_state(_: &mut World) -> Self::State {}
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -231,11 +267,14 @@ impl<T: Resource> SystemParam for Res<T> {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
-        world.get_resource::<T>().unwrap()
+    /// # Safety
+    ///
+    /// Caller must ensure that the resource exists and that we have shared access to it
+    unsafe fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's> {
+        unsafe { world.get_resource_unsafe::<T>().unwrap() }
     }
 
-    fn can_run(world: &WorldLock) -> bool {
+    fn can_run(world: &World) -> bool {
         if !world.has_resource::<T>() {
             warn_once!("Res: Missing resource: {}", std::any::type_name::<T>());
             return false;
@@ -244,13 +283,57 @@ impl<T: Resource> SystemParam for Res<T> {
     }
 }
 
-impl<T: Resource> ReadOnlySystemParam for Res<T> {}
+impl<T: Resource> ReadOnlySystemParam for Res<'_, T> {}
 
-impl<T: Resource> SystemParam for ResMut<T> {
+impl<T: Resource> SystemParam for Option<Res<'_, T>> {
     type State = ();
-    type Item<'w, 's> = ResMut<T>;
+    type Item<'w, 's> = Option<Res<'w, T>>;
 
-    fn init_state(_: &WorldLock) -> Self::State {}
+    fn validate_access(access: &SystemAccess) -> bool {
+        if access.resources_written.contains(&TypeId::of::<T>()) {
+            return false;
+        }
+        true
+    }
+
+    fn init_state(_: &mut World) -> Self::State {}
+
+    fn access() -> SystemAccess {
+        SystemAccess {
+            exclusive: false,
+            resources_read: vec![TypeId::of::<T>()],
+            resources_written: Vec::new(),
+            components_read: Vec::new(),
+            components_written: Vec::new(),
+        }
+    }
+
+    /// # Safety
+    ///
+    /// Caller must ensure that the resource exists and that we have shared access to it
+    unsafe fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's> {
+        unsafe { world.get_resource_unsafe::<T>() }
+    }
+
+    fn can_run(_world: &World) -> bool {
+        true
+    }
+}
+
+impl<T: Resource> SystemParam for ResMut<'_, T> {
+    type State = ();
+    type Item<'w, 's> = ResMut<'w, T>;
+
+    fn validate_access(access: &SystemAccess) -> bool {
+        if access.resources_read.contains(&TypeId::of::<T>())
+            || access.resources_written.contains(&TypeId::of::<T>())
+        {
+            return false;
+        }
+        true
+    }
+
+    fn init_state(_: &mut World) -> Self::State {}
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -262,11 +345,14 @@ impl<T: Resource> SystemParam for ResMut<T> {
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
-        world.get_resource_mut::<T>().unwrap()
+    /// # Safety
+    ///
+    /// Caller must ensure that the resource exists and that we have exclusive access to it
+    unsafe fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's> {
+        unsafe { world.get_resource_mut_unsafe::<T>().unwrap() }
     }
 
-    fn can_run(world: &WorldLock) -> bool {
+    fn can_run(world: &World) -> bool {
         if !world.has_resource::<T>() {
             warn_once!("ResMut: Missing resource: {}", std::any::type_name::<T>());
             return false;
@@ -275,109 +361,41 @@ impl<T: Resource> SystemParam for ResMut<T> {
     }
 }
 
-impl<T: Resource> ReadOnlySystemParam for ResMut<T> {}
+impl<T: Resource> ReadOnlySystemParam for ResMut<'_, T> {}
 
-impl SystemParam for WorldLock {
+impl<T: Resource> SystemParam for Option<ResMut<'_, T>> {
     type State = ();
-    type Item<'w, 's> = WorldLock;
+    type Item<'w, 's> = Option<ResMut<'w, T>>;
 
-    fn init_state(_: &WorldLock) -> Self::State {}
-
-    fn access() -> SystemAccess {
-        SystemAccess {
-            exclusive: true,
-            resources_read: Vec::new(),
-            resources_written: Vec::new(),
-            components_read: Vec::new(),
-            components_written: Vec::new(),
+    fn validate_access(access: &SystemAccess) -> bool {
+        if access.resources_read.contains(&TypeId::of::<T>())
+            || access.resources_written.contains(&TypeId::of::<T>())
+        {
+            return false;
         }
-    }
-
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
-        world.clone()
-    }
-
-    fn can_run(_world: &WorldLock) -> bool {
         true
     }
-}
 
-impl SystemParam for ReadWorld {
-    type State = ();
-    type Item<'w, 's> = Self;
-
-    fn init_state(_: &WorldLock) -> Self::State {}
+    fn init_state(_: &mut World) -> Self::State {}
 
     fn access() -> SystemAccess {
         SystemAccess {
             exclusive: false,
             resources_read: Vec::new(),
-            resources_written: Vec::new(),
+            resources_written: vec![TypeId::of::<T>()],
             components_read: Vec::new(),
             components_written: Vec::new(),
         }
     }
 
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
-        world.read()
+    /// # Safety
+    ///
+    /// Caller must ensure that the resource exists and that we have exclusive access to it
+    unsafe fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's> {
+        unsafe { world.get_resource_mut_unsafe::<T>() }
     }
 
-    fn can_run(_world: &WorldLock) -> bool {
-        true
-    }
-}
-
-impl ReadOnlySystemParam for ReadWorld {}
-
-impl SystemParam for WriteWorld {
-    type State = ();
-    type Item<'w, 's> = Self;
-
-    fn init_state(_: &WorldLock) -> Self::State {}
-
-    fn access() -> SystemAccess {
-        SystemAccess {
-            exclusive: true,
-            resources_read: Vec::new(),
-            resources_written: Vec::new(),
-            components_read: Vec::new(),
-            components_written: Vec::new(),
-        }
-    }
-
-    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
-        world.write()
-    }
-
-    fn can_run(_world: &WorldLock) -> bool {
-        true
-    }
-}
-
-#[derive(Default)]
-pub struct ExclusiveSystemMarker;
-
-impl SystemParam for ExclusiveSystemMarker {
-    type State = ();
-    type Item<'w, 's> = ExclusiveSystemMarker;
-
-    fn init_state(_: &WorldLock) -> Self::State {}
-
-    fn access() -> SystemAccess {
-        SystemAccess {
-            exclusive: true,
-            resources_read: Vec::new(),
-            resources_written: Vec::new(),
-            components_read: Vec::new(),
-            components_written: Vec::new(),
-        }
-    }
-
-    fn fetch<'w, 's>(_: &'s mut Self::State, _world: &'w WorldLock) -> Self::Item<'w, 's> {
-        ExclusiveSystemMarker
-    }
-
-    fn can_run(_world: &WorldLock) -> bool {
+    fn can_run(_world: &World) -> bool {
         true
     }
 }
@@ -392,7 +410,17 @@ macro_rules! impl_system_param_tuple {
             type State = ($($param::State),*);
             type Item<'w, 's> = ($($param::Item<'w, 's>),*);
 
-            fn init_state(world: &WorldLock) -> Self::State {
+            fn validate_access(access: &SystemAccess) -> bool {
+                $(
+                    if !$param::validate_access(access) {
+                        return false;
+                    }
+                )*
+
+                true
+            }
+
+            fn init_state(world: &mut World) -> Self::State {
                 ($($param::init_state(world)),*)
             }
 
@@ -406,18 +434,19 @@ macro_rules! impl_system_param_tuple {
                 };
 
                 $(
+                    assert!($param::validate_access(&access), "SystemParam validation failed");
                     access.extend($param::access());
                 )*
 
                 access
             }
 
-            fn fetch<'w, 's>(state: &'s mut Self::State, world: &'w WorldLock) -> Self::Item<'w, 's> {
+            unsafe fn fetch<'w, 's>(state: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's> {
                 let ($($param),*) = state;
-                ($($param::fetch($param, world)),*)
+                unsafe { ($($param::fetch($param, world)),*) }
             }
 
-            fn can_run(world: &WorldLock) -> bool {
+            fn can_run(world: &World) -> bool {
                 $(
                     if !$param::can_run(world) {
                         return false;
@@ -478,7 +507,7 @@ where
     M: 'static,
     F: SystemParamFunction<M>,
 {
-    fn initialize(&mut self, world: &WorldLock) {
+    fn initialize(&mut self, world: &mut World) {
         let param_state = SystemState {
             access: F::Param::access(),
             state: F::Param::init_state(world),
@@ -490,18 +519,28 @@ where
         F::Param::access()
     }
 
-    fn run_locked(&mut self, world: &WorldLock) -> Result<()> {
+    fn run_locked(&mut self, world: &mut World) -> Result<()> {
+        // validate access
+        self.access();
         let param_state = self.param_state.as_mut().unwrap();
-        let fetch = F::Param::fetch(&mut param_state.state, world);
-        self.func.run(fetch)
+        // SAFETY:
+        // - We have mutable access to the World.
+        // - We have validated that the access is safe.
+
+        let fetch = unsafe { F::Param::fetch(&mut param_state.state, world) };
+        self.func.run(fetch)?;
+        F::Param::apply(&mut param_state.state, world);
+        Ok(())
     }
 
-    fn can_run(&self, world: &WorldLock) -> bool {
+    fn can_run(&self, world: &World) -> bool {
         F::Param::can_run(world)
     }
 }
 
-impl<M, F> IntoSystem<M> for F
+pub struct FunctionSystemMarker;
+
+impl<M, F> IntoSystem<(FunctionSystemMarker, M)> for F
 where
     M: 'static,
     F: SystemParamFunction<M>,
@@ -553,6 +592,143 @@ impl_function_system!(A, B, C, D, E);
 impl_function_system!(A, B, C, D, E, F);
 impl_function_system!(A, B, C, D, E, F, G);
 impl_function_system!(A, B, C, D, E, F, G, H);
+
+pub trait ExclusiveSystemParam {
+    type State: Send + Sync;
+    type Item<'w, 's>: ExclusiveSystemParam<State = Self::State>;
+
+    fn init_state(world: &mut World) -> Self::State;
+
+    fn fetch<'w, 's>(state: &'s mut Self::State, world: &'w mut World) -> Self::Item<'w, 's>;
+
+    #[allow(unused)]
+    fn can_run(world: &World) -> bool {
+        true
+    }
+}
+
+pub type ExclusiveSystemParamItem<'w, 's, P> = <P as ExclusiveSystemParam>::Item<'w, 's>;
+
+impl ExclusiveSystemParam for &mut World {
+    type State = ();
+    type Item<'w, 's> = &'w mut World;
+
+    fn init_state(_: &mut World) -> Self::State {}
+
+    fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w mut World) -> Self::Item<'w, 's> {
+        world
+    }
+
+    fn can_run(_: &World) -> bool {
+        true
+    }
+}
+
+pub trait ExclusiveSystemParamFunction<M>: Send + Sync + 'static {
+    type Param: ExclusiveSystemParam + Send + Sync + 'static;
+    fn run(&mut self, param: ExclusiveSystemParamItem<Self::Param>) -> Result<()>;
+}
+
+impl<F> ExclusiveSystemParamFunction<fn(&mut World)> for F
+where
+    F: FnMut(&mut World) -> Result<()> + Send + Sync + 'static,
+{
+    type Param = &'static mut World;
+
+    fn run(&mut self, world: &mut World) -> Result<()> {
+        self(world)
+    }
+}
+
+pub struct ExclusiveSystemState<P: ExclusiveSystemParam> {
+    state: P::State,
+    _phantom: std::marker::PhantomData<P>,
+}
+
+impl<P: ExclusiveSystemParam> ExclusiveSystemState<P> {
+    pub fn new(world: &mut World) -> Self {
+        Self {
+            state: P::init_state(world),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    pub fn get<'w, 's>(&'s mut self, world: &'w mut World) -> ExclusiveSystemParamItem<'w, 's, P> {
+        P::fetch(&mut self.state, world)
+    }
+}
+
+pub struct ExclusiveFunctionSystem<M, F>
+where
+    M: 'static,
+    F: ExclusiveSystemParamFunction<M>,
+{
+    func: F,
+    param: Option<ExclusiveSystemState<F::Param>>,
+    _marker: std::marker::PhantomData<fn() -> M>,
+}
+
+impl<M, F> ExclusiveFunctionSystem<M, F>
+where
+    M: 'static,
+    F: ExclusiveSystemParamFunction<M>,
+{
+    pub const fn new(func: F) -> Self {
+        Self {
+            func,
+            param: None,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<M, F> System for ExclusiveFunctionSystem<M, F>
+where
+    M: 'static,
+    F: ExclusiveSystemParamFunction<M>,
+{
+    fn access(&self) -> SystemAccess {
+        SystemAccess {
+            exclusive: true,
+            resources_read: Vec::new(),
+            resources_written: Vec::new(),
+            components_read: Vec::new(),
+            components_written: Vec::new(),
+        }
+    }
+
+    fn initialize(&mut self, world: &mut World) {
+        let param = ExclusiveSystemState {
+            state: F::Param::init_state(world),
+            _phantom: std::marker::PhantomData,
+        };
+        self.param = Some(param);
+    }
+
+    fn run_locked(&mut self, world: &mut World) -> Result<()> {
+        let param = self.param.as_mut().unwrap();
+        let item = param.get(world);
+        self.func.run(item)
+    }
+}
+
+pub struct ExclusiveFunctionSystemMarker;
+
+impl<M, F> IntoSystem<(ExclusiveFunctionSystemMarker, M)> for F
+where
+    M: 'static,
+    F: ExclusiveSystemParamFunction<M>,
+{
+    type System = ExclusiveFunctionSystem<M, F>;
+
+    fn into_system(self) -> Self::System {
+        ExclusiveFunctionSystem {
+            func: self,
+            param: None,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
 
 pub fn assert_is_system<Marker>(_: impl IntoSystem<Marker>) {}
 pub fn assert_is_non_exclusive_system<Marker, S>(system: S)
@@ -720,49 +896,15 @@ impl SystemGraph {
         Ok(())
     }
 
-    pub fn run(&mut self, world: &WorldLock) -> Result<()> {
+    pub fn run(&mut self, world: &mut World) -> Result<()> {
         let mut schedule = Topo::new(&self.systems);
         while let Some(node) = schedule.next(&self.systems) {
             let system = &mut self.systems[node];
-            system.write().initialize(world);
-            system.write().run_locked(world)?;
-        }
-
-        Ok(())
-    }
-
-    pub fn run_parallel(&mut self, world: &WorldLock) -> Result<()> {
-        self.resolve_dependencies(100).unwrap();
-        let layers = self.get_layers();
-        for (i, layer) in layers.iter().enumerate() {
-            let mut systems_can_run = HashSet::new();
-            for &node in layer {
-                let system = &self.systems[node];
-                if system.read().can_run(world) {
-                    systems_can_run.insert(node);
-                }
-            }
-
-            for &node in layer.iter().filter(|&node| systems_can_run.contains(node)) {
-                let system = &mut self.systems[node];
-                system.write().initialize(world);
-            }
-
-            if layer.len() == 1 && systems_can_run.contains(&layer[0]) {
-                let system = &mut self.systems[layer[0]];
-                system.write().run_locked(world)?;
+            if !system.read().can_run(world) {
                 continue;
             }
-
-            log::trace!("Layer {i}: Running {} systems in parallel.", layer.len());
-
-            rayon::scope(|s| {
-                for &node in layer.iter().filter(|&node| systems_can_run.contains(node)) {
-                    let world = world.clone();
-                    let system = self.systems[node].clone();
-                    s.spawn(move |_| system.write().run_locked(&world).unwrap());
-                }
-            });
+            system.write().initialize(world);
+            system.write().run_locked(world)?;
         }
 
         Ok(())

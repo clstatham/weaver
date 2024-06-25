@@ -175,20 +175,16 @@ impl Plugin for EguiPlugin {
         Ok(())
     }
     fn finish(&self, app: &mut App) -> Result<()> {
-        let Some(window) = app.main_app().get_resource::<Window>() else {
+        let Some(window) = app.main_app_mut().get_resource_mut::<Window>() else {
             return Ok(());
         };
+        let window = window.clone();
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
-        let Some(renderer) = render_app.get_resource::<weaver_renderer::Renderer>() else {
-            return Ok(());
-        };
-
-        let device = render_app.get_resource::<WgpuDevice>().unwrap();
+        let device = render_app.get_resource_mut::<WgpuDevice>().unwrap();
         let egui_context = EguiContext::new(&device, &window, 1);
-        drop(renderer);
         drop(window);
         render_app.insert_resource(egui_context.clone());
-        app.main_app().insert_resource(egui_context);
+        app.main_app_mut().insert_resource(egui_context);
 
         Ok(())
     }
