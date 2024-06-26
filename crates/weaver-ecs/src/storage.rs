@@ -5,7 +5,7 @@ use std::{
     ops::Deref,
 };
 
-use weaver_util::lock::SharedLock;
+use weaver_util::lock::{Lock, Read, Write};
 
 use crate::prelude::{
     Bundle, ChangeDetection, ChangeDetectionMut, ComponentTicks, Tick, Ticks, TicksMut,
@@ -68,8 +68,8 @@ impl Data {
 
 pub struct SparseSet<T> {
     pub(crate) dense: Vec<T>,
-    pub(crate) dense_added_ticks: Vec<SharedLock<Tick>>,
-    pub(crate) dense_changed_ticks: Vec<SharedLock<Tick>>,
+    pub(crate) dense_added_ticks: Vec<Lock<Tick>>,
+    pub(crate) dense_changed_ticks: Vec<Lock<Tick>>,
     sparse: Vec<Option<usize>>,
     indices: Vec<usize>,
 }
@@ -106,9 +106,8 @@ impl<T> SparseSet<T> {
                 let index = self.dense.len();
 
                 self.dense.push(data);
-                self.dense_added_ticks.push(SharedLock::new(ticks.added));
-                self.dense_changed_ticks
-                    .push(SharedLock::new(ticks.changed));
+                self.dense_added_ticks.push(Lock::new(ticks.added));
+                self.dense_changed_ticks.push(Lock::new(ticks.changed));
 
                 if id >= self.sparse.len() {
                     self.sparse.resize(id + 1, None);
@@ -176,14 +175,12 @@ impl<T> SparseSet<T> {
         self.dense.iter_mut()
     }
 
-    pub fn iter_with_ticks(
-        &self,
-    ) -> impl Iterator<Item = (&T, SharedLock<Tick>, SharedLock<Tick>)> + '_ {
+    pub fn iter_with_ticks(&self) -> impl Iterator<Item = (&T, Read<Tick>, Read<Tick>)> + '_ {
         self.dense
             .iter()
             .zip(self.dense_added_ticks.iter())
             .zip(self.dense_changed_ticks.iter())
-            .map(|((data, added), changed)| (data, added.clone(), changed.clone()))
+            .map(|((data, added), changed)| (data, added.read(), changed.read()))
     }
 
     pub fn sparse_iter(&self) -> std::slice::Iter<'_, usize> {
@@ -192,12 +189,26 @@ impl<T> SparseSet<T> {
 
     pub fn sparse_iter_with_ticks(
         &self,
-    ) -> impl Iterator<Item = (usize, SharedLock<Tick>, SharedLock<Tick>)> + '_ {
+    ) -> impl Iterator<Item = (usize, Read<Tick>, Read<Tick>)> + '_ {
         self.indices.iter().map(move |&index| {
+            let dense_index = self.dense_index_of(index).unwrap();
             (
                 index,
-                self.dense_added_ticks[index].clone(),
-                self.dense_changed_ticks[index].clone(),
+                self.dense_added_ticks[dense_index].read(),
+                self.dense_changed_ticks[dense_index].read(),
+            )
+        })
+    }
+
+    pub fn sparse_iter_with_ticks_mut(
+        &self,
+    ) -> impl Iterator<Item = (usize, Write<Tick>, Write<Tick>)> + '_ {
+        self.indices.iter().map(|&index| {
+            let dense_index = self.dense_index_of(index).unwrap();
+            (
+                index,
+                self.dense_added_ticks[dense_index].write(),
+                self.dense_changed_ticks[dense_index].write(),
             )
         })
     }
@@ -218,18 +229,6 @@ impl<T> SparseSet<T> {
 
     pub fn is_empty(&self) -> bool {
         self.dense.is_empty()
-    }
-
-    pub fn get_ticks(&self, id: usize) -> Option<ComponentTicks> {
-        if id >= self.sparse.len() {
-            return None;
-        }
-
-        let dense_index = self.sparse[id]?;
-        Some(ComponentTicks {
-            added: *self.dense_added_ticks[dense_index].read(),
-            changed: *self.dense_changed_ticks[dense_index].read(),
-        })
     }
 }
 
@@ -372,13 +371,14 @@ impl Archetype {
             .map(|(type_id, column)| (type_id, ColumnRef::new(column)))
     }
 }
+
 pub struct Ref<'w, T: Component> {
     data: &'w T,
-    ticks: Ticks,
+    ticks: Ticks<'w>,
 }
 
 impl<'w, T: Component> Ref<'w, T> {
-    pub(crate) fn new(data: &'w T, ticks: Ticks) -> Self {
+    pub(crate) fn new(data: &'w T, ticks: Ticks<'w>) -> Self {
         Self { data, ticks }
     }
 
@@ -416,11 +416,11 @@ impl<'w, T: Component> ChangeDetection for Ref<'w, T> {
 
 pub struct Mut<'w, T: Component> {
     data: &'w mut T,
-    ticks: TicksMut,
+    ticks: TicksMut<'w>,
 }
 
 impl<'w, T: Component> Mut<'w, T> {
-    pub(crate) fn new(data: &'w mut T, ticks: TicksMut) -> Self {
+    pub(crate) fn new(data: &'w mut T, ticks: TicksMut<'w>) -> Self {
         Self { data, ticks }
     }
 
@@ -558,15 +558,18 @@ impl Storage {
         &mut self,
         entity: Entity,
         component: T,
-        change_tick: Tick,
+        last_run: Tick,
+        this_run: Tick,
     ) {
-        if self.has_component::<T>(entity) {
-            panic!(
-                "entity already has component: {}",
-                std::any::type_name::<T>()
-            );
+        if let Some(mut existing) = self.get_component_mut::<T>(entity, last_run, this_run) {
+            // panic!(
+            //     "entity already has component: {}",
+            //     std::any::type_name::<T>()
+            // );
+            *existing = component;
+            return;
         }
-        self.insert_components(entity, component, change_tick);
+        self.insert_components(entity, component, this_run);
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {
@@ -669,8 +672,8 @@ impl Storage {
             let column = &archetype.columns[&TypeId::of::<T>()];
             let dense_index = column.dense_index_of(entity.as_usize()).unwrap();
             let ticks = Ticks {
-                added: column.dense_added_ticks[dense_index].read_arc(),
-                changed: column.dense_changed_ticks[dense_index].read_arc(),
+                added: column.dense_added_ticks[dense_index].read(),
+                changed: column.dense_changed_ticks[dense_index].read(),
                 last_run,
                 this_run,
             };
@@ -703,8 +706,8 @@ impl Storage {
             let column = archetype.columns.get(&TypeId::of::<T>()).unwrap();
             let dense_index = column.dense_index_of(entity.as_usize()).unwrap();
             let ticks = TicksMut {
-                added: column.dense_added_ticks[dense_index].write_arc(),
-                changed: column.dense_changed_ticks[dense_index].write_arc(),
+                added: column.dense_added_ticks[dense_index].write(),
+                changed: column.dense_changed_ticks[dense_index].write(),
                 last_run,
                 this_run,
             };

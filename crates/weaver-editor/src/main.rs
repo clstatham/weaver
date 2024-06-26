@@ -6,6 +6,7 @@ use weaver::{
     weaver_renderer::{camera::Camera, RendererPlugin},
     weaver_winit::WinitPlugin,
 };
+use weaver_asset::AssetLoader;
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_egui::prelude::*;
@@ -13,7 +14,7 @@ use weaver_renderer::{camera::PrimaryCamera, clear_color::ClearColorPlugin};
 use weaver_winit::Window;
 
 pub mod camera;
-pub mod inspect;
+// pub mod inspect;
 
 #[derive(Component, Reflect)]
 struct Floor;
@@ -48,7 +49,6 @@ fn main() -> Result<()> {
         })?
         .add_plugin(TimePlugin)?
         .add_plugin(InputPlugin)?
-        .add_plugin(AssetPlugin)?
         .add_plugin(RendererPlugin)?
         .add_plugin(PbrPlugin)?
         .add_plugin(GizmoPlugin)?
@@ -69,8 +69,14 @@ fn main() -> Result<()> {
         .run()
 }
 
-fn setup(commands: Commands, mut assets: ResMut<Assets>) -> Result<()> {
-    commands.spawn((
+fn setup(
+    mut world: WorldMut,
+    mut mesh_assets: ResMut<Assets<Mesh>>,
+    mut mesh_loader: AssetLoader<Mesh, MeshLoader>,
+    mut material_assets: ResMut<Assets<Material>>,
+    mut material_loader: AssetLoader<Material, MaterialLoader>,
+) -> Result<()> {
+    world.spawn((
         Camera::perspective_lookat(
             Vec3::new(10.0, 10.0, 10.0),
             Vec3::ZERO,
@@ -88,16 +94,14 @@ fn setup(commands: Commands, mut assets: ResMut<Assets>) -> Result<()> {
         PrimaryCamera,
     ));
 
-    let cube_mesh = assets.load::<Mesh>("assets/meshes/cube.obj")?;
-    let monkey_mesh = assets.load::<Mesh>("assets/meshes/sphere.obj")?;
+    let cube_mesh = mesh_assets.insert(mesh_loader.load("assets/meshes/cube.obj")?);
+    let monkey_mesh = mesh_assets.insert(mesh_loader.load("assets/meshes/sphere.obj")?);
 
-    let material = assets.load::<Material>("assets/materials/wood_tiles.glb")?;
-    {
-        let mut material = assets.get_mut(material).unwrap();
-        material.texture_scale = 100.0;
-    }
+    let mut material = material_loader.load("assets/materials/wood_tiles.glb")?;
+    material.texture_scale = 100.0;
+    let material = material_assets.insert(material);
 
-    commands.spawn((
+    world.spawn((
         cube_mesh,
         material,
         Transform {
@@ -106,7 +110,7 @@ fn setup(commands: Commands, mut assets: ResMut<Assets>) -> Result<()> {
             scale: Vec3::new(20.0, 1.0, 20.0),
         },
         Floor,
-        SelectionAabb::from_mesh(&assets.get(cube_mesh).unwrap()),
+        SelectionAabb::from_mesh(&mesh_assets.get(cube_mesh).unwrap()),
     ));
 
     // // circle of lights
@@ -137,7 +141,7 @@ fn setup(commands: Commands, mut assets: ResMut<Assets>) -> Result<()> {
     //     ));
     // }
 
-    commands.spawn((
+    world.spawn((
         PointLight {
             color: Color::WHITE,
             intensity: 100.0,
@@ -154,17 +158,15 @@ fn setup(commands: Commands, mut assets: ResMut<Assets>) -> Result<()> {
         },
     ));
 
-    let material2 = assets.load::<Material>("assets/materials/metal.glb")?;
-    {
-        let mut material = assets.get_mut(material2).unwrap();
-        material.texture_scale = 20.0;
-    }
+    let mut material2 = material_loader.load("assets/materials/metal.glb")?;
+    material2.texture_scale = 20.0;
+    let material2 = material_assets.insert(material2);
 
     // spawn some meshes
     let count = 10;
     for i in 0..count {
         let angle = i as f32 / count as f32 * std::f32::consts::PI * 2.0;
-        commands.spawn((
+        world.spawn((
             monkey_mesh,
             material2,
             Transform {
@@ -173,7 +175,7 @@ fn setup(commands: Commands, mut assets: ResMut<Assets>) -> Result<()> {
                 scale: Vec3::splat(1.0),
             },
             Object,
-            SelectionAabb::from_mesh(&assets.get(cube_mesh).unwrap()),
+            SelectionAabb::from_mesh(&mesh_assets.get(cube_mesh).unwrap()),
         ));
     }
 
@@ -184,7 +186,7 @@ fn selection_gizmos(
     query: Query<(&Transform, &Handle<Mesh>)>,
     gizmos: Res<Gizmos>,
     state: Res<EditorState>,
-    assets: Res<Assets>,
+    assets: Res<Assets<Mesh>>,
 ) -> Result<()> {
     for (entity, (transform, handle)) in query.iter() {
         if let Some(selected_entity) = state.selected_entity {

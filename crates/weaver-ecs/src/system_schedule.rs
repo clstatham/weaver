@@ -65,9 +65,9 @@ impl SystemSchedule {
             .insert(TypeId::of::<T>(), SystemGraph::default());
     }
 
-    pub fn add_system<S: SystemStage, M>(
+    pub fn add_system<S: SystemStage, M: 'static>(
         &mut self,
-        system: impl IntoSystem<M> + 'static,
+        system: impl IntoSystem<M>,
         _stage: S,
     ) {
         self.systems
@@ -76,10 +76,10 @@ impl SystemSchedule {
             .add_system(system);
     }
 
-    pub fn add_system_before<S: SystemStage, M1, M2>(
+    pub fn add_system_before<S: SystemStage, M1: 'static, M2: 'static>(
         &mut self,
-        system: impl IntoSystem<M1> + 'static,
-        before: impl IntoSystem<M2> + 'static,
+        system: impl IntoSystem<M1>,
+        before: impl IntoSystem<M2>,
         _stage: S,
     ) {
         self.systems
@@ -88,16 +88,27 @@ impl SystemSchedule {
             .add_system_before(system, before);
     }
 
-    pub fn add_system_after<S: SystemStage, M1, M2>(
+    pub fn add_system_after<S: SystemStage, M1: 'static, M2: 'static>(
         &mut self,
-        system: impl IntoSystem<M1> + 'static,
-        after: impl IntoSystem<M2> + 'static,
+        system: impl IntoSystem<M1>,
+        after: impl IntoSystem<M2>,
         _stage: S,
     ) {
         self.systems
             .get_mut(&TypeId::of::<S>())
             .expect("System stage not found")
             .add_system_after(system, after);
+    }
+
+    pub fn has_system<S: SystemStage, M: 'static>(
+        &self,
+        system: &impl IntoSystem<M>,
+        _stage: &S,
+    ) -> bool {
+        self.systems
+            .get(&TypeId::of::<S>())
+            .expect("System stage not found")
+            .has_system(system)
     }
 
     pub fn run_stage<S: SystemStage>(&mut self, world: &mut World) -> Result<()> {

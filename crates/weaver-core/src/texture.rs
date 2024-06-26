@@ -1,11 +1,14 @@
 use std::path::Path;
 
-use weaver_asset::{prelude::Asset, Assets};
+use weaver_asset::{prelude::Asset, LoadAsset};
+use weaver_ecs::prelude::Resource;
 use weaver_util::prelude::Result;
 
 pub struct Texture {
     pub image: image::RgbaImage,
 }
+
+impl Asset for Texture {}
 
 impl Texture {
     pub fn new(image: image::RgbaImage) -> Self {
@@ -62,8 +65,12 @@ impl Texture {
     }
 }
 
-impl Asset for Texture {
-    fn load(_assets: &mut Assets, path: &Path) -> Result<Self> {
+#[derive(Resource, Default)]
+pub struct TextureLoader;
+
+impl LoadAsset<Texture> for TextureLoader {
+    type Param = ();
+    fn load(&mut self, _: &mut (), path: &Path) -> Result<Texture> {
         let image = image::open(path)?;
         let image = image.to_rgba8();
         Ok(Texture::from_rgba8(&image, image.width(), image.height()))

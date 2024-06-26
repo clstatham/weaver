@@ -15,3 +15,6 @@ atomic_refcell = "0.1.13"
 weaver-util = { path = "../weaver-util" }
 weaver-ecs-macros = { path = "../weaver-ecs-macros" }
 weaver-reflect-macros = { path = "../weaver-reflect-macros" }
+
+[dev-dependencies]
+env_logger = "*"

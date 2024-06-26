@@ -13,8 +13,7 @@ use weaver_pbr::render::PbrNodeLabel;
 use weaver_renderer::{
     bind_group::{BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup},
     buffer::{GpuBuffer, GpuBufferVec},
-    camera::{GpuCamera, ViewTarget},
-    extract::{RenderResource, RenderResourcePlugin},
+    camera::{CameraBindGroup, ViewTarget},
     graph::{RenderGraphApp, ViewNode, ViewNodeRunner},
     hdr::{HdrNodeLabel, HdrRenderTarget},
     mesh::primitive::{CubePrimitive, Primitive},
@@ -46,15 +45,11 @@ pub struct RenderCubeGizmo {
     pub num_indices: usize,
 }
 
-impl RenderResource for RenderCubeGizmo {
-    fn extract_render_resource(
-        _main_world: &mut World,
-        device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
+impl FromWorld for RenderCubeGizmo {
+    fn from_world(world: &mut World) -> Self {
+        let device = world.get_resource::<WgpuDevice>().unwrap();
+        let device = device.into_inner();
+
         let cube = CubePrimitive::new(1.0, true);
         let mesh = cube.generate_mesh();
 
@@ -70,20 +65,11 @@ impl RenderResource for RenderCubeGizmo {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        Some(Self {
+        Self {
             vertex_buffer: GpuBuffer::from(vertex_buffer),
             index_buffer: GpuBuffer::from(index_buffer),
             num_indices: mesh.indices.len(),
-        })
-    }
-
-    fn update_render_resource(
-        &mut self,
-        _main_world: &mut World,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> Result<()> {
-        Ok(())
+        }
     }
 }
 
@@ -185,8 +171,8 @@ impl GizmoRenderNode {
 }
 
 impl FromWorld for GizmoRenderNode {
-    fn from_world(world: &World) -> Self {
-        let device = unsafe { world.get_resource_unsafe::<WgpuDevice>().unwrap() };
+    fn from_world(world: &mut World) -> Self {
+        let device = world.get_resource::<WgpuDevice>().unwrap();
         Self::new(&device)
     }
 }
@@ -259,7 +245,7 @@ impl CreateRenderPipeline for GizmoRenderNode {
                 label: Some("GizmoPipelineLayout"),
                 bind_group_layouts: &[
                     &bind_group_layout,
-                    &GpuCamera::create_bind_group_layout(device),
+                    &CameraBindGroup::create_bind_group_layout(device),
                 ],
                 push_constant_ranges: &[],
             }),
@@ -343,7 +329,7 @@ impl ViewNode for GizmoRenderNode {
         Res<'static, RenderPipelineCache>,
         Res<'static, HdrRenderTarget>,
     );
-    type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<GpuCamera>);
+    type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<CameraBindGroup>);
     type ViewQueryFilter = ();
 
     fn prepare(&mut self, render_world: &mut World) -> Result<()> {
@@ -360,20 +346,25 @@ impl ViewNode for GizmoRenderNode {
             self.color_buffer.push(gizmo.color);
         }
 
-        let device = unsafe { render_world.get_resource_unsafe::<WgpuDevice>().unwrap() };
-        let device = device.into_inner();
-        let queue = unsafe { render_world.get_resource_unsafe::<WgpuQueue>().unwrap() };
-        let queue = queue.into_inner();
+        let device = render_world
+            .get_resource::<WgpuDevice>()
+            .unwrap()
+            .into_inner();
+        let queue = render_world
+            .get_resource::<WgpuQueue>()
+            .unwrap()
+            .into_inner();
 
         self.transform_buffer.enqueue_update(device, queue);
         self.color_buffer.enqueue_update(device, queue);
 
         let layout_cache = unsafe {
             render_world
-                .get_resource_mut_unsafe::<BindGroupLayoutCache>()
+                .as_unsafe_world_cell()
+                .get_resource_mut::<BindGroupLayoutCache>()
                 .unwrap()
-        };
-        let layout_cache = layout_cache.into_inner();
+        }
+        .into_inner();
 
         if self.bind_group.is_none() {
             let bind_group = BindGroup::new(device, self, layout_cache);
@@ -382,7 +373,8 @@ impl ViewNode for GizmoRenderNode {
 
         let pipeline_cache = unsafe {
             render_world
-                .get_resource_mut_unsafe::<RenderPipelineCache>()
+                .as_unsafe_world_cell()
+                .get_resource_mut::<RenderPipelineCache>()
                 .unwrap()
         };
         let pipeline_cache = pipeline_cache.into_inner();
@@ -466,7 +458,6 @@ impl Plugin for GizmoPlugin {
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.insert_resource(gizmos);
         render_app.add_plugin(RenderPipelinePlugin::<GizmoRenderNode>::default())?;
-        render_app.add_plugin(RenderResourcePlugin::<RenderCubeGizmo>::default())?;
 
         Ok(())
     }

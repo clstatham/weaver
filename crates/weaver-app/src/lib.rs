@@ -9,10 +9,10 @@ use weaver_ecs::{
     reflect::registry::{TypeRegistry, Typed},
     system::IntoSystem,
     system_schedule::SystemStage,
-    world::World,
+    world::{FromWorld, World},
 };
 use weaver_event::{Event, Events, ManuallyUpdatedEvents};
-use weaver_util::{lock::SharedLock, prelude::Result};
+use weaver_util::prelude::Result;
 
 pub mod plugin;
 
@@ -61,7 +61,7 @@ pub trait AppLabel: 'static {}
 
 pub struct SubApp {
     world: World,
-    plugins: SharedLock<Vec<Box<dyn Plugin>>>,
+    plugins: Vec<Box<dyn Plugin>>,
     extract_fn: Option<ExtractFn>,
 }
 
@@ -71,7 +71,7 @@ impl Default for SubApp {
 
         Self {
             world,
-            plugins: SharedLock::new(Vec::default()),
+            plugins: Vec::new(),
             extract_fn: None,
         }
     }
@@ -94,13 +94,20 @@ impl SubApp {
     }
 
     pub fn finish_plugins(&mut self) {
-        for plugin in self.plugins.read_arc().iter() {
+        let plugins = std::mem::take(&mut self.plugins);
+        for plugin in plugins.iter() {
             self.as_app(|app| {
                 log::debug!("Finishing plugin: {:?}", plugin.name());
                 plugin.finish(app)
             })
             .unwrap();
         }
+        self.plugins = plugins;
+    }
+
+    pub fn init_resource<T: Resource + FromWorld>(&mut self) -> &mut Self {
+        self.world.init_resource::<T>();
+        self
     }
 
     pub fn insert_resource<T: Resource>(&mut self, resource: T) -> &Self {
@@ -108,25 +115,11 @@ impl SubApp {
         self
     }
 
-    /// # Safety
-    ///
-    /// Caller ensures that there are no mutable references to the resource.
-    pub unsafe fn get_resource_unsafe<T: Resource>(&self) -> Option<Res<T>> {
-        unsafe { self.world.get_resource_unsafe::<T>() }
-    }
-
-    /// # Safety
-    ///
-    /// Caller ensures that there are no references to the resource, mutable or otherwise.
-    pub unsafe fn get_resource_mut_unsafe<T: Resource>(&self) -> Option<ResMut<T>> {
-        unsafe { self.world.get_resource_mut_unsafe::<T>() }
-    }
-
-    pub fn get_resource<T: Resource>(&mut self) -> Option<Res<T>> {
+    pub fn get_resource<T: Resource>(&self) -> Option<Res<'_, T>> {
         self.world.get_resource::<T>()
     }
 
-    pub fn get_resource_mut<T: Resource>(&mut self) -> Option<ResMut<T>> {
+    pub fn get_resource_mut<T: Resource>(&mut self) -> Option<ResMut<'_, T>> {
         self.world.get_resource_mut::<T>()
     }
 
@@ -137,7 +130,6 @@ impl SubApp {
     pub fn add_plugin<T: Plugin>(&mut self, plugin: T) -> Result<&mut Self> {
         if self
             .plugins
-            .read_arc()
             .iter()
             .any(|plugin| (**plugin).type_id() == TypeId::of::<T>())
         {
@@ -148,7 +140,7 @@ impl SubApp {
         log::debug!("Adding plugin: {:?}", plugin.name());
         self.as_app(|app| plugin.build(app))?;
 
-        self.plugins.write_arc().push(Box::new(plugin));
+        self.plugins.push(Box::new(plugin));
 
         Ok(self)
     }
@@ -183,29 +175,29 @@ impl SubApp {
         self
     }
 
-    pub fn add_system<S: SystemStage, M>(
+    pub fn add_system<S: SystemStage, M: 'static>(
         &mut self,
-        system: impl IntoSystem<M> + 'static,
+        system: impl IntoSystem<M>,
         stage: S,
     ) -> &mut Self {
         self.world.add_system(system, stage);
         self
     }
 
-    pub fn add_system_before<S: SystemStage, M1, M2>(
+    pub fn add_system_before<S: SystemStage, M1: 'static, M2: 'static>(
         &mut self,
-        system: impl IntoSystem<M1> + 'static,
-        before: impl IntoSystem<M2> + 'static,
+        system: impl IntoSystem<M1>,
+        before: impl IntoSystem<M2>,
         stage: S,
     ) -> &mut Self {
         self.world.add_system_before(system, before, stage);
         self
     }
 
-    pub fn add_system_after<S: SystemStage, M1, M2>(
+    pub fn add_system_after<S: SystemStage, M1: 'static, M2: 'static>(
         &mut self,
-        system: impl IntoSystem<M1> + 'static,
-        after: impl IntoSystem<M2> + 'static,
+        system: impl IntoSystem<M1>,
+        after: impl IntoSystem<M2>,
         stage: S,
     ) -> &mut Self {
         self.world.add_system_after(system, after, stage);
@@ -221,11 +213,11 @@ impl SubApp {
         self.extract_fn.as_ref()
     }
 
-    pub fn read_world(&self) -> &World {
+    pub fn world(&self) -> &World {
         &self.world
     }
 
-    pub fn write_world(&mut self) -> &mut World {
+    pub fn world_mut(&mut self) -> &mut World {
         &mut self.world
     }
 
@@ -275,9 +267,9 @@ impl SubApps {
         for (_, sub_app) in self.sub_apps.iter_mut() {
             sub_app.extract_from(&mut self.main.world).unwrap();
             sub_app.update();
-            sub_app.write_world().increment_change_tick();
+            sub_app.world_mut().increment_change_tick();
         }
-        self.main.write_world().increment_change_tick();
+        self.main.world_mut().increment_change_tick();
     }
 
     pub fn shutdown(&mut self) {
@@ -289,7 +281,7 @@ impl SubApps {
 }
 
 pub struct App {
-    plugins: SharedLock<Vec<Box<dyn Plugin>>>,
+    plugins: Vec<Box<dyn Plugin>>,
     runner: Option<Box<dyn Runner>>,
     sub_apps: SubApps,
 }
@@ -298,7 +290,7 @@ impl App {
     pub fn empty() -> Self {
         Self {
             runner: None,
-            plugins: SharedLock::new(Vec::default()),
+            plugins: Vec::new(),
             sub_apps: SubApps {
                 main: SubApp::new(),
                 sub_apps: FxHashMap::default(),
@@ -332,7 +324,6 @@ impl App {
     pub fn add_plugin<T: Plugin>(&mut self, plugin: T) -> Result<&mut Self> {
         if self
             .plugins
-            .read_arc()
             .iter()
             .any(|plugin| (**plugin).type_id() == TypeId::of::<T>())
         {
@@ -343,7 +334,7 @@ impl App {
         log::debug!("Adding plugin: {:?}", plugin.name());
         plugin.build(self)?;
 
-        self.plugins.write_arc().push(Box::new(plugin));
+        self.plugins.push(Box::new(plugin));
         Ok(self)
     }
 
@@ -369,6 +360,11 @@ impl App {
 
     pub fn has_resource<T: Resource>(&self) -> bool {
         self.main_app().has_resource::<T>()
+    }
+
+    pub fn init_resource<T: Resource + FromWorld>(&mut self) -> &mut Self {
+        self.main_app_mut().world_mut().init_resource::<T>();
+        self
     }
 
     pub fn insert_resource<T: Resource>(&mut self, resource: T) -> &mut Self {
@@ -399,29 +395,29 @@ impl App {
         self
     }
 
-    pub fn add_system<S: SystemStage, M>(
+    pub fn add_system<S: SystemStage, M: 'static>(
         &mut self,
-        system: impl IntoSystem<M> + 'static,
+        system: impl IntoSystem<M>,
         stage: S,
     ) -> &mut Self {
         self.main_app_mut().add_system(system, stage);
         self
     }
 
-    pub fn add_system_before<S: SystemStage, M1, M2>(
+    pub fn add_system_before<S: SystemStage, M1: 'static, M2: 'static>(
         &mut self,
-        system: impl IntoSystem<M1> + 'static,
-        before: impl IntoSystem<M2> + 'static,
+        system: impl IntoSystem<M1>,
+        before: impl IntoSystem<M2>,
         stage: S,
     ) -> &mut Self {
         self.main_app_mut().add_system_before(system, before, stage);
         self
     }
 
-    pub fn add_system_after<S: SystemStage, M1, M2>(
+    pub fn add_system_after<S: SystemStage, M1: 'static, M2: 'static>(
         &mut self,
-        system: impl IntoSystem<M1> + 'static,
-        after: impl IntoSystem<M2> + 'static,
+        system: impl IntoSystem<M1>,
+        after: impl IntoSystem<M2>,
         stage: S,
     ) -> &mut Self {
         self.main_app_mut().add_system_after(system, after, stage);
@@ -442,10 +438,12 @@ impl App {
 
     pub fn run(&mut self) -> Result<()> {
         if let Some(runner) = self.runner.take() {
-            for plugin in self.plugins.read_arc().iter() {
+            let plugins = std::mem::take(&mut self.plugins);
+            for plugin in plugins.iter() {
                 log::debug!("Finishing plugin: {:?}", plugin.name());
                 plugin.finish(self)?;
             }
+            self.plugins = plugins;
 
             self.sub_apps.finish_plugins();
 

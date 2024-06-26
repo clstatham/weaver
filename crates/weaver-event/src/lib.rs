@@ -6,11 +6,11 @@ use std::{
 
 use weaver_ecs::{
     change::Tick,
-    prelude::Resource,
+    prelude::{Resource, UnsafeWorldCell},
     system::{SystemAccess, SystemParam},
     world::World,
 };
-use weaver_util::lock::{ArcRead, SharedLock};
+use weaver_util::lock::{Read, SharedLock};
 
 pub mod prelude {
     pub use super::{Event, EventRx, EventTx};
@@ -18,12 +18,12 @@ pub mod prelude {
 
 pub trait Event: 'static + Send + Sync {}
 
-pub struct EventRef<T: Event> {
-    events: ArcRead<VecDeque<T>>,
+pub struct EventRef<'a, T: Event> {
+    events: Read<'a, VecDeque<T>>,
     index: usize,
 }
 
-impl<T: Event> Deref for EventRef<T> {
+impl<'a, T: Event> Deref for EventRef<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -146,7 +146,7 @@ pub struct EventIter<'a, T: Event> {
 }
 
 impl<'a, T: Event> Iterator for EventIter<'a, T> {
-    type Item = EventRef<T>;
+    type Item = EventRef<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.unread == 0 {
@@ -156,18 +156,18 @@ impl<'a, T: Event> Iterator for EventIter<'a, T> {
         let event = if self.include_back_buffer {
             if self.index < self.events.front_buffer.read().len() {
                 EventRef {
-                    events: self.events.front_buffer.read_arc(),
+                    events: self.events.front_buffer.read(),
                     index: self.index,
                 }
             } else {
                 EventRef {
-                    events: self.events.back_buffer.read_arc(),
+                    events: self.events.back_buffer.read(),
                     index: self.index - self.events.front_buffer.read().len(),
                 }
             }
         } else {
             EventRef {
-                events: self.events.front_buffer.read_arc(),
+                events: self.events.front_buffer.read(),
                 index: self.index,
             }
         };
@@ -179,7 +179,7 @@ impl<'a, T: Event> Iterator for EventIter<'a, T> {
     }
 }
 
-impl<T: Event> SystemParam for EventTx<T> {
+unsafe impl<T: Event> SystemParam for EventTx<T> {
     type State = ();
     type Item<'w, 's> = Self;
 
@@ -206,11 +206,14 @@ impl<T: Event> SystemParam for EventTx<T> {
 
     fn init_state(_: &mut World) -> Self::State {}
 
-    unsafe fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's> {
-        if let Some(events) = unsafe { world.get_resource_unsafe::<Events<T>>() } {
+    unsafe fn fetch<'w, 's>(
+        _: &'s mut Self::State,
+        world: UnsafeWorldCell<'w>,
+    ) -> Self::Item<'w, 's> {
+        if let Some(events) = unsafe { world.get_resource::<Events<T>>() } {
             EventTx::new(events.clone())
         } else if let Some(manual_events) =
-            unsafe { world.get_resource_unsafe::<ManuallyUpdatedEvents<T>>() }
+            unsafe { world.get_resource::<ManuallyUpdatedEvents<T>>() }
         {
             EventTx::new(manual_events.events.clone())
         } else {
@@ -219,7 +222,7 @@ impl<T: Event> SystemParam for EventTx<T> {
     }
 }
 
-impl<T: Event> SystemParam for EventRx<T> {
+unsafe impl<T: Event> SystemParam for EventRx<T> {
     type State = ();
     type Item<'w, 's> = Self;
 
@@ -246,15 +249,18 @@ impl<T: Event> SystemParam for EventRx<T> {
         }
     }
 
-    unsafe fn fetch<'w, 's>(_: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's> {
-        if let Some(events) = unsafe { world.get_resource_unsafe::<Events<T>>() } {
+    unsafe fn fetch<'w, 's>(
+        _: &'s mut Self::State,
+        world: UnsafeWorldCell<'w>,
+    ) -> Self::Item<'w, 's> {
+        if let Some(events) = unsafe { world.get_resource::<Events<T>>() } {
             EventRx::new(
                 events.clone(),
                 world.last_change_tick(),
                 world.read_change_tick(),
             )
         } else if let Some(manual_events) =
-            unsafe { world.get_resource_unsafe::<ManuallyUpdatedEvents<T>>() }
+            unsafe { world.get_resource::<ManuallyUpdatedEvents<T>>() }
         {
             EventRx::new(
                 manual_events.events.clone(),

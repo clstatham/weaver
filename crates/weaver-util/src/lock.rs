@@ -3,15 +3,14 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use lock_api::{ArcRwLockReadGuard, ArcRwLockWriteGuard};
-use parking_lot::*;
+use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 
 #[derive(Debug, Default)]
-pub struct Lock<T>(RwLock<T>);
+pub struct Lock<T>(AtomicRefCell<T>);
 
 impl<T> Lock<T> {
     pub fn new(value: T) -> Self {
-        Self(RwLock::new(value))
+        Self(AtomicRefCell::new(value))
     }
 
     pub fn read(&self) -> Read<'_, T> {
@@ -29,44 +28,6 @@ impl<T> Lock<T> {
     pub fn try_write(&self) -> Option<Write<'_, T>> {
         Write::try_new(self)
     }
-
-    pub fn read_write(&self) -> ReadWrite<'_, T> {
-        ReadWrite::new(self)
-    }
-
-    pub fn map_read<U, F>(&self, f: F) -> MapRead<'_, U>
-    where
-        F: FnOnce(&T) -> &U,
-    {
-        MapRead::new(self, f)
-    }
-
-    pub fn map_write<U, F>(&self, f: F) -> MapWrite<'_, U>
-    where
-        F: FnOnce(&mut T) -> &mut U,
-    {
-        MapWrite::new(self, f)
-    }
-
-    pub fn try_map_read<U, F>(&self, f: F) -> Option<MapRead<'_, U>>
-    where
-        F: FnOnce(&T) -> Option<&U>,
-    {
-        MapRead::try_new(self, f)
-    }
-
-    pub fn try_map_write<U, F>(&self, f: F) -> Option<MapWrite<'_, U>>
-    where
-        F: FnOnce(&mut T) -> Option<&mut U>,
-    {
-        MapWrite::try_new(self, f)
-    }
-}
-
-impl<T: Clone> Clone for Lock<T> {
-    fn clone(&self) -> Self {
-        Self(RwLock::new(self.0.read().clone()))
-    }
 }
 
 impl<T: Clone> From<T> for Lock<T> {
@@ -76,65 +37,49 @@ impl<T: Clone> From<T> for Lock<T> {
 }
 
 #[derive(Debug)]
-pub struct Read<'a, T>(RwLockReadGuard<'a, T>);
+pub struct Read<'a, T>(AtomicRef<'a, T>);
 #[derive(Debug)]
-pub struct Write<'a, T>(RwLockWriteGuard<'a, T>);
-#[derive(Debug)]
-pub struct ReadWrite<'a, T>(RwLockUpgradableReadGuard<'a, T>);
+pub struct Write<'a, T>(AtomicRefMut<'a, T>);
 
 impl<'a, T> Read<'a, T> {
     pub fn new(lock: &'a Lock<T>) -> Self {
-        Self(lock.0.read())
+        Self(lock.0.borrow())
     }
 
     pub fn try_new(lock: &'a Lock<T>) -> Option<Self> {
-        lock.0.try_read().map(Self)
+        lock.0.try_borrow().ok().map(Self)
     }
 
-    pub fn into_inner(self) -> RwLockReadGuard<'a, T> {
+    pub fn into_inner(self) -> AtomicRef<'a, T> {
         self.0
     }
 
-    pub fn map_read<U, F>(self, f: F) -> MapRead<'a, U>
+    pub fn map_read<U, F>(self, f: F) -> Read<'a, U>
     where
         F: FnOnce(&T) -> &U,
     {
-        MapRead(RwLockReadGuard::map(self.0, f))
+        Read(AtomicRef::map(self.0, f))
     }
 }
 
 impl<'a, T> Write<'a, T> {
     pub fn new(lock: &'a Lock<T>) -> Self {
-        Self(lock.0.write())
+        Self(lock.0.borrow_mut())
     }
 
     pub fn try_new(lock: &'a Lock<T>) -> Option<Self> {
-        lock.0.try_write().map(Self)
+        lock.0.try_borrow_mut().ok().map(Self)
     }
 
-    pub fn into_inner(self) -> RwLockWriteGuard<'a, T> {
+    pub fn into_inner(self) -> AtomicRefMut<'a, T> {
         self.0
     }
 
-    pub fn map_write<U, F>(self, f: F) -> MapWrite<'a, U>
+    pub fn map_write<U, F>(self, f: F) -> Write<'a, U>
     where
         F: FnOnce(&mut T) -> &mut U,
     {
-        MapWrite(RwLockWriteGuard::map(self.0, f))
-    }
-}
-
-impl<'a, T> ReadWrite<'a, T> {
-    pub fn new(lock: &'a Lock<T>) -> Self {
-        Self(lock.0.upgradable_read())
-    }
-
-    pub fn into_inner(self) -> RwLockUpgradableReadGuard<'a, T> {
-        self.0
-    }
-
-    pub fn upgrade(self) -> Write<'a, T> {
-        Write(RwLockUpgradableReadGuard::upgrade(self.0))
+        Write(AtomicRefMut::map(self.0, f))
     }
 }
 
@@ -154,183 +99,7 @@ impl<'a, T> Deref for Write<'a, T> {
     }
 }
 
-impl<'a, T> Deref for ReadWrite<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 impl<'a, T> DerefMut for Write<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-#[derive(Debug)]
-pub struct MapRead<'a, T>(MappedRwLockReadGuard<'a, T>);
-
-impl<'a, T> MapRead<'a, T> {
-    pub fn new<U, F>(lock: &'a Lock<U>, f: F) -> Self
-    where
-        F: FnOnce(&U) -> &T,
-    {
-        Self(RwLockReadGuard::map(lock.0.read(), f))
-    }
-
-    pub fn try_new<U, F>(lock: &'a Lock<U>, f: F) -> Option<Self>
-    where
-        F: FnOnce(&U) -> Option<&T>,
-    {
-        lock.0
-            .try_read()
-            .map(|guard| RwLockReadGuard::try_map(guard, f).ok())?
-            .map(Self)
-    }
-
-    pub fn into_inner(self) -> MappedRwLockReadGuard<'a, T> {
-        self.0
-    }
-
-    pub fn map_read<U, F>(self, f: F) -> MapRead<'a, U>
-    where
-        F: FnOnce(&T) -> &U,
-    {
-        MapRead(MappedRwLockReadGuard::map(self.0, f))
-    }
-}
-
-impl<'a, 'b: 'a, T> MapRead<'b, MapRead<'a, T>> {
-    pub fn flatten(this: Self) -> MapRead<'b, T> {
-        MapRead(MappedRwLockReadGuard::map(this.into_inner(), |inner| {
-            &**inner
-        }))
-    }
-}
-
-impl<'a, T> Deref for MapRead<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<'a, T: PartialEq> PartialEq for MapRead<'a, T> {
-    fn eq(&self, other: &Self) -> bool {
-        *self.0 == *other.0
-    }
-}
-
-#[derive(Debug)]
-pub struct MapWrite<'a, T>(MappedRwLockWriteGuard<'a, T>);
-
-impl<'a, T> MapWrite<'a, T> {
-    pub fn new<U, F>(lock: &'a Lock<U>, f: F) -> Self
-    where
-        F: FnOnce(&mut U) -> &mut T,
-    {
-        Self(RwLockWriteGuard::map(lock.0.write(), f))
-    }
-
-    pub fn try_new<U, F>(lock: &'a Lock<U>, f: F) -> Option<Self>
-    where
-        F: FnOnce(&mut U) -> Option<&mut T>,
-    {
-        lock.0
-            .try_write()
-            .map(|guard| RwLockWriteGuard::try_map(guard, f).ok())?
-            .map(Self)
-    }
-
-    pub fn into_inner(self) -> MappedRwLockWriteGuard<'a, T> {
-        self.0
-    }
-
-    pub fn map_write<U, F>(self, f: F) -> MapWrite<'a, U>
-    where
-        F: FnOnce(&mut T) -> &mut U,
-    {
-        MapWrite(MappedRwLockWriteGuard::map(self.0, f))
-    }
-}
-
-impl<'a, T> Deref for MapWrite<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<'a, T> DerefMut for MapWrite<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl<'a, T: PartialEq> PartialEq for MapWrite<'a, T> {
-    fn eq(&self, other: &Self) -> bool {
-        *self.0 == *other.0
-    }
-}
-
-#[derive(Debug)]
-pub struct ArcRead<T: ?Sized>(ArcRwLockReadGuard<RawRwLock, T>);
-
-impl<T: ?Sized> ArcRead<T> {
-    pub fn new(lock: &SharedLock<T>) -> Self {
-        Self(lock.0.read_arc())
-    }
-
-    pub fn into_inner(self) -> ArcRwLockReadGuard<RawRwLock, T> {
-        self.0
-    }
-
-    pub fn get_lock(this: &Self) -> SharedLock<T> {
-        SharedLock(ArcRwLockReadGuard::rwlock(&this.0).clone())
-    }
-}
-
-impl<T: ?Sized> Deref for ArcRead<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[derive(Debug)]
-pub struct ArcWrite<T: ?Sized>(ArcRwLockWriteGuard<RawRwLock, T>);
-
-impl<T: ?Sized> ArcWrite<T> {
-    pub fn new(lock: &SharedLock<T>) -> Self {
-        Self(lock.0.write_arc())
-    }
-
-    pub fn into_inner(self) -> ArcRwLockWriteGuard<RawRwLock, T> {
-        self.0
-    }
-
-    pub fn get_lock(this: &Self) -> SharedLock<T> {
-        SharedLock(ArcRwLockWriteGuard::rwlock(&this.0).clone())
-    }
-
-    pub fn downgrade(this: &Self) -> ArcRead<T> {
-        ArcRead::new(&Self::get_lock(this))
-    }
-}
-
-impl<T: ?Sized> Deref for ArcWrite<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T: ?Sized> DerefMut for ArcWrite<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
@@ -338,31 +107,23 @@ impl<T: ?Sized> DerefMut for ArcWrite<T> {
 
 #[derive(Debug, Default)]
 #[repr(transparent)]
-pub struct SharedLock<T: ?Sized>(Arc<RwLock<T>>);
+pub struct SharedLock<T: ?Sized>(Arc<AtomicRefCell<T>>);
 
 impl<T> SharedLock<T> {
     pub fn new(value: T) -> Self {
-        Self(Arc::new(RwLock::new(value)))
+        Self(Arc::new(AtomicRefCell::new(value)))
     }
 
-    pub fn downgrade(&self) -> Weak<RwLock<T>> {
+    pub fn downgrade(&self) -> Weak<AtomicRefCell<T>> {
         Arc::downgrade(&self.0)
     }
 
     pub fn read(&self) -> Read<'_, T> {
-        Read(self.0.read())
+        Read(self.0.borrow())
     }
 
     pub fn write(&self) -> Write<'_, T> {
-        Write(self.0.write())
-    }
-
-    pub fn read_arc(&self) -> ArcRead<T> {
-        ArcRead::new(self)
-    }
-
-    pub fn write_arc(&self) -> ArcWrite<T> {
-        ArcWrite::new(self)
+        Write(self.0.borrow_mut())
     }
 
     pub fn strong_count(&self) -> usize {
@@ -370,7 +131,7 @@ impl<T> SharedLock<T> {
     }
 
     pub fn into_inner(self) -> Option<T> {
-        Some(RwLock::into_inner(Arc::into_inner(self.0)?))
+        Some(AtomicRefCell::into_inner(Arc::into_inner(self.0)?))
     }
 }
 
@@ -387,7 +148,7 @@ impl<T> From<T> for SharedLock<T> {
 }
 
 impl<T: ?Sized> Deref for SharedLock<T> {
-    type Target = RwLock<T>;
+    type Target = AtomicRefCell<T>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

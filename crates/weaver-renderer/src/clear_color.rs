@@ -7,7 +7,7 @@ use weaver_util::prelude::Result;
 
 use crate::{
     camera::ViewTarget,
-    extract::{RenderResource, RenderResourcePlugin},
+    extract::{ExtractResource, ExtractResourcePlugin},
     graph::{RenderCtx, RenderGraphCtx, ViewNode},
     hdr::HdrRenderTarget,
     RenderApp, RenderLabel,
@@ -16,28 +16,13 @@ use crate::{
 #[derive(Resource, Clone, Copy)]
 pub struct ClearColor(pub Color);
 
-impl RenderResource for ClearColor {
-    fn extract_render_resource(
-        main_world: &mut World,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> Option<Self>
+impl ExtractResource for ClearColor {
+    type Source = ClearColor;
+    fn extract_render_resource(source: &Self::Source) -> Self
     where
         Self: Sized,
     {
-        main_world.get_resource_mut::<Self>().as_deref().cloned()
-    }
-
-    fn update_render_resource(
-        &mut self,
-        main_world: &mut World,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> Result<()> {
-        if let Some(clear_color) = main_world.get_resource_mut::<ClearColor>() {
-            self.0 = clear_color.0;
-        }
-        Ok(())
+        *source
     }
 }
 
@@ -54,7 +39,7 @@ impl Plugin for ClearColorPlugin {
         app.insert_resource(ClearColor(self.0));
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app
-            .add_plugin(RenderResourcePlugin::<ClearColor>::default())
+            .add_plugin(ExtractResourcePlugin::<ClearColor>::default())
             .unwrap();
         Ok(())
     }

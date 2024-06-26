@@ -6,17 +6,19 @@ use std::{
 };
 
 use image::codecs::hdr::HdrDecoder;
-use irradiance::SkyboxIrradiancePlugin;
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
+    commands::WorldMut,
     component::Res,
     prelude::{QueryFetchItem, Resource, SystemParamItem, World},
+    world::FromWorld,
 };
 use weaver_renderer::{
     bind_group::{
         BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup, ResourceBindGroupPlugin,
     },
-    camera::{GpuCamera, ViewTarget},
+    camera::{CameraBindGroup, ViewTarget},
+    extract::{ExtractResource, ExtractResourcePlugin},
     graph::{RenderCtx, RenderGraphApp, RenderGraphCtx, ViewNode, ViewNodeRunner},
     hdr::HdrRenderTarget,
     pipeline::{
@@ -26,7 +28,7 @@ use weaver_renderer::{
     prelude::{wgpu, ComputePipeline, ComputePipelineLayout},
     shader::Shader,
     texture::{texture_format, GpuTexture},
-    RenderLabel,
+    InitRenderResources, RenderLabel, WgpuDevice, WgpuQueue,
 };
 use weaver_util::prelude::Result;
 
@@ -34,7 +36,7 @@ pub mod irradiance;
 
 pub const SKYBOX_CUBEMAP_SIZE: u32 = 1024;
 
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub struct Skybox {
     pub path: PathBuf,
     pub diffuse_path: PathBuf,
@@ -62,6 +64,14 @@ impl Skybox {
             specular_path,
             brdf_lut_path,
         }
+    }
+}
+
+impl ExtractResource for Skybox {
+    type Source = Skybox;
+
+    fn extract_render_resource(source: &Self::Source) -> Self {
+        source.clone()
     }
 }
 
@@ -116,12 +126,43 @@ pub(crate) struct GpuSkybox {
     pub(crate) sampler: Arc<wgpu::Sampler>,
 }
 
+impl FromWorld for GpuSkybox {
+    fn from_world(world: &mut World) -> Self {
+        let device = world.get_resource::<WgpuDevice>().unwrap().into_inner();
+        let queue = world.get_resource::<WgpuQueue>().unwrap().into_inner();
+        let skybox = world.get_resource::<Skybox>().unwrap().into_inner();
+        let bind_group_layout_cache = unsafe {
+            world
+                .as_unsafe_world_cell()
+                .get_resource_mut::<BindGroupLayoutCache>()
+                .unwrap()
+                .into_inner()
+        };
+        let pipeline_cache = unsafe {
+            world
+                .as_unsafe_world_cell()
+                .get_resource_mut::<ComputePipelineCache>()
+                .unwrap()
+                .into_inner()
+        };
+
+        Self::new(
+            skybox,
+            device,
+            queue,
+            pipeline_cache,
+            bind_group_layout_cache,
+        )
+    }
+}
+
 impl GpuSkybox {
     pub fn new(
-        render_world: &mut World,
         skybox: &Skybox,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        pipeline_cache: &mut ComputePipelineCache,
+        bind_group_layout_cache: &mut BindGroupLayoutCache,
     ) -> Self {
         let mut file = File::open(&skybox.path).unwrap();
         let mut buf = Vec::new();
@@ -140,17 +181,6 @@ impl GpuSkybox {
                 &mut pixels,
             )
             .unwrap();
-
-        let mut bind_group_layout_cache = unsafe {
-            render_world
-                .get_resource_mut_unsafe::<BindGroupLayoutCache>()
-                .unwrap()
-        };
-        let mut pipeline_cache = unsafe {
-            render_world
-                .get_resource_mut_unsafe::<ComputePipelineCache>()
-                .unwrap()
-        };
 
         let src = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Skybox Source Texture"),
@@ -218,7 +248,7 @@ impl GpuSkybox {
 
         let src_bind_group = skybox_src.create_bind_group(
             device,
-            &BindGroupLayout::get_or_create::<GpuSkyboxSrc>(device, &mut bind_group_layout_cache),
+            &BindGroupLayout::get_or_create::<GpuSkyboxSrc>(device, bind_group_layout_cache),
         );
 
         let dst = GpuSkyboxDst {
@@ -228,13 +258,13 @@ impl GpuSkybox {
             },
         };
 
-        let pipeline = pipeline_cache
-            .get_or_create_pipeline::<GpuSkybox>(device, &mut bind_group_layout_cache);
-
         let dst_bind_group = dst.create_bind_group(
             device,
-            &BindGroupLayout::get_or_create::<GpuSkyboxDst>(device, &mut bind_group_layout_cache),
+            &BindGroupLayout::get_or_create::<GpuSkyboxDst>(device, bind_group_layout_cache),
         );
+
+        let pipeline =
+            pipeline_cache.get_or_create_pipeline::<GpuSkybox>(device, bind_group_layout_cache);
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Skybox Load Encoder"),
@@ -430,7 +460,7 @@ impl CreateRenderPipeline for SkyboxNode {
                 label: Some("Skybox Pipeline Layout"),
                 bind_group_layouts: &[
                     &bind_group_layout_cache.get_or_create::<GpuSkybox>(device),
-                    &bind_group_layout_cache.get_or_create::<GpuCamera>(device),
+                    &bind_group_layout_cache.get_or_create::<CameraBindGroup>(device),
                 ],
                 push_constant_ranges: &[],
             }),
@@ -489,7 +519,7 @@ impl ViewNode for SkyboxNode {
         Res<'static, BindGroup<GpuSkybox>>,
     );
 
-    type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<GpuCamera>);
+    type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<CameraBindGroup>);
 
     type ViewQueryFilter = ();
 
@@ -543,17 +573,21 @@ pub struct SkyboxPlugin;
 
 impl Plugin for SkyboxPlugin {
     fn build(&self, render_app: &mut weaver_app::App) -> Result<()> {
+        render_app.add_plugin(ExtractResourcePlugin::<Skybox>::default())?;
         render_app.add_plugin(ComputePipelinePlugin::<GpuSkybox>::default())?;
         render_app.add_plugin(ResourceBindGroupPlugin::<GpuSkybox>::default())?;
 
-        Ok(())
-    }
-
-    fn finish(&self, app: &mut weaver_app::App) -> Result<()> {
-        app.add_plugin(SkyboxIrradiancePlugin)?;
+        render_app.add_system(init_gpu_skybox, InitRenderResources);
 
         Ok(())
     }
+}
+
+pub fn init_gpu_skybox(mut world: WorldMut) -> Result<()> {
+    if !world.has_resource::<GpuSkybox>() {
+        world.init_resource::<GpuSkybox>();
+    }
+    Ok(())
 }
 
 pub struct SkyboxNodePlugin;

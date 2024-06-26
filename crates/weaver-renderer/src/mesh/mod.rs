@@ -1,6 +1,6 @@
 use crate::asset::{ExtractRenderAssetPlugin, RenderAsset};
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{prelude::Asset, Assets};
+use weaver_asset::prelude::Asset;
 use weaver_core::mesh::Mesh;
 use weaver_util::prelude::*;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
@@ -13,18 +13,15 @@ pub struct GpuMesh {
     pub num_indices: u32,
 }
 
-impl Asset for GpuMesh {
-    fn load(_assets: &mut Assets, _path: &std::path::Path) -> Result<Self> {
-        bail!("GpuMesh cannot be loaded from a file")
-    }
-}
+impl Asset for GpuMesh {}
 
 impl RenderAsset for GpuMesh {
-    type BaseAsset = Mesh;
+    type Source = Mesh;
+    type Param = ();
 
     fn extract_render_asset(
         base_asset: &Mesh,
-        _main_world_assets: &Assets,
+        _: &(),
         device: &wgpu::Device,
         _queue: &wgpu::Queue,
     ) -> Option<Self>
@@ -52,8 +49,8 @@ impl RenderAsset for GpuMesh {
 
     fn update_render_asset(
         &mut self,
-        _base_asset: &Self::BaseAsset,
-        _main_world_assets: &Assets,
+        _base_asset: &Self::Source,
+        _: &(),
         _device: &wgpu::Device,
         _queue: &wgpu::Queue,
     ) -> Result<()>

@@ -2,6 +2,7 @@ use color::Color;
 use mesh::Mesh;
 use transform::Transform;
 use weaver_app::{plugin::Plugin, App};
+use weaver_asset::AddAsset;
 use weaver_util::prelude::Result;
 
 pub mod color;
@@ -34,6 +35,9 @@ impl Plugin for CoreTypesPlugin {
         app.register_type::<geometry::Plane>();
         app.register_type::<geometry::Ray>();
         app.register_type::<geometry::Aabb>();
+
+        app.add_asset_loader::<texture::Texture, texture::TextureLoader>();
+        app.add_asset_loader::<Mesh, mesh::MeshLoader>();
         Ok(())
     }
 }

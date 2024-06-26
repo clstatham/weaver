@@ -5,7 +5,8 @@ use std::{
 };
 
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
-use weaver_asset::{Asset, Assets};
+use weaver_asset::{Asset, LoadAsset};
+use weaver_ecs::prelude::Resource;
 use weaver_util::prelude::{bail, Result};
 
 pub struct Shader {
@@ -30,12 +31,15 @@ impl Shader {
     }
 }
 
-impl Asset for Shader {
-    fn load(_assets: &mut Assets, path: &Path) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        Ok(Self::new(path))
+impl Asset for Shader {}
+
+#[derive(Resource, Default)]
+pub struct ShaderLoader;
+
+impl LoadAsset<Shader> for ShaderLoader {
+    type Param = ();
+    fn load(&mut self, _: &mut (), path: &Path) -> Result<Shader> {
+        Ok(Shader::new(path))
     }
 }
 

@@ -3,6 +3,7 @@ use std::{ops::Deref, sync::Arc};
 use weaver_app::{plugin::Plugin, prelude::App, Runner};
 use weaver_core::input::Input;
 use weaver_ecs::prelude::Resource;
+use weaver_event::ManuallyUpdatedEvents;
 use weaver_util::{lock::Lock, prelude::Result};
 use winit::{
     dpi::LogicalSize,
@@ -102,42 +103,41 @@ impl Runner for WinitRunner {
                     }
                 }
                 Event::WindowEvent { event, window_id } => {
-                    if let Some(window) = app.main_app_mut().get_resource_mut::<Window>() {
-                        if window.id() == *window_id {
-                            window.request_redraw();
-                            drop(window);
-
-                            if let Some(mut input) = app.main_app_mut().get_resource_mut::<Input>() {
-                                input.update_window(event);
-                            }
-
-                            match event {
-                                WindowEvent::Resized(size) => {
-                                    let tx = app
-                                        .main_app_mut()
-                                        .get_resource_mut::<weaver_event::ManuallyUpdatedEvents<WindowResized>>()
-                                        .unwrap();
-                                    tx.send(WindowResized {
-                                        width: size.width,
-                                        height: size.height,
-                                    });
-                                }
-                                WindowEvent::CloseRequested => {
-                                    app.shutdown();
-                                    event_loop_window.exit();
-                                }
-                                WindowEvent::RedrawRequested => {
-                                    app.update();
-                                }
-                                _ => {}
-                            }
+                    if let Some(window) = app.main_app_mut().get_resource::<Window>() {
+                        if window.id() != *window_id {
+                            return;
                         }
+
+                        window.request_redraw();
+                    }
+
+                    if let Some(mut input) = app.main_app_mut().get_resource_mut::<Input>() {
+                        input.update_window(event);
+                    }
+
+                    match event {
+                        WindowEvent::Resized(size) => {
+                            let tx = app
+                                .main_app_mut()
+                                .get_resource_mut::<ManuallyUpdatedEvents<WindowResized>>()
+                                .unwrap();
+                            tx.send(WindowResized {
+                                width: size.width,
+                                height: size.height,
+                            });
+                        }
+                        WindowEvent::CloseRequested => {
+                            app.shutdown();
+                            event_loop_window.exit();
+                        }
+                        WindowEvent::RedrawRequested => {
+                            app.update();
+                        }
+                        _ => {}
                     }
                 }
-                _ => (),
+                _ => {}
             }
-
-            
         })?;
 
         Ok(())

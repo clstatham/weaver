@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use weaver_app::{plugin::Plugin, prelude::App};
+use weaver_asset::AddAsset;
 use weaver_core::texture::Texture;
 use weaver_util::prelude::Result;
 use wgpu::util::DeviceExt;
@@ -95,7 +96,8 @@ impl GpuTexture {
 pub struct TexturePlugin;
 
 impl Plugin for TexturePlugin {
-    fn build(&self, _app: &mut App) -> Result<()> {
+    fn build(&self, app: &mut App) -> Result<()> {
+        app.add_asset::<Texture>();
         Ok(())
     }
 }

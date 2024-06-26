@@ -8,7 +8,7 @@ use weaver_ecs::{
     world::World,
 };
 use weaver_util::{
-    lock::{ArcRead, ArcWrite, Read, SharedLock, Write},
+    lock::{Read, SharedLock, Write},
     prelude::{impl_downcast, DowncastSync, Result},
     TypeIdMap,
 };
@@ -126,14 +126,6 @@ impl<T: DrawItem> DrawFunctions<T> {
 
     pub fn write(&self) -> Write<'_, DrawFunctionsInner<T>> {
         self.inner.write()
-    }
-
-    pub fn read_arc(&self) -> ArcRead<DrawFunctionsInner<T>> {
-        self.inner.read_arc()
-    }
-
-    pub fn write_arc(&self) -> ArcWrite<DrawFunctionsInner<T>> {
-        self.inner.write_arc()
     }
 }
 

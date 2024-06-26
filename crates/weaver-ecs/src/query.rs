@@ -1,7 +1,7 @@
 use std::{any::TypeId, marker::PhantomData};
 
 use crate::prelude::{
-    Archetype, ReadOnlySystemParam, SystemAccess, SystemParam, Tick, Ticks, TicksMut,
+    Archetype, SystemAccess, SystemParam, Tick, Ticks, TicksMut, UnsafeWorldCell,
 };
 
 use super::{
@@ -21,20 +21,15 @@ pub trait QueryFetch: Send + Sync {
     type Item<'w>;
 
     fn access() -> &'static [(TypeId, QueryAccess)];
-    fn fetch(world: &World, entity: Entity) -> Option<Self::Item<'_>>;
-    fn iter(
+    fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Self::Item<'_>>;
+    fn iter<F: QueryFilter>(
         world: &World,
         last_run: Tick,
         this_run: Tick,
     ) -> impl Iterator<Item = (Entity, Self::Item<'_>)> + '_;
-    fn entity_iter(world: &World) -> impl Iterator<Item = Entity> + '_;
+    fn entity_iter<F: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_;
 
-    fn test_archetype(archetype: &Archetype) -> bool {
-        Self::access().iter().all(|(ty, access)| match access {
-            QueryAccess::ReadOnly => archetype.contains_component_by_type_id(*ty),
-            QueryAccess::ReadWrite => archetype.contains_component_by_type_id(*ty),
-        })
-    }
+    fn test_archetype(archetype: &Archetype) -> bool;
 }
 
 impl<T: Component> QueryFetch for &T {
@@ -45,18 +40,21 @@ impl<T: Component> QueryFetch for &T {
         ACCESS.get_or_init(|| vec![(TypeId::of::<T>(), QueryAccess::ReadOnly)])
     }
 
-    fn fetch(world: &World, entity: Entity) -> Option<Ref<'_, T>> {
+    fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Ref<'_, T>> {
         let storage = world.storage();
         let archetype = storage.get_archetype(entity)?;
-        if !archetype.contains_component_by_type_id(TypeId::of::<T>()) {
+        if !Self::test_archetype(archetype) {
+            return None;
+        }
+        if !F::test_archetype(archetype) {
             return None;
         }
 
-        let column = archetype.get_column::<T>()?;
-        let index = column.sparse_index_of(entity.as_usize())?;
+        let column = archetype.get_column::<T>()?.into_inner();
+        let index = column.dense_index_of(entity.as_usize())?;
         let ticks = Ticks {
-            added: column.dense_added_ticks[index].read_arc(),
-            changed: column.dense_changed_ticks[index].read_arc(),
+            added: column.dense_added_ticks[index].read(),
+            changed: column.dense_changed_ticks[index].read(),
             last_run: world.last_change_tick(),
             this_run: world.read_change_tick(),
         };
@@ -68,7 +66,7 @@ impl<T: Component> QueryFetch for &T {
         Some(item)
     }
 
-    fn iter(
+    fn iter<F: QueryFilter>(
         world: &World,
         last_run: Tick,
         this_run: Tick,
@@ -76,19 +74,18 @@ impl<T: Component> QueryFetch for &T {
         let storage = world.storage();
         storage
             .archetype_iter()
+            .filter(move |archetype| {
+                Self::test_archetype(archetype) && F::test_archetype(archetype)
+            })
             .flat_map(move |archetype| {
-                if !archetype.contains_component_by_type_id(TypeId::of::<T>()) {
-                    return None;
-                }
-
                 archetype.get_column::<T>().map(move |column| {
                     let column = column.into_inner();
                     column
                         .sparse_iter_with_ticks()
                         .map(move |(entity, added, changed)| {
                             let ticks = Ticks {
-                                added: added.read_arc(),
-                                changed: changed.read_arc(),
+                                added,
+                                changed,
                                 last_run,
                                 this_run,
                             };
@@ -104,15 +101,14 @@ impl<T: Component> QueryFetch for &T {
             .flatten()
     }
 
-    fn entity_iter(world: &World) -> impl Iterator<Item = Entity> + '_ {
+    fn entity_iter<F: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_ {
         let storage = world.storage();
         storage
             .archetype_iter()
+            .filter(move |archetype| {
+                Self::test_archetype(archetype) && F::test_archetype(archetype)
+            })
             .flat_map(move |archetype| {
-                if !archetype.contains_component_by_type_id(TypeId::of::<T>()) {
-                    return None;
-                }
-
                 archetype.get_column::<T>().map(move |column| {
                     column
                         .into_inner()
@@ -121,6 +117,10 @@ impl<T: Component> QueryFetch for &T {
                 })
             })
             .flatten()
+    }
+
+    fn test_archetype(archetype: &Archetype) -> bool {
+        archetype.contains_component_by_type_id(TypeId::of::<T>())
     }
 }
 
@@ -132,18 +132,21 @@ impl<T: Component> QueryFetch for &mut T {
         ACCESS.get_or_init(|| vec![(TypeId::of::<T>(), QueryAccess::ReadWrite)])
     }
 
-    fn fetch(world: &World, entity: Entity) -> Option<Mut<'_, T>> {
+    fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Mut<'_, T>> {
         let storage = world.storage();
         let archetype = storage.get_archetype(entity)?;
-        if !archetype.contains_component_by_type_id(TypeId::of::<T>()) {
+        if !Self::test_archetype(archetype) {
+            return None;
+        }
+        if !F::test_archetype(archetype) {
             return None;
         }
 
-        let column = archetype.get_column::<T>()?;
-        let index = column.sparse_index_of(entity.as_usize())?;
+        let column = archetype.get_column::<T>()?.into_inner();
+        let index = column.dense_index_of(entity.as_usize())?;
         let ticks = TicksMut {
-            added: column.dense_added_ticks[index].write_arc(),
-            changed: column.dense_changed_ticks[index].write_arc(),
+            added: column.dense_added_ticks[index].write(),
+            changed: column.dense_changed_ticks[index].write(),
             last_run: world.last_change_tick(),
             this_run: world.read_change_tick(),
         };
@@ -155,7 +158,7 @@ impl<T: Component> QueryFetch for &mut T {
         Some(item)
     }
 
-    fn iter(
+    fn iter<F: QueryFilter>(
         world: &World,
         last_run: Tick,
         this_run: Tick,
@@ -163,19 +166,18 @@ impl<T: Component> QueryFetch for &mut T {
         let storage = world.storage();
         storage
             .archetype_iter()
+            .filter(move |archetype| {
+                Self::test_archetype(archetype) && F::test_archetype(archetype)
+            })
             .flat_map(move |archetype| {
-                if !archetype.contains_component_by_type_id(TypeId::of::<T>()) {
-                    return None;
-                }
-
                 archetype.get_column::<T>().map(move |column| {
                     let column = column.into_inner();
                     column
-                        .sparse_iter_with_ticks()
+                        .sparse_iter_with_ticks_mut()
                         .map(move |(entity, added, changed)| {
                             let ticks = TicksMut {
-                                added: added.write_arc(),
-                                changed: changed.write_arc(),
+                                added,
+                                changed,
                                 last_run,
                                 this_run,
                             };
@@ -191,15 +193,14 @@ impl<T: Component> QueryFetch for &mut T {
             .flatten()
     }
 
-    fn entity_iter(world: &World) -> impl Iterator<Item = Entity> + '_ {
+    fn entity_iter<F: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_ {
         let storage = world.storage();
         storage
             .archetype_iter()
+            .filter(move |archetype| {
+                Self::test_archetype(archetype) && F::test_archetype(archetype)
+            })
             .flat_map(move |archetype| {
-                if !archetype.contains_component_by_type_id(TypeId::of::<T>()) {
-                    return None;
-                }
-
                 archetype.get_column::<T>().map(move |column| {
                     column
                         .into_inner()
@@ -208,6 +209,10 @@ impl<T: Component> QueryFetch for &mut T {
                 })
             })
             .flatten()
+    }
+
+    fn test_archetype(archetype: &Archetype) -> bool {
+        archetype.contains_component_by_type_id(TypeId::of::<T>())
     }
 }
 
@@ -220,17 +225,37 @@ impl QueryFetch for () {
         ACCESS.get_or_init(Vec::new)
     }
 
-    fn fetch(_: &World, _: Entity) -> Option<Self::Item<'_>> {
+    fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Self::Item<'_>> {
+        let storage = world.storage();
+        let archetype = storage.get_archetype(entity)?;
+        if !F::test_archetype(archetype) {
+            return None;
+        }
         Some(())
     }
 
-    fn iter(_: &World, _: Tick, _: Tick) -> impl Iterator<Item = (Entity, Self::Item<'_>)> {
-        std::iter::empty()
+    fn iter<F: QueryFilter>(
+        world: &World,
+        _: Tick,
+        _: Tick,
+    ) -> impl Iterator<Item = (Entity, Self::Item<'_>)> + '_ {
+        world
+            .storage()
+            .archetype_iter()
+            .filter(move |archetype| F::test_archetype(archetype))
+            .flat_map(|archetype| archetype.entity_iter().map(|entity| (entity, ())))
     }
 
-    fn entity_iter(_world: &World) -> impl Iterator<Item = Entity> + '_ {
-        // todo
-        std::iter::empty()
+    fn entity_iter<F: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_ {
+        world
+            .storage()
+            .archetype_iter()
+            .filter(move |archetype| F::test_archetype(archetype))
+            .flat_map(|archetype| archetype.entity_iter())
+    }
+
+    fn test_archetype(_archetype: &Archetype) -> bool {
+        true
     }
 }
 
@@ -240,20 +265,28 @@ impl<T: QueryFetch> QueryFetch for Option<T> {
         T::access()
     }
 
-    fn fetch(world: &World, entity: Entity) -> Option<Self::Item<'_>> {
-        Some(T::fetch(world, entity))
+    fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Self::Item<'_>> {
+        if let Some(item) = T::fetch::<F>(world, entity) {
+            Some(Some(item))
+        } else {
+            Some(None)
+        }
     }
 
-    fn iter(
+    fn iter<F: QueryFilter>(
         world: &World,
         last_run: Tick,
         this_run: Tick,
     ) -> impl Iterator<Item = (Entity, Option<T::Item<'_>>)> + '_ {
-        T::iter(world, last_run, this_run).map(|(entity, item)| (entity, Some(item)))
+        T::iter::<F>(world, last_run, this_run).map(|(entity, item)| (entity, Some(item)))
     }
 
-    fn entity_iter(world: &World) -> impl Iterator<Item = Entity> + '_ {
-        T::entity_iter(world)
+    fn entity_iter<F: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_ {
+        T::entity_iter::<F>(world)
+    }
+
+    fn test_archetype(_archetype: &Archetype) -> bool {
+        true
     }
 }
 
@@ -269,39 +302,41 @@ macro_rules! impl_query_fetch {
                 ACCESS.get_or_init(|| vec![$($param::access(),)*].concat())
             }
 
-            fn fetch(world: &World, entity: Entity) -> Option<Self::Item<'_>> {
+            fn fetch<Filter: QueryFilter>(world: &World, entity: Entity) -> Option<Self::Item<'_>> {
                 Some((
                     $(
-                        <$param as QueryFetch>::fetch(world, entity)?,
+                        <$param as QueryFetch>::fetch::<Filter>(world, entity)?,
                     )*
                 ))
             }
 
             #[allow(non_snake_case, unused)]
-            fn iter<'w>(world: &'w World, last_run: Tick, this_run: Tick) -> impl Iterator<Item = (Entity, Self::Item<'w>)> + '_ {
-                itertools::multizip(($(<$param as QueryFetch>::iter(world, last_run, this_run),)*))
-                .map(|params| {
-                    let ($($param,)*) = params;
-                    $(
-                        let entity = $param.0;
-                    )*
-                    (
-                        entity,
-                        ($($param.1,)*),
-                    )
-                })
+            fn iter<'w, Filter: QueryFilter>(world: &'w World, last_run: Tick, this_run: Tick) -> impl Iterator<Item = (Entity, Self::Item<'w>)> + '_ {
+                let storage = world.storage();
+                storage
+                    .archetype_iter()
+                    .filter(move |archetype| Self::test_archetype(archetype) && Filter::test_archetype(archetype))
+                    .flat_map(move |archetype| {
+                        archetype.entity_iter().filter_map(move |entity| {
+                            Self::fetch::<Filter>(world, entity).map(|item| (entity, item))
+                        })
+                    })
             }
 
             #[allow(non_snake_case, unused)]
-            fn entity_iter(world: &World) -> impl Iterator<Item = Entity> + '_ {
-                itertools::multizip(($(<$param as QueryFetch>::entity_iter(world),)*))
-                .map(|params| {
-                    let ($($param,)*) = params;
-                    $(
-                        let entity = $param;
-                    )*
-                    entity
-                })
+            fn entity_iter<Filter: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_ {
+                let storage = world.storage();
+                storage
+                    .archetype_iter()
+                    .filter(move |archetype| Self::test_archetype(archetype) && Filter::test_archetype(archetype))
+                    .flat_map(move |archetype| archetype.entity_iter())
+            }
+
+            fn test_archetype(archetype: &Archetype) -> bool {
+                $(
+                    $param::test_archetype(archetype) &&
+                )*
+                true
             }
         }
     };
@@ -366,8 +401,8 @@ impl<T: Component> QueryFilter for Without<T> {
 
 pub struct QueryState<Q, F = ()>
 where
-    Q: QueryFetch + ?Sized,
-    F: QueryFilter + ?Sized,
+    Q: QueryFetch,
+    F: QueryFilter,
 {
     last_run: Tick,
     this_run: Tick,
@@ -377,8 +412,8 @@ where
 
 impl<Q, F> QueryState<Q, F>
 where
-    Q: QueryFetch + ?Sized,
-    F: QueryFilter + ?Sized,
+    Q: QueryFetch,
+    F: QueryFilter,
 {
     pub fn new(world: &World) -> Self {
         Self {
@@ -390,61 +425,52 @@ where
     }
 
     pub fn get<'w>(&self, world: &'w World, entity: Entity) -> Option<Q::Item<'w>> {
-        let storage = world.storage();
-        let archetype = storage.get_archetype(entity)?;
-        if !Q::test_archetype(archetype) {
-            return None;
-        }
-        if !F::test_archetype(archetype) {
-            return None;
-        }
-
-        Q::fetch(world, entity)
+        Q::fetch::<F>(world, entity)
     }
 
     pub fn entity_iter<'w>(&'w self, world: &'w World) -> impl Iterator<Item = Entity> + '_ {
-        Q::entity_iter(world)
+        Q::entity_iter::<F>(world)
     }
 
     pub fn iter<'w>(
         &'w self,
         world: &'w World,
     ) -> impl Iterator<Item = (Entity, Q::Item<'w>)> + '_ {
-        Q::iter(world, self.last_run, self.this_run)
+        Q::iter::<F>(world, self.last_run, self.this_run)
     }
 }
 
 pub struct Query<'w, 's, Q, F = ()>
 where
-    Q: QueryFetch + ?Sized + 'w,
-    F: QueryFilter + ?Sized + 'w,
+    Q: QueryFetch + 'w,
+    F: QueryFilter + 'w,
 {
     pub(crate) state: &'s QueryState<Q, F>,
-    pub(crate) world: &'w World,
+    pub(crate) world: UnsafeWorldCell<'w>,
 }
 
 impl<'w, 's: 'w, Q, F> Query<'w, 's, Q, F>
 where
-    Q: QueryFetch + ?Sized,
-    F: QueryFilter + ?Sized,
+    Q: QueryFetch,
+    F: QueryFilter,
 {
     pub fn get(&self, entity: Entity) -> Option<Q::Item<'w>> {
-        self.state.get(self.world, entity)
+        unsafe { self.state.get(self.world.world(), entity) }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Entity, Q::Item<'w>)> + '_ {
-        self.state.iter(self.world)
+        unsafe { self.state.iter(self.world.world()) }
     }
 
     pub fn entity_iter(&self) -> impl Iterator<Item = Entity> + '_ {
-        Q::entity_iter(self.world)
+        unsafe { Q::entity_iter::<F>(self.world.world()) }
     }
 }
 
-impl<Q, F> SystemParam for Query<'_, '_, Q, F>
+unsafe impl<Q, F> SystemParam for Query<'_, '_, Q, F>
 where
-    Q: QueryFetch + ?Sized + 'static,
-    F: QueryFilter + ?Sized + 'static,
+    Q: QueryFetch + 'static,
+    F: QueryFilter + 'static,
 {
     type State = QueryState<Q, F>;
     type Item<'w, 's> = Query<'w, 's, Q, F>;
@@ -497,7 +523,10 @@ where
         }
     }
 
-    unsafe fn fetch<'w, 's>(state: &'s mut Self::State, world: &'w World) -> Self::Item<'w, 's> {
+    unsafe fn fetch<'w, 's>(
+        state: &'s mut Self::State,
+        world: UnsafeWorldCell<'w>,
+    ) -> Self::Item<'w, 's> {
         Query { state, world }
     }
 
@@ -506,9 +535,96 @@ where
     }
 }
 
-impl<Q, F> ReadOnlySystemParam for Query<'_, '_, Q, F>
-where
-    Q: QueryFetch + ?Sized + 'static,
-    F: QueryFilter + ?Sized + 'static,
-{
+#[cfg(test)]
+mod tests {
+    use crate::{self as weaver_ecs, prelude::Entity};
+    use weaver_ecs_macros::Component;
+    use weaver_reflect_macros::Reflect;
+
+    use crate::prelude::World;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Reflect, Component)]
+    struct Position {
+        x: f32,
+        y: f32,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Reflect, Component)]
+    struct Velocity {
+        x: f32,
+        y: f32,
+    }
+
+    #[test]
+    fn query_one_component() {
+        let mut world = World::new();
+        let entity1 = world.spawn((Position { x: 1.0, y: 2.0 }, Velocity { x: 3.0, y: 4.0 }));
+        let entity2 = world.spawn((Position { x: 5.0, y: 6.0 }, Velocity { x: 7.0, y: 8.0 }));
+        let entity3 = world.spawn(Position { x: 9.0, y: 10.0 });
+
+        let query = world.query::<&Position>();
+        let mut iter = query.iter(&world);
+
+        let test_entity = |entity: Entity, position: Position| match entity {
+            e if e == entity1 => {
+                assert_eq!(position.x, 1.0);
+                assert_eq!(position.y, 2.0);
+            }
+            e if e == entity2 => {
+                assert_eq!(position.x, 5.0);
+                assert_eq!(position.y, 6.0);
+            }
+            e if e == entity3 => {
+                assert_eq!(position.x, 9.0);
+                assert_eq!(position.y, 10.0);
+            }
+            _ => panic!("unexpected entity"),
+        };
+
+        let (entity, position) = iter.next().unwrap();
+        test_entity(entity, *position);
+
+        let (entity, position) = iter.next().unwrap();
+        test_entity(entity, *position);
+
+        let (entity, position) = iter.next().unwrap();
+        test_entity(entity, *position);
+
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn query_two_components() {
+        let mut world = World::new();
+        let entity1 = world.spawn((Position { x: 1.0, y: 2.0 }, Velocity { x: 3.0, y: 4.0 }));
+        let entity2 = world.spawn((Position { x: 5.0, y: 6.0 }, Velocity { x: 7.0, y: 8.0 }));
+        let _entity3 = world.spawn(Position { x: 9.0, y: 10.0 });
+
+        let query = world.query::<(&Position, &Velocity)>();
+        let mut iter = query.iter(&world);
+
+        let test_entity = |entity: Entity, position: Position, velocity: Velocity| match entity {
+            e if e == entity1 => {
+                assert_eq!(position.x, 1.0);
+                assert_eq!(position.y, 2.0);
+                assert_eq!(velocity.x, 3.0);
+                assert_eq!(velocity.y, 4.0);
+            }
+            e if e == entity2 => {
+                assert_eq!(position.x, 5.0);
+                assert_eq!(position.y, 6.0);
+                assert_eq!(velocity.x, 7.0);
+                assert_eq!(velocity.y, 8.0);
+            }
+            _ => panic!("unexpected entity"),
+        };
+
+        let (entity, (position, velocity)) = iter.next().unwrap();
+        test_entity(entity, *position, *velocity);
+
+        let (entity, (position, velocity)) = iter.next().unwrap();
+        test_entity(entity, *position, *velocity);
+
+        assert!(iter.next().is_none());
+    }
 }

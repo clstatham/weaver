@@ -1,5 +1,6 @@
 use weaver_app::{App, SubApp};
 use weaver_ecs::{
+    component::ResMut,
     entity::Entity,
     query::{QueryFetch, QueryFilter, QueryState},
     system::{SystemParam, SystemParamItem, SystemState},
@@ -71,7 +72,7 @@ impl<T: DrawItem, C: RenderCommand<T>> DrawFn<T> for RenderCommandState<T, C> {
         };
         let item_query = self.item_query.get(render_world, item.entity());
         let state = self.state.as_mut().unwrap();
-        let param = state.get(render_world);
+        let param = state.get(render_world.as_unsafe_world_cell());
 
         C::render(item, view_query, item_query, param, render_pass)
     }
@@ -83,8 +84,11 @@ pub trait AddRenderCommand {
 
 impl AddRenderCommand for SubApp {
     fn add_render_command<T: DrawItem, C: RenderCommand<T>>(&mut self) -> &mut Self {
-        let draw_fn = RenderCommandState::<T, C>::new(self.read_world());
-        if let Some(draw_fns) = self.get_resource_mut::<DrawFunctions<T>>() {
+        let draw_fn = RenderCommandState::<T, C>::new(self.world());
+        if let Some(draw_fns) = self
+            .get_resource_mut::<DrawFunctions<T>>()
+            .map(ResMut::into_inner)
+        {
             draw_fns.write().add(draw_fn);
         } else {
             let draw_fns = DrawFunctions::<T>::new();

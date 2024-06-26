@@ -2,38 +2,19 @@ use weaver_app::{plugin::Plugin, App};
 use weaver_util::prelude::Result;
 
 use weaver_core::transform::Transform;
-use weaver_ecs::{entity::Entity, world::World};
+use weaver_ecs::prelude::QueryFetchItem;
 
-use crate::extract::{RenderComponent, RenderComponentPlugin};
+use crate::extract::{ExtractComponent, ExtractComponentPlugin};
 
-impl RenderComponent for Transform {
-    type ExtractQuery<'a> = &'a Transform;
+impl ExtractComponent for Transform {
+    type ExtractQueryFetch = &'static Transform;
+    type ExtractQueryFilter = ();
+    type Out = Transform;
 
     fn extract_render_component(
-        entity: Entity,
-        main_world: &mut World,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        main_world
-            .get_component::<Transform>(entity)
-            .as_deref()
-            .copied()
-    }
-
-    fn update_render_component(
-        &mut self,
-        entity: Entity,
-        main_world: &mut World,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> Result<()> {
-        let transform = main_world.get_component::<Transform>(entity).unwrap();
-        *self = *transform;
-        Ok(())
+        item: QueryFetchItem<'_, Self::ExtractQueryFetch>,
+    ) -> Option<Self::Out> {
+        Some(*item)
     }
 }
 
@@ -41,7 +22,7 @@ pub struct TransformPlugin;
 
 impl Plugin for TransformPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_plugin(RenderComponentPlugin::<Transform>::default())?;
+        app.add_plugin(ExtractComponentPlugin::<Transform>::default())?;
         Ok(())
     }
 }

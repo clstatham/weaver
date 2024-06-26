@@ -1,6 +1,6 @@
-use weaver_util::lock::{ArcRead, ArcWrite};
+use weaver_util::lock::{Read, Write};
 
-use crate::prelude::{SystemAccess, SystemParam};
+use crate::prelude::{SystemAccess, SystemParam, UnsafeWorldCell};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Tick {
@@ -42,29 +42,18 @@ impl std::fmt::Display for Tick {
     }
 }
 
-pub(crate) struct Ticks {
-    pub(crate) added: ArcRead<Tick>,
-    pub(crate) changed: ArcRead<Tick>,
+pub(crate) struct Ticks<'a> {
+    pub(crate) added: Read<'a, Tick>,
+    pub(crate) changed: Read<'a, Tick>,
     pub(crate) last_run: Tick,
     pub(crate) this_run: Tick,
 }
 
-pub(crate) struct TicksMut {
-    pub(crate) added: ArcWrite<Tick>,
-    pub(crate) changed: ArcWrite<Tick>,
+pub(crate) struct TicksMut<'a> {
+    pub(crate) added: Write<'a, Tick>,
+    pub(crate) changed: Write<'a, Tick>,
     pub(crate) last_run: Tick,
     pub(crate) this_run: Tick,
-}
-
-impl TicksMut {
-    pub fn downgrade(&self) -> Ticks {
-        Ticks {
-            added: ArcWrite::downgrade(&self.added),
-            changed: ArcWrite::downgrade(&self.changed),
-            last_run: self.last_run,
-            this_run: self.this_run,
-        }
-    }
 }
 
 pub trait ChangeDetection {
@@ -139,7 +128,7 @@ pub struct WorldTicks {
     pub last_change_tick: Tick,
 }
 
-impl SystemParam for WorldTicks {
+unsafe impl SystemParam for WorldTicks {
     type State = ();
     type Item<'w, 's> = Self;
 
@@ -158,7 +147,7 @@ impl SystemParam for WorldTicks {
 
     unsafe fn fetch<'w, 's>(
         _state: &'s mut Self::State,
-        world: &'w crate::prelude::World,
+        world: UnsafeWorldCell<'w>,
     ) -> Self::Item<'w, 's> {
         Self {
             change_tick: world.read_change_tick(),

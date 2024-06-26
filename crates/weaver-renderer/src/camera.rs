@@ -1,7 +1,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use encase::ShaderType;
-use weaver_core::geometry::Ray;
+use weaver_core::{geometry::Ray, transform::Transform};
 use weaver_util::prelude::Result;
 
 use weaver_app::plugin::Plugin;
@@ -12,37 +12,24 @@ use crate::{
     bind_group::{BindGroupLayout, ComponentBindGroupPlugin, CreateBindGroup},
     buffer::GpuBufferVec,
     end_render,
-    extract::{RenderComponent, RenderComponentPlugin},
-    CurrentFrame, PostRender, PreRender,
+    extract::{ExtractComponent, ExtractComponentPlugin},
+    hdr::HdrRenderTarget,
+    CurrentFrame, ExtractBindGroupStage, InitRenderResources, PostRender, PreRender, WgpuDevice,
+    WgpuQueue,
 };
 
 #[derive(Component, Reflect, Clone, Copy)]
 pub struct PrimaryCamera;
 
-impl RenderComponent for PrimaryCamera {
-    type ExtractQuery<'a> = &'a Self;
+impl ExtractComponent for PrimaryCamera {
+    type ExtractQueryFetch = &'static Self;
+    type ExtractQueryFilter = ();
+    type Out = Self;
 
     fn extract_render_component(
-        entity: Entity,
-        main_world: &mut World,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        let camera = main_world.get_component::<PrimaryCamera>(entity)?;
-        Some(*camera)
-    }
-
-    fn update_render_component(
-        &mut self,
-        _entity: Entity,
-        _main_world: &mut World,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> Result<()> {
-        Ok(())
+        item: QueryFetchItem<'_, Self::ExtractQueryFetch>,
+    ) -> Option<Self::Out> {
+        Some(*item)
     }
 }
 
@@ -54,11 +41,11 @@ pub struct ViewTarget {
     pub depth_target: Arc<wgpu::TextureView>,
 }
 
-impl From<&CurrentFrame> for ViewTarget {
-    fn from(current_frame: &CurrentFrame) -> Self {
+impl From<(&CurrentFrame, &HdrRenderTarget)> for ViewTarget {
+    fn from((current_frame, hdr_target): (&CurrentFrame, &HdrRenderTarget)) -> Self {
         Self {
-            color_target: current_frame.color_view.clone(),
-            depth_target: current_frame.depth_view.clone(),
+            color_target: hdr_target.color_target().clone(),
+            depth_target: current_frame.inner.as_ref().unwrap().depth_view.clone(),
         }
     }
 }
@@ -176,77 +163,37 @@ impl Default for Camera {
 #[derive(Component, Reflect)]
 pub struct GpuCamera {
     pub camera: Camera,
-    #[reflect(ignore)]
-    pub uniform_buffer: GpuBufferVec<CameraUniform>,
+    pub transform: Transform,
 }
 
-impl RenderComponent for GpuCamera {
-    type ExtractQuery<'a> = &'a Camera;
-
+impl ExtractComponent for GpuCamera {
+    type ExtractQueryFetch = (&'static Camera, &'static Transform);
+    type ExtractQueryFilter = ();
+    type Out = Self;
     fn extract_render_component(
-        entity: Entity,
-        main_world: &mut World,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        (camera, transform): QueryFetchItem<Self::ExtractQueryFetch>,
     ) -> Option<Self>
     where
         Self: Sized,
     {
-        let camera = main_world.get_component::<Camera>(entity)?;
-
-        let mut uniform_buffer =
-            GpuBufferVec::new(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
-        uniform_buffer.push(CameraUniform::from(&*camera));
-
-        uniform_buffer.enqueue_update(device, queue);
-
         Some(Self {
             camera: *camera,
-            uniform_buffer,
+            transform: *transform,
         })
-    }
-
-    fn update_render_component(
-        &mut self,
-        entity: Entity,
-        main_world: &mut World,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    ) -> Result<()> {
-        let camera = main_world.get_component::<Camera>(entity).unwrap();
-
-        self.camera = *camera;
-
-        self.uniform_buffer.clear();
-        self.uniform_buffer.push(CameraUniform::from(&*camera));
-
-        self.uniform_buffer.enqueue_update(device, queue);
-
-        Ok(())
     }
 }
 
-impl CreateBindGroup for GpuCamera {
-    fn create_bind_group(
-        &self,
-        device: &wgpu::Device,
-        cached_layout: &BindGroupLayout,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: cached_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: self.uniform_buffer.buffer().unwrap(),
-                    offset: 0,
-                    size: None,
-                }),
-            }],
-            label: Some("Camera Bind Group"),
-        })
-    }
+#[derive(Component, Reflect)]
+pub struct CameraBindGroup {
+    #[reflect(ignore)]
+    pub buffer: GpuBufferVec<CameraUniform>,
+}
 
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+impl CreateBindGroup for CameraBindGroup {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
+    where
+        Self: Sized,
+    {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Camera Bind Group Layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -261,16 +208,34 @@ impl CreateBindGroup for GpuCamera {
             }],
         })
     }
+
+    fn create_bind_group(
+        &self,
+        device: &wgpu::Device,
+        layout: &BindGroupLayout,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Camera Bind Group"),
+            layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(
+                    self.buffer.buffer().unwrap().as_entire_buffer_binding(),
+                ),
+            }],
+        })
+    }
 }
 
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut weaver_app::App) -> Result<()> {
-        app.add_plugin(RenderComponentPlugin::<GpuCamera>::default())?;
-        app.add_plugin(RenderComponentPlugin::<PrimaryCamera>::default())?;
-        app.add_plugin(ComponentBindGroupPlugin::<GpuCamera>::default())?;
+        app.add_plugin(ExtractComponentPlugin::<GpuCamera>::default())?;
+        app.add_plugin(ComponentBindGroupPlugin::<CameraBindGroup>::default())?;
+        app.add_plugin(ExtractComponentPlugin::<PrimaryCamera>::default())?;
 
+        app.add_system(extract_camera_bind_groups, ExtractBindGroupStage);
         app.add_system_after(insert_view_target, begin_render, PreRender);
         app.add_system_before(remove_view_target, end_render, PostRender);
 
@@ -278,25 +243,51 @@ impl Plugin for CameraPlugin {
     }
 }
 
-fn insert_view_target(
+pub fn extract_camera_bind_groups(
     commands: Commands,
-    current_frame: Res<CurrentFrame>,
-    query: Query<&PrimaryCamera, Without<ViewTarget>>,
+    query: Query<(&GpuCamera, Option<&mut CameraBindGroup>)>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
 ) -> Result<()> {
-    for gpu_camera in query.entity_iter() {
-        let view_target = ViewTarget::from(&*current_frame);
-        commands.insert_component(gpu_camera, view_target);
+    for (entity, (gpu_camera, mut bind_group)) in query.iter() {
+        let camera_uniform = CameraUniform::from(&gpu_camera.camera);
+        if let Some(bind_group) = bind_group.as_mut() {
+            bind_group.buffer.clear();
+            bind_group.buffer.push(camera_uniform);
+            bind_group.buffer.enqueue_update(&device, &queue);
+        } else {
+            let mut buffer =
+                GpuBufferVec::new(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
+            buffer.push(camera_uniform);
+            buffer.enqueue_update(&device, &queue);
+            let bind_group = CameraBindGroup { buffer };
+            commands.insert_component(entity, bind_group);
+        }
     }
 
     Ok(())
 }
 
-fn remove_view_target(
-    commands: Commands,
-    query: Query<&PrimaryCamera, With<ViewTarget>>,
+pub fn insert_view_target(
+    mut world: WorldMut,
+    current_frame: Res<CurrentFrame>,
+    hdr_target: Res<HdrRenderTarget>,
+    query: Query<&GpuCamera, Without<ViewTarget>>,
 ) -> Result<()> {
     for gpu_camera in query.entity_iter() {
-        commands.remove_component::<ViewTarget>(gpu_camera);
+        let view_target = ViewTarget::from((&*current_frame, &*hdr_target));
+        world.insert_component(gpu_camera, view_target);
+    }
+
+    Ok(())
+}
+
+pub fn remove_view_target(
+    mut world: WorldMut,
+    query: Query<&GpuCamera, With<ViewTarget>>,
+) -> Result<()> {
+    for gpu_camera in query.entity_iter() {
+        world.remove_component::<ViewTarget>(gpu_camera);
     }
 
     Ok(())

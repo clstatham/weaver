@@ -148,12 +148,24 @@ impl<T: ViewNode> RenderNode for ViewNodeRunner<T> {
         render_ctx: &mut RenderCtx,
     ) -> Result<()> {
         let Some(view_query) = self.view_query.get(render_world, graph_ctx.view_entity) else {
+            log::debug!(
+                "View query not found for entity: {:?}",
+                graph_ctx.view_entity
+            );
+            log::debug!(
+                "View query: {:?}",
+                std::any::type_name::<T::ViewQueryFetch>()
+            );
             return Ok(());
         };
 
         let mut state = self.state.write();
         let state = state.as_mut().unwrap();
-        let param = state.get(render_world);
+        if !state.can_run(render_world) {
+            log::debug!("ViewNodeRunner SystemParam state not ready");
+            return Ok(());
+        }
+        let param = state.get(render_world.as_unsafe_world_cell());
 
         self.node
             .run(render_world, graph_ctx, render_ctx, &param, &view_query)
@@ -161,7 +173,7 @@ impl<T: ViewNode> RenderNode for ViewNodeRunner<T> {
 }
 
 impl<T: ViewNode + FromWorld> FromWorld for ViewNodeRunner<T> {
-    fn from_world(world: &World) -> Self {
+    fn from_world(world: &mut World) -> Self {
         Self::new(T::from_world(world), world)
     }
 }
@@ -763,6 +775,8 @@ impl RenderGraph {
                 view_entity,
             };
 
+            log::trace!("Running render graph node: {}", node_state.node_id.name);
+
             node_state
                 .node
                 .run(render_world, &mut graph_ctx, &mut render_ctx)?;
@@ -811,9 +825,10 @@ impl RenderGraphApp for SubApp {
         &mut self,
         label: impl RenderLabel,
     ) -> &mut Self {
-        let node = T::from_world(self.read_world());
+        let node = T::from_world(self.world_mut());
         let mut render_graph = self.get_resource_mut::<RenderGraph>().unwrap();
         render_graph.add_node(label, node).unwrap();
+        drop(render_graph);
         self
     }
 
@@ -824,6 +839,7 @@ impl RenderGraphApp for SubApp {
     ) -> &mut Self {
         let mut render_graph = self.get_resource_mut::<RenderGraph>().unwrap();
         render_graph.try_add_node_edge(from, to).unwrap();
+        drop(render_graph);
         self
     }
 
@@ -839,6 +855,7 @@ impl RenderGraphApp for SubApp {
                 },
             )
             .unwrap();
+        drop(render_graph);
         self
     }
 
@@ -847,12 +864,13 @@ impl RenderGraphApp for SubApp {
         sub_graph: impl RenderLabel,
         label: impl RenderLabel,
     ) -> &mut Self {
-        let node = T::from_world(self.read_world());
+        let node = T::from_world(self.world_mut());
         let mut render_graph = self.get_resource_mut::<RenderGraph>().unwrap();
         let sub_graph = render_graph
             .get_node_mut::<SubGraphNode>(sub_graph)
             .unwrap();
         sub_graph.sub_graph.add_node(label, node).unwrap();
+        drop(render_graph);
         self
     }
 
@@ -867,6 +885,7 @@ impl RenderGraphApp for SubApp {
             .get_node_mut::<SubGraphNode>(sub_graph)
             .unwrap();
         sub_graph.sub_graph.try_add_node_edge(from, to).unwrap();
+        drop(render_graph);
         self
     }
 }

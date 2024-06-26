@@ -1,6 +1,11 @@
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::{
+    cell::UnsafeCell,
+    marker::PhantomData,
+    ptr::NonNull,
+    sync::atomic::{AtomicU32, AtomicU64, Ordering},
+};
 
-use weaver_util::{lock::Lock, prelude::Result};
+use weaver_util::{lock::Lock, prelude::Result, warn_once};
 
 use crate::prelude::{
     Bundle, IntoSystem, QueryFetch, QueryFilter, QueryState, Res, ResMut, Resource, Resources,
@@ -12,6 +17,74 @@ use super::{
     entity::Entity,
     storage::{Mut, Ref, Storage},
 };
+
+#[derive(Clone, Copy)]
+pub struct UnsafeWorldCell<'a>(
+    NonNull<World>,
+    PhantomData<&'a mut World>,
+    PhantomData<&'a UnsafeCell<World>>,
+);
+unsafe impl Sync for UnsafeWorldCell<'_> {}
+
+impl<'a> UnsafeWorldCell<'a> {
+    pub fn new_exclusive(world: &'a mut World) -> Self {
+        unsafe {
+            Self(
+                NonNull::new_unchecked(world as *mut _),
+                PhantomData,
+                PhantomData,
+            )
+        }
+    }
+
+    pub fn new_shared(world: &'a World) -> Self {
+        unsafe {
+            Self(
+                NonNull::new_unchecked(world as *const _ as *mut _),
+                PhantomData,
+                PhantomData,
+            )
+        }
+    }
+
+    /// # Safety
+    ///
+    /// This function is unsafe because it dereferences the pointer to the world.
+    /// Callers must ensure that the world is not accessed concurrently, and that no mutable references to the world are held.
+    pub unsafe fn world(self) -> &'a World {
+        unsafe { self.0.as_ref() }
+    }
+
+    /// # Safety
+    ///
+    /// This function is unsafe because it dereferences the pointer to the world.
+    /// Callers must ensure that the world is not accessed concurrently, and that no other references to the world are held.
+    pub unsafe fn world_mut(mut self) -> &'a mut World {
+        unsafe { self.0.as_mut() }
+    }
+
+    /// # Safety
+    ///
+    /// This function is unsafe because it dereferences the pointer to the world.
+    pub unsafe fn get_resource<T: Resource>(self) -> Option<Res<'a, T>> {
+        unsafe { self.0.as_ref().get_resource::<T>() }
+    }
+
+    /// # Safety
+    ///
+    /// This function is unsafe because it dereferences the pointer to the world.
+    pub unsafe fn get_resource_mut<T: Resource>(mut self) -> Option<ResMut<'a, T>> {
+        unsafe { self.0.as_mut().get_resource_mut::<T>() }
+    }
+
+    pub fn read_change_tick(self) -> Tick {
+        unsafe { self.0.as_ref().read_change_tick() }
+    }
+
+    pub fn last_change_tick(self) -> Tick {
+        unsafe { self.0.as_ref().last_change_tick() }
+    }
+}
 
 pub struct World {
     next_entity: AtomicU32,
@@ -45,6 +118,14 @@ impl World {
         Self::default()
     }
 
+    pub fn as_unsafe_world_cell(&self) -> UnsafeWorldCell {
+        UnsafeWorldCell::new_shared(self)
+    }
+
+    pub fn as_unsafe_world_cell_exclusive(&mut self) -> UnsafeWorldCell {
+        UnsafeWorldCell::new_exclusive(self)
+    }
+
     pub fn storage(&self) -> &Storage {
         &self.storage
     }
@@ -75,8 +156,12 @@ impl World {
     }
 
     pub fn insert_component<T: Component>(&mut self, entity: Entity, component: T) {
-        self.storage
-            .insert_component(entity, component, self.read_change_tick())
+        self.storage.insert_component(
+            entity,
+            component,
+            self.last_change_tick(),
+            self.read_change_tick(),
+        )
     }
 
     pub fn insert_components<T: Bundle>(&mut self, entity: Entity, bundle: T) {
@@ -113,34 +198,29 @@ impl World {
         QueryState::new(self)
     }
 
-    /// # Safety
-    ///
-    /// Caller ensures that there are no mutable references to the resource.
-    pub unsafe fn get_resource_unsafe<T: Resource>(&self) -> Option<Res<'_, T>> {
-        unsafe { self.resources.get_unsafe::<T>() }
-    }
-
-    pub fn get_resource<T: Resource>(&mut self) -> Option<Res<T>> {
+    pub fn get_resource<T: Resource>(&self) -> Option<Res<'_, T>> {
         self.resources.get::<T>()
     }
 
-    /// # Safety
-    ///
-    /// Caller ensures that there are no other references to the resource, mutable or otherwise.
-    pub unsafe fn get_resource_mut_unsafe<T: Resource>(&self) -> Option<ResMut<'_, T>> {
-        unsafe {
-            self.resources
-                .get_mut_unsafe::<T>(self.last_change_tick, self.read_change_tick())
-        }
-    }
-
-    pub fn get_resource_mut<T: Resource>(&mut self) -> Option<ResMut<T>> {
+    pub fn get_resource_mut<T: Resource>(&mut self) -> Option<ResMut<'_, T>> {
         self.resources
             .get_mut::<T>(self.last_change_tick, self.read_change_tick())
     }
 
     pub fn has_resource<T: Resource>(&self) -> bool {
         self.resources.contains::<T>()
+    }
+
+    pub fn init_resource<T: Resource + FromWorld>(&mut self) {
+        if self.has_resource::<T>() {
+            warn_once!(
+                "Resource {} already initialized; not initializing it again",
+                std::any::type_name::<T>(),
+            );
+            return;
+        }
+        let resource = T::from_world(self);
+        self.insert_resource(resource);
     }
 
     pub fn insert_resource<T: Resource>(&mut self, component: T) {
@@ -191,30 +271,55 @@ impl World {
         self.systems.add_stage_after::<T, U>();
     }
 
-    pub fn add_system<S: SystemStage, M>(
-        &mut self,
-        system: impl IntoSystem<M> + 'static,
-        stage: S,
-    ) {
+    pub fn add_system<S: SystemStage, M: 'static>(&mut self, system: impl IntoSystem<M>, stage: S) {
+        if self.has_system(&system, &stage) {
+            warn_once!(
+                "System {} already added to schedule; not adding it again",
+                system.name(),
+            );
+            return;
+        }
         self.systems.add_system(system, stage);
     }
 
-    pub fn add_system_before<S: SystemStage, M1, M2>(
+    pub fn add_system_before<S: SystemStage, M1: 'static, M2: 'static>(
         &mut self,
-        system: impl IntoSystem<M1> + 'static,
-        before: impl IntoSystem<M2> + 'static,
+        system: impl IntoSystem<M1>,
+        before: impl IntoSystem<M2>,
         stage: S,
     ) {
+        if self.has_system(&system, &stage) {
+            warn_once!(
+                "System {} already added to schedule; not adding it again",
+                system.name(),
+            );
+            return;
+        }
         self.systems.add_system_before(system, before, stage);
     }
 
-    pub fn add_system_after<S: SystemStage, M1, M2>(
+    pub fn add_system_after<S: SystemStage, M1: 'static, M2: 'static>(
         &mut self,
-        system: impl IntoSystem<M1> + 'static,
-        after: impl IntoSystem<M2> + 'static,
+        system: impl IntoSystem<M1>,
+        after: impl IntoSystem<M2>,
         stage: S,
     ) {
+        if self.has_system(&system, &stage) {
+            warn_once!(
+                "System {} already added to schedule; not adding it again",
+                system.name(),
+            );
+            return;
+        }
         self.systems.add_system_after(system, after, stage);
+    }
+
+    pub fn has_system<M: 'static>(
+        &self,
+        system: &impl IntoSystem<M>,
+        stage: &impl SystemStage,
+    ) -> bool {
+        self.systems.has_system(system, stage)
     }
 
     pub fn init(&mut self) -> Result<()> {
@@ -247,11 +352,155 @@ impl World {
 }
 
 pub trait FromWorld {
-    fn from_world(world: &World) -> Self;
+    fn from_world(world: &mut World) -> Self;
 }
 
 impl<T: Default> FromWorld for T {
-    fn from_world(_: &World) -> Self {
+    fn from_world(_: &mut World) -> Self {
         T::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use weaver_ecs_macros::Component;
+    use weaver_reflect_macros::Reflect;
+
+    use super::*;
+    use crate::{
+        self as weaver_ecs,
+        prelude::{Query, WorldMut},
+    };
+
+    #[derive(Debug, Clone, Copy, PartialEq, Reflect, Resource)]
+    pub struct TestResource {
+        pub value: f32,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Reflect, Component)]
+    pub struct Position {
+        pub x: f32,
+        pub y: f32,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Reflect, Component)]
+    pub struct Velocity {
+        pub dx: f32,
+        pub dy: f32,
+    }
+
+    struct Update1;
+    impl SystemStage for Update1 {}
+
+    struct Update2;
+    impl SystemStage for Update2 {}
+
+    struct Update3;
+    impl SystemStage for Update3 {}
+
+    fn position_system_exclusive(world: WorldMut) -> Result<()> {
+        let query = world.query::<(&mut Position, &Velocity)>();
+        for (_entity, (mut position, velocity)) in query.iter(&world) {
+            position.x += velocity.dx;
+            position.y += velocity.dy;
+        }
+        Ok(())
+    }
+
+    fn position_system_shared(query: Query<(&mut Position, &Velocity)>) -> Result<()> {
+        dbg!(query.iter().count());
+        for (_entity, (mut position, velocity)) in query.iter() {
+            position.x += velocity.dx;
+            position.y += velocity.dy;
+        }
+        Ok(())
+    }
+
+    fn velocity_system_exclusive(world: WorldMut) -> Result<()> {
+        let query = world.query::<&mut Velocity>();
+        for (_entity, mut velocity) in query.iter(&world) {
+            velocity.dx += 1.0;
+            velocity.dy += 1.0;
+        }
+        Ok(())
+    }
+
+    fn velocity_system_shared(velocity: Query<&mut Velocity>) -> Result<()> {
+        for (_entity, mut velocity) in velocity.iter() {
+            velocity.dx += 1.0;
+            velocity.dy += 1.0;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_destroy_entity() {
+        let mut world = World::new();
+        let entity = world.create_entity();
+        assert_eq!(entity.id(), 0);
+        assert_eq!(entity.generation(), 0);
+
+        let entity = world.create_entity();
+        assert_eq!(entity.id(), 1);
+        assert_eq!(entity.generation(), 0);
+
+        let entity = world.create_entity();
+        assert_eq!(entity.id(), 2);
+        assert_eq!(entity.generation(), 0);
+
+        world.destroy_entity(Entity::new(1, 0));
+
+        let entity = world.create_entity();
+        assert_eq!(entity.id(), 1);
+        assert_eq!(entity.generation(), 1);
+
+        let entity = world.create_entity();
+        assert_eq!(entity.id(), 3);
+        assert_eq!(entity.generation(), 0);
+    }
+
+    #[test]
+    fn test_spawn() {
+        let mut world = World::new();
+        let entity = world.spawn((Position { x: 1.0, y: 2.0 }, Velocity { dx: 3.0, dy: 4.0 }));
+        assert_eq!(world.get_component::<Position>(entity).unwrap().x, 1.0);
+        assert_eq!(world.get_component::<Position>(entity).unwrap().y, 2.0);
+        assert_eq!(world.get_component::<Velocity>(entity).unwrap().dx, 3.0);
+        assert_eq!(world.get_component::<Velocity>(entity).unwrap().dy, 4.0);
+    }
+
+    #[test]
+    fn test_insert_remove_component() {
+        let mut world = World::new();
+        let entity = world.create_entity();
+        world.insert_component(entity, Position { x: 1.0, y: 2.0 });
+        assert_eq!(world.get_component::<Position>(entity).unwrap().x, 1.0);
+        assert_eq!(world.get_component::<Position>(entity).unwrap().y, 2.0);
+
+        let position = world.remove_component::<Position>(entity).unwrap();
+        assert_eq!(position.x, 1.0);
+        assert_eq!(position.y, 2.0);
+        assert!(world.get_component::<Position>(entity).is_none());
+    }
+
+    #[test]
+    fn test_resource() {
+        let mut world = World::new();
+        world.insert_resource(TestResource { value: 1.0 });
+        assert_eq!(world.get_resource::<TestResource>().unwrap().value, 1.0);
+    }
+
+    #[test]
+    fn test_system() {
+        env_logger::builder().is_test(true).try_init().ok();
+        let mut world = World::new();
+        world.push_update_stage::<Update1>();
+        world.add_system(position_system_shared, Update1);
+
+        let entity = world.spawn((Position { x: 1.0, y: 2.0 }, Velocity { dx: 3.0, dy: 4.0 }));
+        world.update().unwrap();
+
+        assert_eq!(world.get_component::<Position>(entity).unwrap().x, 4.0);
+        assert_eq!(world.get_component::<Position>(entity).unwrap().y, 6.0);
     }
 }

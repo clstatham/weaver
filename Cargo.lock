@@ -3002,6 +3002,7 @@ name = "weaver-ecs"
 version = "0.1.0"
 dependencies = [
  "atomic_refcell",
+ "env_logger",
  "glam 0.27.0",
  "itertools 0.13.0",
  "log",
@@ -3125,6 +3126,7 @@ name = "weaver-util"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "atomic_refcell",
  "downcast-rs",
  "lock_api",
  "parking_lot",

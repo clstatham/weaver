@@ -41,28 +41,28 @@ impl EguiContext {
     }
 
     pub fn available_rect(&self) -> egui::Rect {
-        self.state.read_arc().egui_ctx().available_rect()
+        self.state.read().egui_ctx().available_rect()
     }
 
     pub fn handle_input(&self, window: &winit::window::Window, event: &winit::event::WindowEvent) {
-        let _ = self.state.write_arc().on_window_event(window, event);
+        let _ = self.state.write().on_window_event(window, event);
     }
 
     pub fn wants_input(&self) -> bool {
-        self.state.read_arc().egui_ctx().wants_keyboard_input()
-            || self.state.read_arc().egui_ctx().wants_pointer_input()
+        self.state.read().egui_ctx().wants_keyboard_input()
+            || self.state.read().egui_ctx().wants_pointer_input()
     }
 
     pub fn begin_frame(&self, window: &winit::window::Window) {
-        if self.full_output.read_arc().is_none() {
-            let raw_input = self.state.write_arc().take_egui_input(window);
-            self.state.read_arc().egui_ctx().begin_frame(raw_input);
+        if self.full_output.read().is_none() {
+            let raw_input = self.state.write().take_egui_input(window);
+            self.state.read().egui_ctx().begin_frame(raw_input);
         }
     }
 
     pub fn end_frame(&self) {
-        if self.full_output.read_arc().is_none() {
-            *self.full_output.write_arc() = Some(self.state.read_arc().egui_ctx().end_frame());
+        if self.full_output.read().is_none() {
+            *self.full_output.write() = Some(self.state.read().egui_ctx().end_frame());
         }
     }
 
@@ -70,8 +70,8 @@ impl EguiContext {
     where
         F: FnOnce(&egui::Context) -> R,
     {
-        if self.full_output.read_arc().is_none() {
-            Some(f(self.state.read_arc().egui_ctx()))
+        if self.full_output.read().is_none() {
+            Some(f(self.state.read().egui_ctx()))
         } else {
             None
         }
@@ -82,11 +82,9 @@ impl EguiContext {
         device: &wgpu::Device,
         texture: &wgpu::TextureView,
     ) -> egui::epaint::TextureId {
-        self.renderer.write_arc().register_native_texture(
-            device,
-            texture,
-            wgpu::FilterMode::Nearest,
-        )
+        self.renderer
+            .write()
+            .register_native_texture(device, texture, wgpu::FilterMode::Nearest)
     }
 
     pub fn update_texture(
@@ -95,9 +93,12 @@ impl EguiContext {
         texture: &wgpu::TextureView,
         id: egui::epaint::TextureId,
     ) {
-        self.renderer
-            .write_arc()
-            .update_egui_texture_from_wgpu_texture(device, texture, wgpu::FilterMode::Nearest, id);
+        self.renderer.write().update_egui_texture_from_wgpu_texture(
+            device,
+            texture,
+            wgpu::FilterMode::Nearest,
+            id,
+        );
     }
 
     pub fn render(
@@ -109,31 +110,31 @@ impl EguiContext {
         window_surface_view: &wgpu::TextureView,
         screen_descriptor: &ScreenDescriptor,
     ) {
-        if self.full_output.read_arc().is_none() {
+        if self.full_output.read().is_none() {
             return;
         }
-        let full_output = self.full_output.write_arc().take().unwrap();
+        let full_output = self.full_output.write().take().unwrap();
         let pixels_per_point = screen_descriptor.pixels_per_point;
 
         self.state
-            .write_arc()
+            .write()
             .handle_platform_output(window, full_output.platform_output);
 
         let tris = self
             .state
-            .read_arc()
+            .read()
             .egui_ctx()
             .tessellate(full_output.shapes, pixels_per_point);
         for (id, image_delta) in &full_output.textures_delta.set {
             self.renderer
-                .write_arc()
+                .write()
                 .update_texture(device, queue, *id, image_delta);
         }
         self.renderer
-            .write_arc()
+            .write()
             .update_buffers(device, queue, encoder, &tris, screen_descriptor);
 
-        let renderer = self.renderer.read_arc();
+        let renderer = self.renderer.read();
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("egui render pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -153,7 +154,7 @@ impl EguiContext {
         drop(render_pass);
         drop(renderer);
         for x in &full_output.textures_delta.free {
-            self.renderer.write_arc().free_texture(x);
+            self.renderer.write().free_texture(x);
         }
     }
 }
@@ -175,14 +176,14 @@ impl Plugin for EguiPlugin {
         Ok(())
     }
     fn finish(&self, app: &mut App) -> Result<()> {
-        let Some(window) = app.main_app_mut().get_resource_mut::<Window>() else {
+        let Some(window) = app.main_app().get_resource::<Window>() else {
             return Ok(());
         };
-        let window = window.clone();
+        let window = window.into_inner().clone();
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         let device = render_app.get_resource_mut::<WgpuDevice>().unwrap();
         let egui_context = EguiContext::new(&device, &window, 1);
-        drop(window);
+        drop((window, device));
         render_app.insert_resource(egui_context.clone());
         app.main_app_mut().insert_resource(egui_context);
 
@@ -212,6 +213,9 @@ fn render(
     mut egui_context: ResMut<EguiContext>,
     mut renderer: ResMut<weaver_renderer::Renderer>,
 ) -> Result<()> {
+    let Some(current_frame) = current_frame.inner.as_ref() else {
+        return Ok(());
+    };
     let surface_texture_size = current_frame.surface_texture.texture.size();
 
     let screen_descriptor = ScreenDescriptor {

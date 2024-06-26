@@ -2,13 +2,17 @@ use std::path::Path;
 
 use encase::ShaderType;
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::prelude::*;
+use weaver_asset::{prelude::*, LoadAsset};
 use weaver_core::{color::Color, texture::Texture};
-use weaver_ecs::prelude::Reflect;
+use weaver_ecs::{
+    component::{Res, ResMut},
+    prelude::{Reflect, Resource},
+};
 use weaver_renderer::{
     asset::{ExtractRenderAssetPlugin, RenderAsset},
     bind_group::{AssetBindGroupPlugin, BindGroupLayout, CreateBindGroup},
     buffer::GpuBufferVec,
+    extract::Extract,
     prelude::*,
     texture::{texture_format, GpuTexture},
 };
@@ -32,10 +36,14 @@ pub struct Material {
     pub texture_scale: f32,
 }
 
+impl Asset for Material {}
+
+#[derive(Resource, Default)]
 pub struct MaterialLoader;
 
-impl Asset for Material {
-    fn load(assets: &mut Assets, path: &Path) -> Result<Self> {
+impl LoadAsset<Material> for MaterialLoader {
+    type Param = ResMut<'static, Assets<Texture>>;
+    fn load(&mut self, textures: &mut ResMut<Assets<Texture>>, path: &Path) -> Result<Material> {
         let (document, _buffers, images) = gltf::import(path)?;
         if document.materials().count() != 1 {
             bail!("Material file must contain exactly one material");
@@ -134,13 +142,13 @@ impl Asset for Material {
 
         let material = Material {
             diffuse: diffuse.into(),
-            diffuse_texture: assets.insert(diffuse_texture),
-            normal_texture: assets.insert(normal_texture),
+            diffuse_texture: textures.insert(diffuse_texture),
+            normal_texture: textures.insert(normal_texture),
             metallic,
             roughness,
-            metallic_roughness_texture: assets.insert(metallic_roughness_texture),
+            metallic_roughness_texture: textures.insert(metallic_roughness_texture),
             ao,
-            ao_texture: assets.insert(ao_texture),
+            ao_texture: textures.insert(ao_texture),
             texture_scale: 1.0,
         };
 
@@ -171,32 +179,26 @@ pub struct GpuMaterial {
     pub ao_texture_sampler: wgpu::Sampler,
 }
 
-impl Asset for GpuMaterial {
-    fn load(_assets: &mut Assets, _path: &std::path::Path) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        bail!("GpuMaterial cannot be loaded from a file")
-    }
-}
+impl Asset for GpuMaterial {}
 
 impl RenderAsset for GpuMaterial {
-    type BaseAsset = Material;
+    type Source = Material;
+    type Param = Extract<'static, 'static, Res<'static, Assets<Texture>>>;
 
     fn extract_render_asset(
         base_asset: &Material,
-        assets: &Assets,
+        textures: &Extract<Res<Assets<Texture>>>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Option<Self>
     where
         Self: Sized,
     {
-        let diffuse_texture = assets.get(base_asset.diffuse_texture)?;
+        let diffuse_texture = textures.get(base_asset.diffuse_texture)?;
         let diffuse_texture =
             GpuTexture::from_image(device, queue, &diffuse_texture, texture_format::SDR_FORMAT)?;
 
-        let normal_texture = assets.get(base_asset.normal_texture)?;
+        let normal_texture = textures.get(base_asset.normal_texture)?;
         let normal_texture = GpuTexture::from_image(
             device,
             queue,
@@ -204,7 +206,7 @@ impl RenderAsset for GpuMaterial {
             texture_format::NORMAL_FORMAT,
         )?;
 
-        let metallic_roughness_texture = assets.get(base_asset.metallic_roughness_texture)?;
+        let metallic_roughness_texture = textures.get(base_asset.metallic_roughness_texture)?;
         let metallic_roughness_texture = GpuTexture::from_image(
             device,
             queue,
@@ -212,7 +214,7 @@ impl RenderAsset for GpuMaterial {
             texture_format::SDR_FORMAT,
         )?;
 
-        let ao_texture = assets.get(base_asset.ao_texture)?;
+        let ao_texture = textures.get(base_asset.ao_texture)?;
         let ao_texture =
             GpuTexture::from_image(device, queue, &ao_texture, texture_format::SDR_FORMAT)?;
 
@@ -288,8 +290,8 @@ impl RenderAsset for GpuMaterial {
 
     fn update_render_asset(
         &mut self,
-        base_asset: &Self::BaseAsset,
-        _main_world_assets: &Assets,
+        base_asset: &Self::Source,
+        _textures: &Extract<Res<Assets<Texture>>>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<()>

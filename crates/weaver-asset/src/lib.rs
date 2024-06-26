@@ -6,32 +6,77 @@ use std::{
     sync::atomic::AtomicUsize,
 };
 
-use weaver_app::{plugin::Plugin, App};
+use weaver_app::{App, SubApp};
 use weaver_ecs::{
     change::{ComponentTicks, Tick},
     prelude::{reflect_trait, Component, Reflect, Resource},
     storage::SparseSet,
+    system::{SystemAccess, SystemParam, SystemParamItem},
+    world::{FromWorld, UnsafeWorldCell, World},
 };
 use weaver_util::prelude::{anyhow, impl_downcast, DowncastSync, Error, Result};
 
 pub mod prelude {
-    pub use crate::{Asset, AssetPlugin, Assets, Handle, ReflectAsset, UntypedHandle};
+    pub use crate::{Asset, Assets, Handle, ReflectAsset, UntypedHandle};
     pub use weaver_asset_macros::Asset;
 }
 
-#[reflect_trait]
-pub trait Asset: DowncastSync {
-    fn load(assets: &mut Assets, path: &std::path::Path) -> Result<Self>
-    where
-        Self: Sized;
-}
-impl_downcast!(Asset);
+pub trait LoadAsset<T: Asset>: Resource + FromWorld {
+    type Param: SystemParam + 'static;
 
-impl Asset for () {
-    fn load(_assets: &mut Assets, _path: &Path) -> Result<Self> {
-        Ok(())
+    fn load(&mut self, param: &mut SystemParamItem<Self::Param>, path: &Path) -> Result<T>;
+}
+
+pub struct AssetLoader<'w, 's, T: Asset, L: LoadAsset<T>> {
+    loader: &'w mut L,
+    param: SystemParamItem<'w, 's, L::Param>,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<'w, 's, T: Asset, L: LoadAsset<T>> AssetLoader<'w, 's, T, L> {
+    pub fn load(&mut self, path: impl AsRef<Path>) -> Result<T> {
+        self.loader.load(&mut self.param, path.as_ref())
     }
 }
+
+unsafe impl<T: Asset, L: LoadAsset<T>> SystemParam for AssetLoader<'_, '_, T, L> {
+    type State = <L::Param as SystemParam>::State;
+    type Item<'w, 's> = AssetLoader<'w, 's, T, L>;
+
+    fn access() -> SystemAccess {
+        SystemAccess {
+            exclusive: false,
+            ..Default::default()
+        }
+    }
+
+    fn validate_access(_access: &SystemAccess) -> bool {
+        true
+    }
+
+    fn init_state(world: &mut World) -> Self::State {
+        <L::Param as SystemParam>::init_state(world)
+    }
+
+    unsafe fn fetch<'w, 's>(
+        state: &'s mut Self::State,
+        world: UnsafeWorldCell<'w>,
+    ) -> Self::Item<'w, 's> {
+        let loader = unsafe { world.get_resource_mut::<L>().unwrap() };
+        let param = <L::Param as SystemParam>::fetch(state, world);
+        AssetLoader {
+            loader: loader.into_inner(),
+            param,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+#[reflect_trait]
+pub trait Asset: DowncastSync {}
+impl_downcast!(Asset);
+
+impl Asset for () {}
 
 #[derive(Component, Reflect)]
 pub struct Handle<T: Asset> {
@@ -177,31 +222,29 @@ impl<'w, T: Asset> DerefMut for AssetMut<'w, T> {
 }
 
 #[derive(Default, Resource)]
-pub struct Assets {
+pub struct Assets<T: Asset> {
     next_handle_id: AtomicUsize,
-    storage: SparseSet<UnsafeCell<Box<dyn Asset>>>,
+    storage: SparseSet<UnsafeCell<T>>,
 }
 
 // SAFETY: Assets are Sync and we validate access to them before using them.
-unsafe impl Sync for Assets {}
+unsafe impl<T: Asset> Sync for Assets<T> {}
 
-impl Assets {
+impl<T: Asset> Assets<T> {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            next_handle_id: AtomicUsize::new(0),
+            storage: SparseSet::new(),
+        }
     }
 
-    pub fn load<T: Asset>(&mut self, path: impl AsRef<Path>) -> Result<Handle<T>> {
-        let asset = T::load(self, path.as_ref())?;
-        Ok(self.insert(asset))
-    }
-
-    pub fn insert<T: Asset>(&mut self, asset: T) -> Handle<T> {
+    pub fn insert(&mut self, asset: T) -> Handle<T> {
         let id = self
             .next_handle_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.storage.insert(
             id,
-            UnsafeCell::new(Box::new(asset)),
+            UnsafeCell::new(asset),
             ComponentTicks::new(Tick::MAX), // todo: change detection for assets
         );
 
@@ -211,39 +254,57 @@ impl Assets {
         }
     }
 
-    // TODO: make these unsafe
-    pub fn get<T: Asset>(&self, handle: Handle<T>) -> Option<AssetRef<T>> {
-        self.storage.get(handle.id).and_then(|asset| {
-            let asset = unsafe { &**asset.get() };
-            asset.is::<T>().then(|| AssetRef {
-                asset: asset.downcast_ref::<T>().unwrap(),
-            })
+    pub fn get(&self, handle: Handle<T>) -> Option<AssetRef<T>> {
+        self.storage.get(handle.id).map(|asset| {
+            let asset = unsafe { &*asset.get() };
+            AssetRef { asset }
         })
     }
 
-    // TODO: make these unsafe
-    pub fn get_mut<T: Asset>(&self, handle: Handle<T>) -> Option<AssetMut<T>> {
-        self.storage.get(handle.id).and_then(|asset| {
-            let asset = unsafe { &mut **asset.get() };
-            asset.is::<T>().then(|| AssetMut {
-                asset: asset.downcast_mut::<T>().unwrap(),
-            })
+    // todo: make this unsafe
+    pub fn get_mut(&self, handle: Handle<T>) -> Option<AssetMut<T>> {
+        self.storage.get(handle.id).map(|asset| {
+            let asset = unsafe { &mut *asset.get() };
+            AssetMut { asset }
         })
     }
 
-    pub fn remove<T: Asset>(&mut self, handle: Handle<T>) -> Option<T> {
+    pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
         self.storage
             .remove(handle.id)
-            .and_then(|asset| asset.0.into_inner().downcast().ok())
-            .map(|asset| *asset)
+            .map(|asset| asset.0.into_inner())
     }
 }
 
-pub struct AssetPlugin;
+pub trait AddAsset {
+    fn add_asset<T: Asset>(&mut self) -> &mut Self;
+    fn add_asset_loader<T: Asset, L: LoadAsset<T>>(&mut self) -> &mut Self;
+}
 
-impl Plugin for AssetPlugin {
-    fn build(&self, app: &mut App) -> Result<()> {
-        app.insert_resource(Assets::new());
-        Ok(())
+impl AddAsset for SubApp {
+    fn add_asset<T: Asset>(&mut self) -> &mut Self {
+        if !self.has_resource::<Assets<T>>() {
+            self.insert_resource(Assets::<T>::new());
+        }
+        self
+    }
+
+    fn add_asset_loader<T: Asset, L: LoadAsset<T>>(&mut self) -> &mut Self {
+        self.add_asset::<T>();
+        let loader = L::from_world(self.world_mut());
+        self.insert_resource(loader);
+        self
+    }
+}
+
+impl AddAsset for App {
+    fn add_asset<T: Asset>(&mut self) -> &mut Self {
+        self.main_app_mut().add_asset::<T>();
+        self
+    }
+
+    fn add_asset_loader<T: Asset, L: LoadAsset<T>>(&mut self) -> &mut Self {
+        self.main_app_mut().add_asset_loader::<T, L>();
+        self
     }
 }

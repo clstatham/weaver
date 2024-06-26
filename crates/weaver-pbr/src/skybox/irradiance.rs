@@ -1,11 +1,10 @@
 use std::{path::Path, sync::Arc};
 
-use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::prelude::{Resource, World};
-use weaver_renderer::{
-    extract::{RenderResource, RenderResourcePlugin},
-    prelude::wgpu,
+use weaver_ecs::{
+    prelude::{Resource, World},
+    world::FromWorld,
 };
+use weaver_renderer::{prelude::wgpu, WgpuDevice, WgpuQueue};
 use weaver_util::prelude::Result;
 use wgpu::util::DeviceExt;
 
@@ -107,26 +106,15 @@ pub(crate) struct GpuSkyboxIrradiance {
     pub sampler: Arc<wgpu::Sampler>,
 }
 
-impl RenderResource for GpuSkyboxIrradiance {
-    fn extract_render_resource(
-        main_world: &mut World,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        let skybox = main_world.get_resource::<Skybox>()?;
-        let Skybox {
-            diffuse_path,
-            specular_path,
-            brdf_lut_path,
-            ..
-        } = &*skybox;
+impl FromWorld for GpuSkyboxIrradiance {
+    fn from_world(world: &mut World) -> Self {
+        let skybox = world.get_resource::<Skybox>().unwrap();
+        let device = world.get_resource::<WgpuDevice>().unwrap().into_inner();
+        let queue = world.get_resource::<WgpuQueue>().unwrap().into_inner();
 
-        let diffuse = load_ktx(diffuse_path, device, queue).unwrap();
-        let specular = load_ktx(specular_path, device, queue).unwrap();
-        let brdf_lut_texture = load_png(brdf_lut_path, device, queue).unwrap();
+        let diffuse = load_ktx(&skybox.diffuse_path, device, queue).unwrap();
+        let specular = load_ktx(&skybox.specular_path, device, queue).unwrap();
+        let brdf_lut_texture = load_png(&skybox.brdf_lut_path, device, queue).unwrap();
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("skybox_sampler"),
@@ -157,7 +145,7 @@ impl RenderResource for GpuSkyboxIrradiance {
             ..Default::default()
         });
 
-        Some(Self {
+        Self {
             diffuse_texture: diffuse.texture,
             diffuse_cube_view: Arc::new(diffuse_cube_view),
             specular_texture: specular.texture,
@@ -165,25 +153,6 @@ impl RenderResource for GpuSkyboxIrradiance {
             brdf_lut_texture,
             brdf_lut_view: Arc::new(brdf_lut_view),
             sampler: Arc::new(sampler),
-        })
-    }
-
-    fn update_render_resource(
-        &mut self,
-        _main_world: &mut World,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> Result<()> {
-        Ok(())
-    }
-}
-
-pub struct SkyboxIrradiancePlugin;
-
-impl Plugin for SkyboxIrradiancePlugin {
-    fn build(&self, app: &mut App) -> Result<()> {
-        app.add_plugin(RenderResourcePlugin::<GpuSkyboxIrradiance>::default())?;
-
-        Ok(())
+        }
     }
 }

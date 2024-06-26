@@ -1,6 +1,7 @@
-use crate::{
-    self as weaver_ecs,
-    prelude::{Bundle, Component, Entity, Resource, SystemParam},
+use std::ops::{Deref, DerefMut};
+
+use crate::prelude::{
+    Bundle, Component, Entity, FromWorld, Resource, SystemParam, UnsafeWorldCell,
 };
 
 use weaver_util::lock::SharedLock;
@@ -41,16 +42,11 @@ impl CommandQueue {
     }
 }
 
-#[derive(Default, Resource)]
 pub struct Commands {
     queue: SharedLock<CommandQueue>,
 }
 
 impl Commands {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn push<T: Command>(&self, command: T) {
         self.queue.write().push(command);
     }
@@ -65,9 +61,21 @@ impl Commands {
         });
     }
 
+    pub fn insert_components(&self, entity: Entity, bundle: impl Bundle) {
+        self.push(move |world: &mut World| {
+            world.insert_components(entity, bundle);
+        });
+    }
+
     pub fn remove_component<T: Component>(&self, entity: Entity) {
         self.push(move |world: &mut World| {
             world.remove_component::<T>(entity);
+        });
+    }
+
+    pub fn init_resource<T: Resource + FromWorld>(&self) {
+        self.push(move |world: &mut World| {
+            world.init_resource::<T>();
         });
     }
 
@@ -90,12 +98,12 @@ impl Commands {
     }
 }
 
-impl SystemParam for Commands {
+unsafe impl SystemParam for Commands {
     type State = SharedLock<CommandQueue>;
     type Item<'w, 's> = Commands;
 
-    fn validate_access(_access: &crate::prelude::SystemAccess) -> bool {
-        true
+    fn validate_access(access: &crate::prelude::SystemAccess) -> bool {
+        !access.exclusive
     }
 
     fn init_state(_world: &mut World) -> Self::State {
@@ -109,16 +117,75 @@ impl SystemParam for Commands {
         }
     }
 
-    unsafe fn fetch<'w, 's>(state: &'s mut Self::State, _world: &'w World) -> Self::Item<'w, 's> {
+    unsafe fn fetch<'w, 's>(
+        state: &'s mut Self::State,
+        _world: UnsafeWorldCell<'w>,
+    ) -> Self::Item<'w, 's> {
         Commands {
             queue: state.clone(),
         }
     }
 
+    #[inline(never)]
     fn apply(state: &mut Self::State, world: &mut World) {
         let commands = Commands {
             queue: state.clone(),
         };
         commands.execute(world);
+    }
+}
+
+pub struct WorldMut<'w> {
+    world: &'w mut World,
+}
+
+impl<'w> WorldMut<'w> {
+    pub fn into_inner(self) -> &'w mut World {
+        self.world
+    }
+}
+
+unsafe impl SystemParam for WorldMut<'_> {
+    type State = ();
+    type Item<'w, 's> = WorldMut<'w>;
+
+    fn validate_access(_access: &crate::prelude::SystemAccess) -> bool {
+        true
+    }
+
+    fn init_state(_world: &mut World) -> Self::State {}
+
+    fn access() -> crate::prelude::SystemAccess {
+        crate::prelude::SystemAccess {
+            exclusive: true,
+            ..Default::default()
+        }
+    }
+
+    unsafe fn fetch<'w, 's>(
+        _state: &'s mut Self::State,
+        world: UnsafeWorldCell<'w>,
+    ) -> Self::Item<'w, 's> {
+        WorldMut {
+            world: unsafe { world.world_mut() },
+        }
+    }
+
+    fn can_run(_world: &World) -> bool {
+        true
+    }
+}
+
+impl Deref for WorldMut<'_> {
+    type Target = World;
+
+    fn deref(&self) -> &Self::Target {
+        self.world
+    }
+}
+
+impl DerefMut for WorldMut<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.world
     }
 }

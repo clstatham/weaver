@@ -1,20 +1,19 @@
 use std::{any::TypeId, collections::HashMap, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{prelude::Asset, Assets, Handle, UntypedHandle};
+use weaver_asset::{prelude::Asset, AddAsset, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
-    change::ChangeDetection,
     commands::Commands,
     component::{Res, ResMut},
     prelude::{Component, Reflect, Resource},
     query::Query,
 };
 use weaver_util::{
-    prelude::{bail, DowncastSync, Result},
+    prelude::{DowncastSync, Result},
     TypeIdMap,
 };
 
-use crate::{asset::RenderAsset, ExtractBindGroups, WgpuDevice};
+use crate::{asset::RenderAsset, ExtractBindGroupStage, WgpuDevice};
 
 #[derive(Resource, Default)]
 pub struct BindGroupLayoutCache {
@@ -105,11 +104,7 @@ pub struct BindGroup<T: CreateBindGroup> {
     _marker: std::marker::PhantomData<T>,
 }
 
-impl<T: CreateBindGroup> Asset for BindGroup<T> {
-    fn load(_assets: &mut Assets, _path: &std::path::Path) -> Result<Self> {
-        bail!("ComponentBindGroup cannot be loaded from a file")
-    }
-}
+impl<T: Asset + CreateBindGroup> Asset for BindGroup<T> {}
 
 impl<T: CreateBindGroup> BindGroup<T> {
     pub fn new(device: &wgpu::Device, data: &T, cache: &mut BindGroupLayoutCache) -> Self {
@@ -147,7 +142,7 @@ impl<T: Component + CreateBindGroup> Default for ComponentBindGroupPlugin<T> {
 
 impl<T: Component + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_system(create_component_bind_group::<T>, ExtractBindGroups);
+        app.add_system(create_component_bind_group::<T>, ExtractBindGroupStage);
         Ok(())
     }
 }
@@ -186,7 +181,7 @@ impl<T: Resource + CreateBindGroup> Default for ResourceBindGroupPlugin<T> {
 
 impl<T: Resource + CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_system(create_resource_bind_group::<T>, ExtractBindGroups);
+        app.add_system(create_resource_bind_group::<T>, ExtractBindGroupStage);
         Ok(())
     }
 }
@@ -199,7 +194,7 @@ fn create_resource_bind_group<T: Resource + CreateBindGroup>(
     mut layout_cache: ResMut<BindGroupLayoutCache>,
 ) -> Result<()> {
     let mut stale = false;
-    if data.is_changed() || data.bind_group_stale() {
+    if data.bind_group_stale() {
         commands.remove_resource::<BindGroup<T>>();
         stale = true;
     }
@@ -241,15 +236,18 @@ impl<T: CreateBindGroup + RenderAsset> Default for AssetBindGroupPlugin<T> {
 
 impl<T: CreateBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_system(create_asset_bind_group::<T>, ExtractBindGroups);
+        app.add_asset::<BindGroup<T>>();
+        app.add_system(create_asset_bind_group::<T>, ExtractBindGroupStage);
         Ok(())
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
     commands: Commands,
     device: Res<WgpuDevice>,
-    mut assets: ResMut<Assets>,
+    assets: Res<Assets<T>>,
+    mut bind_group_assets: ResMut<Assets<BindGroup<T>>>,
     query: Query<&Handle<T>>,
     mut asset_bind_groups: ResMut<ExtractedAssetBindGroups>,
     mut layout_cache: ResMut<BindGroupLayoutCache>,
@@ -275,10 +273,14 @@ fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
             drop(handle);
             commands.insert_component(entity, bind_group_handle);
         } else {
-            let mut asset = assets.get_mut::<T>(*handle).unwrap();
+            let mut asset = assets.get_mut(*handle).unwrap();
             asset.set_bind_group_stale(false);
             let bind_group = BindGroup::new(&device, &*asset, &mut layout_cache);
-            let bind_group_handle = assets.insert(bind_group);
+            log::trace!(
+                "Created bind group for asset: {:?}",
+                std::any::type_name::<T>()
+            );
+            let bind_group_handle = bind_group_assets.insert(bind_group);
             asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
             drop(handle);
             commands.insert_component(entity, bind_group_handle);

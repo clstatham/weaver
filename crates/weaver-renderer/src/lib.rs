@@ -8,7 +8,7 @@ use std::{
 
 use asset::ExtractedRenderAssets;
 use bind_group::{BindGroupLayoutCache, ExtractedAssetBindGroups};
-use camera::{CameraPlugin, ViewTarget};
+use camera::{CameraPlugin, GpuCamera, ViewTarget};
 use graph::RenderGraph;
 use hdr::{HdrPlugin, HdrRenderTarget};
 use mesh::MeshPlugin;
@@ -19,12 +19,17 @@ use texture::{
 };
 use transform::TransformPlugin;
 use weaver_app::{plugin::Plugin, App, AppLabel, SubApp};
-use weaver_asset::Assets;
 use weaver_ecs::{
-    prelude::Resource, reflect::registry::TypeRegistry, system_schedule::SystemStage, world::World,
+    commands::{Commands, WorldMut},
+    component::{Res, ResMut},
+    prelude::Resource,
+    query::{Query, With},
+    reflect::registry::TypeRegistry,
+    system_schedule::SystemStage,
+    world::World,
 };
 use weaver_event::{EventRx, ManuallyUpdatedEvents};
-use weaver_util::{prelude::Result, warn_once};
+use weaver_util::prelude::Result;
 use weaver_winit::{Window, WindowResized};
 
 pub mod asset;
@@ -48,7 +53,7 @@ pub mod prelude {
     pub use super::{
         camera::{Camera, CameraPlugin},
         draw_fn::{DrawFn, DrawFnsApp, DrawFunctions},
-        extract::RenderComponent,
+        extract::ExtractComponent,
         graph::{RenderGraph, RenderNode, Slot},
         pipeline::{
             ComputePipeline, ComputePipelineLayout, ComputePipelinePlugin, CreateComputePipeline,
@@ -104,14 +109,17 @@ pub trait RenderLabel: Any + Clone + Copy {
 pub struct RenderApp;
 impl AppLabel for RenderApp {}
 
-pub struct Extract;
-impl SystemStage for Extract {}
+pub struct ExtractStage;
+impl SystemStage for ExtractStage {}
 
-pub struct ExtractBindGroups;
-impl SystemStage for ExtractBindGroups {}
+pub struct ExtractBindGroupStage;
+impl SystemStage for ExtractBindGroupStage {}
 
-pub struct ExtractPipelines;
-impl SystemStage for ExtractPipelines {}
+pub struct ExtractPipelineStage;
+impl SystemStage for ExtractPipelineStage {}
+
+pub struct InitRenderResources;
+impl SystemStage for InitRenderResources {}
 
 pub struct PreRender;
 impl SystemStage for PreRender {}
@@ -122,11 +130,15 @@ impl SystemStage for Render {}
 pub struct PostRender;
 impl SystemStage for PostRender {}
 
-#[derive(Resource)]
-pub struct CurrentFrame {
+pub struct CurrentFrameInner {
     pub surface_texture: Arc<wgpu::SurfaceTexture>,
     pub color_view: Arc<wgpu::TextureView>,
     pub depth_view: Arc<wgpu::TextureView>,
+}
+
+#[derive(Resource, Default)]
+pub struct CurrentFrame {
+    pub inner: Option<CurrentFrameInner>,
 }
 
 #[derive(Resource)]
@@ -201,7 +213,7 @@ pub struct Renderer {
 }
 
 fn create_surface(render_world: &mut World) -> Result<()> {
-    if render_world.get_resource_mut::<WindowSurface>().is_some() {
+    if render_world.has_resource::<WindowSurface>() {
         log::warn!("Surface already created");
         return Ok(());
     }
@@ -211,7 +223,10 @@ fn create_surface(render_world: &mut World) -> Result<()> {
         ..Default::default()
     });
 
-    let window = render_world.get_resource_mut::<Window>().unwrap();
+    let window = render_world
+        .get_resource_mut::<Window>()
+        .unwrap()
+        .into_inner();
 
     let surface = unsafe {
         instance
@@ -314,19 +329,19 @@ impl Plugin for RendererPlugin {
         let mut render_app = SubApp::new();
 
         render_app.insert_resource(TypeRegistry::new());
-        render_app.insert_resource(Assets::new());
 
-        render_app.push_manual_stage::<Extract>();
-        render_app.push_manual_stage::<ExtractBindGroups>();
-        render_app.push_manual_stage::<ExtractPipelines>();
+        render_app.init_resource::<CurrentFrame>();
 
+        render_app.push_manual_stage::<ExtractStage>();
+        render_app.push_manual_stage::<ExtractBindGroupStage>();
+        render_app.push_manual_stage::<ExtractPipelineStage>();
+
+        render_app.push_update_stage::<InitRenderResources>();
         render_app.push_update_stage::<PreRender>();
         render_app.push_update_stage::<Render>();
         render_app.push_update_stage::<PostRender>();
 
-        let mut render_graph = RenderGraph::new();
-        render_graph.set_inputs(vec![]).unwrap();
-        render_app.insert_resource(render_graph);
+        render_app.insert_resource(RenderGraph::new());
 
         render_app.insert_resource(RenderPipelineCache::new());
         render_app.insert_resource(BindGroupLayoutCache::new());
@@ -355,32 +370,35 @@ impl Plugin for RendererPlugin {
         let window = main_app
             .main_app_mut()
             .get_resource_mut::<Window>()
-            .unwrap();
+            .unwrap()
+            .into_inner();
         let window = window.clone();
         let resized_events = main_app
             .main_app_mut()
             .get_resource_mut::<ManuallyUpdatedEvents<WindowResized>>()
-            .unwrap();
+            .unwrap()
+            .into_inner();
         let resized_events = resized_events.clone();
         let render_app = main_app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.insert_resource(resized_events.clone());
         render_app.insert_resource(window.clone());
-        create_surface(render_app.write_world())?;
+        create_surface(render_app.world_mut())?;
 
         Ok(())
     }
 }
 
-pub fn begin_render(render_world: &mut World) -> Result<()> {
-    let renderer = unsafe { render_world.get_resource_mut_unsafe::<Renderer>().unwrap() };
-    if render_world.has_resource::<CurrentFrame>() {
-        log::warn!("Current frame already exists");
+pub fn begin_render(
+    renderer: Res<Renderer>,
+    surface: Res<WindowSurface>,
+    mut current_frame: ResMut<CurrentFrame>,
+) -> Result<()> {
+    if current_frame.inner.is_some() {
         return Ok(());
     }
 
-    let surface = unsafe { render_world.get_resource_unsafe::<WindowSurface>().unwrap() };
     let Ok(frame) = surface.get_current_texture() else {
-        warn_once!("Failed to get current frame");
+        log::warn!("Failed to get current frame");
         return Ok(());
     };
 
@@ -400,29 +418,29 @@ pub fn begin_render(render_world: &mut World) -> Result<()> {
                 dimension: Some(wgpu::TextureViewDimension::D2),
                 ..Default::default()
             });
-    let current_frame = CurrentFrame {
+
+    current_frame.inner.replace(CurrentFrameInner {
         surface_texture: Arc::new(frame),
         color_view: Arc::new(color_view),
         depth_view: Arc::new(depth_view),
-    };
-
-    render_world.insert_resource(current_frame);
+    });
 
     Ok(())
 }
 
-pub fn end_render(render_world: &mut World) -> Result<()> {
-    let Some(current_frame) = render_world.remove_resource::<CurrentFrame>() else {
+pub fn end_render(
+    mut current_frame: ResMut<CurrentFrame>,
+    mut renderer: ResMut<Renderer>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
+) -> Result<()> {
+    let Some(current_frame) = current_frame.inner.take() else {
         return Ok(());
     };
 
-    let mut renderer = unsafe { render_world.get_resource_mut_unsafe::<Renderer>().unwrap() };
-    let device = unsafe { render_world.get_resource_unsafe::<WgpuDevice>().unwrap() };
-    let queue = unsafe { render_world.get_resource_unsafe::<WgpuQueue>().unwrap() };
-
     log::trace!("End frame");
 
-    let CurrentFrame {
+    let CurrentFrameInner {
         surface_texture,
         color_view,
         depth_view,
@@ -469,25 +487,26 @@ pub fn end_render(render_world: &mut World) -> Result<()> {
     Ok(())
 }
 
-fn resize_surface(render_world: &mut World) -> Result<()> {
-    let events = render_world
-        .get_resource::<ManuallyUpdatedEvents<WindowResized>>()
-        .unwrap();
-    let events = EventRx::new(
-        events.clone(),
-        render_world.last_change_tick(),
-        render_world.change_tick(),
-    );
+#[allow(clippy::too_many_arguments)]
+fn resize_surface(
+    commands: Commands,
+    events: EventRx<WindowResized>,
+    view_targets: Query<&ViewTarget>,
+    mut current_frame: ResMut<CurrentFrame>,
+    mut renderer: ResMut<Renderer>,
+    device: Res<WgpuDevice>,
+    surface: Res<WindowSurface>,
+    mut hdr_target: ResMut<HdrRenderTarget>,
+) -> Result<()> {
     for event in events.iter() {
         let mut has_current_frame = false;
         let mut view_target_entities = Vec::new();
-        let view_targets = render_world.query::<&ViewTarget>();
-        let view_targets = view_targets.entity_iter(render_world).collect::<Vec<_>>();
-        if render_world.remove_resource::<CurrentFrame>().is_some() {
+        let view_targets = view_targets.entity_iter().collect::<Vec<_>>();
+        if current_frame.inner.take().is_some() {
             has_current_frame = true;
 
             for entity in view_targets {
-                render_world.remove_component::<ViewTarget>(entity).unwrap();
+                commands.remove_component::<ViewTarget>(entity);
                 view_target_entities.push(entity);
             }
         }
@@ -495,10 +514,6 @@ fn resize_surface(render_world: &mut World) -> Result<()> {
         let WindowResized { width, height } = *event;
 
         log::trace!("Resizing surface to {}x{}", width, height);
-
-        let mut renderer = unsafe { render_world.get_resource_mut_unsafe::<Renderer>().unwrap() };
-        let device = unsafe { render_world.get_resource_unsafe::<WgpuDevice>().unwrap() };
-        let surface = unsafe { render_world.get_resource_unsafe::<WindowSurface>().unwrap() };
 
         surface.configure(
             &device,
@@ -549,28 +564,20 @@ fn resize_surface(render_world: &mut World) -> Result<()> {
                 },
             );
 
-            let current_frame = CurrentFrame {
+            let current_frame_inner = CurrentFrameInner {
                 surface_texture: Arc::new(surface_texture),
                 color_view: Arc::new(color_view),
                 depth_view: Arc::new(depth_view),
             };
 
-            drop((surface, device, renderer));
-
-            render_world.insert_resource(current_frame);
-            let current_frame = render_world.get_resource_mut::<CurrentFrame>().unwrap();
-            let view_target = ViewTarget::from(&*current_frame);
+            current_frame.inner.replace(current_frame_inner);
+            let view_target = ViewTarget::from((&*current_frame, &*hdr_target));
             for view_target_entity in view_target_entities {
-                render_world.insert_component(view_target_entity, view_target.clone());
+                commands.insert_component(view_target_entity, view_target.clone());
             }
         }
 
-        if let Some(mut hdr_target) =
-            unsafe { render_world.get_resource_mut_unsafe::<HdrRenderTarget>() }
-        {
-            let device = unsafe { render_world.get_resource_unsafe::<WgpuDevice>().unwrap() };
-            hdr_target.resize(&device, width, height);
-        }
+        hdr_target.resize(&device, width, height);
     }
 
     events.clear();
@@ -578,38 +585,37 @@ fn resize_surface(render_world: &mut World) -> Result<()> {
     Ok(())
 }
 
-pub fn render_system(render_world: &mut World) -> Result<()> {
-    let mut render_graph = render_world.remove_resource::<RenderGraph>().unwrap();
-    render_graph.prepare(render_world)?;
-
-    let mut renderer = unsafe { render_world.get_resource_mut_unsafe::<Renderer>().unwrap() };
-    let device = unsafe { render_world.get_resource_unsafe::<WgpuDevice>().unwrap() };
-    let queue = unsafe { render_world.get_resource_unsafe::<WgpuQueue>().unwrap() };
+pub fn render_system(mut render_world: WorldMut) -> Result<()> {
     let view_targets = render_world.query::<&ViewTarget>();
-    let view_targets = view_targets.entity_iter(render_world).collect::<Vec<_>>();
+    let view_targets = view_targets.entity_iter(&render_world).collect::<Vec<_>>();
+    let mut render_graph = render_world.remove_resource::<RenderGraph>().unwrap();
+    render_graph.prepare(&mut render_world)?;
+
+    let render_world = render_world.into_inner();
+
+    let renderer = unsafe {
+        render_world
+            .as_unsafe_world_cell()
+            .get_resource_mut::<Renderer>()
+            .unwrap()
+            .into_inner()
+    };
+    let device = render_world
+        .get_resource::<WgpuDevice>()
+        .unwrap()
+        .into_inner();
+    let queue = render_world
+        .get_resource::<WgpuQueue>()
+        .unwrap()
+        .into_inner();
+
     // todo: don't assume every camera wants to run the whole main render graph
     for entity in view_targets {
-        render_graph.run(&device, &queue, &mut renderer, render_world, entity)?;
+        log::trace!("Running render graph for entity: {:?}", entity);
+        render_graph.run(device, queue, renderer, render_world, entity)?;
     }
 
     render_world.insert_resource(render_graph);
 
     Ok(())
-}
-
-#[doc(hidden)]
-#[allow(unused)]
-mod hidden {
-    use super::*;
-    use weaver_ecs::system::assert_is_non_exclusive_system;
-
-    fn system_assertions() {
-        // uncomment these lines periodically to check make sure the assertions fail
-        // (they should cause compiler errors)
-
-        // assert_is_non_exclusive_system(begin_render);
-        // assert_is_non_exclusive_system(end_render);
-        // assert_is_non_exclusive_system(render_system);
-        // assert_is_non_exclusive_system(resize_surface);
-    }
 }

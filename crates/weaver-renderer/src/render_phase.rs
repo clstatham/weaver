@@ -5,21 +5,21 @@ use std::{
 
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
+    component::{Res, ResMut},
     entity::Entity,
     prelude::Resource,
-    query::QueryFetch,
-    system::{SystemParam, SystemParamItem, SystemState},
-    world::World,
+    query::{Query, QueryFetch},
+    world::{FromWorld, World},
 };
-use weaver_util::{lock::ArcWrite, prelude::Result};
+use weaver_util::{lock::Write, prelude::Result};
 
 use crate::{
     bind_group::{BindGroupLayout, CreateBindGroup, ResourceBindGroupPlugin},
     buffer::{GpuArrayBuffer, GpuArrayBufferIndex, GpuArrayBufferable},
     draw_fn::{BinnedDrawItem, DrawFunctionsInner, FromDrawItemQuery},
-    extract::{RenderResource, RenderResourcePlugin},
     prelude::DrawFunctions,
     render_command::{RenderCommand, RenderCommandState},
+    WgpuDevice,
 };
 
 pub struct BinnedRenderPhase<T: BinnedDrawItem> {
@@ -68,7 +68,7 @@ impl<T: BinnedDrawItem> BinnedRenderPhase<T> {
         render_world: &'w World,
         render_pass: &mut wgpu::RenderPass<'w>,
         view_entity: Entity,
-        draw_functions: &mut ArcWrite<DrawFunctionsInner<T>>,
+        draw_functions: &mut Write<DrawFunctionsInner<T>>,
     ) -> Result<()> {
         debug_assert_eq!(self.batch_keys.len(), self.batch_sets.len());
         for (key, batch_set) in self.batch_keys.iter().zip(&self.batch_sets) {
@@ -79,6 +79,11 @@ impl<T: BinnedDrawItem> BinnedRenderPhase<T> {
                     batch.batch_range.clone(),
                 );
                 if let Some(draw_fn) = draw_functions.get_mut(item.draw_fn()) {
+                    log::trace!(
+                        "Runnind DrawFn {:?} for Entity {:?}",
+                        item.draw_fn(),
+                        item.entity()
+                    );
                     draw_fn.draw(render_world, render_pass, view_entity, item)?;
                 } else {
                     log::warn!("Draw function not found for key: {:?}", key);
@@ -142,38 +147,22 @@ impl<T: BinnedDrawItem> Plugin for BinnedRenderPhasePlugin<T> {
 }
 
 pub trait GetBatchData: Send + Sync + 'static {
-    type Param: SystemParam + 'static;
     type BufferData: GpuArrayBufferable + Send + Sync + 'static;
     type UpdateQuery: QueryFetch + 'static;
 
-    fn update_from_world(&mut self, render_world: &World);
+    fn update(&mut self, query: Query<Self::UpdateQuery>);
 
-    fn get_batch_data(
-        param: &SystemParamItem<Self::Param>,
-        query_item: Entity,
-    ) -> Option<Self::BufferData>;
+    fn get_batch_data(&self, query_item: Entity) -> Option<Self::BufferData>;
 }
 
 pub type BinnedInstances<I> = <I as BinnedDrawItem>::Instances;
 
 pub type BinnedBatchData<I> = <BinnedInstances<I> as GetBatchData>::BufferData;
 
-pub type BinnedBatchDataParam<'w, 's, I> =
-    <<BinnedInstances<I> as GetBatchData>::Param as SystemParam>::Item<'w, 's>;
-
 #[derive(Resource)]
 pub struct BatchedInstanceBuffer<I: BinnedDrawItem, C: RenderCommand<I>> {
     pub buffer: GpuArrayBuffer<BinnedBatchData<I>>,
     _phantom: std::marker::PhantomData<C>,
-}
-
-impl<I: BinnedDrawItem, C: RenderCommand<I>> Default for BatchedInstanceBuffer<I, C> {
-    fn default() -> Self {
-        Self {
-            buffer: GpuArrayBuffer::default(),
-            _phantom: std::marker::PhantomData,
-        }
-    }
 }
 
 impl<I: BinnedDrawItem, C: RenderCommand<I>> BatchedInstanceBuffer<I, C> {
@@ -183,10 +172,10 @@ impl<I: BinnedDrawItem, C: RenderCommand<I>> BatchedInstanceBuffer<I, C> {
 
     pub fn push(
         &mut self,
-        param: &BinnedBatchDataParam<I>,
+        instances: &BinnedInstances<I>,
         query_item: Entity,
     ) -> Option<GpuArrayBufferIndex<BinnedBatchData<I>>> {
-        let data = BinnedInstances::<I>::get_batch_data(param, query_item)?;
+        let data = instances.get_batch_data(query_item)?;
         let index = self.buffer.push(data);
         Some(index)
     }
@@ -228,30 +217,15 @@ impl<I: BinnedDrawItem, C: RenderCommand<I>> CreateBindGroup for BatchedInstance
     }
 }
 
-impl<I: BinnedDrawItem, C: RenderCommand<I>> RenderResource for BatchedInstanceBuffer<I, C> {
-    fn extract_render_resource(
-        _main_world: &mut World,
-        device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        let mut this = Self::default();
-
-        this.buffer.reserve(1, device);
-
-        Some(this)
-    }
-
-    fn update_render_resource(
-        &mut self,
-        _main_world: &mut World,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    ) -> Result<()> {
-        self.enqueue_update(device, queue);
-        Ok(())
+impl<I: BinnedDrawItem, C: RenderCommand<I>> FromWorld for BatchedInstanceBuffer<I, C> {
+    fn from_world(world: &mut World) -> Self {
+        let mut buffer = GpuArrayBuffer::new();
+        let device = world.get_resource::<WgpuDevice>().unwrap();
+        buffer.reserve(1, &device);
+        Self {
+            buffer,
+            _phantom: std::marker::PhantomData,
+        }
     }
 }
 
@@ -266,44 +240,24 @@ impl<I: BinnedDrawItem, C: RenderCommand<I>> Default for BatchedInstanceBufferPl
 
 impl<I: BinnedDrawItem, C: RenderCommand<I>> Plugin for BatchedInstanceBufferPlugin<I, C> {
     fn build(&self, app: &mut weaver_app::App) -> Result<()> {
-        app.add_plugin(RenderResourcePlugin::<BatchedInstanceBuffer<I, C>>::default())?;
         app.add_plugin(ResourceBindGroupPlugin::<BatchedInstanceBuffer<I, C>>::default())?;
+        Ok(())
+    }
+
+    fn finish(&self, app: &mut weaver_app::App) -> Result<()> {
+        app.init_resource::<BatchedInstanceBuffer<I, C>>();
         Ok(())
     }
 }
 
 pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
-    render_world: &mut World,
+    mut binned_phases: ResMut<BinnedRenderPhases<I>>,
+    draw_fns: Res<DrawFunctions<I>>,
+    mut batched_instance_buffer: ResMut<BatchedInstanceBuffer<I, C>>,
+    mut instances: ResMut<I::Instances>,
+    item_query: Query<I::QueryFetch, I::QueryFilter>,
+    instance_update_query: Query<<I::Instances as GetBatchData>::UpdateQuery>,
 ) -> Result<()> {
-    let mut state = SystemState::<<I::Instances as GetBatchData>::Param>::new(render_world);
-    let param = state.get(render_world);
-
-    let mut binned_phases = unsafe {
-        render_world
-            .get_resource_mut_unsafe::<BinnedRenderPhases<I>>()
-            .unwrap()
-    };
-
-    let draw_fns = unsafe {
-        render_world
-            .get_resource_unsafe::<DrawFunctions<I>>()
-            .unwrap()
-    };
-
-    let mut batched_instance_buffer = unsafe {
-        render_world
-            .get_resource_mut_unsafe::<BatchedInstanceBuffer<I, C>>()
-            .unwrap()
-    };
-
-    let mut instances = unsafe {
-        render_world
-            .get_resource_mut_unsafe::<I::Instances>()
-            .unwrap()
-    };
-
-    let query = render_world.query_filtered::<I::QueryFetch, I::QueryFilter>();
-
     let draw_fn_id = draw_fns
         .read()
         .get_id::<RenderCommandState<I, C>>()
@@ -313,7 +267,7 @@ pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
         phase.clear();
     }
 
-    for (entity, query_fetch) in query.iter(render_world) {
+    for (entity, query_fetch) in item_query.iter() {
         let key = <I::Key as FromDrawItemQuery<I>>::from_draw_item_query(query_fetch, draw_fn_id);
 
         for phase in binned_phases.values_mut() {
@@ -321,7 +275,7 @@ pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
         }
     }
 
-    instances.update_from_world(render_world);
+    instances.update(instance_update_query);
 
     batched_instance_buffer.clear();
 
@@ -329,7 +283,7 @@ pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
         for key in &phase.batch_keys {
             let mut batch_set = Vec::new();
             for entity in &phase.batch_values[key] {
-                let instance = batched_instance_buffer.push(&param, *entity).unwrap();
+                let instance = batched_instance_buffer.push(&instances, *entity).unwrap();
 
                 if !batch_set
                     .last()

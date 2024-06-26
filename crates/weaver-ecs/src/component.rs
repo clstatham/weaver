@@ -27,11 +27,11 @@ impl_downcast!(Resource);
 
 pub struct Res<'w, T: Resource> {
     value: &'w T,
-    ticks: Ticks,
+    ticks: Ticks<'w>,
 }
 
 impl<'w, T: Resource> Res<'w, T> {
-    pub(crate) fn new(value: &'w T, ticks: Ticks) -> Self {
+    pub(crate) fn new(value: &'w T, ticks: Ticks<'w>) -> Self {
         Self { value, ticks }
     }
 
@@ -71,16 +71,12 @@ impl<'w, T: Resource> ChangeDetection for Res<'w, T> {
 
 pub struct ResMut<'w, T: Resource> {
     value: &'w mut T,
-    ticks: TicksMut,
+    ticks: TicksMut<'w>,
 }
 
 impl<'w, T: Resource> ResMut<'w, T> {
-    pub(crate) fn new(value: &'w mut T, ticks: TicksMut) -> Self {
+    pub(crate) fn new(value: &'w mut T, ticks: TicksMut<'w>) -> Self {
         Self { value, ticks }
-    }
-
-    pub fn downgrade(this: &Self) -> Res<T> {
-        Res::new(this.value, this.ticks.downgrade())
     }
 
     pub fn into_inner(self) -> &'w mut T {
@@ -177,16 +173,13 @@ impl Resources {
         *self.resources.get(&type_id).unwrap().changed_tick.write() = change_tick;
     }
 
-    /// # Safety
-    ///
-    /// Caller ensures that there are no mutable references to the resource.
-    pub unsafe fn get_unsafe<T: Resource>(&self) -> Option<Res<T>> {
+    pub fn get<T: Resource>(&self) -> Option<Res<'_, T>> {
         self.resources.get(&TypeId::of::<T>()).map(|resource| {
             Res::new(
                 unsafe { &*resource.data.get() }.downcast_ref().unwrap(),
                 Ticks {
-                    added: resource.added_tick.read_arc(),
-                    changed: resource.changed_tick.read_arc(),
+                    added: resource.added_tick.read(),
+                    changed: resource.changed_tick.read(),
                     last_run: Tick::new(0),
                     this_run: Tick::new(0),
                 },
@@ -194,48 +187,17 @@ impl Resources {
         })
     }
 
-    pub fn get<T: Resource>(&mut self) -> Option<Res<T>> {
-        self.resources.get_mut(&TypeId::of::<T>()).map(|resource| {
-            Res::new(
-                unsafe { &*resource.data.get() }.downcast_ref().unwrap(),
-                Ticks {
-                    added: resource.added_tick.read_arc(),
-                    changed: resource.changed_tick.read_arc(),
-                    last_run: Tick::new(0),
-                    this_run: Tick::new(0),
-                },
-            )
-        })
-    }
-
-    /// # Safety
-    ///
-    /// Caller ensures that there are no references to the resource, mutable or otherwise.
-    pub unsafe fn get_mut_unsafe<T: Resource>(
-        &self,
+    pub fn get_mut<T: Resource>(
+        &mut self,
         last_run: Tick,
         this_run: Tick,
-    ) -> Option<ResMut<T>> {
-        self.resources.get(&TypeId::of::<T>()).map(|resource| {
-            ResMut::new(
-                unsafe { &mut *resource.data.get() }.downcast_mut().unwrap(),
-                TicksMut {
-                    added: resource.added_tick.write_arc(),
-                    changed: resource.changed_tick.write_arc(),
-                    last_run,
-                    this_run,
-                },
-            )
-        })
-    }
-
-    pub fn get_mut<T: Resource>(&mut self, last_run: Tick, this_run: Tick) -> Option<ResMut<T>> {
+    ) -> Option<ResMut<'_, T>> {
         self.resources.get_mut(&TypeId::of::<T>()).map(|resource| {
             ResMut::new(
                 unsafe { &mut *resource.data.get() }.downcast_mut().unwrap(),
                 TicksMut {
-                    added: resource.added_tick.write_arc(),
-                    changed: resource.changed_tick.write_arc(),
+                    added: resource.added_tick.write(),
+                    changed: resource.changed_tick.write(),
                     last_run,
                     this_run,
                 },

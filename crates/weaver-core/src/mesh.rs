@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use glam::{Vec2, Vec3};
-use weaver_asset::{prelude::Asset, Assets};
-use weaver_ecs::prelude::Reflect;
+use weaver_asset::{prelude::Asset, LoadAsset};
+use weaver_ecs::prelude::{Reflect, Resource};
 use weaver_util::prelude::{bail, Result};
 
 use crate::prelude::Aabb;
@@ -22,6 +22,8 @@ pub struct Mesh {
     pub indices: Vec<u32>,
     pub aabb: Aabb,
 }
+
+impl Asset for Mesh {}
 
 impl Mesh {
     pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
@@ -43,10 +45,12 @@ impl Mesh {
     }
 }
 
+#[derive(Resource, Default)]
 pub struct MeshLoader;
 
-impl Asset for Mesh {
-    fn load(_assets: &mut Assets, path: &Path) -> Result<Self> {
+impl LoadAsset<Mesh> for MeshLoader {
+    type Param = ();
+    fn load(&mut self, _: &mut (), path: &Path) -> Result<Mesh> {
         load_obj(path)
     }
 }

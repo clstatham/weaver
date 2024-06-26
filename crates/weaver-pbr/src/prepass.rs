@@ -6,6 +6,7 @@ use weaver_core::{prelude::Mat4, transform::Transform};
 use weaver_ecs::{
     component::Res,
     prelude::{Component, Entity, QueryFetchItem, Reflect, Resource, SystemParamItem, World},
+    query::Query,
 };
 use weaver_renderer::{
     bind_group::BindGroup,
@@ -102,7 +103,6 @@ pub struct PrepassMeshInstances {
 }
 
 impl GetBatchData for PrepassMeshInstances {
-    type Param = Res<'static, PrepassMeshInstances>;
     type BufferData = Mat4;
     type UpdateQuery = (
         &'static Handle<GpuMesh>,
@@ -110,10 +110,9 @@ impl GetBatchData for PrepassMeshInstances {
         &'static Transform,
     );
 
-    fn update_from_world(&mut self, render_world: &World) {
+    fn update(&mut self, query: Query<Self::UpdateQuery>) {
         self.instances.clear();
-        let query = render_world.query::<Self::UpdateQuery>();
-        for (entity, (mesh, material, transform)) in query.iter(render_world) {
+        for (entity, (mesh, material, transform)) in query.iter() {
             self.instances.insert(
                 entity,
                 PrepassMeshInstance {
@@ -125,12 +124,8 @@ impl GetBatchData for PrepassMeshInstances {
         }
     }
 
-    fn get_batch_data(
-        param: &SystemParamItem<Self::Param>,
-        query_item: Entity,
-    ) -> Option<Self::BufferData> {
-        param
-            .instances
+    fn get_batch_data(&self, query_item: Entity) -> Option<Self::BufferData> {
+        self.instances
             .get(&query_item)
             .map(|instance| instance.transform.matrix())
     }
@@ -223,7 +218,7 @@ impl ViewNode for PrepassNode {
         if !phase.is_empty() {
             let encoder = render_ctx.command_encoder();
 
-            let mut draw_fns = draw_fns.write_arc();
+            let mut draw_fns = draw_fns.write();
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Prepass Render Pass"),

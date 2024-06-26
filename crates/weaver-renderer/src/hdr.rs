@@ -2,10 +2,12 @@ use std::{path::Path, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
+    commands::WorldMut,
     component::Res,
     prelude::{Resource, World},
     storage::Ref,
     system::SystemParamItem,
+    world::FromWorld,
 };
 use weaver_util::prelude::Result;
 use weaver_winit::Window;
@@ -13,7 +15,6 @@ use weaver_winit::Window;
 use crate::{
     bind_group::{BindGroup, BindGroupLayoutCache, CreateBindGroup, ResourceBindGroupPlugin},
     camera::ViewTarget,
-    extract::{RenderResource, RenderResourcePlugin},
     graph::{RenderGraphApp, ViewNode, ViewNodeRunner},
     pipeline::{
         CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout,
@@ -21,7 +22,7 @@ use crate::{
     },
     shader::Shader,
     texture::{texture_format, GpuTexture},
-    RenderLabel,
+    CurrentFrame, InitRenderResources, RenderLabel, WgpuDevice,
 };
 
 #[derive(Resource)]
@@ -31,7 +32,7 @@ pub struct HdrRenderTarget {
 }
 
 impl HdrRenderTarget {
-    pub fn color_target(&self) -> &wgpu::TextureView {
+    pub fn color_target(&self) -> &Arc<wgpu::TextureView> {
         &self.texture.view
     }
 
@@ -47,18 +48,12 @@ impl HdrRenderTarget {
     }
 }
 
-impl RenderResource for HdrRenderTarget {
-    fn extract_render_resource(
-        main_world: &mut World,
-        device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        let window = main_world.get_resource_mut::<Window>()?;
+impl FromWorld for HdrRenderTarget {
+    fn from_world(world: &mut World) -> Self {
+        let window = world.get_resource::<Window>().unwrap();
+        let device = world.get_resource::<WgpuDevice>().unwrap();
         let texture = GpuTexture::new(
-            device,
+            &device,
             Some("Hdr Render Target"),
             window.inner_size().width,
             window.inner_size().height,
@@ -76,16 +71,7 @@ impl RenderResource for HdrRenderTarget {
             ..Default::default()
         }));
 
-        Some(Self { texture, sampler })
-    }
-
-    fn update_render_resource(
-        &mut self,
-        _main_world: &mut World,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> Result<()> {
-        Ok(())
+        Self { texture, sampler }
     }
 }
 
@@ -208,6 +194,7 @@ impl CreateRenderPipeline for HdrNode {
 
 impl ViewNode for HdrNode {
     type Param = (
+        Res<'static, CurrentFrame>,
         Res<'static, RenderPipelineCache>,
         Res<'static, BindGroup<HdrRenderTarget>>,
     );
@@ -219,10 +206,13 @@ impl ViewNode for HdrNode {
         _render_world: &World,
         _graph_ctx: &mut crate::graph::RenderGraphCtx,
         render_ctx: &mut crate::graph::RenderCtx,
-        (pipeline_cache, bind_group): &SystemParamItem<Self::Param>,
-        view_target: &Ref<ViewTarget>,
+        (current_frame, pipeline_cache, bind_group): &SystemParamItem<Self::Param>,
+        _view_target: &Ref<ViewTarget>,
     ) -> Result<()> {
         let pipeline = pipeline_cache.get_pipeline::<HdrNode>().unwrap();
+        let Some(current_frame) = current_frame.inner.as_ref() else {
+            return Ok(());
+        };
         {
             let mut render_pass =
                 render_ctx
@@ -230,7 +220,7 @@ impl ViewNode for HdrNode {
                     .begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("HDR Render Pass"),
                         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &view_target.color_target,
+                            view: &current_frame.color_view,
                             resolve_target: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Load,
@@ -256,11 +246,21 @@ pub struct HdrPlugin;
 impl Plugin for HdrPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_plugin(RenderPipelinePlugin::<HdrNode>::default())?;
-        app.add_plugin(RenderResourcePlugin::<HdrRenderTarget>::default())?;
         app.add_plugin(ResourceBindGroupPlugin::<HdrRenderTarget>::default())?;
+
+        app.add_system(init_hdr_render_target, InitRenderResources);
 
         app.main_app_mut()
             .add_render_main_graph_node::<ViewNodeRunner<HdrNode>>(HdrNodeLabel);
+
         Ok(())
     }
+}
+
+pub fn init_hdr_render_target(mut world: WorldMut) -> Result<()> {
+    if !world.has_resource::<HdrRenderTarget>() {
+        let target = HdrRenderTarget::from_world(&mut world);
+        world.insert_resource(target);
+    }
+    Ok(())
 }

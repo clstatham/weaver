@@ -1,19 +1,23 @@
 use std::{collections::HashSet, ops::Range};
 
-use light::PointLightPlugin;
-use material::{GpuMaterial, MaterialPlugin};
+use material::{GpuMaterial, Material, MaterialLoader, MaterialPlugin};
 use render::{PbrLightingInformation, PbrMeshInstances, PbrNode, PbrNodeLabel, PbrRenderCommand};
-use skybox::{SkyboxNodeLabel, SkyboxNodePlugin, SkyboxPlugin};
+use skybox::{Skybox, SkyboxNodeLabel, SkyboxNodePlugin, SkyboxPlugin};
 use weaver_app::prelude::*;
-use weaver_asset::Handle;
+use weaver_asset::{AddAsset, Handle};
 use weaver_core::transform::Transform;
-use weaver_ecs::{component::ResMut, entity::Entity, query::Query, storage::Ref};
+use weaver_ecs::{
+    commands::WorldMut,
+    component::{Res, ResMut},
+    entity::Entity,
+    query::{Query, With},
+    storage::Ref,
+};
 use weaver_renderer::{
     bind_group::{BindGroup, ResourceBindGroupPlugin},
-    camera::GpuCamera,
+    camera::{insert_view_target, GpuCamera, ViewTarget},
     clear_color::{ClearColorLabel, ClearColorNode},
     draw_fn::{BinnedDrawItem, DrawFnId, DrawItem, FromDrawItemQuery},
-    extract::{extract_render_component, RenderResourcePlugin},
     graph::{RenderGraphApp, ViewNodeRunner},
     hdr::HdrNodeLabel,
     mesh::GpuMesh,
@@ -22,7 +26,7 @@ use weaver_renderer::{
     render_phase::{
         batch_and_prepare, BatchedInstanceBufferPlugin, BinnedRenderPhasePlugin, BinnedRenderPhases,
     },
-    Extract, PreRender, RenderApp,
+    InitRenderResources, PreRender, RenderApp,
 };
 use weaver_util::prelude::*;
 
@@ -103,13 +107,14 @@ pub struct PbrPlugin;
 
 impl Plugin for PbrPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
+        app.add_asset_loader::<Material, MaterialLoader>();
+
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.add_plugin(MaterialPlugin)?;
-        render_app.add_plugin(PointLightPlugin)?;
+        // render_app.add_plugin(PointLightPlugin)?;
         render_app.add_plugin(SkyboxPlugin)?;
         render_app.add_plugin(SkyboxNodePlugin)?;
 
-        render_app.add_plugin(RenderResourcePlugin::<PbrLightingInformation>::default())?;
         render_app.add_plugin(ResourceBindGroupPlugin::<PbrLightingInformation>::default())?;
 
         render_app.add_plugin(RenderPipelinePlugin::<PbrNode>::default())?;
@@ -121,13 +126,10 @@ impl Plugin for PbrPlugin {
 
         render_app.add_plugin(BinnedRenderPhasePlugin::<PbrDrawItem>::default())?;
 
+        render_app.add_system_after(extract_pbr_camera_phase, insert_view_target, PreRender);
         render_app.add_system_after(
-            extract_pbr_camera_phase,
-            extract_render_component::<GpuCamera>,
-            Extract,
-        );
-        render_app.add_system(
             batch_and_prepare::<PbrDrawItem, PbrRenderCommand>,
+            extract_pbr_camera_phase,
             PreRender,
         );
 
@@ -137,17 +139,22 @@ impl Plugin for PbrPlugin {
         render_app.add_render_main_graph_edge(PbrNodeLabel, SkyboxNodeLabel);
         render_app.add_render_main_graph_edge(SkyboxNodeLabel, HdrNodeLabel);
 
-        Ok(())
-    }
+        render_app.add_system(init_pbr_lighting_information, InitRenderResources);
 
-    fn finish(&self, app: &mut App) -> Result<()> {
         Ok(())
     }
 }
 
+pub fn init_pbr_lighting_information(mut world: WorldMut, _skybox: Res<Skybox>) -> Result<()> {
+    if !world.has_resource::<PbrLightingInformation>() {
+        world.init_resource::<PbrLightingInformation>();
+    }
+    Ok(())
+}
+
 fn extract_pbr_camera_phase(
     mut binned_phases: ResMut<BinnedRenderPhases<PbrDrawItem>>,
-    cameras: Query<&GpuCamera>,
+    cameras: Query<&GpuCamera, With<ViewTarget>>,
 ) -> Result<()> {
     let mut live_entities = HashSet::new();
 
@@ -155,6 +162,8 @@ fn extract_pbr_camera_phase(
         if !camera.camera.active {
             continue;
         }
+
+        log::trace!("Extracting PBR camera phase for entity: {:?}", entity);
 
         binned_phases.insert_or_clear(entity);
         live_entities.insert(entity);
