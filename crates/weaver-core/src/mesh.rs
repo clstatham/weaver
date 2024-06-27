@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use glam::{Vec2, Vec3};
+use glam::{Vec2, Vec3, Vec3A};
 use weaver_asset::{prelude::Asset, LoadAsset};
 use weaver_ecs::prelude::{Reflect, Resource};
 use weaver_util::prelude::{bail, Result};
 
-use crate::prelude::Aabb;
+use crate::prelude::{Aabb, Transform};
 
 #[derive(Debug, Clone, Copy, PartialEq, Reflect, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
@@ -27,12 +27,12 @@ impl Asset for Mesh {}
 
 impl Mesh {
     pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
-        let mut min = Vec3::splat(f32::INFINITY);
-        let mut max = Vec3::splat(f32::NEG_INFINITY);
+        let mut min = Vec3A::splat(f32::INFINITY);
+        let mut max = Vec3A::splat(f32::NEG_INFINITY);
 
         for vertex in &vertices {
-            min = min.min(vertex.position);
-            max = max.max(vertex.position);
+            min = min.min(vertex.position.into());
+            max = max.max(vertex.position.into());
         }
 
         let aabb = Aabb::new(min, max);
@@ -41,6 +41,22 @@ impl Mesh {
             vertices,
             indices,
             aabb,
+        }
+    }
+
+    pub fn transformed(&self, transform: Transform) -> Self {
+        let mut vertices = self.vertices.clone();
+        let matrix = transform.matrix();
+        for vertex in &mut vertices {
+            vertex.position = matrix.transform_point3(vertex.position);
+            vertex.normal = matrix.transform_vector3(vertex.normal);
+            vertex.tangent = matrix.transform_vector3(vertex.tangent);
+        }
+
+        Self {
+            vertices,
+            indices: self.indices.clone(),
+            aabb: self.aabb.transformed(transform),
         }
     }
 }

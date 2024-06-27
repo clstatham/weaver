@@ -34,8 +34,8 @@ $GLTF_IBL_SAMPLER_PATH \
     -outCubeMap $SKYBOX_DIR/$DIFFUSE_OUTFILE \
     -distribution Lambertian \
     -mipLevelCount 1 \
-    -sampleCount 1024 \
-    -cubeMapResolution 64 \
+    -sampleCount 4096 \
+    -cubeMapResolution 32 \
     -targetFormat R16G16B16A16_SFLOAT \
     -outLUT $SKYBOX_DIR/$LUT_OUTFILE
 
@@ -51,7 +51,7 @@ $GLTF_IBL_SAMPLER_PATH \
     -outCubeMap $SKYBOX_DIR/$SPECULAR_OUTFILE \
     -distribution GGX \
     -mipLevelCount 5 \
-    -sampleCount 1024 \
+    -sampleCount 4096 \
     -cubeMapResolution 512 \
     -targetFormat R16G16B16A16_SFLOAT \
     -outLUT $SKYBOX_DIR/$LUT_OUTFILE

@@ -110,6 +110,62 @@ impl Typed for glam::Vec3 {
     }
 }
 
+impl Struct for glam::Vec3A {
+    fn field(&self, field_name: &str) -> Option<&dyn Reflect> {
+        match field_name {
+            "x" => Some(&self.x),
+            "y" => Some(&self.y),
+            "z" => Some(&self.z),
+            _ => None,
+        }
+    }
+
+    fn field_mut(&mut self, field_name: &str) -> Option<&mut dyn Reflect> {
+        match field_name {
+            "x" => Some(&mut self.x),
+            "y" => Some(&mut self.y),
+            "z" => Some(&mut self.z),
+            _ => None,
+        }
+    }
+}
+
+impl Typed for glam::Vec3A {
+    fn type_name() -> &'static str {
+        "glam::Vec3A"
+    }
+
+    fn type_info() -> &'static TypeInfo {
+        static TYPE_INFO: OnceLock<TypeInfo> = OnceLock::new();
+        TYPE_INFO.get_or_init(|| {
+            TypeInfo::Struct(StructInfo {
+                type_id: TypeId::of::<glam::Vec3A>(),
+                type_name: "glam::Vec3A",
+                fields: vec![
+                    FieldInfo {
+                        name: "x",
+                        type_id: TypeId::of::<f32>(),
+                        type_name: "f32",
+                    },
+                    FieldInfo {
+                        name: "y",
+                        type_id: TypeId::of::<f32>(),
+                        type_name: "f32",
+                    },
+                    FieldInfo {
+                        name: "z",
+                        type_id: TypeId::of::<f32>(),
+                        type_name: "f32",
+                    },
+                ]
+                .into(),
+                field_names: vec!["x", "y", "z"].into(),
+                field_indices: vec![("x", 0), ("y", 1), ("z", 2)].into_iter().collect(),
+            })
+        })
+    }
+}
+
 impl Struct for glam::Vec4 {
     fn field(&self, field_name: &str) -> Option<&dyn Reflect> {
         match field_name {

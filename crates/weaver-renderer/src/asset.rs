@@ -97,7 +97,6 @@ fn extract_render_asset<T: RenderAsset>(
                 let render_handle = render_assets.insert(render_asset);
 
                 let untyped_handle = handle.into_untyped();
-                drop(handle);
 
                 // insert the render asset handle into the entity
                 commands.insert_component(entity, render_handle);
@@ -119,8 +118,6 @@ fn extract_render_asset<T: RenderAsset>(
             let base_asset = main_world_assets.get(*handle).unwrap();
             let mut render_asset = render_assets.get_mut(render_handle).unwrap();
             render_asset.update_render_asset(&base_asset, param.item(), &device, &queue)?;
-
-            drop(handle);
 
             commands.insert_component(entity, render_handle);
         }

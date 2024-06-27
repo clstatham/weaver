@@ -106,9 +106,9 @@ fn setup(
         cube_mesh,
         material,
         Transform {
-            translation: Vec3::new(0.0, -1.0, 0.0),
+            translation: Vec3A::new(0.0, -1.0, 0.0),
             rotation: Quat::IDENTITY,
-            scale: Vec3::new(20.0, 1.0, 20.0),
+            scale: Vec3A::new(20.0, 1.0, 20.0),
         },
         Floor,
         SelectionAabb::from_mesh(&mesh_assets.get(cube_mesh).unwrap()),
@@ -150,12 +150,12 @@ fn setup(
             enabled: true,
         },
         Transform {
-            translation: Vec3::new(0.0, 5.0, 0.0),
+            translation: Vec3A::new(0.0, 5.0, 0.0),
             rotation: Quat::IDENTITY,
-            scale: Vec3::ONE,
+            scale: Vec3A::ONE,
         },
         SelectionAabb {
-            aabb: Aabb::new(Vec3::splat(-0.1), Vec3::splat(0.1)),
+            aabb: Aabb::new(Vec3A::splat(-0.1), Vec3A::splat(0.1)),
         },
     ));
 
@@ -171,9 +171,9 @@ fn setup(
             monkey_mesh,
             material2,
             Transform {
-                translation: Vec3::new(angle.cos() * 5.0, 2.0, angle.sin() * 5.0),
+                translation: Vec3A::new(angle.cos() * 5.0, 2.0, angle.sin() * 5.0),
                 rotation: Quat::IDENTITY,
-                scale: Vec3::splat(1.0),
+                scale: Vec3A::splat(1.0),
             },
             Object,
             SelectionAabb::from_mesh(&mesh_assets.get(cube_mesh).unwrap()),
@@ -193,11 +193,11 @@ fn selection_gizmos(
         if let Some(selected_entity) = state.selected_entity {
             if selected_entity == entity {
                 let mesh = &assets.get(*handle).unwrap();
-                let aabb = mesh.aabb.transform(*transform);
+                let aabb = mesh.aabb.transformed(*transform);
                 let gizmo_transform = Transform::new(
                     aabb.center(),
                     Quat::IDENTITY,
-                    aabb.size() + Vec3::splat(0.1),
+                    aabb.size() + Vec3A::splat(0.1),
                 );
                 gizmos.cube(gizmo_transform, Color::GREEN);
             }
@@ -225,6 +225,7 @@ fn light_gizmos(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn pick_entity(
     window: Res<Window>,
     input: Res<Input>,
@@ -232,6 +233,8 @@ fn pick_entity(
     mut editor_state: ResMut<EditorState>,
     camera_query: Query<&Camera>,
     aabb_transform_query: Query<(&SelectionAabb, Option<&Transform>)>,
+    mesh_assets: Res<Assets<Mesh>>,
+    mesh_query: Query<(&Handle<Mesh>, Option<&Transform>), With<SelectionAabb>>,
 ) -> Result<()> {
     if input.mouse_just_pressed(MouseButton::Left) && !egui_ctx.wants_input() {
         let cursor_pos = input.mouse_pos();
@@ -242,24 +245,50 @@ fn pick_entity(
             cursor_pos,
             Vec2::new(window_size.width as f32, window_size.height as f32),
         );
-        let mut closest_entity = None;
-        let mut closest_distance = f32::INFINITY;
+        let mut hit_entities = Vec::new();
         for (entity, (aabb, transform)) in aabb_transform_query.iter() {
             let bb = if let Some(transform) = transform {
-                aabb.aabb.transform(*transform)
+                aabb.aabb.transformed(*transform)
             } else {
                 aabb.aabb
             };
 
-            if let Some(distance) = ray.intersect(bb) {
-                if distance < closest_distance {
-                    closest_distance = distance;
-                    closest_entity = Some(entity);
+            if let Some(distance) = ray.intersect(&bb) {
+                hit_entities.push((entity, distance));
+            }
+        }
+
+        hit_entities.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+        // check for mesh hit
+        let mut hit_entity = hit_entities.first().copied();
+        for (entity, _) in hit_entities {
+            if let Some((handle, transform)) = mesh_query.get(entity) {
+                let mesh = mesh_assets.get(*handle).unwrap();
+                let mesh = if let Some(transform) = transform {
+                    mesh.transformed(*transform)
+                } else {
+                    mesh.clone()
+                };
+
+                if let Some(intersection) = mesh.intersect(&ray) {
+                    let t = intersection.ray_triangle_intersection.t;
+                    if let Some((_, distance)) = hit_entity {
+                        if t < distance {
+                            hit_entity = Some((entity, t));
+                        }
+                    } else {
+                        hit_entity = Some((entity, t));
+                    }
                 }
             }
         }
 
-        editor_state.selected_entity = closest_entity;
+        if let Some((entity, _)) = hit_entity {
+            editor_state.selected_entity = Some(entity);
+        } else {
+            editor_state.selected_entity = None;
+        }
     }
 
     Ok(())

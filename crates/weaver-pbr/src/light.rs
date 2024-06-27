@@ -1,14 +1,16 @@
 use encase::ShaderType;
 use weaver_app::{plugin::Plugin, App};
 
-use weaver_core::{color::Color, prelude::Vec3};
+use weaver_core::{color::Color, prelude::Vec3, transform::Transform};
 use weaver_ecs::{
     prelude::{Component, Reflect, Resource, World},
+    query::QueryFetchItem,
     world::FromWorld,
 };
 use weaver_renderer::{
-    bind_group::{BindGroupLayout, CreateBindGroup, ResourceBindGroupPlugin},
+    bind_group::{BindGroupLayout, CreateBindGroup},
     buffer::GpuBufferVec,
+    extract::ExtractComponentPlugin,
     prelude::*,
     WgpuDevice,
 };
@@ -22,6 +24,18 @@ pub struct PointLight {
     pub enabled: bool,
 }
 
+impl ExtractComponent for PointLight {
+    type ExtractQueryFetch = &'static Self;
+    type ExtractQueryFilter = ();
+    type Out = Self;
+
+    fn extract_render_component(
+        item: QueryFetchItem<Self::ExtractQueryFetch>,
+    ) -> Option<Self::Out> {
+        Some(*item)
+    }
+}
+
 #[derive(Copy, Clone, Debug, Default, ShaderType)]
 #[repr(C)]
 pub struct PointLightUniform {
@@ -30,6 +44,30 @@ pub struct PointLightUniform {
     pub color: Color,
     pub intensity: f32,
     pub radius: f32,
+}
+
+impl From<PointLight> for PointLightUniform {
+    fn from(light: PointLight) -> Self {
+        Self {
+            position: Vec3::ZERO,
+            _padding: 0,
+            color: light.color,
+            intensity: if light.enabled { light.intensity } else { 0.0 },
+            radius: light.radius,
+        }
+    }
+}
+
+impl From<(PointLight, Transform)> for PointLightUniform {
+    fn from((light, transform): (PointLight, Transform)) -> Self {
+        Self {
+            position: transform.translation.into(),
+            _padding: 0,
+            color: light.color,
+            intensity: if light.enabled { light.intensity } else { 0.0 },
+            radius: light.radius,
+        }
+    }
 }
 
 #[derive(Resource)]
@@ -87,7 +125,7 @@ pub struct PointLightPlugin;
 
 impl Plugin for PointLightPlugin {
     fn build(&self, render_app: &mut App) -> Result<()> {
-        render_app.add_plugin(ResourceBindGroupPlugin::<GpuPointLightArray>::default())?;
+        render_app.add_plugin(ExtractComponentPlugin::<PointLight>::default())?;
 
         Ok(())
     }

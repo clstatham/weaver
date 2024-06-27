@@ -1,5 +1,6 @@
 use std::{collections::HashSet, ops::Range};
 
+use light::{PointLight, PointLightPlugin};
 use material::{GpuMaterial, Material, MaterialLoader, MaterialPlugin};
 use render::{PbrLightingInformation, PbrMeshInstances, PbrNode, PbrNodeLabel, PbrRenderCommand};
 use skybox::{Skybox, SkyboxNodeLabel, SkyboxNodePlugin, SkyboxPlugin};
@@ -26,7 +27,7 @@ use weaver_renderer::{
     render_phase::{
         batch_and_prepare, BatchedInstanceBufferPlugin, BinnedRenderPhasePlugin, BinnedRenderPhases,
     },
-    InitRenderResources, PreRender, RenderApp,
+    InitRenderResources, PreRender, RenderApp, WgpuDevice, WgpuQueue,
 };
 use weaver_util::prelude::*;
 
@@ -106,7 +107,7 @@ impl Plugin for PbrPlugin {
 
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.add_plugin(MaterialPlugin)?;
-        // render_app.add_plugin(PointLightPlugin)?;
+        render_app.add_plugin(PointLightPlugin)?;
         render_app.add_plugin(SkyboxPlugin)?;
         render_app.add_plugin(SkyboxNodePlugin)?;
 
@@ -135,15 +136,43 @@ impl Plugin for PbrPlugin {
         render_app.add_render_main_graph_edge(SkyboxNodeLabel, HdrNodeLabel);
 
         render_app.add_system(init_pbr_lighting_information, InitRenderResources);
+        render_app.add_system_after(
+            update_pbr_lighting_information,
+            init_pbr_lighting_information,
+            InitRenderResources,
+        );
 
         Ok(())
     }
 }
 
-pub fn init_pbr_lighting_information(mut world: WorldMut, _skybox: Res<Skybox>) -> Result<()> {
+pub(crate) fn init_pbr_lighting_information(
+    mut world: WorldMut,
+    _skybox: Res<Skybox>,
+) -> Result<()> {
     if !world.has_resource::<PbrLightingInformation>() {
         world.init_resource::<PbrLightingInformation>();
     }
+    Ok(())
+}
+
+pub(crate) fn update_pbr_lighting_information(
+    mut lighting: ResMut<PbrLightingInformation>,
+    lights: Query<(&PointLight, Option<&Transform>)>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
+) -> Result<()> {
+    lighting.point_lights.buffer.clear();
+    for (_, (light, transform)) in lights.iter() {
+        if let Some(transform) = transform {
+            let uniform = (*light, *transform).into();
+            lighting.point_lights.buffer.push(uniform);
+        } else {
+            let uniform = (*light).into();
+            lighting.point_lights.buffer.push(uniform);
+        }
+    }
+    lighting.point_lights.buffer.enqueue_update(&device, &queue);
     Ok(())
 }
 

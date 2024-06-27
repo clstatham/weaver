@@ -149,7 +149,10 @@ impl Camera {
         let eye = glam::Vec4::new(eye.x, eye.y, -1.0, 0.0);
         let world = inv_view * eye;
 
-        Ray::new(inv_view.col(3).truncate(), world.truncate().normalize())
+        Ray::new(
+            inv_view.col(3).truncate().into(),
+            world.truncate().normalize().into(),
+        )
     }
 }
 
