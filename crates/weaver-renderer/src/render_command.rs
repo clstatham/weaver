@@ -6,10 +6,7 @@ use weaver_ecs::{
     system::{SystemParam, SystemParamItem, SystemState},
     world::World,
 };
-use weaver_util::{
-    error_once,
-    prelude::{bail, Result},
-};
+use weaver_util::prelude::{bail, Result};
 
 use crate::{
     draw_fn::DrawItem,
@@ -64,7 +61,7 @@ impl<T: DrawItem, C: RenderCommand<T>> DrawFn<T> for RenderCommandState<T, C> {
         item: T,
     ) -> Result<()> {
         let Some(view_query) = self.view_query.get(render_world, view_entity) else {
-            error_once!(
+            log::debug!(
                 "View query not found for RenderCommand {:?}",
                 std::any::type_name::<C>()
             );
@@ -72,7 +69,17 @@ impl<T: DrawItem, C: RenderCommand<T>> DrawFn<T> for RenderCommandState<T, C> {
         };
         let item_query = self.item_query.get(render_world, item.entity());
         let state = self.state.as_mut().unwrap();
+        if !state.can_run(render_world) {
+            log::debug!("RenderCommand {:?} cannot run", std::any::type_name::<C>());
+            return Ok(());
+        }
         let param = state.get(render_world.as_unsafe_world_cell());
+
+        log::trace!(
+            "Running RenderCommand {:?} for Entity {:?}",
+            std::any::type_name::<C>(),
+            item.entity()
+        );
 
         C::render(item, view_query, item_query, param, render_pass)
     }

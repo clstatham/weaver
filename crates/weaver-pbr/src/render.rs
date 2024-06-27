@@ -18,7 +18,6 @@ use weaver_renderer::{
     bind_group::{BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup},
     camera::{CameraBindGroup, ViewTarget},
     graph::{RenderCtx, RenderGraphCtx, ViewNode},
-    hdr::HdrRenderTarget,
     mesh::GpuMesh,
     pipeline::{CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout},
     prelude::*,
@@ -306,7 +305,6 @@ impl ViewNode for PbrNode {
     type Param = (
         Res<'static, BinnedRenderPhases<PbrDrawItem>>,
         Res<'static, DrawFunctions<PbrDrawItem>>,
-        Res<'static, HdrRenderTarget>,
     );
     type ViewQueryFetch = &'static ViewTarget;
     type ViewQueryFilter = ();
@@ -327,7 +325,7 @@ impl ViewNode for PbrNode {
         render_world: &World,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut RenderCtx,
-        (binned_phases, draw_functions, hdr_target): &SystemParamItem<Self::Param>,
+        (binned_phases, draw_functions): &SystemParamItem<Self::Param>,
         view_target: &Ref<ViewTarget>,
     ) -> Result<()> {
         let Some(phase) = binned_phases.get(&graph_ctx.view_entity) else {
@@ -345,7 +343,7 @@ impl ViewNode for PbrNode {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("PBR Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: hdr_target.color_target(),
+                    view: &view_target.color_target,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,

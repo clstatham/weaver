@@ -58,11 +58,7 @@ pub struct PbrBinKey {
 
 impl FromDrawItemQuery<PbrDrawItem> for PbrBinKey {
     fn from_draw_item_query(
-        (mesh, material, _): (
-            Ref<Handle<GpuMesh>>,
-            Ref<Handle<BindGroup<GpuMaterial>>>,
-            Ref<Transform>,
-        ),
+        (mesh, material): (Ref<Handle<GpuMesh>>, Ref<Handle<BindGroup<GpuMaterial>>>),
         draw_fn_id: DrawFnId,
     ) -> Self {
         Self {
@@ -77,9 +73,8 @@ impl DrawItem for PbrDrawItem {
     type QueryFetch = (
         &'static Handle<GpuMesh>,
         &'static Handle<BindGroup<GpuMaterial>>,
-        &'static Transform,
     );
-    type QueryFilter = ();
+    type QueryFilter = With<Transform>;
 
     fn entity(&self) -> Entity {
         self.entity

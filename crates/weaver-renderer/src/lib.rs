@@ -8,7 +8,7 @@ use std::{
 
 use asset::ExtractedRenderAssets;
 use bind_group::{BindGroupLayoutCache, ExtractedAssetBindGroups};
-use camera::{CameraPlugin, GpuCamera, ViewTarget};
+use camera::{CameraPlugin, ViewTarget};
 use graph::RenderGraph;
 use hdr::{HdrPlugin, HdrRenderTarget};
 use mesh::MeshPlugin;
@@ -23,7 +23,7 @@ use weaver_ecs::{
     commands::{Commands, WorldMut},
     component::{Res, ResMut},
     prelude::Resource,
-    query::{Query, With},
+    query::Query,
     reflect::registry::TypeRegistry,
     system_schedule::SystemStage,
     world::World,

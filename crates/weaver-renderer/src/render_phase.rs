@@ -19,7 +19,7 @@ use crate::{
     draw_fn::{BinnedDrawItem, DrawFunctionsInner, FromDrawItemQuery},
     prelude::DrawFunctions,
     render_command::{RenderCommand, RenderCommandState},
-    WgpuDevice,
+    WgpuDevice, WgpuQueue,
 };
 
 pub struct BinnedRenderPhase<T: BinnedDrawItem> {
@@ -80,13 +80,14 @@ impl<T: BinnedDrawItem> BinnedRenderPhase<T> {
                 );
                 if let Some(draw_fn) = draw_functions.get_mut(item.draw_fn()) {
                     log::trace!(
-                        "Runnind DrawFn {:?} for Entity {:?}",
+                        "Running DrawFn {:?} for range {:?} for key: {:?}",
                         item.draw_fn(),
-                        item.entity()
+                        &batch.batch_range,
+                        key
                     );
                     draw_fn.draw(render_world, render_pass, view_entity, item)?;
                 } else {
-                    log::warn!("Draw function not found for key: {:?}", key);
+                    log::debug!("Draw function not found for key: {:?}", key);
                 }
             }
         }
@@ -163,6 +164,7 @@ pub type BinnedBatchData<I> = <BinnedInstances<I> as GetBatchData>::BufferData;
 pub struct BatchedInstanceBuffer<I: BinnedDrawItem, C: RenderCommand<I>> {
     pub buffer: GpuArrayBuffer<BinnedBatchData<I>>,
     _phantom: std::marker::PhantomData<C>,
+    bind_group_stale: bool,
 }
 
 impl<I: BinnedDrawItem, C: RenderCommand<I>> BatchedInstanceBuffer<I, C> {
@@ -181,7 +183,7 @@ impl<I: BinnedDrawItem, C: RenderCommand<I>> BatchedInstanceBuffer<I, C> {
     }
 
     pub fn enqueue_update(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        self.buffer.enqueue_update(device, queue);
+        self.bind_group_stale = self.buffer.enqueue_update(device, queue);
     }
 }
 
@@ -215,6 +217,14 @@ impl<I: BinnedDrawItem, C: RenderCommand<I>> CreateBindGroup for BatchedInstance
             label: Some("Batched Instace Buffer Bind Group"),
         })
     }
+
+    fn bind_group_stale(&self) -> bool {
+        self.bind_group_stale
+    }
+
+    fn set_bind_group_stale(&mut self, stale: bool) {
+        self.bind_group_stale = stale;
+    }
 }
 
 impl<I: BinnedDrawItem, C: RenderCommand<I>> FromWorld for BatchedInstanceBuffer<I, C> {
@@ -225,6 +235,7 @@ impl<I: BinnedDrawItem, C: RenderCommand<I>> FromWorld for BatchedInstanceBuffer
         Self {
             buffer,
             _phantom: std::marker::PhantomData,
+            bind_group_stale: true,
         }
     }
 }
@@ -250,6 +261,7 @@ impl<I: BinnedDrawItem, C: RenderCommand<I>> Plugin for BatchedInstanceBufferPlu
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
     mut binned_phases: ResMut<BinnedRenderPhases<I>>,
     draw_fns: Res<DrawFunctions<I>>,
@@ -257,6 +269,8 @@ pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
     mut instances: ResMut<I::Instances>,
     item_query: Query<I::QueryFetch, I::QueryFilter>,
     instance_update_query: Query<<I::Instances as GetBatchData>::UpdateQuery>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
 ) -> Result<()> {
     let draw_fn_id = draw_fns
         .read()
@@ -302,6 +316,9 @@ pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
             phase.batch_sets.push(batch_set);
         }
     }
+
+    batched_instance_buffer.enqueue_update(&device, &queue);
+    device.poll(wgpu::Maintain::Wait);
 
     Ok(())
 }

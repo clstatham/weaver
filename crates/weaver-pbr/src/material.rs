@@ -310,6 +310,7 @@ impl RenderAsset for GpuMaterial {
         self.meta.push(meta);
 
         self.meta.enqueue_update(device, queue);
+        device.poll(wgpu::Maintain::Wait);
 
         Ok(())
     }

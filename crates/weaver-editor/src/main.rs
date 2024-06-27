@@ -1,3 +1,4 @@
+use inspect::InspectUi;
 use weaver::{
     prelude::*,
     weaver_app::App,
@@ -14,7 +15,7 @@ use weaver_renderer::{camera::PrimaryCamera, clear_color::ClearColorPlugin};
 use weaver_winit::Window;
 
 pub mod camera;
-// pub mod inspect;
+pub mod inspect;
 
 #[derive(Component, Reflect)]
 struct Floor;
@@ -57,7 +58,6 @@ fn main() -> Result<()> {
             log_interval: std::time::Duration::from_secs(1),
         })?
         .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
-        // .add_plugin(ClearColorPlugin::default())?
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
         .insert_resource(EditorState::default())
         .add_system(setup, Init)
@@ -66,17 +66,18 @@ fn main() -> Result<()> {
         .add_system(selection_gizmos, Update)
         .add_system(light_gizmos, Update)
         .add_system(pick_entity, Update)
+        .add_system(inspect_ui, Update)
         .run()
 }
 
 fn setup(
-    mut world: WorldMut,
+    commands: Commands,
     mut mesh_assets: ResMut<Assets<Mesh>>,
     mut mesh_loader: AssetLoader<Mesh, MeshLoader>,
     mut material_assets: ResMut<Assets<Material>>,
     mut material_loader: AssetLoader<Material, MaterialLoader>,
 ) -> Result<()> {
-    world.spawn((
+    commands.spawn((
         Camera::perspective_lookat(
             Vec3::new(10.0, 10.0, 10.0),
             Vec3::ZERO,
@@ -101,7 +102,7 @@ fn setup(
     material.texture_scale = 100.0;
     let material = material_assets.insert(material);
 
-    world.spawn((
+    commands.spawn((
         cube_mesh,
         material,
         Transform {
@@ -141,7 +142,7 @@ fn setup(
     //     ));
     // }
 
-    world.spawn((
+    commands.spawn((
         PointLight {
             color: Color::WHITE,
             intensity: 100.0,
@@ -166,7 +167,7 @@ fn setup(
     let count = 10;
     for i in 0..count {
         let angle = i as f32 / count as f32 * std::f32::consts::PI * 2.0;
-        world.spawn((
+        commands.spawn((
             monkey_mesh,
             material2,
             Transform {
@@ -260,6 +261,35 @@ fn pick_entity(
 
         editor_state.selected_entity = closest_entity;
     }
+
+    Ok(())
+}
+
+fn inspect_ui(
+    world: WorldMut,
+    type_registry: Res<TypeRegistry>,
+    editor_state: Res<EditorState>,
+    egui_ctx: Res<EguiContext>,
+) -> Result<()> {
+    let world = world.into_inner();
+
+    egui_ctx.draw_if_ready(|ctx| {
+        if let Some(selected_entity) = editor_state.selected_entity {
+            egui::Window::new("Inspector").show(ctx, |ui| {
+                let storage = world.storage();
+                let archetype = storage.get_archetype(selected_entity).unwrap();
+                for (_, column) in archetype.column_iter() {
+                    let column = column.into_inner();
+                    let component = column.get(selected_entity.as_usize()).unwrap();
+                    let component = unsafe { &mut *component.get() };
+                    let component = component.get_data_mut();
+                    let reflect = component.as_reflect_mut();
+                    let world = unsafe { world.as_unsafe_world_cell().world_mut() };
+                    reflect.inspect_ui(&type_registry, world, ui);
+                }
+            });
+        }
+    });
 
     Ok(())
 }

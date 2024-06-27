@@ -1,7 +1,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use encase::ShaderType;
-use weaver_core::{geometry::Ray, transform::Transform};
+use weaver_core::geometry::Ray;
 use weaver_util::prelude::Result;
 
 use weaver_app::plugin::Plugin;
@@ -14,8 +14,7 @@ use crate::{
     end_render,
     extract::{ExtractComponent, ExtractComponentPlugin},
     hdr::HdrRenderTarget,
-    CurrentFrame, ExtractBindGroupStage, InitRenderResources, PostRender, PreRender, WgpuDevice,
-    WgpuQueue,
+    CurrentFrame, ExtractBindGroupStage, PostRender, PreRender, WgpuDevice, WgpuQueue,
 };
 
 #[derive(Component, Reflect, Clone, Copy)]
@@ -163,23 +162,17 @@ impl Default for Camera {
 #[derive(Component, Reflect)]
 pub struct GpuCamera {
     pub camera: Camera,
-    pub transform: Transform,
 }
 
 impl ExtractComponent for GpuCamera {
-    type ExtractQueryFetch = (&'static Camera, &'static Transform);
+    type ExtractQueryFetch = &'static Camera;
     type ExtractQueryFilter = ();
     type Out = Self;
-    fn extract_render_component(
-        (camera, transform): QueryFetchItem<Self::ExtractQueryFetch>,
-    ) -> Option<Self>
+    fn extract_render_component(camera: QueryFetchItem<Self::ExtractQueryFetch>) -> Option<Self>
     where
         Self: Sized,
     {
-        Some(Self {
-            camera: *camera,
-            transform: *transform,
-        })
+        Some(Self { camera: *camera })
     }
 }
 
@@ -269,25 +262,22 @@ pub fn extract_camera_bind_groups(
 }
 
 pub fn insert_view_target(
-    mut world: WorldMut,
+    commands: Commands,
     current_frame: Res<CurrentFrame>,
     hdr_target: Res<HdrRenderTarget>,
-    query: Query<&GpuCamera, Without<ViewTarget>>,
+    query: Query<&GpuCamera>,
 ) -> Result<()> {
     for gpu_camera in query.entity_iter() {
         let view_target = ViewTarget::from((&*current_frame, &*hdr_target));
-        world.insert_component(gpu_camera, view_target);
+        commands.insert_component(gpu_camera, view_target);
     }
 
     Ok(())
 }
 
-pub fn remove_view_target(
-    mut world: WorldMut,
-    query: Query<&GpuCamera, With<ViewTarget>>,
-) -> Result<()> {
+pub fn remove_view_target(commands: Commands, query: Query<&GpuCamera>) -> Result<()> {
     for gpu_camera in query.entity_iter() {
-        world.remove_component::<ViewTarget>(gpu_camera);
+        commands.remove_component::<ViewTarget>(gpu_camera);
     }
 
     Ok(())

@@ -465,6 +465,8 @@ impl Plugin for GizmoPlugin {
     fn finish(&self, app: &mut App) -> Result<()> {
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
 
+        render_app.init_resource::<RenderCubeGizmo>();
+
         render_app.add_render_main_graph_node::<ViewNodeRunner<GizmoRenderNode>>(GizmoNodeLabel);
         render_app.add_render_main_graph_edge(PbrNodeLabel, GizmoNodeLabel);
         render_app.add_render_main_graph_edge(GizmoNodeLabel, HdrNodeLabel);

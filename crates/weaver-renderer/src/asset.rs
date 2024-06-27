@@ -110,6 +110,19 @@ fn extract_render_asset<T: RenderAsset>(
                     std::any::type_name::<T>()
                 );
             }
+        } else {
+            // if the asset has already been extracted, insert the render asset handle into the entity
+            let render_handle = extracted_assets.assets.get(&handle.into_untyped()).unwrap();
+            let render_handle = Handle::<T>::try_from(*render_handle).unwrap();
+
+            // update the asset
+            let base_asset = main_world_assets.get(*handle).unwrap();
+            let mut render_asset = render_assets.get_mut(render_handle).unwrap();
+            render_asset.update_render_asset(&base_asset, param.item(), &device, &queue)?;
+
+            drop(handle);
+
+            commands.insert_component(entity, render_handle);
         }
     }
 

@@ -391,7 +391,6 @@ impl<'w, T: Component> std::ops::Deref for Ref<'w, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        // self.column.dense[self.dense_index].downcast_ref().unwrap()
         self.data
     }
 }
@@ -433,7 +432,6 @@ impl<'w, T: Component> std::ops::Deref for Mut<'w, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        // self.column.dense[self.dense_index].downcast_ref().unwrap()
         self.data
     }
 }
@@ -441,7 +439,6 @@ impl<'w, T: Component> std::ops::Deref for Mut<'w, T> {
 impl<'w, T: Component> std::ops::DerefMut for Mut<'w, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.set_changed();
-        // self.column.dense[self.dense_index].downcast_mut().unwrap()
         self.data
     }
 }
@@ -468,7 +465,6 @@ impl<'w, T: Component> ChangeDetectionMut for Mut<'w, T> {
     type Inner = T;
 
     fn bypass_change_detection(&mut self) -> &mut Self::Inner {
-        // self.column.dense[self.dense_index].downcast_mut().unwrap()
         self.data
     }
 

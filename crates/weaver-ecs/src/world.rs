@@ -156,6 +156,11 @@ impl World {
     }
 
     pub fn insert_component<T: Component>(&mut self, entity: Entity, component: T) {
+        log::trace!(
+            "Inserting component {:?} for entity {:?}",
+            std::any::type_name::<T>(),
+            entity
+        );
         self.storage.insert_component(
             entity,
             component,
@@ -170,6 +175,11 @@ impl World {
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {
+        log::trace!(
+            "Removing component {:?} for entity {:?}",
+            std::any::type_name::<T>(),
+            entity
+        );
         self.storage.remove_component::<T>(entity)
     }
 
@@ -367,10 +377,7 @@ mod tests {
     use weaver_reflect_macros::Reflect;
 
     use super::*;
-    use crate::{
-        self as weaver_ecs,
-        prelude::{Query, WorldMut},
-    };
+    use crate::{self as weaver_ecs, prelude::Query};
 
     #[derive(Debug, Clone, Copy, PartialEq, Reflect, Resource)]
     pub struct TestResource {
@@ -392,43 +399,10 @@ mod tests {
     struct Update1;
     impl SystemStage for Update1 {}
 
-    struct Update2;
-    impl SystemStage for Update2 {}
-
-    struct Update3;
-    impl SystemStage for Update3 {}
-
-    fn position_system_exclusive(world: WorldMut) -> Result<()> {
-        let query = world.query::<(&mut Position, &Velocity)>();
-        for (_entity, (mut position, velocity)) in query.iter(&world) {
-            position.x += velocity.dx;
-            position.y += velocity.dy;
-        }
-        Ok(())
-    }
-
     fn position_system_shared(query: Query<(&mut Position, &Velocity)>) -> Result<()> {
-        dbg!(query.iter().count());
         for (_entity, (mut position, velocity)) in query.iter() {
             position.x += velocity.dx;
             position.y += velocity.dy;
-        }
-        Ok(())
-    }
-
-    fn velocity_system_exclusive(world: WorldMut) -> Result<()> {
-        let query = world.query::<&mut Velocity>();
-        for (_entity, mut velocity) in query.iter(&world) {
-            velocity.dx += 1.0;
-            velocity.dy += 1.0;
-        }
-        Ok(())
-    }
-
-    fn velocity_system_shared(velocity: Query<&mut Velocity>) -> Result<()> {
-        for (_entity, mut velocity) in velocity.iter() {
-            velocity.dx += 1.0;
-            velocity.dy += 1.0;
         }
         Ok(())
     }
@@ -492,7 +466,6 @@ mod tests {
 
     #[test]
     fn test_system() {
-        env_logger::builder().is_test(true).try_init().ok();
         let mut world = World::new();
         world.push_update_stage::<Update1>();
         world.add_system(position_system_shared, Update1);
