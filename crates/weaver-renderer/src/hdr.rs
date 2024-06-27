@@ -209,7 +209,7 @@ impl ViewNode for HdrNode {
         (current_frame, pipeline_cache, bind_group): &SystemParamItem<Self::Param>,
         _view_target: &Ref<ViewTarget>,
     ) -> Result<()> {
-        let pipeline = pipeline_cache.get_pipeline::<HdrNode>().unwrap();
+        let pipeline = pipeline_cache.get_pipeline_for::<HdrNode>().unwrap();
         let Some(current_frame) = current_frame.inner.as_ref() else {
             return Ok(());
         };

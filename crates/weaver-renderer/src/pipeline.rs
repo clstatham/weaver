@@ -1,4 +1,4 @@
-use std::{any::TypeId, ops::Deref, sync::Arc};
+use std::{any::TypeId, collections::HashMap, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
@@ -6,16 +6,20 @@ use weaver_ecs::{
     prelude::Resource,
 };
 use weaver_util::{
+    define_atomic_id,
     prelude::{DowncastSync, Result},
     TypeIdMap,
 };
 
 use crate::{bind_group::BindGroupLayoutCache, ExtractPipelineStage, WgpuDevice};
 
+define_atomic_id!(PipelineId);
+
 #[derive(Resource, Default)]
 pub struct RenderPipelineCache {
-    layout_cache: TypeIdMap<RenderPipelineLayout>,
-    pipeline_cache: TypeIdMap<RenderPipeline>,
+    layout_cache: HashMap<PipelineId, RenderPipelineLayout>,
+    pipeline_cache: HashMap<PipelineId, RenderPipeline>,
+    ids: TypeIdMap<PipelineId>,
 }
 
 impl RenderPipelineCache {
@@ -23,53 +27,67 @@ impl RenderPipelineCache {
         Self::default()
     }
 
-    pub fn get_layout<T>(&self) -> Option<&RenderPipelineLayout>
+    pub fn get_id_for<T>(&self) -> Option<PipelineId>
     where
         T: CreateRenderPipeline,
     {
-        self.layout_cache.get(&TypeId::of::<T>())
+        self.ids.get(&TypeId::of::<T>()).copied()
     }
 
-    pub fn get_pipeline<T>(&self) -> Option<&RenderPipeline>
+    pub fn get_layout(&self, id: PipelineId) -> Option<&RenderPipelineLayout> {
+        self.layout_cache.get(&id)
+    }
+
+    pub fn get_pipeline(&self, id: PipelineId) -> Option<&RenderPipeline> {
+        self.pipeline_cache.get(&id)
+    }
+
+    pub fn get_layout_for<T>(&self) -> Option<&RenderPipelineLayout>
     where
         T: CreateRenderPipeline,
     {
-        self.pipeline_cache.get(&TypeId::of::<T>())
+        self.ids
+            .get(&TypeId::of::<T>())
+            .and_then(|id| self.layout_cache.get(id))
     }
 
-    pub fn get_or_create_layout<T>(
+    pub fn get_pipeline_for<T>(&self) -> Option<&RenderPipeline>
+    where
+        T: CreateRenderPipeline,
+    {
+        self.ids
+            .get(&TypeId::of::<T>())
+            .and_then(|id| self.pipeline_cache.get(id))
+    }
+
+    pub fn create_for<T>(
         &mut self,
         device: &wgpu::Device,
         bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> RenderPipelineLayout
+    ) -> Result<PipelineId>
     where
         T: CreateRenderPipeline,
     {
-        if let Some(cached_layout) = self.layout_cache.get(&TypeId::of::<T>()) {
-            cached_layout.clone()
-        } else {
-            let layout = T::create_render_pipeline_layout(device, bind_group_layout_cache);
-            self.layout_cache.insert(TypeId::of::<T>(), layout.clone());
-            self.layout_cache.get(&TypeId::of::<T>()).unwrap().clone()
+        if let Some(id) = self.ids.get(&TypeId::of::<T>()) {
+            return Ok(*id);
         }
+
+        let id = PipelineId::new();
+
+        let layout = T::create_render_pipeline_layout(device, bind_group_layout_cache);
+        let pipeline = T::create_render_pipeline(device, &layout);
+        self.layout_cache.insert(id, layout);
+        self.pipeline_cache.insert(id, pipeline);
+        self.ids.insert(TypeId::of::<T>(), id);
+
+        Ok(id)
     }
 
-    pub fn get_or_create_pipeline<T>(
-        &mut self,
-        device: &wgpu::Device,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> RenderPipeline
-    where
-        T: CreateRenderPipeline,
-    {
-        if let Some(cached_pipeline) = self.pipeline_cache.get(&TypeId::of::<T>()) {
-            cached_pipeline.clone()
-        } else {
-            let layout = self.get_or_create_layout::<T>(device, bind_group_layout_cache);
-            let pipeline = T::create_render_pipeline(device, &layout);
-            self.pipeline_cache.insert(TypeId::of::<T>(), pipeline);
-            self.pipeline_cache.get(&TypeId::of::<T>()).unwrap().clone()
-        }
+    pub fn insert(&mut self, layout: RenderPipelineLayout, pipeline: RenderPipeline) -> PipelineId {
+        let id = PipelineId::new();
+        self.layout_cache.insert(id, layout);
+        self.pipeline_cache.insert(id, pipeline);
+        id
     }
 }
 
@@ -83,17 +101,6 @@ impl RenderPipelineLayout {
         Self {
             layout: Arc::new(layout),
         }
-    }
-
-    pub fn get_or_create<T>(
-        device: &wgpu::Device,
-        pipeline_cache: &mut RenderPipelineCache,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> Self
-    where
-        T: CreateRenderPipeline,
-    {
-        pipeline_cache.get_or_create_layout::<T>(device, bind_group_layout_cache)
     }
 }
 
@@ -115,17 +122,6 @@ impl RenderPipeline {
         Self {
             pipeline: Arc::new(pipeline),
         }
-    }
-
-    pub fn get_or_create<T>(
-        device: &wgpu::Device,
-        pipeline_cache: &mut RenderPipelineCache,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> Self
-    where
-        T: CreateRenderPipeline,
-    {
-        pipeline_cache.get_or_create_pipeline::<T>(device, bind_group_layout_cache)
     }
 }
 
@@ -172,7 +168,7 @@ fn extract_render_pipeline<T: CreateRenderPipeline>(
     mut pipeline_cache: ResMut<RenderPipelineCache>,
     mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,
 ) -> Result<()> {
-    pipeline_cache.get_or_create_pipeline::<T>(&device, &mut bind_group_layout_cache);
+    pipeline_cache.create_for::<T>(&device, &mut bind_group_layout_cache)?;
 
     Ok(())
 }

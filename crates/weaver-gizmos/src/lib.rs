@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App, PrepareFrame};
 use weaver_core::{color::Color, prelude::Mat4, transform::Transform};
@@ -11,16 +11,13 @@ use weaver_ecs::{
 };
 use weaver_pbr::render::PbrNodeLabel;
 use weaver_renderer::{
-    bind_group::{BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup},
+    bind_group::{BindGroup, CreateBindGroup},
     buffer::{GpuBuffer, GpuBufferVec},
     camera::{CameraBindGroup, ViewTarget},
     graph::{RenderGraphApp, ViewNode, ViewNodeRunner},
     hdr::{HdrNodeLabel, HdrRenderTarget},
     mesh::primitive::{CubePrimitive, Primitive},
-    pipeline::{
-        CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout,
-        RenderPipelinePlugin,
-    },
+    pipeline::{RenderPipeline, RenderPipelineLayout},
     prelude::*,
     shader::Shader,
     texture::texture_format,
@@ -34,23 +31,24 @@ pub mod prelude {
     pub use super::{Gizmo, GizmoMode, GizmoPlugin, Gizmos};
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Gizmo {
     Cube,
 }
 
 #[derive(Resource)]
-pub struct RenderCubeGizmo {
+pub struct SolidCubeGizmo {
     pub vertex_buffer: GpuBuffer,
     pub index_buffer: GpuBuffer,
     pub num_indices: usize,
 }
 
-impl FromWorld for RenderCubeGizmo {
+impl FromWorld for SolidCubeGizmo {
     fn from_world(world: &mut World) -> Self {
         let device = world.get_resource::<WgpuDevice>().unwrap();
         let device = device.into_inner();
 
-        let cube = CubePrimitive::new(1.0, true);
+        let cube = CubePrimitive::new(1.0, false);
         let mesh = cube.generate_mesh();
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -73,32 +71,63 @@ impl FromWorld for RenderCubeGizmo {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Hash)]
+#[derive(Resource)]
+pub struct WireCubeGizmo {
+    pub vertex_buffer: GpuBuffer,
+    pub index_buffer: GpuBuffer,
+    pub num_indices: usize,
+}
+
+impl FromWorld for WireCubeGizmo {
+    fn from_world(world: &mut World) -> Self {
+        let device = world.get_resource::<WgpuDevice>().unwrap();
+        let device = device.into_inner();
+
+        let cube = CubePrimitive::new(1.0, true);
+        let mesh = cube.generate_mesh();
+
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("WireCubeVertexBuffer"),
+            contents: bytemuck::cast_slice(&mesh.vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("WireCubeIndexBuffer"),
+            contents: bytemuck::cast_slice(&mesh.indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        Self {
+            vertex_buffer: GpuBuffer::from(vertex_buffer),
+            index_buffer: GpuBuffer::from(index_buffer),
+            num_indices: mesh.indices.len(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GizmoMode {
     Solid,
     Wireframe,
 }
 
-pub struct GizmoInstance {
-    pub gizmo: Gizmo,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GizmoKey {
     pub mode: GizmoMode,
     pub depth_test: bool,
+}
+
+pub struct GizmoInstance {
+    pub gizmo: Gizmo,
     pub color: Color,
     pub transform: Transform,
 }
 
 impl GizmoInstance {
-    pub fn new(
-        gizmo: Gizmo,
-        mode: GizmoMode,
-        depth_test: bool,
-        color: Color,
-        transform: Transform,
-    ) -> Self {
+    pub fn new(gizmo: Gizmo, color: Color, transform: Transform) -> Self {
         Self {
             gizmo,
-            mode,
-            depth_test,
             color,
             transform,
         }
@@ -107,34 +136,64 @@ impl GizmoInstance {
 
 #[derive(Resource, Clone)]
 pub struct Gizmos {
-    pub(crate) gizmos: SharedLock<Vec<GizmoInstance>>,
+    pub(crate) gizmos: SharedLock<HashMap<GizmoKey, Vec<GizmoInstance>>>,
 }
 
 impl Default for Gizmos {
     fn default() -> Self {
         Self {
-            gizmos: SharedLock::new(Vec::new()),
+            gizmos: SharedLock::new(HashMap::new()),
         }
     }
 }
 
 impl Gizmos {
-    pub fn add_gizmo(&self, gizmo: GizmoInstance) {
-        self.gizmos.write().push(gizmo);
+    pub fn add_gizmo(&self, key: GizmoKey, gizmo: GizmoInstance) {
+        self.gizmos.write().entry(key).or_default().push(gizmo);
     }
 
     pub fn clear(&self) {
         self.gizmos.write().clear();
     }
 
-    pub fn cube(&self, transform: Transform, color: Color) {
-        self.add_gizmo(GizmoInstance::new(
-            Gizmo::Cube,
-            GizmoMode::Solid,
-            true,
-            color,
-            transform,
-        ));
+    pub fn solid_cube(&self, transform: Transform, color: Color) {
+        self.add_gizmo(
+            GizmoKey {
+                mode: GizmoMode::Solid,
+                depth_test: true,
+            },
+            GizmoInstance::new(Gizmo::Cube, color, transform),
+        );
+    }
+
+    pub fn wire_cube(&self, transform: Transform, color: Color) {
+        self.add_gizmo(
+            GizmoKey {
+                mode: GizmoMode::Wireframe,
+                depth_test: true,
+            },
+            GizmoInstance::new(Gizmo::Cube, color, transform),
+        );
+    }
+
+    pub fn solid_cube_no_depth(&self, transform: Transform, color: Color) {
+        self.add_gizmo(
+            GizmoKey {
+                mode: GizmoMode::Solid,
+                depth_test: false,
+            },
+            GizmoInstance::new(Gizmo::Cube, color, transform),
+        );
+    }
+
+    pub fn wire_cube_no_depth(&self, transform: Transform, color: Color) {
+        self.add_gizmo(
+            GizmoKey {
+                mode: GizmoMode::Wireframe,
+                depth_test: false,
+            },
+            GizmoInstance::new(Gizmo::Cube, color, transform),
+        );
     }
 }
 
@@ -146,60 +205,30 @@ impl RenderLabel for GizmoSubGraph {}
 pub struct GizmoNodeLabel;
 impl RenderLabel for GizmoNodeLabel {}
 
+#[derive(Default)]
 pub struct GizmoRenderNode {
-    transform_buffer: GpuBufferVec<Mat4>,
-    color_buffer: GpuBufferVec<Color>,
-    bind_group: Option<BindGroup<GizmoRenderNode>>,
+    transform_buffer: HashMap<GizmoKey, GpuBufferVec<Mat4>>,
+    color_buffer: HashMap<GizmoKey, GpuBufferVec<Color>>,
+    bind_group: HashMap<GizmoKey, Arc<wgpu::BindGroup>>,
+    pipelines: HashMap<GizmoKey, RenderPipeline>,
 }
 
 impl GizmoRenderNode {
-    #[allow(clippy::new_without_default)]
-    pub fn new(device: &wgpu::Device) -> Self {
-        let mut transform_buffer =
-            GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
-        transform_buffer.reserve(1, device);
-        let mut color_buffer =
-            GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
-        color_buffer.reserve(1, device);
+    pub fn get_or_create_buffers(
+        &mut self,
+        key: GizmoKey,
+    ) -> (&mut GpuBufferVec<Mat4>, &mut GpuBufferVec<Color>) {
+        let transform_buffer = self.transform_buffer.entry(key).or_insert_with(|| {
+            GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST)
+        });
+        let color_buffer = self.color_buffer.entry(key).or_insert_with(|| {
+            GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST)
+        });
 
-        Self {
-            transform_buffer,
-            color_buffer,
-            bind_group: None,
-        }
-    }
-}
-
-impl FromWorld for GizmoRenderNode {
-    fn from_world(world: &mut World) -> Self {
-        let device = world.get_resource::<WgpuDevice>().unwrap();
-        Self::new(&device)
-    }
-}
-
-impl CreateBindGroup for GizmoRenderNode {
-    fn create_bind_group(
-        &self,
-        device: &wgpu::Device,
-        cached_layout: &BindGroupLayout,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("GizmoBindGroup"),
-            layout: cached_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.transform_buffer.binding().unwrap(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.color_buffer.binding().unwrap(),
-                },
-            ],
-        })
+        (transform_buffer, color_buffer)
     }
 
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    pub fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("GizmoTransformBindGroupLayout"),
             entries: &[
@@ -228,17 +257,44 @@ impl CreateBindGroup for GizmoRenderNode {
             ],
         })
     }
-}
 
-impl CreateRenderPipeline for GizmoRenderNode {
-    fn create_render_pipeline_layout(
+    pub fn get_or_create_bind_group(
+        &mut self,
         device: &wgpu::Device,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
+        key: GizmoKey,
+    ) -> Arc<wgpu::BindGroup> {
+        if let Some(bind_group) = self.bind_group.get(&key) {
+            return bind_group.clone();
+        }
+        let layout = Self::create_bind_group_layout(device);
+        let (transform_buffer, color_buffer) = self.get_or_create_buffers(key);
+
+        let bind_group = Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("GizmoBindGroup"),
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: transform_buffer.binding().unwrap(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: color_buffer.binding().unwrap(),
+                },
+            ],
+        }));
+
+        self.bind_group.insert(key, bind_group.clone());
+        bind_group
+    }
+
+    pub fn create_render_pipeline_layout(
+        device: &wgpu::Device,
     ) -> weaver_renderer::pipeline::RenderPipelineLayout
     where
         Self: Sized,
     {
-        let bind_group_layout = bind_group_layout_cache.get_or_create::<Self>(device);
+        let bind_group_layout = Self::create_bind_group_layout(device);
 
         RenderPipelineLayout::new(
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -252,45 +308,74 @@ impl CreateRenderPipeline for GizmoRenderNode {
         )
     }
 
-    fn create_render_pipeline(
+    pub fn get_or_create_pipeline(
+        &mut self,
         device: &wgpu::Device,
-        cached_layout: &wgpu::PipelineLayout,
+        key: GizmoKey,
     ) -> RenderPipeline {
+        if let Some(pipeline) = self.pipelines.get(&key) {
+            return pipeline.clone();
+        }
+
+        let layout = Self::create_render_pipeline_layout(device);
+
+        const VERTEX_BUFFER_LAYOUT: wgpu::VertexBufferLayout = wgpu::VertexBufferLayout {
+            array_stride: 4 * (3 + 3 + 3 + 2) as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x3,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x3,
+                    offset: 4 * 3,
+                    shader_location: 1,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x3,
+                    offset: 4 * 6,
+                    shader_location: 2,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x2,
+                    offset: 4 * 9,
+                    shader_location: 3,
+                },
+            ],
+        };
+
         let shader =
             Shader::new(Path::new("assets/shaders/gizmos.wgsl")).create_shader_module(device);
-        RenderPipeline::new(
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("GizmoRenderNode"),
-                layout: Some(cached_layout),
+
+        let GizmoKey { mode, depth_test } = key;
+
+        let primitive_topology = match mode {
+            GizmoMode::Solid => wgpu::PrimitiveTopology::TriangleList,
+            GizmoMode::Wireframe => wgpu::PrimitiveTopology::LineList,
+        };
+
+        let depth_stencil = if depth_test {
+            Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            })
+        } else {
+            None
+        };
+
+        let pipeline = RenderPipeline::new(device.create_render_pipeline(
+            &wgpu::RenderPipelineDescriptor {
+                label: Some("GizmoRenderPipeline"),
+                layout: Some(&layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "vs_main",
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: 4 * (3 + 3 + 3 + 2) as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[
-                            wgpu::VertexAttribute {
-                                format: wgpu::VertexFormat::Float32x3,
-                                offset: 0,
-                                shader_location: 0,
-                            },
-                            wgpu::VertexAttribute {
-                                format: wgpu::VertexFormat::Float32x3,
-                                offset: 4 * 3,
-                                shader_location: 1,
-                            },
-                            wgpu::VertexAttribute {
-                                format: wgpu::VertexFormat::Float32x3,
-                                offset: 4 * 6,
-                                shader_location: 2,
-                            },
-                            wgpu::VertexAttribute {
-                                format: wgpu::VertexFormat::Float32x2,
-                                offset: 4 * 9,
-                                shader_location: 3,
-                            },
-                        ],
-                    }],
+                    buffers: &[VERTEX_BUFFER_LAYOUT],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
@@ -302,31 +387,28 @@ impl CreateRenderPipeline for GizmoRenderNode {
                     })],
                 }),
                 primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::LineList,
+                    topology: primitive_topology,
                     front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Back),
+                    cull_mode: None,
                     polygon_mode: wgpu::PolygonMode::Fill,
                     ..Default::default()
                 },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
+                depth_stencil,
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
-            }),
-        )
+            },
+        ));
+
+        self.pipelines.insert(key, pipeline.clone());
+        pipeline
     }
 }
 
 impl ViewNode for GizmoRenderNode {
     type Param = (
         Res<'static, Gizmos>,
-        Res<'static, RenderCubeGizmo>,
-        Res<'static, RenderPipelineCache>,
+        Res<'static, SolidCubeGizmo>,
+        Res<'static, WireCubeGizmo>,
         Res<'static, HdrRenderTarget>,
     );
     type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<CameraBindGroup>);
@@ -338,47 +420,32 @@ impl ViewNode for GizmoRenderNode {
         };
         let gizmos = gizmos.into_inner();
 
-        self.transform_buffer.clear();
-        self.color_buffer.clear();
+        for (key, instances) in gizmos.gizmos.read().iter() {
+            let (transform_buffer, color_buffer) = self.get_or_create_buffers(*key);
 
-        for gizmo in gizmos.gizmos.read().iter() {
-            self.transform_buffer.push(gizmo.transform.matrix());
-            self.color_buffer.push(gizmo.color);
-        }
+            transform_buffer.clear();
+            color_buffer.clear();
 
-        let device = render_world
-            .get_resource::<WgpuDevice>()
-            .unwrap()
-            .into_inner();
-        let queue = render_world
-            .get_resource::<WgpuQueue>()
-            .unwrap()
-            .into_inner();
+            for gizmo in instances.iter() {
+                transform_buffer.push(gizmo.transform.matrix());
+                color_buffer.push(gizmo.color);
+            }
 
-        self.transform_buffer.enqueue_update(device, queue);
-        self.color_buffer.enqueue_update(device, queue);
-
-        let layout_cache = unsafe {
-            render_world
-                .as_unsafe_world_cell()
-                .get_resource_mut::<BindGroupLayoutCache>()
+            let device = render_world
+                .get_resource::<WgpuDevice>()
                 .unwrap()
-        }
-        .into_inner();
-
-        if self.bind_group.is_none() {
-            let bind_group = BindGroup::new(device, self, layout_cache);
-            self.bind_group = Some(bind_group);
-        }
-
-        let pipeline_cache = unsafe {
-            render_world
-                .as_unsafe_world_cell()
-                .get_resource_mut::<RenderPipelineCache>()
+                .into_inner();
+            let queue = render_world
+                .get_resource::<WgpuQueue>()
                 .unwrap()
-        };
-        let pipeline_cache = pipeline_cache.into_inner();
-        pipeline_cache.get_or_create_pipeline::<Self>(device, layout_cache);
+                .into_inner();
+
+            transform_buffer.enqueue_update(device, queue);
+            color_buffer.enqueue_update(device, queue);
+
+            self.get_or_create_bind_group(device, *key);
+            self.get_or_create_pipeline(device, *key);
+        }
 
         Ok(())
     }
@@ -388,14 +455,26 @@ impl ViewNode for GizmoRenderNode {
         _render_world: &World,
         _graph_ctx: &mut weaver_renderer::graph::RenderGraphCtx,
         render_ctx: &mut weaver_renderer::graph::RenderCtx,
-        (gizmos, cube_resource, pipeline_cache, hdr_target): &SystemParamItem<Self::Param>,
+        (gizmos, solid_cube, wire_cube, hdr_target): &SystemParamItem<Self::Param>,
         (view_target, camera_bind_group): &QueryFetchItem<Self::ViewQueryFetch>,
     ) -> Result<()> {
-        let pipeline = pipeline_cache.get_pipeline::<Self>().unwrap();
+        for key in gizmos.gizmos.read().keys() {
+            let gizmo_bind_group = self.bind_group.get(key).unwrap();
+            let pipeline = self.pipelines.get(key).unwrap();
 
-        let gizmo_bind_group = self.bind_group.as_ref().unwrap().bind_group();
+            let depth_stencil_attachment = if key.depth_test {
+                Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &view_target.depth_target,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                })
+            } else {
+                None
+            };
 
-        {
             let mut render_pass =
                 render_ctx
                     .command_encoder()
@@ -409,14 +488,7 @@ impl ViewNode for GizmoRenderNode {
                                 store: wgpu::StoreOp::Store,
                             },
                         })],
-                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: &view_target.depth_target,
-                            depth_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            }),
-                            stencil_ops: None,
-                        }),
+                        depth_stencil_attachment,
                         timestamp_writes: None,
                         occlusion_query_set: None,
                     });
@@ -425,20 +497,39 @@ impl ViewNode for GizmoRenderNode {
             render_pass.set_bind_group(0, gizmo_bind_group, &[]);
             render_pass.set_bind_group(1, camera_bind_group, &[]);
 
-            for (i, gizmo) in gizmos.gizmos.read().iter().enumerate() {
-                match gizmo.gizmo {
+            let mut num_cubes = 0;
+            for instance in gizmos.gizmos.read().get(key).unwrap().iter() {
+                match instance.gizmo {
                     Gizmo::Cube => {
-                        render_pass.set_vertex_buffer(0, cube_resource.vertex_buffer.slice(..));
-                        render_pass.set_index_buffer(
-                            cube_resource.index_buffer.slice(..),
-                            wgpu::IndexFormat::Uint32,
-                        );
-                        render_pass.draw_indexed(
-                            0..cube_resource.num_indices as u32,
-                            0,
-                            (i as u32)..(i as u32 + 1),
-                        );
+                        num_cubes += 1;
                     }
+                }
+            }
+
+            match key.mode {
+                GizmoMode::Solid => {
+                    render_pass.set_vertex_buffer(0, solid_cube.vertex_buffer.slice(..));
+                    render_pass.set_index_buffer(
+                        solid_cube.index_buffer.slice(..),
+                        wgpu::IndexFormat::Uint32,
+                    );
+                    render_pass.draw_indexed(
+                        0..solid_cube.num_indices as u32,
+                        0,
+                        0..num_cubes as u32,
+                    );
+                }
+                GizmoMode::Wireframe => {
+                    render_pass.set_vertex_buffer(0, wire_cube.vertex_buffer.slice(..));
+                    render_pass.set_index_buffer(
+                        wire_cube.index_buffer.slice(..),
+                        wgpu::IndexFormat::Uint32,
+                    );
+                    render_pass.draw_indexed(
+                        0..wire_cube.num_indices as u32,
+                        0,
+                        0..num_cubes as u32,
+                    );
                 }
             }
         }
@@ -457,7 +548,6 @@ impl Plugin for GizmoPlugin {
 
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.insert_resource(gizmos);
-        render_app.add_plugin(RenderPipelinePlugin::<GizmoRenderNode>::default())?;
 
         Ok(())
     }
@@ -465,7 +555,8 @@ impl Plugin for GizmoPlugin {
     fn finish(&self, app: &mut App) -> Result<()> {
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
 
-        render_app.init_resource::<RenderCubeGizmo>();
+        render_app.init_resource::<SolidCubeGizmo>();
+        render_app.init_resource::<WireCubeGizmo>();
 
         render_app.add_render_main_graph_node::<ViewNodeRunner<GizmoRenderNode>>(GizmoNodeLabel);
         render_app.add_render_main_graph_edge(PbrNodeLabel, GizmoNodeLabel);

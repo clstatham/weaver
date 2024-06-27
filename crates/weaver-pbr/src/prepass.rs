@@ -234,9 +234,6 @@ impl ViewNode for PrepassNode {
                 graph_ctx.view_entity,
                 &mut draw_fns,
             )?;
-
-            drop(render_pass);
-            drop(draw_fns);
         }
 
         Ok(())

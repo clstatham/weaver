@@ -3,7 +3,6 @@ use std::{
     fmt::Debug,
     ops::{Deref, DerefMut},
     path::Path,
-    sync::atomic::AtomicUsize,
 };
 
 use weaver_app::{App, SubApp};
@@ -14,7 +13,12 @@ use weaver_ecs::{
     system::{SystemAccess, SystemParam, SystemParamItem},
     world::{FromWorld, UnsafeWorldCell, World},
 };
-use weaver_util::prelude::{anyhow, impl_downcast, DowncastSync, Error, Result};
+use weaver_util::{
+    define_atomic_id,
+    prelude::{anyhow, impl_downcast, DowncastSync, Error, Result},
+};
+
+define_atomic_id!(AssetId);
 
 pub mod prelude {
     pub use crate::{Asset, Assets, Handle, ReflectAsset, UntypedHandle};
@@ -80,13 +84,14 @@ impl Asset for () {}
 
 #[derive(Component, Reflect)]
 pub struct Handle<T: Asset> {
-    id: usize,
+    #[reflect(ignore)]
+    id: AssetId,
     #[reflect(ignore)]
     _marker: std::marker::PhantomData<T>,
 }
 
 impl<T: Asset> Handle<T> {
-    pub fn id(&self) -> usize {
+    pub fn id(&self) -> AssetId {
         self.id
     }
 
@@ -94,7 +99,7 @@ impl<T: Asset> Handle<T> {
         self.into()
     }
 
-    pub fn from_raw(id: usize) -> Self {
+    pub fn from_raw(id: AssetId) -> Self {
         Self {
             id,
             _marker: std::marker::PhantomData,
@@ -151,7 +156,7 @@ impl<T: Asset> Ord for Handle<T> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UntypedHandle {
-    id: usize,
+    id: AssetId,
     type_id: std::any::TypeId,
 }
 
@@ -223,7 +228,6 @@ impl<'w, T: Asset> DerefMut for AssetMut<'w, T> {
 
 #[derive(Default, Resource)]
 pub struct Assets<T: Asset> {
-    next_handle_id: AtomicUsize,
     storage: SparseSet<UnsafeCell<T>>,
 }
 
@@ -233,17 +237,15 @@ unsafe impl<T: Asset> Sync for Assets<T> {}
 impl<T: Asset> Assets<T> {
     pub fn new() -> Self {
         Self {
-            next_handle_id: AtomicUsize::new(0),
             storage: SparseSet::new(),
         }
     }
 
     pub fn insert(&mut self, asset: T) -> Handle<T> {
-        let id = self
-            .next_handle_id
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = AssetId::new();
+        let index: usize = id.into();
         self.storage.insert(
-            id,
+            index,
             UnsafeCell::new(asset),
             ComponentTicks::new(Tick::MAX), // todo: change detection for assets
         );
@@ -255,7 +257,7 @@ impl<T: Asset> Assets<T> {
     }
 
     pub fn get(&self, handle: Handle<T>) -> Option<AssetRef<T>> {
-        self.storage.get(handle.id).map(|asset| {
+        self.storage.get(handle.id.into()).map(|asset| {
             let asset = unsafe { &*asset.get() };
             AssetRef { asset }
         })
@@ -263,7 +265,7 @@ impl<T: Asset> Assets<T> {
 
     // todo: make this unsafe
     pub fn get_mut(&self, handle: Handle<T>) -> Option<AssetMut<T>> {
-        self.storage.get(handle.id).map(|asset| {
+        self.storage.get(handle.id.into()).map(|asset| {
             let asset = unsafe { &mut *asset.get() };
             AssetMut { asset }
         })
@@ -271,7 +273,7 @@ impl<T: Asset> Assets<T> {
 
     pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
         self.storage
-            .remove(handle.id)
+            .remove(handle.id.into())
             .map(|asset| asset.0.into_inner())
     }
 }

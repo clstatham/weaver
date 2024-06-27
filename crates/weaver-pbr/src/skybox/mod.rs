@@ -531,7 +531,9 @@ impl ViewNode for SkyboxNode {
         (render_pipeline_cache, hdr_target, skybox_bind_group): &SystemParamItem<Self::Param>,
         (view_target, camera_bind_group): &QueryFetchItem<Self::ViewQueryFetch>,
     ) -> Result<()> {
-        let skybox_pipeline = render_pipeline_cache.get_pipeline::<SkyboxNode>().unwrap();
+        let skybox_pipeline = render_pipeline_cache
+            .get_pipeline_for::<SkyboxNode>()
+            .unwrap();
 
         {
             let mut rpass =

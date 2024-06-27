@@ -184,22 +184,20 @@ fn setup(
 }
 
 fn selection_gizmos(
-    query: Query<(&Transform, &Handle<Mesh>)>,
+    query: Query<(&Transform, &SelectionAabb)>,
     gizmos: Res<Gizmos>,
     state: Res<EditorState>,
-    assets: Res<Assets<Mesh>>,
 ) -> Result<()> {
-    for (entity, (transform, handle)) in query.iter() {
+    for (entity, (transform, aabb)) in query.iter() {
         if let Some(selected_entity) = state.selected_entity {
             if selected_entity == entity {
-                let mesh = &assets.get(*handle).unwrap();
-                let aabb = mesh.aabb.transformed(*transform);
+                let aabb = aabb.aabb.transformed(*transform);
                 let gizmo_transform = Transform::new(
                     aabb.center(),
                     Quat::IDENTITY,
                     aabb.size() + Vec3A::splat(0.1),
                 );
-                gizmos.cube(gizmo_transform, Color::GREEN);
+                gizmos.wire_cube_no_depth(gizmo_transform, Color::GREEN);
             }
         }
     }
@@ -212,12 +210,8 @@ fn light_gizmos(
     gizmos: Res<Gizmos>,
 ) -> Result<()> {
     for (_, (light, transform, aabb)) in query.iter() {
-        gizmos.cube(
-            Transform::new(
-                transform.translation,
-                Quat::IDENTITY,
-                aabb.aabb.size() * 2.0,
-            ),
+        gizmos.solid_cube(
+            Transform::new(transform.translation, Quat::IDENTITY, aabb.aabb.size()),
             light.color,
         );
     }

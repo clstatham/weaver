@@ -8,9 +8,39 @@ pub mod lock;
 pub mod prelude {
     pub use crate::lock::*;
     pub use crate::TypeIdMap;
-    pub use crate::{debug_once, error_once, info_once, log_once, trace_once, warn_once};
+    pub use crate::{
+        debug_once, define_atomic_id, error_once, info_once, log_once, trace_once, warn_once,
+    };
     pub use anyhow::{anyhow, bail, ensure, Error, Result};
     pub use downcast_rs::{impl_downcast, Downcast, DowncastSync};
+}
+
+#[macro_export]
+macro_rules! define_atomic_id {
+    ($id:ident) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $id(u64);
+
+        impl $id {
+            #[allow(clippy::new_without_default)]
+            pub fn new() -> Self {
+                static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                Self(NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+            }
+        }
+
+        impl Into<u64> for $id {
+            fn into(self) -> u64 {
+                self.0
+            }
+        }
+
+        impl Into<usize> for $id {
+            fn into(self) -> usize {
+                self.0 as usize
+            }
+        }
+    };
 }
 
 #[macro_export]

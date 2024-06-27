@@ -432,7 +432,7 @@ impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
         let material_bind_group = material_assets.get(item.key.material).unwrap();
         let material_bind_group = material_bind_group.into_inner();
 
-        let pipeline = pipeline_cache.get_pipeline::<PbrNode>().unwrap();
+        let pipeline = pipeline_cache.get_pipeline_for::<PbrNode>().unwrap();
 
         pass.set_pipeline(pipeline);
         pass.set_bind_group(0, material_bind_group.bind_group(), &[]);
