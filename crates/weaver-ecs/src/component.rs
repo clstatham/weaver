@@ -13,12 +13,11 @@ use weaver_util::{
 
 use crate::{
     self as weaver_ecs,
-    prelude::{
-        ChangeDetection, ChangeDetectionMut, ComponentTicks, Reflect, Tick, Ticks, TicksMut,
-    },
+    prelude::{ChangeDetection, ChangeDetectionMut, ComponentTicks, Tick, Ticks, TicksMut},
 };
 
-pub trait Component: DowncastSync + Reflect {}
+#[reflect_trait]
+pub trait Component: DowncastSync {}
 impl_downcast!(Component);
 
 #[reflect_trait]

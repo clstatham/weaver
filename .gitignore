@@ -11,5 +11,4 @@
 /*.json
 *.tmLanguage.json
 log.txt
-/*.png
 /pipeline.cache

@@ -146,7 +146,7 @@ impl World {
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
         let entity = self.create_entity();
         self.storage
-            .insert_components(entity, bundle, self.read_change_tick());
+            .insert_bundle(entity, bundle, self.read_change_tick());
         entity
     }
 
@@ -171,7 +171,7 @@ impl World {
 
     pub fn insert_components<T: Bundle>(&mut self, entity: Entity, bundle: T) {
         self.storage
-            .insert_components(entity, bundle, self.read_change_tick())
+            .insert_bundle(entity, bundle, self.read_change_tick())
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {

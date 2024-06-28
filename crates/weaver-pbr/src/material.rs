@@ -18,25 +18,27 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::*;
 
-#[derive(Reflect)]
+#[derive(Reflect, Asset)]
 #[reflect(ReflectAsset)]
 pub struct Material {
     pub diffuse: Color,
+    #[reflect(ignore)]
     pub diffuse_texture: Handle<Texture>,
 
+    #[reflect(ignore)]
     pub normal_texture: Handle<Texture>,
 
     pub metallic: f32,
     pub roughness: f32,
+    #[reflect(ignore)]
     pub metallic_roughness_texture: Handle<Texture>,
 
     pub ao: f32,
+    #[reflect(ignore)]
     pub ao_texture: Handle<Texture>,
 
     pub texture_scale: f32,
 }
-
-impl Asset for Material {}
 
 #[derive(Resource, Default)]
 pub struct MaterialLoader;
@@ -166,6 +168,7 @@ pub struct MaterialMetaUniform {
     texture_scale: f32,
 }
 
+#[derive(Asset)]
 pub struct GpuMaterial {
     pub meta: GpuBufferVec<MaterialMetaUniform>,
 
@@ -178,8 +181,6 @@ pub struct GpuMaterial {
     pub ao_texture: GpuTexture,
     pub ao_texture_sampler: wgpu::Sampler,
 }
-
-impl Asset for GpuMaterial {}
 
 impl RenderAsset for GpuMaterial {
     type Source = Material;

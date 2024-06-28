@@ -17,7 +17,7 @@ use crate::{
     CurrentFrame, ExtractBindGroupStage, PostRender, PreRender, WgpuDevice, WgpuQueue,
 };
 
-#[derive(Component, Reflect, Clone, Copy)]
+#[derive(Component, Clone, Copy)]
 pub struct PrimaryCamera;
 
 impl ExtractComponent for PrimaryCamera {
@@ -32,11 +32,9 @@ impl ExtractComponent for PrimaryCamera {
     }
 }
 
-#[derive(Component, Reflect, Clone)]
+#[derive(Component, Clone)]
 pub struct ViewTarget {
-    #[reflect(ignore)]
     pub color_target: Arc<wgpu::TextureView>,
-    #[reflect(ignore)]
     pub depth_target: Arc<wgpu::TextureView>,
 }
 
@@ -174,7 +172,7 @@ impl Default for Camera {
     }
 }
 
-#[derive(Component, Reflect)]
+#[derive(Component)]
 pub struct GpuCamera {
     pub camera: Camera,
 }
@@ -191,9 +189,8 @@ impl ExtractComponent for GpuCamera {
     }
 }
 
-#[derive(Component, Reflect)]
+#[derive(Component)]
 pub struct CameraBindGroup {
-    #[reflect(ignore)]
     pub buffer: GpuBufferVec<CameraUniform>,
 }
 

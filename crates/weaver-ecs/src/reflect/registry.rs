@@ -1,7 +1,7 @@
 use std::{any::TypeId, collections::HashMap, sync::Arc};
 
-use crate as weaver_ecs;
 use crate::prelude::Resource;
+use crate::{self as weaver_ecs, prelude::Component};
 use weaver_util::prelude::{impl_downcast, DowncastSync};
 
 pub use weaver_util::TypeIdMap;
@@ -212,6 +212,11 @@ pub trait FromType<T: Sized> {
 pub trait FromReflect: Sized {
     fn from_reflect(reflect: &dyn Reflect) -> Option<&Self>;
     fn from_reflect_mut(reflect: &mut dyn Reflect) -> Option<&mut Self>;
+}
+
+pub trait FromComponent {
+    fn from_component(component: &dyn Component) -> Option<&dyn Reflect>;
+    fn from_component_mut(component: &mut dyn Component) -> Option<&mut dyn Reflect>;
 }
 
 pub struct TypeRegistration {

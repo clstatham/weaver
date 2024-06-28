@@ -37,10 +37,10 @@
 			- "Similar" is defined by a `Key` that is Hashable
 				- Two entities with identical Keys will have the same hash and be rendered together!
 			- Before every frame is drawn, the batches are cleared out and reconstructed
-				- Keys are generated based on the DrawItem's Query parameters, and the components fetched by that Query are added to batches accordingly
+				- Keys are generated based on the DrawItem's Query parameters, and the entities matching the Query are added to batches accordingly
 		- RenderGraphs/Nodes
 			- Dictate the order of operations in which rendering happens each frame
-			- Nodes of a graph can perform arbitrary work on a RenderPass aren't required to use DrawItems or RenderCommands at all!
+			- Nodes of a graph can perform arbitrary work on a RenderPass and aren't required to use DrawItems or RenderCommands at all!
 - What has this enabled me to do?
 	- Rendering features such as Skyboxes and Image-Based Lighting
 	- Future: Prepasses, deferred rendering, separation of opaque/translucent/transmissive phases

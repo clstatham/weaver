@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use glam::{Vec2, Vec3, Vec3A};
-use weaver_asset::{prelude::Asset, LoadAsset};
+use weaver_asset::{prelude::Asset, LoadAsset, ReflectAsset};
 use weaver_ecs::prelude::{Reflect, Resource};
 use weaver_util::prelude::{bail, Result};
 
@@ -16,14 +16,13 @@ pub struct Vertex {
     pub tex_coords: Vec2,
 }
 
-#[derive(Clone, Reflect)]
+#[derive(Clone, Reflect, Asset)]
+#[reflect(ReflectAsset)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
     pub aabb: Aabb,
 }
-
-impl Asset for Mesh {}
 
 impl Mesh {
     pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {

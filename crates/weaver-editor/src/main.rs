@@ -308,7 +308,6 @@ fn pick_entity(
 
 fn inspect_ui(
     world: WorldMut,
-    type_registry: Res<TypeRegistry>,
     editor_state: Res<EditorState>,
     egui_ctx: Res<EguiContext>,
 ) -> Result<()> {
@@ -324,9 +323,9 @@ fn inspect_ui(
                     let component = column.get(selected_entity.as_usize()).unwrap();
                     let component = unsafe { &mut *component.get() };
                     let component = component.get_data_mut();
-                    let reflect = component.as_reflect_mut();
+
                     let world = unsafe { world.as_unsafe_world_cell().world_mut() };
-                    reflect.inspect_ui(&type_registry, world, ui);
+                    component.inspect_ui(world, ui);
                 }
             });
         }

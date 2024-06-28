@@ -20,11 +20,3 @@ pub fn reflect_trait(_args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::ItemTrait);
     reflect::reflect_trait(&input).into()
 }
-
-#[proc_macro]
-pub fn impl_reflect(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as syn::DeriveInput);
-    reflect::derive_reflect(input)
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
-}

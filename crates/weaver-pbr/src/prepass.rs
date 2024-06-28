@@ -7,6 +7,7 @@ use weaver_ecs::{
     component::Res,
     prelude::{Component, Entity, QueryFetchItem, Reflect, Resource, SystemParamItem, World},
     query::Query,
+    storage::Ref,
 };
 use weaver_renderer::{
     bind_group::BindGroup,
@@ -28,11 +29,9 @@ pub struct DepthPrepass;
 #[derive(Debug, Clone, Copy, Reflect, Component)]
 pub struct NormalPrepass;
 
-#[derive(Clone, Reflect, Component, Default)]
+#[derive(Clone, Component, Default)]
 pub struct PrepassTextures {
-    #[reflect(ignore)]
     pub depth: Option<GpuTexture>,
-    #[reflect(ignore)]
     pub normal: Option<GpuTexture>,
 }
 
@@ -61,10 +60,7 @@ pub struct PrepassKey {
 
 impl FromDrawItemQuery<PrepassDrawItem> for PrepassKey {
     fn from_draw_item_query(
-        (mesh, material): (
-            weaver_ecs::storage::Ref<Handle<GpuMesh>>,
-            weaver_ecs::storage::Ref<Handle<BindGroup<GpuMaterial>>>,
-        ),
+        (mesh, material): (Ref<Handle<GpuMesh>>, Ref<Handle<BindGroup<GpuMaterial>>>),
         draw_fn_id: DrawFnId,
     ) -> Self {
         Self {

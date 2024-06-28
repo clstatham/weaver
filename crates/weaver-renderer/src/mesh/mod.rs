@@ -7,13 +7,12 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
 pub mod primitive;
 
+#[derive(Debug, Asset)]
 pub struct GpuMesh {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: u32,
 }
-
-impl Asset for GpuMesh {}
 
 impl RenderAsset for GpuMesh {
     type Source = Mesh;

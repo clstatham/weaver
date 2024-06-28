@@ -4,11 +4,10 @@ use weaver_asset::{prelude::Asset, LoadAsset};
 use weaver_ecs::prelude::Resource;
 use weaver_util::prelude::Result;
 
+#[derive(Debug, Clone, Asset)]
 pub struct Texture {
     pub image: image::RgbaImage,
 }
-
-impl Asset for Texture {}
 
 impl Texture {
     pub fn new(image: image::RgbaImage) -> Self {

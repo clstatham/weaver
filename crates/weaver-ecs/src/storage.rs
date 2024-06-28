@@ -488,7 +488,7 @@ impl Storage {
         Self::default()
     }
 
-    pub fn insert_components<T: Bundle>(&mut self, entity: Entity, bundle: T, change_tick: Tick) {
+    pub fn insert_bundle<T: Bundle>(&mut self, entity: Entity, bundle: T, change_tick: Tick) {
         let old_archetype_id = self.entity_archetype.remove(&entity);
         let old_archetype = old_archetype_id.and_then(|id| self.archetypes.get_mut(&id));
 
@@ -565,7 +565,7 @@ impl Storage {
             *existing = component;
             return;
         }
-        self.insert_components(entity, component, this_run);
+        self.insert_bundle(entity, component, this_run);
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {

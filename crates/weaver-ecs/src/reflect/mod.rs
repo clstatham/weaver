@@ -11,11 +11,11 @@ pub trait Reflect: DowncastSync + Typed {
 
     fn reflect_type_name(&self) -> &'static str;
 
-    fn as_struct(&self) -> Option<&dyn registry::Struct> {
+    fn as_struct(&self) -> Option<&dyn Struct> {
         None
     }
 
-    fn as_struct_mut(&mut self) -> Option<&mut dyn registry::Struct> {
+    fn as_struct_mut(&mut self) -> Option<&mut dyn Struct> {
         None
     }
 }
@@ -44,11 +44,11 @@ impl<T: Struct + Typed> Reflect for T {
         T::type_name()
     }
 
-    fn as_struct(&self) -> Option<&dyn registry::Struct> {
+    fn as_struct(&self) -> Option<&dyn Struct> {
         Some(self)
     }
 
-    fn as_struct_mut(&mut self) -> Option<&mut dyn registry::Struct> {
+    fn as_struct_mut(&mut self) -> Option<&mut dyn Struct> {
         Some(self)
     }
 }

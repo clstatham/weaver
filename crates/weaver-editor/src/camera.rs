@@ -1,6 +1,7 @@
 use weaver::prelude::*;
 
 #[derive(Debug, Clone, Copy, Component, Reflect)]
+#[reflect(ReflectComponent)]
 pub struct FlyCameraController {
     pub speed: f32,
     pub sensitivity: f32,

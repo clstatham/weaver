@@ -1,8 +1,7 @@
 use weaver::prelude::*;
 
-#[derive(Debug, Clone, Copy, Reflect, Resource)]
+#[derive(Debug, Clone, Copy, Resource)]
 pub struct TransformGizmo {
-    #[reflect(ignore)]
     pub focus: Option<Entity>,
     pub size: f32,
     pub axis_size: f32,

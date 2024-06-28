@@ -8,7 +8,7 @@ use std::{
 use weaver_app::{App, SubApp};
 use weaver_ecs::{
     change::{ComponentTicks, Tick},
-    prelude::{reflect_trait, Component, Reflect, Resource},
+    prelude::{reflect_trait, Component, Resource},
     storage::SparseSet,
     system::{SystemAccess, SystemParam, SystemParamItem},
     world::{FromWorld, UnsafeWorldCell, World},
@@ -82,11 +82,9 @@ impl_downcast!(Asset);
 
 impl Asset for () {}
 
-#[derive(Component, Reflect)]
+#[derive(Component)]
 pub struct Handle<T: Asset> {
-    #[reflect(ignore)]
     id: AssetId,
-    #[reflect(ignore)]
     _marker: std::marker::PhantomData<T>,
 }
 

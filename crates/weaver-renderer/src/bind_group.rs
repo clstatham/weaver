@@ -5,7 +5,7 @@ use weaver_asset::{prelude::Asset, AddAsset, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
     commands::Commands,
     component::{Res, ResMut},
-    prelude::{Component, Reflect, Resource},
+    prelude::{Component, Resource},
     query::Query,
 };
 use weaver_util::{
@@ -96,15 +96,11 @@ pub trait CreateBindGroup: DowncastSync {
     fn set_bind_group_stale(&mut self, stale: bool) {}
 }
 
-#[derive(Component, Resource, Reflect)]
+#[derive(Component, Resource, Asset)]
 pub struct BindGroup<T: CreateBindGroup> {
-    #[reflect(ignore)]
     bind_group: Arc<wgpu::BindGroup>,
-    #[reflect(ignore)]
     _marker: std::marker::PhantomData<T>,
 }
-
-impl<T: Asset + CreateBindGroup> Asset for BindGroup<T> {}
 
 impl<T: CreateBindGroup> BindGroup<T> {
     pub fn new(device: &wgpu::Device, data: &T, cache: &mut BindGroupLayoutCache) -> Self {

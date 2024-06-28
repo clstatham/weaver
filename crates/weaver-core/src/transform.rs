@@ -2,6 +2,7 @@ use glam::*;
 use weaver_ecs::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Reflect, Component)]
+#[reflect(ReflectComponent)]
 pub struct Transform {
     pub translation: Vec3A,
     pub rotation: Quat,

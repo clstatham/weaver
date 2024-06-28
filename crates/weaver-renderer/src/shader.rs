@@ -5,10 +5,11 @@ use std::{
 };
 
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
-use weaver_asset::{Asset, LoadAsset};
+use weaver_asset::{prelude::Asset, LoadAsset};
 use weaver_ecs::prelude::Resource;
 use weaver_util::prelude::{bail, Result};
 
+#[derive(Debug, Clone, Asset)]
 pub struct Shader {
     pub path: PathBuf,
     pub module: wgpu::ShaderSource<'static>,
@@ -30,8 +31,6 @@ impl Shader {
         })
     }
 }
-
-impl Asset for Shader {}
 
 #[derive(Resource, Default)]
 pub struct ShaderLoader;
