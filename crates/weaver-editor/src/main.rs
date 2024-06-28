@@ -1,4 +1,5 @@
 use inspect::InspectUi;
+use transform_gizmo::TransformGizmo;
 use weaver::{
     prelude::*,
     weaver_app::App,
@@ -16,6 +17,7 @@ use weaver_winit::Window;
 
 pub mod camera;
 pub mod inspect;
+pub mod transform_gizmo;
 
 #[derive(Component, Reflect)]
 struct Floor;
@@ -60,12 +62,25 @@ fn main() -> Result<()> {
         .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
         .insert_resource(EditorState::default())
+        .insert_resource(TransformGizmo {
+            focus: None,
+            size: 1.0,
+            axis_size: 0.1,
+            handle_size: 0.3,
+            middle_color: Color::WHITE,
+            x_color: Color::RED,
+            y_color: Color::GREEN,
+            z_color: Color::BLUE,
+            extra_scaling: 1.0,
+            desired_pixel_size: 100.0,
+        })
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)
         .add_system(camera::update_aspect_ratio, Update)
         .add_system(selection_gizmos, Update)
         .add_system(light_gizmos, Update)
         .add_system(pick_entity, Update)
+        .add_system(transform_gizmo::draw_transform_gizmo, Update)
         .add_system(inspect_ui, Update)
         .run()
 }
@@ -229,6 +244,7 @@ fn pick_entity(
     aabb_transform_query: Query<(&SelectionAabb, Option<&Transform>)>,
     mesh_assets: Res<Assets<Mesh>>,
     mesh_query: Query<(&Handle<Mesh>, Option<&Transform>), With<SelectionAabb>>,
+    mut transform_gizmo: ResMut<TransformGizmo>,
 ) -> Result<()> {
     if input.mouse_just_pressed(MouseButton::Left) && !egui_ctx.wants_input() {
         let cursor_pos = input.mouse_pos();
@@ -280,8 +296,10 @@ fn pick_entity(
 
         if let Some((entity, _)) = hit_entity {
             editor_state.selected_entity = Some(entity);
+            transform_gizmo.focus = Some(entity);
         } else {
             editor_state.selected_entity = None;
+            transform_gizmo.focus = None;
         }
     }
 

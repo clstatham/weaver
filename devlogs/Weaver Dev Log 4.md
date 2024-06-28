@@ -1,0 +1,39 @@
+- All about the renderer!
+- Using WGPU
+- General design patterns:
+	- Resources
+		- Centralized management
+		- Lazy initialization/updates
+	- Render Passes
+		- Pseudo-deferred
+			- No gbuffer
+		- Modular render pass trait
+		- Each render pass has its own pipeline and resources
+	- Compute is kind of its own thing right now
+		- todo: update it to this new design
+- Deep dive on resource management
+	- The original problem:
+		- I was sending way too many command encoders to the GPU per frame
+			- This was SLOW!
+		- GPU resource management was handled in the components themselves
+			- This was MESSY!
+	- New method:
+		- Incorporates lazy initialization design pattern
+			- GPU resources are only created the first time they're needed
+		- Updating of resources is deferred to right before they're used
+		- All GPU resources are managed from one place
+			- Components only hold handles
+		- Pros
+			- Allows for ECS components to be constructed without passing the renderer
+			- Only one queue flush is required per frame
+			- Keeps 90% of the GPU code within the bounds of the renderer
+		- Cons
+			- GpuComponents need to store handles, which is messy
+			- Need to update everything BEFORE the first draw call
+				- Technically don't need to, but it's assumed that you will
+			- Lots of boilerplate
+	- Implementation
+		- https://imgur.com/a/N0ENNhe
+	- What could be improved?
+		- Possibly separate out the handles from their components
+		- Custom derive macro for GpuComponent and BindableGpuComponent

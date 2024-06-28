@@ -154,6 +154,18 @@ impl Camera {
             world.truncate().normalize().into(),
         )
     }
+
+    pub fn world_to_screen(
+        &self,
+        world_pos: glam::Vec3,
+        screen_size: glam::Vec2,
+    ) -> Option<glam::Vec2> {
+        let clip_from_view = self.projection_matrix * self.view_matrix;
+        let ndc = clip_from_view.project_point3(world_pos);
+        let mut screen = (ndc.truncate() + glam::Vec2::ONE) / 2.0 * screen_size;
+        screen.y = screen_size.y - screen.y;
+        Some(screen)
+    }
 }
 
 impl Default for Camera {

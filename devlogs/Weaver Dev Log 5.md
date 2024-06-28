@@ -1,0 +1,42 @@
+- Sorry for taking so long!
+	- Busy IRL and been working hard!
+	- 3000 subscriber livestream (need 30 more!)
+- Demo
+	- Tile based layout using `egui_dock`
+	- Loom scripts (NYI in editor)
+	- Scene Tree
+		- Picking entities with mouse
+		- Renaming
+	- Component Inspector
+	- Notice that one of the monkeys follows the other...
+- ECS Rewrite / Redesign
+	- Introducing Fabricate and Loom!
+	- Fabricate features
+		- Everything is an Entity, including Components!
+		- Entity relationships
+		- Components defined at runtime
+	- Why?
+		- Old implementation was getting messy and hacky
+		- Old implementation was designed for component types defined at compile time
+			- Made scripting hard
+	- Quick rundown of Loom
+		- Custom made scripting language for game logic in Weaver
+			- You know how much I like making languages!
+		- Define systems
+			- System stage tag
+			- Can access world-scope resources
+			- Can create queries and iterate through them
+		- Variables
+			- `let`/`var`
+		- Built-in functions
+			- Custom functions WIP
+		- Access methods of components that expose them
+- What's next?
+	- Flesh out Loom
+		- Functions
+		- Methods of runtime-defined components
+	- More editor functionality
+		- Asset browser
+		- Script editor
+		- Spawn entities and add components
+		- Change relationships between entities

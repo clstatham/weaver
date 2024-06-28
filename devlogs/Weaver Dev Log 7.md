@@ -1,0 +1,46 @@
+- Demo
+- Where we left off
+	- Modularizing and generalizing the whole codebase
+	- Plugins
+	- New renderer architecture
+- More renderer changes
+	- Continuing to draw influence from Bevy
+	- Rendering functionality now exists in a separate SubApp with its own ECS World
+	- `Extract` system stage copies data from the main World into the rendering World
+	- Bevy clears the rendering World after every frame - Weaver currently does not (entities can persist in the rendering World between frames)
+		- Advantages of having persistent extracted entities:
+			- Entities only need to be extracted once per spawn
+			- Allows components to be modified and updated in-place
+		- Disadvantages:
+			- Complicates the extraction logic when an entity no longer exists in the main World (not currently an issue, but might become one)
+	- RenderCommands, DrawFns, DrawItems, Batching, and their relation to RenderGraphs
+		- This is (almost) entirely a 1:1 with Bevy
+			- I'd be interested in learning how other game engines do this
+		- Explaining it from the inside out; smallest piece to largest
+		- RenderCommand:
+			- Simple functionality for rendering a specific set of components
+			- Can access the rendering World via SystemParams (Res/ResMut, Assets, etc) and specific Component Queries for the things being drawn
+		- DrawFn:
+			- A generalization of RenderCommands
+			- These do not fetch anything from the ECS world by default
+				- Instead, they get immutable World access directly
+			- Currently the only implemented DrawFn in Weaver is `RenderCommandState`, which simply runs a single RenderCommand (after fetching the ECS components and resources it needs from the rendering World)
+			- Future plans are to implement DrawFn for tuples of RenderCommands, like Bevy does
+				- Runs them sequentially on the same render pass
+				- Allows for more granular RenderCommands that do single things (like setting a bind group or issuing a draw call to the GPU)
+		- DrawItem:
+			- Describes something that can be rendered
+			- Bevy calls these PhaseItems
+			- RenderCommand and DrawFn traits are parameterized by a specific DrawItem type
+		- Batching/Binning:
+			- Rendering multiple similar entities at once
+			- "Similar" is defined by a `Key` that is Hashable
+				- Two entities with identical Keys will have the same hash and be rendered together!
+			- Before every frame is drawn, the batches are cleared out and reconstructed
+				- Keys are generated based on the DrawItem's Query parameters, and the components fetched by that Query are added to batches accordingly
+		- RenderGraphs/Nodes
+			- Dictate the order of operations in which rendering happens each frame
+			- Nodes of a graph can perform arbitrary work on a RenderPass aren't required to use DrawItems or RenderCommands at all!
+- What has this enabled me to do?
+	- Rendering features such as Skyboxes and Image-Based Lighting
+	- Future: Prepasses, deferred rendering, separation of opaque/translucent/transmissive phases

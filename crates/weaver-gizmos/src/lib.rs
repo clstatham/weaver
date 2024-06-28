@@ -20,7 +20,7 @@ use weaver_renderer::{
     pipeline::{RenderPipeline, RenderPipelineLayout},
     prelude::*,
     shader::Shader,
-    texture::texture_format,
+    texture::{texture_format, GpuTexture},
     RenderApp, RenderLabel, WgpuDevice, WgpuQueue,
 };
 use weaver_util::{lock::SharedLock, prelude::Result};
@@ -211,6 +211,7 @@ pub struct GizmoRenderNode {
     color_buffer: HashMap<GizmoKey, GpuBufferVec<Color>>,
     bind_group: HashMap<GizmoKey, Arc<wgpu::BindGroup>>,
     pipelines: HashMap<GizmoKey, RenderPipeline>,
+    gizmo_depth_texture: Option<GpuTexture>,
 }
 
 impl GizmoRenderNode {
@@ -349,23 +350,9 @@ impl GizmoRenderNode {
         let shader =
             Shader::new(Path::new("assets/shaders/gizmos.wgsl")).create_shader_module(device);
 
-        let GizmoKey { mode, depth_test } = key;
-
-        let primitive_topology = match mode {
+        let primitive_topology = match key.mode {
             GizmoMode::Solid => wgpu::PrimitiveTopology::TriangleList,
             GizmoMode::Wireframe => wgpu::PrimitiveTopology::LineList,
-        };
-
-        let depth_stencil = if depth_test {
-            Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            })
-        } else {
-            None
         };
 
         let pipeline = RenderPipeline::new(device.create_render_pipeline(
@@ -393,7 +380,13 @@ impl GizmoRenderNode {
                     polygon_mode: wgpu::PolygonMode::Fill,
                     ..Default::default()
                 },
-                depth_stencil,
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
             },
@@ -419,6 +412,36 @@ impl ViewNode for GizmoRenderNode {
             return Ok(());
         };
         let gizmos = gizmos.into_inner();
+
+        if self.gizmo_depth_texture.is_none() {
+            let device = render_world
+                .get_resource::<WgpuDevice>()
+                .unwrap()
+                .into_inner();
+            let hdr_target = render_world
+                .get_resource::<HdrRenderTarget>()
+                .unwrap()
+                .into_inner();
+
+            let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("GizmoDepthTexture"),
+                size: hdr_target.texture.texture.size(),
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Depth32Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+
+            let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+            self.gizmo_depth_texture = Some(GpuTexture {
+                texture: Arc::new(depth_texture),
+                view: Arc::new(depth_view),
+            });
+        }
 
         for (key, instances) in gizmos.gizmos.read().iter() {
             let (transform_buffer, color_buffer) = self.get_or_create_buffers(*key);
@@ -458,6 +481,27 @@ impl ViewNode for GizmoRenderNode {
         (gizmos, solid_cube, wire_cube, hdr_target): &SystemParamItem<Self::Param>,
         (view_target, camera_bind_group): &QueryFetchItem<Self::ViewQueryFetch>,
     ) -> Result<()> {
+        let depth_texture = self.gizmo_depth_texture.as_ref().unwrap();
+        {
+            let _clear_pass =
+                render_ctx
+                    .command_encoder()
+                    .begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("GizmoDepthClearPass"),
+                        color_attachments: &[],
+                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                            view: &depth_texture.view,
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(1.0),
+                                store: wgpu::StoreOp::Store,
+                            }),
+                            stencil_ops: None,
+                        }),
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+        }
+
         for key in gizmos.gizmos.read().keys() {
             let gizmo_bind_group = self.bind_group.get(key).unwrap();
             let pipeline = self.pipelines.get(key).unwrap();
@@ -472,7 +516,15 @@ impl ViewNode for GizmoRenderNode {
                     stencil_ops: None,
                 })
             } else {
-                None
+                // render to our own depth texture
+                Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                })
             };
 
             let mut render_pass =

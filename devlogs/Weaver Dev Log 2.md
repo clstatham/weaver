@@ -1,0 +1,24 @@
+- Started on basic 3d software renderer
+	- Only does solid lines for now
+	- Supports 3d coordinates and transforms using matrices
+- How does rasterization work in a simple case like this?
+	- Need 3 things:
+		- A framebuffer to render pixels to
+		- A virtual 3d world with objects in it
+			- Translation, rotation, scale information
+		- A virtual camera with view and projection transforms
+	- The 3d world is represented in the form of Entities and Components
+		- Building on the last video's topic!
+	- In `render()`:
+		- Query the ECS world for vertex and transform components
+		- Apply the transforms to the vertices
+		- Apply the camera's view and projection matrices to get screen-space coordinates
+		- Draw lines using the screen-space coordinates
+- Limitations of my current implementation
+	- Obviously, it can only do solid lines
+		- Filled shapes and shading hopefully coming soon!
+	- No support for index lists / proper meshes
+		- It's like writing in cursive: each line is connected to the previous one
+	- Very hacky, code needs to be cleaner
+	- It's probably slow as heck
+		- TODO: Add frame-time / fps counter

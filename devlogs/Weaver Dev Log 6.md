@@ -1,0 +1,23 @@
+- Demo
+- Big architectural changes
+	- Separate functionality into modular crates
+	- Common `Plugin` interface allows modules to add functionality
+- ECS rewrite ... again
+	- Fabricate (ECS from last video) was way too complicated and messy
+		- Trying to do too many things at once (ECS, scene hierarchies, reflection, scripting...)
+	- Keeping it simple for now
+		- Just does ECS and scene hierarchies currently
+		- Worrying about scripting etc later
+- `weaver-asset` crate
+	- Introduced concept of `Asset`s and `Handle`s
+		- Assets are world-scope like Resources (in fact they're stored in one), but you can have multiple of the same type
+		- Handles allow Entities to have Assets as Components
+- Renderer rewrite
+	- Render Graph
+	- Traits/Plugins for managing GPU components
+		- GPU components are just regular ECS components now
+		- Also have GPU versions of Resources and Assets
+- What's next?
+	- Continue reimplementing renderer features
+		- Shadows, HDR, skyboxes/IBL
+	- Eventually get started on scripting

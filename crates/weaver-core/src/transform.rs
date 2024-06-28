@@ -101,12 +101,12 @@ impl Transform {
         self.matrix().inverse()
     }
 
-    pub fn transform_point(&self, point: Vec3) -> Vec3 {
-        self.matrix().transform_point3(point)
+    pub fn transform_point(&self, point: Vec3A) -> Vec3A {
+        self.matrix().transform_point3(point.into()).into()
     }
 
-    pub fn transform_vector(&self, vector: Vec3) -> Vec3 {
-        self.matrix().transform_vector3(vector)
+    pub fn transform_vector(&self, vector: Vec3A) -> Vec3A {
+        self.matrix().transform_vector3(vector.into()).into()
     }
 }
 

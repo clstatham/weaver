@@ -1,0 +1,29 @@
+- Man, it's been a while!
+	- The entire old version of the engine has been scrapped
+	- I've been hyper-focusing on the rewrite
+		- Sorry for not making videos!
+- Philosophy changes
+	- GPU graphics are just way more practical
+		- Save myself the headache of optimizing a software renderer
+	- Static `System`s powered by procedural macros
+		- Hopefully, eventually, we can have runtime-defined systems too!
+- So, what's new?
+	- Overhauled renderer using `wgpu`
+	- Overhauled ECS using proc macros
+	- Added `egui` integration
+- Tour of the renderer
+	- Uses a sort of pseudo-deferred architecture
+		- `Pass`: composable plug-and-play render passes
+	- Existing passes:
+		- PBR pass
+		- Shadow pass
+		- HDR decoding pass
+		- Skybox pass
+		- Doodad pass
+- Tour of the ECS:
+	- Custom derive macros for Component, Bundle, and Resource
+	- Custom attribute macro for Systems
+	- Query filter system inspired by Bevy
+- What's next?
+	- OPTIMIZE, OPTIMIZE, OPTIMIZE
+	- 

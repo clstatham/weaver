@@ -1,0 +1,19 @@
+- Creating a game engine from scratch to learn how they work
+- Written in [Rust](https://www.rust-lang.org/)
+- Desired Features:
+	- [Entity Component System](https://github.com/SanderMertens/ecs-faq) (ECS) architecture
+		- Inspired by [Bevy](https://bevyengine.org/)
+	- 3D Renderer written from scratch using math and a framebuffer
+	- Editor interface (a la Unity, Unreal, Godot)
+		- *Not* a library or framework like Bevy!
+- Different video format / upload schedule
+	- Start uploading videos earlier in the development process
+	- Get something working -> upload video about it
+	- Going to try to manage my time better so I don't burn out
+- What I have so far
+	- Very basic ECS supporting static, hardcoded Systems and both immutable and mutable queries
+	- Crates I'm using:
+		- [Winit](https://github.com/rust-windowing/winit)
+		- [Pixels](https://github.com/parasyte/pixels)
+		- [Raqote](https://github.com/jrmuizel/raqote)
+	- Nothing is really how it needs to be, but it's a start!
