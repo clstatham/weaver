@@ -145,8 +145,8 @@ impl World {
 
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
         let entity = self.create_entity();
-        self.storage
-            .insert_bundle(entity, bundle, self.read_change_tick());
+        let change_tick = self.change_tick();
+        self.storage.insert_bundle(entity, bundle, change_tick);
         entity
     }
 
@@ -156,11 +156,6 @@ impl World {
     }
 
     pub fn insert_component<T: Component>(&mut self, entity: Entity, component: T) {
-        log::trace!(
-            "Inserting component {:?} for entity {:?}",
-            std::any::type_name::<T>(),
-            entity
-        );
         self.storage.insert_component(
             entity,
             component,
@@ -170,30 +165,26 @@ impl World {
     }
 
     pub fn insert_components<T: Bundle>(&mut self, entity: Entity, bundle: T) {
-        self.storage
-            .insert_bundle(entity, bundle, self.read_change_tick())
+        let change_tick = self.change_tick();
+        self.storage.insert_bundle(entity, bundle, change_tick)
     }
 
     pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {
-        log::trace!(
-            "Removing component {:?} for entity {:?}",
-            std::any::type_name::<T>(),
-            entity
-        );
         self.storage.remove_component::<T>(entity)
     }
 
     pub fn get_component<T: Component>(&self, entity: Entity) -> Option<Ref<T>> {
+        let last_change_tick = self.last_change_tick();
+        let change_tick = self.read_change_tick();
         self.storage
-            .get_component::<T>(entity, self.last_change_tick(), self.read_change_tick())
+            .get_component::<T>(entity, last_change_tick, change_tick)
     }
 
     pub fn get_component_mut<T: Component>(&self, entity: Entity) -> Option<Mut<T>> {
-        self.storage.get_component_mut::<T>(
-            entity,
-            self.last_change_tick(),
-            self.read_change_tick(),
-        )
+        let last_change_tick = self.last_change_tick();
+        let change_tick = self.read_change_tick();
+        self.storage
+            .get_component_mut::<T>(entity, last_change_tick, change_tick)
     }
 
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
@@ -213,8 +204,9 @@ impl World {
     }
 
     pub fn get_resource_mut<T: Resource>(&mut self) -> Option<ResMut<'_, T>> {
+        let change_tick = self.change_tick();
         self.resources
-            .get_mut::<T>(self.last_change_tick, self.read_change_tick())
+            .get_mut::<T>(self.last_change_tick, change_tick)
     }
 
     pub fn has_resource<T: Resource>(&self) -> bool {
@@ -234,7 +226,15 @@ impl World {
     }
 
     pub fn insert_resource<T: Resource>(&mut self, component: T) {
-        self.resources.insert(component, self.read_change_tick())
+        if self.has_resource::<T>() {
+            warn_once!(
+                "Resource {} already inserted; not inserting it again",
+                std::any::type_name::<T>(),
+            );
+            return;
+        }
+        let change_tick = self.change_tick();
+        self.resources.insert(component, change_tick)
     }
 
     pub fn remove_resource<T: Resource>(&mut self) -> Option<T> {

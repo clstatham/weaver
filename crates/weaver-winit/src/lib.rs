@@ -44,12 +44,14 @@ pub struct WindowResized {
 impl weaver_event::Event for WindowResized {}
 
 pub struct WinitPlugin {
+    pub window_title: &'static str,
     pub initial_size: (u32, u32),
 }
 
 impl Default for WinitPlugin {
     fn default() -> Self {
         Self {
+            window_title: "Weaver",
             initial_size: (800, 600),
         }
     }
@@ -59,6 +61,8 @@ impl Plugin for WinitPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         let event_loop = winit::event_loop::EventLoop::new()?;
         let window = WindowBuilder::new()
+            .with_title(self.window_title)
+            .with_resizable(false)
             .with_inner_size(LogicalSize::new(self.initial_size.0, self.initial_size.1))
             .build(&event_loop)?;
 

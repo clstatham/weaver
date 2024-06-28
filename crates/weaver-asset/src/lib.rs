@@ -1,6 +1,7 @@
 use std::{
     cell::UnsafeCell,
     fmt::Debug,
+    hash::{Hash, Hasher},
     ops::{Deref, DerefMut},
     path::Path,
 };
@@ -133,8 +134,8 @@ impl<T: Asset> PartialEq for Handle<T> {
 
 impl<T: Asset> Eq for Handle<T> {}
 
-impl<T: Asset> std::hash::Hash for Handle<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl<T: Asset> Hash for Handle<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
@@ -239,7 +240,8 @@ impl<T: Asset> Assets<T> {
         }
     }
 
-    pub fn insert(&mut self, asset: T) -> Handle<T> {
+    pub fn insert(&mut self, asset: impl Into<T>) -> Handle<T> {
+        let asset = asset.into();
         let id = AssetId::new();
         let index: usize = id.into();
         self.storage.insert(
@@ -261,8 +263,7 @@ impl<T: Asset> Assets<T> {
         })
     }
 
-    // todo: make this unsafe
-    pub fn get_mut(&self, handle: Handle<T>) -> Option<AssetMut<T>> {
+    pub fn get_mut(&mut self, handle: Handle<T>) -> Option<AssetMut<T>> {
         self.storage.get(handle.id.into()).map(|asset| {
             let asset = unsafe { &mut *asset.get() };
             AssetMut { asset }

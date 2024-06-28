@@ -36,7 +36,7 @@ impl InspectUi for Color {
 
 impl InspectUi for Handle<Material> {
     fn inspect_ui(&mut self, world: &mut World, ui: &mut egui::Ui) {
-        let assets = world.get_resource::<Assets<Material>>().unwrap();
+        let mut assets = world.get_resource_mut::<Assets<Material>>().unwrap();
         let mut material = assets.get_mut(*self).unwrap();
 
         ui.collapsing(material.reflect_type_name(), |ui| {
