@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 atomic_refcell = "0.1.13"
+zip = "2.1"
 
 weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }

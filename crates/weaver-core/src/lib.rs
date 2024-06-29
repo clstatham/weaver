@@ -37,7 +37,8 @@ impl Plugin for CoreTypesPlugin {
         app.register_type::<geometry::Aabb>();
 
         app.add_asset_loader::<texture::Texture, texture::TextureLoader>();
-        app.add_asset_loader::<Mesh, mesh::MeshLoader>();
+        app.add_asset_loader::<Mesh, mesh::ObjMeshLoader>();
+        app.add_asset_loader::<Mesh, mesh::GltfMeshLoader>();
         Ok(())
     }
 }

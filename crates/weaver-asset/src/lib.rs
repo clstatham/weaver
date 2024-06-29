@@ -3,79 +3,31 @@ use std::{
     fmt::Debug,
     hash::{Hash, Hasher},
     ops::{Deref, DerefMut},
-    path::Path,
 };
 
+use loading::LoadAsset;
 use weaver_app::{App, SubApp};
 use weaver_ecs::{
     change::{ComponentTicks, Tick},
     prelude::{reflect_trait, Component, Resource},
     storage::SparseSet,
-    system::{SystemAccess, SystemParam, SystemParamItem},
-    world::{FromWorld, UnsafeWorldCell, World},
 };
 use weaver_util::{
     define_atomic_id,
     prelude::{anyhow, impl_downcast, DowncastSync, Error, Result},
 };
 
-define_atomic_id!(AssetId);
+pub mod loading;
 
 pub mod prelude {
-    pub use crate::{Asset, Assets, Handle, ReflectAsset, UntypedHandle};
+    pub use crate::{
+        loading::{AssetLoader, LoadAsset},
+        Asset, Assets, Handle, ReflectAsset, UntypedHandle,
+    };
     pub use weaver_asset_macros::Asset;
 }
 
-pub trait LoadAsset<T: Asset>: Resource + FromWorld {
-    type Param: SystemParam + 'static;
-
-    fn load(&mut self, param: &mut SystemParamItem<Self::Param>, path: &Path) -> Result<T>;
-}
-
-pub struct AssetLoader<'w, 's, T: Asset, L: LoadAsset<T>> {
-    loader: &'w mut L,
-    param: SystemParamItem<'w, 's, L::Param>,
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<'w, 's, T: Asset, L: LoadAsset<T>> AssetLoader<'w, 's, T, L> {
-    pub fn load(&mut self, path: impl AsRef<Path>) -> Result<T> {
-        self.loader.load(&mut self.param, path.as_ref())
-    }
-}
-
-unsafe impl<T: Asset, L: LoadAsset<T>> SystemParam for AssetLoader<'_, '_, T, L> {
-    type State = <L::Param as SystemParam>::State;
-    type Item<'w, 's> = AssetLoader<'w, 's, T, L>;
-
-    fn access() -> SystemAccess {
-        SystemAccess {
-            exclusive: false,
-            ..Default::default()
-        }
-    }
-
-    fn validate_access(_access: &SystemAccess) -> bool {
-        true
-    }
-
-    fn init_state(world: &mut World) -> Self::State {
-        <L::Param as SystemParam>::init_state(world)
-    }
-
-    unsafe fn fetch<'w, 's>(
-        state: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        let loader = unsafe { world.get_resource_mut::<L>().unwrap() };
-        let param = <L::Param as SystemParam>::fetch(state, world);
-        AssetLoader {
-            loader: loader.into_inner(),
-            param,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
+define_atomic_id!(AssetId);
 
 #[reflect_trait]
 pub trait Asset: DowncastSync {}

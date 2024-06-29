@@ -1,8 +1,6 @@
-use std::path::Path;
-
 use encase::ShaderType;
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{prelude::*, LoadAsset};
+use weaver_asset::{loading::LoadCtx, prelude::*};
 use weaver_core::{color::Color, texture::Texture};
 use weaver_ecs::{
     component::{Res, ResMut},
@@ -41,12 +39,13 @@ pub struct Material {
 }
 
 #[derive(Resource, Default)]
-pub struct MaterialLoader;
+pub struct GltfMaterialLoader;
 
-impl LoadAsset<Material> for MaterialLoader {
+impl LoadAsset<Material> for GltfMaterialLoader {
     type Param = ResMut<'static, Assets<Texture>>;
-    fn load(&mut self, textures: &mut ResMut<Assets<Texture>>, path: &Path) -> Result<Material> {
-        let (document, _buffers, images) = gltf::import(path)?;
+    fn load(&self, textures: &mut ResMut<Assets<Texture>>, ctx: &mut LoadCtx) -> Result<Material> {
+        let bytes = ctx.read_original()?;
+        let (document, _buffers, images) = gltf::import_slice(bytes)?;
         if document.materials().count() != 1 {
             bail!("Material file must contain exactly one material");
         }

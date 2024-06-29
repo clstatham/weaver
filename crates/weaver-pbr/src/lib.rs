@@ -1,7 +1,10 @@
 use std::{collections::HashSet, ops::Range};
 
+use assets::material_mesh::{
+    GltfMaterialModelLoader, LoadedModelWithMaterials, ObjMaterialModelLoader,
+};
 use light::{PointLight, PointLightPlugin};
-use material::{GpuMaterial, Material, MaterialLoader, MaterialPlugin};
+use material::{GltfMaterialLoader, GpuMaterial, Material, MaterialPlugin};
 use render::{PbrLightingInformation, PbrMeshInstances, PbrNode, PbrNodeLabel, PbrRenderCommand};
 use skybox::{Skybox, SkyboxNodeLabel, SkyboxNodePlugin, SkyboxPlugin};
 use weaver_app::prelude::*;
@@ -31,6 +34,7 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::*;
 
+pub mod assets;
 pub mod light;
 pub mod material;
 pub mod prepass;
@@ -38,6 +42,7 @@ pub mod render;
 pub mod skybox;
 
 pub mod prelude {
+    pub use crate::assets::material_mesh::*;
     pub use crate::light::*;
     pub use crate::material::*;
     pub use crate::skybox::*;
@@ -103,7 +108,9 @@ pub struct PbrPlugin;
 
 impl Plugin for PbrPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_asset_loader::<Material, MaterialLoader>();
+        app.add_asset_loader::<Material, GltfMaterialLoader>();
+        app.add_asset_loader::<LoadedModelWithMaterials, ObjMaterialModelLoader>();
+        app.add_asset_loader::<LoadedModelWithMaterials, GltfMaterialModelLoader>();
 
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.add_plugin(MaterialPlugin)?;

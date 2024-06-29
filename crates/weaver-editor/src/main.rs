@@ -8,7 +8,6 @@ use weaver::{
     weaver_renderer::{camera::Camera, RendererPlugin},
     weaver_winit::WinitPlugin,
 };
-use weaver_asset::AssetLoader;
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_egui::prelude::*;
@@ -88,10 +87,9 @@ fn main() -> Result<()> {
 
 fn setup(
     commands: Commands,
+    mut model_loader: AssetLoader<LoadedModelWithMaterials, ObjMaterialModelLoader>,
     mut mesh_assets: ResMut<Assets<Mesh>>,
-    mut mesh_loader: AssetLoader<Mesh, MeshLoader>,
     mut material_assets: ResMut<Assets<Material>>,
-    mut material_loader: AssetLoader<Material, MaterialLoader>,
 ) -> Result<()> {
     commands.spawn((
         Camera::perspective_lookat(
@@ -111,53 +109,6 @@ fn setup(
         PrimaryCamera,
     ));
 
-    let cube_mesh = mesh_assets.insert(mesh_loader.load("assets/meshes/cube.obj")?);
-    let monkey_mesh = mesh_assets.insert(mesh_loader.load("assets/meshes/sphere.obj")?);
-
-    let mut material = material_loader.load("assets/materials/wood_tiles.glb")?;
-    material.texture_scale = 100.0;
-    let material = material_assets.insert(material);
-
-    commands.spawn((
-        cube_mesh,
-        material,
-        Transform {
-            translation: Vec3A::new(0.0, -1.0, 0.0),
-            rotation: Quat::IDENTITY,
-            scale: Vec3A::new(20.0, 1.0, 20.0),
-        },
-        Floor,
-        SelectionAabb::from_mesh(&mesh_assets.get(cube_mesh).unwrap()),
-    ));
-
-    // // circle of lights
-    // const COLORS: &[Color] = &[
-    //     Color::RED,
-    //     Color::GREEN,
-    //     Color::BLUE,
-    //     Color::YELLOW,
-    //     Color::CYAN,
-    //     Color::MAGENTA,
-    // ];
-    // for (i, color) in COLORS.iter().enumerate() {
-    //     let angle = i as f32 / COLORS.len() as f32 * std::f32::consts::PI * 2.0;
-    //     world.spawn((
-    //         PointLight {
-    //             color: *color,
-    //             intensity: 10.0,
-    //             radius: 10.0,
-    //         },
-    //         Transform {
-    //             translation: Vec3::new(angle.cos() * 5.0, 5.0, angle.sin() * 5.0),
-    //             rotation: Quat::IDENTITY,
-    //             scale: Vec3::ONE,
-    //         },
-    //         SelectionAabb {
-    //             aabb: Aabb::new(Vec3::splat(-0.1), Vec3::splat(0.1)),
-    //         },
-    //     ));
-    // }
-
     commands.spawn((
         PointLight {
             color: Color::WHITE,
@@ -175,24 +126,20 @@ fn setup(
         },
     ));
 
-    let mut material2 = material_loader.load("assets/materials/metal.glb")?;
-    material2.texture_scale = 20.0;
-    let material2 = material_assets.insert(material2);
-
-    // spawn some meshes
-    let count = 10;
-    for i in 0..count {
-        let angle = i as f32 / count as f32 * std::f32::consts::PI * 2.0;
+    let gltf_model = model_loader.load_from_archive("assets/meshes/sponza.zip", "sponza.obj")?;
+    for (material, mesh) in gltf_model.into_iter() {
+        let mesh = mesh_assets.insert(mesh);
+        let material = material_assets.insert(material);
         commands.spawn((
-            monkey_mesh,
-            material2,
+            mesh,
+            material,
             Transform {
-                translation: Vec3A::new(angle.cos() * 5.0, 2.0, angle.sin() * 5.0),
+                translation: Vec3A::new(0.0, 0.0, 0.0),
                 rotation: Quat::IDENTITY,
-                scale: Vec3A::splat(1.0),
+                scale: Vec3A::splat(0.01),
             },
             Object,
-            SelectionAabb::from_mesh(&mesh_assets.get(cube_mesh).unwrap()),
+            SelectionAabb::from_mesh(&mesh_assets.get(mesh).unwrap()),
         ));
     }
 

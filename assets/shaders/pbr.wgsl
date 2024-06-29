@@ -196,10 +196,15 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     let albedo = pow(tex_color, vec3(2.2));
 
     var tex_normal = textureSample(normal_tex, normal_sampler, uv).rgb;
-    tex_normal = normalize(tex_normal * 2.0 - 1.0);
-    let N = normalize(
-        vertex.world_tangent * tex_normal.r + vertex.world_binormal * tex_normal.g + vertex.world_normal * tex_normal.b
-    );
+    var N: vec3<f32>;
+    if tex_normal.r == 0.0 && tex_normal.g == 0.0 && tex_normal.b == 0.0 {
+        N = vertex.world_normal;
+    } else {
+        tex_normal = normalize(tex_normal * 2.0 - 1.0);
+        N = normalize(
+            vertex.world_tangent * tex_normal.r + vertex.world_binormal * tex_normal.g + vertex.world_normal * tex_normal.b
+        );
+    }
 
     let V = normalize(camera.camera_position - vertex.world_position);
 

@@ -1,6 +1,7 @@
-use std::path::Path;
-
-use weaver_asset::{prelude::Asset, LoadAsset};
+use weaver_asset::{
+    loading::LoadCtx,
+    prelude::{Asset, LoadAsset},
+};
 use weaver_ecs::prelude::Resource;
 use weaver_util::prelude::Result;
 
@@ -69,8 +70,9 @@ pub struct TextureLoader;
 
 impl LoadAsset<Texture> for TextureLoader {
     type Param = ();
-    fn load(&mut self, _: &mut (), path: &Path) -> Result<Texture> {
-        let image = image::open(path)?;
+    fn load(&self, _: &mut (), ctx: &mut LoadCtx) -> Result<Texture> {
+        let bytes = ctx.read_original()?;
+        let image = image::load_from_memory(&bytes)?;
         let image = image.to_rgba8();
         Ok(Texture::from_rgba8(&image, image.width(), image.height()))
     }

@@ -1,9 +1,11 @@
-use std::path::Path;
-
-use glam::{Vec2, Vec3, Vec3A};
-use weaver_asset::{prelude::Asset, LoadAsset, ReflectAsset};
+use glam::{Vec2, Vec3, Vec3A, Vec4};
+use weaver_asset::{
+    loading::LoadCtx,
+    prelude::{Asset, LoadAsset},
+    ReflectAsset,
+};
 use weaver_ecs::prelude::{Reflect, Resource};
-use weaver_util::prelude::{bail, Result};
+use weaver_util::prelude::{anyhow, bail, Result};
 
 use crate::prelude::{Aabb, Transform};
 
@@ -61,64 +63,213 @@ impl Mesh {
 }
 
 #[derive(Resource, Default)]
-pub struct MeshLoader;
+pub struct ObjMeshLoader;
 
-impl LoadAsset<Mesh> for MeshLoader {
+impl LoadAsset<Mesh> for ObjMeshLoader {
     type Param = ();
-    fn load(&mut self, _: &mut (), path: &Path) -> Result<Mesh> {
-        load_obj(path)
+    fn load(&self, _: &mut (), ctx: &mut LoadCtx) -> Result<Mesh> {
+        let meshes = load_obj(ctx)?;
+        if meshes.len() != 1 {
+            bail!(
+                "expected exactly one mesh in OBJ file: {:?}",
+                ctx.original_path()
+            );
+        }
+        Ok(meshes.into_iter().next().unwrap())
     }
 }
 
-pub fn load_obj(path: impl AsRef<Path>) -> Result<Mesh> {
-    let path = path.as_ref();
-    let (models, _) = tobj::load_obj(
-        path,
+impl LoadAsset<Vec<Mesh>> for ObjMeshLoader {
+    type Param = ();
+    fn load(&self, _: &mut (), ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
+        load_obj(ctx)
+    }
+}
+
+pub fn load_obj(ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
+    let bytes = ctx.read_original()?;
+    let (models, _) = tobj::load_obj_buf(
+        &mut std::io::Cursor::new(bytes),
         &tobj::LoadOptions {
             single_index: true,
             triangulate: true,
             ignore_lines: true,
             ignore_points: true,
         },
+        |_| Err(tobj::LoadError::MaterialParseError),
     )?;
 
-    if models.len() != 1 {
-        bail!("expected exactly one model in OBJ file: {:?}", path);
+    if models.is_empty() {
+        bail!(
+            "expected at least one model in OBJ file: {:?}",
+            ctx.original_path()
+        );
     }
 
-    let mesh = &models[0].mesh;
+    let mut meshes = Vec::with_capacity(models.len());
 
-    let mut vertices = Vec::with_capacity(mesh.positions.len() / 3);
-    let mut indices = Vec::with_capacity(mesh.indices.len());
+    for model in &models {
+        let mesh = &model.mesh;
 
-    for i in 0..mesh.positions.len() / 3 {
-        let position = [
-            mesh.positions[i * 3],
-            mesh.positions[i * 3 + 1],
-            mesh.positions[i * 3 + 2],
-        ];
-        let normal = [
-            mesh.normals[i * 3],
-            mesh.normals[i * 3 + 1],
-            mesh.normals[i * 3 + 2],
-        ];
-        let uv = [mesh.texcoords[i * 2], mesh.texcoords[i * 2 + 1]];
+        let mut vertices = Vec::with_capacity(mesh.positions.len() / 3);
+        let mut indices = Vec::with_capacity(mesh.indices.len());
+        let has_normals = !mesh.normals.is_empty();
 
-        vertices.push(Vertex {
-            position: Vec3::from(position),
-            normal: Vec3::from(normal).normalize(),
-            tex_coords: Vec2::from(uv),
-            tangent: Vec3::ZERO,
-        });
+        for i in 0..mesh.positions.len() / 3 {
+            let position = [
+                mesh.positions[i * 3],
+                mesh.positions[i * 3 + 1],
+                mesh.positions[i * 3 + 2],
+            ];
+            let normal = if has_normals {
+                [
+                    mesh.normals[i * 3],
+                    mesh.normals[i * 3 + 1],
+                    mesh.normals[i * 3 + 2],
+                ]
+            } else {
+                [0.0, 0.0, 0.0]
+            };
+            let uv = [mesh.texcoords[i * 2], 1.0 - mesh.texcoords[i * 2 + 1]];
+
+            vertices.push(Vertex {
+                position: Vec3::from(position),
+                normal: Vec3::from(normal).normalize(),
+                tex_coords: Vec2::from(uv),
+                tangent: Vec3::ZERO,
+            });
+        }
+
+        for index in &mesh.indices {
+            indices.push(*index);
+        }
+
+        if !has_normals {
+            calculate_normals(&mut vertices, &indices);
+        }
+
+        calculate_tangents(&mut vertices, &indices);
+
+        meshes.push(Mesh::new(vertices, indices));
     }
 
-    for index in &mesh.indices {
-        indices.push(*index);
+    Ok(meshes)
+}
+
+#[derive(Resource, Default)]
+pub struct GltfMeshLoader;
+
+impl LoadAsset<Mesh> for GltfMeshLoader {
+    type Param = ();
+    fn load(&self, _: &mut (), ctx: &mut LoadCtx) -> Result<Mesh> {
+        let meshes = load_gltf(ctx)?;
+        if meshes.len() != 1 {
+            bail!(
+                "expected exactly one mesh in GLTF file: {:?}",
+                ctx.original_path()
+            );
+        }
+        Ok(meshes.into_iter().next().unwrap())
+    }
+}
+
+impl LoadAsset<Vec<Mesh>> for GltfMeshLoader {
+    type Param = ();
+    fn load(&self, _: &mut (), ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
+        load_gltf(ctx)
+    }
+}
+
+pub fn load_gltf(ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
+    let bytes = ctx.read_original()?;
+    let (gltf, buffers, _) = gltf::import_slice(bytes)?;
+
+    if gltf.meshes().count() == 0 {
+        bail!(
+            "expected at least one mesh in GLTF file: {:?}",
+            ctx.original_path()
+        );
     }
 
-    calculate_tangents(&mut vertices, &indices);
+    let mut meshes = Vec::new();
 
-    Ok(Mesh::new(vertices, indices))
+    for mesh in gltf.meshes() {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        for primitive in mesh.primitives() {
+            let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+
+            let mut positions = reader.read_positions().ok_or_else(|| {
+                anyhow!("mesh primitive does not have positions: {:?}", primitive)
+            })?;
+
+            let mut normals = reader
+                .read_normals()
+                .ok_or_else(|| anyhow!("mesh primitive does not have normals: {:?}", primitive))?;
+
+            let mut tex_coords = reader
+                .read_tex_coords(0)
+                .ok_or_else(|| anyhow!("mesh primitive does not have tex coords: {:?}", primitive))?
+                .into_f32();
+
+            let mut tangents = reader
+                .read_tangents()
+                .ok_or_else(|| anyhow!("mesh primitive does not have tangents: {:?}", primitive))?;
+
+            let indices_iter = reader
+                .read_indices()
+                .ok_or_else(|| anyhow!("mesh primitive does not have indices: {:?}", primitive))?
+                .into_u32();
+
+            let vertices_iter = positions
+                .by_ref()
+                .zip(normals.by_ref())
+                .zip(tex_coords.by_ref())
+                .zip(tangents.by_ref())
+                .map(|(((position, normal), tex_coord), tangent)| Vertex {
+                    position: Vec3::from(position),
+                    normal: Vec3::from(normal),
+                    tex_coords: Vec2::from(tex_coord),
+                    tangent: Vec4::from(tangent).truncate(),
+                });
+
+            let vertex_offset = vertices.len() as u32;
+
+            vertices.extend(vertices_iter);
+            indices.extend(indices_iter.map(|index| index + vertex_offset));
+        }
+
+        meshes.push(Mesh::new(vertices, indices));
+    }
+
+    Ok(meshes)
+}
+
+pub fn calculate_normals(vertices: &mut [Vertex], indices: &[u32]) {
+    for vertex in vertices.iter_mut() {
+        vertex.normal = Vec3::ZERO;
+    }
+
+    for c in indices.chunks(3) {
+        let i0 = c[0] as usize;
+        let i1 = c[1] as usize;
+        let i2 = c[2] as usize;
+
+        let v0 = vertices[i0].position;
+        let v1 = vertices[i1].position;
+        let v2 = vertices[i2].position;
+
+        let normal = (v1 - v0).cross(v2 - v0).normalize();
+
+        vertices[i0].normal += normal;
+        vertices[i1].normal += normal;
+        vertices[i2].normal += normal;
+    }
+
+    for vertex in vertices.iter_mut() {
+        vertex.normal = vertex.normal.normalize();
+    }
 }
 
 pub fn calculate_tangents(vertices: &mut [Vertex], indices: &[u32]) {
