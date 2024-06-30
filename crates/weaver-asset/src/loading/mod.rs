@@ -9,7 +9,10 @@ use weaver_ecs::{
     system::{SystemAccess, SystemParam, SystemParamItem},
     world::{FromWorld, UnsafeWorldCell, World},
 };
-use weaver_util::{lock::Lock, prelude::Result};
+use weaver_util::{
+    lock::Lock,
+    prelude::{anyhow, Result},
+};
 use zip::ZipArchive;
 
 use crate::Asset;
@@ -32,7 +35,11 @@ impl LoadRoot {
         match self {
             LoadRoot::Path(root) => Some(File::open(root.join(path))?.read_to_end(&mut buf)?),
             LoadRoot::Archive(archive) => {
-                Some(archive.write().by_name(path)?.read_to_end(&mut buf)?)
+                let mut archive = archive.write();
+                let mut sub_path = archive.by_name(path).map_err(|e| {
+                    anyhow!("Failed to read sub path '{}' from archive: {}", path, e)
+                })?;
+                Some(sub_path.read_to_end(&mut buf)?)
             }
         };
         Ok(buf)
@@ -54,15 +61,24 @@ impl LoadCtx {
     }
 
     pub fn read_original(&self) -> Result<Vec<u8>> {
-        self.root
-            .read_sub_path(self.original_path.file_name().unwrap().to_str().unwrap())
+        let sub_path = match self.root {
+            LoadRoot::Path(_) => self
+                .original_path
+                .as_path()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            LoadRoot::Archive(_) => self.original_path.as_path().to_str().unwrap(),
+        };
+        self.root.read_sub_path(sub_path)
     }
 }
 
 pub trait LoadAsset<T: Loadable>: Resource + FromWorld {
     type Param: SystemParam + 'static;
 
-    fn load(&self, param: &mut SystemParamItem<Self::Param>, ctx: &mut LoadCtx) -> Result<T>;
+    fn load(&self, param: SystemParamItem<Self::Param>, ctx: &mut LoadCtx) -> Result<T>;
 }
 
 pub struct AssetLoader<'w, 's, T: Loadable, L: LoadAsset<T>> {
@@ -72,17 +88,17 @@ pub struct AssetLoader<'w, 's, T: Loadable, L: LoadAsset<T>> {
 }
 
 impl<'w, 's, T: Loadable, L: LoadAsset<T>> AssetLoader<'w, 's, T, L> {
-    pub fn load(&mut self, path: impl AsRef<Path>) -> Result<T> {
+    pub fn load(self, path: impl AsRef<Path>) -> Result<T> {
         let path = path.as_ref();
         let mut ctx = LoadCtx {
             root: LoadRoot::Path(path.parent().unwrap().to_path_buf()),
             original_path: path.to_path_buf(),
         };
-        self.loader.load(&mut self.param, &mut ctx)
+        self.loader.load(self.param, &mut ctx)
     }
 
     pub fn load_from_archive(
-        &mut self,
+        self,
         archive_path: impl AsRef<Path>,
         path_within_archive: impl AsRef<Path>,
     ) -> Result<T> {
@@ -95,7 +111,7 @@ impl<'w, 's, T: Loadable, L: LoadAsset<T>> AssetLoader<'w, 's, T, L> {
             root: LoadRoot::Archive(Lock::new(archive)),
             original_path: path_within_archive.to_path_buf(),
         };
-        self.loader.load(&mut self.param, &mut ctx)
+        self.loader.load(self.param, &mut ctx)
     }
 }
 

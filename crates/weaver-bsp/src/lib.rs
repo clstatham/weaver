@@ -10,7 +10,7 @@ pub struct BspPlugin;
 
 impl Plugin for BspPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_asset_loader::<generator::Bsp, loader::BspLoader>();
+        app.add_asset_loader::<loader::Bsp, loader::BspLoader>();
         Ok(())
     }
 }

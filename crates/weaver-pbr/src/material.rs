@@ -61,12 +61,28 @@ impl From<Color> for Material {
     }
 }
 
+impl From<Handle<Texture>> for Material {
+    fn from(texture: Handle<Texture>) -> Self {
+        Self {
+            diffuse: Color::WHITE,
+            diffuse_texture: texture,
+            normal_texture: BLACK_TEXTURE,
+            metallic: 0.0,
+            roughness: 0.0,
+            metallic_roughness_texture: WHITE_TEXTURE,
+            ao: 0.0,
+            ao_texture: WHITE_TEXTURE,
+            texture_scale: 1.0,
+        }
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct GltfMaterialLoader;
 
 impl LoadAsset<Material> for GltfMaterialLoader {
     type Param = ResMut<'static, Assets<Texture>>;
-    fn load(&self, textures: &mut ResMut<Assets<Texture>>, ctx: &mut LoadCtx) -> Result<Material> {
+    fn load(&self, mut textures: ResMut<Assets<Texture>>, ctx: &mut LoadCtx) -> Result<Material> {
         let bytes = ctx.read_original()?;
         let (document, _buffers, images) = gltf::import_slice(bytes)?;
         if document.materials().count() != 1 {

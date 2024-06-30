@@ -8,7 +8,10 @@ use weaver::{
     weaver_renderer::{camera::Camera, RendererPlugin},
     weaver_winit::WinitPlugin,
 };
-use weaver_bsp::{generator::Bsp, loader::BspLoader, BspPlugin};
+use weaver_bsp::{
+    loader::{Bsp, BspLoader, BspNode},
+    BspPlugin,
+};
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_egui::prelude::*;
@@ -87,13 +90,7 @@ fn main() -> Result<()> {
         .run()
 }
 
-fn setup(
-    commands: Commands,
-    mut bsp_loader: AssetLoader<Bsp, BspLoader>,
-    mut mesh_assets: ResMut<Assets<Mesh>>,
-    mut material_assets: ResMut<Assets<Material>>,
-    mut material_loader: AssetLoader<Material, GltfMaterialLoader>,
-) -> Result<()> {
+fn setup(commands: Commands, bsp_loader: AssetLoader<Bsp, BspLoader>) -> Result<()> {
     commands.spawn((
         Camera::perspective_lookat(
             Vec3::new(10.0, 10.0, 10.0),
@@ -129,26 +126,26 @@ fn setup(
         },
     ));
 
-    let material = material_loader.load("assets/materials/wood.glb")?;
+    // let material = material_loader.load("assets/materials/wood.glb")?;
     // let material = Material::from(Color::WHITE);
-    let material = material_assets.insert(material);
+    // let material = material_assets.insert(material);
 
-    let bsp = bsp_loader.load("assets/maps/oa_dm1.bsp")?;
-    let meshes = bsp.generate_meshes();
-    for mesh in meshes.into_iter() {
-        let mesh = mesh_assets.insert(mesh);
-        commands.spawn((
-            mesh,
-            material,
-            Transform {
-                translation: Vec3A::new(0.0, 0.0, 0.0),
-                rotation: Quat::IDENTITY,
-                scale: Vec3A::splat(0.01),
-            },
-            Object,
-            SelectionAabb::from_mesh(&mesh_assets.get(mesh).unwrap()),
-        ));
-    }
+    let bsp = bsp_loader.load_from_archive("assets/maps/baseq3.zip", "maps/q3dm0.bsp")?;
+    bsp.walk(0, &mut |node| match node {
+        BspNode::Leaf {
+            meshes_and_materials,
+        } => {
+            for (mesh, material) in meshes_and_materials {
+                commands.spawn((
+                    *mesh,
+                    *material,
+                    Transform::from_scale(Vec3A::splat(0.02)),
+                    Floor,
+                ));
+            }
+        }
+        BspNode::Node { .. } => {}
+    });
 
     Ok(())
 }

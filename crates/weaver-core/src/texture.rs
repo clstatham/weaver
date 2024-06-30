@@ -70,7 +70,7 @@ pub struct TextureLoader;
 
 impl LoadAsset<Texture> for TextureLoader {
     type Param = ();
-    fn load(&self, _: &mut (), ctx: &mut LoadCtx) -> Result<Texture> {
+    fn load(&self, _: (), ctx: &mut LoadCtx) -> Result<Texture> {
         let bytes = ctx.read_original()?;
         let image = image::load_from_memory(&bytes)?;
         let image = image.to_rgba8();

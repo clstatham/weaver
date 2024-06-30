@@ -40,7 +40,7 @@ pub struct ShaderLoader;
 
 impl LoadAsset<Shader> for ShaderLoader {
     type Param = ();
-    fn load(&self, _: &mut (), ctx: &mut LoadCtx) -> Result<Shader> {
+    fn load(&self, _: (), ctx: &mut LoadCtx) -> Result<Shader> {
         Ok(Shader::new(ctx.original_path()))
     }
 }

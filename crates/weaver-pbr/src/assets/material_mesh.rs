@@ -46,10 +46,10 @@ impl LoadAsset<LoadedModelWithMaterials> for ObjMaterialModelLoader {
 
     fn load(
         &self,
-        textures: &mut SystemParamItem<Self::Param>,
+        mut textures: SystemParamItem<Self::Param>,
         ctx: &mut LoadCtx,
     ) -> Result<LoadedModelWithMaterials> {
-        load_obj_material_mesh(ctx, textures)
+        load_obj_material_mesh(ctx, &mut textures)
     }
 }
 
@@ -233,10 +233,10 @@ impl LoadAsset<LoadedModelWithMaterials> for GltfMaterialModelLoader {
 
     fn load(
         &self,
-        param: &mut SystemParamItem<Self::Param>,
+        mut param: SystemParamItem<Self::Param>,
         ctx: &mut LoadCtx,
     ) -> Result<LoadedModelWithMaterials> {
-        load_gltf_material_mesh(ctx, param)
+        load_gltf_material_mesh(ctx, &mut param)
     }
 }
 

@@ -1,6 +1,5 @@
 use std::ffi::CString;
 
-use weaver_asset::prelude::Asset;
 use weaver_core::mesh::{Mesh, Vertex};
 use weaver_core::prelude::*;
 
@@ -20,14 +19,14 @@ pub const fn int3_to_vec3(int3: [i32; 3]) -> Vec3 {
     Vec3::new(int3[0] as f32, int3[1] as f32, int3[2] as f32)
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy)]
 pub struct BspPlane {
     pub normal: Vec3,
     pub distance: f32,
 }
 
-#[derive(Debug, Default, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub struct BspVertex {
+#[derive(Debug, Default, Clone, Copy)]
+pub struct GenBspVertex {
     pub position: Vec3,
     pub tex_coords: Vec2,
     pub lightmap_coords: Vec2,
@@ -35,7 +34,7 @@ pub struct BspVertex {
     pub color: [u8; 4],
 }
 
-impl BspVertex {
+impl GenBspVertex {
     pub fn build(vertex: &Vert) -> Self {
         Self {
             position: vertex.position.into(),
@@ -69,7 +68,7 @@ impl BspVertex {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum BspFaceType {
     Polygon,
     Patch,
@@ -77,25 +76,26 @@ pub enum BspFaceType {
     Billboard,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct BspEffect {
+#[derive(Debug)]
+pub struct GenBspEffect {
     pub name: CString,
     pub brush: i32,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct BspTexture {
+#[derive(Debug, Clone)]
+pub struct GenBspTexture {
     pub name: CString,
     pub flags: i32,
     pub contents: i32,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct BspFace {
-    pub texture: BspTexture,
-    pub effect: Option<BspEffect>,
+#[derive(Debug)]
+pub struct GenBspFace {
+    pub face_index: u32,
+    pub texture: GenBspTexture,
+    pub effect: Option<GenBspEffect>,
     pub typ: BspFaceType,
-    pub verts: Vec<BspVertex>,
+    pub verts: Vec<GenBspVertex>,
     pub mesh_verts: Vec<u32>,
     pub lightmap: Option<Vec<Vec<[u8; 3]>>>,
     pub lightmap_origin: Vec3,
@@ -105,14 +105,14 @@ pub struct BspFace {
     pub size: [i32; 2],
 }
 
-impl BspFace {
-    pub fn build(file: &BspFile, face: &Face) -> Self {
+impl GenBspFace {
+    pub fn build(file: &BspFile, face: &Face, face_index: u32) -> Self {
         let texture = &file.textures[face.texture as usize];
         let effect = if face.effect < 0 || face.effect as usize >= file.effects.len() {
             None
         } else {
             let effect = &file.effects[face.effect as usize];
-            Some(BspEffect {
+            Some(GenBspEffect {
                 name: effect.name.to_owned(),
                 brush: effect.brush,
             })
@@ -128,9 +128,9 @@ impl BspFace {
             BspFaceType::Billboard
         };
 
-        let verts: Vec<BspVertex> = (face.first_vertex..face.first_vertex + face.num_verts)
+        let verts: Vec<GenBspVertex> = (face.first_vertex..face.first_vertex + face.num_verts)
             .map(|i| &file.verts[i as usize])
-            .map(BspVertex::build)
+            .map(GenBspVertex::build)
             .collect();
 
         let mesh_verts: Vec<u32> = (face.first_mesh_vert
@@ -145,7 +145,8 @@ impl BspFace {
         };
 
         Self {
-            texture: BspTexture {
+            face_index,
+            texture: GenBspTexture {
                 name: texture.name.to_owned(),
                 flags: texture.flags,
                 contents: texture.contents,
@@ -164,10 +165,10 @@ impl BspFace {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug)]
 pub struct BspPatch {
-    pub verts: Vec<BspVertex>,
-    pub control_points: Vec<BspVertex>,
+    pub verts: Vec<GenBspVertex>,
+    pub control_points: Vec<GenBspVertex>,
     pub indices: Vec<u32>,
     pub rows: i32,
     pub tris_per_row: Vec<usize>,
@@ -178,7 +179,7 @@ impl BspPatch {
     // https://github.com/codesuki/bsp-renderer/blob/94a739e06278632c5442954442664f7b26fd4643/src/bsp.cpp#L152
     // https://github.com/codesuki/bsp-renderer/blob/94a739e06278632c5442954442664f7b26fd4643/src/bezier.cpp#L32
     #[allow(clippy::needless_range_loop)]
-    pub fn build(face: &BspFace, subdivisions: usize) -> Self {
+    pub fn build(face: &GenBspFace, subdivisions: usize) -> Self {
         assert_eq!(face.typ, BspFaceType::Patch);
 
         let width = face.size[0] as usize;
@@ -186,7 +187,7 @@ impl BspPatch {
         let width_count = (width - 1) / 2;
         let height_count = (height - 1) / 2;
 
-        let mut control_points = vec![BspVertex::default(); 9];
+        let mut control_points = vec![GenBspVertex::default(); 9];
 
         for y in 0..height_count {
             for x in 0..width_count {
@@ -200,16 +201,16 @@ impl BspPatch {
             }
         }
 
-        let mut verts = vec![BspVertex::default(); (subdivisions + 1) * (subdivisions + 1)];
+        let mut verts = vec![GenBspVertex::default(); (subdivisions + 1) * (subdivisions + 1)];
         let mut indices = vec![0; subdivisions * (subdivisions + 1) * 2];
 
-        let mut temp = [BspVertex::default(); 3];
+        let mut temp = [GenBspVertex::default(); 3];
 
         for i in 0..subdivisions + 1 {
             let l = i as f32 / subdivisions as f32;
             for j in 0..3 {
                 let k = j * 3;
-                temp[j] = BspVertex::quadratic_bezier(
+                temp[j] = GenBspVertex::quadratic_bezier(
                     control_points[k],
                     control_points[k + 1],
                     control_points[k + 2],
@@ -220,7 +221,7 @@ impl BspPatch {
             for j in 0..subdivisions + 1 {
                 let a = j as f32 / subdivisions as f32;
 
-                let p0 = BspVertex::quadratic_bezier(temp[0], temp[1], temp[2], a);
+                let p0 = GenBspVertex::quadratic_bezier(temp[0], temp[1], temp[2], a);
                 verts[i * (subdivisions + 1) + j] = p0;
             }
         }
@@ -249,16 +250,16 @@ impl BspPatch {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug)]
 pub struct BspBrushSide {
     pub plane: BspPlane,
-    pub texture: BspTexture,
+    pub texture: GenBspTexture,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug)]
 pub struct BspBrush {
     pub sides: Vec<BspBrushSide>,
-    pub texture: BspTexture,
+    pub texture: GenBspTexture,
 }
 
 impl BspBrush {
@@ -277,7 +278,7 @@ impl BspBrush {
             )
             .map(|(plane, texture)| BspBrushSide {
                 plane,
-                texture: BspTexture {
+                texture: GenBspTexture {
                     name: texture.name.to_owned(),
                     flags: texture.flags,
                     contents: texture.contents,
@@ -288,7 +289,7 @@ impl BspBrush {
         let texture = &file.textures[brush.texture as usize];
         Self {
             sides,
-            texture: BspTexture {
+            texture: GenBspTexture {
                 name: texture.name.to_owned(),
                 flags: texture.flags,
                 contents: texture.contents,
@@ -297,42 +298,45 @@ impl BspBrush {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub enum BspNode {
+#[derive(Debug)]
+pub enum GenBspNode {
     Node {
+        index: usize,
         plane: BspPlane,
         mins: Vec3,
         maxs: Vec3,
-        children: [Box<BspNode>; 2],
+        children: [Box<GenBspNode>; 2],
     },
     Leaf {
+        index: usize,
         cluster: i32,
         area: i32,
         mins: Vec3,
         maxs: Vec3,
-        leaf_faces: Vec<BspFace>,
+        leaf_faces: Vec<GenBspFace>,
         leaf_brushes: Vec<BspBrush>,
     },
 }
 
-impl BspNode {
+impl GenBspNode {
     pub fn build(file: &BspFile) -> Self {
         let root = file.nodes.first().unwrap();
-        BspNode::build_recursive(file, root)
+        GenBspNode::build_recursive(file, root, 0)
     }
 
-    fn build_recursive(file: &BspFile, node: &Node) -> Self {
+    fn build_recursive(file: &BspFile, node: &Node, index: usize) -> Self {
         let child1 = if node.children[0] < 0 {
-            let leaf = &file.leafs[(-node.children[0] - 1) as usize];
-            BspNode::Leaf {
+            let index = (-node.children[0] - 1) as usize;
+            let leaf = &file.leafs[index];
+            GenBspNode::Leaf {
+                index: index + file.nodes.len(),
                 cluster: leaf.cluster,
                 area: leaf.area,
                 mins: int3_to_vec3(leaf.mins),
                 maxs: int3_to_vec3(leaf.maxs),
                 leaf_faces: (leaf.leaf_face..leaf.leaf_face + leaf.num_leaf_faces)
                     .map(|i| file.leaf_faces[i as usize].face)
-                    .map(|i| &file.faces[i as usize])
-                    .map(|face| BspFace::build(file, face))
+                    .map(|i| GenBspFace::build(file, &file.faces[i as usize], i as u32))
                     .collect(),
                 leaf_brushes: (leaf.leaf_brush..leaf.leaf_brush + leaf.num_leaf_brushes)
                     .map(|i| file.leaf_brushes[i as usize].brush)
@@ -342,20 +346,21 @@ impl BspNode {
             }
         } else {
             let child = &file.nodes[node.children[0] as usize];
-            BspNode::build_recursive(file, child)
+            GenBspNode::build_recursive(file, child, node.children[0] as usize)
         };
 
         let child2 = if node.children[1] < 0 {
-            let leaf = &file.leafs[(-node.children[1] - 1) as usize];
-            BspNode::Leaf {
+            let index = (-node.children[1] - 1) as usize;
+            let leaf = &file.leafs[index];
+            GenBspNode::Leaf {
+                index: index + file.nodes.len(),
                 cluster: leaf.cluster,
                 area: leaf.area,
                 mins: int3_to_vec3(leaf.mins),
                 maxs: int3_to_vec3(leaf.maxs),
                 leaf_faces: (leaf.leaf_face..leaf.leaf_face + leaf.num_leaf_faces)
                     .map(|i| file.leaf_faces[i as usize].face)
-                    .map(|i| &file.faces[i as usize])
-                    .map(|face| BspFace::build(file, face))
+                    .map(|i| GenBspFace::build(file, &file.faces[i as usize], i as u32))
                     .collect(),
                 leaf_brushes: (leaf.leaf_brush..leaf.leaf_brush + leaf.num_leaf_brushes)
                     .map(|i| file.leaf_brushes[i as usize].brush)
@@ -365,11 +370,12 @@ impl BspNode {
             }
         } else {
             let child = &file.nodes[node.children[1] as usize];
-            BspNode::build_recursive(file, child)
+            GenBspNode::build_recursive(file, child, node.children[1] as usize)
         };
 
         let plane = &file.planes[node.plane as usize];
-        BspNode::Node {
+        GenBspNode::Node {
+            index,
             plane: BspPlane {
                 normal: plane.normal.into(),
                 distance: plane.dist,
@@ -379,16 +385,23 @@ impl BspNode {
             children: [Box::new(child1), Box::new(child2)],
         }
     }
+
+    pub fn index(&self) -> usize {
+        match self {
+            GenBspNode::Node { index, .. } => *index,
+            GenBspNode::Leaf { index, .. } => *index,
+        }
+    }
 }
 
 pub trait MeshExt {
-    fn add_vertices(&mut self, vertices: &[BspVertex]);
+    fn add_vertices(&mut self, vertices: &[GenBspVertex]);
     fn add_indices(&mut self, indices: &[u32]);
-    fn add_polygon(&mut self, vertices: &[BspVertex], indices: &[u32]);
+    fn add_polygon(&mut self, vertices: &[GenBspVertex], indices: &[u32]);
 }
 
 impl MeshExt for Mesh {
-    fn add_vertices(&mut self, vertices: &[BspVertex]) {
+    fn add_vertices(&mut self, vertices: &[GenBspVertex]) {
         for vert in vertices {
             self.vertices.push(Vertex {
                 position: q3_to_weaver().transform_point3(vert.position),
@@ -403,11 +416,12 @@ impl MeshExt for Mesh {
         self.indices.extend(indices);
     }
 
-    fn add_polygon(&mut self, vertices: &[BspVertex], indices: &[u32]) {
-        // fix winding order based on normal
+    fn add_polygon(&mut self, vertices: &[GenBspVertex], indices: &[u32]) {
         let mut indices = indices.to_vec();
         // chop off any extra indices
         indices.truncate(indices.len() - (indices.len() % 3));
+
+        // fix winding order based on normal
         for idxs in indices.chunks_exact_mut(3) {
             let v0 = vertices[idxs[0] as usize];
             let v1 = vertices[idxs[1] as usize];
@@ -426,37 +440,120 @@ impl MeshExt for Mesh {
     }
 }
 
-#[derive(Debug, Asset, serde::Serialize, serde::Deserialize)]
-pub struct Bsp {
-    pub root: BspNode,
+#[derive(Clone)]
+pub enum GenBspMeshNode {
+    Node {
+        plane: BspPlane,
+        mins: Vec3,
+        maxs: Vec3,
+        back: usize,
+        front: usize,
+    },
+    Leaf {
+        cluster: i32,
+        area: i32,
+        mins: Vec3,
+        maxs: Vec3,
+        meshes_and_textures: Vec<(Mesh, GenBspTexture)>,
+    },
 }
 
-impl Bsp {
-    pub fn build(file: &BspFile) -> Self {
+#[derive(Default)]
+pub struct GenBspMeshes {
+    pub nodes: Vec<Option<GenBspMeshNode>>,
+}
+
+impl GenBspMeshes {
+    pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            root: BspNode::build(file),
+            nodes: vec![None; capacity],
         }
     }
 
-    pub fn generate_meshes(&self) -> Vec<Mesh> {
-        let mut meshes = Vec::new();
-        Self::generate_meshes_recursive(&self.root, &mut meshes);
-        for mesh in &mut meshes {
-            mesh.regenerate_aabb();
-            // mesh.recalculate_normals();
-            mesh.recalculate_tangents();
+    pub fn insert(&mut self, index: usize, node: GenBspMeshNode) {
+        self.nodes[index] = Some(node);
+    }
+
+    pub fn walk<F>(&self, index: usize, visitor: &mut F)
+    where
+        F: FnMut(usize, &GenBspMeshNode),
+    {
+        if let Some(node) = &self.nodes[index] {
+            visitor(index, node);
+            match node {
+                GenBspMeshNode::Node { back, front, .. } => {
+                    self.walk(*back, visitor);
+                    self.walk(*front, visitor);
+                }
+                GenBspMeshNode::Leaf { .. } => {}
+            }
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct GenBsp {
+    file: BspFile,
+    pub root: GenBspNode,
+}
+
+impl GenBsp {
+    pub fn build(file: BspFile) -> Self {
+        Self {
+            root: GenBspNode::build(&file),
+            file,
+        }
+    }
+
+    pub fn generate_meshes(&self) -> GenBspMeshes {
+        let mut meshes = GenBspMeshes::with_capacity(self.file.leafs.len() + self.file.nodes.len());
+        let mut seen_faces = Vec::new();
+        Self::generate_meshes_recursive(&self.root, &mut meshes, &mut seen_faces);
         meshes
     }
 
-    fn generate_meshes_recursive(node: &BspNode, meshes: &mut Vec<Mesh>) {
+    fn generate_meshes_recursive(
+        node: &GenBspNode,
+        meshes: &mut GenBspMeshes,
+        seen_faces: &mut Vec<u32>,
+    ) {
         match node {
-            BspNode::Node { children, .. } => {
-                Self::generate_meshes_recursive(&children[0], meshes);
-                Self::generate_meshes_recursive(&children[1], meshes);
+            GenBspNode::Node {
+                index,
+                children,
+                plane,
+                mins,
+                maxs,
+            } => {
+                meshes.insert(
+                    *index,
+                    GenBspMeshNode::Node {
+                        plane: *plane,
+                        mins: *mins,
+                        maxs: *maxs,
+                        back: children[0].index(),
+                        front: children[1].index(),
+                    },
+                );
+                Self::generate_meshes_recursive(&children[0], meshes, seen_faces);
+                Self::generate_meshes_recursive(&children[1], meshes, seen_faces);
             }
-            BspNode::Leaf { leaf_faces, .. } => {
+            GenBspNode::Leaf {
+                leaf_faces,
+                index,
+                cluster,
+                area,
+                mins,
+                maxs,
+                leaf_brushes: _,
+            } => {
+                let mut meshes_to_add = Vec::new();
                 for face in leaf_faces {
+                    if seen_faces.contains(&face.face_index) {
+                        continue;
+                    } else {
+                        seen_faces.push(face.face_index);
+                    }
                     let mut mesh = Mesh::default();
                     match face.typ {
                         BspFaceType::Polygon | BspFaceType::Mesh => {
@@ -470,24 +567,24 @@ impl Bsp {
                             // todo
                         }
                     }
-                    meshes.push(mesh);
+
+                    mesh.regenerate_aabb();
+                    mesh.recalculate_tangents();
+
+                    meshes_to_add.push((mesh, face.texture.clone()));
                 }
+
+                meshes.insert(
+                    *index,
+                    GenBspMeshNode::Leaf {
+                        cluster: *cluster,
+                        area: *area,
+                        mins: *mins,
+                        maxs: *maxs,
+                        meshes_and_textures: meshes_to_add,
+                    },
+                );
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::parser::*;
-
-    #[test]
-    fn test_bsp() {
-        let bytes = include_bytes!("../../../assets/maps/oa_dm1.bsp");
-        let (_rest, bsp) = bsp_file(bytes).unwrap();
-        let bsp = Bsp::build(&bsp);
-        let meshes = bsp.generate_meshes();
-        dbg!(meshes.len());
     }
 }
