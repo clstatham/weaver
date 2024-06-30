@@ -282,7 +282,6 @@ impl CreateRenderPipeline for PbrNode {
                 })],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
                 cull_mode: Some(wgpu::Face::Back),
                 ..Default::default()
             },

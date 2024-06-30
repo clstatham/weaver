@@ -9,6 +9,7 @@ edition = "2021"
 env_logger = "0.11.0"
 log = "0.4.20"
 
-weaver-egui = { path = "../weaver-egui" }
 weaver = { path = "../../" }
+weaver-egui = { path = "../weaver-egui" }
 weaver-diagnostics = { path = "../weaver-diagnostics" }
+weaver-bsp = { path = "../weaver-bsp" }

@@ -22,7 +22,7 @@ members = [
     "crates/weaver-egui",
     "crates/weaver-ecs-macros",
     "crates/weaver-event",
-    "crates/weaver-gizmos",
+    "crates/weaver-gizmos", "crates/weaver-bsp",
 ]
 
 [features]

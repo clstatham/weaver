@@ -1,5 +1,6 @@
 use std::{
     cell::UnsafeCell,
+    collections::HashMap,
     fmt::Debug,
     hash::{Hash, Hasher},
     ops::{Deref, DerefMut},
@@ -7,11 +8,7 @@ use std::{
 
 use loading::LoadAsset;
 use weaver_app::{App, SubApp};
-use weaver_ecs::{
-    change::{ComponentTicks, Tick},
-    prelude::{reflect_trait, Component, Resource},
-    storage::SparseSet,
-};
+use weaver_ecs::prelude::{reflect_trait, Component, Resource};
 use weaver_util::{
     define_atomic_id,
     prelude::{anyhow, impl_downcast, DowncastSync, Error, Result},
@@ -42,6 +39,11 @@ pub struct Handle<T: Asset> {
 }
 
 impl<T: Asset> Handle<T> {
+    pub const INVALID: Self = Self {
+        id: AssetId::INVALID,
+        _marker: std::marker::PhantomData,
+    };
+
     pub fn id(&self) -> AssetId {
         self.id
     }
@@ -50,7 +52,7 @@ impl<T: Asset> Handle<T> {
         self.into()
     }
 
-    pub fn from_raw(id: AssetId) -> Self {
+    pub const fn from_raw(id: AssetId) -> Self {
         Self {
             id,
             _marker: std::marker::PhantomData,
@@ -179,7 +181,7 @@ impl<'w, T: Asset> DerefMut for AssetMut<'w, T> {
 
 #[derive(Default, Resource)]
 pub struct Assets<T: Asset> {
-    storage: SparseSet<UnsafeCell<T>>,
+    storage: HashMap<AssetId, UnsafeCell<T>>,
 }
 
 // SAFETY: Assets are Sync and we validate access to them before using them.
@@ -188,19 +190,23 @@ unsafe impl<T: Asset> Sync for Assets<T> {}
 impl<T: Asset> Assets<T> {
     pub fn new() -> Self {
         Self {
-            storage: SparseSet::new(),
+            storage: HashMap::new(),
+        }
+    }
+
+    pub fn insert_manual(&mut self, asset: T, id: AssetId) -> Handle<T> {
+        self.storage.insert(id, UnsafeCell::new(asset));
+
+        Handle {
+            id,
+            _marker: std::marker::PhantomData,
         }
     }
 
     pub fn insert(&mut self, asset: impl Into<T>) -> Handle<T> {
         let asset = asset.into();
         let id = AssetId::new();
-        let index: usize = id.into();
-        self.storage.insert(
-            index,
-            UnsafeCell::new(asset),
-            ComponentTicks::new(Tick::MAX), // todo: change detection for assets
-        );
+        self.storage.insert(id, UnsafeCell::new(asset));
 
         Handle {
             id,
@@ -209,14 +215,14 @@ impl<T: Asset> Assets<T> {
     }
 
     pub fn get(&self, handle: Handle<T>) -> Option<AssetRef<T>> {
-        self.storage.get(handle.id.into()).map(|asset| {
+        self.storage.get(&handle.id).map(|asset| {
             let asset = unsafe { &*asset.get() };
             AssetRef { asset }
         })
     }
 
     pub fn get_mut(&mut self, handle: Handle<T>) -> Option<AssetMut<T>> {
-        self.storage.get(handle.id.into()).map(|asset| {
+        self.storage.get(&handle.id).map(|asset| {
             let asset = unsafe { &mut *asset.get() };
             AssetMut { asset }
         })
@@ -224,8 +230,8 @@ impl<T: Asset> Assets<T> {
 
     pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
         self.storage
-            .remove(handle.id.into())
-            .map(|asset| asset.0.into_inner())
+            .remove(&handle.id)
+            .map(|asset| asset.into_inner())
     }
 }
 

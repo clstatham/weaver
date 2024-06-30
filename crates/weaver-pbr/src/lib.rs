@@ -4,12 +4,14 @@ use assets::material_mesh::{
     GltfMaterialModelLoader, LoadedModelWithMaterials, ObjMaterialModelLoader,
 };
 use light::{PointLight, PointLightPlugin};
-use material::{GltfMaterialLoader, GpuMaterial, Material, MaterialPlugin};
+use material::{
+    GltfMaterialLoader, GpuMaterial, Material, MaterialPlugin, BLACK_TEXTURE, WHITE_TEXTURE,
+};
 use render::{PbrLightingInformation, PbrMeshInstances, PbrNode, PbrNodeLabel, PbrRenderCommand};
 use skybox::{Skybox, SkyboxNodeLabel, SkyboxNodePlugin, SkyboxPlugin};
 use weaver_app::prelude::*;
-use weaver_asset::{AddAsset, Handle};
-use weaver_core::transform::Transform;
+use weaver_asset::{AddAsset, Assets, Handle};
+use weaver_core::{texture::Texture, transform::Transform};
 use weaver_ecs::{
     commands::WorldMut,
     component::{Res, ResMut},
@@ -149,6 +151,19 @@ impl Plugin for PbrPlugin {
             InitRenderResources,
         );
 
+        Ok(())
+    }
+
+    fn finish(&self, app: &mut App) -> Result<()> {
+        let white_texture = Texture::from_rgba8(&[255, 255, 255, 255], 1, 1);
+        let black_texture = Texture::from_rgba8(&[0, 0, 0, 255], 1, 1);
+        let mut textures = app
+            .main_app_mut()
+            .world_mut()
+            .get_resource_mut::<Assets<Texture>>()
+            .unwrap();
+        textures.insert_manual(white_texture, WHITE_TEXTURE.id());
+        textures.insert_manual(black_texture, BLACK_TEXTURE.id());
         Ok(())
     }
 }

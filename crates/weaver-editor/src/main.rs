@@ -8,6 +8,7 @@ use weaver::{
     weaver_renderer::{camera::Camera, RendererPlugin},
     weaver_winit::WinitPlugin,
 };
+use weaver_bsp::{generator::Bsp, loader::BspLoader, BspPlugin};
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_egui::prelude::*;
@@ -56,6 +57,7 @@ fn main() -> Result<()> {
         .add_plugin(PbrPlugin)?
         .add_plugin(GizmoPlugin)?
         .add_plugin(EguiPlugin)?
+        .add_plugin(BspPlugin)?
         .add_plugin(LogFrameTimePlugin {
             log_interval: std::time::Duration::from_secs(1),
         })?
@@ -87,9 +89,10 @@ fn main() -> Result<()> {
 
 fn setup(
     commands: Commands,
-    mut model_loader: AssetLoader<LoadedModelWithMaterials, ObjMaterialModelLoader>,
+    mut bsp_loader: AssetLoader<Bsp, BspLoader>,
     mut mesh_assets: ResMut<Assets<Mesh>>,
     mut material_assets: ResMut<Assets<Material>>,
+    mut material_loader: AssetLoader<Material, GltfMaterialLoader>,
 ) -> Result<()> {
     commands.spawn((
         Camera::perspective_lookat(
@@ -126,10 +129,14 @@ fn setup(
         },
     ));
 
-    let gltf_model = model_loader.load_from_archive("assets/meshes/sponza.zip", "sponza.obj")?;
-    for (material, mesh) in gltf_model.into_iter() {
+    let material = material_loader.load("assets/materials/wood.glb")?;
+    // let material = Material::from(Color::WHITE);
+    let material = material_assets.insert(material);
+
+    let bsp = bsp_loader.load("assets/maps/oa_dm1.bsp")?;
+    let meshes = bsp.generate_meshes();
+    for mesh in meshes.into_iter() {
         let mesh = mesh_assets.insert(mesh);
-        let material = material_assets.insert(material);
         commands.spawn((
             mesh,
             material,

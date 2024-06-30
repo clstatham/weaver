@@ -3,6 +3,10 @@ name = "weaver-core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+serde = ["glam/serde"]
+
 [dependencies]
 bytemuck = { version = "1.7.0", features = ["derive"] }
 glam = { version = "0.27.0", features = ["bytemuck"] }

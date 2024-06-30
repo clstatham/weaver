@@ -142,7 +142,7 @@ impl Intersect<Triangle> for Ray {
 }
 
 /// Axis-aligned bounding box
-#[derive(Clone, Copy, Debug, PartialEq, Reflect)]
+#[derive(Clone, Copy, Debug, PartialEq, Reflect, Default)]
 #[repr(C)]
 pub struct Aabb {
     pub min: Vec3A,

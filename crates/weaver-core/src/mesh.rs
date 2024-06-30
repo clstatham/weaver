@@ -18,7 +18,7 @@ pub struct Vertex {
     pub tex_coords: Vec2,
 }
 
-#[derive(Clone, Reflect, Asset)]
+#[derive(Clone, Reflect, Asset, Default)]
 #[reflect(ReflectAsset)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
@@ -59,6 +59,26 @@ impl Mesh {
             indices: self.indices.clone(),
             aabb: self.aabb.transformed(transform),
         }
+    }
+
+    pub fn regenerate_aabb(&mut self) {
+        let mut min = Vec3A::splat(f32::INFINITY);
+        let mut max = Vec3A::splat(f32::NEG_INFINITY);
+
+        for vertex in &self.vertices {
+            min = min.min(vertex.position.into());
+            max = max.max(vertex.position.into());
+        }
+
+        self.aabb = Aabb::new(min, max);
+    }
+
+    pub fn recalculate_normals(&mut self) {
+        calculate_normals(&mut self.vertices, &self.indices);
+    }
+
+    pub fn recalculate_tangents(&mut self) {
+        calculate_tangents(&mut self.vertices, &self.indices);
     }
 }
 
@@ -251,7 +271,7 @@ pub fn calculate_normals(vertices: &mut [Vertex], indices: &[u32]) {
         vertex.normal = Vec3::ZERO;
     }
 
-    for c in indices.chunks(3) {
+    for c in indices.chunks_exact(3) {
         let i0 = c[0] as usize;
         let i1 = c[1] as usize;
         let i2 = c[2] as usize;
@@ -278,7 +298,7 @@ pub fn calculate_tangents(vertices: &mut [Vertex], indices: &[u32]) {
     }
 
     let mut num_triangles = vec![0; vertices.len()];
-    for c in indices.chunks(3) {
+    for c in indices.chunks_exact(3) {
         let i0 = c[0] as usize;
         let i1 = c[1] as usize;
         let i2 = c[2] as usize;
@@ -311,40 +331,5 @@ pub fn calculate_tangents(vertices: &mut [Vertex], indices: &[u32]) {
 
     for (vertex, num_triangles) in vertices.iter_mut().zip(num_triangles) {
         vertex.tangent /= num_triangles as f32;
-
-        // gram-schmidt orthogonalize
-        let tangent = vertex.tangent - vertex.normal * vertex.normal.dot(vertex.tangent);
-        vertex.tangent = tangent.normalize();
-
-        // check for orthogonality
-        let ndt = vertex.normal.dot(vertex.tangent);
-        debug_assert!(
-            ndt < 0.001,
-            "normal and tangent are not orthogonal: N . T = {:?}",
-            ndt
-        );
-
-        // sanity check with the binormal
-        let binormal = vertex.normal.cross(vertex.tangent);
-        let ndb = vertex.normal.dot(binormal);
-        debug_assert!(
-            ndb < 0.001,
-            "normal and binormal are not orthogonal: N . B = {:?}",
-            ndb
-        );
-        let bdt = binormal.dot(vertex.tangent);
-        debug_assert!(
-            bdt < 0.001,
-            "binormal and tangent are not orthogonal: B . T = {:?}",
-            bdt
-        );
-
-        // calculate handedness
-        let tangent = if vertex.normal.cross(vertex.tangent).dot(vertex.tangent) < 0.0 {
-            -vertex.tangent
-        } else {
-            vertex.tangent
-        };
-        vertex.tangent = tangent;
     }
 }

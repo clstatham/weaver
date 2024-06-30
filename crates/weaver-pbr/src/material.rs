@@ -1,6 +1,6 @@
 use encase::ShaderType;
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{loading::LoadCtx, prelude::*};
+use weaver_asset::{loading::LoadCtx, prelude::*, AssetId};
 use weaver_core::{color::Color, texture::Texture};
 use weaver_ecs::{
     component::{Res, ResMut},
@@ -15,6 +15,13 @@ use weaver_renderer::{
     texture::{texture_format, GpuTexture},
 };
 use weaver_util::prelude::*;
+
+pub const WHITE_TEXTURE: Handle<Texture> = Handle::from_raw(AssetId::from_u64(
+    171952135557955961317447623731106286307u128 as u64,
+));
+pub const BLACK_TEXTURE: Handle<Texture> = Handle::from_raw(AssetId::from_u64(
+    29903794803500143808416926793703205514u128 as u64,
+));
 
 #[derive(Reflect, Asset)]
 #[reflect(ReflectAsset)]
@@ -36,6 +43,22 @@ pub struct Material {
     pub ao_texture: Handle<Texture>,
 
     pub texture_scale: f32,
+}
+
+impl From<Color> for Material {
+    fn from(color: Color) -> Self {
+        Self {
+            diffuse: color,
+            diffuse_texture: WHITE_TEXTURE,
+            normal_texture: BLACK_TEXTURE,
+            metallic: 0.0,
+            roughness: 0.0,
+            metallic_roughness_texture: WHITE_TEXTURE,
+            ao: 0.0,
+            ao_texture: WHITE_TEXTURE,
+            texture_scale: 1.0,
+        }
+    }
 }
 
 #[derive(Resource, Default)]
