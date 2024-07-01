@@ -54,7 +54,7 @@ impl From<Color> for Material {
             metallic: 0.0,
             roughness: 0.0,
             metallic_roughness_texture: WHITE_TEXTURE,
-            ao: 0.0,
+            ao: 1.0,
             ao_texture: WHITE_TEXTURE,
             texture_scale: 1.0,
         }
@@ -70,7 +70,7 @@ impl From<Handle<Texture>> for Material {
             metallic: 0.0,
             roughness: 0.0,
             metallic_roughness_texture: WHITE_TEXTURE,
-            ao: 0.0,
+            ao: 1.0,
             ao_texture: WHITE_TEXTURE,
             texture_scale: 1.0,
         }

@@ -68,7 +68,7 @@ pub fn load_obj_material_mesh(
         },
         |mtl_path| {
             let bytes = ctx
-                .root()
+                .filesystem()
                 .read_sub_path(mtl_path.as_os_str().to_str().unwrap())
                 .map_err(|e| {
                     log::error!("Failed to open MTL file: {:?}", e);
@@ -133,7 +133,7 @@ pub fn load_obj_material_mesh(
                 let diffuse = material.diffuse.unwrap_or([1.0, 1.0, 1.0]);
                 let diffuse_texture = match &material.diffuse_texture {
                     Some(texture) => {
-                        let bytes = ctx.root().read_sub_path(texture)?;
+                        let bytes = ctx.filesystem().read_sub_path(texture)?;
                         let rgba8 = image::load_from_memory(&bytes)?.to_rgba8();
                         Texture::from_rgba8(&rgba8, rgba8.width(), rgba8.height())
                     }
@@ -145,7 +145,7 @@ pub fn load_obj_material_mesh(
                 };
                 let normal_texture = match &material.normal_texture {
                     Some(texture) => {
-                        let bytes = ctx.root().read_sub_path(texture)?;
+                        let bytes = ctx.filesystem().read_sub_path(texture)?;
                         let rgba8 = image::load_from_memory(&bytes)?.to_rgba8();
                         Texture::from_rgba8(&rgba8, rgba8.width(), rgba8.height())
                     }
@@ -158,7 +158,7 @@ pub fn load_obj_material_mesh(
                 let ao = material.ambient.unwrap_or([1.0, 1.0, 1.0]);
                 let ao_texture = match &material.ambient_texture {
                     Some(texture) => {
-                        let bytes = ctx.root().read_sub_path(texture)?;
+                        let bytes = ctx.filesystem().read_sub_path(texture)?;
                         let rgba8 = image::load_from_memory(&bytes)?.to_rgba8();
                         Texture::from_rgba8(&rgba8, rgba8.width(), rgba8.height())
                     }
@@ -172,7 +172,7 @@ pub fn load_obj_material_mesh(
                 let metallic = material.shininess.unwrap_or(0.0);
                 let metallic_roughness_texture = match &material.shininess_texture {
                     Some(texture) => {
-                        let bytes = ctx.root().read_sub_path(texture)?;
+                        let bytes = ctx.filesystem().read_sub_path(texture)?;
                         let rgba8 = image::load_from_memory(&bytes)?.to_rgba8();
                         Texture::from_rgba8(&rgba8, rgba8.width(), rgba8.height())
                     }

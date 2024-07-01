@@ -192,8 +192,9 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     let uv = vertex.uv * material.properties.w;
 
-    let tex_color = textureSample(diffuse_tex, diffuse_sampler, uv).rgb * material.base_color.rgb;
-    let albedo = pow(tex_color, vec3(2.2));
+    let tex_color = textureSample(diffuse_tex, diffuse_sampler, uv).rgba * material.base_color.rgba;
+    let albedo = pow(tex_color, vec4(2.2));
+
 
     var tex_normal = textureSample(normal_tex, normal_sampler, uv).rgb;
     var N: vec3<f32>;
@@ -226,18 +227,19 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
         let distance = length(light_pos - vertex.world_position);
         let attenuation = light.intensity / (1.0 + distance * distance / (light.radius * light.radius));
 
-        illumination += calculate_lighting(albedo, roughness, metallic, N, L, V, light.color.rgb, attenuation);
+        illumination += calculate_lighting(albedo.rgb, roughness, metallic, N, L, V, light.color.rgb, attenuation);
     }
 
     let tex_ao = textureSample(ao_tex, ao_sampler, uv).r * material.properties.z;
-    let ibl = calculate_ibl(albedo, roughness, metallic, N, V);
+    let ibl = calculate_ibl(albedo.rgb, roughness, metallic, N, V);
+    let ambient = ibl * tex_ao;
 
-    var out_color = ibl + illumination;
+    var out_color = ambient + illumination;
 
     // gamma correction
     out_color = pow(out_color, vec3(1.0 / 2.2));
 
-    output.color = vec4<f32>(out_color, 1.0);
+    output.color = vec4<f32>(out_color, tex_color.a);
 
     return output;
 }

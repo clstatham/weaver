@@ -8,13 +8,17 @@ use weaver::{
     weaver_renderer::{camera::Camera, RendererPlugin},
     weaver_winit::WinitPlugin,
 };
-use weaver_bsp::{
-    loader::{Bsp, BspLoader},
-    BspPlugin,
-};
+use weaver_asset::loading::Filesystem;
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_egui::prelude::*;
+use weaver_q3::{
+    bsp::{
+        loader::{Bsp, BspLoader},
+        BspPlugin,
+    },
+    pk3::Pk3Filesystem,
+};
 use weaver_renderer::{camera::PrimaryCamera, clear_color::ClearColorPlugin};
 use weaver_winit::Window;
 
@@ -97,38 +101,40 @@ fn setup(
 ) -> Result<()> {
     commands.spawn((
         Camera::default(),
-        *camera::FlyCameraController {
+        camera::FlyCameraController {
             aspect: 16.0 / 9.0,
-            speed: 500.0,
-            fov: 45.0f32.to_radians(),
+            speed: 320.0,
+            fov: 70.0f32.to_radians(),
             near: 0.1,
             far: 100000.0,
             ..Default::default()
         }
-        .look_at(Vec3::new(10.0, 10.0, 10.0), Vec3::ZERO, Vec3::Y),
+        .looking_at(Vec3::new(10.0, 10.0, 10.0), Vec3::ZERO, Vec3::Y),
         PrimaryCamera,
     ));
 
-    commands.spawn((
-        PointLight {
-            color: Color::WHITE,
-            intensity: 100.0,
-            radius: 100.0,
-            enabled: true,
-        },
-        Transform {
-            translation: Vec3A::new(0.0, 5.0, 0.0),
-            rotation: Quat::IDENTITY,
-            scale: Vec3A::ONE,
-        },
-        SelectionAabb {
-            aabb: Aabb::new(Vec3A::splat(-0.1), Vec3A::splat(0.1)),
-        },
-    ));
+    // commands.spawn((
+    //     PointLight {
+    //         color: Color::WHITE,
+    //         intensity: 1000.0,
+    //         radius: 100000.0,
+    //         enabled: true,
+    //     },
+    //     Transform {
+    //         translation: Vec3A::new(0.0, 5000.0, 0.0),
+    //         rotation: Quat::IDENTITY,
+    //         scale: Vec3A::ONE,
+    //     },
+    //     SelectionAabb {
+    //         aabb: Aabb::new(Vec3A::splat(-0.1), Vec3A::splat(0.1)),
+    //     },
+    // ));
 
-    let bsp = bsp_loader.load_from_archive("assets/maps/baseq3.zip", "maps/q3dm6.bsp")?;
+    let fs = Filesystem::default().with_pk3s_from_dir("assets/maps")?;
+
+    let bsp = bsp_loader.load_from_filesystem(fs, "maps/q3dm6.bsp")?;
     let bsp = bsp_assets.insert(bsp);
-    commands.spawn((bsp,));
+    commands.spawn(bsp);
 
     Ok(())
 }

@@ -22,38 +22,87 @@ pub trait Loadable {}
 impl<T: Asset> Loadable for T {}
 impl<T: Asset> Loadable for Vec<T> {}
 
-/// Base directory of where to load further associated assets from when loading an asset.
-/// This will either be the directory the asset is located in or the root directory of an archive.
-pub enum LoadRoot {
-    Path(PathBuf),
-    Archive(Lock<ZipArchive<BufReader<File>>>),
+/// Virtual filesystem created from one or more directories or archives.
+#[derive(Default)]
+pub struct Filesystem {
+    roots: Vec<PathBuf>,
+    archives: Vec<Lock<ZipArchive<BufReader<File>>>>,
 }
 
-impl LoadRoot {
-    pub fn read_sub_path(&self, path: &str) -> Result<Vec<u8>> {
-        let mut buf = Vec::new();
-        match self {
-            LoadRoot::Path(root) => Some(File::open(root.join(path))?.read_to_end(&mut buf)?),
-            LoadRoot::Archive(archive) => {
-                let mut archive = archive.write();
-                let mut sub_path = archive.by_name(path).map_err(|e| {
-                    anyhow!("Failed to read sub path '{}' from archive: {}", path, e)
-                })?;
-                Some(sub_path.read_to_end(&mut buf)?)
+impl Filesystem {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_root(mut self, root: impl AsRef<Path>) -> Self {
+        self.add_root(root);
+        self
+    }
+
+    pub fn with_archive(mut self, archive: impl AsRef<Path>) -> Result<Self> {
+        self.add_archive(archive)?;
+        Ok(self)
+    }
+
+    pub fn add_root(&mut self, root: impl AsRef<Path>) {
+        self.roots.push(root.as_ref().to_path_buf());
+    }
+
+    pub fn add_archive(&mut self, archive: impl AsRef<Path>) -> Result<()> {
+        let archive = File::open(archive)?;
+        let archive = BufReader::new(archive);
+        let archive = ZipArchive::new(archive)?;
+        self.archives.push(Lock::new(archive));
+        Ok(())
+    }
+
+    pub fn exists(&self, path: &str) -> bool {
+        for root in self.roots.iter() {
+            let full_path = root.join(path);
+            if full_path.exists() {
+                return true;
             }
-        };
-        Ok(buf)
+        }
+
+        for archive in self.archives.iter() {
+            let mut archive = archive.write();
+            if archive.by_name(path).is_ok() {
+                return true;
+            };
+        }
+
+        false
+    }
+
+    pub fn read_sub_path(&self, path: &str) -> Result<Vec<u8>> {
+        for root in self.roots.iter() {
+            let full_path = root.join(path);
+            if full_path.exists() {
+                return Ok(std::fs::read(full_path)?);
+            }
+        }
+
+        for archive in self.archives.iter() {
+            let mut archive = archive.write();
+            if let Ok(mut sub_path) = archive.by_name(path) {
+                let mut buf = Vec::new();
+                sub_path.read_to_end(&mut buf)?;
+                return Ok(buf);
+            };
+        }
+
+        Err(anyhow!("Failed to read sub path '{}'", path))
     }
 }
 
 pub struct LoadCtx {
-    root: LoadRoot,
+    filesystem: Filesystem,
     original_path: PathBuf,
 }
 
 impl LoadCtx {
-    pub fn root(&self) -> &LoadRoot {
-        &self.root
+    pub fn filesystem(&self) -> &Filesystem {
+        &self.filesystem
     }
 
     pub fn original_path(&self) -> &Path {
@@ -61,17 +110,8 @@ impl LoadCtx {
     }
 
     pub fn read_original(&self) -> Result<Vec<u8>> {
-        let sub_path = match self.root {
-            LoadRoot::Path(_) => self
-                .original_path
-                .as_path()
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap(),
-            LoadRoot::Archive(_) => self.original_path.as_path().to_str().unwrap(),
-        };
-        self.root.read_sub_path(sub_path)
+        self.filesystem
+            .read_sub_path(self.original_path.to_str().unwrap())
     }
 }
 
@@ -90,8 +130,10 @@ pub struct AssetLoader<'w, 's, T: Loadable, L: LoadAsset<T>> {
 impl<'w, 's, T: Loadable, L: LoadAsset<T>> AssetLoader<'w, 's, T, L> {
     pub fn load(self, path: impl AsRef<Path>) -> Result<T> {
         let path = path.as_ref();
+        let mut filesystem = Filesystem::default();
+        filesystem.add_root(path.parent().unwrap());
         let mut ctx = LoadCtx {
-            root: LoadRoot::Path(path.parent().unwrap().to_path_buf()),
+            filesystem,
             original_path: path.to_path_buf(),
         };
         self.loader.load(self.param, &mut ctx)
@@ -104,12 +146,25 @@ impl<'w, 's, T: Loadable, L: LoadAsset<T>> AssetLoader<'w, 's, T, L> {
     ) -> Result<T> {
         let archive_path = archive_path.as_ref();
         let path_within_archive = path_within_archive.as_ref();
-        let archive = File::open(archive_path)?;
-        let archive = BufReader::new(archive);
-        let archive = ZipArchive::new(archive)?;
+        let mut filesystem = Filesystem::default();
+        filesystem.add_archive(archive_path)?;
         let mut ctx = LoadCtx {
-            root: LoadRoot::Archive(Lock::new(archive)),
+            filesystem,
             original_path: path_within_archive.to_path_buf(),
+        };
+        self.loader.load(self.param, &mut ctx)
+    }
+
+    pub fn load_from_filesystem(
+        self,
+        mut filesystem: Filesystem,
+        path: impl AsRef<Path>,
+    ) -> Result<T> {
+        let path = path.as_ref();
+        filesystem.add_root(path.parent().unwrap());
+        let mut ctx = LoadCtx {
+            filesystem,
+            original_path: path.to_path_buf(),
         };
         self.loader.load(self.param, &mut ctx)
     }

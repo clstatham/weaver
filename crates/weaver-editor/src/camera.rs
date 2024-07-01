@@ -91,7 +91,7 @@ impl FlyCameraController {
         Mat4::perspective_rh(self.fov, self.aspect, self.near, self.far)
     }
 
-    pub fn look_at(&mut self, eye: Vec3, target: Vec3, up: Vec3) -> &mut Self {
+    pub fn looking_at(mut self, eye: Vec3, target: Vec3, up: Vec3) -> Self {
         let matrix = Mat4::look_at_rh(eye, target, up).inverse();
         let (_scale, rotation, translation) = matrix.to_scale_rotation_translation();
         self.translation = translation;
