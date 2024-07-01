@@ -94,14 +94,6 @@ impl Debug for Camera {
 }
 
 impl Camera {
-    pub fn new(view_matrix: glam::Mat4, projection_matrix: glam::Mat4) -> Self {
-        Self {
-            active: true,
-            view_matrix,
-            projection_matrix,
-        }
-    }
-
     pub fn perspective_lookat(
         eye: glam::Vec3,
         center: glam::Vec3,
@@ -111,10 +103,13 @@ impl Camera {
         near: f32,
         far: f32,
     ) -> Self {
-        Self::new(
-            glam::Mat4::look_at_rh(eye, center, up),
-            glam::Mat4::perspective_rh(fov, aspect, near, far),
-        )
+        let view = glam::Mat4::look_at_rh(eye, center, up);
+        let proj = glam::Mat4::perspective_rh(fov, aspect, near, far);
+        Self {
+            active: true,
+            view_matrix: view,
+            projection_matrix: proj,
+        }
     }
 
     pub fn active(&self) -> bool {
@@ -164,11 +159,65 @@ impl Camera {
         screen.y = screen_size.y - screen.y;
         Some(screen)
     }
+
+    pub fn frustum_planes(&self) -> [glam::Vec4; 6] {
+        let clip_from_view = self.projection_matrix * self.view_matrix;
+        let mut planes = [
+            // Left
+            clip_from_view.col(3) + clip_from_view.col(0),
+            // Right
+            clip_from_view.col(3) - clip_from_view.col(0),
+            // Bottom
+            clip_from_view.col(3) + clip_from_view.col(1),
+            // Top
+            clip_from_view.col(3) - clip_from_view.col(1),
+            // Near
+            clip_from_view.col(3) + clip_from_view.col(2),
+            // Far
+            clip_from_view.col(3) - clip_from_view.col(2),
+        ];
+
+        for plane in &mut planes {
+            *plane = plane.normalize();
+        }
+
+        planes
+    }
+
+    pub fn intersect_frustum_with_plane(
+        &self,
+        plane_normal: glam::Vec3,
+        plane_distance: f32,
+    ) -> bool {
+        let view_proj = self.projection_matrix * self.view_matrix;
+        let plane_point = plane_normal * plane_distance;
+        let plane = glam::Vec4::new(
+            plane_normal.x,
+            plane_normal.y,
+            plane_normal.z,
+            -plane_point.dot(plane_normal),
+        );
+        let view_from_plane = view_proj.transpose() * plane;
+        let view_from_plane = view_from_plane.normalize();
+
+        let frustum_planes = self.frustum_planes();
+        for plane in &frustum_planes {
+            let dot = plane.dot(view_from_plane);
+            if dot < 0.0 {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 impl Default for Camera {
     fn default() -> Self {
-        Self::new(glam::Mat4::IDENTITY, glam::Mat4::IDENTITY)
+        Self {
+            active: true,
+            view_matrix: glam::Mat4::IDENTITY,
+            projection_matrix: glam::Mat4::IDENTITY,
+        }
     }
 }
 

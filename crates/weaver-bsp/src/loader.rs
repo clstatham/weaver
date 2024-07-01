@@ -1,18 +1,21 @@
 use std::collections::HashMap;
 
 use weaver_asset::{
-    loading::{LoadAsset, LoadCtx, LoadRoot},
+    loading::{LoadAsset, LoadCtx},
     prelude::Asset,
     Assets, Handle,
 };
 use weaver_core::{mesh::Mesh, texture::Texture};
 use weaver_ecs::{component::ResMut, prelude::Resource};
 use weaver_pbr::material::Material;
-use weaver_util::prelude::{anyhow, bail, Result};
+use weaver_util::{
+    prelude::{anyhow, Result},
+    warn_once,
+};
 
 use crate::{
     generator::{BspPlane, GenBsp, GenBspMeshNode},
-    parser::bsp_file,
+    parser::{bsp_file, VisData},
 };
 
 pub type BspIndex = usize;
@@ -21,23 +24,28 @@ pub type BspIndex = usize;
 pub enum BspNode {
     Leaf {
         meshes_and_materials: Vec<(Handle<Mesh>, Handle<Material>)>,
+        parent: BspIndex,
+        cluster: usize,
     },
     Node {
         plane: BspPlane,
         back: BspIndex,
         front: BspIndex,
+        parent: Option<BspIndex>,
     },
 }
 
 #[derive(Asset)]
 pub struct Bsp {
     pub nodes: Vec<Option<BspNode>>,
+    pub vis_data: VisData,
 }
 
 impl Bsp {
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub fn with_capacity(capacity: usize, vis_data: VisData) -> Self {
         Self {
             nodes: vec![None; capacity],
+            vis_data,
         }
     }
 
@@ -70,7 +78,6 @@ impl Bsp {
             let Some(node) = &self.nodes[index] else {
                 continue;
             };
-            dbg!(index);
             visitor(node);
             match node {
                 BspNode::Leaf { .. } => {}
@@ -108,7 +115,7 @@ impl LoadAsset<Bsp> for BspLoader {
         let gen = GenBsp::build(bsp_file);
         let meshes_and_textures = gen.generate_meshes();
 
-        let mut bsp = Bsp::with_capacity(meshes_and_textures.nodes.len());
+        let mut bsp = Bsp::with_capacity(meshes_and_textures.nodes.len(), gen.file.vis_data);
         let mut material_handles = HashMap::new();
 
         let error_texture = Texture::from_rgba8(&[255, 0, 255, 255], 1, 1);
@@ -123,11 +130,12 @@ impl LoadAsset<Bsp> for BspLoader {
 
             match node {
                 GenBspMeshNode::Leaf {
-                    cluster: _,
+                    cluster,
                     area: _,
                     mins: _,
                     maxs: _,
                     meshes_and_textures,
+                    parent,
                 } => {
                     let mut meshes_and_materials = Vec::with_capacity(meshes_and_textures.len());
                     for (mesh, texture) in meshes_and_textures {
@@ -159,7 +167,9 @@ impl LoadAsset<Bsp> for BspLoader {
                                         );
                                         let texture_handle = texture_assets.insert(texture);
 
-                                        let material = Material::from(texture_handle);
+                                        let mut material = Material::from(texture_handle);
+                                        material.metallic = 0.0;
+                                        material.roughness = 1.0;
                                         let material_handle = material_assets.insert(material);
                                         material_handles
                                             .insert(texture_name.to_owned(), material_handle);
@@ -172,9 +182,8 @@ impl LoadAsset<Bsp> for BspLoader {
                             }
 
                             if !found {
-                                log::warn!(
-                                    "Failed to load texture: {}. Using error material instead.",
-                                    texture_name
+                                warn_once!(
+                                    "Some textures could not be loaded, using solid pink error texture instead"
                                 );
                                 meshes_and_materials.push((mesh, error_material));
                             }
@@ -184,6 +193,8 @@ impl LoadAsset<Bsp> for BspLoader {
                         node_index,
                         BspNode::Leaf {
                             meshes_and_materials,
+                            parent,
+                            cluster: cluster as usize,
                         },
                     );
                 }
@@ -193,8 +204,17 @@ impl LoadAsset<Bsp> for BspLoader {
                     maxs: _,
                     back,
                     front,
+                    parent,
                 } => {
-                    bsp.insert(node_index, BspNode::Node { plane, back, front });
+                    bsp.insert(
+                        node_index,
+                        BspNode::Node {
+                            plane,
+                            back,
+                            front,
+                            parent,
+                        },
+                    );
                 }
             }
         }

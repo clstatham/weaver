@@ -9,7 +9,10 @@ use weaver_ecs::{
     query::Query,
     system::{SystemParam, SystemParamItem, SystemParamWrapper},
 };
-use weaver_util::prelude::Result;
+use weaver_util::{
+    lock::{Lock, Read, Write},
+    prelude::Result,
+};
 
 use crate::{extract::Extract, ExtractStage, WgpuDevice, WgpuQueue};
 
@@ -39,7 +42,7 @@ pub trait RenderAsset: Asset {
 
 #[derive(Default, Resource)]
 pub struct ExtractedRenderAssets {
-    assets: HashMap<UntypedHandle, UntypedHandle>,
+    assets: Lock<HashMap<UntypedHandle, UntypedHandle>>,
 }
 
 impl ExtractedRenderAssets {
@@ -47,12 +50,20 @@ impl ExtractedRenderAssets {
         Self::default()
     }
 
-    pub fn insert(&mut self, handle: UntypedHandle, render_handle: UntypedHandle) {
-        self.assets.insert(handle, render_handle);
+    pub fn insert(&self, handle: UntypedHandle, render_handle: UntypedHandle) {
+        self.assets.write().insert(handle, render_handle);
     }
 
     pub fn contains(&self, handle: &UntypedHandle) -> bool {
-        self.assets.contains_key(handle)
+        self.assets.read().contains_key(handle)
+    }
+
+    pub fn read(&self) -> Read<HashMap<UntypedHandle, UntypedHandle>> {
+        self.assets.read()
+    }
+
+    pub fn write(&self) -> Write<HashMap<UntypedHandle, UntypedHandle>> {
+        self.assets.write()
     }
 }
 
@@ -78,7 +89,7 @@ fn extract_render_asset<T: RenderAsset>(
     main_world_assets: Extract<Res<'static, Assets<T::Source>>>,
     param: SystemParamWrapper<T::Param>,
     query: Extract<Query<&'static Handle<T::Source>>>,
-    mut extracted_assets: ResMut<ExtractedRenderAssets>,
+    extracted_assets: Res<ExtractedRenderAssets>,
     mut render_assets: ResMut<Assets<T>>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
@@ -111,7 +122,8 @@ fn extract_render_asset<T: RenderAsset>(
             }
         } else {
             // if the asset has already been extracted, insert the render asset handle into the entity
-            let render_handle = extracted_assets.assets.get(&handle.into_untyped()).unwrap();
+            let extracted_assets = extracted_assets.read();
+            let render_handle = extracted_assets.get(&handle.into_untyped()).unwrap();
             let render_handle = Handle::<T>::try_from(*render_handle).unwrap();
 
             // update the asset

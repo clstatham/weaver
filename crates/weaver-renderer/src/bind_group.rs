@@ -9,6 +9,7 @@ use weaver_ecs::{
     query::Query,
 };
 use weaver_util::{
+    lock::{Lock, Read, Write},
     prelude::{DowncastSync, Result},
     TypeIdMap,
 };
@@ -205,7 +206,7 @@ fn create_resource_bind_group<T: Resource + CreateBindGroup>(
 
 #[derive(Default, Resource)]
 pub struct ExtractedAssetBindGroups {
-    bind_groups: HashMap<UntypedHandle, UntypedHandle>,
+    bind_groups: Lock<HashMap<UntypedHandle, UntypedHandle>>,
 }
 
 impl ExtractedAssetBindGroups {
@@ -213,12 +214,20 @@ impl ExtractedAssetBindGroups {
         Self::default()
     }
 
-    pub fn insert(&mut self, handle: UntypedHandle, bind_group: UntypedHandle) {
-        self.bind_groups.insert(handle, bind_group);
+    pub fn insert(&self, handle: UntypedHandle, bind_group: UntypedHandle) {
+        self.bind_groups.write().insert(handle, bind_group);
     }
 
     pub fn contains(&self, handle: &UntypedHandle) -> bool {
-        self.bind_groups.contains_key(handle)
+        self.bind_groups.read().contains_key(handle)
+    }
+
+    pub fn read(&self) -> Read<HashMap<UntypedHandle, UntypedHandle>> {
+        self.bind_groups.read()
+    }
+
+    pub fn write(&self) -> Write<HashMap<UntypedHandle, UntypedHandle>> {
+        self.bind_groups.write()
     }
 }
 
@@ -245,7 +254,7 @@ fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
     mut assets: ResMut<Assets<T>>,
     mut bind_group_assets: ResMut<Assets<BindGroup<T>>>,
     query: Query<&Handle<T>>,
-    mut asset_bind_groups: ResMut<ExtractedAssetBindGroups>,
+    asset_bind_groups: Res<ExtractedAssetBindGroups>,
     mut layout_cache: ResMut<BindGroupLayoutCache>,
     bind_group_handle_query: Query<&Handle<BindGroup<T>>>,
 ) -> Result<()> {
@@ -255,7 +264,10 @@ fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
         if let Some(asset) = assets.get(*handle) {
             if asset.bind_group_stale() {
                 commands.remove_component::<Handle<BindGroup<T>>>(entity);
-                asset_bind_groups.bind_groups.remove(&handle.into_untyped());
+                asset_bind_groups
+                    .bind_groups
+                    .write()
+                    .remove(&handle.into_untyped());
                 stale = true;
             }
         }
@@ -264,7 +276,11 @@ fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
             continue;
         }
 
-        if let Some(bind_group_handle) = asset_bind_groups.bind_groups.get(&handle.into_untyped()) {
+        if let Some(bind_group_handle) = asset_bind_groups
+            .bind_groups
+            .read()
+            .get(&handle.into_untyped())
+        {
             let bind_group_handle = Handle::<BindGroup<T>>::try_from(*bind_group_handle).unwrap();
             drop(handle);
             commands.insert_component(entity, bind_group_handle);

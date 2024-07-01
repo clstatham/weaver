@@ -8,7 +8,7 @@ use weaver_ecs::{
     component::{Res, ResMut},
     entity::Entity,
     prelude::Resource,
-    query::{Query, QueryFetch},
+    query::{Query, QueryFetch, QueryFilter},
     world::{FromWorld, World},
 };
 use weaver_util::{lock::Write, prelude::Result};
@@ -149,9 +149,10 @@ impl<T: BinnedDrawItem> Plugin for BinnedRenderPhasePlugin<T> {
 
 pub trait GetBatchData: Send + Sync + 'static {
     type BufferData: GpuArrayBufferable + Send + Sync + 'static;
-    type UpdateQuery: QueryFetch + 'static;
+    type UpdateQueryFetch: QueryFetch + 'static;
+    type UpdateQueryFilter: QueryFilter + 'static;
 
-    fn update(&mut self, query: Query<Self::UpdateQuery>);
+    fn update(&mut self, query: Query<Self::UpdateQueryFetch, Self::UpdateQueryFilter>);
 
     fn get_batch_data(&self, query_item: Entity) -> Option<Self::BufferData>;
 }
@@ -268,7 +269,10 @@ pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
     mut batched_instance_buffer: ResMut<BatchedInstanceBuffer<I, C>>,
     mut instances: ResMut<I::Instances>,
     item_query: Query<I::QueryFetch, I::QueryFilter>,
-    instance_update_query: Query<<I::Instances as GetBatchData>::UpdateQuery>,
+    instance_update_query: Query<
+        <I::Instances as GetBatchData>::UpdateQueryFetch,
+        <I::Instances as GetBatchData>::UpdateQueryFilter,
+    >,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
 ) -> Result<()> {

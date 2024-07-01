@@ -268,7 +268,7 @@ impl BspBrush {
             .map(|i| file.brush_sides[i as usize].plane)
             .map(|i| &file.planes[i as usize])
             .map(|plane| BspPlane {
-                normal: plane.normal.into(),
+                normal: q3_to_weaver().transform_vector3(plane.normal.into()),
                 distance: plane.dist,
             })
             .zip(
@@ -326,7 +326,7 @@ impl GenBspNode {
 
     fn build_recursive(file: &BspFile, node: &Node, index: usize) -> Self {
         let child1 = if node.children[0] < 0 {
-            let index = (-node.children[0] - 1) as usize;
+            let index = -(node.children[0] + 1) as usize;
             let leaf = &file.leafs[index];
             GenBspNode::Leaf {
                 index: index + file.nodes.len(),
@@ -350,7 +350,7 @@ impl GenBspNode {
         };
 
         let child2 = if node.children[1] < 0 {
-            let index = (-node.children[1] - 1) as usize;
+            let index = -(node.children[1] + 1) as usize;
             let leaf = &file.leafs[index];
             GenBspNode::Leaf {
                 index: index + file.nodes.len(),
@@ -377,7 +377,7 @@ impl GenBspNode {
         GenBspNode::Node {
             index,
             plane: BspPlane {
-                normal: plane.normal.into(),
+                normal: q3_to_weaver().transform_vector3(plane.normal.into()),
                 distance: plane.dist,
             },
             mins: int3_to_vec3(node.mins),
@@ -448,6 +448,7 @@ pub enum GenBspMeshNode {
         maxs: Vec3,
         back: usize,
         front: usize,
+        parent: Option<usize>,
     },
     Leaf {
         cluster: i32,
@@ -455,6 +456,7 @@ pub enum GenBspMeshNode {
         mins: Vec3,
         maxs: Vec3,
         meshes_and_textures: Vec<(Mesh, GenBspTexture)>,
+        parent: usize,
     },
 }
 
@@ -493,7 +495,7 @@ impl GenBspMeshes {
 
 #[derive(Debug)]
 pub struct GenBsp {
-    file: BspFile,
+    pub file: BspFile,
     pub root: GenBspNode,
 }
 
@@ -508,12 +510,13 @@ impl GenBsp {
     pub fn generate_meshes(&self) -> GenBspMeshes {
         let mut meshes = GenBspMeshes::with_capacity(self.file.leafs.len() + self.file.nodes.len());
         let mut seen_faces = Vec::new();
-        Self::generate_meshes_recursive(&self.root, &mut meshes, &mut seen_faces);
+        Self::generate_meshes_recursive(&self.root, None, &mut meshes, &mut seen_faces);
         meshes
     }
 
     fn generate_meshes_recursive(
         node: &GenBspNode,
+        parent: Option<usize>,
         meshes: &mut GenBspMeshes,
         seen_faces: &mut Vec<u32>,
     ) {
@@ -533,10 +536,11 @@ impl GenBsp {
                         maxs: *maxs,
                         back: children[0].index(),
                         front: children[1].index(),
+                        parent,
                     },
                 );
-                Self::generate_meshes_recursive(&children[0], meshes, seen_faces);
-                Self::generate_meshes_recursive(&children[1], meshes, seen_faces);
+                Self::generate_meshes_recursive(&children[0], Some(*index), meshes, seen_faces);
+                Self::generate_meshes_recursive(&children[1], Some(*index), meshes, seen_faces);
             }
             GenBspNode::Leaf {
                 leaf_faces,
@@ -582,6 +586,7 @@ impl GenBsp {
                         mins: *mins,
                         maxs: *maxs,
                         meshes_and_textures: meshes_to_add,
+                        parent: parent.unwrap(),
                     },
                 );
             }

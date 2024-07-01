@@ -59,13 +59,14 @@ impl DerefMut for PbrMeshInstances {
 
 impl GetBatchData for PbrMeshInstances {
     type BufferData = Mat4;
-    type UpdateQuery = (
+    type UpdateQueryFetch = (
         &'static Handle<GpuMesh>,
         &'static Handle<BindGroup<GpuMaterial>>,
         &'static Transform,
     );
+    type UpdateQueryFilter = ();
 
-    fn update(&mut self, query: Query<Self::UpdateQuery>) {
+    fn update(&mut self, query: Query<Self::UpdateQueryFetch>) {
         self.0.clear();
         for (entity, (mesh, material, transform)) in query.iter() {
             self.0.insert(
@@ -87,7 +88,7 @@ impl GetBatchData for PbrMeshInstances {
 
 /// Combined bind group for PBR light arrays and environment maps.
 #[derive(Resource)]
-pub(crate) struct PbrLightingInformation {
+pub struct PbrLightingInformation {
     pub point_lights: GpuPointLightArray,
     pub env_map: GpuSkyboxIrradiance,
 }
@@ -282,7 +283,8 @@ impl CreateRenderPipeline for PbrNode {
                 })],
             }),
             primitive: wgpu::PrimitiveState {
-                cull_mode: Some(wgpu::Face::Back),
+                // cull_mode: Some(wgpu::Face::Back),
+                cull_mode: None,
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -383,7 +385,7 @@ impl ViewNode for PbrNode {
     }
 }
 
-pub(crate) struct PbrRenderCommand;
+pub struct PbrRenderCommand;
 
 impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
     type Param = (

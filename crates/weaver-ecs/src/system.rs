@@ -505,6 +505,14 @@ impl_system_param_tuple!(A, B, C, D, E, F, G, H, I);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
+impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M);
+impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
+impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
+impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
+impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q);
+impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R);
+impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S);
+impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
 
 pub trait SystemParamFunction<M>: Send + Sync + 'static {
     type Param: SystemParam + 'static;
@@ -643,6 +651,14 @@ impl_function_system!(A, B, C, D, E, F, G, H, I);
 impl_function_system!(A, B, C, D, E, F, G, H, I, J);
 impl_function_system!(A, B, C, D, E, F, G, H, I, J, K);
 impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L);
+impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M);
+impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
+impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
+impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
+impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q);
+impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R);
+impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S);
+impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
 
 pub fn assert_is_system<Marker>(_: impl IntoSystem<Marker>) {}
 

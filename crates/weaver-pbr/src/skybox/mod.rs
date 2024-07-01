@@ -441,7 +441,7 @@ impl CreateBindGroup for GpuSkybox {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct SkyboxNodeLabel;
+pub struct SkyboxNodeLabel;
 impl RenderLabel for SkyboxNodeLabel {}
 
 #[derive(Default)]

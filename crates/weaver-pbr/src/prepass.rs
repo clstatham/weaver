@@ -100,13 +100,14 @@ pub struct PrepassMeshInstances {
 
 impl GetBatchData for PrepassMeshInstances {
     type BufferData = Mat4;
-    type UpdateQuery = (
+    type UpdateQueryFetch = (
         &'static Handle<GpuMesh>,
         &'static Handle<BindGroup<GpuMaterial>>,
         &'static Transform,
     );
+    type UpdateQueryFilter = ();
 
-    fn update(&mut self, query: Query<Self::UpdateQuery>) {
+    fn update(&mut self, query: Query<Self::UpdateQueryFetch>) {
         self.instances.clear();
         for (entity, (mesh, material, transform)) in query.iter() {
             self.instances.insert(

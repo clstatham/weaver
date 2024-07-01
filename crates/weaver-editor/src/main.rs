@@ -4,12 +4,12 @@ use weaver::{
     prelude::*,
     weaver_app::App,
     weaver_core::{input::InputPlugin, mesh::Mesh, time::TimePlugin},
-    weaver_pbr::{material::Material, PbrPlugin},
+    weaver_pbr::PbrPlugin,
     weaver_renderer::{camera::Camera, RendererPlugin},
     weaver_winit::WinitPlugin,
 };
 use weaver_bsp::{
-    loader::{Bsp, BspLoader, BspNode},
+    loader::{Bsp, BspLoader},
     BspPlugin,
 };
 use weaver_core::CoreTypesPlugin;
@@ -29,7 +29,7 @@ struct Floor;
 struct Object;
 
 #[derive(Component, Reflect)]
-struct SelectionAabb {
+pub struct SelectionAabb {
     pub aabb: Aabb,
 }
 
@@ -90,19 +90,19 @@ fn main() -> Result<()> {
         .run()
 }
 
-fn setup(commands: Commands, bsp_loader: AssetLoader<Bsp, BspLoader>) -> Result<()> {
+fn setup(
+    commands: Commands,
+    bsp_loader: AssetLoader<Bsp, BspLoader>,
+    mut bsp_assets: ResMut<Assets<Bsp>>,
+) -> Result<()> {
     commands.spawn((
-        Camera::perspective_lookat(
-            Vec3::new(10.0, 10.0, 10.0),
-            Vec3::ZERO,
-            Vec3::Y,
-            45.0f32.to_radians(),
-            1280.0 / 720.0,
-            0.1,
-            100.0,
-        ),
+        Camera::default(),
         *camera::FlyCameraController {
-            aspect: 1280.0 / 720.0,
+            aspect: 16.0 / 9.0,
+            speed: 500.0,
+            fov: 45.0f32.to_radians(),
+            near: 0.1,
+            far: 100000.0,
             ..Default::default()
         }
         .look_at(Vec3::new(10.0, 10.0, 10.0), Vec3::ZERO, Vec3::Y),
@@ -126,26 +126,9 @@ fn setup(commands: Commands, bsp_loader: AssetLoader<Bsp, BspLoader>) -> Result<
         },
     ));
 
-    // let material = material_loader.load("assets/materials/wood.glb")?;
-    // let material = Material::from(Color::WHITE);
-    // let material = material_assets.insert(material);
-
-    let bsp = bsp_loader.load_from_archive("assets/maps/baseq3.zip", "maps/q3dm0.bsp")?;
-    bsp.walk(0, &mut |node| match node {
-        BspNode::Leaf {
-            meshes_and_materials,
-        } => {
-            for (mesh, material) in meshes_and_materials {
-                commands.spawn((
-                    *mesh,
-                    *material,
-                    Transform::from_scale(Vec3A::splat(0.02)),
-                    Floor,
-                ));
-            }
-        }
-        BspNode::Node { .. } => {}
-    });
+    let bsp = bsp_loader.load_from_archive("assets/maps/baseq3.zip", "maps/q3dm1.bsp")?;
+    let bsp = bsp_assets.insert(bsp);
+    commands.spawn((bsp,));
 
     Ok(())
 }

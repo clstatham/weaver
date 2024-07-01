@@ -92,7 +92,7 @@ fn load_png(
 }
 
 #[derive(Clone, Resource)]
-pub(crate) struct GpuSkyboxIrradiance {
+pub struct GpuSkyboxIrradiance {
     #[allow(unused)]
     pub diffuse_texture: Arc<wgpu::Texture>,
     pub diffuse_cube_view: Arc<wgpu::TextureView>,

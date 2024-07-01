@@ -3232,6 +3232,7 @@ name = "weaver-bsp"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.6.0",
+ "encase",
  "image 0.25.1",
  "log",
  "nom",
@@ -3240,6 +3241,7 @@ dependencies = [
  "weaver-core",
  "weaver-ecs",
  "weaver-pbr",
+ "weaver-renderer",
  "weaver-util",
 ]
 

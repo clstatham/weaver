@@ -198,7 +198,7 @@ pub(crate) fn update_pbr_lighting_information(
     Ok(())
 }
 
-fn extract_pbr_camera_phase(
+pub fn extract_pbr_camera_phase(
     mut binned_phases: ResMut<BinnedRenderPhases<PbrDrawItem>>,
     cameras: Query<&GpuCamera, With<ViewTarget>>,
 ) -> Result<()> {

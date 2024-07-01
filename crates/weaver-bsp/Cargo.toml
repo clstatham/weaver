@@ -8,10 +8,12 @@ nom = "7.1"
 bitflags = "2.6"
 image = "0.25.1"
 log = "0.4"
+encase = { version = "0.8", features = ["glam"] }
 
 weaver-app = { path = "../weaver-app" }
 weaver-pbr = { path = "../weaver-pbr" }
 weaver-asset = { path = "../weaver-asset" }
 weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }
-weaver-core = { path = "../weaver-core", features = ["serde"] }
+weaver-core = { path = "../weaver-core" }
+weaver-renderer = { path = "../weaver-renderer" }
