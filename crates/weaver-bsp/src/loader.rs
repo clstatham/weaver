@@ -14,7 +14,7 @@ use weaver_util::{
 };
 
 use crate::{
-    generator::{BspPlane, GenBsp, GenBspMeshNode},
+    generator::{BspFaceType, BspPlane, GenBsp, GenBspMeshNode},
     parser::{bsp_file, VisData},
 };
 
@@ -23,7 +23,7 @@ pub type BspIndex = usize;
 #[derive(Debug, Clone)]
 pub enum BspNode {
     Leaf {
-        meshes_and_materials: Vec<(Handle<Mesh>, Handle<Material>)>,
+        meshes_and_materials: Vec<(Handle<Mesh>, Handle<Material>, BspFaceType)>,
         parent: BspIndex,
         cluster: usize,
     },
@@ -138,11 +138,11 @@ impl LoadAsset<Bsp> for BspLoader {
                     parent,
                 } => {
                     let mut meshes_and_materials = Vec::with_capacity(meshes_and_textures.len());
-                    for (mesh, texture) in meshes_and_textures {
+                    for (mesh, texture, typ) in meshes_and_textures {
                         let mesh = mesh_assets.insert(mesh);
                         let texture_name = texture.name.to_string_lossy().into_owned();
                         if let Some(material) = material_handles.get(&texture_name) {
-                            meshes_and_materials.push((mesh, *material));
+                            meshes_and_materials.push((mesh, *material, typ));
                         } else {
                             let extensions_to_try = [
                                 (".tga", image::ImageFormat::Tga),
@@ -173,7 +173,7 @@ impl LoadAsset<Bsp> for BspLoader {
                                         let material_handle = material_assets.insert(material);
                                         material_handles
                                             .insert(texture_name.to_owned(), material_handle);
-                                        meshes_and_materials.push((mesh, material_handle));
+                                        meshes_and_materials.push((mesh, material_handle, typ));
                                         found = true;
                                         break;
                                     }
@@ -185,7 +185,7 @@ impl LoadAsset<Bsp> for BspLoader {
                                 warn_once!(
                                     "Some textures could not be loaded, using solid pink error texture instead"
                                 );
-                                meshes_and_materials.push((mesh, error_material));
+                                meshes_and_materials.push((mesh, error_material, typ));
                             }
                         }
                     }

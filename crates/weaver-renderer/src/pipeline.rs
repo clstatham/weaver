@@ -123,6 +123,10 @@ impl RenderPipeline {
             pipeline: Arc::new(pipeline),
         }
     }
+
+    pub fn get_mut(&mut self) -> &mut wgpu::RenderPipeline {
+        Arc::get_mut(&mut self.pipeline).unwrap()
+    }
 }
 
 impl Deref for RenderPipeline {

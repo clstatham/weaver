@@ -1,4 +1,5 @@
 use std::ffi::CString;
+use std::ops::{Add, Mul};
 
 use weaver_core::mesh::{Mesh, Vertex};
 use weaver_core::prelude::*;
@@ -62,13 +63,52 @@ impl GenBspVertex {
     }
 
     pub fn quadratic_bezier(p0: Self, p1: Self, p2: Self, t: f32) -> Self {
-        let p01 = Self::lerp(p0, p1, t);
-        let p12 = Self::lerp(p1, p2, t);
-        Self::lerp(p01, p12, t)
+        let term0 = p0 * (1.0 - t) * (1.0 - t);
+        let term1 = p1 * 2.0 * (1.0 - t) * t;
+        let term2 = p2 * t * t;
+        term0 + term1 + term2
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+impl Add<GenBspVertex> for GenBspVertex {
+    type Output = Self;
+
+    fn add(self, rhs: GenBspVertex) -> Self::Output {
+        Self::Output {
+            position: self.position + rhs.position,
+            tex_coords: self.tex_coords + rhs.tex_coords,
+            lightmap_coords: self.lightmap_coords + rhs.lightmap_coords,
+            normal: self.normal + rhs.normal,
+            color: [
+                (self.color[0] as f32 + rhs.color[0] as f32) as u8,
+                (self.color[1] as f32 + rhs.color[1] as f32) as u8,
+                (self.color[2] as f32 + rhs.color[2] as f32) as u8,
+                (self.color[3] as f32 + rhs.color[3] as f32) as u8,
+            ],
+        }
+    }
+}
+
+impl Mul<f32> for GenBspVertex {
+    type Output = Self;
+
+    fn mul(self, rhs: f32) -> Self::Output {
+        Self::Output {
+            position: self.position * rhs,
+            tex_coords: self.tex_coords * rhs,
+            lightmap_coords: self.lightmap_coords * rhs,
+            normal: self.normal * rhs,
+            color: [
+                (self.color[0] as f32 * rhs) as u8,
+                (self.color[1] as f32 * rhs) as u8,
+                (self.color[2] as f32 * rhs) as u8,
+                (self.color[3] as f32 * rhs) as u8,
+            ],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BspFaceType {
     Polygon,
     Patch,
@@ -171,7 +211,7 @@ pub struct BspPatch {
     pub control_points: Vec<GenBspVertex>,
     pub indices: Vec<u32>,
     pub rows: i32,
-    pub tris_per_row: Vec<usize>,
+    pub row_indices: Vec<Vec<u32>>,
 }
 
 impl BspPatch {
@@ -179,34 +219,23 @@ impl BspPatch {
     // https://github.com/codesuki/bsp-renderer/blob/94a739e06278632c5442954442664f7b26fd4643/src/bsp.cpp#L152
     // https://github.com/codesuki/bsp-renderer/blob/94a739e06278632c5442954442664f7b26fd4643/src/bezier.cpp#L32
     #[allow(clippy::needless_range_loop)]
-    pub fn build(face: &GenBspFace, subdivisions: usize) -> Self {
-        assert_eq!(face.typ, BspFaceType::Patch);
-
-        let width = face.size[0] as usize;
-        let height = face.size[1] as usize;
-        let width_count = (width - 1) / 2;
-        let height_count = (height - 1) / 2;
-
-        let mut control_points = vec![GenBspVertex::default(); 9];
-
-        for y in 0..height_count {
-            for x in 0..width_count {
-                for row in 0..3 {
-                    for col in 0..3 {
-                        let index = (y * 2 * width + x * 2) + row * width + col;
-                        let control_point = face.verts[index];
-                        control_points[row * 3 + col] = control_point;
-                    }
-                }
-            }
-        }
-
+    pub fn build(control_points: &[GenBspVertex], subdivisions: usize) -> Self {
+        assert_eq!(control_points.len(), 9);
         let mut verts = vec![GenBspVertex::default(); (subdivisions + 1) * (subdivisions + 1)];
-        let mut indices = vec![0; subdivisions * (subdivisions + 1) * 2];
+
+        for i in 0..=subdivisions {
+            let a = i as f32 / subdivisions as f32;
+            verts[i] = GenBspVertex::quadratic_bezier(
+                control_points[0],
+                control_points[3],
+                control_points[6],
+                a,
+            );
+        }
 
         let mut temp = [GenBspVertex::default(); 3];
 
-        for i in 0..subdivisions + 1 {
+        for i in 1..=subdivisions {
             let l = i as f32 / subdivisions as f32;
             for j in 0..3 {
                 let k = j * 3;
@@ -218,7 +247,7 @@ impl BspPatch {
                 );
             }
 
-            for j in 0..subdivisions + 1 {
+            for j in 0..=subdivisions {
                 let a = j as f32 / subdivisions as f32;
 
                 let p0 = GenBspVertex::quadratic_bezier(temp[0], temp[1], temp[2], a);
@@ -226,26 +255,28 @@ impl BspPatch {
             }
         }
 
+        let mut indices = vec![0; subdivisions * (subdivisions + 1) * 2];
+
         for row in 0..subdivisions {
-            for col in 0..subdivisions + 1 {
+            for col in 0..=subdivisions {
                 let h = (row * (subdivisions + 1) + col) * 2;
-                let g = h + 1;
-                indices[h] = (row * (subdivisions + 1) + col) as u32;
-                indices[g] = ((row + 1) * (subdivisions + 1) + col) as u32;
+                indices[h] = ((row + 1) * (subdivisions + 1) + col) as u32;
+                indices[h + 1] = (row * (subdivisions + 1) + col) as u32;
             }
         }
 
-        let mut tris_per_row = vec![0; subdivisions];
-        for _ in 0..subdivisions {
-            tris_per_row[0] = 2 * (subdivisions + 1);
+        let tris_per_row = 2 * (subdivisions + 1);
+        let mut row_indices = vec![vec![0; tris_per_row]; subdivisions];
+        for row in 0..subdivisions {
+            row_indices[row] = indices[row * tris_per_row..(row + 1) * tris_per_row].to_vec();
         }
 
         Self {
             verts,
-            control_points,
+            control_points: control_points.to_vec(),
             indices,
             rows: subdivisions as i32,
-            tris_per_row,
+            row_indices,
         }
     }
 }
@@ -455,7 +486,7 @@ pub enum GenBspMeshNode {
         area: i32,
         mins: Vec3,
         maxs: Vec3,
-        meshes_and_textures: Vec<(Mesh, GenBspTexture)>,
+        meshes_and_textures: Vec<(Mesh, GenBspTexture, BspFaceType)>,
         parent: usize,
     },
 }
@@ -551,31 +582,59 @@ impl GenBsp {
                 maxs,
                 leaf_brushes: _,
             } => {
-                let mut meshes_to_add = Vec::new();
+                let mut meshes_and_textures = Vec::new();
                 for face in leaf_faces {
                     if seen_faces.contains(&face.face_index) {
                         continue;
                     } else {
                         seen_faces.push(face.face_index);
                     }
-                    let mut mesh = Mesh::default();
+
                     match face.typ {
                         BspFaceType::Polygon | BspFaceType::Mesh => {
+                            let mut mesh = Mesh::default();
                             mesh.add_polygon(&face.verts, &face.mesh_verts);
+                            mesh.regenerate_aabb();
+                            mesh.recalculate_tangents();
+                            meshes_and_textures.push((mesh, face.texture.clone(), face.typ));
                         }
                         BspFaceType::Patch => {
-                            // let patch = BspPatch::build(face, 10);
-                            // mesh.add_polygon(&patch.verts, &patch.indices);
+                            let num_patches_x = (face.size[0] - 1) / 2;
+                            let num_patches_y = (face.size[1] - 1) / 2;
+                            let mut patches = Vec::new();
+                            for y in 0..num_patches_y {
+                                for x in 0..num_patches_x {
+                                    let mut control_points = Vec::new();
+                                    for row in 0..3 {
+                                        for col in 0..3 {
+                                            let index = (y * 2 * face.size[0] + x * 2)
+                                                + row * face.size[0]
+                                                + col;
+                                            let control_point = face.verts[index as usize];
+                                            control_points.push(control_point);
+                                        }
+                                    }
+
+                                    let patch = BspPatch::build(&control_points, 10);
+                                    patches.push(patch);
+                                }
+                            }
+
+                            for patch in patches {
+                                let mut mesh = Mesh::default();
+                                mesh.add_vertices(&patch.verts);
+                                for row in 0..patch.rows {
+                                    mesh.add_indices(&patch.row_indices[row as usize]);
+                                }
+                                mesh.regenerate_aabb();
+                                mesh.recalculate_tangents();
+                                meshes_and_textures.push((mesh, face.texture.clone(), face.typ));
+                            }
                         }
                         BspFaceType::Billboard => {
                             // todo
                         }
                     }
-
-                    mesh.regenerate_aabb();
-                    mesh.recalculate_tangents();
-
-                    meshes_to_add.push((mesh, face.texture.clone()));
                 }
 
                 meshes.insert(
@@ -585,7 +644,7 @@ impl GenBsp {
                         area: *area,
                         mins: *mins,
                         maxs: *maxs,
-                        meshes_and_textures: meshes_to_add,
+                        meshes_and_textures,
                         parent: parent.unwrap(),
                     },
                 );

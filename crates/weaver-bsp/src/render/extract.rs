@@ -17,7 +17,7 @@ use weaver_renderer::{
 use weaver_util::prelude::Result;
 
 use crate::{
-    generator::BspPlane,
+    generator::{BspFaceType, BspPlane},
     loader::{Bsp, BspNode},
     parser::VisData,
 };
@@ -25,7 +25,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub enum ExtractedBspNode {
     Leaf {
-        meshes_and_materials: Vec<(Handle<GpuMesh>, Handle<BindGroup<GpuMaterial>>)>,
+        meshes_and_materials: Vec<(Handle<GpuMesh>, Handle<BindGroup<GpuMaterial>>, BspFaceType)>,
         parent: usize,
         cluster: usize,
     },
@@ -148,7 +148,7 @@ pub fn extract_bsps(
                             cluster,
                         } => {
                             let mut extracted_meshes_and_materials = Vec::new();
-                            for (mesh, material) in meshes_and_materials {
+                            for (mesh, material, typ) in meshes_and_materials {
                                 let source_mesh = source_meshes.get(*mesh).unwrap();
                                 let source_material = source_materials.get(*material).unwrap();
 
@@ -190,8 +190,11 @@ pub fn extract_bsps(
                                     extracted_material_bind_group.into_untyped(),
                                 );
 
-                                extracted_meshes_and_materials
-                                    .push((extracted_mesh, extracted_material_bind_group));
+                                extracted_meshes_and_materials.push((
+                                    extracted_mesh,
+                                    extracted_material_bind_group,
+                                    *typ,
+                                ));
                             }
                             extracted_bsp.insert(
                                 i,

@@ -126,7 +126,7 @@ fn setup(
         },
     ));
 
-    let bsp = bsp_loader.load_from_archive("assets/maps/baseq3.zip", "maps/q3dm1.bsp")?;
+    let bsp = bsp_loader.load_from_archive("assets/maps/baseq3.zip", "maps/q3dm6.bsp")?;
     let bsp = bsp_assets.insert(bsp);
     commands.spawn((bsp,));
 
