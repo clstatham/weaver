@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use weaver_core::prelude::Vec3;
 
 pub mod parser;
@@ -16,6 +14,15 @@ pub enum ShaderGlobalParam {
     PolygonOffset,
     Portal,
     Sort(Sort),
+    Light(f32),
+    // qer specific params
+    TessSize(f32),
+    EditorImage(String),
+    Trans(f32),
+    // q3map specific params
+    SurfaceLight(f32),
+    LightImage(Map),
+    LightSubdivide(f32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -64,9 +71,6 @@ pub enum DeformVertexes {
         freq: f32,
     },
     Normal {
-        div: f32,
-        func: WaveFunc,
-        base: f32,
         amp: f32,
         freq: f32,
     },
@@ -100,9 +104,9 @@ pub enum WaveFunc {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SkyParms {
-    pub farbox: Option<PathBuf>,
+    pub farbox: Option<String>,
     pub cloudheight: u8,
-    pub nearbox: Option<PathBuf>,
+    pub nearbox: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -127,7 +131,7 @@ pub enum Sort {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ShaderStageParam {
     Map(Map),
-    ClampMap(PathBuf),
+    ClampMap(String),
     AnimMap(AnimMap),
     BlendFunc(BlendFunc),
     RgbGen(RgbGen),
@@ -137,11 +141,19 @@ pub enum ShaderStageParam {
     DepthFunc(DepthFunc),
     DepthWrite,
     AlphaFunc(AlphaFunc),
+    Detail,
+    // q3map specific params
+    BackShader(String),
+    GlobalTexture,
+    Sun(Sun),
+    SurfaceLight(f32),
+    LightImage(Map),
+    SurfaceParm(SurfaceParm),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Map {
-    Path(PathBuf),
+    Path(String),
     Lightmap,
     WhiteImage,
 }
@@ -149,7 +161,7 @@ pub enum Map {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnimMap {
     pub freq: f32,
-    pub maps: Vec<PathBuf>,
+    pub maps: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -162,28 +174,22 @@ pub enum BlendFunc {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlendFuncExplicit {
-    pub src: BlendFuncSrc,
-    pub dest: BlendFuncDest,
+    pub src: BlendFuncExplicitParam,
+    pub dest: BlendFuncExplicitParam,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum BlendFuncSrc {
-    One,
-    Zero,
-    DstColor,
-    OneMinusDstColor,
-    SrcAlpha,
-    OneMinusSrcAlpha,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum BlendFuncDest {
+pub enum BlendFuncExplicitParam {
     One,
     Zero,
     SrcColor,
+    DstColor,
     OneMinusSrcColor,
+    OneMinusDstColor,
     SrcAlpha,
+    DstAlpha,
     OneMinusSrcAlpha,
+    OneMinusDstAlpha,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -220,6 +226,7 @@ pub enum AlphaGen {
     OneMinusVertex,
     LightingDiffuse,
     Portal,
+    LightingSpecular,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -281,6 +288,14 @@ pub enum AlphaFunc {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Sun {
+    pub color: [f32; 3],
+    pub intensity: f32,
+    pub degrees: f32,
+    pub elevation: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ShaderStage {
     pub params: Vec<ShaderStageParam>,
 }
@@ -288,7 +303,45 @@ pub struct ShaderStage {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Shader {
     pub name: String,
-    pub source: String,
     pub global_params: Vec<ShaderGlobalParam>,
     pub stages: Vec<ShaderStage>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParsedDirectiveArg {
+    Float(f32),
+    Ident(String),
+    Path(String),
+    Parens(Vec<ParsedDirectiveArg>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedDirective {
+    pub name: String,
+    pub args: Vec<ParsedDirectiveArg>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedStage {
+    pub directives: Vec<ParsedDirective>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedShader {
+    pub name: String,
+    pub globals: Vec<ParsedDirective>,
+    pub stages: Vec<ParsedStage>,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::shader::parser::parse_shaders;
+
+    #[test]
+    #[rustfmt::skip]
+    fn test_parse_shader_file() {
+        let input = include_str!("../../../../assets/maps/test.shader");
+        let shaders = parse_shaders(input).unwrap();
+        dbg!(&shaders);
+    }
 }
