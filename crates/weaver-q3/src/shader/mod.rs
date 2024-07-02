@@ -1,5 +1,8 @@
+use std::fmt::Display;
+
 use weaver_core::prelude::Vec3;
 
+pub mod lexer;
 pub mod parser;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -142,13 +145,6 @@ pub enum ShaderStageParam {
     DepthWrite,
     AlphaFunc(AlphaFunc),
     Detail,
-    // q3map specific params
-    BackShader(String),
-    GlobalTexture,
-    Sun(Sun),
-    SurfaceLight(f32),
-    LightImage(Map),
-    SurfaceParm(SurfaceParm),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -315,10 +311,41 @@ pub enum ParsedDirectiveArg {
     Parens(Vec<ParsedDirectiveArg>),
 }
 
+impl Display for ParsedDirectiveArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParsedDirectiveArg::Float(x) => write!(f, "{}", x),
+            ParsedDirectiveArg::Ident(x) => write!(f, "{}", x),
+            ParsedDirectiveArg::Path(x) => write!(f, "{}", x),
+            ParsedDirectiveArg::Parens(x) => {
+                write!(f, "(")?;
+                for (i, arg) in x.iter().enumerate() {
+                    write!(f, "{}", arg)?;
+                    if i < x.len() - 1 {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, ")")?;
+                Ok(())
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedDirective {
     pub name: String,
     pub args: Vec<ParsedDirectiveArg>,
+}
+
+impl Display for ParsedDirective {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+        for arg in &self.args {
+            write!(f, " {}", arg)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -341,7 +368,6 @@ mod tests {
     #[rustfmt::skip]
     fn test_parse_shader_file() {
         let input = include_str!("../../../../assets/maps/test.shader");
-        let shaders = parse_shaders(input).unwrap();
-        dbg!(&shaders);
+        parse_shaders(input).unwrap();
     }
 }
