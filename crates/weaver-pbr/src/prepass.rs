@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Range};
+use std::ops::Range;
 
 use weaver_app::plugin::Plugin;
 use weaver_asset::Handle;
@@ -19,7 +19,7 @@ use weaver_renderer::{
     texture::GpuTexture,
     RenderLabel,
 };
-use weaver_util::prelude::Result;
+use weaver_util::prelude::{FxHashMap, Result};
 
 use crate::prelude::GpuMaterial;
 
@@ -95,7 +95,7 @@ pub struct PrepassMeshInstance {
 
 #[derive(Default, Resource)]
 pub struct PrepassMeshInstances {
-    pub instances: HashMap<Entity, PrepassMeshInstance>,
+    pub instances: FxHashMap<Entity, PrepassMeshInstance>,
 }
 
 impl GetBatchData for PrepassMeshInstances {

@@ -1,6 +1,5 @@
 use std::{
     cell::UnsafeCell,
-    collections::HashMap,
     fmt::Debug,
     hash::{Hash, Hasher},
     ops::{Deref, DerefMut},
@@ -11,7 +10,7 @@ use weaver_app::{App, SubApp};
 use weaver_ecs::prelude::{reflect_trait, Component, Resource};
 use weaver_util::{
     define_atomic_id,
-    prelude::{anyhow, impl_downcast, DowncastSync, Error, Result},
+    prelude::{anyhow, impl_downcast, DowncastSync, Error, FxHashMap, Result},
 };
 
 pub mod loading;
@@ -188,7 +187,7 @@ impl<'w, T: Asset> DerefMut for AssetMut<'w, T> {
 
 #[derive(Default, Resource)]
 pub struct Assets<T: Asset> {
-    storage: HashMap<AssetId, UnsafeCell<T>>,
+    storage: FxHashMap<AssetId, UnsafeCell<T>>,
 }
 
 // SAFETY: Assets are Sync and we validate access to them before using them.
@@ -197,7 +196,7 @@ unsafe impl<T: Asset> Sync for Assets<T> {}
 impl<T: Asset> Assets<T> {
     pub fn new() -> Self {
         Self {
-            storage: HashMap::new(),
+            storage: FxHashMap::default(),
         }
     }
 

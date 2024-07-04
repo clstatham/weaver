@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use weaver_asset::{
     loading::{Filesystem, LoadAsset, LoadCtx},
     prelude::Asset,
@@ -10,7 +8,7 @@ use weaver_ecs::prelude::Resource;
 use weaver_pbr::material::{ERROR_TEXTURE, WHITE_TEXTURE};
 use weaver_renderer::prelude::wgpu;
 use weaver_util::{
-    prelude::{anyhow, Result},
+    prelude::{anyhow, FxHashMap, Result},
     warn_once,
 };
 
@@ -29,7 +27,7 @@ pub fn make_error_shader(name: &str) -> LoadedShader {
                 ))],
             }],
         },
-        textures: HashMap::from_iter([(Map::Path("textures/error".to_string()), ERROR_TEXTURE)]),
+        textures: FxHashMap::from_iter([(Map::Path("textures/error".to_string()), ERROR_TEXTURE)]),
         topology: wgpu::PrimitiveTopology::TriangleList,
     }
 }
@@ -47,7 +45,7 @@ pub fn strip_extension(path: &str) -> &str {
 }
 
 #[derive(Resource, Default)]
-pub struct TextureCache(pub HashMap<String, Handle<Texture>>);
+pub struct TextureCache(pub FxHashMap<String, Handle<Texture>>);
 
 impl TextureCache {
     pub fn get(&self, name: &str) -> Option<Handle<Texture>> {
@@ -60,7 +58,7 @@ impl TextureCache {
 }
 
 #[derive(Resource, Default)]
-pub struct ShaderCache(pub HashMap<String, Handle<LexedShader>>);
+pub struct ShaderCache(pub FxHashMap<String, Handle<LexedShader>>);
 
 impl ShaderCache {
     pub fn get(&self, name: &str) -> Option<Handle<LexedShader>> {
@@ -109,7 +107,7 @@ impl ShaderCache {
 pub struct LoadedShader {
     pub shader: LexedShader,
     pub topology: wgpu::PrimitiveTopology,
-    pub textures: HashMap<Map, Handle<Texture>>,
+    pub textures: FxHashMap<Map, Handle<Texture>>,
 }
 
 impl LoadedShader {
@@ -126,7 +124,7 @@ impl LoadedShader {
             }],
         };
 
-        let mut textures = HashMap::new();
+        let mut textures = FxHashMap::default();
         textures.insert(Map::Path(texture_name.to_string()), texture);
 
         Self {
@@ -141,7 +139,7 @@ impl LoadedShader {
         load_ctx: &mut LoadCtx,
         topology: wgpu::PrimitiveTopology,
     ) -> Self {
-        let mut textures = HashMap::new();
+        let mut textures = FxHashMap::default();
 
         let mut texture_cache = load_ctx.get_resource_mut::<TextureCache>().unwrap();
 

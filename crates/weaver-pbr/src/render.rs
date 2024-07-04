@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     ops::{Deref, DerefMut},
     path::Path,
 };
@@ -27,7 +26,7 @@ use weaver_renderer::{
     texture::texture_format,
     RenderLabel,
 };
-use weaver_util::prelude::Result;
+use weaver_util::prelude::{FxHashMap, Result};
 
 use crate::{
     light::GpuPointLightArray, material::GpuMaterial, prelude::irradiance::GpuSkyboxIrradiance,
@@ -41,10 +40,10 @@ pub struct PbrMeshInstance {
 }
 
 #[derive(Resource, Default)]
-pub struct PbrMeshInstances(HashMap<Entity, PbrMeshInstance>);
+pub struct PbrMeshInstances(FxHashMap<Entity, PbrMeshInstance>);
 
 impl Deref for PbrMeshInstances {
-    type Target = HashMap<Entity, PbrMeshInstance>;
+    type Target = FxHashMap<Entity, PbrMeshInstance>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

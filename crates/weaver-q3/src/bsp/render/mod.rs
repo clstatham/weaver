@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    ops::Range,
-};
+use std::ops::Range;
 
 use encase::ShaderType;
 use extract::{extract_bsps, ExtractedBsp, ExtractedBspNode};
@@ -33,7 +30,7 @@ use weaver_renderer::{
     },
     ExtractStage, PreRender, RenderLabel,
 };
-use weaver_util::prelude::Result;
+use weaver_util::prelude::{FxHashMap, FxHashSet, Result};
 
 use crate::{
     bsp::generator::BspFaceType,
@@ -99,7 +96,7 @@ pub struct BspDrawItemInstance {
 
 #[derive(Default, Resource)]
 pub struct BspDrawItemInstances {
-    pub instances: HashMap<Entity, BspDrawItemInstance>,
+    pub instances: FxHashMap<Entity, BspDrawItemInstance>,
 }
 
 impl GetBatchData for BspDrawItemInstances {
@@ -405,7 +402,7 @@ pub fn extract_bsp_camera_phase(
     mut binned_phases: ResMut<BinnedRenderPhases<BspDrawItem>>,
     cameras: Query<&GpuCamera, With<ViewTarget>>,
 ) -> Result<()> {
-    let mut live_cameras = HashSet::new();
+    let mut live_cameras = FxHashSet::default();
     for (entity, camera) in cameras.iter() {
         if !camera.camera.active {
             continue;

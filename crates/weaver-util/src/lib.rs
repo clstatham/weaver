@@ -14,7 +14,7 @@ pub mod prelude {
     pub use anyhow::{anyhow, bail, ensure, Error, Result};
     pub use downcast_rs::{impl_downcast, Downcast, DowncastSync};
     pub use lazy_static::lazy_static;
-    pub use rustc_hash::FxHashMap;
+    pub use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
     pub use scopeguard::{defer, guard, ScopeGuard};
 }
 

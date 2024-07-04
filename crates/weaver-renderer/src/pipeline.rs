@@ -1,4 +1,4 @@
-use std::{any::TypeId, collections::HashMap, ops::Deref, sync::Arc};
+use std::{any::TypeId, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
@@ -7,7 +7,7 @@ use weaver_ecs::{
 };
 use weaver_util::{
     define_atomic_id,
-    prelude::{DowncastSync, Result},
+    prelude::{DowncastSync, FxHashMap, Result},
     TypeIdMap,
 };
 
@@ -17,8 +17,8 @@ define_atomic_id!(PipelineId);
 
 #[derive(Resource, Default)]
 pub struct RenderPipelineCache {
-    layout_cache: HashMap<PipelineId, RenderPipelineLayout>,
-    pipeline_cache: HashMap<PipelineId, RenderPipeline>,
+    layout_cache: FxHashMap<PipelineId, RenderPipelineLayout>,
+    pipeline_cache: FxHashMap<PipelineId, RenderPipeline>,
     ids: TypeIdMap<PipelineId>,
 }
 

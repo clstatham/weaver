@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    ops::{Deref, DerefMut, Range},
-};
+use std::ops::{Deref, DerefMut, Range};
 
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
@@ -11,7 +8,10 @@ use weaver_ecs::{
     query::{Query, QueryFetch, QueryFilter},
     world::{FromWorld, World},
 };
-use weaver_util::{lock::Write, prelude::Result};
+use weaver_util::{
+    lock::Write,
+    prelude::{FxHashMap, Result},
+};
 
 use crate::{
     bind_group::{BindGroupLayout, CreateBindGroup, ResourceBindGroupPlugin},
@@ -24,7 +24,7 @@ use crate::{
 
 pub struct BinnedRenderPhase<T: BinnedDrawItem> {
     pub batch_keys: Vec<T::Key>,
-    pub batch_values: HashMap<T::Key, Vec<Entity>>,
+    pub batch_values: FxHashMap<T::Key, Vec<Entity>>,
     pub batch_sets: Vec<Vec<BinnedBatch>>,
 }
 
@@ -37,7 +37,7 @@ impl<T: BinnedDrawItem> Default for BinnedRenderPhase<T> {
     fn default() -> Self {
         Self {
             batch_keys: Vec::new(),
-            batch_values: HashMap::new(),
+            batch_values: FxHashMap::default(),
             batch_sets: Vec::new(),
         }
     }
@@ -98,7 +98,7 @@ impl<T: BinnedDrawItem> BinnedRenderPhase<T> {
 
 #[derive(Resource)]
 pub struct BinnedRenderPhases<T: BinnedDrawItem> {
-    pub phases: HashMap<Entity, BinnedRenderPhase<T>>,
+    pub phases: FxHashMap<Entity, BinnedRenderPhase<T>>,
 }
 
 impl<T: BinnedDrawItem> BinnedRenderPhases<T> {
@@ -114,13 +114,13 @@ impl<T: BinnedDrawItem> BinnedRenderPhases<T> {
 impl<T: BinnedDrawItem> Default for BinnedRenderPhases<T> {
     fn default() -> Self {
         Self {
-            phases: HashMap::new(),
+            phases: FxHashMap::default(),
         }
     }
 }
 
 impl<T: BinnedDrawItem> Deref for BinnedRenderPhases<T> {
-    type Target = HashMap<Entity, BinnedRenderPhase<T>>;
+    type Target = FxHashMap<Entity, BinnedRenderPhase<T>>;
 
     fn deref(&self) -> &Self::Target {
         &self.phases

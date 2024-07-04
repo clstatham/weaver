@@ -1,6 +1,6 @@
-use std::{any::TypeId, collections::HashMap};
+use std::any::TypeId;
 
-use weaver_util::prelude::Result;
+use weaver_util::prelude::{FxHashMap, Result};
 
 use crate::{
     prelude::{IntoSystem, World},
@@ -15,7 +15,7 @@ pub struct SystemSchedule {
     update_stages: Vec<TypeId>,
     shutdown_stages: Vec<TypeId>,
     manual_stages: Vec<TypeId>,
-    systems: HashMap<TypeId, SystemGraph>,
+    systems: FxHashMap<TypeId, SystemGraph>,
 }
 
 impl SystemSchedule {

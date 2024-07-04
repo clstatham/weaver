@@ -1,7 +1,4 @@
-use std::{
-    any::TypeId,
-    collections::{HashMap, HashSet},
-};
+use std::any::TypeId;
 
 use crate::{
     component::{Res, ResMut},
@@ -10,7 +7,7 @@ use crate::{
 use petgraph::{prelude::*, visit::Topo};
 use weaver_util::{
     lock::SharedLock,
-    prelude::{anyhow, Result},
+    prelude::{anyhow, FxHashMap, FxHashSet, Result},
 };
 
 #[derive(Default, Clone)]
@@ -669,7 +666,7 @@ pub fn assert_is_system<Marker>(_: impl IntoSystem<Marker>) {}
 #[derive(Default)]
 pub struct SystemGraph {
     systems: StableDiGraph<SharedLock<Box<dyn System>>, ()>,
-    index_cache: HashMap<TypeId, NodeIndex>,
+    index_cache: FxHashMap<TypeId, NodeIndex>,
 }
 
 impl SystemGraph {
@@ -728,7 +725,7 @@ impl SystemGraph {
     pub fn get_layers(&self) -> Vec<Vec<NodeIndex>> {
         let mut schedule = Topo::new(&self.systems);
 
-        let mut seen = HashSet::new();
+        let mut seen = FxHashSet::default();
         let mut layers = Vec::new();
         let mut current_layer = Vec::new();
         while let Some(node) = schedule.next(&self.systems) {

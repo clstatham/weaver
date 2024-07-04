@@ -1,4 +1,4 @@
-use std::{any::TypeId, collections::HashMap, ops::Deref, sync::Arc};
+use std::{any::TypeId, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{prelude::Asset, AddAsset, Assets, Handle, UntypedHandle};
@@ -10,7 +10,7 @@ use weaver_ecs::{
 };
 use weaver_util::{
     lock::{Lock, Read, Write},
-    prelude::{DowncastSync, Result},
+    prelude::{DowncastSync, FxHashMap, Result},
     TypeIdMap,
 };
 
@@ -206,7 +206,7 @@ fn create_resource_bind_group<T: Resource + CreateBindGroup>(
 
 #[derive(Default, Resource)]
 pub struct ExtractedAssetBindGroups {
-    bind_groups: Lock<HashMap<UntypedHandle, UntypedHandle>>,
+    bind_groups: Lock<FxHashMap<UntypedHandle, UntypedHandle>>,
 }
 
 impl ExtractedAssetBindGroups {
@@ -222,11 +222,11 @@ impl ExtractedAssetBindGroups {
         self.bind_groups.read().contains_key(handle)
     }
 
-    pub fn read(&self) -> Read<HashMap<UntypedHandle, UntypedHandle>> {
+    pub fn read(&self) -> Read<FxHashMap<UntypedHandle, UntypedHandle>> {
         self.bind_groups.read()
     }
 
-    pub fn write(&self) -> Write<HashMap<UntypedHandle, UntypedHandle>> {
+    pub fn write(&self) -> Write<FxHashMap<UntypedHandle, UntypedHandle>> {
         self.bind_groups.write()
     }
 }

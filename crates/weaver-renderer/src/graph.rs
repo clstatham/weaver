@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, hash::Hash, sync::Arc};
+use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 use petgraph::{prelude::*, visit::Topo};
 use weaver_app::{App, SubApp};
@@ -11,7 +11,7 @@ use weaver_ecs::{
 };
 use weaver_util::{
     lock::Lock,
-    prelude::{anyhow, bail, impl_downcast, DowncastSync, Result},
+    prelude::{anyhow, bail, impl_downcast, DowncastSync, FxHashMap, Result},
 };
 
 use crate::{RenderId, RenderLabel, Renderer};
@@ -456,14 +456,14 @@ impl RenderNode for SubGraphNode {
 #[derive(Resource)]
 pub struct RenderGraph {
     graph: StableDiGraph<RenderNodeState, ()>,
-    node_ids: HashMap<RenderId, NodeIndex>,
+    node_ids: FxHashMap<RenderId, NodeIndex>,
 }
 
 impl Default for RenderGraph {
     fn default() -> Self {
         Self {
             graph: StableDiGraph::new(),
-            node_ids: HashMap::new(),
+            node_ids: FxHashMap::default(),
         }
     }
 }
@@ -718,7 +718,7 @@ impl RenderGraph {
 
         let mut search = Topo::new(&self.graph);
 
-        let mut output_cache: HashMap<RenderId, Vec<Slot>> = HashMap::new();
+        let mut output_cache: FxHashMap<RenderId, Vec<Slot>> = FxHashMap::default();
 
         let mut render_ctx = RenderCtx::new(device, queue, renderer);
 

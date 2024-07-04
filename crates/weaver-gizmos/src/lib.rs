@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App, PrepareFrame};
 use weaver_core::{color::Color, prelude::Mat4, transform::Transform};
@@ -23,7 +23,10 @@ use weaver_renderer::{
     texture::{texture_format, GpuTexture},
     RenderApp, RenderLabel, WgpuDevice, WgpuQueue,
 };
-use weaver_util::{lock::SharedLock, prelude::Result};
+use weaver_util::{
+    lock::SharedLock,
+    prelude::{FxHashMap, Result},
+};
 
 use wgpu::util::DeviceExt;
 
@@ -136,13 +139,13 @@ impl GizmoInstance {
 
 #[derive(Resource, Clone)]
 pub struct Gizmos {
-    pub(crate) gizmos: SharedLock<HashMap<GizmoKey, Vec<GizmoInstance>>>,
+    pub(crate) gizmos: SharedLock<FxHashMap<GizmoKey, Vec<GizmoInstance>>>,
 }
 
 impl Default for Gizmos {
     fn default() -> Self {
         Self {
-            gizmos: SharedLock::new(HashMap::new()),
+            gizmos: SharedLock::new(FxHashMap::default()),
         }
     }
 }
@@ -207,10 +210,10 @@ impl RenderLabel for GizmoNodeLabel {}
 
 #[derive(Default)]
 pub struct GizmoRenderNode {
-    transform_buffer: HashMap<GizmoKey, GpuBufferVec<Mat4>>,
-    color_buffer: HashMap<GizmoKey, GpuBufferVec<Color>>,
-    bind_group: HashMap<GizmoKey, Arc<wgpu::BindGroup>>,
-    pipelines: HashMap<GizmoKey, RenderPipeline>,
+    transform_buffer: FxHashMap<GizmoKey, GpuBufferVec<Mat4>>,
+    color_buffer: FxHashMap<GizmoKey, GpuBufferVec<Color>>,
+    bind_group: FxHashMap<GizmoKey, Arc<wgpu::BindGroup>>,
+    pipelines: FxHashMap<GizmoKey, RenderPipeline>,
     gizmo_depth_texture: Option<GpuTexture>,
 }
 

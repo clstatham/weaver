@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
 use weaver_asset::{
     loading::{LoadAsset, LoadCtx},
@@ -9,7 +9,7 @@ use weaver_core::{mesh::Mesh, prelude::Vec3, texture::Texture};
 use weaver_ecs::prelude::Resource;
 use weaver_renderer::prelude::wgpu;
 use weaver_util::{
-    prelude::{anyhow, Result},
+    prelude::{anyhow, FxHashMap, Result},
     warn_once,
 };
 
@@ -53,7 +53,7 @@ pub enum BspNode {
 
 #[derive(Asset)]
 pub struct Bsp {
-    pub shaders: HashMap<PathBuf, String>,
+    pub shaders: FxHashMap<PathBuf, String>,
     pub nodes: Vec<Option<BspNode>>,
     pub vis_data: VisData,
 }
@@ -61,7 +61,7 @@ pub struct Bsp {
 impl Bsp {
     pub fn with_capacity(capacity: usize, vis_data: VisData) -> Self {
         Self {
-            shaders: HashMap::new(),
+            shaders: FxHashMap::default(),
             nodes: vec![None; capacity],
             vis_data,
         }

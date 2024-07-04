@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{AddAsset, Asset, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
@@ -11,7 +9,7 @@ use weaver_ecs::{
 };
 use weaver_util::{
     lock::{Lock, Read, Write},
-    prelude::Result,
+    prelude::{FxHashMap, Result},
 };
 
 use crate::{extract::Extract, ExtractStage, WgpuDevice, WgpuQueue};
@@ -42,7 +40,7 @@ pub trait RenderAsset: Asset {
 
 #[derive(Default, Resource)]
 pub struct ExtractedRenderAssets {
-    assets: Lock<HashMap<UntypedHandle, UntypedHandle>>,
+    assets: Lock<FxHashMap<UntypedHandle, UntypedHandle>>,
 }
 
 impl ExtractedRenderAssets {
@@ -58,11 +56,11 @@ impl ExtractedRenderAssets {
         self.assets.read().contains_key(handle)
     }
 
-    pub fn read(&self) -> Read<HashMap<UntypedHandle, UntypedHandle>> {
+    pub fn read(&self) -> Read<FxHashMap<UntypedHandle, UntypedHandle>> {
         self.assets.read()
     }
 
-    pub fn write(&self) -> Write<HashMap<UntypedHandle, UntypedHandle>> {
+    pub fn write(&self) -> Write<FxHashMap<UntypedHandle, UntypedHandle>> {
         self.assets.write()
     }
 }

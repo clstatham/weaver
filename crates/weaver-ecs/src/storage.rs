@@ -1,11 +1,9 @@
-use std::{
-    any::TypeId,
-    cell::UnsafeCell,
-    collections::{HashMap, HashSet},
-    ops::Deref,
-};
+use std::{any::TypeId, cell::UnsafeCell, collections::HashSet, ops::Deref};
 
-use weaver_util::lock::{Lock, Read, Write};
+use weaver_util::{
+    lock::{Lock, Read, Write},
+    prelude::FxHashMap,
+};
 
 use crate::prelude::{
     Bundle, ChangeDetection, ChangeDetectionMut, ComponentTicks, Tick, Ticks, TicksMut,
@@ -260,7 +258,7 @@ impl<'w> Deref for ColumnRef<'w> {
 
 #[derive(Default)]
 pub struct Archetype {
-    columns: HashMap<TypeId, SparseSet<UnsafeCell<Data>>>,
+    columns: FxHashMap<TypeId, SparseSet<UnsafeCell<Data>>>,
     entities: HashSet<Entity>,
 }
 
@@ -479,8 +477,8 @@ pub struct ArchetypeId(usize);
 #[derive(Default)]
 pub struct Storage {
     next_archetype_id: usize,
-    archetypes: HashMap<ArchetypeId, Archetype>,
-    entity_archetype: HashMap<Entity, ArchetypeId>,
+    archetypes: FxHashMap<ArchetypeId, Archetype>,
+    entity_archetype: FxHashMap<Entity, ArchetypeId>,
 }
 
 impl Storage {

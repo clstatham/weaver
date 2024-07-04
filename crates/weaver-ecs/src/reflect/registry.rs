@@ -1,8 +1,8 @@
-use std::{any::TypeId, collections::HashMap, sync::Arc};
+use std::{any::TypeId, sync::Arc};
 
 use crate::prelude::Resource;
 use crate::{self as weaver_ecs, prelude::Component};
-use weaver_util::prelude::{impl_downcast, DowncastSync};
+use weaver_util::prelude::{impl_downcast, DowncastSync, FxHashMap};
 
 pub use weaver_util::TypeIdMap;
 
@@ -54,7 +54,7 @@ pub struct StructInfo {
     pub type_name: &'static str,
     pub fields: Box<[FieldInfo]>,
     pub field_names: Box<[&'static str]>,
-    pub field_indices: HashMap<&'static str, usize>,
+    pub field_indices: FxHashMap<&'static str, usize>,
 }
 
 impl StructInfo {
@@ -229,7 +229,7 @@ pub struct TypeRegistration {
 #[derive(Resource)]
 pub struct TypeRegistry {
     types: TypeIdMap<TypeRegistration>,
-    type_names: HashMap<&'static str, TypeId>,
+    type_names: FxHashMap<&'static str, TypeId>,
 }
 
 impl Default for TypeRegistry {
@@ -242,7 +242,7 @@ impl TypeRegistry {
     pub fn empty() -> Self {
         Self {
             types: TypeIdMap::default(),
-            type_names: HashMap::new(),
+            type_names: FxHashMap::default(),
         }
     }
 
