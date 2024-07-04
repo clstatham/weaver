@@ -19,7 +19,8 @@ pub struct Shader {
 }
 
 impl Shader {
-    pub fn new(path: &Path) -> Self {
+    pub fn new(path: impl AsRef<Path>) -> Self {
+        let path = path.as_ref();
         let module = preprocess_shader(path.to_str().unwrap(), "assets/shaders/");
         Self {
             path: path.into(),
@@ -39,8 +40,7 @@ impl Shader {
 pub struct ShaderLoader;
 
 impl LoadAsset<Shader> for ShaderLoader {
-    type Param = ();
-    fn load(&self, _: (), ctx: &mut LoadCtx) -> Result<Shader> {
+    fn load(&self, ctx: &mut LoadCtx) -> Result<Shader> {
         Ok(Shader::new(ctx.original_path()))
     }
 }

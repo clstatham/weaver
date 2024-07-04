@@ -9,3 +9,6 @@ lock_api = "0.4.0"
 anyhow = { version = "1.0", features = ["backtrace"] }
 downcast-rs = "1.0.0"
 atomic_refcell = "0.1.13"
+rustc-hash = "2.0"
+scopeguard = "1.2"
+lazy_static = "1.5"

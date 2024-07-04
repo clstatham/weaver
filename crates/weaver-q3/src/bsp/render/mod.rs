@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
-    path::Path,
 };
 
 use encase::ShaderType;
@@ -17,32 +16,29 @@ use weaver_ecs::{
     storage::Ref,
 };
 use weaver_pbr::{
-    extract_pbr_camera_phase,
-    material::GpuMaterial,
-    prelude::SkyboxNodeLabel,
-    render::{PbrLightingInformation, PbrNode},
+    extract_pbr_camera_phase, prelude::SkyboxNodeLabel, render::PbrLightingInformation,
 };
 use weaver_renderer::{
-    bind_group::{BindGroup, BindGroupLayoutCache},
+    bind_group::BindGroup,
     camera::{CameraBindGroup, GpuCamera, ViewTarget},
     clear_color::ClearColorLabel,
     draw_fn::{BinnedDrawItem, DrawFnId, DrawFunctions, DrawItem, FromDrawItemQuery},
     graph::{RenderGraphApp, RenderGraphCtx, ViewNode, ViewNodeRunner},
     mesh::GpuMesh,
-    pipeline::{CreateRenderPipeline, RenderPipelineCache, RenderPipelinePlugin},
-    prelude::{wgpu, RenderPipeline, RenderPipelineLayout},
+    prelude::wgpu,
     render_command::{AddRenderCommand, RenderCommand},
     render_phase::{
         batch_and_prepare, BatchedInstanceBuffer, BatchedInstanceBufferPlugin,
         BinnedRenderPhasePlugin, BinnedRenderPhases, GetBatchData,
     },
-    shader::Shader,
-    texture::texture_format,
     ExtractStage, PreRender, RenderLabel,
 };
 use weaver_util::prelude::Result;
 
-use crate::bsp::generator::BspFaceType;
+use crate::{
+    bsp::generator::BspFaceType,
+    shader::render::{extract::ExtractedShader, KeyedShaderStage, KeyedShaderStagePipelineCache},
+};
 
 pub mod extract;
 
@@ -132,10 +128,20 @@ impl RenderCommand<BspDrawItem> for BspRenderCommand {
     type Param = (
         Res<'static, Assets<ExtractedBsp>>,
         Res<'static, Assets<GpuMesh>>,
-        Res<'static, Assets<BindGroup<GpuMaterial>>>,
-        Res<'static, RenderPipelineCache>,
+        Res<'static, Assets<ExtractedShader>>,
+        Res<'static, Assets<BindGroup<KeyedShaderStage>>>,
+        Res<'static, KeyedShaderStagePipelineCache>,
         Res<'static, BindGroup<BatchedInstanceBuffer<BspDrawItem, BspRenderCommand>>>,
         Res<'static, BindGroup<PbrLightingInformation>>,
+        Query<
+            'static,
+            'static,
+            (
+                &'static Handle<GpuMesh>,
+                &'static Handle<ExtractedShader>,
+                &'static BspFaceType,
+            ),
+        >,
     );
 
     type ViewQueryFetch = (&'static BindGroup<CameraBindGroup>, &'static GpuCamera);
@@ -145,6 +151,7 @@ impl RenderCommand<BspDrawItem> for BspRenderCommand {
     type ItemQueryFetch = ();
 
     type ItemQueryFilter = ();
+
     fn render<'w>(
         item: BspDrawItem,
         (camera_bind_group, camera): <Self::ViewQueryFetch as QueryFetch>::Item<'w>,
@@ -155,14 +162,17 @@ impl RenderCommand<BspDrawItem> for BspRenderCommand {
         let (
             bsp_assets,
             mesh_assets,
-            material_assets,
+            shader_assets,
+            shader_bind_groups,
             pipeline_cache,
             instance_bind_group,
             lighting_bind_group,
+            shader_meshes,
         ) = param;
         let bsp_assets = bsp_assets.into_inner();
         let mesh_assets = mesh_assets.into_inner();
-        let material_assets = material_assets.into_inner();
+        let shader_assets = shader_assets.into_inner();
+        let shader_bind_groups = shader_bind_groups.into_inner();
         let pipeline_cache = pipeline_cache.into_inner();
         let instance_bind_group = instance_bind_group.into_inner();
         let lighting_bind_group = lighting_bind_group.into_inner();
@@ -170,13 +180,6 @@ impl RenderCommand<BspDrawItem> for BspRenderCommand {
         let camera = camera.into_inner();
 
         let bsp = bsp_assets.get(item.key.bsp).unwrap();
-
-        let face_pipeline = pipeline_cache
-            .get_pipeline_for::<BspFacePipeline>()
-            .unwrap();
-        let patch_pipeline = pipeline_cache
-            .get_pipeline_for::<BspPatchPipeline>()
-            .unwrap();
 
         render_pass.set_bind_group(1, camera_bind_group.bind_group(), &[]);
         render_pass.set_bind_group(2, instance_bind_group.bind_group(), &[]);
@@ -215,43 +218,49 @@ impl RenderCommand<BspDrawItem> for BspRenderCommand {
         bsp.walk(0, &mut |_index, node| {
             match node {
                 ExtractedBspNode::Leaf {
-                    meshes_and_materials,
+                    shader_mesh_entities,
                     parent: _,
-                    cluster,
+                    cluster: _,
+                    min,
+                    max,
                 } => {
-                    // check if the leaf's cluster is visible from the camera's cluster
-                    let visible = {
-                        if camera_cluster < 0 || (*cluster as i32) < 0 {
-                            true
-                        } else {
-                            let vis = bsp.vis_data.vecs[*cluster * bsp.vis_data.size_vecs as usize
-                                + camera_cluster as usize / 8];
-                            (vis & (1 << (camera_cluster % 8))) != 0
-                        }
-                    };
-                    if visible {
-                        for (mesh, material, typ) in meshes_and_materials {
+                    // // check if the leaf intersects with the camera frustum
+                    // let mut visible = false;
+                    // let aabb = Aabb::new((*min).into(), (*max).into());
+                    // let corners = aabb.corners();
+                    // for p in corners {
+                    //     if camera.camera.intersect_frustum_with_point(p.into()) {
+                    //         visible = true;
+                    //         break;
+                    //     }
+                    // }
+                    // if visible
+                    {
+                        for entity in shader_mesh_entities {
+                            let (mesh, shader, _typ) = shader_meshes.get(*entity).unwrap();
                             let mesh = mesh_assets.get(*mesh).unwrap();
-                            let material = material_assets.get(*material).unwrap();
+                            let shader = shader_assets.get(*shader).unwrap();
                             let mesh = mesh.into_inner();
-                            let material = material.into_inner();
+                            let shader = shader.into_inner();
 
-                            let pipeline = match typ {
-                                BspFaceType::Mesh
-                                | BspFaceType::Polygon
-                                | BspFaceType::Billboard => &face_pipeline,
-                                BspFaceType::Patch => &patch_pipeline,
-                            };
-                            render_pass.set_pipeline(pipeline);
-
-                            render_pass.set_bind_group(0, material.bind_group(), &[]);
                             render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                             render_pass.set_index_buffer(
                                 mesh.index_buffer.slice(..),
                                 wgpu::IndexFormat::Uint32,
                             );
 
-                            render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+                            for stage in shader.stages.iter() {
+                                let pipeline = pipeline_cache.get(stage.key).unwrap();
+                                render_pass.set_pipeline(pipeline);
+
+                                let shader_bind_group =
+                                    shader_bind_groups.get(stage.bind_group).unwrap();
+                                let shader_bind_group = shader_bind_group.into_inner();
+
+                                render_pass.set_bind_group(0, shader_bind_group.bind_group(), &[]);
+
+                                render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+                            }
                         }
                     }
                 }
@@ -260,151 +269,6 @@ impl RenderCommand<BspDrawItem> for BspRenderCommand {
         });
 
         Ok(())
-    }
-}
-
-pub struct BspFacePipeline;
-
-impl CreateRenderPipeline for BspFacePipeline {
-    fn create_render_pipeline_layout(
-        device: &wgpu::Device,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> RenderPipelineLayout
-    where
-        Self: Sized,
-    {
-        let material_layout = bind_group_layout_cache.get_or_create::<GpuMaterial>(device);
-        let instance_layout = bind_group_layout_cache
-            .get_or_create::<BatchedInstanceBuffer<BspDrawItem, BspRenderCommand>>(device);
-        let lighting_layout =
-            bind_group_layout_cache.get_or_create::<PbrLightingInformation>(device);
-        let camera_layout = bind_group_layout_cache.get_or_create::<CameraBindGroup>(device);
-
-        RenderPipelineLayout::new(
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("BspFacePipeline Pipeline Layout"),
-                bind_group_layouts: &[
-                    &material_layout,
-                    &camera_layout,
-                    &instance_layout,
-                    &lighting_layout,
-                ],
-                push_constant_ranges: &[],
-            }),
-        )
-    }
-
-    fn create_render_pipeline(
-        device: &wgpu::Device,
-        cached_layout: &wgpu::PipelineLayout,
-    ) -> RenderPipeline
-    where
-        Self: Sized,
-    {
-        PbrNode::create_render_pipeline(device, cached_layout)
-    }
-}
-
-pub struct BspPatchPipeline;
-
-impl CreateRenderPipeline for BspPatchPipeline {
-    fn create_render_pipeline_layout(
-        device: &wgpu::Device,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> RenderPipelineLayout
-    where
-        Self: Sized,
-    {
-        let material_layout = bind_group_layout_cache.get_or_create::<GpuMaterial>(device);
-        let instance_layout = bind_group_layout_cache
-            .get_or_create::<BatchedInstanceBuffer<BspDrawItem, BspRenderCommand>>(device);
-        let lighting_layout =
-            bind_group_layout_cache.get_or_create::<PbrLightingInformation>(device);
-        let camera_layout = bind_group_layout_cache.get_or_create::<CameraBindGroup>(device);
-
-        RenderPipelineLayout::new(
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("BspPatchPipeline Pipeline Layout"),
-                bind_group_layouts: &[
-                    &material_layout,
-                    &camera_layout,
-                    &instance_layout,
-                    &lighting_layout,
-                ],
-                push_constant_ranges: &[],
-            }),
-        )
-    }
-
-    fn create_render_pipeline(
-        device: &wgpu::Device,
-        cached_layout: &wgpu::PipelineLayout,
-    ) -> RenderPipeline
-    where
-        Self: Sized,
-    {
-        let shader = Shader::new(Path::new("assets/shaders/pbr.wgsl")).create_shader_module(device);
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("PBR Pipeline"),
-            layout: Some(cached_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: 4 * (3 + 3 + 3 + 2) as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x3,
-                            offset: 0,
-                            shader_location: 0,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x3,
-                            offset: 4 * 3,
-                            shader_location: 1,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x3,
-                            offset: 4 * 6,
-                            shader_location: 2,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x2,
-                            offset: 4 * 9,
-                            shader_location: 3,
-                        },
-                    ],
-                }],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: texture_format::HDR_FORMAT,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                // cull_mode: Some(wgpu::Face::Back),
-                cull_mode: None, // don't cull patches for now
-                topology: wgpu::PrimitiveTopology::TriangleStrip, // patches are triangle strips
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: texture_format::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: Default::default(),
-            multiview: None,
-        });
-
-        RenderPipeline::new(pipeline)
     }
 }
 
@@ -504,9 +368,6 @@ impl Plugin for BspRenderPlugin {
     fn build(&self, render_app: &mut App) -> Result<()> {
         render_app.add_asset::<ExtractedBsp>();
         render_app.add_system(extract_bsps, ExtractStage);
-
-        render_app.add_plugin(RenderPipelinePlugin::<BspFacePipeline>::default())?;
-        render_app.add_plugin(RenderPipelinePlugin::<BspPatchPipeline>::default())?;
 
         render_app
             .add_plugin(BatchedInstanceBufferPlugin::<BspDrawItem, BspRenderCommand>::default())?;

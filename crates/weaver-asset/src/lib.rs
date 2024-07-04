@@ -58,6 +58,13 @@ impl<T: Asset> Handle<T> {
             _marker: std::marker::PhantomData,
         }
     }
+
+    pub const fn from_uuid(uuid: u128) -> Self {
+        Self {
+            id: AssetId::from_u64(uuid as u64),
+            _marker: std::marker::PhantomData,
+        }
+    }
 }
 
 impl<T: Asset> Debug for Handle<T> {

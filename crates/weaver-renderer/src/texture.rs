@@ -93,6 +93,100 @@ impl GpuTexture {
     }
 }
 
+pub struct GpuTextureArray {
+    pub backing_texture: Arc<wgpu::Texture>,
+    pub backing_view: Arc<wgpu::TextureView>,
+}
+
+impl GpuTextureArray {
+    pub fn from_images(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        images: &[Texture],
+    ) -> Option<Self> {
+        let layer_count = images.len() as u32;
+        assert!(
+            layer_count > 0,
+            "Texture array must have at least one layer"
+        );
+        assert!(
+            images
+                .iter()
+                .all(|image| image.width() == images[0].width()),
+            "All images in texture array must have the same width"
+        );
+        assert!(
+            images
+                .iter()
+                .all(|image| image.height() == images[0].height()),
+            "All images in texture array must have the same height"
+        );
+        let width = images[0].width();
+        let height = images[0].height();
+
+        let data = images
+            .iter()
+            .flat_map(|image| image.to_rgba8())
+            .collect::<Vec<u8>>();
+
+        let texture = device.create_texture_with_data(
+            queue,
+            &wgpu::TextureDescriptor {
+                label: Some("Texture Array"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: layer_count,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &data,
+        );
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            array_layer_count: Some(layer_count),
+            base_array_layer: 0,
+            ..Default::default()
+        });
+
+        Some(Self {
+            backing_texture: Arc::new(texture),
+            backing_view: Arc::new(view),
+        })
+    }
+
+    pub fn format(&self) -> wgpu::TextureFormat {
+        self.backing_texture.format()
+    }
+
+    pub fn layer_count(&self) -> u32 {
+        self.backing_texture.size().depth_or_array_layers
+    }
+
+    pub fn width(&self) -> u32 {
+        self.backing_texture.size().width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.backing_texture.size().height
+    }
+
+    pub fn view(&self) -> &wgpu::TextureView {
+        &self.backing_view
+    }
+
+    pub fn as_binding_resource(&self) -> wgpu::BindingResource {
+        wgpu::BindingResource::TextureView(&self.backing_view)
+    }
+}
+
 pub struct TexturePlugin;
 
 impl Plugin for TexturePlugin {

@@ -13,11 +13,10 @@ use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_egui::prelude::*;
 use weaver_q3::{
-    bsp::{
-        loader::{Bsp, BspLoader},
-        BspPlugin,
-    },
+    bsp::loader::{Bsp, BspLoader},
     pk3::Pk3Filesystem,
+    shader::{lexer::LexedShader, loader::ShaderCache},
+    Q3Plugin,
 };
 use weaver_renderer::{camera::PrimaryCamera, clear_color::ClearColorPlugin};
 use weaver_winit::Window;
@@ -64,12 +63,13 @@ fn main() -> Result<()> {
         .add_plugin(PbrPlugin)?
         .add_plugin(GizmoPlugin)?
         .add_plugin(EguiPlugin)?
-        .add_plugin(BspPlugin)?
+        .add_plugin(Q3Plugin)?
         .add_plugin(LogFrameTimePlugin {
             log_interval: std::time::Duration::from_secs(1),
         })?
         .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
+        .insert_resource(Filesystem::default().with_pk3s_from_dir("assets/q3")?)
         .insert_resource(EditorState::default())
         // .insert_resource(TransformGizmo {
         //     focus: None,
@@ -83,7 +83,8 @@ fn main() -> Result<()> {
         //     extra_scaling: 1.0,
         //     desired_pixel_size: 100.0,
         // })
-        .add_system(setup, Init)
+        .add_system(load_shaders, Init)
+        .add_system_after(setup, load_shaders, Init)
         .add_system(camera::update_camera, Update)
         .add_system(camera::update_aspect_ratio, Update)
         .add_system(selection_gizmos, Update)
@@ -94,10 +95,23 @@ fn main() -> Result<()> {
         .run()
 }
 
+fn load_shaders(
+    mut shader_assets: ResMut<Assets<LexedShader>>,
+    fs: Res<Filesystem>,
+    mut cache: ResMut<ShaderCache>,
+) -> Result<()> {
+    cache.load_all("scripts", &fs, &mut shader_assets)?;
+    let mut shaders = cache.shader_names().collect::<Vec<_>>();
+    shaders.sort();
+    log::debug!("Loaded shaders: {:#?}", shaders);
+    Ok(())
+}
+
 fn setup(
     commands: Commands,
     bsp_loader: AssetLoader<Bsp, BspLoader>,
     mut bsp_assets: ResMut<Assets<Bsp>>,
+    mut fs: ResMut<Filesystem>,
 ) -> Result<()> {
     commands.spawn((
         Camera::default(),
@@ -107,32 +121,14 @@ fn setup(
             fov: 70.0f32.to_radians(),
             near: 0.1,
             far: 100000.0,
+            sensitivity: 0.2,
             ..Default::default()
         }
         .looking_at(Vec3::new(10.0, 10.0, 10.0), Vec3::ZERO, Vec3::Y),
         PrimaryCamera,
     ));
 
-    // commands.spawn((
-    //     PointLight {
-    //         color: Color::WHITE,
-    //         intensity: 1000.0,
-    //         radius: 100000.0,
-    //         enabled: true,
-    //     },
-    //     Transform {
-    //         translation: Vec3A::new(0.0, 5000.0, 0.0),
-    //         rotation: Quat::IDENTITY,
-    //         scale: Vec3A::ONE,
-    //     },
-    //     SelectionAabb {
-    //         aabb: Aabb::new(Vec3A::splat(-0.1), Vec3A::splat(0.1)),
-    //     },
-    // ));
-
-    let fs = Filesystem::default().with_pk3s_from_dir("assets/maps")?;
-
-    let bsp = bsp_loader.load_from_filesystem(fs, "maps/q3dm6.bsp")?;
+    let bsp = bsp_loader.load_from_filesystem(&mut fs, "maps/q3dm6.bsp")?;
     let bsp = bsp_assets.insert(bsp);
     commands.spawn(bsp);
 

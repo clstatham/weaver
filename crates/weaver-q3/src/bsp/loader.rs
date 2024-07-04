@@ -5,25 +5,43 @@ use weaver_asset::{
     prelude::Asset,
     Assets, Handle,
 };
-use weaver_core::{mesh::Mesh, texture::Texture};
-use weaver_ecs::{component::ResMut, prelude::Resource};
-use weaver_pbr::material::Material;
+use weaver_core::{mesh::Mesh, prelude::Vec3, texture::Texture};
+use weaver_ecs::prelude::Resource;
+use weaver_renderer::prelude::wgpu;
 use weaver_util::{
     prelude::{anyhow, Result},
     warn_once,
 };
 
-use crate::bsp::{
-    generator::{BspFaceType, BspPlane, GenBsp, GenBspMeshNode},
-    parser::{bsp_file, VisData},
+use crate::{
+    bsp::{
+        generator::{BspFaceType, BspPlane, GenBsp, GenBspMeshNode},
+        parser::{bsp_file, VisData},
+    },
+    shader::{
+        lexer::LexedShader,
+        loader::{
+            strip_extension, LoadedShader, ShaderCache, TextureCache, TryEverythingTextureLoader,
+            ERROR_SHADER_HANDLE,
+        },
+    },
 };
+
+#[derive(Debug, Clone)]
+pub struct LoadedBspShaderMesh {
+    pub mesh: Handle<Mesh>,
+    pub shader: Handle<LoadedShader>,
+    pub typ: BspFaceType,
+}
 
 #[derive(Debug, Clone)]
 pub enum BspNode {
     Leaf {
-        meshes_and_materials: Vec<(Handle<Mesh>, Handle<Material>, BspFaceType)>,
+        shader_meshes: Vec<LoadedBspShaderMesh>,
         parent: usize,
         cluster: usize,
+        min: Vec3,
+        max: Vec3,
     },
     Node {
         plane: BspPlane,
@@ -94,35 +112,41 @@ impl Bsp {
 pub struct BspLoader;
 
 impl LoadAsset<Bsp> for BspLoader {
-    type Param = (
-        ResMut<'static, Assets<Mesh>>,
-        ResMut<'static, Assets<Material>>,
-        ResMut<'static, Assets<Texture>>,
-    );
-
     // TODO: clean this up
-    fn load(
-        &self,
-        (mut mesh_assets, mut material_assets, mut texture_assets): (
-            ResMut<Assets<Mesh>>,
-            ResMut<Assets<Material>>,
-            ResMut<Assets<Texture>>,
-        ),
-        ctx: &mut LoadCtx,
-    ) -> Result<Bsp> {
+    fn load(&self, ctx: &mut LoadCtx<'_, '_>) -> Result<Bsp> {
         let bytes = ctx.read_original()?;
-        let (_, bsp_file) =
-            bsp_file(bytes.as_slice()).map_err(|e| anyhow!("Failed to parse bsp file: {:?}", e))?;
+        let (_, bsp_file) = bsp_file(bytes.as_slice())
+            .map_err(|_| anyhow!("Failed to parse bsp file; check logs"))?;
+
+        log::debug!("Loaded bsp file version {}", bsp_file.header.version);
+        log::debug!(">>> Header: {:#?}", bsp_file.header);
+        log::debug!(">>> {} textures", bsp_file.textures.len());
+        log::debug!(">>> {} planes", bsp_file.planes.len());
+        log::debug!(">>> {} nodes", bsp_file.nodes.len());
+        log::debug!(">>> {} leafs", bsp_file.leafs.len());
+        log::debug!(">>> {} leaf faces", bsp_file.leaf_faces.len());
+        log::debug!(">>> {} leaf brushes", bsp_file.leaf_brushes.len());
+        log::debug!(">>> {} models", bsp_file.models.len());
+        log::debug!(">>> {} brushes", bsp_file.brushes.len());
+        log::debug!(">>> {} brush sides", bsp_file.brush_sides.len());
+        log::debug!(">>> {} vertices", bsp_file.verts.len());
+        log::debug!(">>> {} mesh vertices", bsp_file.mesh_verts.len());
+        log::debug!(">>> {} effects", bsp_file.effects.len());
+        log::debug!(">>> {} faces", bsp_file.faces.len());
+        log::debug!(">>> {} lightmaps", bsp_file.lightmaps.len());
+        log::debug!(">>> {} light volumes", bsp_file.light_vols.len());
+        log::debug!(
+            ">>> {} vis data vecs of {} bytes each",
+            bsp_file.vis_data.num_vecs,
+            bsp_file.vis_data.size_vecs
+        );
+
         let gen = GenBsp::build(bsp_file);
         let meshes_and_textures = gen.generate_meshes();
 
         let mut bsp = Bsp::with_capacity(meshes_and_textures.nodes.len(), gen.file.vis_data);
-        let mut material_handles = HashMap::new();
 
-        let error_texture = Texture::from_rgba8(&[255, 0, 255, 255], 1, 1);
-        let error_texture_handle = texture_assets.insert(error_texture);
-        let error_material = Material::from(error_texture_handle);
-        let error_material = material_assets.insert(error_material);
+        let mut mesh_assets = ctx.get_resource_mut::<Assets<Mesh>>()?;
 
         for (node_index, node) in meshes_and_textures.nodes.into_iter().enumerate() {
             let Some(node) = node else {
@@ -133,95 +157,98 @@ impl LoadAsset<Bsp> for BspLoader {
                 GenBspMeshNode::Leaf {
                     cluster,
                     area: _,
-                    mins: _,
-                    maxs: _,
+                    mins,
+                    maxs,
                     meshes_and_textures,
                     parent,
                 } => {
-                    let mut meshes_and_materials = Vec::with_capacity(meshes_and_textures.len());
+                    let mut shader_meshes = Vec::with_capacity(meshes_and_textures.len());
                     for (mesh, texture, typ) in meshes_and_textures {
                         let mesh = mesh_assets.insert(mesh);
-                        let texture_name = texture.name.to_string_lossy().into_owned();
-                        if let Some(material) = material_handles.get(&texture_name) {
-                            meshes_and_materials.push((mesh, *material, typ));
-                        } else {
-                            let extensions_to_try = [
-                                (".tga", image::ImageFormat::Tga),
-                                (".jpg", image::ImageFormat::Jpeg),
-                                (".png", image::ImageFormat::Png),
-                                (".dds", image::ImageFormat::Dds),
-                            ];
-                            let mut found_format = None;
-                            let mut found_extension = None;
-                            'try_load_image: for (extension, format) in extensions_to_try.iter() {
-                                let texture_name_with_extension =
-                                    format!("{}{}", texture_name, extension);
-                                if ctx.filesystem().exists(&texture_name_with_extension) {
-                                    found_format = Some(*format);
-                                    found_extension = Some(extension);
-                                    break 'try_load_image;
-                                }
+                        let texture_name = texture.to_str().unwrap();
+                        let texture_name = strip_extension(texture_name);
+
+                        let topology = match typ {
+                            BspFaceType::Polygon | BspFaceType::Mesh | BspFaceType::Billboard => {
+                                wgpu::PrimitiveTopology::TriangleList
                             }
+                            BspFaceType::Patch => wgpu::PrimitiveTopology::TriangleStrip,
+                        };
 
-                            if let (Some(found_extension), Some(format)) =
-                                (found_extension, found_format)
-                            {
-                                let texture_name = format!("{}{}", texture_name, found_extension);
-                                let texture_bytes =
-                                    ctx.filesystem().read_sub_path(&texture_name)?;
-                                let texture =
-                                    image::load_from_memory_with_format(&texture_bytes, format)?
-                                        .to_rgba8();
-                                let texture = Texture::from_rgba8(
-                                    &texture,
-                                    texture.width(),
-                                    texture.height(),
+                        let shader_cache = ctx.get_resource::<ShaderCache>()?;
+                        let lexed_shader_assets = ctx.get_resource::<Assets<LexedShader>>()?;
+                        let mut loaded_shader_assets =
+                            ctx.get_resource_mut::<Assets<LoadedShader>>()?;
+                        if let Some(shader) = shader_cache.get(texture_name) {
+                            let shader = lexed_shader_assets.get(shader).unwrap().clone();
+
+                            let shader = LoadedShader::load_from_lexed(shader, ctx, topology);
+                            let shader = loaded_shader_assets.insert(shader);
+                            shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
+                        } else {
+                            let texture_cache = ctx.get_resource::<TextureCache>()?;
+                            if let Some(texture) = texture_cache.get(texture_name) {
+                                let shader = LoadedShader::make_simple_textured(
+                                    texture,
+                                    texture_name,
+                                    topology,
                                 );
-                                let texture_handle = texture_assets.insert(texture);
-
-                                let mut material = Material::from(texture_handle);
-                                material.metallic = 0.0;
-                                material.roughness = 0.5;
-                                let material_handle = material_assets.insert(material);
-                                material_handles.insert(texture_name.to_owned(), material_handle);
-                                meshes_and_materials.push((mesh, material_handle, typ));
+                                let shader = loaded_shader_assets.insert(shader);
+                                shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
+                                ctx.drop_resource(texture_cache);
                             } else {
-                                // just try to load it anyway
-                                if let Ok(texture_bytes) =
-                                    ctx.filesystem().read_sub_path(&texture_name)
-                                {
-                                    let texture =
-                                        image::load_from_memory(&texture_bytes)?.to_rgba8();
-                                    let texture = Texture::from_rgba8(
-                                        &texture,
-                                        texture.width(),
-                                        texture.height(),
-                                    );
-                                    let texture_handle = texture_assets.insert(texture);
+                                ctx.drop_resource(texture_cache);
 
-                                    let mut material = Material::from(texture_handle);
-                                    material.metallic = 0.0;
-                                    material.roughness = 0.5;
-                                    let material_handle = material_assets.insert(material);
-                                    material_handles
-                                        .insert(texture_name.to_owned(), material_handle);
-                                    meshes_and_materials.push((mesh, material_handle, typ));
-                                } else {
-                                    warn_once!(
-                                        "Some textures could not be loaded, using solid pink error texture instead"
-                                    );
-                                    log::debug!("Failed to load texture: {:?}", texture_name);
-                                    meshes_and_materials.push((mesh, error_material, typ));
-                                }
+                                // try to load it again
+                                match ctx.load_asset::<_, TryEverythingTextureLoader>(texture_name)
+                                {
+                                    Ok(texture) => {
+                                        log::debug!("Loaded texture: {}", texture_name);
+                                        let mut texture_assets =
+                                            ctx.get_resource_mut::<Assets<Texture>>()?;
+                                        let handle = texture_assets.insert(texture);
+                                        ctx.drop_resource_mut(texture_assets);
+                                        let mut texture_cache =
+                                            ctx.get_resource_mut::<TextureCache>()?;
+                                        texture_cache.insert(texture_name.to_string(), handle);
+                                        ctx.drop_resource_mut(texture_cache);
+
+                                        let shader = LoadedShader::make_simple_textured(
+                                            handle,
+                                            texture_name,
+                                            topology,
+                                        );
+
+                                        let shader = loaded_shader_assets.insert(shader);
+                                        shader_meshes.push(LoadedBspShaderMesh {
+                                            mesh,
+                                            shader,
+                                            typ,
+                                        });
+                                    }
+                                    Err(_) => {
+                                        warn_once!("Failed to load texture: {}", texture_name);
+                                        shader_meshes.push(LoadedBspShaderMesh {
+                                            mesh,
+                                            shader: ERROR_SHADER_HANDLE,
+                                            typ,
+                                        });
+                                    }
+                                };
                             }
                         }
+                        ctx.drop_resource(shader_cache);
+                        ctx.drop_resource(lexed_shader_assets);
+                        ctx.drop_resource_mut(loaded_shader_assets);
                     }
                     bsp.insert(
                         node_index,
                         BspNode::Leaf {
-                            meshes_and_materials,
+                            shader_meshes,
                             parent,
                             cluster: cluster as usize,
+                            min: mins,
+                            max: maxs,
                         },
                     );
                 }
@@ -245,6 +272,8 @@ impl LoadAsset<Bsp> for BspLoader {
                 }
             }
         }
+
+        ctx.drop_resource_mut(mesh_assets);
 
         Ok(bsp)
     }

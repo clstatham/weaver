@@ -14,6 +14,7 @@ image = "0.25.1"
 winit = "0.29.15"
 tobj = "4.0.2"
 gltf = "1.4.1"
+log = "0.4"
 encase = { version = "0.8", features = ["glam"] }
 
 weaver-util = { path = "../weaver-util" }

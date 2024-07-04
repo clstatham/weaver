@@ -68,6 +68,24 @@ where
             .get(main_world.into_inner().as_unsafe_world_cell());
         Extract { item }
     }
+
+    fn can_run(world: &World) -> bool {
+        if !<Res<'_, MainWorld> as SystemParam>::can_run(world) {
+            log::debug!("Extract: Res<MainWorld> is not available");
+            return false;
+        }
+
+        let main_world = world.get_resource::<MainWorld>().unwrap();
+        if !<T as SystemParam>::can_run(&main_world) {
+            log::debug!(
+                "Extract: {} is not available in main world",
+                std::any::type_name::<T>()
+            );
+            return false;
+        }
+
+        true
+    }
 }
 
 pub trait ExtractComponent: Component {

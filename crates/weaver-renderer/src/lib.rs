@@ -240,10 +240,13 @@ fn create_surface(render_world: &mut World) -> Result<()> {
     }))
     .unwrap();
 
+    let mut required_limits = wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits());
+    required_limits.max_push_constant_size = 256;
+
     let (device, queue) = pollster::block_on(adapter.request_device(
         &wgpu::DeviceDescriptor {
-            required_features: wgpu::Features::MULTIVIEW,
-            required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
+            required_features: wgpu::Features::MULTIVIEW | wgpu::Features::PUSH_CONSTANTS,
+            required_limits,
             label: None,
         },
         None,

@@ -1,12 +1,15 @@
 use std::{
+    any::TypeId,
+    collections::HashSet,
     fs::File,
     io::{BufReader, Read},
     path::{Path, PathBuf},
 };
 
 use weaver_ecs::{
+    component::{Res, ResMut},
     prelude::Resource,
-    system::{SystemAccess, SystemParam, SystemParamItem},
+    system::{SystemAccess, SystemParam},
     world::{FromWorld, UnsafeWorldCell, World},
 };
 use weaver_util::{
@@ -23,7 +26,7 @@ impl<T: Asset> Loadable for T {}
 impl<T: Asset> Loadable for Vec<T> {}
 
 /// Virtual filesystem created from one or more directories or archives.
-#[derive(Default)]
+#[derive(Default, Resource)]
 pub struct Filesystem {
     roots: Vec<PathBuf>,
     archives: Vec<Lock<ZipArchive<BufReader<File>>>>,
@@ -56,7 +59,42 @@ impl Filesystem {
         Ok(())
     }
 
-    pub fn exists(&self, path: &str) -> bool {
+    pub fn read_dir(&self, dir_path: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
+        let dir_path = dir_path.as_ref();
+        for root in self.roots.iter() {
+            let full_path = root.join(dir_path);
+            if full_path.exists() {
+                let mut entries = std::fs::read_dir(full_path)?
+                    .map(|entry| entry.map(|e| e.path()))
+                    .collect::<Result<Vec<_>, _>>()?;
+                entries.sort();
+                return Ok(entries);
+            }
+        }
+
+        let mut files = Vec::new();
+
+        for archive in self.archives.iter() {
+            let mut archive = archive.write();
+
+            for i in 0..archive.len() {
+                let file = archive.by_index(i)?;
+                let path = file.enclosed_name().unwrap();
+                if path.starts_with(dir_path) {
+                    files.push(path);
+                }
+            }
+        }
+
+        if !files.is_empty() {
+            return Ok(files);
+        }
+
+        Err(anyhow!("Failed to list directory: {:?}", dir_path))
+    }
+
+    pub fn exists(&self, path: impl AsRef<Path>) -> bool {
+        let path = path.as_ref();
         for root in self.roots.iter() {
             let full_path = root.join(path);
             if full_path.exists() {
@@ -66,7 +104,7 @@ impl Filesystem {
 
         for archive in self.archives.iter() {
             let mut archive = archive.write();
-            if archive.by_name(path).is_ok() {
+            if archive.by_name(path.as_os_str().to_str().unwrap()).is_ok() {
                 return true;
             };
         }
@@ -74,7 +112,8 @@ impl Filesystem {
         false
     }
 
-    pub fn read_sub_path(&self, path: &str) -> Result<Vec<u8>> {
+    pub fn read_sub_path(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
+        let path = path.as_ref();
         for root in self.roots.iter() {
             let full_path = root.join(path);
             if full_path.exists() {
@@ -84,25 +123,40 @@ impl Filesystem {
 
         for archive in self.archives.iter() {
             let mut archive = archive.write();
-            if let Ok(mut sub_path) = archive.by_name(path) {
+            if let Ok(mut sub_path) = archive.by_name(path.as_os_str().to_str().unwrap()) {
                 let mut buf = Vec::new();
                 sub_path.read_to_end(&mut buf)?;
                 return Ok(buf);
             };
         }
 
-        Err(anyhow!("Failed to read sub path '{}'", path))
+        Err(anyhow!("Failed to read sub path: {:?}", path))
     }
 }
 
-pub struct LoadCtx {
-    filesystem: Filesystem,
+pub struct LoadCtx<'w, 'f> {
+    filesystem: &'f mut Filesystem,
     original_path: PathBuf,
+    world: UnsafeWorldCell<'w>,
+    resources_accessed: HashSet<TypeId>,
 }
 
-impl LoadCtx {
+impl<'w, 'f> LoadCtx<'w, 'f> {
+    pub fn new(filesystem: &'f mut Filesystem, world: &'w mut World) -> Self {
+        Self {
+            filesystem,
+            original_path: PathBuf::new(),
+            world: world.as_unsafe_world_cell_exclusive(),
+            resources_accessed: HashSet::new(),
+        }
+    }
+
     pub fn filesystem(&self) -> &Filesystem {
-        &self.filesystem
+        self.filesystem
+    }
+
+    pub fn filesystem_mut(&mut self) -> &mut Filesystem {
+        self.filesystem
     }
 
     pub fn original_path(&self) -> &Path {
@@ -113,30 +167,87 @@ impl LoadCtx {
         self.filesystem
             .read_sub_path(self.original_path.to_str().unwrap())
     }
+
+    pub fn get_resource<T: Resource>(&mut self) -> Result<Res<'w, T>> {
+        if self.resources_accessed.contains(&TypeId::of::<T>()) {
+            return Err(anyhow!(
+                "Resource of type {:?} already accessed",
+                std::any::type_name::<T>()
+            ));
+        }
+        let world = unsafe { self.world.world() };
+        let resource = world.get_resource::<T>().ok_or_else(|| {
+            anyhow!(
+                "Resource of type {:?} not found",
+                std::any::type_name::<T>()
+            )
+        })?;
+        self.resources_accessed.insert(TypeId::of::<T>());
+        Ok(resource)
+    }
+
+    pub fn get_resource_mut<T: Resource>(&mut self) -> Result<ResMut<'w, T>> {
+        if self.resources_accessed.contains(&TypeId::of::<T>()) {
+            return Err(anyhow!(
+                "Resource of type {:?} already accessed",
+                std::any::type_name::<T>()
+            ));
+        }
+        let world = unsafe { self.world.world_mut() };
+        let resource = world.get_resource_mut::<T>().ok_or_else(|| {
+            anyhow!(
+                "Resource of type {:?} not found",
+                std::any::type_name::<T>()
+            )
+        })?;
+        self.resources_accessed.insert(TypeId::of::<T>());
+        Ok(resource)
+    }
+
+    pub fn drop_resource<T: Resource>(&mut self, _resource: Res<T>) {
+        self.resources_accessed.remove(&TypeId::of::<T>());
+    }
+
+    pub fn drop_resource_mut<T: Resource>(&mut self, _resource: ResMut<T>) {
+        self.resources_accessed.remove(&TypeId::of::<T>());
+    }
+
+    pub fn load_asset<T: Loadable, L: LoadAsset<T>>(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<T> {
+        let old_path = self.original_path.clone();
+        self.original_path = path.as_ref().to_path_buf();
+        let world = unsafe { self.world.world_mut() };
+        let loader = L::from_world(world);
+        let asset = loader.load(self);
+        self.original_path = old_path;
+        asset
+    }
 }
 
 pub trait LoadAsset<T: Loadable>: Resource + FromWorld {
-    type Param: SystemParam + 'static;
-
-    fn load(&self, param: SystemParamItem<Self::Param>, ctx: &mut LoadCtx) -> Result<T>;
+    fn load(&self, ctx: &mut LoadCtx<'_, '_>) -> Result<T>;
 }
 
-pub struct AssetLoader<'w, 's, T: Loadable, L: LoadAsset<T>> {
+pub struct AssetLoader<'w, T: Loadable, L: LoadAsset<T>> {
     loader: &'w mut L,
-    param: SystemParamItem<'w, 's, L::Param>,
-    _marker: std::marker::PhantomData<T>,
+    world: &'w mut World,
+    _marker: std::marker::PhantomData<fn() -> T>,
 }
 
-impl<'w, 's, T: Loadable, L: LoadAsset<T>> AssetLoader<'w, 's, T, L> {
+impl<'w, T: Loadable, L: LoadAsset<T>> AssetLoader<'w, T, L> {
     pub fn load(self, path: impl AsRef<Path>) -> Result<T> {
         let path = path.as_ref();
         let mut filesystem = Filesystem::default();
         filesystem.add_root(path.parent().unwrap());
         let mut ctx = LoadCtx {
-            filesystem,
+            filesystem: &mut filesystem,
             original_path: path.to_path_buf(),
+            world: self.world.as_unsafe_world_cell_exclusive(),
+            resources_accessed: HashSet::new(),
         };
-        self.loader.load(self.param, &mut ctx)
+        self.loader.load(&mut ctx)
     }
 
     pub fn load_from_archive(
@@ -149,15 +260,17 @@ impl<'w, 's, T: Loadable, L: LoadAsset<T>> AssetLoader<'w, 's, T, L> {
         let mut filesystem = Filesystem::default();
         filesystem.add_archive(archive_path)?;
         let mut ctx = LoadCtx {
-            filesystem,
+            filesystem: &mut filesystem,
             original_path: path_within_archive.to_path_buf(),
+            world: self.world.as_unsafe_world_cell_exclusive(),
+            resources_accessed: HashSet::new(),
         };
-        self.loader.load(self.param, &mut ctx)
+        self.loader.load(&mut ctx)
     }
 
     pub fn load_from_filesystem(
         self,
-        mut filesystem: Filesystem,
+        filesystem: &mut Filesystem,
         path: impl AsRef<Path>,
     ) -> Result<T> {
         let path = path.as_ref();
@@ -165,14 +278,16 @@ impl<'w, 's, T: Loadable, L: LoadAsset<T>> AssetLoader<'w, 's, T, L> {
         let mut ctx = LoadCtx {
             filesystem,
             original_path: path.to_path_buf(),
+            world: self.world.as_unsafe_world_cell_exclusive(),
+            resources_accessed: HashSet::new(),
         };
-        self.loader.load(self.param, &mut ctx)
+        self.loader.load(&mut ctx)
     }
 }
 
-unsafe impl<T: Loadable, L: LoadAsset<T>> SystemParam for AssetLoader<'_, '_, T, L> {
-    type State = <L::Param as SystemParam>::State;
-    type Item<'w, 's> = AssetLoader<'w, 's, T, L>;
+unsafe impl<T: Loadable, L: LoadAsset<T>> SystemParam for AssetLoader<'_, T, L> {
+    type State = ();
+    type Item<'w, 's> = AssetLoader<'w, T, L>;
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -185,19 +300,16 @@ unsafe impl<T: Loadable, L: LoadAsset<T>> SystemParam for AssetLoader<'_, '_, T,
         true
     }
 
-    fn init_state(world: &mut World) -> Self::State {
-        <L::Param as SystemParam>::init_state(world)
-    }
+    fn init_state(_world: &mut World) -> Self::State {}
 
     unsafe fn fetch<'w, 's>(
-        state: &'s mut Self::State,
+        _: &'s mut Self::State,
         world: UnsafeWorldCell<'w>,
     ) -> Self::Item<'w, 's> {
         let loader = unsafe { world.get_resource_mut::<L>().unwrap() };
-        let param = <L::Param as SystemParam>::fetch(state, world);
         AssetLoader {
             loader: loader.into_inner(),
-            param,
+            world: unsafe { world.world_mut() },
             _marker: std::marker::PhantomData,
         }
     }

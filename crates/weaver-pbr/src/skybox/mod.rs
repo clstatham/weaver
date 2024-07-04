@@ -586,7 +586,7 @@ impl Plugin for SkyboxPlugin {
 }
 
 pub fn init_gpu_skybox(mut world: WorldMut) -> Result<()> {
-    if !world.has_resource::<GpuSkybox>() {
+    if !world.has_resource::<GpuSkybox>() && world.has_resource::<Skybox>() {
         world.init_resource::<GpuSkybox>();
     }
     Ok(())

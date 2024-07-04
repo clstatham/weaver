@@ -20,7 +20,7 @@ impl RenderAsset for GpuMesh {
 
     fn extract_render_asset(
         base_asset: &Mesh,
-        _: &(),
+        _: &mut (),
         device: &wgpu::Device,
         _queue: &wgpu::Queue,
     ) -> Option<Self>
@@ -49,7 +49,7 @@ impl RenderAsset for GpuMesh {
     fn update_render_asset(
         &mut self,
         _base_asset: &Self::Source,
-        _: &(),
+        _: &mut (),
         _device: &wgpu::Device,
         _queue: &wgpu::Queue,
     ) -> Result<()>

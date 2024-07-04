@@ -1,9 +1,9 @@
 use encase::ShaderType;
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{loading::LoadCtx, prelude::*, AssetId};
+use weaver_asset::{loading::LoadCtx, prelude::*};
 use weaver_core::{color::Color, texture::Texture};
 use weaver_ecs::{
-    component::{Res, ResMut},
+    component::Res,
     prelude::{Reflect, Resource},
 };
 use weaver_renderer::{
@@ -16,12 +16,12 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::*;
 
-pub const WHITE_TEXTURE: Handle<Texture> = Handle::from_raw(AssetId::from_u64(
-    171952135557955961317447623731106286307u128 as u64,
-));
-pub const BLACK_TEXTURE: Handle<Texture> = Handle::from_raw(AssetId::from_u64(
-    29903794803500143808416926793703205514u128 as u64,
-));
+pub const WHITE_TEXTURE: Handle<Texture> =
+    Handle::from_uuid(171952135557955961317447623731106286307);
+pub const BLACK_TEXTURE: Handle<Texture> =
+    Handle::from_uuid(29903794803500143808416926793703205514);
+pub const ERROR_TEXTURE: Handle<Texture> =
+    Handle::from_uuid(288942464416563327199333453807837020723);
 
 #[derive(Reflect, Asset)]
 #[reflect(ReflectAsset)]
@@ -81,8 +81,7 @@ impl From<Handle<Texture>> for Material {
 pub struct GltfMaterialLoader;
 
 impl LoadAsset<Material> for GltfMaterialLoader {
-    type Param = ResMut<'static, Assets<Texture>>;
-    fn load(&self, mut textures: ResMut<Assets<Texture>>, ctx: &mut LoadCtx) -> Result<Material> {
+    fn load(&self, ctx: &mut LoadCtx) -> Result<Material> {
         let bytes = ctx.read_original()?;
         let (document, _buffers, images) = gltf::import_slice(bytes)?;
         if document.materials().count() != 1 {
@@ -180,6 +179,8 @@ impl LoadAsset<Material> for GltfMaterialLoader {
             ),
         };
 
+        let mut textures = ctx.get_resource_mut::<Assets<Texture>>().unwrap();
+
         let material = Material {
             diffuse: diffuse.into(),
             diffuse_texture: textures.insert(diffuse_texture),
@@ -226,7 +227,7 @@ impl RenderAsset for GpuMaterial {
 
     fn extract_render_asset(
         base_asset: &Material,
-        textures: &Extract<Res<Assets<Texture>>>,
+        textures: &mut Extract<Res<Assets<Texture>>>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Option<Self>
@@ -330,7 +331,7 @@ impl RenderAsset for GpuMaterial {
     fn update_render_asset(
         &mut self,
         base_asset: &Self::Source,
-        _textures: &Extract<Res<Assets<Texture>>>,
+        _textures: &mut Extract<Res<Assets<Texture>>>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<()>

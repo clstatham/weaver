@@ -22,7 +22,7 @@ pub trait RenderAsset: Asset {
 
     fn extract_render_asset(
         source: &Self::Source,
-        param: &SystemParamItem<Self::Param>,
+        param: &mut SystemParamItem<Self::Param>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Option<Self>
@@ -32,7 +32,7 @@ pub trait RenderAsset: Asset {
     fn update_render_asset(
         &mut self,
         source: &Self::Source,
-        param: &SystemParamItem<Self::Param>,
+        param: &mut SystemParamItem<Self::Param>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<()>
@@ -87,7 +87,7 @@ impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
 fn extract_render_asset<T: RenderAsset>(
     commands: Commands,
     main_world_assets: Extract<Res<'static, Assets<T::Source>>>,
-    param: SystemParamWrapper<T::Param>,
+    mut param: SystemParamWrapper<T::Param>,
     query: Extract<Query<&'static Handle<T::Source>>>,
     extracted_assets: Res<ExtractedRenderAssets>,
     mut render_assets: ResMut<Assets<T>>,
@@ -100,7 +100,7 @@ fn extract_render_asset<T: RenderAsset>(
             // if the asset has not been extracted yet, extract it
             let base_asset = main_world_assets.get(*handle).unwrap();
             if let Some(render_asset) =
-                T::extract_render_asset(&base_asset, param.item(), &device, &queue)
+                T::extract_render_asset(&base_asset, param.item_mut(), &device, &queue)
             {
                 log::trace!("Extracted render asset: {:?}", std::any::type_name::<T>());
 
@@ -129,7 +129,7 @@ fn extract_render_asset<T: RenderAsset>(
             // update the asset
             let base_asset = main_world_assets.get(*handle).unwrap();
             let mut render_asset = render_assets.get_mut(render_handle).unwrap();
-            render_asset.update_render_asset(&base_asset, param.item(), &device, &queue)?;
+            render_asset.update_render_asset(&base_asset, param.item_mut(), &device, &queue)?;
 
             commands.insert_component(entity, render_handle);
         }

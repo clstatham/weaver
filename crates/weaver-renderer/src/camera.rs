@@ -160,54 +160,18 @@ impl Camera {
         Some(screen)
     }
 
-    pub fn frustum_planes(&self) -> [glam::Vec4; 6] {
+    pub fn intersect_frustum_with_point(&self, point: glam::Vec3) -> bool {
+        // transform point to ndc
         let clip_from_view = self.projection_matrix * self.view_matrix;
-        let mut planes = [
-            // Left
-            clip_from_view.col(3) + clip_from_view.col(0),
-            // Right
-            clip_from_view.col(3) - clip_from_view.col(0),
-            // Bottom
-            clip_from_view.col(3) + clip_from_view.col(1),
-            // Top
-            clip_from_view.col(3) - clip_from_view.col(1),
-            // Near
-            clip_from_view.col(3) + clip_from_view.col(2),
-            // Far
-            clip_from_view.col(3) - clip_from_view.col(2),
-        ];
+        let ndc = clip_from_view.project_point3(point);
 
-        for plane in &mut planes {
-            *plane = plane.normalize();
-        }
-
-        planes
-    }
-
-    pub fn intersect_frustum_with_plane(
-        &self,
-        plane_normal: glam::Vec3,
-        plane_distance: f32,
-    ) -> bool {
-        let view_proj = self.projection_matrix * self.view_matrix;
-        let plane_point = plane_normal * plane_distance;
-        let plane = glam::Vec4::new(
-            plane_normal.x,
-            plane_normal.y,
-            plane_normal.z,
-            -plane_point.dot(plane_normal),
-        );
-        let view_from_plane = view_proj.transpose() * plane;
-        let view_from_plane = view_from_plane.normalize();
-
-        let frustum_planes = self.frustum_planes();
-        for plane in &frustum_planes {
-            let dot = plane.dot(view_from_plane);
-            if dot < 0.0 {
-                return false;
-            }
-        }
-        true
+        // check if point is inside frustum
+        ndc.x >= -1.0
+            && ndc.x <= 1.0
+            && ndc.y >= -1.0
+            && ndc.y <= 1.0
+            && ndc.z >= -1.0
+            && ndc.z <= 1.0
     }
 }
 

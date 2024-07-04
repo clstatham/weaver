@@ -21,17 +21,21 @@ pub fn float(input: &[u8]) -> IResult<&[u8], f32> {
 
 pub fn string(input: &[u8]) -> IResult<&[u8], &CStr> {
     let string = CStr::from_bytes_until_nul(input).unwrap();
-    if input.last() == Some(&0) {
-        Ok((&input[string.to_bytes().len() + 1..], string))
-    } else {
-        Ok((&input[string.to_bytes().len()..], string))
-    }
+    Ok((&input[string.to_bytes().len()..], string))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
 pub struct DirEntry {
     pub offset: i32,
     pub length: i32,
+}
+
+impl DirEntry {
+    pub const fn size() -> usize {
+        4 // offset
+        + 4 // length
+    }
 }
 
 pub fn dir_entry(input: &[u8]) -> IResult<&[u8], DirEntry> {
@@ -41,7 +45,9 @@ pub fn dir_entry(input: &[u8]) -> IResult<&[u8], DirEntry> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
 pub struct BspHeader {
+    pub magic: [u8; 4],
     pub version: i32,
     pub entities: DirEntry,
     pub textures: DirEntry,
@@ -62,8 +68,32 @@ pub struct BspHeader {
     pub vis_data: DirEntry,
 }
 
+impl BspHeader {
+    pub const fn size() -> usize {
+        4 // magic
+        + 4 // version
+        + DirEntry::size() // entities
+        + DirEntry::size() // textures
+        + DirEntry::size() // planes
+        + DirEntry::size() // nodes
+        + DirEntry::size() // leafs
+        + DirEntry::size() // leaf_faces
+        + DirEntry::size() // leaf_brushes
+        + DirEntry::size() // models
+        + DirEntry::size() // brushes
+        + DirEntry::size() // brush_sides
+        + DirEntry::size() // verts
+        + DirEntry::size() // mesh_verts
+        + DirEntry::size() // effects
+        + DirEntry::size() // faces
+        + DirEntry::size() // lightmaps
+        + DirEntry::size() // light_vols
+        + DirEntry::size() // vis_data
+    }
+}
+
 pub fn bsp_header(input: &[u8]) -> IResult<&[u8], BspHeader> {
-    let (input, _) = tag("IBSP")(input)?;
+    let (input, magic) = tag(b"IBSP")(input)?;
     let (input, version) = int(input)?;
     let (input, entities) = dir_entry(input)?;
     let (input, textures) = dir_entry(input)?;
@@ -85,6 +115,7 @@ pub fn bsp_header(input: &[u8]) -> IResult<&[u8], BspHeader> {
     Ok((
         input,
         BspHeader {
+            magic: [magic[0], magic[1], magic[2], magic[3]],
             version,
             entities,
             textures,
@@ -652,27 +683,12 @@ pub struct BspFile {
     pub vis_data: VisData,
 }
 
-pub fn take_while_ok<I, O, E, F>(f: F) -> impl Fn(I) -> IResult<I, Vec<O>, E>
-where
-    I: Clone,
-    F: Fn(I) -> IResult<I, O, E>,
-{
-    move |input: I| {
-        let mut input = input;
-        let mut output = Vec::new();
-        while let Ok((rest, o)) = f(input.clone()) {
-            input = rest;
-            output.push(o);
-        }
-        Ok((input, output))
-    }
-}
-
 pub fn bsp_file(input: &[u8]) -> IResult<&[u8], BspFile> {
     let (_, header) = bsp_header(input)?;
 
     let BspHeader {
-        version: _,
+        magic: _,
+        version,
         entities,
         textures,
         planes,
@@ -691,6 +707,161 @@ pub fn bsp_file(input: &[u8]) -> IResult<&[u8], BspFile> {
         light_vols,
         vis_data,
     } = header;
+
+    if version != 46 {
+        log::error!("Unsupported bsp version {}", version);
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if textures.length % Texture::size() as i32 != 0 {
+        log::error!("Texture data length is not a multiple of texture size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if planes.length % Plane::size() as i32 != 0 {
+        log::error!("Plane data length is not a multiple of plane size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if nodes.length % Node::size() as i32 != 0 {
+        log::error!("Node data length is not a multiple of node size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if leafs.length % Leaf::size() as i32 != 0 {
+        log::error!("Leaf data length is not a multiple of leaf size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if leaf_faces.length % LeafFace::size() as i32 != 0 {
+        log::error!("Leaf face data length is not a multiple of leaf face size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if leaf_brushes.length % LeafBrush::size() as i32 != 0 {
+        log::error!("Leaf brush data length is not a multiple of leaf brush size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if models.length % Model::size() as i32 != 0 {
+        log::error!("Model data length is not a multiple of model size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if brushes.length % Brush::size() as i32 != 0 {
+        log::error!("Brush data length is not a multiple of brush size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if brush_sides.length % BrushSide::size() as i32 != 0 {
+        log::error!("Brush side data length is not a multiple of brush side size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if verts.length % Vert::size() as i32 != 0 {
+        log::error!("Vertex data length is not a multiple of vertex size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if mesh_verts.length % MeshVert::size() as i32 != 0 {
+        log::error!("Mesh vertex data length is not a multiple of mesh vertex size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if effects.length % Effect::size() as i32 != 0 {
+        log::error!("Effect data length is not a multiple of effect size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if faces.length % Face::size() as i32 != 0 {
+        log::error!("Face data length is not a multiple of face size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if lightmaps.length % Lightmap::size() as i32 != 0 {
+        log::error!("Lightmap data length is not a multiple of lightmap size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    if light_vols.length % LightVol::size() as i32 != 0 {
+        log::error!("Light volume data length is not a multiple of light volume size");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    let total_length = BspHeader::size()
+        + entities.length as usize
+        + textures.length as usize
+        + planes.length as usize
+        + nodes.length as usize
+        + leafs.length as usize
+        + leaf_faces.length as usize
+        + leaf_brushes.length as usize
+        + models.length as usize
+        + brushes.length as usize
+        + brush_sides.length as usize
+        + verts.length as usize
+        + mesh_verts.length as usize
+        + effects.length as usize
+        + faces.length as usize
+        + lightmaps.length as usize
+        + light_vols.length as usize
+        + vis_data.length as usize;
+
+    if total_length != input.len() {
+        log::warn!(
+            "Total length of all data ({} bytes) does not match input length ({} bytes)",
+            total_length,
+            input.len()
+        );
+    }
 
     let entity_bytes =
         &input[entities.offset as usize..(entities.offset + entities.length) as usize];
@@ -719,69 +890,203 @@ pub fn bsp_file(input: &[u8]) -> IResult<&[u8], BspFile> {
     let vis_data_bytes =
         &input[vis_data.offset as usize..(vis_data.offset + vis_data.length) as usize];
 
-    let (_, entities) = crate::bsp::parser::entities(entity_bytes)?;
-    let (_, textures_vec) = count(
+    let (_rest, entities) = crate::bsp::parser::entities(entity_bytes)?;
+    // if !rest.is_empty() && !entity_bytes.is_empty() {
+    //     log::error!("Failed to parse all entities");
+    //     return Err(nom::Err::Error(nom::error::Error::new(
+    //         input,
+    //         nom::error::ErrorKind::Verify,
+    //     )));
+    // }
+
+    let (rest, textures_vec) = count(
         crate::bsp::parser::texture,
         textures.length as usize / Texture::size(),
     )(textures_bytes)?;
-    let (_, planes_vec) = count(
+    if !rest.is_empty() && !textures_bytes.is_empty() {
+        log::error!("Failed to parse all textures");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    let (rest, planes_vec) = count(
         crate::bsp::parser::plane,
         planes.length as usize / Plane::size(),
     )(planes_bytes)?;
-    let (_, nodes_vec) = count(
+    if !rest.is_empty() && !planes_bytes.is_empty() {
+        log::error!("Failed to parse all planes");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    let (rest, nodes_vec) = count(
         crate::bsp::parser::node,
         nodes.length as usize / Node::size(),
     )(nodes_bytes)?;
-    let (_, leafs_vec) = count(
+    if !rest.is_empty() && !nodes_bytes.is_empty() {
+        log::error!("Failed to parse all nodes");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    let (rest, leafs_vec) = count(
         crate::bsp::parser::leaf,
         leafs.length as usize / Leaf::size(),
     )(leafs_bytes)?;
-    let (_, leaf_faces_vec) = count(
+    if !rest.is_empty() && !leafs_bytes.is_empty() {
+        log::error!("Failed to parse all leafs");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    let (rest, leaf_faces_vec) = count(
         crate::bsp::parser::leaf_face,
         leaf_faces.length as usize / LeafFace::size(),
     )(leaf_faces_bytes)?;
-    let (_, leaf_brushes_vec) = count(
+    if !rest.is_empty() && !leaf_faces_bytes.is_empty() {
+        log::error!("Failed to parse all leaf faces");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    let (rest, leaf_brushes_vec) = count(
         crate::bsp::parser::leaf_brush,
         leaf_brushes.length as usize / LeafBrush::size(),
     )(leaf_brushes_bytes)?;
-    let (_, models_vec) = count(
+    if !rest.is_empty() && !leaf_brushes_bytes.is_empty() {
+        log::error!("Failed to parse all leaf brushes");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    let (rest, models_vec) = count(
         crate::bsp::parser::model,
         models.length as usize / Model::size(),
     )(models_bytes)?;
-    let (_, brushes_vec) = count(
+    if !rest.is_empty() && !models_bytes.is_empty() {
+        log::error!("Failed to parse all models");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    let (rest, brushes_vec) = count(
         crate::bsp::parser::brush,
         brushes.length as usize / Brush::size(),
     )(brushes_bytes)?;
-    let (_, brush_sides_vec) = count(
+    if !rest.is_empty() && !brushes_bytes.is_empty() {
+        log::error!("Failed to parse all brushes");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    let (rest, brush_sides_vec) = count(
         crate::bsp::parser::brush_side,
         brush_sides.length as usize / BrushSide::size(),
     )(brush_sides_bytes)?;
-    let (_, verts_vec) = count(
+    if !rest.is_empty() && !brush_sides_bytes.is_empty() {
+        log::error!("Failed to parse all brush sides");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    let (rest, verts_vec) = count(
         crate::bsp::parser::vert,
         verts.length as usize / Vert::size(),
     )(verts_bytes)?;
-    let (_, mesh_verts_vec) = count(
+    if !rest.is_empty() && !verts_bytes.is_empty() {
+        log::error!("Failed to parse all verts");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    let (rest, mesh_verts_vec) = count(
         crate::bsp::parser::mesh_vert,
         mesh_verts.length as usize / MeshVert::size(),
     )(mesh_verts_bytes)?;
-    let (_, effects_vec) = count(
+    if !rest.is_empty() && !mesh_verts_bytes.is_empty() {
+        log::error!("Failed to parse all mesh verts");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    let (rest, effects_vec) = count(
         crate::bsp::parser::effect,
         effects.length as usize / Effect::size(),
     )(effects_bytes)?;
+    if !rest.is_empty() && !effects_bytes.is_empty() {
+        log::error!("Failed to parse all effects");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
     let (_, faces_vec) = count(
         crate::bsp::parser::face,
         faces.length as usize / Face::size(),
     )(faces_bytes)?;
+    if !rest.is_empty() && !faces_bytes.is_empty() {
+        log::error!("Failed to parse all faces");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
     let (_, lightmaps_vec) = count(
         crate::bsp::parser::lightmap,
         lightmaps.length as usize / Lightmap::size(),
     )(lightmaps_bytes)?;
+    if !rest.is_empty() && !lightmaps_bytes.is_empty() {
+        log::error!("Failed to parse all lightmaps");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
     let (_, light_vols_vec) = count(
         crate::bsp::parser::light_vol,
         light_vols.length as usize / LightVol::size(),
     )(light_vols_bytes)?;
+    if !rest.is_empty() && !light_vols_bytes.is_empty() {
+        log::error!("Failed to parse all light volumes");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
 
-    let (_, vis_data) = crate::bsp::parser::vis_data(vis_data_bytes)?;
+    let (rest, vis_data) = crate::bsp::parser::vis_data(vis_data_bytes)?;
+    if !rest.is_empty() && !vis_data_bytes.is_empty() {
+        log::error!("Failed to parse vis data");
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
 
     Ok((
         input,

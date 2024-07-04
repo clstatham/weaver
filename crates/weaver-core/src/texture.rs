@@ -69,11 +69,28 @@ impl Texture {
 pub struct TextureLoader;
 
 impl LoadAsset<Texture> for TextureLoader {
-    type Param = ();
-    fn load(&self, _: (), ctx: &mut LoadCtx) -> Result<Texture> {
+    fn load(&self, ctx: &mut LoadCtx) -> Result<Texture> {
         let bytes = ctx.read_original()?;
+        // check if it's a tga file
+        if let Ok(image) = image::load_from_memory_with_format(&bytes, image::ImageFormat::Tga) {
+            log::trace!(
+                "Successfully loaded TGA texture with dimensions {}x{}",
+                image.width(),
+                image.height()
+            );
+            return Ok(Texture::from_rgba8(
+                &image.to_rgba8(),
+                image.width(),
+                image.height(),
+            ));
+        }
         let image = image::load_from_memory(&bytes)?;
         let image = image.to_rgba8();
+        log::trace!(
+            "Successfully loaded texture with dimensions {}x{}",
+            image.width(),
+            image.height()
+        );
         Ok(Texture::from_rgba8(&image, image.width(), image.height()))
     }
 }

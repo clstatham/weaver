@@ -1,343 +1,208 @@
-use nom::{
-    branch::alt,
-    bytes::complete::{is_not, tag_no_case},
-    character::complete::{alphanumeric1, char, one_of},
-    combinator::{all_consuming, map, opt, recognize, value},
-    error::{context, convert_error, VerboseError},
-    multi::{many0, many1},
-    number::complete::float,
-    sequence::{delimited, pair, preceded, tuple},
-    Finish,
-};
+use std::fmt::Display;
 
-use weaver_util::prelude::{anyhow, Result};
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParsedDirectiveArg {
+    Float(f32),
+    Ident(String),
+    Path(String),
+    Parens(Vec<ParsedDirectiveArg>),
+}
 
-use super::*;
+impl Display for ParsedDirectiveArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParsedDirectiveArg::Float(x) => write!(f, "{}", x),
+            ParsedDirectiveArg::Ident(x) => write!(f, "{}", x),
+            ParsedDirectiveArg::Path(x) => write!(f, "{}", x),
+            ParsedDirectiveArg::Parens(x) => {
+                write!(f, "(")?;
+                for (i, arg) in x.iter().enumerate() {
+                    write!(f, "{}", arg)?;
+                    if i < x.len() - 1 {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, ")")?;
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedDirective {
+    pub name: String,
+    pub args: Vec<ParsedDirectiveArg>,
+}
+
+impl Display for ParsedDirective {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+        for arg in &self.args {
+            write!(f, " {}", arg)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedStage {
+    pub directives: Vec<ParsedDirective>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedShader {
+    pub name: String,
+    pub globals: Vec<ParsedDirective>,
+    pub stages: Vec<ParsedStage>,
+}
 
 pub type Span<'a> = &'a str;
-pub type IResult<'a, I, O> = nom::IResult<I, O, VerboseError<Span<'a>>>;
 
-pub fn hspace0(input: Span) -> IResult<Span, Span> {
-    let (input, space) = recognize(many0(one_of(" \t")))(input)?;
-    Ok((input, space))
+pub fn take(input: Span, n: usize) -> Option<(Span, Span)> {
+    if input.len() < n {
+        return None;
+    }
+    Some((&input[n..], &input[..n]))
 }
 
-pub fn hspace1(input: Span) -> IResult<Span, Span> {
-    let (input, space) = recognize(many1(one_of(" \t")))(input)?;
-    Ok((input, space))
+pub fn tag<'a>(input: Span<'a>, tag: &str) -> Option<Span<'a>> {
+    if input
+        .to_ascii_lowercase()
+        .starts_with(&tag.to_ascii_lowercase())
+    {
+        Some(&input[tag.len()..])
+    } else {
+        None
+    }
 }
 
-pub fn newline(input: Span) -> IResult<Span, Span> {
-    recognize(alt((
-        tag_no_case("\r\n"),
-        tag_no_case("\r"),
-        tag_no_case("\n"),
-    )))(input)
+pub fn take_whitespace(mut input: Span) -> Span {
+    while let Some(c) = input.chars().next() {
+        if input.starts_with("//") {
+            input = &input[input.find('\n').unwrap_or(input.len())..];
+            continue;
+        }
+        if !c.is_whitespace() {
+            break;
+        }
+        input = &input[1..];
+    }
+    input
 }
 
-pub fn full_line<'a, O, F>(f: F) -> impl FnMut(Span<'a>) -> IResult<Span<'a>, O>
-where
-    F: FnMut(Span<'a>) -> IResult<Span<'a>, O>,
-{
-    delimited(hspace0, f, preceded(hspace0, newline))
+pub fn parse_shaders_manual(mut input: Span) -> Vec<ParsedShader> {
+    let mut shaders = vec![];
+    loop {
+        input = take_whitespace(input);
+        if input.is_empty() {
+            break;
+        }
+        let (rest, shader) = parse_shader_manual(input);
+        if let Some(shader) = shader {
+            shaders.push(shader);
+        }
+        input = rest;
+    }
+    shaders
 }
 
-pub fn many0_lines<'a, O, F>(f: F) -> impl FnMut(Span<'a>) -> IResult<Span<'a>, Vec<O>>
-where
-    F: FnMut(Span<'a>) -> IResult<Span<'a>, O>,
-    O: Clone,
-{
-    map(
-        many0(alt((
-            map(full_line(f), Some),
-            value(None, preceded(hspace0, newline)),
-            value(None, parse_comment),
-        ))),
-        |o| o.into_iter().flatten().collect::<Vec<_>>(),
-    )
+pub fn parse_directive_manual(input: Span) -> Option<ParsedDirective> {
+    let input = take_whitespace(input);
+    let name = input.split_whitespace().next()?.to_string();
+    let input = &input[name.len()..];
+    let input = take_whitespace(input);
+    let mut args = vec![];
+    for raw_arg in input.split_whitespace() {
+        if raw_arg.contains('/') {
+            args.push(ParsedDirectiveArg::Path(raw_arg.to_string()));
+            continue;
+        } else {
+            let arg = match raw_arg.parse::<f32>() {
+                Ok(f) => ParsedDirectiveArg::Float(f),
+                Err(_) => ParsedDirectiveArg::Ident(raw_arg.to_string()),
+            };
+            args.push(arg);
+        }
+    }
+    Some(ParsedDirective { name, args })
 }
 
-pub fn many1_lines<'a, O, F>(f: F) -> impl FnMut(Span<'a>) -> IResult<Span<'a>, Vec<O>>
-where
-    F: FnMut(Span<'a>) -> IResult<Span<'a>, O>,
-    O: Clone,
-{
-    map(
-        many1(alt((
-            map(full_line(f), Some),
-            value(None, preceded(hspace0, newline)),
-            value(None, parse_comment),
-        ))),
-        |o| o.into_iter().flatten().collect::<Vec<_>>(),
-    )
-}
+pub fn parse_shader_manual(input: Span) -> (Span, Option<ParsedShader>) {
+    let input = take_whitespace(input);
+    let name = input.lines().next();
+    let Some(name) = name else {
+        return (input, None);
+    };
+    let name = name.trim();
+    let name = name.split_whitespace().next();
+    let Some(name) = name else {
+        return (input, None);
+    };
+    let input = &input[name.len()..];
+    let input = take_whitespace(input);
+    let Some(input) = tag(input, "{") else {
+        return (input, None);
+    };
+    let input = take_whitespace(input);
+    let mut globals = vec![];
+    let mut stages = vec![];
+    let mut stage_directives = vec![];
+    let mut in_stage = false;
+    let mut length_read = 0;
 
-pub fn parse_comment(input: Span) -> IResult<Span, ()> {
-    let (input, _) = full_line(preceded(tag_no_case("//"), opt(is_not("\r\n"))))(input)?;
-    Ok((input, ()))
-}
+    for line in input.split('\n') {
+        length_read += line.len() + 1; // +1 for newline
+        let line = line.trim();
+        if line.is_empty() {
+            // Empty line
+        } else if line.starts_with("//") {
+            // Comment
+        } else if line.starts_with('}') {
+            if in_stage {
+                // End of stage
+                stages.push(ParsedStage {
+                    directives: std::mem::take(&mut stage_directives),
+                });
+                in_stage = false;
+            } else {
+                // End of shader
+                break;
+            }
+        } else if line.starts_with('{') {
+            // Start of stage
+            in_stage = true;
+        } else if in_stage {
+            // Parse stage directive
+            if let Some(directive) = parse_directive_manual(line) {
+                stage_directives.push(directive);
+            }
+        } else if let Some(directive) = parse_directive_manual(line) {
+            // Parse global directive
+            globals.push(directive);
+        }
+    }
 
-pub fn hspace_or_comments(input: Span) -> IResult<Span, ()> {
-    let (input, _) = many0(alt((parse_comment, value((), hspace1))))(input)?;
-    Ok((input, ()))
-}
+    // Skip the lines we've read
+    length_read = length_read.saturating_sub(1); // Remove the last newline
+    let input = &input[length_read..];
 
-pub fn space0(input: Span) -> IResult<Span, Span> {
-    recognize(many0(one_of("\t \r\n")))(input)
-}
-
-pub fn space1(input: Span) -> IResult<Span, Span> {
-    recognize(many1(one_of("\t \r\n")))(input)
-}
-
-pub fn space_or_comments(input: Span) -> IResult<Span, ()> {
-    let (input, _) = many0(alt((parse_comment, value((), space1))))(input)?;
-    Ok((input, ()))
-}
-
-pub fn hspace_delimited<'a, F, O>(f: F) -> impl FnMut(Span<'a>) -> IResult<Span<'a>, O>
-where
-    F: FnMut(Span<'a>) -> IResult<Span<'a>, O>,
-{
-    delimited(hspace_or_comments, f, hspace_or_comments)
-}
-
-pub fn space_delimited<'a, F, O>(f: F) -> impl FnMut(Span<'a>) -> IResult<Span<'a>, O>
-where
-    F: FnMut(Span<'a>) -> IResult<Span<'a>, O>,
-{
-    delimited(space_or_comments, f, space_or_comments)
-}
-
-pub fn make_anyhow_error(input: Span, e: VerboseError<Span>) -> weaver_util::prelude::Error {
-    anyhow!("Failed to parse shaders:\n{}", convert_error(input, e))
-}
-
-pub fn parse_shaders(input: &str) -> Result<Vec<ParsedShader>> {
-    let (_, shaders) = all_consuming(many1(space_delimited(parse_shader)))(input)
-        .finish()
-        .map_err(|e| make_anyhow_error(input, e))?;
-
-    Ok(shaders)
-}
-
-pub fn parse_shader(input: Span) -> IResult<Span, ParsedShader> {
-    map(
-        pair(
-            space_delimited(full_line(parse_path)),
-            delimited(
-                space_delimited(char('{')),
-                tuple((
-                    many0(space_delimited(full_line(parse_directive))),
-                    many0(space_delimited(parse_stage)),
-                    many0(space_delimited(full_line(parse_directive))),
-                )),
-                space_delimited(char('}')),
-            ),
-        ),
-        |(name, (globals, stages, more_globals))| ParsedShader {
-            name,
-            globals: [globals, more_globals].concat(),
+    (
+        input,
+        Some(ParsedShader {
+            name: name.to_string(),
+            globals,
             stages,
-        },
-    )(input)
-}
-
-pub fn parse_path(input: Span) -> IResult<Span, String> {
-    let (input, name_first) = alt((tag_no_case("_"), tag_no_case("-"), alphanumeric1))(input)?;
-    let (input, name) = many1(pair(
-        tag_no_case("/"),
-        many1(alt((
-            tag_no_case("_"),
-            tag_no_case("."),
-            tag_no_case("-"),
-            alphanumeric1,
-        ))),
-    ))(input)?;
-    let name = name
-        .into_iter()
-        .fold(String::from(name_first), |mut acc, (slash, item)| {
-            acc.push_str(slash);
-            acc.push_str(item.concat().as_str());
-            acc
-        });
-    Ok((input, name))
-}
-
-pub fn parse_identifier(input: Span) -> IResult<Span, String> {
-    let (input, name) = recognize(many1(alt((
-        tag_no_case("_"),
-        tag_no_case("$"),
-        tag_no_case("."),
-        tag_no_case("-"),
-        alphanumeric1,
-    ))))(input)?;
-    Ok((input, name.to_string()))
-}
-
-pub fn parse_directive_arg(input: Span) -> IResult<Span, ParsedDirectiveArg> {
-    let (input, arg) = alt((
-        map(float, ParsedDirectiveArg::Float),
-        map(parse_path, ParsedDirectiveArg::Path),
-        map(parse_identifier, ParsedDirectiveArg::Ident),
-        map(
-            delimited(
-                tag_no_case("("),
-                many1(hspace_delimited(parse_directive_arg)),
-                tag_no_case(")"),
-            ),
-            ParsedDirectiveArg::Parens,
-        ),
-    ))(input)?;
-    Ok((input, arg))
-}
-
-pub fn parse_directive(input: Span) -> IResult<Span, ParsedDirective> {
-    let (input, name) =
-        context("directive identifier", preceded(hspace0, parse_identifier))(input)?;
-    let (input, args) = many0(hspace_delimited(parse_directive_arg))(input)?;
-    Ok((input, ParsedDirective { name, args }))
-}
-
-pub fn parse_stage(input: Span) -> IResult<Span, ParsedStage> {
-    map(
-        delimited(
-            hspace_delimited(char('{')),
-            many1_lines(parse_directive),
-            hspace_delimited(char('}')),
-        ),
-        |directives| ParsedStage { directives },
-    )(input)
+        }),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_parse_path() {
-        assert_eq!(
-            parse_path("textures/common/caulk"),
-            Ok(("", "textures/common/caulk".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_parse_identifier() {
-        assert_eq!(parse_identifier("$foo"), Ok(("", "$foo".to_string())));
-        assert_eq!(parse_identifier("foo"), Ok(("", "foo".to_string())));
-        assert_eq!(parse_identifier("foo_bar"), Ok(("", "foo_bar".to_string())));
-    }
-
-    #[test]
-    fn test_parse_directive() {
-        assert_eq!(
-            parse_directive("foo"),
-            Ok((
-                "",
-                ParsedDirective {
-                    name: "foo".to_string(),
-                    args: vec![]
-                }
-            ))
-        );
-        assert_eq!(
-            parse_directive("foo bar"),
-            Ok((
-                "",
-                ParsedDirective {
-                    name: "foo".to_string(),
-                    args: vec![ParsedDirectiveArg::Ident("bar".to_string())],
-                }
-            ))
-        );
-        assert_eq!(
-            parse_directive("foo bar 4 baz/qux.tga"),
-            Ok((
-                "",
-                ParsedDirective {
-                    name: "foo".to_string(),
-                    args: vec![
-                        ParsedDirectiveArg::Ident("bar".to_string()),
-                        ParsedDirectiveArg::Float(4.0),
-                        ParsedDirectiveArg::Path("baz/qux.tga".to_string())
-                    ]
-                }
-            ))
-        );
-        assert_eq!(
-            parse_directive("map $lightmap"),
-            Ok((
-                "",
-                ParsedDirective {
-                    name: "map".to_string(),
-                    args: vec![ParsedDirectiveArg::Ident("$lightmap".to_string())],
-                }
-            ))
-        );
-        assert_eq!(
-            parse_directive("rgbGen identity"),
-            Ok((
-                "",
-                ParsedDirective {
-                    name: "rgbGen".to_string(),
-                    args: vec![ParsedDirectiveArg::Ident("identity".to_string())],
-                }
-            ))
-        );
-    }
-
-    #[test]
-    fn test_parse_stage() {
-        let input = r#"
-            {
-                foo
-            }
-            "#;
-        assert_eq!(
-            space_delimited(parse_stage)(input)
-                .finish()
-                .map_err(|e| make_anyhow_error(input, e))
-                .unwrap(),
-            (
-                "",
-                ParsedStage {
-                    directives: vec![ParsedDirective {
-                        name: "foo".to_string(),
-                        args: vec![]
-                    },]
-                }
-            )
-        );
-
-        let input = r#"
-            {
-                foo
-                bar
-            }
-            "#;
-        assert_eq!(
-            space_delimited(parse_stage)(input)
-                .finish()
-                .map_err(|e| make_anyhow_error(input, e))
-                .unwrap(),
-            (
-                "",
-                ParsedStage {
-                    directives: vec![
-                        ParsedDirective {
-                            name: "foo".to_string(),
-                            args: vec![]
-                        },
-                        ParsedDirective {
-                            name: "bar".to_string(),
-                            args: vec![]
-                        },
-                    ]
-                }
-            )
-        );
-    }
+    // Test shaders copied from quake 3 arena data files
+    // Copyright id software, licensed under GNU GPL2
 
     #[test]
     #[rustfmt::skip]
@@ -357,6 +222,80 @@ textures/dont_use/openwindow
 	}
 }
         "#;
-        parse_shaders(input).unwrap();
+        let shaders = parse_shaders_manual(input);
+        assert_eq!(shaders.len(), 1);
+        let shader = &shaders[0];
+        assert_eq!(shader.name, "textures/dont_use/openwindow");
+        assert_eq!(shader.globals.len(), 2);
+        assert_eq!(shader.stages.len(), 1);
+        let stage = &shader.stages[0];
+        assert_eq!(stage.directives.len(), 4);
+    }
+
+    #[test]
+    fn test_parse_shaders() {
+        let input = r#"
+textures/common/nolightmap
+{
+	surfaceparm nolightmap
+}
+
+textures/common/nodrawnonsolid
+{
+	surfaceparm	nonsolid
+	surfaceparm	nodraw
+}
+
+textures/common/invisible
+{
+	surfaceparm nolightmap			
+        {
+                map textures/common/invisible.tga
+                alphaFunc GE128
+		depthWrite
+		rgbGen vertex
+        }
+}
+
+textures/common/teleporter
+{
+	surfaceparm nolightmap
+	surfaceparm noimpact
+	q3map_lightimage textures/sfx/powerupshit.tga	
+	q3map_surfacelight 800
+	{
+		map textures/sfx/powerupshit.tga
+		tcGen environment
+//		tcMod scale 5 5
+		tcMod turb 0 0.015 0 0.3
+	}
+}
+        "#;
+        let shaders = parse_shaders_manual(input);
+        assert_eq!(shaders.len(), 4);
+
+        let shader = &shaders[0];
+        assert_eq!(shader.name, "textures/common/nolightmap");
+        assert_eq!(shader.globals.len(), 1);
+        assert_eq!(shader.stages.len(), 0);
+
+        let shader = &shaders[1];
+        assert_eq!(shader.name, "textures/common/nodrawnonsolid");
+        assert_eq!(shader.globals.len(), 2);
+        assert_eq!(shader.stages.len(), 0);
+
+        let shader = &shaders[2];
+        assert_eq!(shader.name, "textures/common/invisible");
+        assert_eq!(shader.globals.len(), 1);
+        assert_eq!(shader.stages.len(), 1);
+        let stage = &shader.stages[0];
+        assert_eq!(stage.directives.len(), 4);
+
+        let shader = &shaders[3];
+        assert_eq!(shader.name, "textures/common/teleporter");
+        assert_eq!(shader.globals.len(), 4);
+        assert_eq!(shader.stages.len(), 1);
+        let stage = &shader.stages[0];
+        assert_eq!(stage.directives.len(), 3);
     }
 }

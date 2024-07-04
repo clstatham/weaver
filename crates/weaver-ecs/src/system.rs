@@ -122,6 +122,10 @@ impl<'w, 's, P: SystemParam> SystemParamWrapper<'w, 's, P> {
         &self.item
     }
 
+    pub fn item_mut(&mut self) -> &mut P::Item<'w, 's> {
+        &mut self.item
+    }
+
     pub fn into_inner(self) -> P::Item<'w, 's> {
         self.item
     }

@@ -86,8 +86,7 @@ impl Mesh {
 pub struct ObjMeshLoader;
 
 impl LoadAsset<Mesh> for ObjMeshLoader {
-    type Param = ();
-    fn load(&self, _: (), ctx: &mut LoadCtx) -> Result<Mesh> {
+    fn load(&self, ctx: &mut LoadCtx) -> Result<Mesh> {
         let meshes = load_obj(ctx)?;
         if meshes.len() != 1 {
             bail!(
@@ -100,8 +99,7 @@ impl LoadAsset<Mesh> for ObjMeshLoader {
 }
 
 impl LoadAsset<Vec<Mesh>> for ObjMeshLoader {
-    type Param = ();
-    fn load(&self, _: (), ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
+    fn load(&self, ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
         load_obj(ctx)
     }
 }
@@ -180,8 +178,7 @@ pub fn load_obj(ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
 pub struct GltfMeshLoader;
 
 impl LoadAsset<Mesh> for GltfMeshLoader {
-    type Param = ();
-    fn load(&self, _: (), ctx: &mut LoadCtx) -> Result<Mesh> {
+    fn load(&self, ctx: &mut LoadCtx) -> Result<Mesh> {
         let meshes = load_gltf(ctx)?;
         if meshes.len() != 1 {
             bail!(
@@ -194,8 +191,7 @@ impl LoadAsset<Mesh> for GltfMeshLoader {
 }
 
 impl LoadAsset<Vec<Mesh>> for GltfMeshLoader {
-    type Param = ();
-    fn load(&self, _: (), ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
+    fn load(&self, ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
         load_gltf(ctx)
     }
 }

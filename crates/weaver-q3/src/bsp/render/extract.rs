@@ -1,33 +1,44 @@
 use weaver_asset::{prelude::Asset, Assets, Handle};
-use weaver_core::mesh::Mesh;
+use weaver_core::{mesh::Mesh, prelude::Vec3};
 use weaver_ecs::{
-    commands::Commands,
+    commands::WorldMut,
     component::{Res, ResMut},
+    entity::Entity,
     query::Query,
     system::SystemParamWrapper,
 };
-use weaver_pbr::material::{GpuMaterial, Material};
 use weaver_renderer::{
     asset::{ExtractedRenderAssets, RenderAsset},
-    bind_group::{BindGroup, BindGroupLayoutCache, ExtractedAssetBindGroups},
     extract::Extract,
     mesh::GpuMesh,
     WgpuDevice, WgpuQueue,
 };
 use weaver_util::prelude::Result;
 
-use crate::bsp::{
-    generator::{BspFaceType, BspPlane},
-    loader::{Bsp, BspNode},
-    parser::VisData,
+use crate::{
+    bsp::{
+        generator::BspPlane,
+        loader::{Bsp, BspNode, LoadedBspShaderMesh},
+        parser::VisData,
+    },
+    shader::{loader::LoadedShader, render::extract::ExtractedShader},
 };
+
+// #[derive(Debug, Clone)]
+// pub struct ExtractedBspMesh {
+//     pub mesh: Handle<Mesh>,
+//     pub shader: Handle<ExtractedShader>,
+//     pub typ: BspFaceType,
+// }
 
 #[derive(Debug, Clone)]
 pub enum ExtractedBspNode {
     Leaf {
-        meshes_and_materials: Vec<(Handle<GpuMesh>, Handle<BindGroup<GpuMaterial>>, BspFaceType)>,
+        shader_mesh_entities: Vec<Entity>,
         parent: usize,
         cluster: usize,
+        min: Vec3,
+        max: Vec3,
     },
     Node {
         plane: BspPlane,
@@ -117,19 +128,16 @@ impl ExtractedBsp {
 
 #[allow(clippy::too_many_arguments)]
 pub fn extract_bsps(
-    commands: Commands,
+    mut world: WorldMut,
     query: Extract<Query<&'static Handle<Bsp>>>,
     source_assets: Extract<Res<'static, Assets<Bsp>>>,
     source_meshes: Extract<Res<Assets<Mesh>>>,
-    source_materials: Extract<Res<Assets<Material>>>,
-    source_textures: SystemParamWrapper<<GpuMaterial as RenderAsset>::Param>,
+    source_shaders: Extract<Res<'static, Assets<LoadedShader>>>,
+    mut shader_param: SystemParamWrapper<<ExtractedShader as RenderAsset>::Param>,
     mut render_assets: ResMut<Assets<ExtractedBsp>>,
     mut render_meshes: ResMut<Assets<GpuMesh>>,
-    mut render_materials: ResMut<Assets<GpuMaterial>>,
-    mut render_bind_groups: ResMut<Assets<BindGroup<GpuMaterial>>>,
+    mut render_shaders: ResMut<Assets<ExtractedShader>>,
     extracted_assets: Res<ExtractedRenderAssets>,
-    extracted_bind_groups: Res<ExtractedAssetBindGroups>,
-    mut cache: ResMut<BindGroupLayoutCache>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
 ) -> Result<()> {
@@ -143,25 +151,20 @@ pub fn extract_bsps(
                 if let Some(node) = node {
                     match node {
                         BspNode::Leaf {
-                            meshes_and_materials,
+                            shader_meshes: meshes_and_materials,
                             parent,
                             cluster,
+                            min,
+                            max,
                         } => {
-                            let mut extracted_meshes_and_materials = Vec::new();
-                            for (mesh, material, typ) in meshes_and_materials {
+                            let mut shader_mesh_entities = Vec::new();
+                            for loaded_mesh in meshes_and_materials {
+                                let LoadedBspShaderMesh { mesh, shader, typ } = loaded_mesh;
                                 let source_mesh = source_meshes.get(*mesh).unwrap();
-                                let source_material = source_materials.get(*material).unwrap();
 
                                 let extracted_mesh = GpuMesh::extract_render_asset(
                                     &source_mesh,
-                                    &(),
-                                    &device,
-                                    &queue,
-                                )
-                                .unwrap();
-                                let extracted_material = GpuMaterial::extract_render_asset(
-                                    &source_material,
-                                    source_textures.item(),
+                                    &mut (),
                                     &device,
                                     &queue,
                                 )
@@ -169,39 +172,39 @@ pub fn extract_bsps(
 
                                 let extracted_mesh = render_meshes.insert(extracted_mesh);
 
-                                let material_bind_group = BindGroup::<GpuMaterial>::new(
-                                    &device,
-                                    &extracted_material,
-                                    &mut cache,
-                                );
-                                let extracted_material =
-                                    render_materials.insert(extracted_material);
-                                let extracted_material_bind_group =
-                                    render_bind_groups.insert(material_bind_group);
-
                                 extracted_assets
                                     .insert(mesh.into_untyped(), extracted_mesh.into_untyped());
+
+                                let extracted_shader = source_shaders.get(*shader).unwrap();
+                                let extracted_shader = ExtractedShader::extract_render_asset(
+                                    &extracted_shader,
+                                    shader_param.item_mut(),
+                                    &device,
+                                    &queue,
+                                )
+                                .unwrap();
+
+                                let extracted_shader_handle =
+                                    render_shaders.insert(extracted_shader);
+
                                 extracted_assets.insert(
-                                    material.into_untyped(),
-                                    extracted_material.into_untyped(),
-                                );
-                                extracted_bind_groups.insert(
-                                    material.into_untyped(),
-                                    extracted_material_bind_group.into_untyped(),
+                                    shader.into_untyped(),
+                                    extracted_shader_handle.into_untyped(),
                                 );
 
-                                extracted_meshes_and_materials.push((
-                                    extracted_mesh,
-                                    extracted_material_bind_group,
-                                    *typ,
-                                ));
+                                let entity =
+                                    world.spawn((extracted_mesh, extracted_shader_handle, *typ));
+
+                                shader_mesh_entities.push(entity);
                             }
                             extracted_bsp.insert(
                                 i,
                                 ExtractedBspNode::Leaf {
-                                    meshes_and_materials: extracted_meshes_and_materials,
+                                    shader_mesh_entities,
                                     parent: *parent,
                                     cluster: *cluster,
+                                    min: *min,
+                                    max: *max,
                                 },
                             );
                         }
@@ -229,7 +232,7 @@ pub fn extract_bsps(
 
             let render_handle = render_assets.insert(extracted_bsp);
             extracted_assets.insert(bsp_handle.into_untyped(), render_handle.into_untyped());
-            commands.insert_component(entity, render_handle);
+            world.insert_component(entity, render_handle);
         }
     }
 

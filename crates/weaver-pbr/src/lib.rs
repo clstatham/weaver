@@ -5,7 +5,8 @@ use assets::material_mesh::{
 };
 use light::{PointLight, PointLightPlugin};
 use material::{
-    GltfMaterialLoader, GpuMaterial, Material, MaterialPlugin, BLACK_TEXTURE, WHITE_TEXTURE,
+    GltfMaterialLoader, GpuMaterial, Material, MaterialPlugin, BLACK_TEXTURE, ERROR_TEXTURE,
+    WHITE_TEXTURE,
 };
 use render::{PbrLightingInformation, PbrMeshInstances, PbrNode, PbrNodeLabel, PbrRenderCommand};
 use skybox::{Skybox, SkyboxNodeLabel, SkyboxNodePlugin, SkyboxPlugin};
@@ -157,6 +158,13 @@ impl Plugin for PbrPlugin {
     fn finish(&self, app: &mut App) -> Result<()> {
         let white_texture = Texture::from_rgba8(&[255, 255, 255, 255], 1, 1);
         let black_texture = Texture::from_rgba8(&[0, 0, 0, 255], 1, 1);
+        let error_texture = Texture::from_rgba8(
+            &[
+                255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255,
+            ],
+            2,
+            2,
+        );
         let mut textures = app
             .main_app_mut()
             .world_mut()
@@ -164,6 +172,7 @@ impl Plugin for PbrPlugin {
             .unwrap();
         textures.insert_manual(white_texture, WHITE_TEXTURE.id());
         textures.insert_manual(black_texture, BLACK_TEXTURE.id());
+        textures.insert_manual(error_texture, ERROR_TEXTURE.id());
         Ok(())
     }
 }

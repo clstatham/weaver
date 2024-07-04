@@ -3,6 +3,7 @@ use std::ops::{Add, Mul};
 
 use weaver_core::mesh::{Mesh, Vertex};
 use weaver_core::prelude::*;
+use weaver_ecs::prelude::Component;
 
 use crate::bsp::parser::{Brush, BspFile, Face, Node, Vert};
 
@@ -108,7 +109,7 @@ impl Mul<f32> for GenBspVertex {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Component)]
 pub enum BspFaceType {
     Polygon,
     Patch,
@@ -474,7 +475,7 @@ pub enum GenBspMeshNode {
         area: i32,
         mins: Vec3,
         maxs: Vec3,
-        meshes_and_textures: Vec<(Mesh, GenBspTexture, BspFaceType)>,
+        meshes_and_textures: Vec<(Mesh, CString, BspFaceType)>,
         parent: usize,
     },
 }
@@ -584,7 +585,16 @@ impl GenBsp {
                             mesh.add_polygon(&face.verts, &face.mesh_verts);
                             mesh.regenerate_aabb();
                             mesh.recalculate_tangents();
-                            meshes_and_textures.push((mesh, face.texture.clone(), face.typ));
+                            if let Some(ref effect) = face.effect {
+                                log::debug!("face effect: {:?}", effect);
+                                meshes_and_textures.push((mesh, effect.name.clone(), face.typ));
+                            } else {
+                                meshes_and_textures.push((
+                                    mesh,
+                                    face.texture.name.clone(),
+                                    face.typ,
+                                ));
+                            }
                         }
                         BspFaceType::Patch => {
                             let num_patches_x = (face.size[0] - 1) / 2;
@@ -616,7 +626,16 @@ impl GenBsp {
                                 }
                                 mesh.regenerate_aabb();
                                 mesh.recalculate_tangents();
-                                meshes_and_textures.push((mesh, face.texture.clone(), face.typ));
+                                if let Some(ref effect) = face.effect {
+                                    log::debug!("patch effect: {:?}", effect);
+                                    meshes_and_textures.push((mesh, effect.name.clone(), face.typ));
+                                } else {
+                                    meshes_and_textures.push((
+                                        mesh,
+                                        face.texture.name.clone(),
+                                        face.typ,
+                                    ));
+                                }
                             }
                         }
                         BspFaceType::Billboard => {

@@ -449,6 +449,9 @@ where
     pub(crate) world: UnsafeWorldCell<'w>,
 }
 
+unsafe impl<Q: QueryFetch, F: QueryFilter> Send for Query<'_, '_, Q, F> {}
+unsafe impl<Q: QueryFetch, F: QueryFilter> Sync for Query<'_, '_, Q, F> {}
+
 impl<'w, 's: 'w, Q, F> Query<'w, 's, Q, F>
 where
     Q: QueryFetch,

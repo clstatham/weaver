@@ -4,7 +4,7 @@ use weaver_core::{
     prelude::{Vec2, Vec3, Vec4},
     texture::Texture,
 };
-use weaver_ecs::{component::ResMut, prelude::Resource, system::SystemParamItem};
+use weaver_ecs::prelude::Resource;
 use weaver_util::prelude::{anyhow, bail, Result};
 
 use crate::prelude::Material;
@@ -42,21 +42,12 @@ impl LoadedMaterialMeshPrimitive {
 pub struct ObjMaterialModelLoader;
 
 impl LoadAsset<LoadedModelWithMaterials> for ObjMaterialModelLoader {
-    type Param = ResMut<'static, Assets<Texture>>;
-
-    fn load(
-        &self,
-        mut textures: SystemParamItem<Self::Param>,
-        ctx: &mut LoadCtx,
-    ) -> Result<LoadedModelWithMaterials> {
-        load_obj_material_mesh(ctx, &mut textures)
+    fn load(&self, ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWithMaterials> {
+        load_obj_material_mesh(ctx)
     }
 }
 
-pub fn load_obj_material_mesh(
-    ctx: &mut LoadCtx,
-    textures: &mut Assets<Texture>,
-) -> Result<LoadedModelWithMaterials> {
+pub fn load_obj_material_mesh(ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWithMaterials> {
     let bytes = ctx.read_original()?;
     let (models, materials) = tobj::load_obj_buf(
         &mut std::io::Cursor::new(bytes),
@@ -183,6 +174,8 @@ pub fn load_obj_material_mesh(
                     }
                 };
 
+                let mut textures = ctx.get_resource_mut::<Assets<Texture>>().unwrap();
+
                 let material = Material {
                     diffuse: diffuse.into(),
                     diffuse_texture: textures.insert(diffuse_texture),
@@ -202,6 +195,9 @@ pub fn load_obj_material_mesh(
             }
             None => {
                 log::warn!("Model does not have a material");
+
+                let mut textures = ctx.get_resource_mut::<Assets<Texture>>().unwrap();
+
                 let material = Material {
                     diffuse: [1.0, 1.0, 1.0].into(),
                     diffuse_texture: textures.insert(white_texture.clone()),
@@ -229,29 +225,22 @@ pub fn load_obj_material_mesh(
 pub struct GltfMaterialModelLoader;
 
 impl LoadAsset<LoadedModelWithMaterials> for GltfMaterialModelLoader {
-    type Param = ResMut<'static, Assets<Texture>>;
-
-    fn load(
-        &self,
-        mut param: SystemParamItem<Self::Param>,
-        ctx: &mut LoadCtx,
-    ) -> Result<LoadedModelWithMaterials> {
-        load_gltf_material_mesh(ctx, &mut param)
+    fn load(&self, ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWithMaterials> {
+        load_gltf_material_mesh(ctx)
     }
 }
 
-pub fn load_gltf_material_mesh(
-    ctx: &mut LoadCtx,
-    textures: &mut Assets<Texture>,
-) -> Result<LoadedModelWithMaterials> {
+pub fn load_gltf_material_mesh(ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWithMaterials> {
     let bytes = ctx.read_original()?;
     let (document, buffers, images) = gltf::import_slice(bytes)?;
 
     let mut primitives = Vec::new();
 
+    let mut textures = ctx.get_resource_mut::<Assets<Texture>>().unwrap();
+
     for mesh in document.meshes() {
         for primitive in mesh.primitives() {
-            let material = load_material(primitive.material(), &images, textures)?;
+            let material = load_material(primitive.material(), &images, &mut textures)?;
 
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 

@@ -13,6 +13,9 @@ pub mod prelude {
     };
     pub use anyhow::{anyhow, bail, ensure, Error, Result};
     pub use downcast_rs::{impl_downcast, Downcast, DowncastSync};
+    pub use lazy_static::lazy_static;
+    pub use rustc_hash::FxHashMap;
+    pub use scopeguard::{defer, guard, ScopeGuard};
 }
 
 #[macro_export]
@@ -56,11 +59,16 @@ macro_rules! define_atomic_id {
 #[macro_export]
 macro_rules! log_once {
     ($log:ident; $($arg:tt)*) => {{
-        use std::sync::Once;
-        static LOGGED: Once = Once::new();
-        LOGGED.call_once(|| {
-            log::$log!($($arg)*);
-        });
+        use std::sync::RwLock;
+        use std::collections::HashSet;
+        weaver_util::prelude::lazy_static! {
+            static ref LOGGED: RwLock<HashSet<String>> = RwLock::new(HashSet::new());
+        }
+        let msg = format!($($arg)*);
+        if !LOGGED.read().unwrap().contains(&msg) {
+            LOGGED.write().unwrap().insert(msg.clone());
+            log::$log!("{}", msg);
+        }
     }};
 }
 
