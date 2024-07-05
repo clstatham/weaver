@@ -61,7 +61,7 @@ impl From<PointLight> for PointLightUniform {
 impl From<(PointLight, Transform)> for PointLightUniform {
     fn from((light, transform): (PointLight, Transform)) -> Self {
         Self {
-            position: transform.translation.into(),
+            position: transform.translation,
             _padding: 0,
             color: light.color,
             intensity: if light.enabled { light.intensity } else { 0.0 },

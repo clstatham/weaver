@@ -4,9 +4,9 @@ use weaver_ecs::prelude::*;
 #[derive(Debug, Clone, Copy, PartialEq, Reflect, Component)]
 #[reflect(ReflectComponent)]
 pub struct Transform {
-    pub translation: Vec3A,
+    pub translation: Vec3,
     pub rotation: Quat,
-    pub scale: Vec3A,
+    pub scale: Vec3,
 }
 
 impl Default for Transform {
@@ -17,12 +17,12 @@ impl Default for Transform {
 
 impl Transform {
     pub const IDENTITY: Self = Self {
-        translation: Vec3A::ZERO,
+        translation: Vec3::ZERO,
         rotation: Quat::IDENTITY,
-        scale: Vec3A::ONE,
+        scale: Vec3::ONE,
     };
 
-    pub fn new(translation: Vec3A, rotation: Quat, scale: Vec3A) -> Self {
+    pub fn new(translation: Vec3, rotation: Quat, scale: Vec3) -> Self {
         Self {
             translation,
             rotation,
@@ -30,57 +30,57 @@ impl Transform {
         }
     }
 
-    pub fn from_translation(translation: Vec3A) -> Self {
+    pub fn from_translation(translation: Vec3) -> Self {
         Self {
             translation,
             rotation: Quat::IDENTITY,
-            scale: Vec3A::ONE,
+            scale: Vec3::ONE,
         }
     }
 
     pub fn from_rotation(rotation: Quat) -> Self {
         Self {
-            translation: Vec3A::ZERO,
+            translation: Vec3::ZERO,
             rotation,
-            scale: Vec3A::ONE,
+            scale: Vec3::ONE,
         }
     }
 
-    pub fn from_scale(scale: Vec3A) -> Self {
+    pub fn from_scale(scale: Vec3) -> Self {
         Self {
-            translation: Vec3A::ZERO,
+            translation: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             scale,
         }
     }
 
-    pub fn look_at(eye: Vec3A, target: Vec3A, up: Vec3A) -> Self {
-        let matrix = Mat4::look_at_rh(eye.into(), target.into(), up.into());
+    pub fn look_at(eye: Vec3, target: Vec3, up: Vec3) -> Self {
+        let matrix = Mat4::look_at_rh(eye, target, up);
         let (scale, rotation, translation) = matrix.to_scale_rotation_translation();
 
         Self {
-            translation: translation.into(),
+            translation,
             rotation,
-            scale: scale.into(),
+            scale,
         }
     }
 
     pub fn perspective(fov: f32, aspect: f32, near: f32, far: f32) -> Self {
-        let matrix = Mat4::perspective_rh(fov, aspect, near, far);
+        let matrix = Mat4::perspective_rh_gl(fov, aspect, near, far);
         let (scale, rotation, translation) = matrix.to_scale_rotation_translation();
 
         Self {
-            translation: translation.into(),
+            translation,
             rotation,
-            scale: scale.into(),
+            scale,
         }
     }
 
     pub fn matrix(&self) -> Mat4 {
         Mat4::from_scale_rotation_translation(
-            self.scale.into(),
+            self.scale,
             Quat::from_array(self.rotation.to_array()),
-            self.translation.into(),
+            self.translation,
         )
     }
 
@@ -88,9 +88,9 @@ impl Transform {
         let (scale, rotation, translation) = matrix.to_scale_rotation_translation();
 
         Self {
-            translation: translation.into(),
+            translation,
             rotation,
-            scale: scale.into(),
+            scale,
         }
     }
 
@@ -102,12 +102,12 @@ impl Transform {
         self.matrix().inverse()
     }
 
-    pub fn transform_point(&self, point: Vec3A) -> Vec3A {
-        self.matrix().transform_point3(point.into()).into()
+    pub fn transform_point(&self, point: Vec3) -> Vec3 {
+        self.matrix().transform_point3(point)
     }
 
-    pub fn transform_vector(&self, vector: Vec3A) -> Vec3A {
-        self.matrix().transform_vector3(vector.into()).into()
+    pub fn transform_vector(&self, vector: Vec3) -> Vec3 {
+        self.matrix().transform_vector3(vector)
     }
 }
 

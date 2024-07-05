@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use nom::Finish;
 use weaver_asset::{
     loading::{LoadAsset, LoadCtx},
     prelude::Asset,
@@ -48,6 +49,8 @@ pub enum BspNode {
         back: usize,
         front: usize,
         parent: Option<usize>,
+        min: Vec3,
+        max: Vec3,
     },
 }
 
@@ -116,7 +119,8 @@ impl LoadAsset<Bsp> for BspLoader {
     fn load(&self, ctx: &mut LoadCtx<'_, '_>) -> Result<Bsp> {
         let bytes = ctx.read_original()?;
         let (_, bsp_file) = bsp_file(bytes.as_slice())
-            .map_err(|_| anyhow!("Failed to parse bsp file; check logs"))?;
+            .finish()
+            .map_err(|e| anyhow!("Failed to parse bsp file: {:?}", e.code))?;
 
         log::debug!("Loaded bsp file version {}", bsp_file.header.version);
         log::debug!(">>> Header: {:#?}", bsp_file.header);
@@ -254,8 +258,8 @@ impl LoadAsset<Bsp> for BspLoader {
                 }
                 GenBspMeshNode::Node {
                     plane,
-                    mins: _,
-                    maxs: _,
+                    mins,
+                    maxs,
                     back,
                     front,
                     parent,
@@ -267,6 +271,8 @@ impl LoadAsset<Bsp> for BspLoader {
                             back,
                             front,
                             parent,
+                            min: mins,
+                            max: maxs,
                         },
                     );
                 }

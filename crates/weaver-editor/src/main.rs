@@ -12,13 +12,19 @@ use weaver_asset::loading::Filesystem;
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_egui::prelude::*;
+use weaver_gizmos::GizmoNodeLabel;
 use weaver_q3::{
-    bsp::loader::{Bsp, BspLoader},
+    bsp::{
+        loader::{Bsp, BspLoader, BspNode},
+        render::BspRenderNodeLabel,
+    },
     pk3::Pk3Filesystem,
     shader::{lexer::LexedShader, loader::ShaderCache},
     Q3Plugin,
 };
-use weaver_renderer::{camera::PrimaryCamera, clear_color::ClearColorPlugin};
+use weaver_renderer::{
+    camera::PrimaryCamera, clear_color::ClearColorPlugin, graph::RenderGraphApp, RenderApp,
+};
 use weaver_winit::Window;
 
 pub mod camera;
@@ -43,9 +49,18 @@ impl SelectionAabb {
     }
 }
 
+#[derive(Default)]
+enum VisMode {
+    #[default]
+    None,
+    Nodes,
+    Leaves,
+}
+
 #[derive(Resource, Default)]
 struct EditorState {
     pub selected_entity: Option<Entity>,
+    pub vis_mode: VisMode,
 }
 
 fn main() -> Result<()> {
@@ -68,6 +83,10 @@ fn main() -> Result<()> {
             log_interval: std::time::Duration::from_secs(1),
         })?
         .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
+        .configure_sub_app::<RenderApp>(|app| {
+            app.add_render_main_graph_edge(SkyboxNodeLabel, BspRenderNodeLabel);
+            app.add_render_main_graph_edge(BspRenderNodeLabel, GizmoNodeLabel);
+        })
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
         .insert_resource(Filesystem::default().with_pk3s_from_dir("assets/q3")?)
         .insert_resource(EditorState::default())
@@ -88,6 +107,8 @@ fn main() -> Result<()> {
         .add_system(camera::update_camera, Update)
         .add_system(camera::update_aspect_ratio, Update)
         .add_system(selection_gizmos, Update)
+        .add_system(toggle_vis_mode, Update)
+        .add_system(debug_stuff, Update)
         .add_system(light_gizmos, Update)
         .add_system(pick_entity, Update)
         // .add_system(transform_gizmo::draw_transform_gizmo, Update)
@@ -120,17 +141,132 @@ fn setup(
             speed: 320.0,
             fov: 70.0f32.to_radians(),
             near: 0.1,
-            far: 100000.0,
+            far: 10000.0,
             sensitivity: 0.2,
             ..Default::default()
-        }
-        .looking_at(Vec3::new(10.0, 10.0, 10.0), Vec3::ZERO, Vec3::Y),
+        },
         PrimaryCamera,
     ));
 
     let bsp = bsp_loader.load_from_filesystem(&mut fs, "maps/q3dm6.bsp")?;
     let bsp = bsp_assets.insert(bsp);
     commands.spawn(bsp);
+
+    Ok(())
+}
+
+fn toggle_vis_mode(mut editor_state: ResMut<EditorState>, input: Res<Input>) -> Result<()> {
+    if input.key_down(KeyCode::Digit1) {
+        editor_state.vis_mode = VisMode::None;
+    } else if input.key_down(KeyCode::Digit2) {
+        editor_state.vis_mode = VisMode::Leaves;
+    } else if input.key_down(KeyCode::Digit3) {
+        editor_state.vis_mode = VisMode::Nodes;
+    }
+
+    Ok(())
+}
+
+fn debug_stuff(
+    gizmos: Res<Gizmos>,
+    egui_ctx: Res<EguiContext>,
+    bsp_query: Query<&Handle<Bsp>>,
+    bsp_assets: Res<Assets<Bsp>>,
+    camera_query: Query<&Camera>,
+    editor_state: Res<EditorState>,
+) -> Result<()> {
+    let (_, camera) = camera_query.iter().next().unwrap();
+
+    let mut total_nodes = 0;
+    let mut total_leaves = 0;
+
+    let mut culled_nodes = 0;
+    let mut visible_nodes = 0;
+    let mut partial_nodes = 0;
+
+    let mut culled_leaves = 0;
+    let mut visible_leaves = 0;
+    let mut partial_leaves = 0;
+
+    // visualize bsp tree
+    for (_, handle) in bsp_query.iter() {
+        let bsp = bsp_assets.get(*handle).unwrap();
+        for (_, node) in bsp.node_iter() {
+            match node {
+                BspNode::Leaf { min, max, .. } => {
+                    total_leaves += 1;
+                    let color = match camera.intersect_frustum_with_aabb(
+                        &Aabb::new(*min, *max),
+                        true,
+                        false,
+                    ) {
+                        Intersection::Inside => {
+                            visible_leaves += 1;
+                            Color::GREEN
+                        }
+                        Intersection::Outside => {
+                            culled_leaves += 1;
+                            Color::RED
+                        }
+                        Intersection::Intersecting => {
+                            partial_leaves += 1;
+                            Color::YELLOW
+                        }
+                    };
+                    if let VisMode::Leaves = editor_state.vis_mode {
+                        gizmos.wire_cube_no_depth(
+                            Transform::new(
+                                (*min + *max) / 2.0,
+                                Quat::IDENTITY,
+                                (*max - *min).abs(),
+                            ),
+                            color,
+                        );
+                    }
+                }
+                BspNode::Node { min, max, .. } => {
+                    total_nodes += 1;
+                    match camera.intersect_frustum_with_aabb(&Aabb::new(*min, *max), true, false) {
+                        Intersection::Inside => {
+                            visible_nodes += 1;
+                        }
+                        Intersection::Outside => {
+                            culled_nodes += 1;
+                        }
+                        Intersection::Intersecting => {
+                            partial_nodes += 1;
+                        }
+                    }
+                    if let VisMode::Nodes = editor_state.vis_mode {
+                        gizmos.wire_cube_no_depth(
+                            Transform::new(
+                                (*min + *max) / 2.0,
+                                Quat::IDENTITY,
+                                (*max - *min).abs(),
+                            ),
+                            Color::CYAN,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    egui_ctx.draw_if_ready(|ctx| {
+        egui::Window::new("Debug").show(ctx, |ui| {
+            ui.vertical(|ui| {
+                ui.label(format!("Culled nodes: {}", culled_nodes));
+                ui.label(format!("Partial nodes: {}", partial_nodes));
+                ui.label(format!("Visible nodes: {}", visible_nodes));
+                ui.label(format!("Total nodes: {}", total_nodes));
+                ui.separator();
+                ui.label(format!("Culled leaves: {}", culled_leaves));
+                ui.label(format!("Partial leaves: {}", partial_leaves));
+                ui.label(format!("Visible leaves: {}", visible_leaves));
+                ui.label(format!("Total leaves: {}", total_leaves));
+            });
+        });
+    });
 
     Ok(())
 }
@@ -147,7 +283,7 @@ fn selection_gizmos(
                 let gizmo_transform = Transform::new(
                     aabb.center(),
                     Quat::IDENTITY,
-                    aabb.size() + Vec3A::splat(0.1),
+                    aabb.size() + Vec3::splat(0.1),
                 );
                 gizmos.wire_cube_no_depth(gizmo_transform, Color::GREEN);
             }

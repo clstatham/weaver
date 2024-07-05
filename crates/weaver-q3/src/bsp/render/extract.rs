@@ -86,6 +86,13 @@ impl ExtractedBsp {
         self.nodes[index] = Some(node);
     }
 
+    pub fn node_iter(&self) -> impl Iterator<Item = (usize, &ExtractedBspNode)> {
+        self.nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, node)| node.as_ref().map(|n| (i, n)))
+    }
+
     pub fn walk<F>(&self, index: usize, visitor: &mut F)
     where
         F: FnMut(usize, &ExtractedBspNode),
@@ -213,6 +220,7 @@ pub fn extract_bsps(
                             back,
                             front,
                             parent,
+                            ..
                         } => {
                             extracted_bsp.insert(
                                 i,

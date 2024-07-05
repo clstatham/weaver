@@ -1,7 +1,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use encase::ShaderType;
-use weaver_core::geometry::Ray;
+use weaver_core::geometry::{Aabb, Intersection, Plane, Ray};
 use weaver_util::prelude::Result;
 
 use weaver_app::plugin::Plugin;
@@ -104,7 +104,7 @@ impl Camera {
         far: f32,
     ) -> Self {
         let view = glam::Mat4::look_at_rh(eye, center, up);
-        let proj = glam::Mat4::perspective_rh(fov, aspect, near, far);
+        let proj = glam::Mat4::perspective_rh_gl(fov, aspect, near, far);
         Self {
             active: true,
             view_matrix: view,
@@ -142,10 +142,7 @@ impl Camera {
         let eye = glam::Vec4::new(eye.x, eye.y, -1.0, 0.0);
         let world = inv_view * eye;
 
-        Ray::new(
-            inv_view.col(3).truncate().into(),
-            world.truncate().normalize().into(),
-        )
+        Ray::new(inv_view.col(3).truncate(), world.truncate().normalize())
     }
 
     pub fn world_to_screen(
@@ -153,25 +150,69 @@ impl Camera {
         world_pos: glam::Vec3,
         screen_size: glam::Vec2,
     ) -> Option<glam::Vec2> {
-        let clip_from_view = self.projection_matrix * self.view_matrix;
-        let ndc = clip_from_view.project_point3(world_pos);
+        let clip_from_world = self.projection_matrix * self.view_matrix;
+        let ndc = clip_from_world.project_point3(world_pos);
         let mut screen = (ndc.truncate() + glam::Vec2::ONE) / 2.0 * screen_size;
         screen.y = screen_size.y - screen.y;
         Some(screen)
     }
 
-    pub fn intersect_frustum_with_point(&self, point: glam::Vec3) -> bool {
-        // transform point to ndc
-        let clip_from_view = self.projection_matrix * self.view_matrix;
-        let ndc = clip_from_view.project_point3(point);
+    pub fn intersect_frustum_with_aabb(
+        &self,
+        aabb: &Aabb,
+        intersect_near: bool,
+        intersect_far: bool,
+    ) -> Intersection {
+        let planes = self.frustum_planes();
 
-        // check if point is inside frustum
-        ndc.x >= -1.0
-            && ndc.x <= 1.0
-            && ndc.y >= -1.0
-            && ndc.y <= 1.0
-            && ndc.z >= -1.0
-            && ndc.z <= 1.0
+        for (i, plane) in planes.into_iter().enumerate() {
+            if i == 4 && !intersect_near {
+                continue;
+            }
+            if i == 5 && !intersect_far {
+                continue;
+            }
+            let center = aabb.center().extend(1.0);
+            let rel_rad = aabb.relative_radius(plane.normal);
+            let normal_d = plane.to_coefficients();
+            let distance = center.dot(normal_d) + rel_rad;
+            if distance <= 0.0 {
+                return Intersection::Outside;
+            }
+        }
+
+        Intersection::Inside
+    }
+
+    /// Returns the frustum planes in the following order:
+    /// - Left
+    /// - Right
+    /// - Bottom
+    /// - Top
+    /// - Near
+    /// - Far
+    pub fn frustum_planes(&self) -> [Plane; 6] {
+        let clip_from_view = self.projection_matrix * self.view_matrix;
+
+        let row1 = clip_from_view.row(0);
+        let row2 = clip_from_view.row(1);
+        let row3 = clip_from_view.row(2);
+        let row4 = clip_from_view.row(3);
+
+        [
+            // Left
+            Plane::from_coefficient_vec4(row4 + row1, true),
+            // Right
+            Plane::from_coefficient_vec4(row4 - row1, true),
+            // Bottom
+            Plane::from_coefficient_vec4(row4 + row2, true),
+            // Top
+            Plane::from_coefficient_vec4(row4 - row2, true),
+            // Near
+            Plane::from_coefficient_vec4(row4 + row3, true),
+            // Far
+            Plane::from_coefficient_vec4(row4 - row3, true),
+        ]
     }
 }
 

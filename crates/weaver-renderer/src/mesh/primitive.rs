@@ -1,4 +1,4 @@
-use glam::{Vec2, Vec3, Vec3A};
+use glam::{Vec2, Vec3};
 use weaver_core::{
     mesh::{Mesh, Vertex},
     transform::Transform,
@@ -215,6 +215,6 @@ pub fn create_unit_cube(wireframe: bool) -> Mesh {
 impl Primitive for CubePrimitive {
     fn generate_mesh(&self) -> Mesh {
         create_unit_cube(self.wireframe)
-            .transformed(Transform::from_scale(Vec3A::splat(self.side_length / 2.0)))
+            .transformed(Transform::from_scale(Vec3::splat(self.side_length / 2.0)))
     }
 }

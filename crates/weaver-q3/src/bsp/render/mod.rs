@@ -12,15 +12,14 @@ use weaver_ecs::{
     query::{QueryFetchItem, With},
     storage::Ref,
 };
-use weaver_pbr::{
-    extract_pbr_camera_phase, prelude::SkyboxNodeLabel, render::PbrLightingInformation,
-};
+use weaver_pbr::{extract_pbr_camera_phase, render::PbrLightingInformation};
 use weaver_renderer::{
     bind_group::BindGroup,
     camera::{CameraBindGroup, GpuCamera, ViewTarget},
     clear_color::ClearColorLabel,
     draw_fn::{BinnedDrawItem, DrawFnId, DrawFunctions, DrawItem, FromDrawItemQuery},
     graph::{RenderGraphApp, RenderGraphCtx, ViewNode, ViewNodeRunner},
+    hdr::HdrNodeLabel,
     mesh::GpuMesh,
     prelude::wgpu,
     render_command::{AddRenderCommand, RenderCommand},
@@ -182,37 +181,37 @@ impl RenderCommand<BspDrawItem> for BspRenderCommand {
         render_pass.set_bind_group(2, instance_bind_group.bind_group(), &[]);
         render_pass.set_bind_group(3, lighting_bind_group.bind_group(), &[]);
 
-        let inv_view = camera.camera.view_matrix.inverse();
-        let camera_pos = inv_view.col(3).truncate();
+        // let inv_view = camera.camera.view_matrix.inverse();
+        // let camera_pos = inv_view.col(3).truncate();
 
-        // figure out what leaf cluster the camera is in
-        let mut camera_cluster = -1i32;
-        let mut stack = vec![0];
+        // // figure out what leaf cluster the camera is in
+        // let mut camera_cluster = -1i32;
+        // let mut stack = vec![0];
 
-        while let Some(node_index) = stack.pop() {
-            let node = bsp.nodes[node_index].as_ref().unwrap();
-            match node {
-                ExtractedBspNode::Leaf { cluster, .. } => {
-                    camera_cluster = *cluster as i32;
-                    break;
-                }
-                ExtractedBspNode::Node {
-                    back, front, plane, ..
-                } => {
-                    let dist = plane.normal.dot(camera_pos) - plane.distance;
+        // while let Some(node_index) = stack.pop() {
+        //     let node = bsp.nodes[node_index].as_ref().unwrap();
+        //     match node {
+        //         ExtractedBspNode::Leaf { cluster, .. } => {
+        //             camera_cluster = *cluster as i32;
+        //             break;
+        //         }
+        //         ExtractedBspNode::Node {
+        //             back, front, plane, ..
+        //         } => {
+        //             let dist = plane.normal.dot(camera_pos) - plane.distance;
 
-                    if dist > 0.0 {
-                        stack.push(*front);
-                        stack.push(*back);
-                    } else {
-                        stack.push(*back);
-                        stack.push(*front);
-                    }
-                }
-            }
-        }
+        //             if dist > 0.0 {
+        //                 stack.push(*front);
+        //                 stack.push(*back);
+        //             } else {
+        //                 stack.push(*back);
+        //                 stack.push(*front);
+        //             }
+        //         }
+        //     }
+        // }
 
-        bsp.walk(0, &mut |_index, node| {
+        for (_, node) in bsp.node_iter() {
             match node {
                 ExtractedBspNode::Leaf {
                     shader_mesh_entities,
@@ -221,25 +220,20 @@ impl RenderCommand<BspDrawItem> for BspRenderCommand {
                     min,
                     max,
                 } => {
-                    // // check if the leaf intersects with the camera frustum
-                    // let mut visible = false;
-                    // let aabb = Aabb::new((*min).into(), (*max).into());
-                    // let corners = aabb.corners();
-                    // for p in corners {
-                    //     if camera.camera.intersect_frustum_with_point(p.into()) {
-                    //         visible = true;
-                    //         break;
-                    //     }
-                    // }
-                    // if visible
-                    {
-                        for entity in shader_mesh_entities {
-                            let (mesh, shader, _typ) = shader_meshes.get(*entity).unwrap();
-                            let mesh = mesh_assets.get(*mesh).unwrap();
-                            let shader = shader_assets.get(*shader).unwrap();
-                            let mesh = mesh.into_inner();
-                            let shader = shader.into_inner();
+                    // check if the leaf intersects with the camera frustum
+                    // let aabb = Aabb::new(*min, *max);
 
+                    for entity in shader_mesh_entities {
+                        let (mesh, shader, _typ) = shader_meshes.get(*entity).unwrap();
+                        let mesh = mesh_assets.get(*mesh).unwrap();
+                        let shader = shader_assets.get(*shader).unwrap();
+                        let mesh = mesh.into_inner();
+                        let shader = shader.into_inner();
+                        if camera
+                            .camera
+                            .intersect_frustum_with_aabb(&mesh.aabb, true, false)
+                            != Intersection::Outside
+                        {
                             render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                             render_pass.set_index_buffer(
                                 mesh.index_buffer.slice(..),
@@ -263,7 +257,7 @@ impl RenderCommand<BspDrawItem> for BspRenderCommand {
                 }
                 ExtractedBspNode::Node { .. } => {}
             }
-        });
+        }
 
         Ok(())
     }
@@ -387,7 +381,7 @@ impl Plugin for BspRenderPlugin {
 
         render_app.add_render_main_graph_node::<ViewNodeRunner<BspRenderNode>>(BspRenderNodeLabel);
         render_app.add_render_main_graph_edge(ClearColorLabel, BspRenderNodeLabel);
-        render_app.add_render_main_graph_edge(BspRenderNodeLabel, SkyboxNodeLabel);
+        render_app.add_render_main_graph_edge(BspRenderNodeLabel, HdrNodeLabel);
 
         Ok(())
     }

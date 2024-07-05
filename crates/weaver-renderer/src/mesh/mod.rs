@@ -1,7 +1,7 @@
 use crate::asset::{ExtractRenderAssetPlugin, RenderAsset};
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::prelude::Asset;
-use weaver_core::mesh::Mesh;
+use weaver_core::{geometry::Aabb, mesh::Mesh};
 use weaver_util::prelude::*;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
@@ -9,6 +9,7 @@ pub mod primitive;
 
 #[derive(Debug, Asset)]
 pub struct GpuMesh {
+    pub aabb: Aabb,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: u32,
@@ -40,6 +41,7 @@ impl RenderAsset for GpuMesh {
         });
 
         Some(Self {
+            aabb: base_asset.aabb,
             vertex_buffer,
             index_buffer,
             num_indices: base_asset.indices.len() as u32,

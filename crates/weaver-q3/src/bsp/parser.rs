@@ -686,6 +686,8 @@ pub struct BspFile {
 pub fn bsp_file(input: &[u8]) -> IResult<&[u8], BspFile> {
     let (_, header) = bsp_header(input)?;
 
+    log::debug!("Parsing bsp file with header: {:#?}", header);
+
     let BspHeader {
         magic: _,
         version,
@@ -1079,14 +1081,23 @@ pub fn bsp_file(input: &[u8]) -> IResult<&[u8], BspFile> {
         )));
     }
 
-    let (rest, vis_data) = crate::bsp::parser::vis_data(vis_data_bytes)?;
-    if !rest.is_empty() && !vis_data_bytes.is_empty() {
-        log::error!("Failed to parse vis data");
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Verify,
-        )));
-    }
+    let vis_data = if vis_data.length == 0 {
+        VisData {
+            num_vecs: 0,
+            size_vecs: 0,
+            vecs: vec![],
+        }
+    } else {
+        let (_, vis_data) = crate::bsp::parser::vis_data(vis_data_bytes)?;
+        if !rest.is_empty() && !vis_data_bytes.is_empty() {
+            log::error!("Failed to parse vis data");
+            return Err(nom::Err::Error(nom::error::Error::new(
+                input,
+                nom::error::ErrorKind::Verify,
+            )));
+        }
+        vis_data
+    };
 
     Ok((
         input,

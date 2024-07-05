@@ -1,4 +1,4 @@
-use glam::{Vec2, Vec3, Vec3A, Vec4};
+use glam::{Vec2, Vec3, Vec4};
 use weaver_asset::{
     loading::LoadCtx,
     prelude::{Asset, LoadAsset},
@@ -28,12 +28,12 @@ pub struct Mesh {
 
 impl Mesh {
     pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
-        let mut min = Vec3A::splat(f32::INFINITY);
-        let mut max = Vec3A::splat(f32::NEG_INFINITY);
+        let mut min = Vec3::splat(f32::INFINITY);
+        let mut max = Vec3::splat(f32::NEG_INFINITY);
 
         for vertex in &vertices {
-            min = min.min(vertex.position.into());
-            max = max.max(vertex.position.into());
+            min = min.min(vertex.position);
+            max = max.max(vertex.position);
         }
 
         let aabb = Aabb::new(min, max);
@@ -62,12 +62,12 @@ impl Mesh {
     }
 
     pub fn regenerate_aabb(&mut self) {
-        let mut min = Vec3A::splat(f32::INFINITY);
-        let mut max = Vec3A::splat(f32::NEG_INFINITY);
+        let mut min = Vec3::splat(f32::INFINITY);
+        let mut max = Vec3::splat(f32::NEG_INFINITY);
 
         for vertex in &self.vertices {
-            min = min.min(vertex.position.into());
-            max = max.max(vertex.position.into());
+            min = min.min(vertex.position);
+            max = max.max(vertex.position);
         }
 
         self.aabb = Aabb::new(min, max);

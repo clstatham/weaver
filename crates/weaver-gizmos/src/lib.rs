@@ -604,6 +604,10 @@ impl Plugin for GizmoPlugin {
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.insert_resource(gizmos);
 
+        render_app.add_render_main_graph_node::<ViewNodeRunner<GizmoRenderNode>>(GizmoNodeLabel);
+        render_app.add_render_main_graph_edge(PbrNodeLabel, GizmoNodeLabel);
+        render_app.add_render_main_graph_edge(GizmoNodeLabel, HdrNodeLabel);
+
         Ok(())
     }
 
@@ -612,10 +616,6 @@ impl Plugin for GizmoPlugin {
 
         render_app.init_resource::<SolidCubeGizmo>();
         render_app.init_resource::<WireCubeGizmo>();
-
-        render_app.add_render_main_graph_node::<ViewNodeRunner<GizmoRenderNode>>(GizmoNodeLabel);
-        render_app.add_render_main_graph_edge(PbrNodeLabel, GizmoNodeLabel);
-        render_app.add_render_main_graph_edge(GizmoNodeLabel, HdrNodeLabel);
 
         Ok(())
     }

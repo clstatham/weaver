@@ -88,7 +88,7 @@ impl FlyCameraController {
     }
 
     pub fn projection_matrix(&self) -> Mat4 {
-        Mat4::perspective_rh(self.fov, self.aspect, self.near, self.far)
+        Mat4::perspective_rh_gl(self.fov, self.aspect, self.near, self.far)
     }
 
     pub fn looking_at(mut self, eye: Vec3, target: Vec3, up: Vec3) -> Self {

@@ -22,9 +22,9 @@ impl TransformGizmo {
         let axis_size = self.extra_scaling * self.axis_size;
         let size = self.extra_scaling * self.size;
 
-        let x_axis = Vec3A::X;
-        let y_axis = Vec3A::Y;
-        let z_axis = Vec3A::Z;
+        let x_axis = Vec3::X;
+        let y_axis = Vec3::Y;
+        let z_axis = Vec3::Z;
 
         let x_start = focus_translation + x_axis * handle_size;
         let y_start = focus_translation + y_axis * handle_size;
@@ -38,15 +38,15 @@ impl TransformGizmo {
         let y_middle = (y_start + y_end) / 2.0 - y_axis * handle_size / 2.0;
         let z_middle = (z_start + z_end) / 2.0 - z_axis * handle_size / 2.0;
 
-        let x_scale = Vec3A::new(size, axis_size, axis_size);
-        let y_scale = Vec3A::new(axis_size, size, axis_size);
-        let z_scale = Vec3A::new(axis_size, axis_size, size);
+        let x_scale = Vec3::new(size, axis_size, axis_size);
+        let y_scale = Vec3::new(axis_size, size, axis_size);
+        let z_scale = Vec3::new(axis_size, axis_size, size);
 
         gizmos.solid_cube_no_depth(
             Transform {
                 translation: focus_translation,
                 rotation: Quat::IDENTITY,
-                scale: Vec3A::splat(handle_size),
+                scale: Vec3::splat(handle_size),
             },
             self.middle_color,
         );
@@ -65,7 +65,7 @@ impl TransformGizmo {
             Transform {
                 translation: x_end,
                 rotation: Quat::IDENTITY,
-                scale: Vec3A::splat(handle_size),
+                scale: Vec3::splat(handle_size),
             },
             self.x_color,
         );
@@ -84,7 +84,7 @@ impl TransformGizmo {
             Transform {
                 translation: y_end,
                 rotation: Quat::IDENTITY,
-                scale: Vec3A::splat(handle_size),
+                scale: Vec3::splat(handle_size),
             },
             self.y_color,
         );
@@ -103,7 +103,7 @@ impl TransformGizmo {
             Transform {
                 translation: z_end,
                 rotation: Quat::IDENTITY,
-                scale: Vec3A::splat(handle_size),
+                scale: Vec3::splat(handle_size),
             },
             self.z_color,
         );

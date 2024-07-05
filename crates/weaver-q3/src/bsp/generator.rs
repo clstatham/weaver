@@ -352,8 +352,8 @@ impl GenBspNode {
                 index: index + file.nodes.len(),
                 cluster: leaf.cluster,
                 area: leaf.area,
-                mins: int3_to_vec3(leaf.mins),
-                maxs: int3_to_vec3(leaf.maxs),
+                mins: q3_to_weaver().transform_point3(int3_to_vec3(leaf.mins)),
+                maxs: q3_to_weaver().transform_point3(int3_to_vec3(leaf.maxs)),
                 leaf_faces: (leaf.leaf_face..leaf.leaf_face + leaf.num_leaf_faces)
                     .map(|i| file.leaf_faces[i as usize].face)
                     .map(|i| GenBspFace::build(file, &file.faces[i as usize], i as u32))
@@ -376,8 +376,8 @@ impl GenBspNode {
                 index: index + file.nodes.len(),
                 cluster: leaf.cluster,
                 area: leaf.area,
-                mins: int3_to_vec3(leaf.mins),
-                maxs: int3_to_vec3(leaf.maxs),
+                mins: q3_to_weaver().transform_point3(int3_to_vec3(leaf.mins)),
+                maxs: q3_to_weaver().transform_point3(int3_to_vec3(leaf.maxs)),
                 leaf_faces: (leaf.leaf_face..leaf.leaf_face + leaf.num_leaf_faces)
                     .map(|i| file.leaf_faces[i as usize].face)
                     .map(|i| GenBspFace::build(file, &file.faces[i as usize], i as u32))
@@ -400,8 +400,8 @@ impl GenBspNode {
                 normal: q3_to_weaver().transform_vector3(plane.normal.into()),
                 distance: plane.dist,
             },
-            mins: int3_to_vec3(node.mins),
-            maxs: int3_to_vec3(node.maxs),
+            mins: q3_to_weaver().transform_point3(int3_to_vec3(node.mins)),
+            maxs: q3_to_weaver().transform_point3(int3_to_vec3(node.maxs)),
             children: [Box::new(child1), Box::new(child2)],
         }
     }

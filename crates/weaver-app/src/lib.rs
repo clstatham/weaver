@@ -354,6 +354,13 @@ impl App {
         self.sub_apps.sub_apps.get_mut(&TypeId::of::<T>())
     }
 
+    pub fn configure_sub_app<T: AppLabel>(&mut self, f: impl FnOnce(&mut SubApp)) -> &mut Self {
+        if let Some(sub_app) = self.get_sub_app_mut::<T>() {
+            f(sub_app);
+        }
+        self
+    }
+
     pub fn remove_sub_app<T: AppLabel>(&mut self) -> Option<SubApp> {
         self.sub_apps.sub_apps.remove(&TypeId::of::<T>())
     }

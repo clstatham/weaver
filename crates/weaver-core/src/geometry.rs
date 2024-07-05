@@ -8,55 +8,115 @@ pub trait Intersect<Rhs> {
     fn intersect(&self, rhs: &Rhs) -> Option<Self::Output>;
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(C)]
+pub enum Intersection {
+    Inside = 1,
+    Outside = 2,
+    Intersecting = 3, // 1 | 2
+}
+
 /// 3D plane with infinite extent
 #[derive(Clone, Copy, Debug, PartialEq, Reflect)]
 #[repr(C)]
 pub struct Plane {
-    pub normal: Vec3A,
-    pub center: Vec3A,
+    /// Normal vector of the plane
+    pub normal: Vec3,
+    /// Distance from the origin along the normal vector
+    pub distance: f32,
 }
 
 impl Plane {
-    pub fn new(normal: Vec3A, center: Vec3A) -> Self {
-        Self { normal, center }
+    pub const ZERO: Self = Self {
+        normal: Vec3::ZERO,
+        distance: 0.0,
+    };
+
+    pub fn new(normal: Vec3, distance: f32) -> Self {
+        Self { normal, distance }
     }
 
-    pub fn from_points(a: Vec3A, b: Vec3A, c: Vec3A) -> Self {
+    pub fn from_normal_and_point(normal: Vec3, point: Vec3) -> Self {
+        let distance = normal.dot(point);
+        Self { normal, distance }
+    }
+
+    pub fn from_points(a: Vec3, b: Vec3, c: Vec3) -> Self {
         let normal = (b - a).cross(c - a).normalize();
         let center = a;
-        Self { normal, center }
+        let distance = normal.dot(center);
+        Self { normal, distance }
+    }
+
+    pub fn from_coefficients(a: f32, b: f32, c: f32, d: f32, normalize: bool) -> Self {
+        let normal = Vec3::new(a, b, c);
+        let distance = d;
+        if normalize {
+            let length_recip = normal.length_recip();
+            let normal = normal.normalize();
+            let distance = distance * length_recip;
+            Self { normal, distance }
+        } else {
+            Self { normal, distance }
+        }
+    }
+
+    pub fn from_coefficient_vec4(coefficients: Vec4, normalize: bool) -> Self {
+        Self::from_coefficients(
+            coefficients.x,
+            coefficients.y,
+            coefficients.z,
+            coefficients.w,
+            normalize,
+        )
+    }
+
+    pub fn to_coefficients(&self) -> Vec4 {
+        Vec4::new(self.normal.x, self.normal.y, self.normal.z, self.distance)
+    }
+
+    pub fn center(&self) -> Vec3 {
+        self.normal * self.distance
     }
 
     pub fn transformed(&self, transform: Transform) -> Self {
         let matrix = transform.matrix();
-        let normal = matrix.transform_vector3a(self.normal);
-        let center = matrix.transform_point3a(self.center);
-        Self { normal, center }
+        let normal = matrix.transform_vector3(self.normal);
+        let center = matrix.transform_point3(self.center());
+        let distance = normal.dot(center);
+        Self { normal, distance }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum HalfSpace {
+    Front,
+    Back,
+    On,
 }
 
 /// 3D ray with origin and direction, and infinite extent
 #[derive(Clone, Copy, Debug, PartialEq, Reflect)]
 #[repr(C)]
 pub struct Ray {
-    pub origin: Vec3A,
-    pub direction: Vec3A,
+    pub origin: Vec3,
+    pub direction: Vec3,
 }
 
 impl Ray {
-    pub fn new(origin: Vec3A, direction: Vec3A) -> Self {
+    pub fn new(origin: Vec3, direction: Vec3) -> Self {
         Self { origin, direction }
     }
 
-    pub fn at(&self, t: f32) -> Vec3A {
+    pub fn at(&self, t: f32) -> Vec3 {
         self.origin + self.direction * t
     }
 
     pub fn transformed(&self, transform: Transform) -> Self {
         let matrix = transform.matrix();
         Self {
-            origin: matrix.transform_point3a(self.origin),
-            direction: matrix.transform_vector3a(self.direction),
+            origin: matrix.transform_point3(self.origin),
+            direction: matrix.transform_vector3(self.direction),
         }
     }
 }
@@ -64,26 +124,26 @@ impl Ray {
 #[derive(Clone, Copy, Debug, PartialEq, Reflect)]
 #[repr(C)]
 pub struct Triangle {
-    pub a: Vec3A,
-    pub b: Vec3A,
-    pub c: Vec3A,
+    pub a: Vec3,
+    pub b: Vec3,
+    pub c: Vec3,
 }
 
 impl Triangle {
-    pub fn new(a: Vec3A, b: Vec3A, c: Vec3A) -> Self {
+    pub fn new(a: Vec3, b: Vec3, c: Vec3) -> Self {
         Self { a, b, c }
     }
 
-    pub fn normal(&self) -> Vec3A {
+    pub fn normal(&self) -> Vec3 {
         (self.b - self.a).cross(self.c - self.a).normalize()
     }
 
     pub fn transformed(&self, transform: Transform) -> Self {
         let matrix = transform.matrix();
         Self {
-            a: matrix.transform_point3a(self.a),
-            b: matrix.transform_point3a(self.b),
-            c: matrix.transform_point3a(self.c),
+            a: matrix.transform_point3(self.a),
+            b: matrix.transform_point3(self.b),
+            c: matrix.transform_point3(self.c),
         }
     }
 }
@@ -145,44 +205,54 @@ impl Intersect<Triangle> for Ray {
 #[derive(Clone, Copy, Debug, PartialEq, Reflect, Default)]
 #[repr(C)]
 pub struct Aabb {
-    pub min: Vec3A,
-    pub max: Vec3A,
+    pub min: Vec3,
+    pub max: Vec3,
 }
 
 impl Aabb {
-    pub fn new(min: Vec3A, max: Vec3A) -> Self {
+    #[inline]
+    pub const fn new(min: Vec3, max: Vec3) -> Self {
         Self { min, max }
     }
 
-    pub fn center(&self) -> Vec3A {
-        (self.min + self.max) / 2.0
+    #[inline]
+    pub fn center(&self) -> Vec3 {
+        (self.max + self.min) * 0.5
     }
 
-    pub fn size(&self) -> Vec3A {
+    #[inline]
+    pub fn size(&self) -> Vec3 {
         self.max - self.min
     }
 
-    pub fn half_size(&self) -> Vec3A {
-        self.size() / 2.0
+    #[inline]
+    pub fn half_size(&self) -> Vec3 {
+        (self.max - self.min) * 0.5
     }
 
+    #[inline]
+    pub fn relative_radius(&self, plane_normal: Vec3) -> f32 {
+        self.half_size().dot(plane_normal.abs())
+    }
+
+    #[inline]
     pub fn transformed(&self, transform: Transform) -> Self {
         let matrix = transform.matrix();
-        let min = matrix.transform_point3a(self.min);
-        let max = matrix.transform_point3a(self.max);
+        let min = matrix.transform_point3(self.min);
+        let max = matrix.transform_point3(self.max);
         Self { min, max }
     }
 
-    pub fn corners(&self) -> [Vec3A; 8] {
+    pub const fn corners(&self) -> [Vec3; 8] {
         [
-            Vec3A::new(self.min.x, self.min.y, self.min.z),
-            Vec3A::new(self.min.x, self.min.y, self.max.z),
-            Vec3A::new(self.min.x, self.max.y, self.min.z),
-            Vec3A::new(self.min.x, self.max.y, self.max.z),
-            Vec3A::new(self.max.x, self.min.y, self.min.z),
-            Vec3A::new(self.max.x, self.min.y, self.max.z),
-            Vec3A::new(self.max.x, self.max.y, self.min.z),
-            Vec3A::new(self.max.x, self.max.y, self.max.z),
+            Vec3::new(self.min.x, self.min.y, self.min.z),
+            Vec3::new(self.min.x, self.min.y, self.max.z),
+            Vec3::new(self.min.x, self.max.y, self.min.z),
+            Vec3::new(self.min.x, self.max.y, self.max.z),
+            Vec3::new(self.max.x, self.min.y, self.min.z),
+            Vec3::new(self.max.x, self.min.y, self.max.z),
+            Vec3::new(self.max.x, self.max.y, self.min.z),
+            Vec3::new(self.max.x, self.max.y, self.max.z),
         ]
     }
 }
@@ -236,7 +306,7 @@ impl Intersect<Plane> for Ray {
             return None;
         }
 
-        let t = (plane.center - self.origin).dot(plane.normal) / denom;
+        let t = (plane.center() - self.origin).dot(plane.normal) / denom;
 
         if t < 0.0 {
             return None;
@@ -266,19 +336,19 @@ impl Obb {
         Self { aabb, transform }
     }
 
-    pub fn center(&self) -> Vec3A {
+    pub fn center(&self) -> Vec3 {
         self.transform.translation
     }
 
-    pub fn size(&self) -> Vec3A {
+    pub fn size(&self) -> Vec3 {
         self.aabb.size()
     }
 
-    pub fn half_size(&self) -> Vec3A {
+    pub fn half_size(&self) -> Vec3 {
         self.aabb.half_size()
     }
 
-    pub fn corners(&self) -> [Vec3A; 8] {
+    pub fn corners(&self) -> [Vec3; 8] {
         self.aabb.corners()
     }
 
@@ -311,12 +381,12 @@ impl Intersect<Obb> for Ray {
         let mut tmin = 0.0f32;
         let mut tmax = f32::INFINITY;
 
-        let obb_pos_worldspace: Vec3A = matrix.col(3).truncate().into();
+        let obb_pos_worldspace: Vec3 = matrix.col(3).truncate();
 
         let delta = obb_pos_worldspace - self.origin;
 
         for i in 0..3 {
-            let axis: Vec3A = matrix.col(i).truncate().into();
+            let axis: Vec3 = matrix.col(i).truncate();
             let e = axis.dot(delta);
             let f = axis.dot(self.direction);
 
@@ -373,7 +443,7 @@ impl Intersect<Ray> for Mesh {
             let b = self.vertices[indices[1] as usize].position;
             let c = self.vertices[indices[2] as usize].position;
 
-            let triangle = Triangle::new(a.into(), b.into(), c.into());
+            let triangle = Triangle::new(a, b, c);
 
             if let Some(intersection) = rhs.intersect(&triangle) {
                 if let Some(ref closest) = closest_intersection {
