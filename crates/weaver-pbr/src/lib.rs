@@ -11,7 +11,7 @@ use material::{
 use render::{PbrLightingInformation, PbrMeshInstances, PbrNode, PbrNodeLabel, PbrRenderCommand};
 use skybox::{Skybox, SkyboxNodeLabel, SkyboxNodePlugin, SkyboxPlugin};
 use weaver_app::prelude::*;
-use weaver_asset::{AddAsset, Assets, Handle};
+use weaver_asset::{AssetApp, Assets, Handle};
 use weaver_core::{texture::Texture, transform::Transform};
 use weaver_ecs::{
     commands::WorldMut,

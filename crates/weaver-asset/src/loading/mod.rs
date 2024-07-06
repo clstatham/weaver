@@ -212,10 +212,7 @@ impl<'w, 'f> LoadCtx<'w, 'f> {
         self.resources_accessed.remove(&TypeId::of::<T>());
     }
 
-    pub fn load_asset<T: Loadable, L: LoadAsset<T>>(
-        &mut self,
-        path: impl AsRef<Path>,
-    ) -> Result<T> {
+    pub fn load_asset<T: Loadable, L: Loader<T>>(&mut self, path: impl AsRef<Path>) -> Result<T> {
         let old_path = self.original_path.clone();
         self.original_path = path.as_ref().to_path_buf();
         let world = unsafe { self.world.world_mut() };
@@ -226,17 +223,17 @@ impl<'w, 'f> LoadCtx<'w, 'f> {
     }
 }
 
-pub trait LoadAsset<T: Loadable>: Resource + FromWorld {
+pub trait Loader<T: Loadable>: Resource + FromWorld {
     fn load(&self, ctx: &mut LoadCtx<'_, '_>) -> Result<T>;
 }
 
-pub struct AssetLoader<'w, T: Loadable, L: LoadAsset<T>> {
+pub struct AssetLoader<'w, T: Loadable, L: Loader<T>> {
     loader: &'w mut L,
     world: &'w mut World,
     _marker: std::marker::PhantomData<fn() -> T>,
 }
 
-impl<'w, T: Loadable, L: LoadAsset<T>> AssetLoader<'w, T, L> {
+impl<'w, T: Loadable, L: Loader<T>> AssetLoader<'w, T, L> {
     pub fn load(self, path: impl AsRef<Path>) -> Result<T> {
         let path = path.as_ref();
         let mut filesystem = Filesystem::default();
@@ -285,7 +282,7 @@ impl<'w, T: Loadable, L: LoadAsset<T>> AssetLoader<'w, T, L> {
     }
 }
 
-unsafe impl<T: Loadable, L: LoadAsset<T>> SystemParam for AssetLoader<'_, T, L> {
+unsafe impl<T: Loadable, L: Loader<T>> SystemParam for AssetLoader<'_, T, L> {
     type State = ();
     type Item<'w, 's> = AssetLoader<'w, T, L>;
 

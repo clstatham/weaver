@@ -34,6 +34,7 @@ impl<'w, T: Resource> Res<'w, T> {
         Self { value, ticks }
     }
 
+    #[inline]
     pub fn into_inner(self) -> &'w T {
         self.value
     }
@@ -45,6 +46,7 @@ where
 {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         self.value
     }
@@ -78,6 +80,7 @@ impl<'w, T: Resource> ResMut<'w, T> {
         Self { value, ticks }
     }
 
+    #[inline]
     pub fn into_inner(self) -> &'w mut T {
         self.value
     }
@@ -89,6 +92,7 @@ where
 {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         self.value
     }

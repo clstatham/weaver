@@ -1,7 +1,7 @@
 use glam::{Vec2, Vec3, Vec4};
 use weaver_asset::{
     loading::LoadCtx,
-    prelude::{Asset, LoadAsset},
+    prelude::{Asset, Loader},
     ReflectAsset,
 };
 use weaver_ecs::prelude::{Reflect, Resource};
@@ -85,7 +85,7 @@ impl Mesh {
 #[derive(Resource, Default)]
 pub struct ObjMeshLoader;
 
-impl LoadAsset<Mesh> for ObjMeshLoader {
+impl Loader<Mesh> for ObjMeshLoader {
     fn load(&self, ctx: &mut LoadCtx) -> Result<Mesh> {
         let meshes = load_obj(ctx)?;
         if meshes.len() != 1 {
@@ -98,7 +98,7 @@ impl LoadAsset<Mesh> for ObjMeshLoader {
     }
 }
 
-impl LoadAsset<Vec<Mesh>> for ObjMeshLoader {
+impl Loader<Vec<Mesh>> for ObjMeshLoader {
     fn load(&self, ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
         load_obj(ctx)
     }
@@ -177,7 +177,7 @@ pub fn load_obj(ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
 #[derive(Resource, Default)]
 pub struct GltfMeshLoader;
 
-impl LoadAsset<Mesh> for GltfMeshLoader {
+impl Loader<Mesh> for GltfMeshLoader {
     fn load(&self, ctx: &mut LoadCtx) -> Result<Mesh> {
         let meshes = load_gltf(ctx)?;
         if meshes.len() != 1 {
@@ -190,7 +190,7 @@ impl LoadAsset<Mesh> for GltfMeshLoader {
     }
 }
 
-impl LoadAsset<Vec<Mesh>> for GltfMeshLoader {
+impl Loader<Vec<Mesh>> for GltfMeshLoader {
     fn load(&self, ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
         load_gltf(ctx)
     }

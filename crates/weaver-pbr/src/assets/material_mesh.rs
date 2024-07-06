@@ -41,7 +41,7 @@ impl LoadedMaterialMeshPrimitive {
 #[derive(Resource, Default)]
 pub struct ObjMaterialModelLoader;
 
-impl LoadAsset<LoadedModelWithMaterials> for ObjMaterialModelLoader {
+impl Loader<LoadedModelWithMaterials> for ObjMaterialModelLoader {
     fn load(&self, ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWithMaterials> {
         load_obj_material_mesh(ctx)
     }
@@ -224,7 +224,7 @@ pub fn load_obj_material_mesh(ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWi
 #[derive(Resource, Default)]
 pub struct GltfMaterialModelLoader;
 
-impl LoadAsset<LoadedModelWithMaterials> for GltfMaterialModelLoader {
+impl Loader<LoadedModelWithMaterials> for GltfMaterialModelLoader {
     fn load(&self, ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWithMaterials> {
         load_gltf_material_mesh(ctx)
     }

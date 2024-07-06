@@ -80,7 +80,7 @@ impl From<Handle<Texture>> for Material {
 #[derive(Resource, Default)]
 pub struct GltfMaterialLoader;
 
-impl LoadAsset<Material> for GltfMaterialLoader {
+impl Loader<Material> for GltfMaterialLoader {
     fn load(&self, ctx: &mut LoadCtx) -> Result<Material> {
         let bytes = ctx.read_original()?;
         let (document, _buffers, images) = gltf::import_slice(bytes)?;

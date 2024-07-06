@@ -1,5 +1,6 @@
 use std::{any::TypeId, cell::UnsafeCell, ops::Deref};
 
+use rayon::prelude::*;
 use weaver_util::{
     lock::{Lock, Read, Write},
     prelude::FxHashMap,
@@ -65,6 +66,9 @@ impl Data {
         (*self.data).downcast_mut()
     }
 }
+
+unsafe impl Send for Data {}
+unsafe impl Sync for Data {}
 
 pub struct SparseSet<T> {
     pub(crate) dense: Vec<T>,
@@ -187,6 +191,10 @@ impl<T> SparseSet<T> {
         self.indices.iter()
     }
 
+    pub fn par_sparse_iter(&self) -> impl ParallelIterator<Item = usize> + '_ {
+        self.indices.par_iter().copied()
+    }
+
     pub fn sparse_iter_with_ticks(
         &self,
     ) -> impl Iterator<Item = (usize, Read<Tick>, Read<Tick>)> + '_ {
@@ -263,6 +271,9 @@ pub struct Archetype {
     columns: TypeIdMap<SparseSet<UnsafeCell<Data>>>,
     entities: EntitySet,
 }
+
+unsafe impl Send for Archetype {}
+unsafe impl Sync for Archetype {}
 
 impl Archetype {
     pub fn new() -> Self {
@@ -357,6 +368,10 @@ impl Archetype {
 
     pub fn entity_iter(&self) -> impl Iterator<Item = Entity> + '_ {
         self.entities.iter().copied()
+    }
+
+    pub fn par_entity_iter(&self) -> impl ParallelIterator<Item = Entity> + '_ {
+        self.entities.par_iter().copied()
     }
 
     pub fn column_iter(&self) -> impl Iterator<Item = (&TypeId, ColumnRef)> + '_ {
@@ -738,6 +753,10 @@ impl Storage {
 
     pub fn archetype_iter(&self) -> impl Iterator<Item = &Archetype> + '_ {
         self.archetypes.values()
+    }
+
+    pub fn par_archetype_iter(&self) -> impl ParallelIterator<Item = &Archetype> + '_ {
+        self.archetypes.par_values()
     }
 
     pub fn get_archetype(&self, entity: Entity) -> Option<&Archetype> {

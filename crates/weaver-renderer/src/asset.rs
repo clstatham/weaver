@@ -1,5 +1,5 @@
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{AddAsset, Asset, Assets, Handle, UntypedHandle};
+use weaver_asset::{Asset, AssetApp, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
     commands::Commands,
     component::{Res, ResMut},

@@ -1,15 +1,12 @@
 use lexer::LexedShader;
-use loader::{LoadedShader, ShaderCache, TextureCache, TryEverythingTextureLoader};
-use render::{
-    extract::ExtractedShader, init_keyed_shader_stage_pipelines, KeyedShaderStage,
-    KeyedShaderStagePipelineCache,
+use loader::{
+    LexedShaderCache, LoadedShader, LoadedShaderCache, TextureCache, TryEverythingTextureLoader,
 };
+use render::{extract::ExtractedShader, KeyedShaderStagePipelineCache};
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{AddAsset, Assets};
+use weaver_asset::{AssetApp, Assets};
 use weaver_core::texture::Texture;
-use weaver_renderer::{
-    asset::ExtractRenderAssetPlugin, bind_group::BindGroup, InitRenderResources, RenderApp,
-};
+use weaver_renderer::{asset::ExtractRenderAssetPlugin, RenderApp};
 use weaver_util::prelude::Result;
 
 pub mod lexer;
@@ -22,7 +19,8 @@ pub struct ShaderPlugin;
 impl Plugin for ShaderPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.init_resource::<TextureCache>();
-        app.init_resource::<ShaderCache>();
+        app.init_resource::<LexedShaderCache>();
+        app.init_resource::<LoadedShaderCache>();
         app.add_asset_loader::<Texture, TryEverythingTextureLoader>();
         app.add_asset::<LexedShader>();
         let mut shaders = Assets::<LoadedShader>::new();
@@ -34,9 +32,7 @@ impl Plugin for ShaderPlugin {
 
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.add_plugin(ExtractRenderAssetPlugin::<ExtractedShader>::default())?;
-        render_app.add_system(init_keyed_shader_stage_pipelines, InitRenderResources);
         render_app.init_resource::<KeyedShaderStagePipelineCache>();
-        render_app.add_asset::<BindGroup<KeyedShaderStage>>();
 
         Ok(())
     }

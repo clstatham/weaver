@@ -2,7 +2,7 @@ use color::Color;
 use mesh::Mesh;
 use transform::Transform;
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::AddAsset;
+use weaver_asset::AssetApp;
 use weaver_util::prelude::Result;
 
 pub mod color;

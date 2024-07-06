@@ -19,38 +19,40 @@ struct VertexOutput {
     @location(4) uv: vec2<f32>,
 }
 
+var<push_constant> tex_index: u32;
+
 // material information
-@group(0) @binding(0) var          tex: texture_2d<f32>;
+@group(0) @binding(0) var          tex: binding_array<texture_2d<f32>>;
 @group(0) @binding(1) var          tex_sampler: sampler;
 
 // camera information
 @group(1) @binding(0) var<uniform> camera: CameraUniform;
 
 // model information
-@group(2) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
+// @group(2) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
 
 // lights information
-@group(3) @binding(0) var<storage> point_lights: array<PointLight>;
-@group(3) @binding(1) var          env_map_diffuse: texture_cube<f32>;
-@group(3) @binding(2) var          env_map_specular: texture_cube<f32>;
-@group(3) @binding(3) var          env_map_brdf: texture_2d<f32>;
-@group(3) @binding(4) var          env_map_sampler: sampler;
+@group(2) @binding(0) var<storage> point_lights: array<PointLight>;
+@group(2) @binding(1) var          env_map_diffuse: texture_cube<f32>;
+@group(2) @binding(2) var          env_map_specular: texture_cube<f32>;
+@group(2) @binding(3) var          env_map_brdf: texture_2d<f32>;
+@group(2) @binding(4) var          env_map_sampler: sampler;
 
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
 
-    let model_transform = model_transforms[input.instance_index];
+    // let model_transform = model_transforms[input.instance_index];
 
-    let world_position = (model_transform * vec4<f32>(input.position, 1.0));
+    let world_position = vec4<f32>(input.position, 1.0);
 
     output.world_position = world_position.xyz;
     output.clip_position = camera.proj * camera.view * world_position;
     output.uv = input.uv;
 
-    var N = normalize((model_transform * vec4<f32>(input.normal, 0.0)).xyz);
-    var T = normalize((model_transform * vec4<f32>(input.tangent, 0.0)).xyz);
+    var N = normalize(vec4<f32>(input.normal, 0.0).xyz);
+    var T = normalize(vec4<f32>(input.tangent, 0.0).xyz);
     var B = normalize(cross(N, T));
 
     output.world_tangent = T;
@@ -68,7 +70,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let world_binormal = input.world_binormal;
     let tex_coord = input.uv;
 
-    let tex_color = textureSample(tex, tex_sampler, tex_coord);
+    let tex_color = textureSample(tex[tex_index], tex_sampler, tex_coord);
     return vec4<f32>(tex_color.rgb, 1.0);
     // return vec4<f32>(1.0, 0.0, 0.0, 1.0);
 }

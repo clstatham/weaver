@@ -5,7 +5,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use loading::LoadAsset;
+use loading::{Loadable, Loader};
 use weaver_app::{App, SubApp};
 use weaver_ecs::prelude::{reflect_trait, Component, Resource};
 use weaver_util::{
@@ -17,7 +17,7 @@ pub mod loading;
 
 pub mod prelude {
     pub use crate::{
-        loading::{AssetLoader, LoadAsset},
+        loading::{AssetLoader, Loader},
         Asset, Assets, Handle, ReflectAsset, UntypedHandle,
     };
     pub use weaver_asset_macros::Asset;
@@ -148,6 +148,7 @@ pub struct AssetRef<'w, T: Asset> {
 }
 
 impl<'w, T: Asset> AssetRef<'w, T> {
+    #[inline]
     pub fn into_inner(self) -> &'w T {
         self.asset
     }
@@ -156,6 +157,7 @@ impl<'w, T: Asset> AssetRef<'w, T> {
 impl<'w, T: Asset> Deref for AssetRef<'w, T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         self.asset
     }
@@ -166,6 +168,7 @@ pub struct AssetMut<'w, T: Asset> {
 }
 
 impl<'w, T: Asset> AssetMut<'w, T> {
+    #[inline]
     pub fn into_inner(self) -> &'w mut T {
         self.asset
     }
@@ -174,12 +177,14 @@ impl<'w, T: Asset> AssetMut<'w, T> {
 impl<'w, T: Asset> Deref for AssetMut<'w, T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         self.asset
     }
 }
 
 impl<'w, T: Asset> DerefMut for AssetMut<'w, T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.asset
     }
@@ -241,12 +246,13 @@ impl<T: Asset> Assets<T> {
     }
 }
 
-pub trait AddAsset {
+pub trait AssetApp {
     fn add_asset<T: Asset>(&mut self) -> &mut Self;
-    fn add_asset_loader<T: Asset, L: LoadAsset<T>>(&mut self) -> &mut Self;
+    fn add_asset_loader<T: Asset + Loadable, L: Loader<T>>(&mut self) -> &mut Self;
+    fn add_resource_loader<T: Resource + Loadable, L: Loader<T>>(&mut self) -> &mut Self;
 }
 
-impl AddAsset for SubApp {
+impl AssetApp for SubApp {
     fn add_asset<T: Asset>(&mut self) -> &mut Self {
         if !self.has_resource::<Assets<T>>() {
             self.insert_resource(Assets::<T>::new());
@@ -254,22 +260,33 @@ impl AddAsset for SubApp {
         self
     }
 
-    fn add_asset_loader<T: Asset, L: LoadAsset<T>>(&mut self) -> &mut Self {
+    fn add_asset_loader<T: Loadable + Asset, L: Loader<T>>(&mut self) -> &mut Self {
         self.add_asset::<T>();
+        let loader = L::from_world(self.world_mut());
+        self.insert_resource(loader);
+        self
+    }
+
+    fn add_resource_loader<T: Resource + Loadable, L: Loader<T>>(&mut self) -> &mut Self {
         let loader = L::from_world(self.world_mut());
         self.insert_resource(loader);
         self
     }
 }
 
-impl AddAsset for App {
+impl AssetApp for App {
     fn add_asset<T: Asset>(&mut self) -> &mut Self {
         self.main_app_mut().add_asset::<T>();
         self
     }
 
-    fn add_asset_loader<T: Asset, L: LoadAsset<T>>(&mut self) -> &mut Self {
+    fn add_asset_loader<T: Loadable + Asset, L: Loader<T>>(&mut self) -> &mut Self {
         self.main_app_mut().add_asset_loader::<T, L>();
+        self
+    }
+
+    fn add_resource_loader<T: Resource + Loadable, L: Loader<T>>(&mut self) -> &mut Self {
+        self.main_app_mut().add_resource_loader::<T, L>();
         self
     }
 }

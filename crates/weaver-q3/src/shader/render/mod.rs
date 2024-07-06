@@ -1,24 +1,14 @@
-use extract::ExtractedShader;
-use weaver_asset::{Assets, Handle};
-use weaver_ecs::{
-    component::{Res, ResMut},
-    prelude::Resource,
-    query::Query,
-};
+use weaver_ecs::prelude::Resource;
 use weaver_pbr::render::PbrLightingInformation;
 use weaver_renderer::{
-    bind_group::{BindGroup, BindGroupLayoutCache},
+    bind_group::BindGroupLayoutCache,
     camera::CameraBindGroup,
     pipeline::RenderPipeline,
     prelude::{wgpu, RenderPipelineLayout},
-    render_phase::BatchedInstanceBuffer,
     shader::Shader as RenderShader,
     texture::{texture_format, GpuTexture},
-    WgpuDevice,
 };
-use weaver_util::prelude::{FxHashMap, Result};
-
-use crate::bsp::render::{BspDrawItem, BspRenderCommand};
+use weaver_util::prelude::FxHashMap;
 
 use super::lexer::{BlendFunc, BlendFuncExplicitParam, Cull, LexedShader, LexedShaderStage};
 
@@ -90,25 +80,13 @@ impl Into<wgpu::BlendComponent> for BlendFunc {
 pub struct ShaderStagePipelineKey {
     pub blend_func: Option<BlendFunc>,
     pub cull: Cull,
-    pub topology: wgpu::PrimitiveTopology,
 }
 
 impl ShaderStagePipelineKey {
-    pub fn new(
-        shader: &LexedShader,
-        stage: &LexedShaderStage,
-        topology: wgpu::PrimitiveTopology,
-    ) -> Self {
-        let cull = if topology == wgpu::PrimitiveTopology::TriangleStrip {
-            // HACK: Triangle strips are used for curved patches and those currently have a broken winding order
-            Cull::Disable
-        } else {
-            shader.cull()
-        };
+    pub fn new(shader: &LexedShader, stage: &LexedShaderStage) -> Self {
         Self {
             blend_func: stage.blend_func().copied(),
-            cull,
-            topology,
+            cull: shader.cull(),
         }
     }
 
@@ -116,23 +94,16 @@ impl ShaderStagePipelineKey {
         &self,
         device: &wgpu::Device,
         bind_group_layout_cache: &mut BindGroupLayoutCache,
+        shader_layout: &wgpu::BindGroupLayout,
     ) -> RenderPipelineLayout {
-        let shader_layout = bind_group_layout_cache.get_or_create::<KeyedShaderStage>(device);
         let camera_layout = bind_group_layout_cache.get_or_create::<CameraBindGroup>(device);
-        let instance_layout = bind_group_layout_cache
-            .get_or_create::<BatchedInstanceBuffer<BspDrawItem, BspRenderCommand>>(device);
         let lighting_layout =
             bind_group_layout_cache.get_or_create::<PbrLightingInformation>(device);
 
         RenderPipelineLayout::new(
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Shader Stage Pipeline Layout"),
-                bind_group_layouts: &[
-                    &shader_layout,
-                    &camera_layout,
-                    &instance_layout,
-                    &lighting_layout,
-                ],
+                bind_group_layouts: &[shader_layout, &camera_layout, &lighting_layout],
                 push_constant_ranges: &[
                     // texture index
                     wgpu::PushConstantRange {
@@ -148,8 +119,9 @@ impl ShaderStagePipelineKey {
         &self,
         device: &wgpu::Device,
         bind_group_layout_cache: &mut BindGroupLayoutCache,
+        shader_layout: &wgpu::BindGroupLayout,
     ) -> RenderPipeline {
-        let layout = self.create_pipeline_layout(device, bind_group_layout_cache);
+        let layout = self.create_pipeline_layout(device, bind_group_layout_cache, shader_layout);
         let shader =
             RenderShader::new("assets/shaders/q3_shader_stage.wgsl").create_shader_module(device);
         RenderPipeline::new(
@@ -177,13 +149,13 @@ impl ShaderStagePipelineKey {
                         format: texture_format::HDR_FORMAT,
                         blend: self.blend_func.map(|func| wgpu::BlendState {
                             color: func.into(),
-                            alpha: wgpu::BlendComponent::REPLACE,
+                            alpha: wgpu::BlendComponent::OVER,
                         }),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
                 primitive: wgpu::PrimitiveState {
-                    topology: self.topology,
+                    topology: wgpu::PrimitiveTopology::TriangleList,
                     front_face: wgpu::FrontFace::Ccw,
                     cull_mode: self.cull.into(),
                     polygon_mode: wgpu::PolygonMode::Fill,
@@ -206,8 +178,6 @@ impl ShaderStagePipelineKey {
 pub struct KeyedShaderStage {
     pub key: ShaderStagePipelineKey,
     pub texture: GpuTexture,
-    pub sampler: wgpu::Sampler,
-    pub bind_group: Handle<BindGroup<Self>>,
 }
 
 #[derive(Resource, Default)]
@@ -229,8 +199,9 @@ impl KeyedShaderStagePipelineCache {
         key: ShaderStagePipelineKey,
         device: &wgpu::Device,
         bind_group_layout_cache: &mut BindGroupLayoutCache,
+        shader_layout: &wgpu::BindGroupLayout,
     ) {
-        let pipeline = key.create_pipeline(device, bind_group_layout_cache);
+        let pipeline = key.create_pipeline(device, bind_group_layout_cache, shader_layout);
         self.insert(key, pipeline);
     }
 
@@ -239,25 +210,10 @@ impl KeyedShaderStagePipelineCache {
         key: ShaderStagePipelineKey,
         device: &wgpu::Device,
         bind_group_layout_cache: &mut BindGroupLayoutCache,
+        shader_layout: &wgpu::BindGroupLayout,
     ) -> &RenderPipeline {
         self.map
             .entry(key)
-            .or_insert_with(|| key.create_pipeline(device, bind_group_layout_cache))
+            .or_insert_with(|| key.create_pipeline(device, bind_group_layout_cache, shader_layout))
     }
-}
-
-pub fn init_keyed_shader_stage_pipelines(
-    device: Res<WgpuDevice>,
-    mut cache: ResMut<KeyedShaderStagePipelineCache>,
-    mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,
-    shaders: Res<Assets<ExtractedShader>>,
-    query: Query<&Handle<ExtractedShader>>,
-) -> Result<()> {
-    for (_, handle) in query.iter() {
-        let shader = shaders.get(*handle).unwrap();
-        for stage in &shader.stages {
-            cache.get_or_init(stage.key, &device, &mut bind_group_layout_cache);
-        }
-    }
-    Ok(())
 }

@@ -140,6 +140,7 @@ pub struct WorldMut<'w> {
 }
 
 impl<'w> WorldMut<'w> {
+    #[inline]
     pub fn into_inner(self) -> &'w mut World {
         self.world
     }

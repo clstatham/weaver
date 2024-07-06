@@ -17,7 +17,7 @@ pub enum Intersection {
 }
 
 /// 3D plane with infinite extent
-#[derive(Clone, Copy, Debug, PartialEq, Reflect)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Reflect)]
 #[repr(C)]
 pub struct Plane {
     /// Normal vector of the plane
@@ -27,20 +27,18 @@ pub struct Plane {
 }
 
 impl Plane {
-    pub const ZERO: Self = Self {
-        normal: Vec3::ZERO,
-        distance: 0.0,
-    };
-
+    #[inline]
     pub fn new(normal: Vec3, distance: f32) -> Self {
         Self { normal, distance }
     }
 
+    #[inline]
     pub fn from_normal_and_point(normal: Vec3, point: Vec3) -> Self {
         let distance = normal.dot(point);
         Self { normal, distance }
     }
 
+    #[inline]
     pub fn from_points(a: Vec3, b: Vec3, c: Vec3) -> Self {
         let normal = (b - a).cross(c - a).normalize();
         let center = a;
@@ -48,6 +46,7 @@ impl Plane {
         Self { normal, distance }
     }
 
+    #[inline]
     pub fn from_coefficients(a: f32, b: f32, c: f32, d: f32, normalize: bool) -> Self {
         let normal = Vec3::new(a, b, c);
         let distance = d;
@@ -61,6 +60,7 @@ impl Plane {
         }
     }
 
+    #[inline]
     pub fn from_coefficient_vec4(coefficients: Vec4, normalize: bool) -> Self {
         Self::from_coefficients(
             coefficients.x,
@@ -71,14 +71,17 @@ impl Plane {
         )
     }
 
+    #[inline]
     pub fn to_coefficients(&self) -> Vec4 {
         Vec4::new(self.normal.x, self.normal.y, self.normal.z, self.distance)
     }
 
+    #[inline]
     pub fn center(&self) -> Vec3 {
         self.normal * self.distance
     }
 
+    #[inline]
     pub fn transformed(&self, transform: Transform) -> Self {
         let matrix = transform.matrix();
         let normal = matrix.transform_vector3(self.normal);
@@ -93,6 +96,47 @@ pub enum HalfSpace {
     Front,
     Back,
     On,
+}
+
+#[derive(Default, Clone, Copy, Debug, PartialEq, Reflect)]
+pub struct Sphere {
+    pub center: Vec3,
+    pub radius: f32,
+}
+
+impl Sphere {
+    pub fn new(center: Vec3, radius: f32) -> Self {
+        Self { center, radius }
+    }
+
+    pub fn transformed(&self, transform: Transform) -> Self {
+        let matrix = transform.matrix();
+        let center = matrix.transform_point3(self.center);
+        Self {
+            center,
+            radius: self.radius,
+        }
+    }
+}
+
+impl Intersect<Sphere> for Sphere {
+    type Output = Intersection;
+
+    fn intersect(&self, rhs: &Sphere) -> Option<Self::Output> {
+        let distance_squared = (self.center - rhs.center).length_squared();
+        let radius_sum = self.radius + rhs.radius;
+        let radius_sum_squared = radius_sum * radius_sum;
+
+        if distance_squared < radius_sum_squared {
+            if distance_squared <= (self.radius - rhs.radius).powi(2) {
+                Some(Intersection::Inside)
+            } else {
+                Some(Intersection::Intersecting)
+            }
+        } else {
+            Some(Intersection::Outside)
+        }
+    }
 }
 
 /// 3D ray with origin and direction, and infinite extent
@@ -201,6 +245,66 @@ impl Intersect<Triangle> for Ray {
     }
 }
 
+#[derive(Default, Clone, Copy, Debug, PartialEq, Reflect)]
+#[repr(C)]
+pub struct Frustum {
+    pub left: Plane,
+    pub right: Plane,
+    pub bottom: Plane,
+    pub top: Plane,
+    pub near: Plane,
+    pub far: Plane,
+}
+
+impl Frustum {
+    #[inline]
+    pub fn from_view_proj(view_proj: Mat4) -> Self {
+        let left = Plane::from_coefficient_vec4(view_proj.row(3) + view_proj.row(0), true);
+        let right = Plane::from_coefficient_vec4(view_proj.row(3) - view_proj.row(0), true);
+        let bottom = Plane::from_coefficient_vec4(view_proj.row(3) + view_proj.row(1), true);
+        let top = Plane::from_coefficient_vec4(view_proj.row(3) - view_proj.row(1), true);
+        let near = Plane::from_coefficient_vec4(view_proj.row(3) + view_proj.row(2), true);
+        let far = Plane::from_coefficient_vec4(view_proj.row(3) - view_proj.row(2), true);
+        Self {
+            left,
+            right,
+            bottom,
+            top,
+            near,
+            far,
+        }
+    }
+
+    #[inline]
+    pub fn planes(&self) -> [Plane; 6] {
+        [
+            self.left,
+            self.right,
+            self.bottom,
+            self.top,
+            self.near,
+            self.far,
+        ]
+    }
+
+    #[inline]
+    pub fn bounding_sphere(&self) -> Sphere {
+        let mut center = Vec3::ZERO;
+        for plane in self.planes().iter() {
+            center += plane.normal * plane.distance;
+        }
+        center /= 6.0;
+
+        let mut radius = 0.0f32;
+        for plane in self.planes().iter() {
+            let distance = plane.normal.dot(center) - plane.distance;
+            radius = radius.max(distance.abs());
+        }
+
+        Sphere::new(center, radius)
+    }
+}
+
 /// Axis-aligned bounding box
 #[derive(Clone, Copy, Debug, PartialEq, Reflect, Default)]
 #[repr(C)]
@@ -255,6 +359,13 @@ impl Aabb {
             Vec3::new(self.max.x, self.max.y, self.max.z),
         ]
     }
+
+    #[inline]
+    pub fn bounding_sphere(&self) -> Sphere {
+        let center = self.center();
+        let radius = self.size().length() * 0.5;
+        Sphere::new(center, radius)
+    }
 }
 
 impl Intersect<Aabb> for Ray {
@@ -296,31 +407,38 @@ impl Intersect<Ray> for Aabb {
     }
 }
 
-impl Intersect<Plane> for Ray {
-    type Output = f32;
+impl Intersect<Sphere> for Aabb {
+    type Output = Intersection;
 
-    fn intersect(&self, plane: &Plane) -> Option<Self::Output> {
-        let denom = plane.normal.dot(self.direction);
-
-        if denom.abs() < 1e-6 {
-            return None;
+    fn intersect(&self, sphere: &Sphere) -> Option<Self::Output> {
+        let mut distance_squared = 0.0;
+        for i in 0..3 {
+            let v = sphere.center[i];
+            if v < self.min[i] {
+                distance_squared += (self.min[i] - v).powi(2);
+            } else if v > self.max[i] {
+                distance_squared += (v - self.max[i]).powi(2);
+            }
         }
 
-        let t = (plane.center() - self.origin).dot(plane.normal) / denom;
+        let radius = sphere.radius;
+        let radius_squared = radius * radius;
 
-        if t < 0.0 {
-            return None;
+        if distance_squared <= radius_squared {
+            if self.min.x <= sphere.center.x
+                && sphere.center.x <= self.max.x
+                && self.min.y <= sphere.center.y
+                && sphere.center.y <= self.max.y
+                && self.min.z <= sphere.center.z
+                && sphere.center.z <= self.max.z
+            {
+                Some(Intersection::Inside)
+            } else {
+                Some(Intersection::Intersecting)
+            }
+        } else {
+            Some(Intersection::Outside)
         }
-
-        Some(t)
-    }
-}
-
-impl Intersect<Ray> for Plane {
-    type Output = <Ray as Intersect<Plane>>::Output;
-
-    fn intersect(&self, ray: &Ray) -> Option<Self::Output> {
-        ray.intersect(self)
     }
 }
 

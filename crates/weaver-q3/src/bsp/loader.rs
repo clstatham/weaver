@@ -2,13 +2,11 @@ use std::path::PathBuf;
 
 use nom::Finish;
 use weaver_asset::{
-    loading::{LoadAsset, LoadCtx},
-    prelude::Asset,
+    loading::{LoadCtx, Loadable, Loader},
     Assets, Handle,
 };
 use weaver_core::{mesh::Mesh, prelude::Vec3, texture::Texture};
 use weaver_ecs::prelude::Resource;
-use weaver_renderer::prelude::wgpu;
 use weaver_util::{
     prelude::{anyhow, FxHashMap, Result},
     warn_once,
@@ -19,12 +17,9 @@ use crate::{
         generator::{BspFaceType, BspPlane, GenBsp, GenBspMeshNode},
         parser::{bsp_file, VisData},
     },
-    shader::{
-        lexer::LexedShader,
-        loader::{
-            strip_extension, LoadedShader, ShaderCache, TextureCache, TryEverythingTextureLoader,
-            ERROR_SHADER_HANDLE,
-        },
+    shader::loader::{
+        strip_extension, LexedShaderCache, LoadedShader, LoadedShaderCache, TextureCache,
+        TryEverythingTextureLoader, ERROR_SHADER_HANDLE,
     },
 };
 
@@ -54,7 +49,7 @@ pub enum BspNode {
     },
 }
 
-#[derive(Asset)]
+#[derive(Resource)]
 pub struct Bsp {
     pub shaders: FxHashMap<PathBuf, String>,
     pub nodes: Vec<Option<BspNode>>,
@@ -111,10 +106,12 @@ impl Bsp {
     }
 }
 
+impl Loadable for Bsp {}
+
 #[derive(Default, Resource)]
 pub struct BspLoader;
 
-impl LoadAsset<Bsp> for BspLoader {
+impl Loader<Bsp> for BspLoader {
     // TODO: clean this up
     fn load(&self, ctx: &mut LoadCtx<'_, '_>) -> Result<Bsp> {
         let bytes = ctx.read_original()?;
@@ -172,77 +169,70 @@ impl LoadAsset<Bsp> for BspLoader {
                         let texture_name = texture.to_str().unwrap();
                         let texture_name = strip_extension(texture_name);
 
-                        let topology = match typ {
-                            BspFaceType::Polygon | BspFaceType::Mesh | BspFaceType::Billboard => {
-                                wgpu::PrimitiveTopology::TriangleList
-                            }
-                            BspFaceType::Patch => wgpu::PrimitiveTopology::TriangleStrip,
-                        };
-
-                        let shader_cache = ctx.get_resource::<ShaderCache>()?;
-                        let lexed_shader_assets = ctx.get_resource::<Assets<LexedShader>>()?;
+                        let mut shader_cache = ctx.get_resource_mut::<LoadedShaderCache>()?;
                         let mut loaded_shader_assets =
                             ctx.get_resource_mut::<Assets<LoadedShader>>()?;
                         if let Some(shader) = shader_cache.get(texture_name) {
-                            let shader = lexed_shader_assets.get(shader).unwrap().clone();
-
-                            let shader = LoadedShader::load_from_lexed(shader, ctx, topology);
-                            let shader = loaded_shader_assets.insert(shader);
                             shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
                         } else {
-                            let texture_cache = ctx.get_resource::<TextureCache>()?;
-                            if let Some(texture) = texture_cache.get(texture_name) {
-                                let shader = LoadedShader::make_simple_textured(
-                                    texture,
-                                    texture_name,
-                                    topology,
-                                );
+                            let lexed_shader_cache = ctx.get_resource::<LexedShaderCache>()?;
+                            if let Some(shader) = lexed_shader_cache.get(texture_name) {
+                                let shader = LoadedShader::load_from_lexed(shader.clone(), ctx);
                                 let shader = loaded_shader_assets.insert(shader);
+                                shader_cache.insert(texture_name.to_string(), shader);
                                 shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
-                                ctx.drop_resource(texture_cache);
                             } else {
-                                ctx.drop_resource(texture_cache);
+                                let texture_cache = ctx.get_resource::<TextureCache>()?;
+                                if let Some(texture) = texture_cache.get(texture_name) {
+                                    let shader =
+                                        LoadedShader::make_simple_textured(texture, texture_name);
+                                    let shader = loaded_shader_assets.insert(shader);
+                                    shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
+                                    ctx.drop_resource(texture_cache);
+                                } else {
+                                    ctx.drop_resource(texture_cache);
 
-                                // try to load it again
-                                match ctx.load_asset::<_, TryEverythingTextureLoader>(texture_name)
-                                {
-                                    Ok(texture) => {
-                                        log::debug!("Loaded texture: {}", texture_name);
-                                        let mut texture_assets =
-                                            ctx.get_resource_mut::<Assets<Texture>>()?;
-                                        let handle = texture_assets.insert(texture);
-                                        ctx.drop_resource_mut(texture_assets);
-                                        let mut texture_cache =
-                                            ctx.get_resource_mut::<TextureCache>()?;
-                                        texture_cache.insert(texture_name.to_string(), handle);
-                                        ctx.drop_resource_mut(texture_cache);
+                                    // try to load it again
+                                    match ctx
+                                        .load_asset::<_, TryEverythingTextureLoader>(texture_name)
+                                    {
+                                        Ok(texture) => {
+                                            log::debug!("Loaded texture: {}", texture_name);
+                                            let mut texture_assets =
+                                                ctx.get_resource_mut::<Assets<Texture>>()?;
+                                            let handle = texture_assets.insert(texture);
+                                            ctx.drop_resource_mut(texture_assets);
+                                            let mut texture_cache =
+                                                ctx.get_resource_mut::<TextureCache>()?;
+                                            texture_cache.insert(texture_name.to_string(), handle);
+                                            ctx.drop_resource_mut(texture_cache);
 
-                                        let shader = LoadedShader::make_simple_textured(
-                                            handle,
-                                            texture_name,
-                                            topology,
-                                        );
+                                            let shader = LoadedShader::make_simple_textured(
+                                                handle,
+                                                texture_name,
+                                            );
 
-                                        let shader = loaded_shader_assets.insert(shader);
-                                        shader_meshes.push(LoadedBspShaderMesh {
-                                            mesh,
-                                            shader,
-                                            typ,
-                                        });
-                                    }
-                                    Err(_) => {
-                                        warn_once!("Failed to load texture: {}", texture_name);
-                                        shader_meshes.push(LoadedBspShaderMesh {
-                                            mesh,
-                                            shader: ERROR_SHADER_HANDLE,
-                                            typ,
-                                        });
-                                    }
-                                };
+                                            let shader = loaded_shader_assets.insert(shader);
+                                            shader_meshes.push(LoadedBspShaderMesh {
+                                                mesh,
+                                                shader,
+                                                typ,
+                                            });
+                                        }
+                                        Err(_) => {
+                                            warn_once!("Failed to load texture: {}", texture_name);
+                                            shader_meshes.push(LoadedBspShaderMesh {
+                                                mesh,
+                                                shader: ERROR_SHADER_HANDLE,
+                                                typ,
+                                            });
+                                        }
+                                    };
+                                }
                             }
+                            ctx.drop_resource(lexed_shader_cache);
                         }
-                        ctx.drop_resource(shader_cache);
-                        ctx.drop_resource(lexed_shader_assets);
+                        ctx.drop_resource_mut(shader_cache);
                         ctx.drop_resource_mut(loaded_shader_assets);
                     }
                     bsp.insert(

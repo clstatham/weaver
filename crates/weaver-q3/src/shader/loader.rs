@@ -1,12 +1,11 @@
 use weaver_asset::{
-    loading::{Filesystem, LoadAsset, LoadCtx},
+    loading::{Filesystem, LoadCtx, Loader},
     prelude::Asset,
     Assets, Handle,
 };
 use weaver_core::texture::{Texture, TextureLoader};
 use weaver_ecs::prelude::Resource;
 use weaver_pbr::material::{ERROR_TEXTURE, WHITE_TEXTURE};
-use weaver_renderer::prelude::wgpu;
 use weaver_util::{
     prelude::{anyhow, FxHashMap, Result},
     warn_once,
@@ -28,7 +27,6 @@ pub fn make_error_shader(name: &str) -> LoadedShader {
             }],
         },
         textures: FxHashMap::from_iter([(Map::Path("textures/error".to_string()), ERROR_TEXTURE)]),
-        topology: wgpu::PrimitiveTopology::TriangleList,
     }
 }
 
@@ -58,27 +56,22 @@ impl TextureCache {
 }
 
 #[derive(Resource, Default)]
-pub struct ShaderCache(pub FxHashMap<String, Handle<LexedShader>>);
+pub struct LexedShaderCache(pub FxHashMap<String, LexedShader>);
 
-impl ShaderCache {
-    pub fn get(&self, name: &str) -> Option<Handle<LexedShader>> {
-        self.0.get(name).copied()
+impl LexedShaderCache {
+    pub fn get(&self, name: &str) -> Option<&LexedShader> {
+        self.0.get(name)
     }
 
-    pub fn insert(&mut self, name: String, handle: Handle<LexedShader>) {
-        self.0.insert(name, handle);
+    pub fn insert(&mut self, name: String, shader: LexedShader) {
+        self.0.insert(name, shader);
     }
 
     pub fn shader_names(&self) -> impl Iterator<Item = &str> {
         self.0.keys().map(String::as_str)
     }
 
-    pub fn load_all(
-        &mut self,
-        dirname: &str,
-        fs: &Filesystem,
-        shader_assets: &mut Assets<LexedShader>,
-    ) -> Result<()> {
+    pub fn load_all(&mut self, dirname: &str, fs: &mut Filesystem) -> Result<()> {
         for path in fs.read_dir(dirname)? {
             if path.is_dir() {
                 continue;
@@ -94,8 +87,7 @@ impl ShaderCache {
             for shader in parsed {
                 let shader_name = shader.name.clone();
                 let shader = shader.lex();
-                let handle = shader_assets.insert(shader);
-                self.0.insert(shader_name, handle);
+                self.insert(shader_name, shader);
             }
         }
 
@@ -103,19 +95,31 @@ impl ShaderCache {
     }
 }
 
+#[derive(Resource, Default)]
+pub struct LoadedShaderCache(pub FxHashMap<String, Handle<LoadedShader>>);
+
+impl LoadedShaderCache {
+    pub fn get(&self, name: &str) -> Option<Handle<LoadedShader>> {
+        self.0.get(name).copied()
+    }
+
+    pub fn insert(&mut self, name: String, handle: Handle<LoadedShader>) {
+        self.0.insert(name, handle);
+    }
+
+    pub fn shader_names(&self) -> impl Iterator<Item = &str> {
+        self.0.keys().map(String::as_str)
+    }
+}
+
 #[derive(Asset, Clone)]
 pub struct LoadedShader {
     pub shader: LexedShader,
-    pub topology: wgpu::PrimitiveTopology,
     pub textures: FxHashMap<Map, Handle<Texture>>,
 }
 
 impl LoadedShader {
-    pub fn make_simple_textured(
-        texture: Handle<Texture>,
-        texture_name: &str,
-        topology: wgpu::PrimitiveTopology,
-    ) -> Self {
+    pub fn make_simple_textured(texture: Handle<Texture>, texture_name: &str) -> Self {
         let shader = LexedShader {
             name: texture_name.to_string(),
             global_params: vec![],
@@ -127,18 +131,10 @@ impl LoadedShader {
         let mut textures = FxHashMap::default();
         textures.insert(Map::Path(texture_name.to_string()), texture);
 
-        Self {
-            shader,
-            textures,
-            topology,
-        }
+        Self { shader, textures }
     }
 
-    pub fn load_from_lexed(
-        shader: LexedShader,
-        load_ctx: &mut LoadCtx,
-        topology: wgpu::PrimitiveTopology,
-    ) -> Self {
+    pub fn load_from_lexed(shader: LexedShader, load_ctx: &mut LoadCtx) -> Self {
         let mut textures = FxHashMap::default();
 
         let mut texture_cache = load_ctx.get_resource_mut::<TextureCache>().unwrap();
@@ -219,18 +215,14 @@ impl LoadedShader {
 
         load_ctx.drop_resource_mut(texture_cache);
 
-        Self {
-            shader,
-            textures,
-            topology,
-        }
+        Self { shader, textures }
     }
 }
 
 #[derive(Resource, Default)]
 pub struct TryEverythingTextureLoader;
 
-impl LoadAsset<Texture> for TryEverythingTextureLoader {
+impl Loader<Texture> for TryEverythingTextureLoader {
     fn load(&self, ctx: &mut LoadCtx<'_, '_>) -> Result<Texture> {
         let path = ctx.original_path().to_path_buf();
 

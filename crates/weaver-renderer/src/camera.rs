@@ -1,7 +1,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use encase::ShaderType;
-use weaver_core::geometry::{Aabb, Intersection, Plane, Ray};
+use weaver_core::geometry::{Aabb, Frustum, Intersection, Ray, Sphere};
 use weaver_util::prelude::Result;
 
 use weaver_app::plugin::Plugin;
@@ -80,8 +80,10 @@ impl From<&Camera> for CameraUniform {
 #[derive(Component, Reflect, Clone, Copy)]
 pub struct Camera {
     pub active: bool,
-    pub view_matrix: glam::Mat4,
-    pub projection_matrix: glam::Mat4,
+    view_matrix: glam::Mat4,
+    projection_matrix: glam::Mat4,
+    frustum: Frustum,
+    frustum_bounding_sphere: Sphere,
 }
 
 impl Debug for Camera {
@@ -105,10 +107,14 @@ impl Camera {
     ) -> Self {
         let view = glam::Mat4::look_at_rh(eye, center, up);
         let proj = glam::Mat4::perspective_rh_gl(fov, aspect, near, far);
+        let frustum = Frustum::from_view_proj(proj * view);
+        let frustum_bounding_sphere = frustum.bounding_sphere();
         Self {
             active: true,
             view_matrix: view,
             projection_matrix: proj,
+            frustum,
+            frustum_bounding_sphere,
         }
     }
 
@@ -126,6 +132,41 @@ impl Camera {
 
     pub fn deactivate(&mut self) {
         self.set_active(false);
+    }
+
+    pub fn view_matrix(&self) -> glam::Mat4 {
+        self.view_matrix
+    }
+
+    pub fn set_view_matrix(&mut self, view_matrix: glam::Mat4) {
+        self.view_matrix = view_matrix;
+        self.frustum = Frustum::from_view_proj(self.projection_matrix * self.view_matrix);
+        self.frustum_bounding_sphere = self.frustum.bounding_sphere();
+    }
+
+    pub fn projection_matrix(&self) -> glam::Mat4 {
+        self.projection_matrix
+    }
+
+    pub fn set_projection_matrix(&mut self, projection_matrix: glam::Mat4) {
+        self.projection_matrix = projection_matrix;
+        self.frustum = Frustum::from_view_proj(self.projection_matrix * self.view_matrix);
+        self.frustum_bounding_sphere = self.frustum.bounding_sphere();
+    }
+
+    pub fn view_projection_matrix(&self) -> glam::Mat4 {
+        self.projection_matrix * self.view_matrix
+    }
+
+    pub fn set_view_projection_matrix(
+        &mut self,
+        view_matrix: glam::Mat4,
+        projection_matrix: glam::Mat4,
+    ) {
+        self.view_matrix = view_matrix;
+        self.projection_matrix = projection_matrix;
+        self.frustum = Frustum::from_view_proj(self.projection_matrix * self.view_matrix);
+        self.frustum_bounding_sphere = self.frustum.bounding_sphere();
     }
 
     pub fn screen_to_ray(&self, screen_pos: glam::Vec2, screen_size: glam::Vec2) -> Ray {
@@ -157,15 +198,41 @@ impl Camera {
         Some(screen)
     }
 
+    pub fn intersect_frustum_with_sphere(
+        &self,
+        sphere: Sphere,
+        intersect_near: bool,
+        intersect_far: bool,
+    ) -> Intersection {
+        for (i, plane) in self.frustum.planes().iter().enumerate() {
+            if i == 4 && !intersect_near {
+                continue;
+            }
+            if i == 5 && !intersect_far {
+                continue;
+            }
+            let distance = plane.normal.dot(sphere.center) + plane.distance;
+            if distance < -sphere.radius {
+                return Intersection::Outside;
+            }
+        }
+
+        Intersection::Inside
+    }
+
     pub fn intersect_frustum_with_aabb(
         &self,
         aabb: &Aabb,
         intersect_near: bool,
         intersect_far: bool,
     ) -> Intersection {
-        let planes = self.frustum_planes();
+        if self.intersect_frustum_with_sphere(aabb.bounding_sphere(), intersect_near, intersect_far)
+            == Intersection::Outside
+        {
+            return Intersection::Outside;
+        }
 
-        for (i, plane) in planes.into_iter().enumerate() {
+        for (i, plane) in self.frustum.planes().iter().enumerate() {
             if i == 4 && !intersect_near {
                 continue;
             }
@@ -183,37 +250,6 @@ impl Camera {
 
         Intersection::Inside
     }
-
-    /// Returns the frustum planes in the following order:
-    /// - Left
-    /// - Right
-    /// - Bottom
-    /// - Top
-    /// - Near
-    /// - Far
-    pub fn frustum_planes(&self) -> [Plane; 6] {
-        let clip_from_view = self.projection_matrix * self.view_matrix;
-
-        let row1 = clip_from_view.row(0);
-        let row2 = clip_from_view.row(1);
-        let row3 = clip_from_view.row(2);
-        let row4 = clip_from_view.row(3);
-
-        [
-            // Left
-            Plane::from_coefficient_vec4(row4 + row1, true),
-            // Right
-            Plane::from_coefficient_vec4(row4 - row1, true),
-            // Bottom
-            Plane::from_coefficient_vec4(row4 + row2, true),
-            // Top
-            Plane::from_coefficient_vec4(row4 - row2, true),
-            // Near
-            Plane::from_coefficient_vec4(row4 + row3, true),
-            // Far
-            Plane::from_coefficient_vec4(row4 - row3, true),
-        ]
-    }
 }
 
 impl Default for Camera {
@@ -222,6 +258,8 @@ impl Default for Camera {
             active: true,
             view_matrix: glam::Mat4::IDENTITY,
             projection_matrix: glam::Mat4::IDENTITY,
+            frustum: Frustum::default(),
+            frustum_bounding_sphere: Sphere::default(),
         }
     }
 }

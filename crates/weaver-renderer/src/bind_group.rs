@@ -1,7 +1,7 @@
 use std::{any::TypeId, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{prelude::Asset, AddAsset, Assets, Handle, UntypedHandle};
+use weaver_asset::{prelude::Asset, AssetApp, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
     commands::Commands,
     component::{Res, ResMut},

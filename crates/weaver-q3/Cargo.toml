@@ -10,6 +10,7 @@ image = "0.25.1"
 log = "0.4"
 encase = { version = "0.8", features = ["glam"] }
 bytemuck = "1.16"
+rayon = "1.10"
 
 weaver-app = { path = "../weaver-app" }
 weaver-pbr = { path = "../weaver-pbr" }

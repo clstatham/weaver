@@ -7,14 +7,15 @@ pub mod lock;
 
 pub mod prelude {
     pub use crate::lock::*;
-    pub use crate::TypeIdMap;
     pub use crate::{
         debug_once, define_atomic_id, error_once, info_once, log_once, trace_once, warn_once,
     };
+    pub use crate::{FxHashMap, FxHashSet, TypeIdMap};
     pub use anyhow::{anyhow, bail, ensure, Error, Result};
     pub use downcast_rs::{impl_downcast, Downcast, DowncastSync};
+    pub use hashbrown::{HashMap, HashSet};
     pub use lazy_static::lazy_static;
-    pub use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
+    pub use rustc_hash::FxHasher;
     pub use scopeguard::{defer, guard, ScopeGuard};
 }
 
@@ -130,5 +131,7 @@ impl Hasher for TypeIdHasher {
     }
 }
 
-pub type TypeIdMap<T> =
-    std::collections::hash_map::HashMap<TypeId, T, BuildHasherDefault<TypeIdHasher>>;
+pub type TypeIdMap<T> = hashbrown::HashMap<TypeId, T, BuildHasherDefault<TypeIdHasher>>;
+
+pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
+pub type FxHashSet<T> = hashbrown::HashSet<T, rustc_hash::FxBuildHasher>;

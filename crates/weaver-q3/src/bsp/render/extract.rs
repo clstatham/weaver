@@ -1,19 +1,24 @@
-use weaver_asset::{prelude::Asset, Assets, Handle};
-use weaver_core::{mesh::Mesh, prelude::Vec3};
+use std::sync::Arc;
+
+use weaver_asset::{Assets, Handle};
+use weaver_core::{
+    mesh::{Mesh, Vertex},
+    prelude::Vec3,
+};
 use weaver_ecs::{
     commands::WorldMut,
     component::{Res, ResMut},
-    entity::Entity,
-    query::Query,
+    prelude::{Component, Resource},
     system::SystemParamWrapper,
 };
 use weaver_renderer::{
     asset::{ExtractedRenderAssets, RenderAsset},
     extract::Extract,
-    mesh::GpuMesh,
+    prelude::wgpu,
     WgpuDevice, WgpuQueue,
 };
-use weaver_util::prelude::Result;
+use weaver_util::prelude::{FxHashMap, Result};
+use wgpu::util::DeviceExt;
 
 use crate::{
     bsp::{
@@ -32,9 +37,20 @@ use crate::{
 // }
 
 #[derive(Debug, Clone)]
+pub struct IndexBuffer {
+    pub buffer: Arc<wgpu::Buffer>,
+    pub num_indices: u32,
+}
+
+#[derive(Debug, Clone, Component)]
+pub struct ExtractedBspShaderIndices {
+    pub shader: Handle<ExtractedShader>,
+    pub vbo_indices: IndexBuffer,
+}
+
+#[derive(Debug, Clone, Component)]
 pub enum ExtractedBspNode {
     Leaf {
-        shader_mesh_entities: Vec<Entity>,
         parent: usize,
         cluster: usize,
         min: Vec3,
@@ -64,20 +80,14 @@ pub enum WalkDirection {
     Skip,
 }
 
-#[derive(Asset)]
+#[derive(Resource)]
 pub struct ExtractedBsp {
     pub nodes: Vec<Option<ExtractedBspNode>>,
     pub vis_data: VisData,
+    pub vbo: wgpu::Buffer,
 }
 
 impl ExtractedBsp {
-    pub fn with_capacity(capacity: usize, vis_data: VisData) -> Self {
-        Self {
-            nodes: vec![None; capacity],
-            vis_data,
-        }
-    }
-
     pub const fn root(&self) -> usize {
         0
     }
@@ -145,111 +155,123 @@ impl ExtractedBsp {
 #[allow(clippy::too_many_arguments)]
 pub fn extract_bsps(
     mut world: WorldMut,
-    query: Extract<Query<&'static Handle<Bsp>>>,
-    source_assets: Extract<Res<'static, Assets<Bsp>>>,
+    bsp: Extract<Res<'static, Bsp>>,
     source_meshes: Extract<Res<Assets<Mesh>>>,
     source_shaders: Extract<Res<'static, Assets<LoadedShader>>>,
     mut shader_param: SystemParamWrapper<<ExtractedShader as RenderAsset>::Param>,
-    mut render_assets: ResMut<Assets<ExtractedBsp>>,
-    mut render_meshes: ResMut<Assets<GpuMesh>>,
     mut render_shaders: ResMut<Assets<ExtractedShader>>,
     extracted_assets: Res<ExtractedRenderAssets>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
 ) -> Result<()> {
-    for (entity, bsp_handle) in query.iter() {
-        if !extracted_assets.contains(&bsp_handle.into_untyped()) {
-            let bsp = source_assets.get(*bsp_handle).unwrap();
+    if !world.has_resource::<ExtractedBsp>() {
+        let mut nodes = vec![None; bsp.nodes.len()];
+        // let mut extracted_bsp = ExtractedBsp::with_capacity(bsp.nodes.len(), bsp.vis_data.clone());
+        let mut vbo: Vec<Vertex> = Vec::new();
+        let mut shader_mesh_indices = FxHashMap::default();
+        for (i, node) in bsp.nodes.iter().enumerate() {
+            if let Some(node) = node {
+                match node {
+                    BspNode::Leaf {
+                        shader_meshes: leaf_shader_meshes,
+                        parent,
+                        cluster,
+                        min,
+                        max,
+                    } => {
+                        for loaded_mesh in leaf_shader_meshes {
+                            let LoadedBspShaderMesh { mesh, shader, .. } = loaded_mesh;
+                            let source_mesh = source_meshes.get(*mesh).unwrap();
 
-            let mut extracted_bsp =
-                ExtractedBsp::with_capacity(bsp.nodes.len(), bsp.vis_data.clone());
-            for (i, node) in bsp.nodes.iter().enumerate() {
-                if let Some(node) = node {
-                    match node {
-                        BspNode::Leaf {
-                            shader_meshes: meshes_and_materials,
-                            parent,
-                            cluster,
-                            min,
-                            max,
-                        } => {
-                            let mut shader_mesh_entities = Vec::new();
-                            for loaded_mesh in meshes_and_materials {
-                                let LoadedBspShaderMesh { mesh, shader, .. } = loaded_mesh;
-                                let source_mesh = source_meshes.get(*mesh).unwrap();
+                            let base_index = vbo.len() as u32;
+                            vbo.extend(&source_mesh.vertices);
+                            let indices = source_mesh
+                                .indices
+                                .iter()
+                                .map(|i| i + base_index)
+                                .collect::<Vec<_>>();
 
-                                let extracted_mesh = GpuMesh::extract_render_asset(
-                                    &source_mesh,
-                                    &mut (),
-                                    &device,
-                                    &queue,
-                                )
-                                .unwrap();
-
-                                let extracted_mesh = render_meshes.insert(extracted_mesh);
-
-                                extracted_assets
-                                    .insert(mesh.into_untyped(), extracted_mesh.into_untyped());
-
-                                let extracted_shader = source_shaders.get(*shader).unwrap();
-                                let extracted_shader = ExtractedShader::extract_render_asset(
-                                    &extracted_shader,
-                                    shader_param.item_mut(),
-                                    &device,
-                                    &queue,
-                                )
-                                .unwrap();
-
-                                let extracted_shader_handle =
-                                    render_shaders.insert(extracted_shader);
-
-                                extracted_assets.insert(
-                                    shader.into_untyped(),
-                                    extracted_shader_handle.into_untyped(),
-                                );
-
-                                let entity = world.spawn((extracted_mesh, extracted_shader_handle));
-
-                                shader_mesh_entities.push(entity);
-                            }
-                            extracted_bsp.insert(
-                                i,
-                                ExtractedBspNode::Leaf {
-                                    shader_mesh_entities,
-                                    parent: *parent,
-                                    cluster: *cluster,
-                                    min: *min,
-                                    max: *max,
-                                },
-                            );
+                            shader_mesh_indices
+                                .entry(*shader)
+                                .or_insert_with(Vec::new)
+                                .extend(indices);
                         }
-                        BspNode::Node {
-                            plane,
-                            back,
-                            front,
-                            parent,
-                            ..
-                        } => {
-                            extracted_bsp.insert(
-                                i,
-                                ExtractedBspNode::Node {
-                                    plane: *plane,
-                                    back: *back,
-                                    front: *front,
-                                    parent: *parent,
-                                },
-                            );
-                        }
+                        nodes[i] = Some(ExtractedBspNode::Leaf {
+                            parent: *parent,
+                            cluster: *cluster,
+                            min: *min,
+                            max: *max,
+                        });
+                    }
+                    BspNode::Node {
+                        plane,
+                        back,
+                        front,
+                        parent,
+                        ..
+                    } => {
+                        nodes[i] = Some(ExtractedBspNode::Node {
+                            plane: *plane,
+                            back: *back,
+                            front: *front,
+                            parent: *parent,
+                        });
                     }
                 }
             }
-
-            log::debug!("Extracted BSP");
-
-            let render_handle = render_assets.insert(extracted_bsp);
-            extracted_assets.insert(bsp_handle.into_untyped(), render_handle.into_untyped());
-            world.insert_component(entity, render_handle);
         }
+
+        for (shader, vbo_indices) in shader_mesh_indices {
+            let extracted_shader = source_shaders.get(shader).unwrap();
+            let extracted_shader = ExtractedShader::extract_render_asset(
+                &extracted_shader,
+                shader_param.item_mut(),
+                &device,
+                &queue,
+            )
+            .unwrap();
+
+            let extracted_shader_handle = render_shaders.insert(extracted_shader);
+
+            extracted_assets.insert(
+                shader.into_untyped(),
+                extracted_shader_handle.into_untyped(),
+            );
+
+            let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("BSP Index Buffer"),
+                contents: bytemuck::cast_slice(&vbo_indices),
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            });
+
+            let vbo_indices = IndexBuffer {
+                buffer: Arc::new(index_buffer),
+                num_indices: vbo_indices.len() as u32,
+            };
+
+            let extracted_bsp_shader_indices = ExtractedBspShaderIndices {
+                shader: extracted_shader_handle,
+                vbo_indices,
+            };
+
+            world.spawn(extracted_bsp_shader_indices);
+        }
+
+        log::debug!("Extracted BSP");
+
+        let vbo = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("BSP VBO"),
+            contents: bytemuck::cast_slice(&vbo),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let extracted_bsp = ExtractedBsp {
+            nodes,
+            vis_data: bsp.vis_data.clone(),
+            vbo,
+        };
+
+        world.insert_resource(extracted_bsp);
     }
 
     Ok(())

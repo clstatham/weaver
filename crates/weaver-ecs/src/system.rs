@@ -115,14 +115,17 @@ pub struct SystemParamWrapper<'w, 's, P: SystemParam> {
 }
 
 impl<'w, 's, P: SystemParam> SystemParamWrapper<'w, 's, P> {
+    #[inline]
     pub fn item(&self) -> &P::Item<'w, 's> {
         &self.item
     }
 
+    #[inline]
     pub fn item_mut(&mut self) -> &mut P::Item<'w, 's> {
         &mut self.item
     }
 
+    #[inline]
     pub fn into_inner(self) -> P::Item<'w, 's> {
         self.item
     }

@@ -257,8 +257,28 @@ impl BspPatch {
 
         let tris_per_row = 2 * (subdivisions + 1);
         let mut row_indices = vec![vec![0; tris_per_row]; subdivisions];
+        // for row in 0..subdivisions {
+        //     row_indices[row] = indices[row * tris_per_row..(row + 1) * tris_per_row].to_vec();
+        // }
+
+        // convert the triangle strip to triangle list
         for row in 0..subdivisions {
-            row_indices[row] = indices[row * tris_per_row..(row + 1) * tris_per_row].to_vec();
+            let mut triangle_indices = Vec::new();
+            for col in 0..subdivisions {
+                let i0 = row * (subdivisions + 1) + col;
+                let i1 = i0 + 1;
+                let i2 = (row + 1) * (subdivisions + 1) + col;
+                let i3 = i2 + 1;
+
+                triangle_indices.push(i0 as u32);
+                triangle_indices.push(i2 as u32);
+                triangle_indices.push(i1 as u32);
+
+                triangle_indices.push(i1 as u32);
+                triangle_indices.push(i2 as u32);
+                triangle_indices.push(i3 as u32);
+            }
+            row_indices[row] = triangle_indices;
         }
 
         Self {

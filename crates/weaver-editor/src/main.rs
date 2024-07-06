@@ -22,7 +22,7 @@ use weaver_q3::{
         render::BspRenderNodeLabel,
     },
     pk3::Pk3Filesystem,
-    shader::{lexer::LexedShader, loader::ShaderCache},
+    shader::loader::LexedShaderCache,
     Q3Plugin,
 };
 use weaver_renderer::{
@@ -121,12 +121,8 @@ fn main() -> Result<()> {
         .run()
 }
 
-fn load_shaders(
-    mut shader_assets: ResMut<Assets<LexedShader>>,
-    fs: Res<Filesystem>,
-    mut cache: ResMut<ShaderCache>,
-) -> Result<()> {
-    cache.load_all("scripts", &fs, &mut shader_assets)?;
+fn load_shaders(mut fs: ResMut<Filesystem>, mut cache: ResMut<LexedShaderCache>) -> Result<()> {
+    cache.load_all("scripts", &mut fs)?;
     let mut shaders = cache.shader_names().collect::<Vec<_>>();
     shaders.sort();
     log::debug!("Loaded shaders: {:#?}", shaders);
@@ -136,7 +132,6 @@ fn load_shaders(
 fn setup(
     commands: Commands,
     bsp_loader: AssetLoader<Bsp, BspLoader>,
-    mut bsp_assets: ResMut<Assets<Bsp>>,
     mut fs: ResMut<Filesystem>,
 ) -> Result<()> {
     commands.spawn((
@@ -154,8 +149,7 @@ fn setup(
     ));
 
     let bsp = bsp_loader.load_from_filesystem(&mut fs, "maps/q3dm6.bsp")?;
-    let bsp = bsp_assets.insert(bsp);
-    commands.spawn(bsp);
+    commands.insert_resource(bsp);
 
     Ok(())
 }
@@ -203,8 +197,7 @@ fn toggle_vis_mode(mut editor_state: ResMut<EditorState>, input: Res<Input>) -> 
 fn debug_stuff(
     gizmos: Res<Gizmos>,
     egui_ctx: Res<EguiContext>,
-    bsp_query: Query<&Handle<Bsp>>,
-    bsp_assets: Res<Assets<Bsp>>,
+    bsp: Res<Bsp>,
     camera_query: Query<&Camera>,
     editor_state: Res<EditorState>,
 ) -> Result<()> {
@@ -222,17 +215,12 @@ fn debug_stuff(
     let mut partial_leaves = 0;
 
     // visualize bsp tree
-    for (_, handle) in bsp_query.iter() {
-        let bsp = bsp_assets.get(*handle).unwrap();
-        for (_, node) in bsp.node_iter() {
-            match node {
-                BspNode::Leaf { min, max, .. } => {
-                    total_leaves += 1;
-                    let color = match camera.intersect_frustum_with_aabb(
-                        &Aabb::new(*min, *max),
-                        true,
-                        false,
-                    ) {
+    for (_, node) in bsp.node_iter() {
+        match node {
+            BspNode::Leaf { min, max, .. } => {
+                total_leaves += 1;
+                let color =
+                    match camera.intersect_frustum_with_aabb(&Aabb::new(*min, *max), true, false) {
                         Intersection::Inside => {
                             visible_leaves += 1;
                             Color::GREEN
@@ -246,40 +234,31 @@ fn debug_stuff(
                             Color::YELLOW
                         }
                     };
-                    if let VisMode::Leaves = editor_state.vis_mode {
-                        gizmos.wire_cube_no_depth(
-                            Transform::new(
-                                (*min + *max) / 2.0,
-                                Quat::IDENTITY,
-                                (*max - *min).abs(),
-                            ),
-                            color,
-                        );
+                if let VisMode::Leaves = editor_state.vis_mode {
+                    gizmos.wire_cube_no_depth(
+                        Transform::new((*min + *max) / 2.0, Quat::IDENTITY, (*max - *min).abs()),
+                        color,
+                    );
+                }
+            }
+            BspNode::Node { min, max, .. } => {
+                total_nodes += 1;
+                match camera.intersect_frustum_with_aabb(&Aabb::new(*min, *max), true, false) {
+                    Intersection::Inside => {
+                        visible_nodes += 1;
+                    }
+                    Intersection::Outside => {
+                        culled_nodes += 1;
+                    }
+                    Intersection::Intersecting => {
+                        partial_nodes += 1;
                     }
                 }
-                BspNode::Node { min, max, .. } => {
-                    total_nodes += 1;
-                    match camera.intersect_frustum_with_aabb(&Aabb::new(*min, *max), true, false) {
-                        Intersection::Inside => {
-                            visible_nodes += 1;
-                        }
-                        Intersection::Outside => {
-                            culled_nodes += 1;
-                        }
-                        Intersection::Intersecting => {
-                            partial_nodes += 1;
-                        }
-                    }
-                    if let VisMode::Nodes = editor_state.vis_mode {
-                        gizmos.wire_cube_no_depth(
-                            Transform::new(
-                                (*min + *max) / 2.0,
-                                Quat::IDENTITY,
-                                (*max - *min).abs(),
-                            ),
-                            Color::CYAN,
-                        );
-                    }
+                if let VisMode::Nodes = editor_state.vis_mode {
+                    gizmos.wire_cube_no_depth(
+                        Transform::new((*min + *max) / 2.0, Quat::IDENTITY, (*max - *min).abs()),
+                        Color::CYAN,
+                    );
                 }
             }
         }

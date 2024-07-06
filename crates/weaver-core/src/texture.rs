@@ -1,6 +1,6 @@
 use weaver_asset::{
     loading::LoadCtx,
-    prelude::{Asset, LoadAsset},
+    prelude::{Asset, Loader},
 };
 use weaver_ecs::prelude::Resource;
 use weaver_util::prelude::Result;
@@ -68,7 +68,7 @@ impl Texture {
 #[derive(Resource, Default)]
 pub struct TextureLoader;
 
-impl LoadAsset<Texture> for TextureLoader {
+impl Loader<Texture> for TextureLoader {
     fn load(&self, ctx: &mut LoadCtx) -> Result<Texture> {
         let bytes = ctx.read_original()?;
         // check if it's a tga file

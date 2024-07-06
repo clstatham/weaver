@@ -79,8 +79,7 @@ impl FlyCameraController {
             self.rotation = self.rotation.normalize();
         }
 
-        camera.view_matrix = self.view_matrix();
-        camera.projection_matrix = self.projection_matrix();
+        camera.set_view_projection_matrix(self.view_matrix(), self.projection_matrix());
     }
 
     pub fn view_matrix(&self) -> Mat4 {
