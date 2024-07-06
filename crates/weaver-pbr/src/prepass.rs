@@ -5,6 +5,7 @@ use weaver_asset::Handle;
 use weaver_core::{prelude::Mat4, transform::Transform};
 use weaver_ecs::{
     component::Res,
+    entity::EntityMap,
     prelude::{Component, Entity, QueryFetchItem, Reflect, Resource, SystemParamItem, World},
     query::Query,
     storage::Ref,
@@ -19,7 +20,7 @@ use weaver_renderer::{
     texture::GpuTexture,
     RenderLabel,
 };
-use weaver_util::prelude::{FxHashMap, Result};
+use weaver_util::prelude::Result;
 
 use crate::prelude::GpuMaterial;
 
@@ -95,7 +96,7 @@ pub struct PrepassMeshInstance {
 
 #[derive(Default, Resource)]
 pub struct PrepassMeshInstances {
-    pub instances: FxHashMap<Entity, PrepassMeshInstance>,
+    pub instances: EntityMap<PrepassMeshInstance>,
 }
 
 impl GetBatchData for PrepassMeshInstances {

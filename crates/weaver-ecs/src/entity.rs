@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+use std::hash::{BuildHasherDefault, Hash, Hasher};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub struct Entity {
     id: u32,
@@ -37,3 +39,35 @@ impl Entity {
         Self::from_u64(value as u64)
     }
 }
+
+impl Hash for Entity {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.as_u64());
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct EntityHasher {
+    state: u64,
+}
+
+impl Hasher for EntityHasher {
+    fn finish(&self) -> u64 {
+        self.state
+    }
+
+    fn write(&mut self, _: &[u8]) {
+        panic!("EntityHasher does not support writing bytes");
+    }
+
+    fn write_u64(&mut self, i: u64) {
+        // See the Bevy source code for this one (bevy-ecs/src/entity/hash.rs)
+        const UPPER_PHI: u64 = 0x9e37_79b9_0000_0001;
+        self.state = i.wrapping_mul(UPPER_PHI);
+    }
+}
+
+pub type EntityMap<V> =
+    std::collections::hash_map::HashMap<Entity, V, BuildHasherDefault<EntityHasher>>;
+
+pub type EntitySet = std::collections::hash_set::HashSet<Entity, BuildHasherDefault<EntityHasher>>;

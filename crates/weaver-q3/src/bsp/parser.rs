@@ -646,6 +646,21 @@ pub struct VisData {
     pub vecs: Vec<u8>,
 }
 
+impl VisData {
+    /// Checks if two clusters are visible to each other.
+    pub fn check_visible(&self, cluster1: i32, cluster2: i32) -> bool {
+        if cluster1 < 0 || cluster2 < 0 {
+            return false;
+        }
+
+        let vis_row = cluster1 * self.size_vecs + cluster2 / 8;
+        let vis_byte = cluster2 % 8;
+
+        let vis_data = self.vecs[vis_row as usize];
+        vis_data & (1 << vis_byte) != 0
+    }
+}
+
 pub fn vis_data(input: &[u8]) -> IResult<&[u8], VisData> {
     let (input, num_vecs) = int(input)?;
     let (input, size_vecs) = int(input)?;

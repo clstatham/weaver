@@ -93,6 +93,15 @@ impl ExtractedBsp {
             .filter_map(|(i, node)| node.as_ref().map(|n| (i, n)))
     }
 
+    pub fn nodes_sorted_by<F>(&self, mut f: F) -> Vec<(usize, &ExtractedBspNode)>
+    where
+        F: FnMut(&ExtractedBspNode, &ExtractedBspNode) -> std::cmp::Ordering,
+    {
+        let mut nodes = self.node_iter().collect::<Vec<_>>();
+        nodes.sort_unstable_by(|(_, a), (_, b)| f(a, b));
+        nodes
+    }
+
     pub fn walk<F>(&self, index: usize, visitor: &mut F)
     where
         F: FnMut(usize, &ExtractedBspNode),
@@ -166,7 +175,7 @@ pub fn extract_bsps(
                         } => {
                             let mut shader_mesh_entities = Vec::new();
                             for loaded_mesh in meshes_and_materials {
-                                let LoadedBspShaderMesh { mesh, shader, typ } = loaded_mesh;
+                                let LoadedBspShaderMesh { mesh, shader, .. } = loaded_mesh;
                                 let source_mesh = source_meshes.get(*mesh).unwrap();
 
                                 let extracted_mesh = GpuMesh::extract_render_asset(
@@ -199,8 +208,7 @@ pub fn extract_bsps(
                                     extracted_shader_handle.into_untyped(),
                                 );
 
-                                let entity =
-                                    world.spawn((extracted_mesh, extracted_shader_handle, *typ));
+                                let entity = world.spawn((extracted_mesh, extracted_shader_handle));
 
                                 shader_mesh_entities.push(entity);
                             }

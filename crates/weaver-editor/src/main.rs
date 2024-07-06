@@ -1,3 +1,6 @@
+use std::collections::VecDeque;
+
+use camera::CameraUpdate;
 use inspect::InspectUi;
 use transform_gizmo::TransformGizmo;
 use weaver::{
@@ -10,7 +13,7 @@ use weaver::{
 };
 use weaver_asset::loading::Filesystem;
 use weaver_core::CoreTypesPlugin;
-use weaver_diagnostics::frame_time::LogFrameTimePlugin;
+use weaver_diagnostics::frame_time::{FrameTime, LogFrameTimePlugin};
 use weaver_egui::prelude::*;
 use weaver_gizmos::GizmoNodeLabel;
 use weaver_q3::{
@@ -30,12 +33,6 @@ use weaver_winit::Window;
 pub mod camera;
 pub mod inspect;
 pub mod transform_gizmo;
-
-#[derive(Component, Reflect)]
-struct Floor;
-
-#[derive(Component, Reflect)]
-struct Object;
 
 #[derive(Component, Reflect)]
 pub struct SelectionAabb {
@@ -63,6 +60,11 @@ struct EditorState {
     pub vis_mode: VisMode,
 }
 
+#[derive(Resource, Default)]
+struct FpsHistory {
+    pub history: VecDeque<f32>,
+}
+
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -80,8 +82,9 @@ fn main() -> Result<()> {
         .add_plugin(EguiPlugin)?
         .add_plugin(Q3Plugin)?
         .add_plugin(LogFrameTimePlugin {
-            log_interval: std::time::Duration::from_secs(1),
+            log_interval: std::time::Duration::from_secs(5),
         })?
+        .init_resource::<FpsHistory>()
         .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
         .configure_sub_app::<RenderApp>(|app| {
             app.add_render_main_graph_edge(SkyboxNodeLabel, BspRenderNodeLabel);
@@ -90,6 +93,7 @@ fn main() -> Result<()> {
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
         .insert_resource(Filesystem::default().with_pk3s_from_dir("assets/q3")?)
         .insert_resource(EditorState::default())
+        .add_plugin(FixedUpdatePlugin::<CameraUpdate>::new(1.0 / 1000.0, 0.1))?
         // .insert_resource(TransformGizmo {
         //     focus: None,
         //     size: 1.0,
@@ -113,6 +117,7 @@ fn main() -> Result<()> {
         .add_system(pick_entity, Update)
         // .add_system(transform_gizmo::draw_transform_gizmo, Update)
         .add_system(inspect_ui, Update)
+        .add_system(fps_ui, Update)
         .run()
 }
 
@@ -141,8 +146,8 @@ fn setup(
             speed: 320.0,
             fov: 70.0f32.to_radians(),
             near: 0.1,
-            far: 10000.0,
-            sensitivity: 0.2,
+            far: 100000.0,
+            sensitivity: 40.0,
             ..Default::default()
         },
         PrimaryCamera,
@@ -151,6 +156,34 @@ fn setup(
     let bsp = bsp_loader.load_from_filesystem(&mut fs, "maps/q3dm6.bsp")?;
     let bsp = bsp_assets.insert(bsp);
     commands.spawn(bsp);
+
+    Ok(())
+}
+
+fn fps_ui(
+    time: Res<FrameTime>,
+    mut history: ResMut<FpsHistory>,
+    egui_ctx: Res<EguiContext>,
+) -> Result<()> {
+    egui_ctx.draw_if_ready(|ctx| {
+        egui::Window::new("FPS").show(ctx, |ui| {
+            history.history.push_back(time.fps);
+            if history.history.len() > 1000 {
+                history.history.pop_front();
+            }
+
+            let plot = egui_plot::Plot::new("FPS");
+            let points = history
+                .history
+                .iter()
+                .enumerate()
+                .map(|(i, &fps)| [i as f64, fps as f64])
+                .collect::<Vec<_>>();
+            plot.show(ui, |plot| {
+                plot.line(egui_plot::Line::new(points).color(egui::Color32::LIGHT_GREEN));
+            });
+        });
+    });
 
     Ok(())
 }

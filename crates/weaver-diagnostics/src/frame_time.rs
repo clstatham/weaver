@@ -1,5 +1,8 @@
 use weaver_app::{plugin::Plugin, App, PreUpdate};
-use weaver_ecs::{component::ResMut, prelude::Resource};
+use weaver_ecs::{
+    component::{Res, ResMut},
+    prelude::Resource,
+};
 use weaver_util::prelude::Result;
 
 #[derive(Resource)]
@@ -8,8 +11,6 @@ pub struct FrameTime {
     pub fps: f32,
     pub last_update: std::time::Instant,
     pub frame_count: u32,
-    pub log_interval: std::time::Duration,
-    pub last_log: std::time::Instant,
 }
 
 pub struct FrameTimePlugin;
@@ -21,13 +22,17 @@ impl Plugin for FrameTimePlugin {
             fps: 0.0,
             last_update: std::time::Instant::now(),
             frame_count: 0,
-            log_interval: std::time::Duration::from_secs(1),
-            last_log: std::time::Instant::now(),
         });
         app.add_system(update_frame_time, PreUpdate);
 
         Ok(())
     }
+}
+
+#[derive(Resource)]
+pub struct FrameTimeLogger {
+    pub log_interval: std::time::Duration,
+    pub last_log: std::time::Instant,
 }
 
 pub struct LogFrameTimePlugin {
@@ -37,6 +42,10 @@ pub struct LogFrameTimePlugin {
 impl Plugin for LogFrameTimePlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_plugin(FrameTimePlugin)?;
+        app.insert_resource(FrameTimeLogger {
+            log_interval: self.log_interval,
+            last_log: std::time::Instant::now(),
+        });
         app.add_system_after(log_frame_time, update_frame_time, PreUpdate);
 
         Ok(())
@@ -53,15 +62,15 @@ fn update_frame_time(mut frame_time: ResMut<FrameTime>) -> Result<()> {
     Ok(())
 }
 
-fn log_frame_time(mut frame_time: ResMut<FrameTime>) -> Result<()> {
+fn log_frame_time(frame_time: Res<FrameTime>, mut logger: ResMut<FrameTimeLogger>) -> Result<()> {
     let now = std::time::Instant::now();
-    if now.duration_since(frame_time.last_log) >= frame_time.log_interval {
+    if now.duration_since(logger.last_log) >= logger.log_interval {
         log::info!(
             "Frame time: {:.2}ms, FPS: {:.2}",
             frame_time.frame_time * 1000.0,
             frame_time.fps
         );
-        frame_time.last_log = now;
+        logger.last_log = now;
     }
 
     Ok(())

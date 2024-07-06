@@ -7,7 +7,7 @@ use weaver_asset::{AddAsset, Assets, Handle};
 use weaver_core::prelude::*;
 use weaver_ecs::{
     component::{Res, ResMut},
-    entity::Entity,
+    entity::{Entity, EntityMap},
     prelude::{Query, QueryFetch, Resource, SystemParamItem, World},
     query::{QueryFetchItem, With},
     storage::Ref,
@@ -29,11 +29,10 @@ use weaver_renderer::{
     },
     ExtractStage, PreRender, RenderLabel,
 };
-use weaver_util::prelude::{FxHashMap, FxHashSet, Result};
+use weaver_util::prelude::{FxHashSet, Result};
 
-use crate::{
-    bsp::generator::BspFaceType,
-    shader::render::{extract::ExtractedShader, KeyedShaderStage, KeyedShaderStagePipelineCache},
+use crate::shader::render::{
+    extract::ExtractedShader, KeyedShaderStage, KeyedShaderStagePipelineCache,
 };
 
 pub mod extract;
@@ -95,7 +94,7 @@ pub struct BspDrawItemInstance {
 
 #[derive(Default, Resource)]
 pub struct BspDrawItemInstances {
-    pub instances: FxHashMap<Entity, BspDrawItemInstance>,
+    pub instances: EntityMap<BspDrawItemInstance>,
 }
 
 impl GetBatchData for BspDrawItemInstances {
@@ -129,15 +128,7 @@ impl RenderCommand<BspDrawItem> for BspRenderCommand {
         Res<'static, KeyedShaderStagePipelineCache>,
         Res<'static, BindGroup<BatchedInstanceBuffer<BspDrawItem, BspRenderCommand>>>,
         Res<'static, BindGroup<PbrLightingInformation>>,
-        Query<
-            'static,
-            'static,
-            (
-                &'static Handle<GpuMesh>,
-                &'static Handle<ExtractedShader>,
-                &'static BspFaceType,
-            ),
-        >,
+        Query<'static, 'static, (&'static Handle<GpuMesh>, &'static Handle<ExtractedShader>)>,
     );
 
     type ViewQueryFetch = (&'static BindGroup<CameraBindGroup>, &'static GpuCamera);
@@ -181,8 +172,8 @@ impl RenderCommand<BspDrawItem> for BspRenderCommand {
         render_pass.set_bind_group(2, instance_bind_group.bind_group(), &[]);
         render_pass.set_bind_group(3, lighting_bind_group.bind_group(), &[]);
 
-        // let inv_view = camera.camera.view_matrix.inverse();
-        // let camera_pos = inv_view.col(3).truncate();
+        let inv_view = camera.camera.view_matrix.inverse();
+        let camera_pos = inv_view.col(3).truncate();
 
         // // figure out what leaf cluster the camera is in
         // let mut camera_cluster = -1i32;
@@ -211,28 +202,53 @@ impl RenderCommand<BspDrawItem> for BspRenderCommand {
         //     }
         // }
 
-        for (_, node) in bsp.node_iter() {
+        let nodes = bsp.nodes_sorted_by(|a, b| match (a, b) {
+            (
+                ExtractedBspNode::Leaf {
+                    min: a_min,
+                    max: a_max,
+                    ..
+                },
+                ExtractedBspNode::Leaf {
+                    min: b_min,
+                    max: b_max,
+                    ..
+                },
+            ) => {
+                let a_center = (*a_min + *a_max) / 2.0;
+                let b_center = (*b_min + *b_max) / 2.0;
+                let a_dist = camera_pos.distance(a_center);
+                let b_dist = camera_pos.distance(b_center);
+                a_dist.partial_cmp(&b_dist).unwrap()
+            }
+            _ => std::cmp::Ordering::Equal,
+        });
+
+        for (_, node) in nodes {
             match node {
                 ExtractedBspNode::Leaf {
                     shader_mesh_entities,
-                    parent: _,
-                    cluster: _,
-                    min,
-                    max,
+                    ..
                 } => {
-                    // check if the leaf intersects with the camera frustum
-                    // let aabb = Aabb::new(*min, *max);
+                    // // check if the leaf is potentially visible from the camera's cluster
+                    // if camera_cluster >= 0 {
+                    //     let vis = bsp.vis_data.check_visible(camera_cluster, *cluster as i32)
+                    //         || bsp.vis_data.check_visible(*cluster as i32, camera_cluster);
+                    //     if !vis {
+                    //         continue;
+                    //     }
+                    // }
 
                     for entity in shader_mesh_entities {
-                        let (mesh, shader, _typ) = shader_meshes.get(*entity).unwrap();
+                        let (mesh, shader) = shader_meshes.get(*entity).unwrap();
                         let mesh = mesh_assets.get(*mesh).unwrap();
                         let shader = shader_assets.get(*shader).unwrap();
                         let mesh = mesh.into_inner();
                         let shader = shader.into_inner();
-                        if camera
-                            .camera
-                            .intersect_frustum_with_aabb(&mesh.aabb, true, false)
-                            != Intersection::Outside
+                        // if camera
+                        //     .camera
+                        //     .intersect_frustum_with_aabb(&mesh.aabb, true, false)
+                        //     != Intersection::Outside
                         {
                             render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                             render_pass.set_index_buffer(
@@ -310,7 +326,7 @@ impl ViewNode for BspRenderNode {
             let encoder = render_ctx.command_encoder();
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("PBR Render Pass"),
+                label: Some("BSP Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view_target.color_target,
                     resolve_target: None,

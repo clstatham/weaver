@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut, Range};
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
     component::{Res, ResMut},
-    entity::Entity,
+    entity::{Entity, EntityMap},
     prelude::Resource,
     query::{Query, QueryFetch, QueryFilter},
     world::{FromWorld, World},
@@ -98,7 +98,7 @@ impl<T: BinnedDrawItem> BinnedRenderPhase<T> {
 
 #[derive(Resource)]
 pub struct BinnedRenderPhases<T: BinnedDrawItem> {
-    pub phases: FxHashMap<Entity, BinnedRenderPhase<T>>,
+    pub phases: EntityMap<BinnedRenderPhase<T>>,
 }
 
 impl<T: BinnedDrawItem> BinnedRenderPhases<T> {
@@ -114,13 +114,13 @@ impl<T: BinnedDrawItem> BinnedRenderPhases<T> {
 impl<T: BinnedDrawItem> Default for BinnedRenderPhases<T> {
     fn default() -> Self {
         Self {
-            phases: FxHashMap::default(),
+            phases: EntityMap::default(),
         }
     }
 }
 
 impl<T: BinnedDrawItem> Deref for BinnedRenderPhases<T> {
-    type Target = FxHashMap<Entity, BinnedRenderPhase<T>>;
+    type Target = EntityMap<BinnedRenderPhase<T>>;
 
     fn deref(&self) -> &Self::Target {
         &self.phases

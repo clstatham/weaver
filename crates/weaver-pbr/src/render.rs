@@ -7,7 +7,7 @@ use weaver_asset::{Assets, Handle};
 use weaver_core::{prelude::Mat4, transform::Transform};
 use weaver_ecs::{
     component::Res,
-    entity::Entity,
+    entity::{Entity, EntityMap},
     prelude::{Query, QueryFetch, Resource, World},
     storage::Ref,
     system::SystemParamItem,
@@ -26,7 +26,7 @@ use weaver_renderer::{
     texture::texture_format,
     RenderLabel,
 };
-use weaver_util::prelude::{FxHashMap, Result};
+use weaver_util::prelude::Result;
 
 use crate::{
     light::GpuPointLightArray, material::GpuMaterial, prelude::irradiance::GpuSkyboxIrradiance,
@@ -40,10 +40,10 @@ pub struct PbrMeshInstance {
 }
 
 #[derive(Resource, Default)]
-pub struct PbrMeshInstances(FxHashMap<Entity, PbrMeshInstance>);
+pub struct PbrMeshInstances(EntityMap<PbrMeshInstance>);
 
 impl Deref for PbrMeshInstances {
-    type Target = FxHashMap<Entity, PbrMeshInstance>;
+    type Target = EntityMap<PbrMeshInstance>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

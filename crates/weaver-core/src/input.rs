@@ -110,7 +110,8 @@ impl Input {
     pub fn update_device(&mut self, event: &DeviceEvent) {
         match event {
             DeviceEvent::MouseMotion { delta } => {
-                self.mouse_delta = (delta.0 as f32, delta.1 as f32);
+                self.mouse_delta.0 += delta.0 as f32;
+                self.mouse_delta.1 += delta.1 as f32;
             }
             DeviceEvent::Key(key) => {
                 if let Some(scancode) = key.physical_key.to_scancode() {

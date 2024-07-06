@@ -63,11 +63,11 @@ impl FlyCameraController {
         self.translation += velocity;
 
         if input.mouse_down(MouseButton::Right) {
-            let mouse_delta = input.mouse_delta();
+            let (dx, dy) = input.mouse_delta();
             let (mut yaw, mut pitch, _roll) = self.rotation.to_euler(EulerRot::YXZ);
 
-            yaw += -(mouse_delta.0 * self.sensitivity).to_radians();
-            pitch += -(mouse_delta.1 * self.sensitivity).to_radians();
+            yaw += -(dx * self.sensitivity).to_radians() * delta_time;
+            pitch += -(dy * self.sensitivity).to_radians() * delta_time;
 
             pitch = pitch.clamp(
                 -std::f32::consts::FRAC_PI_2 + 0.001,
@@ -104,14 +104,18 @@ impl FlyCameraController {
     }
 }
 
+pub struct CameraUpdate;
+
 pub fn update_camera(
-    time: Res<Time>,
+    mut time: ResMut<FixedTimestep<CameraUpdate>>,
     input: Res<Input>,
     query: Query<(&mut Camera, &mut FlyCameraController)>,
 ) -> Result<()> {
-    for (_entity, (mut camera, mut controller)) in query.iter() {
-        controller.update(&input, time.delta_time, &mut camera);
-    }
+    time.run_with_fixed_timestep(|_total, dt| {
+        for (_entity, (mut camera, mut controller)) in query.iter() {
+            controller.update(&input, dt, &mut camera);
+        }
+    });
 
     Ok(())
 }
