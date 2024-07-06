@@ -83,24 +83,13 @@ impl ViewNode for BspRenderNode {
         render_pass.set_bind_group(2, lighting_bind_group.bind_group(), &[]);
 
         render_pass.set_vertex_buffer(0, bsp.vbo.slice(..));
+        render_pass.set_index_buffer(bsp.ibo.slice(..), wgpu::IndexFormat::Uint32);
 
         for (_entity, shader_indices) in item_query.iter() {
             let shader_indices = shader_indices.into_inner();
 
             render_pass.set_bind_group(0, &shader_indices.bind_group, &[]);
-
-            render_pass.set_push_constants(
-                wgpu::ShaderStages::FRAGMENT,
-                0,
-                bytemuck::cast_slice(&shader_indices.texture_indices),
-            );
-
-            render_pass.set_index_buffer(
-                shader_indices.vbo_indices.buffer.slice(..),
-                wgpu::IndexFormat::Uint32,
-            );
-
-            render_pass.draw_indexed(0..shader_indices.vbo_indices.num_indices, 0, 0..1);
+            render_pass.draw_indexed(shader_indices.ibo_range.clone(), 0, 0..1);
         }
 
         Ok(())

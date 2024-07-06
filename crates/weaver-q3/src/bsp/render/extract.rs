@@ -1,9 +1,10 @@
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 
+use encase::ShaderType;
 use weaver_asset::Assets;
 use weaver_core::{
     mesh::{Mesh, Vertex},
-    prelude::Vec3,
+    prelude::{Vec2, Vec3},
     texture::Texture,
 };
 use weaver_ecs::{
@@ -33,18 +34,22 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone)]
-pub struct IndexBuffer {
-    pub buffer: Arc<wgpu::Buffer>,
-    pub num_indices: u32,
+#[derive(Clone, Copy, Debug, ShaderType, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+pub struct VertexWithTexIdx {
+    pub position: Vec3,
+    pub normal: Vec3,
+    pub tangent: Vec3,
+    pub tex_coords: Vec2,
+    pub tex_idx: u32,
 }
 
 /// A group of shaders that have been batched together for a single bind group, pipeline, and draw call.
 #[derive(Component)]
 pub struct BatchedBspShaderIndices {
     pub textures: Vec<GpuTexture>,
-    pub vbo_indices: IndexBuffer,
-    pub texture_indices: Vec<u32>,
+    pub texture_ibo_indices: Vec<u32>,
+    pub ibo_range: Range<u32>,
     pub bind_group: wgpu::BindGroup,
     pub sampler: wgpu::Sampler,
     pub dummy_texture: GpuTexture,
@@ -87,6 +92,8 @@ pub struct ExtractedBsp {
     pub nodes: Vec<Option<ExtractedBspNode>>,
     pub vis_data: VisData,
     pub vbo: wgpu::Buffer,
+    pub ibo: wgpu::Buffer,
+    pub num_indices: u32,
 }
 
 impl ExtractedBsp {
@@ -167,8 +174,7 @@ pub fn extract_bsps(
 ) -> Result<()> {
     if !world.has_resource::<ExtractedBsp>() {
         let mut nodes = vec![None; bsp.nodes.len()];
-        let mut vbo: Vec<Vertex> = Vec::new();
-        let mut shader_mesh_indices = FxHashMap::default();
+        let mut shader_meshes = FxHashMap::default();
 
         for (i, node) in bsp.nodes.iter().enumerate() {
             if let Some(node) = node {
@@ -183,19 +189,10 @@ pub fn extract_bsps(
                         for loaded_mesh in leaf_shader_meshes {
                             let LoadedBspShaderMesh { mesh, shader, .. } = loaded_mesh;
                             let source_mesh = source_meshes.get(*mesh).unwrap();
-
-                            let base_index = vbo.len() as u32;
-                            vbo.extend(&source_mesh.vertices);
-                            let indices = source_mesh
-                                .indices
-                                .iter()
-                                .map(|i| i + base_index)
-                                .collect::<Vec<_>>();
-
-                            shader_mesh_indices
+                            shader_meshes
                                 .entry(*shader)
                                 .or_insert_with(Vec::new)
-                                .extend(indices);
+                                .push(source_mesh.clone());
                         }
                         nodes[i] = Some(ExtractedBspNode::Leaf {
                             parent: *parent,
@@ -222,9 +219,11 @@ pub fn extract_bsps(
             }
         }
 
-        let shader_mesh_indices = shader_mesh_indices.into_iter().collect::<Vec<_>>();
-
         let mut shader_mesh_index = 0;
+        let shader_meshes = shader_meshes.into_iter().collect::<Vec<_>>();
+
+        let mut vbo = Vec::new();
+        let mut ibo = Vec::new();
 
         let dummy_texture = Texture::from_rgba8(&[255, 0, 255, 255], 1, 1);
 
@@ -236,14 +235,15 @@ pub fn extract_bsps(
         'batch_outer: loop {
             let mut total_stages = 0;
             let mut outer_textures = Vec::new();
-            let mut outer_vbo_indices = Vec::new();
-            let mut outer_texture_indices = Vec::new();
+            let mut texture_ibo_indices = Vec::new();
+
+            let ibo_start = ibo.len() as u32;
 
             'gather_stages: loop {
-                if shader_mesh_index >= shader_mesh_indices.len() {
+                if shader_mesh_index >= shader_meshes.len() {
                     break 'batch_outer;
                 }
-                let (shader, vbo_indices) = shader_mesh_indices.get(shader_mesh_index).unwrap();
+                let (shader, meshes) = shader_meshes.get(shader_mesh_index).unwrap();
                 let shader = source_shaders.get(*shader).unwrap();
 
                 if total_stages + shader.shader.stages.len() > SHADER_TEXTURE_ARRAY_SIZE as usize {
@@ -264,18 +264,32 @@ pub fn extract_bsps(
                             texture_format::SDR_FORMAT,
                         )
                         .unwrap();
-
                         outer_textures.push(texture);
                     } else {
                         outer_textures.push(dummy_texture.clone());
                     }
 
-                    let start_index = vbo_indices.iter().copied().min().unwrap();
-                    let end_index = vbo_indices.iter().copied().max().unwrap() + 1;
-                    assert!(start_index < end_index);
+                    for mesh in meshes {
+                        let mut tmp_vbo = Vec::new();
+                        for vertex in &mesh.vertices {
+                            let tex_idx = total_stages as u32;
+                            let vertex = VertexWithTexIdx {
+                                position: vertex.position,
+                                normal: vertex.normal,
+                                tangent: vertex.tangent,
+                                tex_coords: vertex.tex_coords,
+                                tex_idx,
+                            };
+                            tmp_vbo.push(vertex);
+                        }
 
-                    outer_vbo_indices.extend(vbo_indices.iter().copied());
-                    outer_texture_indices.push([start_index, end_index]);
+                        let vbo_offset = vbo.len() as u32;
+                        vbo.extend(tmp_vbo);
+
+                        for index in &mesh.indices {
+                            ibo.push(*index + vbo_offset);
+                        }
+                    }
 
                     total_stages += 1;
                 }
@@ -283,19 +297,15 @@ pub fn extract_bsps(
                 shader_mesh_index += 1;
             }
 
-            let mut texture_indices_vec = outer_texture_indices
-                .iter()
-                .copied()
-                .flatten()
-                .collect::<Vec<_>>();
+            let ibo_end = ibo.len() as u32;
 
-            if texture_indices_vec.len() < SHADER_TEXTURE_ARRAY_SIZE as usize * 2 {
+            if texture_ibo_indices.len() < SHADER_TEXTURE_ARRAY_SIZE as usize * 2 {
                 let dummy_indices = vec![
                     u32::MAX;
                     (SHADER_TEXTURE_ARRAY_SIZE as usize * 2)
-                        - texture_indices_vec.len()
+                        - texture_ibo_indices.len()
                 ];
-                texture_indices_vec.extend(dummy_indices);
+                texture_ibo_indices.extend(dummy_indices);
             }
 
             let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -337,21 +347,10 @@ pub fn extract_bsps(
                 label: Some("BSP Shader Bind Group"),
             });
 
-            let vbo_indices = IndexBuffer {
-                buffer: Arc::new(
-                    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("BSP Index Buffer"),
-                        contents: bytemuck::cast_slice(&outer_vbo_indices),
-                        usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-                    }),
-                ),
-                num_indices: outer_vbo_indices.len() as u32,
-            };
-
             let extracted_bsp_shader_indices = BatchedBspShaderIndices {
                 textures: outer_textures,
-                vbo_indices,
-                texture_indices: texture_indices_vec,
+                ibo_range: ibo_start..ibo_end,
+                texture_ibo_indices,
                 bind_group,
                 sampler,
                 dummy_texture: dummy_texture.clone(),
@@ -359,8 +358,6 @@ pub fn extract_bsps(
 
             world.spawn(extracted_bsp_shader_indices);
         }
-
-        // ignore excess shaders for now
 
         log::debug!("Extracted BSP");
 
@@ -370,10 +367,20 @@ pub fn extract_bsps(
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
+        let num_indices = ibo.len() as u32;
+
+        let ibo = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("BSP IBO"),
+            contents: bytemuck::cast_slice(&ibo),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        });
+
         let extracted_bsp = ExtractedBsp {
             nodes,
             vis_data: bsp.vis_data.clone(),
             vbo,
+            ibo,
+            num_indices,
         };
 
         world.insert_resource(extracted_bsp);

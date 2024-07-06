@@ -1,5 +1,5 @@
 #define_import_path weaver::q3_shader_stage
-#import weaver::common::{ModelTransform, CameraUniform, MaterialUniform, VertexInput, MIN_LIGHT_INTENSITY, PI};
+#import weaver::common::{ModelTransform, CameraUniform, MaterialUniform, MIN_LIGHT_INTENSITY, PI};
 
 
 struct PointLight {
@@ -7,6 +7,14 @@ struct PointLight {
     color: vec4<f32>,
     intensity: f32,
     radius: f32,
+};
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) tangent: vec3<f32>,
+    @location(3) uv: vec2<f32>,
+    @location(4) tex_idx: u32,
 };
 
 
@@ -17,10 +25,8 @@ struct VertexOutput {
     @location(2) world_binormal: vec3<f32>,
     @location(3) world_tangent: vec3<f32>,
     @location(4) uv: vec2<f32>,
-    @location(5) vidx: u32,
+    @location(5) tex_idx: u32,
 }
-
-var<push_constant> tex_indices: array<u32, 32>;
 
 // material information
 @group(0) @binding(0) var          tex: binding_array<texture_2d<f32>>;
@@ -28,9 +34,6 @@ var<push_constant> tex_indices: array<u32, 32>;
 
 // camera information
 @group(1) @binding(0) var<uniform> camera: CameraUniform;
-
-// model information
-// @group(2) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
 
 // lights information
 @group(2) @binding(0) var<storage> point_lights: array<PointLight>;
@@ -40,10 +43,8 @@ var<push_constant> tex_indices: array<u32, 32>;
 @group(2) @binding(4) var          env_map_sampler: sampler;
 
 @vertex
-fn vs_main(input: VertexInput, @builtin(vertex_index) vidx: u32) -> VertexOutput {
+fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
-
-    // let model_transform = model_transforms[input.instance_index];
 
     let world_position = vec4<f32>(input.position, 1.0);
 
@@ -59,7 +60,7 @@ fn vs_main(input: VertexInput, @builtin(vertex_index) vidx: u32) -> VertexOutput
     output.world_binormal = B;
     output.world_normal = N;
 
-    output.vidx = vidx;
+    output.tex_idx = input.tex_idx;
 
     return output;
 }
@@ -74,15 +75,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     var tex_color = vec4<f32>(0.0, 0.0, 0.0, 1.0);
 
-    for (var i: u32 = 0; i < 16u; i += 1u) {
-        if tex_indices[i * 2u] == 4294967295u {
-            break;
-        }
-        if (input.vidx >= tex_indices[i * 2u]) && (input.vidx < tex_indices[i * 2u + 1u]) {
-            tex_color = textureSample(tex[i], tex_sampler, tex_coord);
-            break;
-        }
-    }
+    tex_color = textureSample(tex[input.tex_idx], tex_sampler, tex_coord);
 
-    return vec4<f32>(tex_color.rgb, 1.0);
+    return tex_color;
 }

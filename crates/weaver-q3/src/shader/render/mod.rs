@@ -84,15 +84,7 @@ impl FromWorld for ShaderPipeline {
             &wgpu::PipelineLayoutDescriptor {
                 label: Some("Shader Stage Pipeline Layout"),
                 bind_group_layouts: &[&shader_layout.layout, &camera_layout, &lighting_layout],
-                push_constant_ranges: &[
-                    // texture index
-                    wgpu::PushConstantRange {
-                        stages: wgpu::ShaderStages::FRAGMENT,
-                        range: 0..(std::mem::size_of::<u32>() as u32
-                            * SHADER_TEXTURE_ARRAY_SIZE
-                            * 2),
-                    },
-                ],
+                push_constant_ranges: &[],
             },
         ));
 
@@ -107,13 +99,14 @@ impl FromWorld for ShaderPipeline {
                     module: &shader,
                     entry_point: "vs_main",
                     buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: 4 * (3 + 3 + 3 + 2) as u64,
+                        array_stride: 4 * (3 + 3 + 3 + 2 + 1) as u64,
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes: &wgpu::vertex_attr_array![
                             0 => Float32x3, // Position
                             1 => Float32x3, // Normal
                             2 => Float32x3, // Tangent
                             3 => Float32x2, // TexCoord
+                            4 => Uint32, // Texture Index
                         ],
                     }],
                 },
