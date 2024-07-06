@@ -17,9 +17,10 @@ struct VertexOutput {
     @location(2) world_binormal: vec3<f32>,
     @location(3) world_tangent: vec3<f32>,
     @location(4) uv: vec2<f32>,
+    @location(5) vidx: u32,
 }
 
-var<push_constant> tex_index: u32;
+var<push_constant> tex_indices: array<u32, 32>;
 
 // material information
 @group(0) @binding(0) var          tex: binding_array<texture_2d<f32>>;
@@ -38,9 +39,8 @@ var<push_constant> tex_index: u32;
 @group(2) @binding(3) var          env_map_brdf: texture_2d<f32>;
 @group(2) @binding(4) var          env_map_sampler: sampler;
 
-
 @vertex
-fn vs_main(input: VertexInput) -> VertexOutput {
+fn vs_main(input: VertexInput, @builtin(vertex_index) vidx: u32) -> VertexOutput {
     var output: VertexOutput;
 
     // let model_transform = model_transforms[input.instance_index];
@@ -59,6 +59,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     output.world_binormal = B;
     output.world_normal = N;
 
+    output.vidx = vidx;
+
     return output;
 }
 
@@ -70,7 +72,17 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let world_binormal = input.world_binormal;
     let tex_coord = input.uv;
 
-    let tex_color = textureSample(tex[tex_index], tex_sampler, tex_coord);
+    var tex_color = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+
+    for (var i: u32 = 0; i < 16u; i += 1u) {
+        if tex_indices[i * 2u] == 4294967295u {
+            break;
+        }
+        if (input.vidx >= tex_indices[i * 2u]) && (input.vidx < tex_indices[i * 2u + 1u]) {
+            tex_color = textureSample(tex[i], tex_sampler, tex_coord);
+            break;
+        }
+    }
+
     return vec4<f32>(tex_color.rgb, 1.0);
-    // return vec4<f32>(1.0, 0.0, 0.0, 1.0);
 }

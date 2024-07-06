@@ -247,7 +247,8 @@ fn create_surface(render_world: &mut World) -> Result<()> {
         &wgpu::DeviceDescriptor {
             required_features: wgpu::Features::MULTIVIEW
                 | wgpu::Features::PUSH_CONSTANTS
-                | wgpu::Features::TEXTURE_BINDING_ARRAY,
+                | wgpu::Features::TEXTURE_BINDING_ARRAY
+                | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
             required_limits,
             label: None,
         },

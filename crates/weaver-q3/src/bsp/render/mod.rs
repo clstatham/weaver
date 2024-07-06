@@ -1,7 +1,5 @@
-use extract::{extract_bsps, ExtractedBsp, ExtractedBspShaderIndices};
+use extract::{extract_bsps, BatchedBspShaderIndices, ExtractedBsp};
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::Assets;
-use weaver_core::prelude::*;
 use weaver_ecs::{
     component::Res,
     prelude::{Query, SystemParamItem, World},
@@ -19,7 +17,7 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::Result;
 
-use crate::shader::render::{extract::ExtractedShader, KeyedShaderStagePipelineCache};
+use crate::shader::render::ShaderPipeline;
 
 pub mod extract;
 
@@ -32,11 +30,10 @@ pub struct BspRenderNode;
 
 impl ViewNode for BspRenderNode {
     type Param = (
-        Query<'static, 'static, &'static ExtractedBspShaderIndices>,
+        Query<'static, 'static, &'static BatchedBspShaderIndices>,
         Res<'static, ExtractedBsp>,
         Res<'static, BindGroup<PbrLightingInformation>>,
-        Res<'static, Assets<ExtractedShader>>,
-        Res<'static, KeyedShaderStagePipelineCache>,
+        Res<'static, ShaderPipeline>,
     );
 
     type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<CameraBindGroup>);
@@ -48,9 +45,7 @@ impl ViewNode for BspRenderNode {
         _render_world: &World,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut weaver_renderer::graph::RenderCtx,
-        (item_query, bsp, lighting_bind_group, shader_assets, pipeline_cache): &SystemParamItem<
-            Self::Param,
-        >,
+        (item_query, bsp, lighting_bind_group, shader_pipeline): &SystemParamItem<Self::Param>,
         (view_target, camera_bind_group): &QueryFetchItem<Self::ViewQueryFetch>,
     ) -> Result<()> {
         let encoder = render_ctx.command_encoder();
@@ -82,49 +77,30 @@ impl ViewNode for BspRenderNode {
             graph_ctx.view_entity
         );
 
+        render_pass.set_pipeline(&shader_pipeline.pipeline);
+
         render_pass.set_bind_group(1, camera_bind_group.bind_group(), &[]);
         render_pass.set_bind_group(2, lighting_bind_group.bind_group(), &[]);
 
         render_pass.set_vertex_buffer(0, bsp.vbo.slice(..));
 
-        for (_entity, shader_meshes) in item_query.iter() {
-            // let camera = camera.into_inner();
+        for (_entity, shader_indices) in item_query.iter() {
+            let shader_indices = shader_indices.into_inner();
 
-            let ExtractedBspShaderIndices {
-                shader,
-                vbo_indices,
-            } = shader_meshes.into_inner();
+            render_pass.set_bind_group(0, &shader_indices.bind_group, &[]);
 
-            let shader = shader_assets.get(*shader).unwrap();
-            let shader = shader.into_inner();
+            render_pass.set_push_constants(
+                wgpu::ShaderStages::FRAGMENT,
+                0,
+                bytemuck::cast_slice(&shader_indices.texture_indices),
+            );
 
-            render_pass.set_bind_group(0, &shader.bind_group, &[]);
+            render_pass.set_index_buffer(
+                shader_indices.vbo_indices.buffer.slice(..),
+                wgpu::IndexFormat::Uint32,
+            );
 
-            // let inv_view = camera.camera.view_matrix().inverse();
-            // let camera_pos = inv_view.col(3).truncate();
-
-            // if camera
-            //     .camera
-            //     .intersect_frustum_with_aabb(&mesh.aabb, true, false)
-            //     == Intersection::Outside
-            // {
-            //     continue;
-            // }
-
-            render_pass.set_index_buffer(vbo_indices.buffer.slice(..), wgpu::IndexFormat::Uint32);
-
-            for (i, stage) in shader.stages.iter().enumerate() {
-                let pipeline = pipeline_cache.get(stage.key).unwrap();
-                render_pass.set_pipeline(pipeline);
-
-                render_pass.set_push_constants(
-                    wgpu::ShaderStages::FRAGMENT,
-                    0,
-                    bytemuck::bytes_of(&(i as u32)),
-                );
-
-                render_pass.draw_indexed(0..vbo_indices.num_indices, 0, 0..1);
-            }
+            render_pass.draw_indexed(0..shader_indices.vbo_indices.num_indices, 0, 0..1);
         }
 
         Ok(())
