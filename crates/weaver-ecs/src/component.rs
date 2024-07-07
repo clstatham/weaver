@@ -13,7 +13,7 @@ use weaver_util::{
 
 use crate::{
     self as weaver_ecs,
-    prelude::{ChangeDetection, ChangeDetectionMut, ComponentTicks, Tick, Ticks, TicksMut},
+    prelude::{ChangeDetection, ChangeDetectionMut, ComponentTicks, Tick, Ticks, TicksMut, World},
 };
 
 #[reflect_trait]
@@ -135,6 +135,67 @@ where
         *self.ticks.changed = self.ticks.this_run;
     }
 }
+
+pub trait MultiResource<'w> {
+    type Output;
+    fn is_unique() -> bool;
+    fn fetch(world: &'w mut World) -> Self::Output
+    where
+        Self: Sized;
+}
+
+impl<'w, T> MultiResource<'w> for T
+where
+    T: Resource,
+{
+    type Output = ResMut<'w, T>;
+
+    fn is_unique() -> bool {
+        true
+    }
+
+    fn fetch(world: &'w mut World) -> ResMut<'w, T> {
+        let cell = world.as_unsafe_world_cell();
+        unsafe { cell.get_resource_mut::<T>().unwrap() }
+    }
+}
+
+macro_rules! impl_multi_resource_tuple {
+    ($($name:ident),*) => {
+        #[allow(unused_parens)]
+        impl<'w, $($name: Resource),*> MultiResource<'w> for ($($name,)*) {
+            type Output = ($(ResMut<'w, $name>),*);
+
+            fn is_unique() -> bool {
+                let mut set = std::collections::HashSet::new();
+                $((set.insert(std::any::TypeId::of::<$name>())) &&)* true
+            }
+
+            fn fetch(world: &'w mut World) -> ($(ResMut<'w, $name>),*) {
+                if !Self::is_unique() {
+                    panic!("duplicate resource types");
+                }
+
+                let cell = world.as_unsafe_world_cell();
+
+                unsafe {
+                    ($(
+                        cell.get_resource_mut::<$name>().unwrap()
+                    ),*)
+                }
+            }
+        }
+    };
+}
+
+impl_multi_resource_tuple!(A);
+impl_multi_resource_tuple!(A, B);
+impl_multi_resource_tuple!(A, B, C);
+impl_multi_resource_tuple!(A, B, C, D);
+impl_multi_resource_tuple!(A, B, C, D, E);
+impl_multi_resource_tuple!(A, B, C, D, E, F);
+impl_multi_resource_tuple!(A, B, C, D, E, F, G);
+impl_multi_resource_tuple!(A, B, C, D, E, F, G, H);
 
 pub struct ResourceData {
     data: UnsafeCell<Box<dyn Resource>>,

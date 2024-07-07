@@ -127,30 +127,20 @@ pub(crate) struct GpuSkybox {
 
 impl FromWorld for GpuSkybox {
     fn from_world(world: &mut World) -> Self {
-        let device = world.get_resource::<WgpuDevice>().unwrap().into_inner();
-        let queue = world.get_resource::<WgpuQueue>().unwrap().into_inner();
-        let skybox = world.get_resource::<Skybox>().unwrap().into_inner();
-        let bind_group_layout_cache = unsafe {
-            world
-                .as_unsafe_world_cell_readonly()
-                .get_resource_mut::<BindGroupLayoutCache>()
-                .unwrap()
-                .into_inner()
-        };
-        let pipeline_cache = unsafe {
-            world
-                .as_unsafe_world_cell_readonly()
-                .get_resource_mut::<ComputePipelineCache>()
-                .unwrap()
-                .into_inner()
-        };
-
+        let (device, queue, skybox, mut pipeline_cache, mut bind_group_layout_cache) = world
+            .get_many_resources_mut::<(
+                WgpuDevice,
+                WgpuQueue,
+                Skybox,
+                ComputePipelineCache,
+                BindGroupLayoutCache,
+            )>();
         Self::new(
-            skybox,
-            device,
-            queue,
-            pipeline_cache,
-            bind_group_layout_cache,
+            &skybox,
+            &device,
+            &queue,
+            &mut pipeline_cache,
+            &mut bind_group_layout_cache,
         )
     }
 }

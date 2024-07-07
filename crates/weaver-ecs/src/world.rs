@@ -7,8 +7,8 @@ use std::{
 use weaver_util::{lock::Lock, prelude::Result, warn_once};
 
 use crate::prelude::{
-    Bundle, IntoSystem, QueryFetch, QueryFilter, QueryState, Res, ResMut, Resource, Resources,
-    SystemSchedule, SystemStage, Tick,
+    Bundle, IntoSystem, MultiResource, QueryFetch, QueryFilter, QueryState, Res, ResMut, Resource,
+    Resources, SystemSchedule, SystemStage, Tick,
 };
 
 use super::{
@@ -197,6 +197,20 @@ impl World {
         self.resources.contains::<T>()
     }
 
+    /// Allows for multiple resources to be accessed and modified simultaneously, similarly as to in a system.
+    ///
+    /// # Panics
+    ///
+    /// - If any of the resources are accessed twice in the same call
+    /// - If any of the resources have been accessed and not released prior to this call
+    /// - If any of the resources do not exist
+    pub fn get_many_resources_mut<'w, T>(&'w mut self) -> T::Output
+    where
+        T: MultiResource<'w>,
+    {
+        T::fetch(self)
+    }
+
     pub fn init_resource<T: Resource + FromWorld>(&mut self) {
         if self.has_resource::<T>() {
             warn_once!(
@@ -368,6 +382,11 @@ mod tests {
         pub value: f32,
     }
 
+    #[derive(Debug, Clone, Copy, PartialEq, Reflect, Resource)]
+    pub struct TestResource2 {
+        pub value: f32,
+    }
+
     #[derive(Debug, Clone, Copy, PartialEq, Reflect, Component)]
     pub struct Position {
         pub x: f32,
@@ -466,34 +485,5 @@ mod tests {
 
         assert_eq!(world.get_component::<Position>(entity).unwrap().x, 4.0);
         assert_eq!(world.get_component::<Position>(entity).unwrap().y, 6.0);
-    }
-
-    #[test]
-    fn test_unsafe_world_cell() {
-        let mut world = World::new();
-        world.insert_resource(TestResource { value: 1.0 });
-        let cell = world.as_unsafe_world_cell();
-        unsafe {
-            assert_eq!(
-                cell.get_resource_mut::<TestResource>()
-                    .unwrap()
-                    .into_inner()
-                    .value,
-                1.0
-            );
-            assert_eq!(
-                cell.get_resource_mut::<TestResource>()
-                    .unwrap()
-                    .into_inner()
-                    .value,
-                1.0
-            );
-        }
-
-        // this should fail miri
-        unsafe {
-            let _resource1 = cell.get_resource_mut::<TestResource>().unwrap();
-            let _resource2 = cell.get_resource_mut::<TestResource>().unwrap();
-        }
     }
 }

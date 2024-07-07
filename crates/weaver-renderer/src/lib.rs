@@ -598,27 +598,20 @@ pub fn render_system(render_world: &mut World) -> Result<()> {
     let mut render_graph = render_world.remove_resource::<RenderGraph>().unwrap();
     render_graph.prepare(render_world)?;
 
-    let renderer = unsafe {
-        render_world
-            .as_unsafe_world_cell_readonly()
-            .get_resource_mut::<Renderer>()
-            .unwrap()
-            .into_inner()
-    };
-    let device = render_world
-        .get_resource::<WgpuDevice>()
-        .unwrap()
-        .into_inner();
-    let queue = render_world
-        .get_resource::<WgpuQueue>()
-        .unwrap()
-        .into_inner();
+    let mut renderer = render_world.remove_resource::<Renderer>().unwrap();
+
+    let device = render_world.get_resource::<WgpuDevice>().unwrap();
+    let queue = render_world.get_resource::<WgpuQueue>().unwrap();
 
     // todo: don't assume every camera wants to run the whole main render graph
     for entity in view_targets {
         log::trace!("Running render graph for entity: {:?}", entity);
-        render_graph.run(device, queue, renderer, render_world, entity)?;
+        render_graph.run(&device, &queue, &mut renderer, render_world, entity)?;
     }
+
+    drop((device, queue));
+
+    render_world.insert_resource(renderer);
 
     render_world.insert_resource(render_graph);
 
