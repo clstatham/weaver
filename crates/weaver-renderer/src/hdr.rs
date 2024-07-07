@@ -2,7 +2,6 @@ use std::{path::Path, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
-    commands::WorldMut,
     component::Res,
     prelude::{Resource, World},
     storage::Ref,
@@ -257,9 +256,9 @@ impl Plugin for HdrPlugin {
     }
 }
 
-pub fn init_hdr_render_target(mut world: WorldMut) -> Result<()> {
+pub fn init_hdr_render_target(world: &mut World) -> Result<()> {
     if !world.has_resource::<HdrRenderTarget>() {
-        let target = HdrRenderTarget::from_world(&mut world);
+        let target = HdrRenderTarget::from_world(world);
         world.insert_resource(target);
     }
     Ok(())

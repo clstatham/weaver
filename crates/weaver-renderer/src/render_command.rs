@@ -14,7 +14,7 @@ use crate::{
 };
 
 pub trait RenderCommand<T: DrawItem>: 'static + Send + Sync {
-    type Param: SystemParam +  'static;
+    type Param: SystemParam + 'static;
     type ViewQueryFetch: QueryFetch;
     type ViewQueryFilter: QueryFilter;
     type ItemQueryFetch: QueryFetch;
@@ -73,7 +73,7 @@ impl<T: DrawItem, C: RenderCommand<T>> DrawFn<T> for RenderCommandState<T, C> {
             log::debug!("RenderCommand {:?} cannot run", std::any::type_name::<C>());
             return Ok(());
         }
-        let param = state.get(render_world.as_unsafe_world_cell());
+        let param = state.get(render_world.as_unsafe_world_cell_readonly());
 
         log::trace!(
             "Running RenderCommand {:?} for Entity {:?}",

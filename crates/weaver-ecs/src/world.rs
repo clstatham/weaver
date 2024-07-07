@@ -20,7 +20,7 @@ use super::{
 #[derive(Clone, Copy)]
 pub struct UnsafeWorldCell<'a>(
     *mut World,
-    PhantomData<&'a mut World>,
+    PhantomData<&'a World>,
     PhantomData<&'a UnsafeCell<World>>,
 );
 
@@ -101,11 +101,11 @@ impl World {
         Self::default()
     }
 
-    pub fn as_unsafe_world_cell(&self) -> UnsafeWorldCell {
+    pub fn as_unsafe_world_cell_readonly(&self) -> UnsafeWorldCell {
         UnsafeWorldCell::new_shared(self)
     }
 
-    pub fn as_unsafe_world_cell_exclusive(&mut self) -> UnsafeWorldCell {
+    pub fn as_unsafe_world_cell(&mut self) -> UnsafeWorldCell {
         UnsafeWorldCell::new_exclusive(self)
     }
 
@@ -147,7 +147,7 @@ impl World {
         )
     }
 
-    pub fn insert_components<T: Bundle>(&mut self, entity: Entity, bundle: T) {
+    pub fn insert_bundle<T: Bundle>(&mut self, entity: Entity, bundle: T) {
         let change_tick = self.change_tick();
         self.storage.insert_bundle(entity, bundle, change_tick)
     }
@@ -183,7 +183,8 @@ impl World {
     }
 
     pub fn get_resource<T: Resource>(&self) -> Option<Res<'_, T>> {
-        self.resources.get::<T>()
+        self.resources
+            .get::<T>(self.last_change_tick, self.read_change_tick())
     }
 
     pub fn get_resource_mut<T: Resource>(&mut self) -> Option<ResMut<'_, T>> {
@@ -444,7 +445,14 @@ mod tests {
     fn test_resource() {
         let mut world = World::new();
         world.insert_resource(TestResource { value: 1.0 });
-        assert_eq!(world.get_resource::<TestResource>().unwrap().value, 1.0);
+        assert_eq!(
+            world
+                .get_resource::<TestResource>()
+                .unwrap()
+                .into_inner()
+                .value,
+            1.0
+        );
     }
 
     #[test]
@@ -458,5 +466,34 @@ mod tests {
 
         assert_eq!(world.get_component::<Position>(entity).unwrap().x, 4.0);
         assert_eq!(world.get_component::<Position>(entity).unwrap().y, 6.0);
+    }
+
+    #[test]
+    fn test_unsafe_world_cell() {
+        let mut world = World::new();
+        world.insert_resource(TestResource { value: 1.0 });
+        let cell = world.as_unsafe_world_cell();
+        unsafe {
+            assert_eq!(
+                cell.get_resource_mut::<TestResource>()
+                    .unwrap()
+                    .into_inner()
+                    .value,
+                1.0
+            );
+            assert_eq!(
+                cell.get_resource_mut::<TestResource>()
+                    .unwrap()
+                    .into_inner()
+                    .value,
+                1.0
+            );
+        }
+
+        // this should fail miri
+        unsafe {
+            let _resource1 = cell.get_resource_mut::<TestResource>().unwrap();
+            let _resource2 = cell.get_resource_mut::<TestResource>().unwrap();
+        }
     }
 }

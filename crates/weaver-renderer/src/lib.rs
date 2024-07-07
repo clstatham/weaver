@@ -20,7 +20,7 @@ use texture::{
 use transform::TransformPlugin;
 use weaver_app::{plugin::Plugin, App, AppLabel, SubApp};
 use weaver_ecs::{
-    commands::{Commands, WorldMut},
+    commands::Commands,
     component::{Res, ResMut},
     prelude::Resource,
     query::Query,
@@ -496,7 +496,7 @@ pub fn end_render(
 
 #[allow(clippy::too_many_arguments)]
 fn resize_surface(
-    commands: Commands,
+    mut commands: Commands,
     events: EventRx<WindowResized>,
     view_targets: Query<&ViewTarget>,
     mut current_frame: ResMut<CurrentFrame>,
@@ -592,17 +592,15 @@ fn resize_surface(
     Ok(())
 }
 
-pub fn render_system(mut render_world: WorldMut) -> Result<()> {
+pub fn render_system(render_world: &mut World) -> Result<()> {
     let view_targets = render_world.query::<&ViewTarget>();
-    let view_targets = view_targets.entity_iter(&render_world).collect::<Vec<_>>();
+    let view_targets = view_targets.entity_iter(render_world).collect::<Vec<_>>();
     let mut render_graph = render_world.remove_resource::<RenderGraph>().unwrap();
-    render_graph.prepare(&mut render_world)?;
-
-    let render_world = render_world.into_inner();
+    render_graph.prepare(render_world)?;
 
     let renderer = unsafe {
         render_world
-            .as_unsafe_world_cell()
+            .as_unsafe_world_cell_readonly()
             .get_resource_mut::<Renderer>()
             .unwrap()
             .into_inner()

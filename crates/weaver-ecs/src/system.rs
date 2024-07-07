@@ -577,12 +577,8 @@ where
         // SAFETY:
         // - We have mutable access to the World.
         // - We have validated that the access is safe.
-        let fetch = unsafe {
-            F::Param::fetch(
-                &mut param_state.state,
-                world.as_unsafe_world_cell_exclusive(),
-            )
-        };
+        let fetch =
+            unsafe { F::Param::fetch(&mut param_state.state, world.as_unsafe_world_cell()) };
         self.func.run(fetch)?;
         F::Param::apply(&mut param_state.state, world);
         Ok(())

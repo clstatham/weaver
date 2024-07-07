@@ -14,11 +14,11 @@ use weaver_app::prelude::*;
 use weaver_asset::{AssetApp, Assets, Handle};
 use weaver_core::{texture::Texture, transform::Transform};
 use weaver_ecs::{
-    commands::WorldMut,
     component::{Res, ResMut},
     entity::Entity,
     query::{Query, With},
     storage::Ref,
+    world::World,
 };
 use weaver_renderer::{
     bind_group::{BindGroup, ResourceBindGroupPlugin},
@@ -177,10 +177,7 @@ impl Plugin for PbrPlugin {
     }
 }
 
-pub(crate) fn init_pbr_lighting_information(
-    mut world: WorldMut,
-    _skybox: Res<Skybox>,
-) -> Result<()> {
+pub(crate) fn init_pbr_lighting_information(world: &mut World, _skybox: Res<Skybox>) -> Result<()> {
     if !world.has_resource::<PbrLightingInformation>() {
         world.init_resource::<PbrLightingInformation>();
     }

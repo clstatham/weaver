@@ -132,7 +132,7 @@ fn load_shaders(mut fs: ResMut<Filesystem>, mut cache: ResMut<LexedShaderCache>)
 }
 
 fn setup(
-    commands: Commands,
+    mut commands: Commands,
     bsp_loader: AssetLoader<Bsp, BspLoader>,
     mut fs: ResMut<Filesystem>,
 ) -> Result<()> {
@@ -328,12 +328,10 @@ fn pick_entity(
 }
 
 fn inspect_ui(
-    world: WorldMut,
+    world: &mut World,
     editor_state: Res<EditorState>,
     egui_ctx: Res<EguiContext>,
 ) -> Result<()> {
-    let world = world.into_inner();
-
     egui_ctx.draw_if_ready(|ctx| {
         if let Some(selected_entity) = editor_state.selected_entity {
             egui::Window::new("Inspector").show(ctx, |ui| {
@@ -345,7 +343,7 @@ fn inspect_ui(
                     let component = unsafe { &mut *component.get() };
                     let component = component.get_data_mut();
 
-                    let world = unsafe { world.as_unsafe_world_cell().world_mut() };
+                    let world = unsafe { world.as_unsafe_world_cell_readonly().world_mut() };
                     component.inspect_ui(world, ui);
                 }
             });

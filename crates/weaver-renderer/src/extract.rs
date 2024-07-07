@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use weaver_app::{plugin::Plugin, prelude::App};
 use weaver_ecs::{
-    commands::{Commands, WorldMut},
+    commands::Commands,
     component::{Component, Res, ResMut, Resource},
     prelude::UnsafeWorldCell,
     query::{Query, QueryFetch, QueryFetchItem, QueryFilter},
@@ -65,7 +65,7 @@ where
         let main_world = unsafe { Res::<MainWorld>::fetch(&mut state.main_world_state, world) };
         let item = state
             .state
-            .get(main_world.into_inner().as_unsafe_world_cell());
+            .get(main_world.into_inner().as_unsafe_world_cell_readonly());
         Extract { item }
     }
 
@@ -113,10 +113,9 @@ impl<T: ExtractComponent> Plugin for ExtractComponentPlugin<T> {
 }
 
 pub fn extract_render_component<T: ExtractComponent>(
-    render_world: WorldMut,
+    render_world: &mut World,
     query: Extract<Query<T::ExtractQueryFetch, T::ExtractQueryFilter>>,
 ) -> Result<()> {
-    let render_world = render_world.into_inner();
     for (entity, item) in query.iter() {
         if let Some(component) = T::extract_render_component(item) {
             {
@@ -181,7 +180,7 @@ impl<T: ExtractResource, Dep: ExtractResource> Plugin for RenderResourceDependen
 }
 
 pub fn extract_render_resource<T: ExtractResource>(
-    commands: Commands,
+    mut commands: Commands,
     main_resource: Extract<Option<Res<T::Source>>>,
     target_resource: Option<ResMut<T>>,
 ) -> Result<()> {

@@ -165,7 +165,7 @@ impl<T: ViewNode> RenderNode for ViewNodeRunner<T> {
             log::debug!("ViewNodeRunner SystemParam state not ready");
             return Ok(());
         }
-        let param = state.get(render_world.as_unsafe_world_cell());
+        let param = state.get(render_world.as_unsafe_world_cell_readonly());
 
         self.node
             .run(render_world, graph_ctx, render_ctx, &param, &view_query)

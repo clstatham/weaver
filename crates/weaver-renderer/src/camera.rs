@@ -341,7 +341,7 @@ impl Plugin for CameraPlugin {
 }
 
 pub fn extract_camera_bind_groups(
-    commands: Commands,
+    mut commands: Commands,
     query: Query<(&GpuCamera, Option<&mut CameraBindGroup>)>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
@@ -366,7 +366,7 @@ pub fn extract_camera_bind_groups(
 }
 
 pub fn insert_view_target(
-    commands: Commands,
+    mut commands: Commands,
     current_frame: Res<CurrentFrame>,
     hdr_target: Res<HdrRenderTarget>,
     query: Query<&GpuCamera>,
@@ -379,7 +379,7 @@ pub fn insert_view_target(
     Ok(())
 }
 
-pub fn remove_view_target(commands: Commands, query: Query<&GpuCamera>) -> Result<()> {
+pub fn remove_view_target(mut commands: Commands, query: Query<&GpuCamera>) -> Result<()> {
     for gpu_camera in query.entity_iter() {
         commands.remove_component::<ViewTarget>(gpu_camera);
     }

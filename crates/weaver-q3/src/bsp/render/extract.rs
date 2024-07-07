@@ -8,9 +8,9 @@ use weaver_core::{
     texture::Texture,
 };
 use weaver_ecs::{
-    commands::WorldMut,
     component::{Res, ResMut},
     prelude::{Component, Resource},
+    world::World,
 };
 use weaver_renderer::{
     bind_group::BindGroupLayoutCache,
@@ -233,7 +233,7 @@ pub struct BatchedShaderStages {
 
 #[allow(clippy::too_many_arguments)]
 pub fn extract_bsps(
-    mut world: WorldMut,
+    world: &mut World,
     bsp: Extract<Res<'static, Bsp>>,
     source_meshes: Extract<Res<Assets<Mesh>>>,
     source_shaders: Extract<Res<'static, Assets<LoadedShader>>>,

@@ -5,6 +5,52 @@ use std::{
 
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 
+#[derive(Default)]
+#[repr(transparent)]
+pub struct BorrowLock(AtomicRefCell<()>);
+
+impl BorrowLock {
+    pub const fn new() -> Self {
+        Self(AtomicRefCell::new(()))
+    }
+
+    #[inline]
+    pub fn borrow(&self) -> Borrow<'_> {
+        Borrow(self.0.borrow())
+    }
+
+    #[inline]
+    pub fn can_borrow(&self) -> bool {
+        self.0.try_borrow().is_ok()
+    }
+
+    #[inline]
+    pub fn try_borrow(&self) -> Option<Borrow<'_>> {
+        self.0.try_borrow().ok().map(Borrow)
+    }
+
+    #[inline]
+    pub fn can_borrow_mut(&self) -> bool {
+        self.0.try_borrow_mut().is_ok()
+    }
+
+    #[inline]
+    pub fn borrow_mut(&self) -> BorrowMut<'_> {
+        BorrowMut(self.0.borrow_mut())
+    }
+
+    #[inline]
+    pub fn try_borrow_mut(&self) -> Option<BorrowMut<'_>> {
+        self.0.try_borrow_mut().ok().map(BorrowMut)
+    }
+}
+
+#[repr(transparent)]
+pub struct Borrow<'a>(AtomicRef<'a, ()>);
+
+#[repr(transparent)]
+pub struct BorrowMut<'a>(AtomicRefMut<'a, ()>);
+
 #[derive(Debug, Default)]
 pub struct Lock<T>(AtomicRefCell<T>);
 

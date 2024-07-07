@@ -8,7 +8,6 @@ use std::{
 use image::codecs::hdr::HdrDecoder;
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
-    commands::WorldMut,
     component::Res,
     prelude::{QueryFetchItem, Resource, SystemParamItem, World},
     world::FromWorld,
@@ -133,14 +132,14 @@ impl FromWorld for GpuSkybox {
         let skybox = world.get_resource::<Skybox>().unwrap().into_inner();
         let bind_group_layout_cache = unsafe {
             world
-                .as_unsafe_world_cell()
+                .as_unsafe_world_cell_readonly()
                 .get_resource_mut::<BindGroupLayoutCache>()
                 .unwrap()
                 .into_inner()
         };
         let pipeline_cache = unsafe {
             world
-                .as_unsafe_world_cell()
+                .as_unsafe_world_cell_readonly()
                 .get_resource_mut::<ComputePipelineCache>()
                 .unwrap()
                 .into_inner()
@@ -585,7 +584,7 @@ impl Plugin for SkyboxPlugin {
     }
 }
 
-pub fn init_gpu_skybox(mut world: WorldMut) -> Result<()> {
+pub fn init_gpu_skybox(world: &mut World) -> Result<()> {
     if !world.has_resource::<GpuSkybox>() && world.has_resource::<Skybox>() {
         world.init_resource::<GpuSkybox>();
     }

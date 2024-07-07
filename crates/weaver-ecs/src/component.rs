@@ -24,23 +24,19 @@ impl_downcast!(Component);
 pub trait Resource: Downcast {}
 impl_downcast!(Resource);
 
-pub struct Res<'w, T: Resource> {
-    value: &'w T,
-    ticks: Ticks<'w>,
+pub struct Res<'r, T: Resource> {
+    pub(crate) value: &'r T,
+    pub(crate) ticks: Ticks<'r>,
 }
 
-impl<'w, T: Resource> Res<'w, T> {
-    pub(crate) fn new(value: &'w T, ticks: Ticks<'w>) -> Self {
-        Self { value, ticks }
-    }
-
+impl<'r, T: Resource> Res<'r, T> {
     #[inline]
-    pub fn into_inner(self) -> &'w T {
+    pub fn into_inner(self) -> &'r T {
         self.value
     }
 }
 
-impl<'w, T> Deref for Res<'w, T>
+impl<'r, T> Deref for Res<'r, T>
 where
     T: Resource,
 {
@@ -52,7 +48,7 @@ where
     }
 }
 
-impl<'w, T: Resource> ChangeDetection for Res<'w, T> {
+impl<'r, T: Resource> ChangeDetection for Res<'r, T> {
     fn is_added(&self) -> bool {
         self.ticks
             .added
@@ -70,23 +66,19 @@ impl<'w, T: Resource> ChangeDetection for Res<'w, T> {
     }
 }
 
-pub struct ResMut<'w, T: Resource> {
-    value: &'w mut T,
-    ticks: TicksMut<'w>,
+pub struct ResMut<'r, T: Resource> {
+    pub(crate) value: &'r mut T,
+    pub(crate) ticks: TicksMut<'r>,
 }
 
-impl<'w, T: Resource> ResMut<'w, T> {
-    pub(crate) fn new(value: &'w mut T, ticks: TicksMut<'w>) -> Self {
-        Self { value, ticks }
-    }
-
+impl<'r, T: Resource> ResMut<'r, T> {
     #[inline]
-    pub fn into_inner(self) -> &'w mut T {
+    pub fn into_inner(self) -> &'r mut T {
         self.value
     }
 }
 
-impl<'w, T> Deref for ResMut<'w, T>
+impl<'r, T> Deref for ResMut<'r, T>
 where
     T: Resource,
 {
@@ -98,7 +90,7 @@ where
     }
 }
 
-impl<'w, T> DerefMut for ResMut<'w, T>
+impl<'r, T> DerefMut for ResMut<'r, T>
 where
     T: Resource,
 {
@@ -108,7 +100,7 @@ where
     }
 }
 
-impl<'w, T> ChangeDetection for ResMut<'w, T>
+impl<'r, T> ChangeDetection for ResMut<'r, T>
 where
     T: Resource,
 {
@@ -129,7 +121,7 @@ where
     }
 }
 
-impl<'w, T> ChangeDetectionMut for ResMut<'w, T>
+impl<'r, T> ChangeDetectionMut for ResMut<'r, T>
 where
     T: Resource,
 {
@@ -173,17 +165,18 @@ impl Resources {
         *self.resources.get(&type_id).unwrap().changed_tick.write() = change_tick;
     }
 
-    pub fn get<T: Resource>(&self) -> Option<Res<'_, T>> {
+    pub fn get<T: Resource>(&self, last_run: Tick, this_run: Tick) -> Option<Res<'_, T>> {
         self.resources.get(&TypeId::of::<T>()).map(|resource| {
-            Res::new(
-                unsafe { &*resource.data.get() }.downcast_ref().unwrap(),
-                Ticks {
-                    added: resource.added_tick.read(),
-                    changed: resource.changed_tick.read(),
-                    last_run: Tick::new(0),
-                    this_run: Tick::new(0),
-                },
-            )
+            let ticks = Ticks {
+                added: resource.added_tick.read(),
+                changed: resource.changed_tick.read(),
+                last_run,
+                this_run,
+            };
+            Res {
+                value: unsafe { &*resource.data.get() }.downcast_ref().unwrap(),
+                ticks,
+            }
         })
     }
 
@@ -193,15 +186,16 @@ impl Resources {
         this_run: Tick,
     ) -> Option<ResMut<'_, T>> {
         self.resources.get_mut(&TypeId::of::<T>()).map(|resource| {
-            ResMut::new(
-                unsafe { &mut *resource.data.get() }.downcast_mut().unwrap(),
-                TicksMut {
-                    added: resource.added_tick.write(),
-                    changed: resource.changed_tick.write(),
-                    last_run,
-                    this_run,
-                },
-            )
+            let ticks = TicksMut {
+                added: resource.added_tick.write(),
+                changed: resource.changed_tick.write(),
+                last_run,
+                this_run,
+            };
+            ResMut {
+                value: unsafe { &mut *resource.data.get() }.downcast_mut().unwrap(),
+                ticks,
+            }
         })
     }
 

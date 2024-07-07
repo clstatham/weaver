@@ -145,7 +145,7 @@ impl<T: Component + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
 }
 
 fn create_component_bind_group<T: Component + CreateBindGroup>(
-    commands: Commands,
+    mut commands: Commands,
     device: Res<WgpuDevice>,
     mut layout_cache: ResMut<BindGroupLayoutCache>,
     item_query: Query<&mut T>,
@@ -184,7 +184,7 @@ impl<T: Resource + CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
 }
 
 fn create_resource_bind_group<T: Resource + CreateBindGroup>(
-    commands: Commands,
+    mut commands: Commands,
     mut data: ResMut<T>,
     bind_group: Option<Res<BindGroup<T>>>,
     device: Res<WgpuDevice>,
@@ -249,7 +249,7 @@ impl<T: CreateBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
 
 #[allow(clippy::too_many_arguments)]
 fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
-    commands: Commands,
+    mut commands: Commands,
     device: Res<WgpuDevice>,
     mut assets: ResMut<Assets<T>>,
     mut bind_group_assets: ResMut<Assets<BindGroup<T>>>,

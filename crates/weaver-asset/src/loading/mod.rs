@@ -146,7 +146,7 @@ impl<'w, 'f> LoadCtx<'w, 'f> {
         Self {
             filesystem,
             original_path: PathBuf::new(),
-            world: world.as_unsafe_world_cell_exclusive(),
+            world: world.as_unsafe_world_cell(),
             resources_accessed: HashSet::new(),
         }
     }
@@ -241,7 +241,7 @@ impl<'w, T: Loadable, L: Loader<T>> AssetLoader<'w, T, L> {
         let mut ctx = LoadCtx {
             filesystem: &mut filesystem,
             original_path: path.to_path_buf(),
-            world: self.world.as_unsafe_world_cell_exclusive(),
+            world: self.world.as_unsafe_world_cell(),
             resources_accessed: HashSet::new(),
         };
         self.loader.load(&mut ctx)
@@ -259,7 +259,7 @@ impl<'w, T: Loadable, L: Loader<T>> AssetLoader<'w, T, L> {
         let mut ctx = LoadCtx {
             filesystem: &mut filesystem,
             original_path: path_within_archive.to_path_buf(),
-            world: self.world.as_unsafe_world_cell_exclusive(),
+            world: self.world.as_unsafe_world_cell(),
             resources_accessed: HashSet::new(),
         };
         self.loader.load(&mut ctx)
@@ -275,7 +275,7 @@ impl<'w, T: Loadable, L: Loader<T>> AssetLoader<'w, T, L> {
         let mut ctx = LoadCtx {
             filesystem,
             original_path: path.to_path_buf(),
-            world: self.world.as_unsafe_world_cell_exclusive(),
+            world: self.world.as_unsafe_world_cell(),
             resources_accessed: HashSet::new(),
         };
         self.loader.load(&mut ctx)

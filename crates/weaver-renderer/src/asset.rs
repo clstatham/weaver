@@ -83,7 +83,7 @@ impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
 
 #[allow(clippy::too_many_arguments)]
 fn extract_render_asset<T: RenderAsset>(
-    commands: Commands,
+    mut commands: Commands,
     main_world_assets: Extract<Res<'static, Assets<T::Source>>>,
     mut param: SystemParamWrapper<T::Param>,
     query: Extract<Query<&'static Handle<T::Source>>>,
