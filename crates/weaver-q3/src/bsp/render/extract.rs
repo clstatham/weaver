@@ -29,7 +29,6 @@ use crate::{
         parser::VisData,
     },
     shader::{
-        lexer::Map,
         loader::LoadedShader,
         render::{
             ShaderBindGroupLayout, ShaderPipeline, ShaderPipelineCache, ShaderPipelineKey,
@@ -205,6 +204,14 @@ impl ShaderKeyPath {
         }
         count
     }
+
+    pub fn batch_count(&self) -> usize {
+        let mut count = self.stages.len();
+        for (_, child) in self.tree.iter() {
+            count += child.batch_count();
+        }
+        count
+    }
 }
 
 impl Debug for ShaderKeyPath {
@@ -289,7 +296,7 @@ pub fn extract_bsps(
 
     let mut vbo = Vec::new();
 
-    let dummy_texture = Texture::from_rgba8(&[255, 0, 255, 255], 1, 1);
+    let dummy_texture = Texture::from_rgba8(&[255, 255, 255, 255], 1, 1);
 
     let dummy_texture =
         GpuTexture::from_image(&device, &queue, &dummy_texture, texture_format::SDR_FORMAT)
@@ -305,18 +312,20 @@ pub fn extract_bsps(
 
         let mut current = &mut key_paths;
 
-        for stage in &shader.shader.stages {
-            let texture = if let Some(ref texture) = stage.texture_map() {
-                if *texture == Map::WhiteImage || *texture == Map::Lightmap {
-                    continue;
-                }
+        for stage in shader.shader.stages.iter() {
+            let (texture, is_dummy) = if let Some(ref texture) = stage.texture_map() {
+                // if *texture == Map::WhiteImage || *texture == Map::Lightmap {
+                //     continue;
+                // }
 
                 let texture = shader.textures.get(texture).unwrap();
                 let texture = source_textures.get(*texture).unwrap();
-                GpuTexture::from_image(&device, &queue, &texture, texture_format::SDR_FORMAT)
-                    .unwrap()
+                let texture =
+                    GpuTexture::from_image(&device, &queue, &texture, texture_format::SDR_FORMAT)
+                        .unwrap();
+                (texture, false)
             } else {
-                dummy_texture.clone()
+                (dummy_texture.clone(), true)
             };
 
             let key = ShaderPipelineKey {
@@ -368,7 +377,11 @@ pub fn extract_bsps(
 
             let current_batch = entry.stages.last_mut().unwrap();
 
-            let tex_idx = current_batch.textures.len() as u32;
+            let tex_idx = if is_dummy {
+                u32::MAX
+            } else {
+                current_batch.textures.len() as u32
+            };
 
             current_batch.textures.push(texture);
 
@@ -398,6 +411,8 @@ pub fn extract_bsps(
             current = entry;
         }
     }
+
+    // dbg!(key_paths.node_count(), key_paths.batch_count());
 
     // recursively generate the batch data for each key path
     recursively_generate_batch_data(

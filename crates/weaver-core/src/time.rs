@@ -60,6 +60,14 @@ impl<Label: Send + Sync + 'static> FixedTimestep<Label> {
         }
     }
 
+    pub fn ready(&self) -> bool {
+        self.accumulator >= self.timestep
+    }
+
+    pub fn clear_accumulator(&mut self) {
+        self.accumulator = 0.0;
+    }
+
     /// Run the given function with a fixed timestep.
     /// The function should take two arguments: the total time and the timestep.
     ///

@@ -73,8 +73,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let world_binormal = input.world_binormal;
     let tex_coord = input.uv;
 
-    var tex_color = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    var tex_color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
 
+    if input.tex_idx == 0xFFFFFFFFu {
+        return tex_color;
+    }
     tex_color = textureSample(tex[input.tex_idx], tex_sampler, tex_coord);
 
     return tex_color;

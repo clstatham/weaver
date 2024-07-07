@@ -3262,6 +3262,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "weaver-demo"
+version = "0.1.0"
+dependencies = [
+ "egui_plot",
+ "env_logger",
+ "log",
+ "weaver",
+ "weaver-diagnostics",
+ "weaver-egui",
+ "weaver-q3",
+]
+
+[[package]]
 name = "weaver-diagnostics"
 version = "0.1.0"
 dependencies = [
@@ -3296,19 +3309,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.48",
-]
-
-[[package]]
-name = "weaver-editor"
-version = "0.1.0"
-dependencies = [
- "egui_plot",
- "env_logger",
- "log",
- "weaver",
- "weaver-diagnostics",
- "weaver-egui",
- "weaver-q3",
 ]
 
 [[package]]

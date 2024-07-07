@@ -8,7 +8,7 @@ edition = "2021"
 [workspace]
 members = [
     "crates/weaver-app",
-    "crates/weaver-editor",
+    "crates/weaver-demo",
     "crates/weaver-util",
     "crates/weaver-ecs",
     "crates/weaver-renderer",
