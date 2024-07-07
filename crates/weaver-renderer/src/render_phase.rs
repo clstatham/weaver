@@ -147,8 +147,8 @@ impl<T: BinnedDrawItem> Plugin for BinnedRenderPhasePlugin<T> {
     }
 }
 
-pub trait GetBatchData: Send + Sync + 'static {
-    type BufferData: GpuArrayBufferable + Send + Sync + 'static;
+pub trait GetBatchData:  'static {
+    type BufferData: GpuArrayBufferable +  'static;
     type UpdateQueryFetch: QueryFetch + 'static;
     type UpdateQueryFilter: QueryFilter + 'static;
 

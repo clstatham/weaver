@@ -10,7 +10,7 @@ use weaver_ecs::{
 };
 use weaver_util::{
     lock::{Lock, Read, Write},
-    prelude::{DowncastSync, FxHashMap, Result},
+    prelude::{Downcast, DowncastSync, FxHashMap, Result},
     TypeIdMap,
 };
 
@@ -79,7 +79,7 @@ impl Deref for BindGroupLayout {
     }
 }
 
-pub trait CreateBindGroup: DowncastSync {
+pub trait CreateBindGroup: Downcast {
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
     where
         Self: Sized;

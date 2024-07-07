@@ -1,7 +1,6 @@
 use std::{
     cell::UnsafeCell,
     marker::PhantomData,
-    ptr::NonNull,
     sync::atomic::{AtomicU32, AtomicU64, Ordering},
 };
 
@@ -20,31 +19,18 @@ use super::{
 
 #[derive(Clone, Copy)]
 pub struct UnsafeWorldCell<'a>(
-    NonNull<World>,
+    *mut World,
     PhantomData<&'a mut World>,
     PhantomData<&'a UnsafeCell<World>>,
 );
-unsafe impl Sync for UnsafeWorldCell<'_> {}
 
 impl<'a> UnsafeWorldCell<'a> {
     pub fn new_exclusive(world: &'a mut World) -> Self {
-        unsafe {
-            Self(
-                NonNull::new_unchecked(world as *mut _),
-                PhantomData,
-                PhantomData,
-            )
-        }
+        Self(world as *mut _, PhantomData, PhantomData)
     }
 
     pub fn new_shared(world: &'a World) -> Self {
-        unsafe {
-            Self(
-                NonNull::new_unchecked(world as *const _ as *mut _),
-                PhantomData,
-                PhantomData,
-            )
-        }
+        Self(world as *const _ as *mut _, PhantomData, PhantomData)
     }
 
     /// # Safety
@@ -52,37 +38,37 @@ impl<'a> UnsafeWorldCell<'a> {
     /// This function is unsafe because it dereferences the pointer to the world.
     /// Callers must ensure that the world is not accessed concurrently, and that no mutable references to the world are held.
     pub unsafe fn world(self) -> &'a World {
-        unsafe { self.0.as_ref() }
+        unsafe { &*self.0 }
     }
 
     /// # Safety
     ///
     /// This function is unsafe because it dereferences the pointer to the world.
     /// Callers must ensure that the world is not accessed concurrently, and that no other references to the world are held.
-    pub unsafe fn world_mut(mut self) -> &'a mut World {
-        unsafe { self.0.as_mut() }
+    pub unsafe fn world_mut(self) -> &'a mut World {
+        unsafe { &mut *self.0 }
     }
 
     /// # Safety
     ///
     /// This function is unsafe because it dereferences the pointer to the world.
     pub unsafe fn get_resource<T: Resource>(self) -> Option<Res<'a, T>> {
-        unsafe { self.0.as_ref().get_resource::<T>() }
+        unsafe { self.world().get_resource::<T>() }
     }
 
     /// # Safety
     ///
     /// This function is unsafe because it dereferences the pointer to the world.
-    pub unsafe fn get_resource_mut<T: Resource>(mut self) -> Option<ResMut<'a, T>> {
-        unsafe { self.0.as_mut().get_resource_mut::<T>() }
+    pub unsafe fn get_resource_mut<T: Resource>(self) -> Option<ResMut<'a, T>> {
+        unsafe { self.world_mut().get_resource_mut::<T>() }
     }
 
     pub fn read_change_tick(self) -> Tick {
-        unsafe { self.0.as_ref().read_change_tick() }
+        unsafe { self.world().read_change_tick() }
     }
 
     pub fn last_change_tick(self) -> Tick {
-        unsafe { self.0.as_ref().last_change_tick() }
+        unsafe { self.world().last_change_tick() }
     }
 }
 
@@ -95,9 +81,6 @@ pub struct World {
     last_change_tick: Tick,
     systems: SystemSchedule,
 }
-
-unsafe impl Send for World {}
-unsafe impl Sync for World {}
 
 impl Default for World {
     fn default() -> Self {

@@ -9,7 +9,7 @@ use weaver_ecs::{
 };
 use weaver_util::{
     lock::{Read, SharedLock, Write},
-    prelude::{impl_downcast, DowncastSync, Result},
+    prelude::{impl_downcast, Downcast, Result},
     TypeIdMap,
 };
 
@@ -28,7 +28,7 @@ impl DrawFnId {
     }
 }
 
-pub trait DrawItem: Send + Sync + 'static {
+pub trait DrawItem: 'static {
     type QueryFetch: QueryFetch + 'static;
     type QueryFilter: QueryFilter + 'static;
 
@@ -44,13 +44,13 @@ pub trait FromDrawItemQuery<T: DrawItem> {
 }
 
 pub trait BinnedDrawItem: DrawItem + Sized {
-    type Key: Debug + Clone + Send + Sync + Eq + Ord + Hash + FromDrawItemQuery<Self>;
+    type Key: Debug + Clone + Eq + Ord + Hash + FromDrawItemQuery<Self>;
     type Instances: GetBatchData + Resource;
 
     fn new(key: Self::Key, entity: Entity, batch_range: Range<u32>) -> Self;
 }
 
-pub trait DrawFn<T: DrawItem>: DowncastSync {
+pub trait DrawFn<T: DrawItem>: Downcast {
     #[allow(unused_variables)]
     fn prepare(&mut self, render_world: &mut World) -> Result<()> {
         Ok(())

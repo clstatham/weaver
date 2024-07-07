@@ -29,7 +29,7 @@ impl SystemAccess {
     }
 }
 
-pub trait System: Send + Sync {
+pub trait System {
     fn name(&self) -> &str {
         std::any::type_name::<Self>()
     }
@@ -167,7 +167,7 @@ unsafe impl<'w2, 's2, P: SystemParam> SystemParam for SystemParamWrapper<'w2, 's
 ///
 /// Caller must ensure that all system params being used are valid for simultaneous access.
 pub unsafe trait SystemParam {
-    type State: Send + Sync + Sized;
+    type State: Sized;
     type Item<'w, 's>: SystemParam<State = Self::State>;
 
     fn validate_access(access: &SystemAccess) -> bool;
@@ -518,7 +518,7 @@ impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
 
-pub trait SystemParamFunction<M>: Send + Sync + 'static {
+pub trait SystemParamFunction<M>: 'static {
     type Param: SystemParam + 'static;
 
     fn run(&mut self, param: SystemParamItem<Self::Param>) -> Result<()>;
@@ -623,7 +623,7 @@ macro_rules! impl_function_system {
             FnMut($($param),*) -> Result<()>
             + FnMut($(SystemParamItem<$param>),*) -> Result<()>,
             $($param: SystemParam + 'static),*,
-            Func: Send + Sync + 'static,
+            Func: 'static,
         {
             type Param = ($($param),*);
 

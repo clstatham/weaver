@@ -48,7 +48,7 @@ pub trait Runner: 'static {
 
 impl<T> Runner for T
 where
-    T: Fn(&mut App) -> Result<()> + Send + Sync + 'static,
+    T: Fn(&mut App) -> Result<()> + 'static,
 {
     fn run(&self, app: &mut App) -> Result<()> {
         self(app)

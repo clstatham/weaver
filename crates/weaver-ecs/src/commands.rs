@@ -8,13 +8,13 @@ use weaver_util::lock::SharedLock;
 
 use crate::prelude::World;
 
-pub trait Command: 'static + Send + Sync {
+pub trait Command: 'static {
     fn execute(self: Box<Self>, world: &mut World);
 }
 
 impl<F> Command for F
 where
-    F: FnOnce(&mut World) + Send + Sync + 'static,
+    F: FnOnce(&mut World) + 'static,
 {
     fn execute(self: Box<Self>, world: &mut World) {
         self(world)

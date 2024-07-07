@@ -11,7 +11,7 @@ use weaver_ecs::{
 };
 use weaver_util::{
     lock::Lock,
-    prelude::{anyhow, bail, impl_downcast, DowncastSync, FxHashMap, Result},
+    prelude::{anyhow, bail, impl_downcast, Downcast, FxHashMap, Result},
 };
 
 use crate::{RenderId, RenderLabel, Renderer};
@@ -60,7 +60,7 @@ pub enum SlotType {
     BindGroup,
 }
 
-pub trait RenderNode: DowncastSync {
+pub trait RenderNode: Downcast {
     fn input_slots(&self) -> Vec<SlotType> {
         Vec::new()
     }
@@ -82,7 +82,7 @@ pub trait RenderNode: DowncastSync {
 }
 impl_downcast!(RenderNode);
 
-pub trait ViewNode: Send + Sync + 'static {
+pub trait ViewNode: 'static {
     type Param: SystemParam;
     type ViewQueryFetch: QueryFetch;
     type ViewQueryFilter: QueryFilter;

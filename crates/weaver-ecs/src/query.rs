@@ -1,7 +1,5 @@
 use std::{any::TypeId, marker::PhantomData};
 
-use rayon::prelude::*;
-
 use crate::prelude::{
     Archetype, SystemAccess, SystemParam, Tick, Ticks, TicksMut, UnsafeWorldCell,
 };
@@ -19,14 +17,14 @@ pub enum QueryAccess {
     ReadWrite,
 }
 
-pub trait QueryFetch: Send + Sync {
-    type Item<'w>: Send + Sync;
+pub trait QueryFetch {
+    type Item<'w>;
 
     fn access() -> &'static [(TypeId, QueryAccess)];
+
     fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Self::Item<'_>>;
 
     fn entity_iter<F: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_;
-    fn par_entity_iter<F: QueryFilter>(world: &World) -> impl ParallelIterator<Item = Entity> + '_;
 
     fn iter<F: QueryFilter>(
         world: &World,
@@ -84,24 +82,6 @@ impl<T: Component> QueryFetch for &T {
                         .into_inner()
                         .sparse_iter()
                         .map(|entity| Entity::from_usize(*entity))
-                })
-            })
-            .flatten()
-    }
-
-    fn par_entity_iter<F: QueryFilter>(world: &World) -> impl ParallelIterator<Item = Entity> + '_ {
-        let storage = world.storage();
-        storage
-            .par_archetype_iter()
-            .filter(move |archetype| {
-                Self::test_archetype(archetype) && F::test_archetype(archetype)
-            })
-            .flat_map(move |archetype| {
-                archetype.get_column::<T>().map(move |column| {
-                    column
-                        .into_inner()
-                        .par_sparse_iter()
-                        .map(Entity::from_usize)
                 })
             })
             .flatten()
@@ -234,24 +214,6 @@ impl<T: Component> QueryFetch for &mut T {
             .flatten()
     }
 
-    fn par_entity_iter<F: QueryFilter>(world: &World) -> impl ParallelIterator<Item = Entity> + '_ {
-        let storage = world.storage();
-        storage
-            .par_archetype_iter()
-            .filter(move |archetype| {
-                Self::test_archetype(archetype) && F::test_archetype(archetype)
-            })
-            .flat_map(move |archetype| {
-                archetype.get_column::<T>().map(move |column| {
-                    column
-                        .into_inner()
-                        .par_sparse_iter()
-                        .map(Entity::from_usize)
-                })
-            })
-            .flatten()
-    }
-
     fn test_archetype(archetype: &Archetype) -> bool {
         archetype.contains_component_by_type_id(TypeId::of::<T>())
     }
@@ -295,14 +257,6 @@ impl QueryFetch for () {
             .flat_map(|archetype| archetype.entity_iter())
     }
 
-    fn par_entity_iter<F: QueryFilter>(world: &World) -> impl ParallelIterator<Item = Entity> + '_ {
-        world
-            .storage()
-            .par_archetype_iter()
-            .filter(move |archetype| F::test_archetype(archetype))
-            .flat_map(|archetype| archetype.par_entity_iter())
-    }
-
     fn test_archetype(_archetype: &Archetype) -> bool {
         true
     }
@@ -332,10 +286,6 @@ impl<T: QueryFetch> QueryFetch for Option<T> {
 
     fn entity_iter<F: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_ {
         T::entity_iter::<F>(world)
-    }
-
-    fn par_entity_iter<F: QueryFilter>(world: &World) -> impl ParallelIterator<Item = Entity> + '_ {
-        T::par_entity_iter::<F>(world)
     }
 
     fn test_archetype(_archetype: &Archetype) -> bool {
@@ -385,15 +335,6 @@ macro_rules! impl_query_fetch {
                     .flat_map(move |archetype| archetype.entity_iter())
             }
 
-            #[allow(non_snake_case, unused)]
-            fn par_entity_iter<Filter: QueryFilter>(world: &World) -> impl ParallelIterator<Item = Entity> + '_ {
-                let storage = world.storage();
-                storage
-                    .par_archetype_iter()
-                    .filter(move |archetype| Self::test_archetype(archetype) && Filter::test_archetype(archetype))
-                    .flat_map(move |archetype| archetype.par_entity_iter())
-            }
-
             fn test_archetype(archetype: &Archetype) -> bool {
                 $(
                     $param::test_archetype(archetype) &&
@@ -413,7 +354,7 @@ impl_query_fetch!(A, B, C, D, E, F);
 impl_query_fetch!(A, B, C, D, E, F, G);
 impl_query_fetch!(A, B, C, D, E, F, G, H);
 
-pub trait QueryFilter: Send + Sync {
+pub trait QueryFilter {
     fn test_archetype(archetype: &Archetype) -> bool;
 }
 
@@ -529,10 +470,6 @@ where
 
     pub fn entity_iter(&self) -> impl Iterator<Item = Entity> + '_ {
         unsafe { Q::entity_iter::<F>(self.world.world()) }
-    }
-
-    pub fn par_entity_iter(&self) -> impl ParallelIterator<Item = Entity> + '_ {
-        unsafe { Q::par_entity_iter::<F>(self.world.world()) }
     }
 }
 

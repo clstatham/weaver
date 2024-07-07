@@ -7,7 +7,7 @@ use std::{
 use weaver_reflect_macros::reflect_trait;
 use weaver_util::{
     lock::SharedLock,
-    prelude::{impl_downcast, DowncastSync},
+    prelude::{impl_downcast, Downcast},
     TypeIdMap,
 };
 
@@ -17,11 +17,11 @@ use crate::{
 };
 
 #[reflect_trait]
-pub trait Component: DowncastSync {}
+pub trait Component: Downcast {}
 impl_downcast!(Component);
 
 #[reflect_trait]
-pub trait Resource: DowncastSync {}
+pub trait Resource: Downcast {}
 impl_downcast!(Resource);
 
 pub struct Res<'w, T: Resource> {
@@ -149,9 +149,6 @@ pub struct ResourceData {
     added_tick: SharedLock<Tick>,
     changed_tick: SharedLock<Tick>,
 }
-
-// SAFETY: Resources are Sync and we validate access to them before using them.
-unsafe impl Sync for ResourceData {}
 
 #[derive(Default)]
 pub struct Resources {

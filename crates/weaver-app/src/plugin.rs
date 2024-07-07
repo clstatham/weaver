@@ -1,8 +1,8 @@
-use weaver_util::prelude::{impl_downcast, DowncastSync, Result};
+use weaver_util::prelude::{impl_downcast, Downcast, Result};
 
 use crate::App;
 
-pub trait Plugin: DowncastSync {
+pub trait Plugin: Downcast {
     fn name(&self) -> &str {
         std::any::type_name::<Self>()
     }

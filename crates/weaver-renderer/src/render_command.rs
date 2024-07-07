@@ -14,7 +14,7 @@ use crate::{
 };
 
 pub trait RenderCommand<T: DrawItem>: 'static + Send + Sync {
-    type Param: SystemParam + Send + Sync + 'static;
+    type Param: SystemParam +  'static;
     type ViewQueryFetch: QueryFetch;
     type ViewQueryFilter: QueryFilter;
     type ItemQueryFetch: QueryFetch;
