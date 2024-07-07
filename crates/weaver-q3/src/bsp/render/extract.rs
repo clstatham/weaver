@@ -1,18 +1,19 @@
-use std::{ops::Range, sync::Arc};
+use std::fmt::Debug;
 
 use encase::ShaderType;
 use weaver_asset::Assets;
 use weaver_core::{
-    mesh::{Mesh, Vertex},
+    mesh::Mesh,
     prelude::{Vec2, Vec3},
     texture::Texture,
 };
 use weaver_ecs::{
     commands::WorldMut,
-    component::Res,
+    component::{Res, ResMut},
     prelude::{Component, Resource},
 };
 use weaver_renderer::{
+    bind_group::BindGroupLayoutCache,
     extract::Extract,
     prelude::wgpu,
     texture::{texture_format, GpuTexture},
@@ -30,7 +31,10 @@ use crate::{
     shader::{
         lexer::Map,
         loader::LoadedShader,
-        render::{ShaderBindGroupLayout, SHADER_TEXTURE_ARRAY_SIZE},
+        render::{
+            ShaderBindGroupLayout, ShaderPipeline, ShaderPipelineCache, ShaderPipelineKey,
+            SHADER_TEXTURE_ARRAY_SIZE,
+        },
     },
 };
 
@@ -42,17 +46,6 @@ pub struct VertexWithTexIdx {
     pub tangent: Vec3,
     pub tex_coords: Vec2,
     pub tex_idx: u32,
-}
-
-/// A group of shaders that have been batched together for a single bind group, pipeline, and draw call.
-#[derive(Component)]
-pub struct BatchedBspShaderIndices {
-    pub textures: Vec<GpuTexture>,
-    pub texture_ibo_indices: Vec<u32>,
-    pub ibo_range: Range<u32>,
-    pub bind_group: wgpu::BindGroup,
-    pub sampler: wgpu::Sampler,
-    pub dummy_texture: GpuTexture,
 }
 
 #[derive(Debug, Clone, Component)]
@@ -92,8 +85,7 @@ pub struct ExtractedBsp {
     pub nodes: Vec<Option<ExtractedBspNode>>,
     pub vis_data: VisData,
     pub vbo: wgpu::Buffer,
-    pub ibo: wgpu::Buffer,
-    pub num_indices: u32,
+    pub key_paths: ShaderKeyPath,
 }
 
 impl ExtractedBsp {
@@ -161,6 +153,77 @@ impl ExtractedBsp {
     }
 }
 
+/// A tree of possible shader key paths.
+///
+/// In other words, this is a tree of all possible combinations of shader keys that can be used in various sequences in a BSP map.
+///
+/// For example, if a shader uses key A in its first stage, then key B in its second stage, then key C in its third stage,
+/// then the tree would look like this:
+///
+/// ```text
+/// root
+/// ├── A
+/// │   └── B
+/// │       └── C
+/// ```
+///
+/// If another shader used key A, then key B, then key D, then the tree would look like this:
+///
+/// ```text
+/// root
+/// ├── A
+/// │   └── B
+/// │       ├── C
+/// │       └── D
+/// ```
+///
+/// This tree can be used to determine which shaders can be batched together based on their stages.
+/// Each node of the tree corresponds to one batch, and each batch will result in one draw call.
+///
+pub struct ShaderKeyPath {
+    pub tree: FxHashMap<ShaderPipelineKey, ShaderKeyPath>,
+    pub stages: Vec<BatchedShaderStages>,
+}
+
+impl ShaderKeyPath {
+    pub fn walk<'a, F>(&'a self, f: &mut F)
+    where
+        F: FnMut(&'a BatchedShaderStages),
+    {
+        for stage in &self.stages {
+            f(stage);
+        }
+        for (_, child) in self.tree.iter() {
+            child.walk(f);
+        }
+    }
+
+    pub fn node_count(&self) -> usize {
+        let mut count = 1;
+        for (_, child) in self.tree.iter() {
+            count += child.node_count();
+        }
+        count
+    }
+}
+
+impl Debug for ShaderKeyPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map().entries(self.tree.iter()).finish()
+    }
+}
+
+pub struct BatchedShaderStages {
+    pub key: ShaderPipelineKey,
+    pub textures: Vec<GpuTexture>,
+    pub indices: Vec<u32>,
+    pub index_buffer: Option<wgpu::Buffer>,
+    pub num_indices: u32,
+    pub bind_group: Option<wgpu::BindGroup>,
+    pub sampler: wgpu::Sampler,
+    pub dummy_texture: GpuTexture,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn extract_bsps(
     mut world: WorldMut,
@@ -169,222 +232,264 @@ pub fn extract_bsps(
     source_shaders: Extract<Res<'static, Assets<LoadedShader>>>,
     source_textures: Extract<Res<'static, Assets<Texture>>>,
     bind_group_layout: Res<ShaderBindGroupLayout>,
+    mut pipeline_cache: ResMut<ShaderPipelineCache>,
+    mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
 ) -> Result<()> {
-    if !world.has_resource::<ExtractedBsp>() {
-        let mut nodes = vec![None; bsp.nodes.len()];
-        let mut shader_meshes = FxHashMap::default();
-
-        for (i, node) in bsp.nodes.iter().enumerate() {
-            if let Some(node) = node {
-                match node {
-                    BspNode::Leaf {
-                        shader_meshes: leaf_shader_meshes,
-                        parent,
-                        cluster,
-                        min,
-                        max,
-                    } => {
-                        for loaded_mesh in leaf_shader_meshes {
-                            let LoadedBspShaderMesh { mesh, shader, .. } = loaded_mesh;
-                            let source_mesh = source_meshes.get(*mesh).unwrap();
-                            shader_meshes
-                                .entry(*shader)
-                                .or_insert_with(Vec::new)
-                                .push(source_mesh.clone());
-                        }
-                        nodes[i] = Some(ExtractedBspNode::Leaf {
-                            parent: *parent,
-                            cluster: *cluster,
-                            min: *min,
-                            max: *max,
-                        });
-                    }
-                    BspNode::Node {
-                        plane,
-                        back,
-                        front,
-                        parent,
-                        ..
-                    } => {
-                        nodes[i] = Some(ExtractedBspNode::Node {
-                            plane: *plane,
-                            back: *back,
-                            front: *front,
-                            parent: *parent,
-                        });
-                    }
-                }
-            }
-        }
-
-        let mut shader_mesh_index = 0;
-        let shader_meshes = shader_meshes.into_iter().collect::<Vec<_>>();
-
-        let mut vbo = Vec::new();
-        let mut ibo = Vec::new();
-
-        let dummy_texture = Texture::from_rgba8(&[255, 0, 255, 255], 1, 1);
-
-        let dummy_texture =
-            GpuTexture::from_image(&device, &queue, &dummy_texture, texture_format::SDR_FORMAT)
-                .unwrap();
-
-        // batch shaders together
-        'batch_outer: loop {
-            let mut total_stages = 0;
-            let mut outer_textures = Vec::new();
-            let mut texture_ibo_indices = Vec::new();
-
-            let ibo_start = ibo.len() as u32;
-
-            'gather_stages: loop {
-                if shader_mesh_index >= shader_meshes.len() {
-                    break 'batch_outer;
-                }
-                let (shader, meshes) = shader_meshes.get(shader_mesh_index).unwrap();
-                let shader = source_shaders.get(*shader).unwrap();
-
-                if total_stages + shader.shader.stages.len() > SHADER_TEXTURE_ARRAY_SIZE as usize {
-                    break 'gather_stages;
-                }
-
-                for stage in &shader.shader.stages {
-                    if let Some(ref texture) = stage.texture_map() {
-                        if *texture == Map::WhiteImage || *texture == Map::Lightmap {
-                            continue;
-                        }
-                        let texture = shader.textures.get(texture).unwrap();
-                        let texture = source_textures.get(*texture).unwrap();
-                        let texture = GpuTexture::from_image(
-                            &device,
-                            &queue,
-                            &texture,
-                            texture_format::SDR_FORMAT,
-                        )
-                        .unwrap();
-                        outer_textures.push(texture);
-                    } else {
-                        outer_textures.push(dummy_texture.clone());
-                    }
-
-                    for mesh in meshes {
-                        let mut tmp_vbo = Vec::new();
-                        for vertex in &mesh.vertices {
-                            let tex_idx = total_stages as u32;
-                            let vertex = VertexWithTexIdx {
-                                position: vertex.position,
-                                normal: vertex.normal,
-                                tangent: vertex.tangent,
-                                tex_coords: vertex.tex_coords,
-                                tex_idx,
-                            };
-                            tmp_vbo.push(vertex);
-                        }
-
-                        let vbo_offset = vbo.len() as u32;
-                        vbo.extend(tmp_vbo);
-
-                        for index in &mesh.indices {
-                            ibo.push(*index + vbo_offset);
-                        }
-                    }
-
-                    total_stages += 1;
-                }
-
-                shader_mesh_index += 1;
-            }
-
-            let ibo_end = ibo.len() as u32;
-
-            if texture_ibo_indices.len() < SHADER_TEXTURE_ARRAY_SIZE as usize * 2 {
-                let dummy_indices = vec![
-                    u32::MAX;
-                    (SHADER_TEXTURE_ARRAY_SIZE as usize * 2)
-                        - texture_ibo_indices.len()
-                ];
-                texture_ibo_indices.extend(dummy_indices);
-            }
-
-            let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-                address_mode_u: wgpu::AddressMode::Repeat,
-                address_mode_v: wgpu::AddressMode::Repeat,
-                address_mode_w: wgpu::AddressMode::Repeat,
-                mag_filter: wgpu::FilterMode::Linear,
-                min_filter: wgpu::FilterMode::Linear,
-                mipmap_filter: wgpu::FilterMode::Linear,
-                ..Default::default()
-            });
-
-            let mut views = outer_textures
-                .iter()
-                .map(|stage| &*stage.view)
-                .collect::<Vec<_>>();
-
-            if views.is_empty() {
-                views.push(&dummy_texture.view);
-            }
-
-            if views.len() < SHADER_TEXTURE_ARRAY_SIZE as usize {
-                let dummy_views = vec![views[0]; SHADER_TEXTURE_ARRAY_SIZE as usize - views.len()];
-                views.extend(dummy_views);
-            }
-
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &bind_group_layout.layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureViewArray(&views),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                ],
-                label: Some("BSP Shader Bind Group"),
-            });
-
-            let extracted_bsp_shader_indices = BatchedBspShaderIndices {
-                textures: outer_textures,
-                ibo_range: ibo_start..ibo_end,
-                texture_ibo_indices,
-                bind_group,
-                sampler,
-                dummy_texture: dummy_texture.clone(),
-            };
-
-            world.spawn(extracted_bsp_shader_indices);
-        }
-
-        log::debug!("Extracted BSP");
-
-        let vbo = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("BSP VBO"),
-            contents: bytemuck::cast_slice(&vbo),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let num_indices = ibo.len() as u32;
-
-        let ibo = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("BSP IBO"),
-            contents: bytemuck::cast_slice(&ibo),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let extracted_bsp = ExtractedBsp {
-            nodes,
-            vis_data: bsp.vis_data.clone(),
-            vbo,
-            ibo,
-            num_indices,
-        };
-
-        world.insert_resource(extracted_bsp);
+    if world.has_resource::<ExtractedBsp>() {
+        return Ok(());
     }
 
+    let mut nodes = vec![None; bsp.nodes.len()];
+    let mut shader_meshes = FxHashMap::default();
+
+    for (i, node) in bsp.nodes.iter().enumerate() {
+        if let Some(node) = node {
+            match node {
+                BspNode::Leaf {
+                    shader_meshes: leaf_shader_meshes,
+                    parent,
+                    cluster,
+                    min,
+                    max,
+                } => {
+                    for loaded_mesh in leaf_shader_meshes {
+                        let LoadedBspShaderMesh { mesh, shader, .. } = loaded_mesh;
+                        let source_mesh = source_meshes.get(*mesh).unwrap();
+                        shader_meshes
+                            .entry(*shader)
+                            .or_insert_with(Vec::new)
+                            .push(source_mesh.clone());
+                    }
+                    nodes[i] = Some(ExtractedBspNode::Leaf {
+                        parent: *parent,
+                        cluster: *cluster,
+                        min: *min,
+                        max: *max,
+                    });
+                }
+                BspNode::Node {
+                    plane,
+                    back,
+                    front,
+                    parent,
+                    ..
+                } => {
+                    nodes[i] = Some(ExtractedBspNode::Node {
+                        plane: *plane,
+                        back: *back,
+                        front: *front,
+                        parent: *parent,
+                    });
+                }
+            }
+        }
+    }
+
+    let mut vbo = Vec::new();
+
+    let dummy_texture = Texture::from_rgba8(&[255, 0, 255, 255], 1, 1);
+
+    let dummy_texture =
+        GpuTexture::from_image(&device, &queue, &dummy_texture, texture_format::SDR_FORMAT)
+            .unwrap();
+
+    // generate the tree of possible key paths
+    let mut key_paths = ShaderKeyPath {
+        tree: FxHashMap::default(),
+        stages: Vec::new(),
+    };
+    for (shader, meshes) in &shader_meshes {
+        let shader = source_shaders.get(*shader).unwrap();
+
+        let mut current = &mut key_paths;
+
+        for stage in &shader.shader.stages {
+            let texture = if let Some(ref texture) = stage.texture_map() {
+                if *texture == Map::WhiteImage || *texture == Map::Lightmap {
+                    continue;
+                }
+
+                let texture = shader.textures.get(texture).unwrap();
+                let texture = source_textures.get(*texture).unwrap();
+                GpuTexture::from_image(&device, &queue, &texture, texture_format::SDR_FORMAT)
+                    .unwrap()
+            } else {
+                dummy_texture.clone()
+            };
+
+            let key = ShaderPipelineKey {
+                blend_func: stage.blend_func().copied(),
+                cull: shader.shader.cull(),
+            };
+
+            let entry = current.tree.entry(key).or_insert_with(|| {
+                let graph = FxHashMap::default();
+                ShaderKeyPath {
+                    tree: graph,
+                    stages: Vec::new(),
+                }
+            });
+
+            let mut need_to_create_new_batch = true;
+
+            if let Some(last) = entry.stages.last() {
+                assert_eq!(last.key, key);
+                need_to_create_new_batch = last.textures.len() + shader.shader.stages.len()
+                    >= SHADER_TEXTURE_ARRAY_SIZE as usize;
+            }
+
+            if need_to_create_new_batch {
+                let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+                    label: Some("BSP Sampler"),
+                    address_mode_u: wgpu::AddressMode::Repeat,
+                    address_mode_v: wgpu::AddressMode::Repeat,
+                    address_mode_w: wgpu::AddressMode::Repeat,
+                    mag_filter: wgpu::FilterMode::Linear,
+                    min_filter: wgpu::FilterMode::Linear,
+                    mipmap_filter: wgpu::FilterMode::Linear,
+                    ..Default::default()
+                });
+
+                let dummy_texture = dummy_texture.clone();
+
+                entry.stages.push(BatchedShaderStages {
+                    key,
+                    textures: Vec::new(),
+                    indices: Vec::new(),
+                    index_buffer: None,
+                    num_indices: 0,
+                    bind_group: None,
+                    sampler,
+                    dummy_texture,
+                });
+            }
+
+            let current_batch = entry.stages.last_mut().unwrap();
+
+            let tex_idx = current_batch.textures.len() as u32;
+
+            current_batch.textures.push(texture);
+
+            for mesh in meshes {
+                let mut tmp_vbo = Vec::new();
+                for vertex in &mesh.vertices {
+                    let vertex = VertexWithTexIdx {
+                        position: vertex.position,
+                        normal: vertex.normal,
+                        tangent: vertex.tangent,
+                        tex_coords: vertex.tex_coords,
+                        tex_idx,
+                    };
+                    tmp_vbo.push(vertex);
+                }
+
+                let vbo_offset = vbo.len() as u32;
+                vbo.extend(tmp_vbo);
+
+                for index in &mesh.indices {
+                    current_batch.indices.push(*index + vbo_offset);
+                }
+            }
+
+            current_batch.num_indices = current_batch.indices.len() as u32;
+
+            current = entry;
+        }
+    }
+
+    // recursively generate the batch data for each key path
+    recursively_generate_batch_data(
+        &mut key_paths,
+        &device,
+        &bind_group_layout,
+        &mut pipeline_cache,
+        &mut bind_group_layout_cache,
+    );
+
+    log::debug!("Extracted BSP");
+
+    let vbo = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("BSP VBO"),
+        contents: bytemuck::cast_slice(&vbo),
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+    });
+
+    let extracted_bsp = ExtractedBsp {
+        nodes,
+        vis_data: bsp.vis_data.clone(),
+        vbo,
+        key_paths,
+    };
+
+    world.insert_resource(extracted_bsp);
+
     Ok(())
+}
+
+fn recursively_generate_batch_data(
+    tree: &mut ShaderKeyPath,
+    device: &wgpu::Device,
+    bind_group_layout: &ShaderBindGroupLayout,
+    pipeline_cache: &mut ShaderPipelineCache,
+    bind_group_layout_cache: &mut BindGroupLayoutCache,
+) {
+    for stages in &mut tree.stages {
+        stages.index_buffer = Some(
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("BSP IBO"),
+                contents: bytemuck::cast_slice(&stages.indices),
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            }),
+        );
+
+        let mut views = stages
+            .textures
+            .iter()
+            .map(|stage| &*stage.view)
+            .collect::<Vec<_>>();
+
+        if views.is_empty() {
+            views.push(&stages.dummy_texture.view);
+        }
+
+        if views.len() < SHADER_TEXTURE_ARRAY_SIZE as usize {
+            let dummy_views = vec![views[0]; SHADER_TEXTURE_ARRAY_SIZE as usize - views.len()];
+            views.extend(dummy_views);
+        }
+
+        stages.bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureViewArray(&views),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&stages.sampler),
+                },
+            ],
+            label: Some("BSP Shader Bind Group"),
+        }));
+
+        stages.num_indices = stages.indices.len() as u32;
+
+        let key = stages.key;
+
+        pipeline_cache.cache.entry(key).or_insert_with(|| {
+            ShaderPipeline::from_key(key, device, bind_group_layout, bind_group_layout_cache)
+        });
+    }
+
+    for (_, child) in tree.tree.iter_mut() {
+        recursively_generate_batch_data(
+            child,
+            device,
+            bind_group_layout,
+            pipeline_cache,
+            bind_group_layout_cache,
+        );
+    }
 }

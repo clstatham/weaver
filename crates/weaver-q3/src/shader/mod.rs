@@ -2,7 +2,7 @@ use lexer::LexedShader;
 use loader::{
     LexedShaderCache, LoadedShader, LoadedShaderCache, TextureCache, TryEverythingTextureLoader,
 };
-use render::{ShaderBindGroupLayout, ShaderPipeline};
+use render::{ShaderBindGroupLayout, ShaderPipelineCache};
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{AssetApp, Assets};
 use weaver_core::texture::Texture;
@@ -36,7 +36,7 @@ impl Plugin for ShaderPlugin {
     fn finish(&self, app: &mut App) -> Result<()> {
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.init_resource::<ShaderBindGroupLayout>();
-        render_app.init_resource::<ShaderPipeline>();
+        render_app.init_resource::<ShaderPipelineCache>();
         Ok(())
     }
 }

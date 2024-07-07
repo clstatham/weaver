@@ -1,8 +1,8 @@
-use extract::{extract_bsps, BatchedBspShaderIndices, ExtractedBsp};
+use extract::{extract_bsps, ExtractedBsp};
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
     component::Res,
-    prelude::{Query, SystemParamItem, World},
+    prelude::{SystemParamItem, World},
     query::QueryFetchItem,
 };
 use weaver_pbr::render::PbrLightingInformation;
@@ -17,7 +17,7 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::Result;
 
-use crate::shader::render::ShaderPipeline;
+use crate::shader::render::ShaderPipelineCache;
 
 pub mod extract;
 
@@ -30,10 +30,9 @@ pub struct BspRenderNode;
 
 impl ViewNode for BspRenderNode {
     type Param = (
-        Query<'static, 'static, &'static BatchedBspShaderIndices>,
         Res<'static, ExtractedBsp>,
         Res<'static, BindGroup<PbrLightingInformation>>,
-        Res<'static, ShaderPipeline>,
+        Res<'static, ShaderPipelineCache>,
     );
 
     type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<CameraBindGroup>);
@@ -45,7 +44,7 @@ impl ViewNode for BspRenderNode {
         _render_world: &World,
         graph_ctx: &mut RenderGraphCtx,
         render_ctx: &mut weaver_renderer::graph::RenderCtx,
-        (item_query, bsp, lighting_bind_group, shader_pipeline): &SystemParamItem<Self::Param>,
+        (bsp, lighting_bind_group, shader_pipeline_cache): &SystemParamItem<Self::Param>,
         (view_target, camera_bind_group): &QueryFetchItem<Self::ViewQueryFetch>,
     ) -> Result<()> {
         let encoder = render_ctx.command_encoder();
@@ -77,20 +76,23 @@ impl ViewNode for BspRenderNode {
             graph_ctx.view_entity
         );
 
-        render_pass.set_pipeline(&shader_pipeline.pipeline);
-
         render_pass.set_bind_group(1, camera_bind_group.bind_group(), &[]);
         render_pass.set_bind_group(2, lighting_bind_group.bind_group(), &[]);
 
         render_pass.set_vertex_buffer(0, bsp.vbo.slice(..));
-        render_pass.set_index_buffer(bsp.ibo.slice(..), wgpu::IndexFormat::Uint32);
 
-        for (_entity, shader_indices) in item_query.iter() {
-            let shader_indices = shader_indices.into_inner();
+        bsp.key_paths.walk(&mut |stages| {
+            let bind_group = stages.bind_group.as_ref().unwrap();
+            let index_buffer = stages.index_buffer.as_ref().unwrap();
+            let pipeline = shader_pipeline_cache.cache.get(&stages.key).unwrap();
 
-            render_pass.set_bind_group(0, &shader_indices.bind_group, &[]);
-            render_pass.draw_indexed(shader_indices.ibo_range.clone(), 0, 0..1);
-        }
+            render_pass.set_pipeline(&pipeline.pipeline);
+
+            render_pass.set_bind_group(0, bind_group, &[]);
+            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+
+            render_pass.draw_indexed(0..stages.num_indices, 0, 0..1);
+        });
 
         Ok(())
     }
