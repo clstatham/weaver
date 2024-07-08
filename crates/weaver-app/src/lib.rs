@@ -402,6 +402,13 @@ impl App {
         self
     }
 
+    pub fn send_event<T: Event>(&mut self, event: T) {
+        self.main_app_mut()
+            .get_resource::<Events<T>>()
+            .unwrap()
+            .send(event);
+    }
+
     pub fn add_system<S: SystemStage, M: 'static>(
         &mut self,
         system: impl IntoSystem<M>,

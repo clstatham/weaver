@@ -1,15 +1,17 @@
-use camera::CameraUpdate;
+use std::collections::VecDeque;
+
 use weaver::{
     prelude::*,
     weaver_app::App,
-    weaver_core::{input::InputPlugin, mesh::Mesh, time::TimePlugin},
+    weaver_core::{input::InputPlugin, time::TimePlugin},
     weaver_pbr::PbrPlugin,
     weaver_renderer::{camera::Camera, RendererPlugin},
     weaver_winit::WinitPlugin,
 };
 use weaver_asset::loading::Filesystem;
 use weaver_core::CoreTypesPlugin;
-use weaver_diagnostics::frame_time::LogFrameTimePlugin;
+use weaver_diagnostics::frame_time::{FrameTime, LogFrameTimePlugin};
+use weaver_egui::{egui, EguiContext, EguiPlugin};
 use weaver_gizmos::GizmoNodeLabel;
 use weaver_q3::{
     bsp::{
@@ -27,24 +29,11 @@ use weaver_renderer::{
 pub mod camera;
 pub mod transform_gizmo;
 
-#[derive(Component, Reflect)]
-pub struct SelectionAabb {
-    pub aabb: Aabb,
-}
-
-impl SelectionAabb {
-    pub fn from_mesh(mesh: &Mesh) -> Self {
-        let aabb = mesh.aabb;
-        Self { aabb }
-    }
-}
-
-#[derive(Default)]
-pub enum VisMode {
-    #[default]
-    None,
-    Nodes,
-    Leaves,
+#[derive(Resource, Default)]
+struct FpsHistory {
+    pub history: VecDeque<f32>,
+    pub display_fps: f32,
+    smoothing_buffer: Vec<f32>,
 }
 
 fn main() -> Result<()> {
@@ -61,6 +50,7 @@ fn main() -> Result<()> {
         .add_plugin(RendererPlugin)?
         .add_plugin(PbrPlugin)?
         .add_plugin(GizmoPlugin)?
+        .add_plugin(EguiPlugin)?
         .add_plugin(Q3Plugin)?
         .add_plugin(LogFrameTimePlugin {
             log_interval: std::time::Duration::from_secs(5),
@@ -72,23 +62,13 @@ fn main() -> Result<()> {
         })
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
         .insert_resource(Filesystem::default().with_pk3s_from_dir("assets/q3")?)
-        .add_plugin(FixedUpdatePlugin::<CameraUpdate>::new(1.0 / 1000.0, 0.1))?
-        // .insert_resource(TransformGizmo {
-        //     focus: None,
-        //     size: 1.0,
-        //     axis_size: 0.1,
-        //     handle_size: 0.3,
-        //     middle_color: Color::WHITE,
-        //     x_color: Color::RED,
-        //     y_color: Color::GREEN,
-        //     z_color: Color::BLUE,
-        //     extra_scaling: 1.0,
-        //     desired_pixel_size: 100.0,
-        // })
+        .init_resource::<FpsHistory>()
+        .add_plugin(FixedUpdatePlugin::<FpsHistory>::new(1.0 / 50.0, 1.0))?
         .add_system(load_shaders, Init)
         .add_system_after(setup, load_shaders, Init)
         .add_system(camera::update_camera, Update)
         .add_system(camera::update_aspect_ratio, Update)
+        .add_system(fps_ui, Update)
         .run()
 }
 
@@ -121,6 +101,53 @@ fn setup(
 
     let bsp = bsp_loader.load_from_filesystem(&mut fs, "maps/pro-q3dm6.bsp")?;
     commands.insert_resource(bsp);
+
+    Ok(())
+}
+
+fn fps_ui(
+    mut time: ResMut<FixedTimestep<FpsHistory>>,
+    frame_time: Res<FrameTime>,
+    mut history: ResMut<FpsHistory>,
+    egui_ctx: Res<EguiContext>,
+) -> Result<()> {
+    egui_ctx.draw_if_ready(|ctx| {
+        egui::Window::new("FPS")
+            .default_height(200.0)
+            .show(ctx, |ui| {
+                history.smoothing_buffer.push(frame_time.fps);
+
+                let smoothed_fps = history.smoothing_buffer.iter().copied().sum::<f32>()
+                    / history.smoothing_buffer.len() as f32;
+
+                if time.ready() {
+                    history.smoothing_buffer.clear();
+
+                    history.history.push_back(smoothed_fps);
+                    if history.history.len() > 1000 {
+                        history.history.pop_front();
+                    }
+
+                    history.display_fps = smoothed_fps;
+
+                    time.clear_accumulator();
+                }
+
+                ui.label(format!("FPS: {:.2}", history.display_fps));
+                ui.separator();
+
+                let plot = egui_plot::Plot::new("FPS");
+                let points = history
+                    .history
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &fps)| [i as f64, fps as f64])
+                    .collect::<Vec<_>>();
+                plot.show(ui, |plot| {
+                    plot.line(egui_plot::Line::new(points).color(egui::Color32::LIGHT_GREEN));
+                });
+            });
+    });
 
     Ok(())
 }

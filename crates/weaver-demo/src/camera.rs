@@ -106,15 +106,13 @@ impl FlyCameraController {
 pub struct CameraUpdate;
 
 pub fn update_camera(
-    mut time: ResMut<FixedTimestep<CameraUpdate>>,
+    time: Res<Time>,
     input: Res<Input>,
     query: Query<(&mut Camera, &mut FlyCameraController)>,
 ) -> Result<()> {
-    time.run_with_fixed_timestep(|_total, dt| {
-        for (_entity, (mut camera, mut controller)) in query.iter() {
-            controller.update(&input, dt, &mut camera);
-        }
-    });
+    for (_entity, (mut camera, mut controller)) in query.iter() {
+        controller.update(&input, time.delta_time, &mut camera);
+    }
 
     Ok(())
 }

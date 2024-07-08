@@ -2,7 +2,7 @@ use std::any::TypeId;
 
 use crate::{
     component::{Res, ResMut},
-    prelude::{Resource, UnsafeWorldCell, World},
+    prelude::{NonSend, Resource, UnsafeWorldCell, World},
 };
 use petgraph::{prelude::*, visit::Topo};
 use weaver_util::{
@@ -166,7 +166,7 @@ unsafe impl<'w2, 's2, P: SystemParam> SystemParam for SystemParamWrapper<'w2, 's
 /// # Safety
 ///
 /// Caller must ensure that all system params being used are valid for simultaneous access.
-pub unsafe trait SystemParam: Send + Sync {
+pub unsafe trait SystemParam {
     type State: Sized + Send + Sync;
     type Item<'w, 's>: SystemParam<State = Self::State>;
 
@@ -425,6 +425,46 @@ unsafe impl<T: Resource> SystemParam for Option<ResMut<'_, T>> {
         world: UnsafeWorldCell<'w>,
     ) -> Self::Item<'w, 's> {
         unsafe { world.get_resource_mut::<T>() }
+    }
+
+    fn can_run(_world: &World) -> bool {
+        true
+    }
+}
+
+unsafe impl<T: 'static> SystemParam for NonSend<'_, T> {
+    type State = ();
+    type Item<'w, 's> = NonSend<'w, T>;
+
+    fn validate_access(access: &SystemAccess) -> bool {
+        if access.resources_read.contains(&TypeId::of::<T>())
+            || access.resources_written.contains(&TypeId::of::<T>())
+        {
+            return false;
+        }
+        true
+    }
+
+    fn init_state(_: &mut World) -> Self::State {}
+
+    fn access() -> SystemAccess {
+        SystemAccess {
+            exclusive: false,
+            resources_read: Vec::new(),
+            resources_written: vec![TypeId::of::<T>()],
+            components_read: Vec::new(),
+            components_written: Vec::new(),
+        }
+    }
+
+    /// # Safety
+    ///
+    /// Caller must ensure that the resource exists and that we have exclusive access to it
+    unsafe fn fetch<'w, 's>(
+        _: &'s mut Self::State,
+        world: UnsafeWorldCell<'w>,
+    ) -> Self::Item<'w, 's> {
+        unsafe { world.world().get_non_send_resource().unwrap() }
     }
 
     fn can_run(_world: &World) -> bool {

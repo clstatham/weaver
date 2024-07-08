@@ -28,7 +28,7 @@ use weaver_ecs::{
     system_schedule::SystemStage,
     world::World,
 };
-use weaver_event::{EventRx, ManuallyUpdatedEvents};
+use weaver_event::{EventRx, Events};
 use weaver_util::prelude::Result;
 use weaver_winit::{Window, WindowResized, WindowSize};
 
@@ -300,6 +300,13 @@ impl Renderer {
     pub fn enqueue_command_buffer(&mut self, command_buffer: wgpu::CommandBuffer) {
         self.command_buffers.push(command_buffer);
     }
+
+    pub fn enqueue_command_buffers(
+        &mut self,
+        command_buffers: impl IntoIterator<Item = wgpu::CommandBuffer>,
+    ) {
+        self.command_buffers.extend(command_buffers);
+    }
 }
 
 pub struct RenderExtractApp;
@@ -359,9 +366,9 @@ impl Plugin for RendererPlugin {
         render_app.insert_resource(ExtractedRenderAssets::new());
         render_app.insert_resource(ExtractedAssetBindGroups::new());
 
-        // render_app.add_system(resize_surface, PreRender);
-        // render_app.add_system_after(begin_render, resize_surface, PreRender);
-        render_app.add_system(begin_render, PreRender);
+        render_app.add_system(resize_surface, PreRender);
+        render_app.add_system_after(begin_render, resize_surface, PreRender);
+        // render_app.add_system(begin_render, PreRender);
         render_app.add_system(render_system, Render);
         render_app.add_system(end_render, PostRender);
 
@@ -389,12 +396,12 @@ impl Plugin for RendererPlugin {
         let window = main_app
             .main_app()
             .world()
-            .get_non_send_resource::<Window>()
+            .get_resource::<Window>()
             .unwrap()
             .clone();
         let resized_events = main_app
             .main_app_mut()
-            .get_resource_mut::<ManuallyUpdatedEvents<WindowResized>>()
+            .get_resource_mut::<Events<WindowResized>>()
             .unwrap()
             .into_inner();
 
@@ -409,6 +416,8 @@ impl Plugin for RendererPlugin {
         render_app.insert_resource(resized_events);
         create_surface(render_app.world_mut(), &window).unwrap();
 
+        render_app.insert_resource(window);
+
         render_app.finish_plugins();
 
         render_to_main_tx.send(render_app).unwrap();
@@ -422,7 +431,9 @@ impl Plugin for RendererPlugin {
             log::trace!("Entering render thread main loop");
 
             loop {
-                let mut render_app = main_to_render_rx.recv().unwrap();
+                let Ok(mut render_app) = main_to_render_rx.recv() else {
+                    break;
+                };
                 log::trace!("Received render app on render thread");
 
                 render_app.update();
@@ -431,6 +442,8 @@ impl Plugin for RendererPlugin {
 
                 render_to_main_tx.send(render_app).unwrap();
             }
+
+            log::trace!("Exiting render thread main loop");
         });
 
         Ok(())
@@ -474,7 +487,7 @@ pub fn begin_render(
         }
     };
 
-    log::trace!("Begin frame");
+    log::trace!("Begin render");
 
     let color_view = frame
         .texture
@@ -530,7 +543,6 @@ pub fn begin_render(
 pub fn end_render(
     mut current_frame: ResMut<CurrentFrame>,
     mut renderer: ResMut<Renderer>,
-    device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
 ) -> Result<()> {
     let Some(current_frame) = current_frame.inner.take() else {
@@ -538,51 +550,21 @@ pub fn end_render(
         return Ok(());
     };
 
-    log::trace!("End frame");
+    log::trace!("End render");
 
     let CurrentFrameInner {
-        surface_texture,
-        color_view,
-        depth_view,
+        surface_texture, ..
     } = current_frame;
 
-    let mut command_buffers = renderer.command_buffers.drain(..).collect::<Vec<_>>();
-
-    if command_buffers.is_empty() {
-        // ensure that we have at least some work to do
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Final Encoder"),
-        });
-        {
-            let mut _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Final Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &color_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                ..Default::default()
-            });
-        }
-        command_buffers.push(encoder.finish());
-    }
+    let command_buffers = std::mem::take(&mut renderer.command_buffers);
 
     queue.submit(command_buffers);
 
     let surface_texture = Arc::into_inner(surface_texture).unwrap();
 
+    log::trace!("Presenting frame");
     surface_texture.present();
+    log::trace!("Frame presented");
 
     Ok(())
 }
@@ -591,6 +573,7 @@ pub fn end_render(
 fn resize_surface(
     mut commands: Commands,
     events: EventRx<WindowResized>,
+    mut window_size: ResMut<WindowSize>,
     view_targets: Query<&ViewTarget>,
     mut current_frame: ResMut<CurrentFrame>,
     mut renderer: ResMut<Renderer>,
@@ -598,7 +581,8 @@ fn resize_surface(
     surface: Res<WindowSurface>,
     mut hdr_target: ResMut<HdrRenderTarget>,
 ) -> Result<()> {
-    for event in events.iter() {
+    let mut events_vec = events.iter().collect::<Vec<_>>();
+    if let Some(event) = events_vec.pop() {
         let mut has_current_frame = false;
         let mut view_target_entities = Vec::new();
         let view_targets = view_targets.entity_iter().collect::<Vec<_>>();
@@ -614,6 +598,9 @@ fn resize_surface(
         let WindowResized { width, height } = *event;
 
         log::trace!("Resizing surface to {}x{}", width, height);
+
+        window_size.width = width;
+        window_size.height = height;
 
         surface.configure(
             &device,
@@ -680,7 +667,9 @@ fn resize_surface(
         hdr_target.resize(&device, width, height);
     }
 
-    events.clear();
+    // drop(events_vec);
+
+    // events.clear();
 
     Ok(())
 }

@@ -3,7 +3,6 @@ use std::{ops::Deref, sync::Arc};
 use weaver_app::{plugin::Plugin, prelude::App, Runner};
 use weaver_core::input::Input;
 use weaver_ecs::prelude::Resource;
-use weaver_event::ManuallyUpdatedEvents;
 use weaver_util::{lock::Lock, prelude::Result};
 use winit::{
     dpi::LogicalSize,
@@ -17,10 +16,9 @@ pub mod prelude {
     pub use winit;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Resource)]
 pub struct Window {
     window: Arc<winit::window::Window>,
-    _marker: std::marker::PhantomData<*const ()>,
 }
 
 #[derive(Debug, Clone, Copy, Resource)]
@@ -69,17 +67,13 @@ impl Plugin for WinitPlugin {
         let event_loop = winit::event_loop::EventLoop::new()?;
         let window = WindowBuilder::new()
             .with_title(self.window_title)
-            .with_resizable(false)
             .with_inner_size(LogicalSize::new(self.initial_size.0, self.initial_size.1))
             .build(&event_loop)?;
 
         let window = Window {
             window: Arc::new(window),
-            _marker: std::marker::PhantomData,
         };
-        app.main_app_mut()
-            .world_mut()
-            .insert_non_send_resource(window);
+        app.main_app_mut().world_mut().insert_resource(window);
         app.main_app_mut().insert_resource(WindowSize {
             width: self.initial_size.0,
             height: self.initial_size.1,
@@ -88,7 +82,7 @@ impl Plugin for WinitPlugin {
             event_loop: Lock::new(Some(event_loop)),
         });
         app.add_event::<WinitEvent>();
-        app.add_manually_updated_event::<WindowResized>();
+        app.add_event::<WindowResized>();
         Ok(())
     }
 }
@@ -106,14 +100,9 @@ impl Runner for WinitRunner {
         event_loop.run(move |event, event_loop_window| {
             event_loop_window.set_control_flow(ControlFlow::Poll);
 
-            if let Some(tx) = app
-                .main_app_mut()
-                .get_resource_mut::<weaver_event::Events<WinitEvent>>()
-            {
-                tx.send(WinitEvent {
-                    event: event.clone(),
-                });
-            }
+            app.send_event(WinitEvent {
+                event: event.clone(),
+            });
 
             match &event {
                 Event::DeviceEvent { event, .. } => {
@@ -122,7 +111,7 @@ impl Runner for WinitRunner {
                     }
                 }
                 Event::WindowEvent { event, window_id } => {
-                    if let Some(window) = app.main_app().world().get_non_send_resource::<Window>() {
+                    if let Some(window) = app.main_app().world().get_resource::<Window>() {
                         if window.id() != *window_id {
                             return;
                         }
@@ -136,16 +125,10 @@ impl Runner for WinitRunner {
 
                     match event {
                         WindowEvent::Resized(size) => {
-                            let tx = app
-                                .main_app_mut()
-                                .get_resource_mut::<ManuallyUpdatedEvents<WindowResized>>()
-                                .unwrap();
-                            tx.send(WindowResized {
+                            app.send_event(WindowResized {
                                 width: size.width,
                                 height: size.height,
                             });
-
-                            drop(tx);
 
                             if let Some(mut window_size) =
                                 app.main_app_mut().get_resource_mut::<WindowSize>()

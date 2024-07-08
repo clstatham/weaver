@@ -3,60 +3,14 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
-
-#[derive(Default)]
-#[repr(transparent)]
-pub struct BorrowLock(AtomicRefCell<()>);
-
-impl BorrowLock {
-    pub const fn new() -> Self {
-        Self(AtomicRefCell::new(()))
-    }
-
-    #[inline]
-    pub fn borrow(&self) -> Borrow<'_> {
-        Borrow(self.0.borrow())
-    }
-
-    #[inline]
-    pub fn can_borrow(&self) -> bool {
-        self.0.try_borrow().is_ok()
-    }
-
-    #[inline]
-    pub fn try_borrow(&self) -> Option<Borrow<'_>> {
-        self.0.try_borrow().ok().map(Borrow)
-    }
-
-    #[inline]
-    pub fn can_borrow_mut(&self) -> bool {
-        self.0.try_borrow_mut().is_ok()
-    }
-
-    #[inline]
-    pub fn borrow_mut(&self) -> BorrowMut<'_> {
-        BorrowMut(self.0.borrow_mut())
-    }
-
-    #[inline]
-    pub fn try_borrow_mut(&self) -> Option<BorrowMut<'_>> {
-        self.0.try_borrow_mut().ok().map(BorrowMut)
-    }
-}
-
-#[repr(transparent)]
-pub struct Borrow<'a>(AtomicRef<'a, ()>);
-
-#[repr(transparent)]
-pub struct BorrowMut<'a>(AtomicRefMut<'a, ()>);
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[derive(Debug, Default)]
-pub struct Lock<T>(AtomicRefCell<T>);
+pub struct Lock<T>(RwLock<T>);
 
 impl<T> Lock<T> {
     pub fn new(value: T) -> Self {
-        Self(AtomicRefCell::new(value))
+        Self(RwLock::new(value))
     }
 
     pub fn read(&self) -> Read<'_, T> {
@@ -83,49 +37,45 @@ impl<T: Clone> From<T> for Lock<T> {
 }
 
 #[derive(Debug)]
-pub struct Read<'a, T>(AtomicRef<'a, T>);
+pub struct Read<'a, T>(RwLockReadGuard<'a, T>);
 #[derive(Debug)]
-pub struct Write<'a, T>(AtomicRefMut<'a, T>);
+pub struct Write<'a, T>(RwLockWriteGuard<'a, T>);
 
 impl<'a, T> Read<'a, T> {
     pub fn new(lock: &'a Lock<T>) -> Self {
-        Self(lock.0.borrow())
+        if cfg!(debug_assertions) && lock.0.try_read().is_none() {
+            log::warn!("Read lock contention detected");
+            let bt = std::backtrace::Backtrace::force_capture();
+            log::warn!("{}", bt);
+        }
+        Self(lock.0.read())
     }
 
     pub fn try_new(lock: &'a Lock<T>) -> Option<Self> {
-        lock.0.try_borrow().ok().map(Self)
+        lock.0.try_read().map(Self)
     }
 
-    pub fn into_inner(self) -> AtomicRef<'a, T> {
+    pub fn into_inner(self) -> RwLockReadGuard<'a, T> {
         self.0
-    }
-
-    pub fn map_read<U, F>(self, f: F) -> Read<'a, U>
-    where
-        F: FnOnce(&T) -> &U,
-    {
-        Read(AtomicRef::map(self.0, f))
     }
 }
 
 impl<'a, T> Write<'a, T> {
     pub fn new(lock: &'a Lock<T>) -> Self {
-        Self(lock.0.borrow_mut())
+        if cfg!(debug_assertions) && lock.0.try_write().is_none() {
+            log::warn!("Write lock contention detected");
+            let bt = std::backtrace::Backtrace::force_capture();
+            log::warn!("{}", bt);
+        }
+        Self(lock.0.write())
     }
 
     pub fn try_new(lock: &'a Lock<T>) -> Option<Self> {
-        lock.0.try_borrow_mut().ok().map(Self)
+        lock.0.try_write().map(Self)
     }
 
-    pub fn into_inner(self) -> AtomicRefMut<'a, T> {
+    pub fn into_inner(self) -> RwLockWriteGuard<'a, T> {
         self.0
-    }
-
-    pub fn map_write<U, F>(self, f: F) -> Write<'a, U>
-    where
-        F: FnOnce(&mut T) -> &mut U,
-    {
-        Write(AtomicRefMut::map(self.0, f))
     }
 }
 
@@ -153,23 +103,33 @@ impl<'a, T> DerefMut for Write<'a, T> {
 
 #[derive(Debug, Default)]
 #[repr(transparent)]
-pub struct SharedLock<T: ?Sized>(Arc<AtomicRefCell<T>>);
+pub struct SharedLock<T: ?Sized>(Arc<RwLock<T>>);
 
 impl<T> SharedLock<T> {
     pub fn new(value: T) -> Self {
-        Self(Arc::new(AtomicRefCell::new(value)))
+        Self(Arc::new(RwLock::new(value)))
     }
 
-    pub fn downgrade(&self) -> Weak<AtomicRefCell<T>> {
+    pub fn downgrade(&self) -> Weak<RwLock<T>> {
         Arc::downgrade(&self.0)
     }
 
     pub fn read(&self) -> Read<'_, T> {
-        Read(self.0.borrow())
+        if cfg!(debug_assertions) && self.0.try_read().is_none() {
+            log::warn!("Read lock contention detected");
+            let bt = std::backtrace::Backtrace::force_capture();
+            log::warn!("{}", bt);
+        }
+        Read(self.0.read())
     }
 
     pub fn write(&self) -> Write<'_, T> {
-        Write(self.0.borrow_mut())
+        if cfg!(debug_assertions) && self.0.try_write().is_none() {
+            log::warn!("Write lock contention detected");
+            let bt = std::backtrace::Backtrace::force_capture();
+            log::warn!("{}", bt);
+        }
+        Write(self.0.write())
     }
 
     pub fn strong_count(&self) -> usize {
@@ -177,7 +137,7 @@ impl<T> SharedLock<T> {
     }
 
     pub fn into_inner(self) -> Option<T> {
-        Some(AtomicRefCell::into_inner(Arc::into_inner(self.0)?))
+        Some(RwLock::into_inner(Arc::into_inner(self.0)?))
     }
 }
 
@@ -194,7 +154,7 @@ impl<T> From<T> for SharedLock<T> {
 }
 
 impl<T: ?Sized> Deref for SharedLock<T> {
-    type Target = AtomicRefCell<T>;
+    type Target = RwLock<T>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

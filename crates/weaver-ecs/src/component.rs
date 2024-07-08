@@ -286,7 +286,7 @@ impl Resources {
 
 pub struct NonSend<'r, T: 'static> {
     pub(crate) value: &'r T,
-    _marker: std::marker::PhantomData<*const ()>,
+    pub(crate) _marker: std::marker::PhantomData<*const ()>,
 }
 
 impl<'r, T: 'static> NonSend<'r, T> {
