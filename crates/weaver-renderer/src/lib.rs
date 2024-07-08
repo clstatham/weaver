@@ -30,7 +30,7 @@ use weaver_ecs::{
 };
 use weaver_event::{EventRx, ManuallyUpdatedEvents};
 use weaver_util::prelude::Result;
-use weaver_winit::{Window, WindowResized};
+use weaver_winit::{Window, WindowResized, WindowSize};
 
 pub mod asset;
 pub mod bind_group;
@@ -212,7 +212,7 @@ pub struct Renderer {
     command_buffers: Vec<wgpu::CommandBuffer>,
 }
 
-fn create_surface(render_world: &mut World) -> Result<()> {
+fn create_surface(render_world: &mut World, window: &Window) -> Result<()> {
     if render_world.has_resource::<WindowSurface>() {
         log::warn!("Surface already created");
         return Ok(());
@@ -222,11 +222,6 @@ fn create_surface(render_world: &mut World) -> Result<()> {
         backends: wgpu::Backends::all(),
         ..Default::default()
     });
-
-    let window = render_world
-        .get_resource_mut::<Window>()
-        .unwrap()
-        .into_inner();
 
     let surface = unsafe {
         instance
@@ -307,6 +302,15 @@ impl Renderer {
     }
 }
 
+pub struct RenderExtractApp;
+impl AppLabel for RenderExtractApp {}
+
+#[derive(Resource)]
+pub struct RenderAppChannels {
+    pub main_to_render_tx: crossbeam_channel::Sender<SubApp>,
+    pub render_to_main_rx: crossbeam_channel::Receiver<SubApp>,
+}
+
 #[derive(Resource, Default)]
 pub struct ScratchMainWorld(World);
 
@@ -355,8 +359,9 @@ impl Plugin for RendererPlugin {
         render_app.insert_resource(ExtractedRenderAssets::new());
         render_app.insert_resource(ExtractedAssetBindGroups::new());
 
-        render_app.add_system(resize_surface, PreRender);
-        render_app.add_system_after(begin_render, resize_surface, PreRender);
+        // render_app.add_system(resize_surface, PreRender);
+        // render_app.add_system_after(begin_render, resize_surface, PreRender);
+        render_app.add_system(begin_render, PreRender);
         render_app.add_system(render_system, Render);
         render_app.add_system(end_render, PostRender);
 
@@ -370,33 +375,84 @@ impl Plugin for RendererPlugin {
 
         main_app.add_sub_app::<RenderApp>(render_app);
 
+        let mut extract_app = SubApp::new();
+        extract_app.set_extract(Box::new(renderer_extract));
+        main_app.add_sub_app::<RenderExtractApp>(extract_app);
+
         Ok(())
     }
 
     fn finish(&self, main_app: &mut App) -> Result<()> {
+        let (main_to_render_tx, main_to_render_rx) = crossbeam_channel::bounded(1);
+        let (render_to_main_tx, render_to_main_rx) = crossbeam_channel::bounded(1);
+
         let window = main_app
-            .main_app_mut()
-            .get_resource_mut::<Window>()
+            .main_app()
+            .world()
+            .get_non_send_resource::<Window>()
             .unwrap()
-            .into_inner();
-        let window = window.clone();
+            .clone();
         let resized_events = main_app
             .main_app_mut()
             .get_resource_mut::<ManuallyUpdatedEvents<WindowResized>>()
             .unwrap()
             .into_inner();
+
         let resized_events = resized_events.clone();
-        let render_app = main_app.get_sub_app_mut::<RenderApp>().unwrap();
-        render_app.insert_resource(resized_events.clone());
-        render_app.insert_resource(window.clone());
-        create_surface(render_app.world_mut())?;
+
+        let mut render_app: SubApp = main_app.remove_sub_app::<RenderApp>().unwrap();
+
+        render_app.insert_resource(WindowSize {
+            width: window.inner_size().width,
+            height: window.inner_size().height,
+        });
+        render_app.insert_resource(resized_events);
+        create_surface(render_app.world_mut(), &window).unwrap();
+
+        render_app.finish_plugins();
+
+        render_to_main_tx.send(render_app).unwrap();
+
+        main_app.insert_resource(RenderAppChannels {
+            main_to_render_tx,
+            render_to_main_rx,
+        });
+
+        std::thread::spawn(move || {
+            log::trace!("Entering render thread main loop");
+
+            loop {
+                let mut render_app = main_to_render_rx.recv().unwrap();
+                log::trace!("Received render app on render thread");
+
+                render_app.update();
+
+                log::trace!("Sending render app back to main thread");
+
+                render_to_main_tx.send(render_app).unwrap();
+            }
+        });
 
         Ok(())
     }
 }
 
+fn renderer_extract(main_world: &mut World, _world: &mut World) -> Result<()> {
+    let channels = main_world.remove_resource::<RenderAppChannels>().unwrap();
+    let mut render_app = channels.render_to_main_rx.recv().unwrap();
+    log::trace!("Received render app on main thread");
+    render_app.extract_from(main_world).unwrap();
+    log::trace!("Sending render app back to render thread");
+    channels.main_to_render_tx.send(render_app).unwrap();
+    main_world.insert_resource(channels);
+
+    Ok(())
+}
+
 pub fn begin_render(
-    renderer: Res<Renderer>,
+    world: &mut World,
+    device: Res<WgpuDevice>,
+    mut renderer: ResMut<Renderer>,
     surface: Res<WindowSurface>,
     mut current_frame: ResMut<CurrentFrame>,
 ) -> Result<()> {
@@ -404,9 +460,18 @@ pub fn begin_render(
         return Ok(());
     }
 
-    let Ok(frame) = surface.get_current_texture() else {
-        log::warn!("Failed to get current frame");
-        return Ok(());
+    let view_targets = world.query::<&ViewTarget>();
+    let view_targets = view_targets.entity_iter(world).collect::<Vec<_>>();
+    for entity in view_targets {
+        world.remove_component::<ViewTarget>(entity);
+    }
+
+    let frame = match surface.get_current_texture() {
+        Ok(frame) => frame,
+        Err(e) => {
+            panic!("Failed to acquire next surface texture: {}", e);
+            // return Ok(());
+        }
     };
 
     log::trace!("Begin frame");
@@ -426,6 +491,33 @@ pub fn begin_render(
                 ..Default::default()
             });
 
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("Render Initial Encoder"),
+    });
+    {
+        let mut _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Initial Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &color_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            ..Default::default()
+        });
+    }
+    renderer.enqueue_command_buffer(encoder.finish());
+
     current_frame.inner.replace(CurrentFrameInner {
         surface_texture: Arc::new(frame),
         color_view: Arc::new(color_view),
@@ -442,6 +534,7 @@ pub fn end_render(
     queue: Res<WgpuQueue>,
 ) -> Result<()> {
     let Some(current_frame) = current_frame.inner.take() else {
+        log::warn!("No current frame to end");
         return Ok(());
     };
 
@@ -467,14 +560,14 @@ pub fn end_render(
                     view: &color_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &depth_view,
                     depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
+                        load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,

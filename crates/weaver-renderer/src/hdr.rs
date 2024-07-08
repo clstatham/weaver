@@ -9,7 +9,7 @@ use weaver_ecs::{
     world::FromWorld,
 };
 use weaver_util::prelude::Result;
-use weaver_winit::Window;
+use weaver_winit::WindowSize;
 
 use crate::{
     bind_group::{BindGroup, BindGroupLayoutCache, CreateBindGroup, ResourceBindGroupPlugin},
@@ -49,13 +49,13 @@ impl HdrRenderTarget {
 
 impl FromWorld for HdrRenderTarget {
     fn from_world(world: &mut World) -> Self {
-        let window = world.get_resource::<Window>().unwrap();
+        let window_size = world.get_resource::<WindowSize>().unwrap();
         let device = world.get_resource::<WgpuDevice>().unwrap();
         let texture = GpuTexture::new(
             &device,
             Some("Hdr Render Target"),
-            window.inner_size().width,
-            window.inner_size().height,
+            window_size.width,
+            window_size.height,
             texture_format::HDR_FORMAT,
             wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         );

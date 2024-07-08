@@ -10,7 +10,7 @@ use weaver_app::{App, SubApp};
 use weaver_ecs::prelude::{reflect_trait, Component, Resource};
 use weaver_util::{
     define_atomic_id,
-    prelude::{anyhow, impl_downcast, Downcast, Error, FxHashMap, Result},
+    prelude::{anyhow, impl_downcast, DowncastSync, Error, FxHashMap, Result},
 };
 
 pub mod loading;
@@ -26,7 +26,7 @@ pub mod prelude {
 define_atomic_id!(AssetId);
 
 #[reflect_trait]
-pub trait Asset: Downcast {}
+pub trait Asset: DowncastSync {}
 impl_downcast!(Asset);
 
 impl Asset for () {}

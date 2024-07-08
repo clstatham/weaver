@@ -30,13 +30,24 @@ impl Plugin for ShaderPlugin {
         );
         app.insert_resource(shaders);
 
+        let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
+        render_app.add_plugin(ShaderRenderAppPlugin).unwrap();
+
+        Ok(())
+    }
+}
+
+pub struct ShaderRenderAppPlugin;
+
+impl Plugin for ShaderRenderAppPlugin {
+    fn build(&self, _app: &mut App) -> Result<()> {
         Ok(())
     }
 
-    fn finish(&self, app: &mut App) -> Result<()> {
-        let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
+    fn finish(&self, render_app: &mut App) -> Result<()> {
         render_app.init_resource::<ShaderBindGroupLayout>();
         render_app.init_resource::<ShaderPipelineCache>();
+
         Ok(())
     }
 }

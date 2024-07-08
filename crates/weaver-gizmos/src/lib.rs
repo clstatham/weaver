@@ -602,18 +602,29 @@ impl Plugin for GizmoPlugin {
         app.add_system(clear_gizmos, PrepareFrame);
 
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
-        render_app.insert_resource(gizmos);
+        render_app
+            .add_plugin(GizmoRenderAppPlugin { gizmos })
+            .unwrap();
+
+        Ok(())
+    }
+}
+
+pub struct GizmoRenderAppPlugin {
+    gizmos: Gizmos,
+}
+
+impl Plugin for GizmoRenderAppPlugin {
+    fn build(&self, render_app: &mut App) -> Result<()> {
+        render_app.insert_resource(self.gizmos.clone());
 
         render_app.add_render_main_graph_node::<ViewNodeRunner<GizmoRenderNode>>(GizmoNodeLabel);
         render_app.add_render_main_graph_edge(PbrNodeLabel, GizmoNodeLabel);
         render_app.add_render_main_graph_edge(GizmoNodeLabel, HdrNodeLabel);
-
         Ok(())
     }
 
-    fn finish(&self, app: &mut App) -> Result<()> {
-        let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
-
+    fn finish(&self, render_app: &mut App) -> Result<()> {
         render_app.init_resource::<SolidCubeGizmo>();
         render_app.init_resource::<WireCubeGizmo>();
 

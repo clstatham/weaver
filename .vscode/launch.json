@@ -7,7 +7,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'weaver-editor'",
+            "name": "Debug executable 'weaver-demo'",
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "info"
@@ -19,11 +19,11 @@
                 },
                 "args": [
                     "build",
-                    "--bin=weaver-editor",
-                    "--package=weaver-editor",
+                    "--bin=weaver-demo",
+                    "--package=weaver-demo",
                 ],
                 "filter": {
-                    "name": "weaver-editor",
+                    "name": "weaver-demo",
                     "kind": "bin",
                 }
             },

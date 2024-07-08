@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use camera::CameraUpdate;
 use weaver::{
     prelude::*,
@@ -11,8 +9,7 @@ use weaver::{
 };
 use weaver_asset::loading::Filesystem;
 use weaver_core::CoreTypesPlugin;
-use weaver_diagnostics::frame_time::{FrameTime, LogFrameTimePlugin};
-use weaver_egui::prelude::*;
+use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_gizmos::GizmoNodeLabel;
 use weaver_q3::{
     bsp::{
@@ -28,7 +25,6 @@ use weaver_renderer::{
 };
 
 pub mod camera;
-pub mod inspect;
 pub mod transform_gizmo;
 
 #[derive(Component, Reflect)]
@@ -51,19 +47,6 @@ pub enum VisMode {
     Leaves,
 }
 
-#[derive(Resource, Default)]
-pub struct EditorState {
-    pub selected_entity: Option<Entity>,
-    pub vis_mode: VisMode,
-}
-
-#[derive(Resource, Default)]
-struct FpsHistory {
-    pub history: VecDeque<f32>,
-    pub display_fps: f32,
-    smoothing_buffer: Vec<f32>,
-}
-
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -78,13 +61,10 @@ fn main() -> Result<()> {
         .add_plugin(RendererPlugin)?
         .add_plugin(PbrPlugin)?
         .add_plugin(GizmoPlugin)?
-        .add_plugin(EguiPlugin)?
         .add_plugin(Q3Plugin)?
         .add_plugin(LogFrameTimePlugin {
             log_interval: std::time::Duration::from_secs(5),
         })?
-        .init_resource::<FpsHistory>()
-        .add_plugin(FixedUpdatePlugin::<FpsHistory>::new(1.0 / 50.0, 1.0))?
         .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
         .configure_sub_app::<RenderApp>(|app| {
             app.add_render_main_graph_edge(SkyboxNodeLabel, BspRenderNodeLabel);
@@ -92,7 +72,6 @@ fn main() -> Result<()> {
         })
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
         .insert_resource(Filesystem::default().with_pk3s_from_dir("assets/q3")?)
-        .insert_resource(EditorState::default())
         .add_plugin(FixedUpdatePlugin::<CameraUpdate>::new(1.0 / 1000.0, 0.1))?
         // .insert_resource(TransformGizmo {
         //     focus: None,
@@ -110,9 +89,6 @@ fn main() -> Result<()> {
         .add_system_after(setup, load_shaders, Init)
         .add_system(camera::update_camera, Update)
         .add_system(camera::update_aspect_ratio, Update)
-        .add_system(toggle_vis_mode, Update)
-        // .add_system(transform_gizmo::draw_transform_gizmo, Update)
-        .add_system(fps_ui, Update)
         .run()
 }
 
@@ -145,65 +121,6 @@ fn setup(
 
     let bsp = bsp_loader.load_from_filesystem(&mut fs, "maps/pro-q3dm6.bsp")?;
     commands.insert_resource(bsp);
-
-    Ok(())
-}
-
-fn fps_ui(
-    mut time: ResMut<FixedTimestep<FpsHistory>>,
-    frame_time: Res<FrameTime>,
-    mut history: ResMut<FpsHistory>,
-    egui_ctx: Res<EguiContext>,
-) -> Result<()> {
-    egui_ctx.draw_if_ready(|ctx| {
-        egui::Window::new("FPS")
-            .default_height(200.0)
-            .show(ctx, |ui| {
-                history.smoothing_buffer.push(frame_time.fps);
-
-                let smoothed_fps = history.smoothing_buffer.iter().copied().sum::<f32>()
-                    / history.smoothing_buffer.len() as f32;
-
-                if time.ready() {
-                    history.smoothing_buffer.clear();
-
-                    history.history.push_back(smoothed_fps);
-                    if history.history.len() > 1000 {
-                        history.history.pop_front();
-                    }
-
-                    history.display_fps = smoothed_fps;
-
-                    time.clear_accumulator();
-                }
-
-                ui.label(format!("FPS: {:.2}", history.display_fps));
-                ui.separator();
-
-                let plot = egui_plot::Plot::new("FPS");
-                let points = history
-                    .history
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &fps)| [i as f64, fps as f64])
-                    .collect::<Vec<_>>();
-                plot.show(ui, |plot| {
-                    plot.line(egui_plot::Line::new(points).color(egui::Color32::LIGHT_GREEN));
-                });
-            });
-    });
-
-    Ok(())
-}
-
-fn toggle_vis_mode(mut editor_state: ResMut<EditorState>, input: Res<Input>) -> Result<()> {
-    if input.key_down(KeyCode::Digit1) {
-        editor_state.vis_mode = VisMode::None;
-    } else if input.key_down(KeyCode::Digit2) {
-        editor_state.vis_mode = VisMode::Leaves;
-    } else if input.key_down(KeyCode::Digit3) {
-        editor_state.vis_mode = VisMode::Nodes;
-    }
 
     Ok(())
 }

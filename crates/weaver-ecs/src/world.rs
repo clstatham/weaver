@@ -7,8 +7,8 @@ use std::{
 use weaver_util::{lock::Lock, prelude::Result, warn_once};
 
 use crate::prelude::{
-    Bundle, IntoSystem, MultiResource, QueryFetch, QueryFilter, QueryState, Res, ResMut, Resource,
-    Resources, SystemSchedule, SystemStage, Tick,
+    Bundle, IntoSystem, MultiResource, NonSend, NonSendResources, QueryFetch, QueryFilter,
+    QueryState, Res, ResMut, Resource, Resources, SystemSchedule, SystemStage, Tick,
 };
 
 use super::{
@@ -77,10 +77,14 @@ pub struct World {
     free_entities: Lock<Vec<Entity>>,
     storage: Storage,
     resources: Resources,
+    non_send_resources: NonSendResources,
     change_tick: AtomicU64,
     last_change_tick: Tick,
     systems: SystemSchedule,
 }
+
+unsafe impl Send for World {}
+unsafe impl Sync for World {}
 
 impl Default for World {
     fn default() -> Self {
@@ -89,6 +93,7 @@ impl Default for World {
             free_entities: Lock::new(Vec::new()),
             storage: Storage::new(),
             resources: Resources::default(),
+            non_send_resources: NonSendResources::default(),
             change_tick: AtomicU64::new(0),
             last_change_tick: Tick::new(0),
             systems: SystemSchedule::default(),
@@ -237,6 +242,21 @@ impl World {
 
     pub fn remove_resource<T: Resource>(&mut self) -> Option<T> {
         self.resources.remove::<T>().map(|(resource, _)| resource)
+    }
+
+    pub fn insert_non_send_resource<T: 'static>(&mut self, component: T) {
+        if self.non_send_resources.contains::<T>() {
+            warn_once!(
+                "Non-send resource {} already inserted; not inserting it again",
+                std::any::type_name::<T>(),
+            );
+            return;
+        }
+        self.non_send_resources.insert(component)
+    }
+
+    pub fn get_non_send_resource<T: 'static>(&self) -> Option<NonSend<T>> {
+        self.non_send_resources.get::<T>()
     }
 
     pub fn increment_change_tick(&mut self) {

@@ -4,13 +4,13 @@ use weaver_util::SyncCell;
 
 use crate::prelude::World;
 
-pub trait Command: 'static {
+pub trait Command: Send + Sync + 'static {
     fn execute(self: Box<Self>, world: &mut World);
 }
 
 impl<F> Command for F
 where
-    F: FnOnce(&mut World) + 'static,
+    F: FnOnce(&mut World) + Send + Sync + 'static,
 {
     fn execute(self: Box<Self>, world: &mut World) {
         self(world)
@@ -71,7 +71,7 @@ impl<'s> Commands<'s> {
         });
     }
 
-    pub fn insert_resource<T: Resource>(&mut self, resource: T) {
+    pub fn insert_resource<T: Resource + Send + Sync>(&mut self, resource: T) {
         self.push(move |world: &mut World| {
             world.insert_resource(resource);
         });

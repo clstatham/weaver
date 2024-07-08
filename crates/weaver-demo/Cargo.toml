@@ -11,6 +11,5 @@ log = "0.4.20"
 egui_plot = "0.27"
 
 weaver = { path = "../../" }
-weaver-egui = { path = "../weaver-egui" }
 weaver-diagnostics = { path = "../weaver-diagnostics" }
 weaver-q3 = { path = "../weaver-q3" }

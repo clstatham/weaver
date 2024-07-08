@@ -17,7 +17,7 @@ pub enum QueryAccess {
     ReadWrite,
 }
 
-pub trait QueryFetch {
+pub trait QueryFetch: Send + Sync {
     type Item<'w>;
 
     fn access() -> &'static [(TypeId, QueryAccess)];
@@ -354,7 +354,7 @@ impl_query_fetch!(A, B, C, D, E, F);
 impl_query_fetch!(A, B, C, D, E, F, G);
 impl_query_fetch!(A, B, C, D, E, F, G, H);
 
-pub trait QueryFilter {
+pub trait QueryFilter: Send + Sync {
     fn test_archetype(archetype: &Archetype) -> bool;
 }
 

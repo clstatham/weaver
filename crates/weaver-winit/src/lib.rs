@@ -17,9 +17,16 @@ pub mod prelude {
     pub use winit;
 }
 
-#[derive(Resource, Clone)]
+#[derive(Clone)]
 pub struct Window {
     window: Arc<winit::window::Window>,
+    _marker: std::marker::PhantomData<*const ()>,
+}
+
+#[derive(Debug, Clone, Copy, Resource)]
+pub struct WindowSize {
+    pub width: u32,
+    pub height: u32,
 }
 
 impl Deref for Window {
@@ -66,8 +73,16 @@ impl Plugin for WinitPlugin {
             .with_inner_size(LogicalSize::new(self.initial_size.0, self.initial_size.1))
             .build(&event_loop)?;
 
-        app.insert_resource(Window {
+        let window = Window {
             window: Arc::new(window),
+            _marker: std::marker::PhantomData,
+        };
+        app.main_app_mut()
+            .world_mut()
+            .insert_non_send_resource(window);
+        app.main_app_mut().insert_resource(WindowSize {
+            width: self.initial_size.0,
+            height: self.initial_size.1,
         });
         app.set_runner(WinitRunner {
             event_loop: Lock::new(Some(event_loop)),
@@ -107,7 +122,7 @@ impl Runner for WinitRunner {
                     }
                 }
                 Event::WindowEvent { event, window_id } => {
-                    if let Some(window) = app.main_app_mut().get_resource::<Window>() {
+                    if let Some(window) = app.main_app().world().get_non_send_resource::<Window>() {
                         if window.id() != *window_id {
                             return;
                         }
@@ -129,6 +144,15 @@ impl Runner for WinitRunner {
                                 width: size.width,
                                 height: size.height,
                             });
+
+                            drop(tx);
+
+                            if let Some(mut window_size) =
+                                app.main_app_mut().get_resource_mut::<WindowSize>()
+                            {
+                                window_size.width = size.width;
+                                window_size.height = size.height;
+                            }
                         }
                         WindowEvent::CloseRequested => {
                             app.shutdown();

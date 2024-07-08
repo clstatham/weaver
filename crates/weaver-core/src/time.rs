@@ -34,7 +34,7 @@ impl Time {
 }
 
 #[derive(Resource)]
-pub struct FixedTimestep<Label:  'static> {
+pub struct FixedTimestep<Label: Send + Sync + 'static> {
     pub timestep: f32,
     pub total_time: f32,
     accumulator: f32,
@@ -42,7 +42,7 @@ pub struct FixedTimestep<Label:  'static> {
     _label: std::marker::PhantomData<Label>,
 }
 
-impl<Label:  'static> FixedTimestep<Label> {
+impl<Label: Send + Sync + 'static> FixedTimestep<Label> {
     pub fn new(timestep: f32, max_frame_time: f32) -> Self {
         Self {
             timestep,
@@ -101,13 +101,13 @@ fn update_time(mut time: ResMut<Time>) -> Result<()> {
     Ok(())
 }
 
-pub struct FixedUpdatePlugin<Label:  'static> {
+pub struct FixedUpdatePlugin<Label: 'static> {
     pub timestep: f32,
     pub max_frame_time: f32,
     _label: std::marker::PhantomData<Label>,
 }
 
-impl<Label:  'static> FixedUpdatePlugin<Label> {
+impl<Label: 'static> FixedUpdatePlugin<Label> {
     pub fn new(timestep: f32, max_frame_time: f32) -> Self {
         Self {
             timestep,
@@ -117,7 +117,7 @@ impl<Label:  'static> FixedUpdatePlugin<Label> {
     }
 }
 
-impl<Label:  'static> Plugin for FixedUpdatePlugin<Label> {
+impl<Label: Send + Sync + 'static> Plugin for FixedUpdatePlugin<Label> {
     fn build(&self, app: &mut App) -> Result<()> {
         app.insert_resource(FixedTimestep::<Label>::new(
             self.timestep,
@@ -128,7 +128,7 @@ impl<Label:  'static> Plugin for FixedUpdatePlugin<Label> {
     }
 }
 
-fn update_fixed_timestep<Label:  'static>(
+fn update_fixed_timestep<Label: Send + Sync + 'static>(
     time: Res<Time>,
     mut fixed_timestep: ResMut<FixedTimestep<Label>>,
 ) -> Result<()> {

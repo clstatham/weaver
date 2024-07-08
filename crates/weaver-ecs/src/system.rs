@@ -166,8 +166,8 @@ unsafe impl<'w2, 's2, P: SystemParam> SystemParam for SystemParamWrapper<'w2, 's
 /// # Safety
 ///
 /// Caller must ensure that all system params being used are valid for simultaneous access.
-pub unsafe trait SystemParam {
-    type State: Sized;
+pub unsafe trait SystemParam: Send + Sync {
+    type State: Sized + Send + Sync;
     type Item<'w, 's>: SystemParam<State = Self::State>;
 
     fn validate_access(access: &SystemAccess) -> bool;

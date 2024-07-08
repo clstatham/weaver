@@ -19,7 +19,6 @@ members = [
     "crates/weaver-diagnostics",
     "crates/weaver-reflect-macros",
     "crates/weaver-asset-macros",
-    "crates/weaver-egui",
     "crates/weaver-ecs-macros",
     "crates/weaver-event",
     "crates/weaver-gizmos",
