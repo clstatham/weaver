@@ -1,6 +1,6 @@
 use std::any::TypeId;
 
-use weaver_util::prelude::{FxHashMap, Result};
+use weaver_util::{FxHashMap, Result};
 
 use crate::{
     prelude::{IntoSystem, World},

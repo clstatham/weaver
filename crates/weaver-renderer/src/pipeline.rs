@@ -6,9 +6,7 @@ use weaver_ecs::{
     prelude::Resource,
 };
 use weaver_util::{
-    define_atomic_id,
-    prelude::{DowncastSync, FxHashMap, Result},
-    TypeIdMap,
+    define_atomic_id, TypeIdMap, {DowncastSync, FxHashMap, Result},
 };
 
 use crate::{bind_group::BindGroupLayoutCache, ExtractPipelineStage, WgpuDevice};

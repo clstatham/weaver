@@ -10,8 +10,7 @@ use weaver_ecs::{
 };
 use weaver_util::{
     lock::{Lock, Read, Write},
-    prelude::{DowncastSync, FxHashMap, Result},
-    TypeIdMap,
+    TypeIdMap, {DowncastSync, FxHashMap, Result},
 };
 
 use crate::{asset::RenderAsset, ExtractBindGroupStage, WgpuDevice};

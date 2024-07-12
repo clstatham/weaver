@@ -1,5 +1,5 @@
 use weaver_asset::loading::Filesystem;
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 
 pub trait Pk3Filesystem {
     fn with_pk3s_from_dir(self, directory: impl AsRef<std::path::Path>) -> Result<Self>

@@ -9,8 +9,7 @@ use loading::{Loadable, Loader};
 use weaver_app::{App, SubApp};
 use weaver_ecs::prelude::{reflect_trait, Component, Resource};
 use weaver_util::{
-    define_atomic_id,
-    prelude::{anyhow, impl_downcast, DowncastSync, Error, FxHashMap, Result},
+    define_atomic_id, {anyhow, impl_downcast, DowncastSync, Error, FxHashMap, Result},
 };
 
 pub mod loading;

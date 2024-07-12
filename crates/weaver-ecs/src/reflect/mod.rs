@@ -1,5 +1,5 @@
 use registry::{Struct, Typed};
-use weaver_util::prelude::{impl_downcast, DowncastSync};
+use weaver_util::{impl_downcast, DowncastSync};
 
 pub mod impls;
 pub mod registry;

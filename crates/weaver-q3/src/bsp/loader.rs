@@ -8,8 +8,7 @@ use weaver_asset::{
 use weaver_core::{mesh::Mesh, prelude::Vec3, texture::Texture};
 use weaver_ecs::prelude::Resource;
 use weaver_util::{
-    prelude::{anyhow, FxHashMap, Result},
-    warn_once,
+    warn_once, {anyhow, FxHashMap, Result},
 };
 
 use crate::{

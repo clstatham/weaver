@@ -1,4 +1,4 @@
-use weaver_util::prelude::{impl_downcast, DowncastSync};
+use weaver_util::{impl_downcast, DowncastSync};
 
 use crate::prelude::Component;
 

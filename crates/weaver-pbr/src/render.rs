@@ -26,7 +26,7 @@ use weaver_renderer::{
     texture::texture_format,
     RenderLabel,
 };
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 
 use crate::{
     light::GpuPointLightArray, material::GpuMaterial, prelude::irradiance::GpuSkyboxIrradiance,

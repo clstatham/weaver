@@ -160,3 +160,36 @@ impl<T: ?Sized> Deref for SharedLock<T> {
         &self.0
     }
 }
+
+#[derive(Debug, Default)]
+#[repr(transparent)]
+pub struct SyncCell<T: ?Sized>(T);
+
+impl<T: Sized> SyncCell<T> {
+    pub fn new(value: T) -> Self {
+        Self(value)
+    }
+
+    pub fn into_inner(Self(value): Self) -> T {
+        value
+    }
+}
+
+impl<T: ?Sized> SyncCell<T> {
+    pub fn read(&self) -> &T
+    where
+        T: Sync,
+    {
+        &self.0
+    }
+
+    pub fn get(&mut self) -> &mut T {
+        &mut self.0
+    }
+
+    pub fn from_mut(value: &mut T) -> &mut Self {
+        unsafe { &mut *(std::ptr::from_mut(value) as *mut SyncCell<T>) }
+    }
+}
+
+unsafe impl<T: ?Sized> Sync for SyncCell<T> {}

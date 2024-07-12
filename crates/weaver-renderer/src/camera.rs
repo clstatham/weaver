@@ -2,7 +2,7 @@ use std::{fmt::Debug, sync::Arc};
 
 use encase::ShaderType;
 use weaver_core::geometry::{Aabb, Frustum, Intersection, Ray, Sphere};
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 
 use weaver_app::plugin::Plugin;
 use weaver_ecs::prelude::*;

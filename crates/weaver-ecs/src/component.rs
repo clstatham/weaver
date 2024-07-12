@@ -7,8 +7,7 @@ use std::{
 use weaver_reflect_macros::reflect_trait;
 use weaver_util::{
     lock::SharedLock,
-    prelude::{impl_downcast, DowncastSync},
-    TypeIdMap,
+    TypeIdMap, {impl_downcast, DowncastSync},
 };
 
 use crate::{

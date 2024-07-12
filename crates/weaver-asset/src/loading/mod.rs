@@ -14,7 +14,7 @@ use weaver_ecs::{
 };
 use weaver_util::{
     lock::Lock,
-    prelude::{anyhow, Result},
+    {anyhow, Result},
 };
 use zip::ZipArchive;
 

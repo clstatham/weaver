@@ -4,7 +4,7 @@ use std::{
     sync::atomic::{AtomicU32, AtomicU64, Ordering},
 };
 
-use weaver_util::{lock::Lock, prelude::Result, warn_once};
+use weaver_util::{lock::Lock, warn_once, Result};
 
 use crate::prelude::{
     Bundle, IntoSystem, MultiResource, NonSend, NonSendResources, QueryFetch, QueryFilter,

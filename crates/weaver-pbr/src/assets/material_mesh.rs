@@ -5,7 +5,7 @@ use weaver_core::{
     texture::Texture,
 };
 use weaver_ecs::prelude::Resource;
-use weaver_util::prelude::{anyhow, bail, Result};
+use weaver_util::{anyhow, bail, Result};
 
 use crate::prelude::Material;
 

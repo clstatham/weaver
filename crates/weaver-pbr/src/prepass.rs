@@ -20,7 +20,7 @@ use weaver_renderer::{
     texture::GpuTexture,
     RenderLabel,
 };
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 
 use crate::prelude::GpuMaterial;
 

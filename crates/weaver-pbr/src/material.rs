@@ -1,6 +1,10 @@
 use encase::ShaderType;
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{loading::LoadCtx, prelude::*};
+use weaver_asset::{
+    loading::{LoadCtx, Loader},
+    prelude::Asset,
+    Assets, Handle, ReflectAsset,
+};
 use weaver_core::{color::Color, texture::Texture};
 use weaver_ecs::{
     component::Res,
@@ -14,7 +18,7 @@ use weaver_renderer::{
     prelude::*,
     texture::{texture_format, GpuTexture},
 };
-use weaver_util::prelude::*;
+use weaver_util::{anyhow, bail, Result};
 
 pub const WHITE_TEXTURE: Handle<Texture> =
     Handle::from_uuid(171952135557955961317447623731106286307);

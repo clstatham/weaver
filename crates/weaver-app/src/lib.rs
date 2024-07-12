@@ -12,7 +12,7 @@ use weaver_ecs::{
     world::{FromWorld, World},
 };
 use weaver_event::{Event, Events, ManuallyUpdatedEvents};
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 
 pub mod plugin;
 

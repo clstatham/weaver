@@ -5,7 +5,7 @@ use weaver_ecs::{
     world::FromWorld,
 };
 use weaver_renderer::{prelude::wgpu, WgpuDevice, WgpuQueue};
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 use wgpu::util::DeviceExt;
 
 use super::Skybox;

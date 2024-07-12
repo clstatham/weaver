@@ -35,7 +35,7 @@ use weaver_renderer::{
     },
     InitRenderResources, PreRender, RenderApp, WgpuDevice, WgpuQueue,
 };
-use weaver_util::prelude::*;
+use weaver_util::Result;
 
 pub mod assets;
 pub mod light;

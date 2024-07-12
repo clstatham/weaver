@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use weaver_app::{plugin::Plugin, App, PostUpdate};
 use weaver_ecs::{component::ResMut, prelude::Resource};
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 use winit::{
     event::{DeviceEvent, ElementState, WindowEvent},
     platform::scancode::PhysicalKeyExtScancode,

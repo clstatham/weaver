@@ -14,3 +14,4 @@ rustc-hash = "2.0"
 scopeguard = "1.2"
 lazy_static = "1.5"
 hashbrown = { version = "0.14.5", features = ["rayon"] }
+indextree = "4.6"

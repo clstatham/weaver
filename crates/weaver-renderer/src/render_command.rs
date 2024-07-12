@@ -6,7 +6,7 @@ use weaver_ecs::{
     system::{SystemParam, SystemParamItem, SystemState},
     world::World,
 };
-use weaver_util::prelude::{bail, Result};
+use weaver_util::{bail, Result};
 
 use crate::{
     draw_fn::DrawItem,

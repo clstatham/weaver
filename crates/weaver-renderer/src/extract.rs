@@ -9,7 +9,7 @@ use weaver_ecs::{
     system::{SystemAccess, SystemParam, SystemParamItem, SystemState},
     world::World,
 };
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 
 use crate::{
     ExtractBindGroupStage, ExtractPipelineStage, ExtractStage, MainWorld, ScratchMainWorld,

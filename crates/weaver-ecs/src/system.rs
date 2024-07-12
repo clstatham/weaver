@@ -7,7 +7,7 @@ use crate::{
 use petgraph::{prelude::*, visit::Topo};
 use weaver_util::{
     lock::SharedLock,
-    prelude::{anyhow, FxHashMap, FxHashSet, Result},
+    {anyhow, FxHashMap, FxHashSet, Result},
 };
 
 #[derive(Default, Clone)]

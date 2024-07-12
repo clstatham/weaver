@@ -3,7 +3,7 @@ use mesh::Mesh;
 use transform::Transform;
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::AssetApp;
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 
 pub mod color;
 pub mod geometry;

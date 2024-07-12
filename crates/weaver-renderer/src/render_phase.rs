@@ -10,7 +10,7 @@ use weaver_ecs::{
 };
 use weaver_util::{
     lock::Write,
-    prelude::{FxHashMap, Result},
+    {FxHashMap, Result},
 };
 
 use crate::{

@@ -3,7 +3,7 @@ use weaver_asset::{
     prelude::{Asset, Loader},
 };
 use weaver_ecs::prelude::Resource;
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 
 #[derive(Debug, Clone, Asset)]
 pub struct Texture {

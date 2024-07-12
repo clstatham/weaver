@@ -29,7 +29,7 @@ use weaver_ecs::{
     world::World,
 };
 use weaver_event::{EventRx, Events};
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 use weaver_winit::{Window, WindowResized, WindowSize};
 
 pub mod asset;

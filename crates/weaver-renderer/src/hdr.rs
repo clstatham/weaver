@@ -8,7 +8,7 @@ use weaver_ecs::{
     system::SystemParamItem,
     world::FromWorld,
 };
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 use weaver_winit::WindowSize;
 
 use crate::{

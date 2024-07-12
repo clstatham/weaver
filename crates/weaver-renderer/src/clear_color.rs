@@ -3,7 +3,7 @@ use weaver_core::color::Color;
 use weaver_ecs::{
     component::Res, prelude::Resource, storage::Ref, system::SystemParamItem, world::World,
 };
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 
 use crate::{
     camera::ViewTarget,

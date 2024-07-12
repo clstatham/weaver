@@ -8,9 +8,9 @@ use weaver_ecs::{
     world::World,
 };
 use weaver_util::{
+    impl_downcast,
     lock::{Read, SharedLock, Write},
-    prelude::{impl_downcast, DowncastSync, Result},
-    TypeIdMap,
+    DowncastSync, Result, TypeIdMap,
 };
 
 use crate::render_phase::GetBatchData;

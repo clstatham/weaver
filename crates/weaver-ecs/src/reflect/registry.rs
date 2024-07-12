@@ -2,7 +2,7 @@ use std::{any::TypeId, sync::Arc};
 
 use crate::prelude::Resource;
 use crate::{self as weaver_ecs, prelude::Component};
-use weaver_util::prelude::{impl_downcast, DowncastSync, FxHashMap};
+use weaver_util::{impl_downcast, DowncastSync, FxHashMap};
 
 pub use weaver_util::TypeIdMap;
 

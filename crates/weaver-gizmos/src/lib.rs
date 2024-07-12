@@ -25,7 +25,7 @@ use weaver_renderer::{
 };
 use weaver_util::{
     lock::SharedLock,
-    prelude::{FxHashMap, Result},
+    {FxHashMap, Result},
 };
 
 use wgpu::util::DeviceExt;

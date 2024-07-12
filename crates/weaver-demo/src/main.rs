@@ -99,7 +99,7 @@ fn setup(
         PrimaryCamera,
     ));
 
-    let bsp = bsp_loader.load_from_filesystem(&mut fs, "maps/pro-q3dm6.bsp")?;
+    let bsp = bsp_loader.load_from_filesystem(&mut fs, "maps/q3dm1.bsp")?;
     commands.insert_resource(bsp);
 
     Ok(())
@@ -111,7 +111,7 @@ fn fps_ui(
     mut history: ResMut<FpsHistory>,
     egui_ctx: Res<EguiContext>,
 ) -> Result<()> {
-    egui_ctx.draw_if_ready(|ctx| {
+    egui_ctx.with_ctx(|ctx| {
         egui::Window::new("FPS")
             .default_height(200.0)
             .show(ctx, |ui| {

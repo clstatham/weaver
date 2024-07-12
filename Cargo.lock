@@ -1484,6 +1484,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "indextree"
+version = "4.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a6f7e29c1619ec492f411b021ac9f30649d5f522ca6f287f2467ee48c8dfe10"
+
+[[package]]
 name = "inflections"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3429,6 +3435,7 @@ dependencies = [
  "atomic_refcell",
  "downcast-rs",
  "hashbrown",
+ "indextree",
  "lazy_static",
  "lock_api",
  "log",

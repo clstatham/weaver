@@ -29,7 +29,7 @@ use weaver_renderer::{
     texture::{texture_format, GpuTexture},
     InitRenderResources, RenderLabel, WgpuDevice, WgpuQueue,
 };
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 
 pub mod irradiance;
 

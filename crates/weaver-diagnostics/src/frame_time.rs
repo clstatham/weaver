@@ -3,7 +3,7 @@ use weaver_ecs::{
     component::{Res, ResMut},
     prelude::Resource,
 };
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 
 #[derive(Resource)]
 pub struct FrameTime {

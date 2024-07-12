@@ -11,7 +11,7 @@ use weaver_ecs::{
 };
 use weaver_util::{
     lock::Lock,
-    prelude::{anyhow, bail, impl_downcast, DowncastSync, FxHashMap, Result},
+    {anyhow, bail, impl_downcast, DowncastSync, FxHashMap, Result},
 };
 
 use crate::{RenderId, RenderLabel, Renderer};

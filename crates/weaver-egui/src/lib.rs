@@ -13,7 +13,7 @@ use weaver_renderer::{
     prelude::wgpu, texture::texture_format, CurrentFrame, ExtractStage, MainWorld, Render,
     RenderApp, WgpuDevice, WgpuQueue,
 };
-use weaver_util::{lock::SharedLock, prelude::Result};
+use weaver_util::{lock::SharedLock, Result};
 use weaver_winit::{Window, WinitEvent};
 
 pub use egui;
@@ -66,11 +66,11 @@ impl EguiContext {
         *self.full_output.write() = Some(self.state.read().egui_ctx().end_frame());
     }
 
-    pub fn draw_if_ready<F, R>(&self, f: F) -> Option<R>
+    pub fn with_ctx<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&egui::Context) -> R,
     {
-        Some(f(self.state.read().egui_ctx()))
+        f(self.state.read().egui_ctx())
     }
 
     pub fn convert_texture(

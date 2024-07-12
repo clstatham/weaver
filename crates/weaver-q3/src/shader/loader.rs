@@ -7,8 +7,7 @@ use weaver_core::texture::{Texture, TextureLoader};
 use weaver_ecs::prelude::Resource;
 use weaver_pbr::material::{ERROR_TEXTURE, WHITE_TEXTURE};
 use weaver_util::{
-    prelude::{anyhow, FxHashMap, Result},
-    warn_once,
+    warn_once, {anyhow, FxHashMap, Result},
 };
 
 use crate::shader::{lexer::LexedShaderGlobalParam, parser::parse_shaders_manual};

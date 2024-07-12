@@ -9,7 +9,7 @@ use weaver_ecs::{
 };
 use weaver_util::{
     lock::{Lock, Read, Write},
-    prelude::{FxHashMap, Result},
+    {FxHashMap, Result},
 };
 
 use crate::{extract::Extract, ExtractStage, WgpuDevice, WgpuQueue};

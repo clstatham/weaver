@@ -14,7 +14,7 @@ use weaver_renderer::{
     prelude::*,
     WgpuDevice,
 };
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 
 #[derive(Copy, Clone, Debug, Component, Reflect)]
 pub struct PointLight {

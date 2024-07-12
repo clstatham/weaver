@@ -5,7 +5,7 @@ use weaver_asset::{
     ReflectAsset,
 };
 use weaver_ecs::prelude::{Reflect, Resource};
-use weaver_util::prelude::{anyhow, bail, Result};
+use weaver_util::{anyhow, bail, Result};
 
 use crate::prelude::{Aabb, Transform};
 

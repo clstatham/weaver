@@ -10,7 +10,7 @@ use weaver_asset::{
     prelude::{Asset, Loader},
 };
 use weaver_ecs::prelude::Resource;
-use weaver_util::prelude::{bail, Result};
+use weaver_util::{bail, Result};
 
 #[derive(Debug, Clone, Asset)]
 pub struct Shader {

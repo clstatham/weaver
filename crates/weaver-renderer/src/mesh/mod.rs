@@ -2,7 +2,7 @@ use crate::asset::{ExtractRenderAssetPlugin, RenderAsset};
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::prelude::Asset;
 use weaver_core::{geometry::Aabb, mesh::Mesh};
-use weaver_util::prelude::*;
+use weaver_util::Result;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
 pub mod primitive;

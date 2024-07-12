@@ -15,7 +15,7 @@ use weaver_renderer::{
     prelude::wgpu,
     ExtractStage, RenderLabel,
 };
-use weaver_util::prelude::Result;
+use weaver_util::Result;
 
 use crate::shader::render::ShaderPipelineCache;
 
