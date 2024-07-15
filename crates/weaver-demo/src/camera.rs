@@ -109,18 +109,13 @@ pub fn update_camera(
     time: Res<Time>,
     input: Res<Input>,
     query: Query<(&mut Camera, &mut FlyCameraController)>,
-) -> Result<()> {
+) {
     for (_entity, (mut camera, mut controller)) in query.iter() {
         controller.update(&input, time.delta_time, &mut camera);
     }
-
-    Ok(())
 }
 
-pub fn update_aspect_ratio(
-    camera: Query<&mut FlyCameraController>,
-    rx: EventRx<WindowResized>,
-) -> Result<()> {
+pub fn update_aspect_ratio(camera: Query<&mut FlyCameraController>, rx: EventRx<WindowResized>) {
     let events: Vec<_> = rx.iter().collect();
     if let Some(event) = events.last() {
         let WindowResized { width, height } = **event;
@@ -129,6 +124,4 @@ pub fn update_aspect_ratio(
             camera.aspect = aspect;
         }
     }
-
-    Ok(())
 }

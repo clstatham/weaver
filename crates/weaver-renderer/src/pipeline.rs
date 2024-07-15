@@ -169,10 +169,10 @@ fn extract_render_pipeline<T: CreateRenderPipeline>(
     device: Res<WgpuDevice>,
     mut pipeline_cache: ResMut<RenderPipelineCache>,
     mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,
-) -> Result<()> {
-    pipeline_cache.create_for::<T>(&device, &mut bind_group_layout_cache)?;
-
-    Ok(())
+) {
+    pipeline_cache
+        .create_for::<T>(&device, &mut bind_group_layout_cache)
+        .unwrap();
 }
 
 #[derive(Resource, Default)]
@@ -336,8 +336,6 @@ fn extract_compute_pipeline<T: CreateComputePipeline>(
     device: Res<WgpuDevice>,
     mut pipeline_cache: ResMut<ComputePipelineCache>,
     mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,
-) -> Result<()> {
+) {
     pipeline_cache.get_or_create_pipeline::<T>(&device, &mut bind_group_layout_cache);
-
-    Ok(())
 }

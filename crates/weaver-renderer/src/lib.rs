@@ -368,7 +368,6 @@ impl Plugin for RendererPlugin {
 
         render_app.add_system(resize_surface, PreRender);
         render_app.add_system_after(begin_render, resize_surface, PreRender);
-        // render_app.add_system(begin_render, PreRender);
         render_app.add_system(render_system, Render);
         render_app.add_system(end_render, PostRender);
 
@@ -468,9 +467,9 @@ pub fn begin_render(
     mut renderer: ResMut<Renderer>,
     surface: Res<WindowSurface>,
     mut current_frame: ResMut<CurrentFrame>,
-) -> Result<()> {
+) {
     if current_frame.inner.is_some() {
-        return Ok(());
+        return;
     }
 
     let view_targets = world.query::<&ViewTarget>();
@@ -483,7 +482,6 @@ pub fn begin_render(
         Ok(frame) => frame,
         Err(e) => {
             panic!("Failed to acquire next surface texture: {}", e);
-            // return Ok(());
         }
     };
 
@@ -536,18 +534,16 @@ pub fn begin_render(
         color_view: Arc::new(color_view),
         depth_view: Arc::new(depth_view),
     });
-
-    Ok(())
 }
 
 pub fn end_render(
     mut current_frame: ResMut<CurrentFrame>,
     mut renderer: ResMut<Renderer>,
     queue: Res<WgpuQueue>,
-) -> Result<()> {
+) {
     let Some(current_frame) = current_frame.inner.take() else {
         log::warn!("No current frame to end");
-        return Ok(());
+        return;
     };
 
     log::trace!("End render");
@@ -565,8 +561,6 @@ pub fn end_render(
     log::trace!("Presenting frame");
     surface_texture.present();
     log::trace!("Frame presented");
-
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -580,7 +574,7 @@ fn resize_surface(
     device: Res<WgpuDevice>,
     surface: Res<WindowSurface>,
     mut hdr_target: ResMut<HdrRenderTarget>,
-) -> Result<()> {
+) {
     let mut events_vec = events.iter().collect::<Vec<_>>();
     if let Some(event) = events_vec.pop() {
         let mut has_current_frame = false;
@@ -666,19 +660,13 @@ fn resize_surface(
 
         hdr_target.resize(&device, width, height);
     }
-
-    // drop(events_vec);
-
-    // events.clear();
-
-    Ok(())
 }
 
-pub fn render_system(render_world: &mut World) -> Result<()> {
+pub fn render_system(render_world: &mut World) {
     let view_targets = render_world.query::<&ViewTarget>();
     let view_targets = view_targets.entity_iter(render_world).collect::<Vec<_>>();
     let mut render_graph = render_world.remove_resource::<RenderGraph>().unwrap();
-    render_graph.prepare(render_world)?;
+    render_graph.prepare(render_world).unwrap();
 
     let mut renderer = render_world.remove_resource::<Renderer>().unwrap();
 
@@ -688,7 +676,9 @@ pub fn render_system(render_world: &mut World) -> Result<()> {
     // todo: don't assume every camera wants to run the whole main render graph
     for entity in view_targets {
         log::trace!("Running render graph for entity: {:?}", entity);
-        render_graph.run(&device, &queue, &mut renderer, render_world, entity)?;
+        render_graph
+            .run(&device, &queue, &mut renderer, render_world, entity)
+            .unwrap();
     }
 
     drop((device, queue));
@@ -696,6 +686,4 @@ pub fn render_system(render_world: &mut World) -> Result<()> {
     render_world.insert_resource(renderer);
 
     render_world.insert_resource(render_graph);
-
-    Ok(())
 }

@@ -632,7 +632,6 @@ impl Plugin for GizmoRenderAppPlugin {
     }
 }
 
-fn clear_gizmos(gizmos: Res<Gizmos>) -> Result<()> {
+fn clear_gizmos(gizmos: Res<Gizmos>) {
     gizmos.clear();
-    Ok(())
 }

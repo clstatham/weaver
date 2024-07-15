@@ -72,19 +72,18 @@ fn main() -> Result<()> {
         .run()
 }
 
-fn load_shaders(mut fs: ResMut<Filesystem>, mut cache: ResMut<LexedShaderCache>) -> Result<()> {
-    cache.load_all("scripts", &mut fs)?;
+fn load_shaders(mut fs: ResMut<Filesystem>, mut cache: ResMut<LexedShaderCache>) {
+    cache.load_all("scripts", &mut fs).unwrap();
     let mut shaders = cache.shader_names().collect::<Vec<_>>();
     shaders.sort();
     log::debug!("Loaded shaders: {:#?}", shaders);
-    Ok(())
 }
 
 fn setup(
     mut commands: Commands,
     bsp_loader: AssetLoader<Bsp, BspLoader>,
     mut fs: ResMut<Filesystem>,
-) -> Result<()> {
+) {
     commands.spawn((
         Camera::default(),
         camera::FlyCameraController {
@@ -99,10 +98,10 @@ fn setup(
         PrimaryCamera,
     ));
 
-    let bsp = bsp_loader.load_from_filesystem(&mut fs, "maps/q3dm1.bsp")?;
+    let bsp = bsp_loader
+        .load_from_filesystem(&mut fs, "maps/q3dm1.bsp")
+        .unwrap();
     commands.insert_resource(bsp);
-
-    Ok(())
 }
 
 fn fps_ui(
@@ -110,7 +109,7 @@ fn fps_ui(
     frame_time: Res<FrameTime>,
     mut history: ResMut<FpsHistory>,
     egui_ctx: Res<EguiContext>,
-) -> Result<()> {
+) {
     egui_ctx.with_ctx(|ctx| {
         egui::Window::new("FPS")
             .default_height(200.0)
@@ -148,6 +147,4 @@ fn fps_ui(
                 });
             });
     });
-
-    Ok(())
 }

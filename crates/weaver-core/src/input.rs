@@ -154,7 +154,6 @@ impl Plugin for InputPlugin {
     }
 }
 
-fn update_input(mut input: ResMut<Input>) -> Result<()> {
+fn update_input(mut input: ResMut<Input>) {
     input.prepare();
-    Ok(())
 }

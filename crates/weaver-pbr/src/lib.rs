@@ -177,11 +177,10 @@ impl Plugin for PbrPlugin {
     }
 }
 
-pub(crate) fn init_pbr_lighting_information(world: &mut World, _skybox: Res<Skybox>) -> Result<()> {
+pub(crate) fn init_pbr_lighting_information(world: &mut World, _skybox: Res<Skybox>) {
     if !world.has_resource::<PbrLightingInformation>() {
         world.init_resource::<PbrLightingInformation>();
     }
-    Ok(())
 }
 
 pub(crate) fn update_pbr_lighting_information(
@@ -189,7 +188,7 @@ pub(crate) fn update_pbr_lighting_information(
     lights: Query<(&PointLight, Option<&Transform>)>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
-) -> Result<()> {
+) {
     lighting.point_lights.buffer.clear();
     for (_, (light, transform)) in lights.iter() {
         if let Some(transform) = transform {
@@ -201,13 +200,12 @@ pub(crate) fn update_pbr_lighting_information(
         }
     }
     lighting.point_lights.buffer.enqueue_update(&device, &queue);
-    Ok(())
 }
 
 pub fn extract_pbr_camera_phase(
     mut binned_phases: ResMut<BinnedRenderPhases<PbrDrawItem>>,
     cameras: Query<&GpuCamera, With<ViewTarget>>,
-) -> Result<()> {
+) {
     let mut live_entities = HashSet::new();
 
     for (entity, camera) in cameras.iter() {
@@ -222,6 +220,4 @@ pub fn extract_pbr_camera_phase(
     }
 
     binned_phases.retain(|entity, _| live_entities.contains(entity));
-
-    Ok(())
 }

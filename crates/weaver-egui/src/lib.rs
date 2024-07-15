@@ -188,28 +188,23 @@ fn extract_egui_context(
     mut main_world: ResMut<MainWorld>,
     window: Res<Window>,
     device: Res<WgpuDevice>,
-) -> Result<()> {
+) {
     if render_world.has_resource::<EguiContext>() {
-        return Ok(());
+        return;
     }
     let egui_context = EguiContext::new(&device, &window);
     render_world.insert_resource(egui_context.clone());
     main_world.insert_resource(egui_context);
-
-    Ok(())
 }
 
-pub fn begin_frame(egui_context: Res<EguiContext>, window: Res<Window>) -> Result<()> {
+pub fn begin_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
     egui_context.begin_frame(&window);
-    Ok(())
 }
 
-pub fn end_frame(egui_context: Res<EguiContext>, window: Res<Window>) -> Result<()> {
+pub fn end_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
     egui_context.end_frame();
 
     egui_context.pre_render_on_main_thread(&window);
-
-    Ok(())
 }
 
 fn render(
@@ -218,9 +213,9 @@ fn render(
     current_frame: Res<CurrentFrame>,
     mut egui_context: ResMut<EguiContext>,
     mut renderer: ResMut<weaver_renderer::Renderer>,
-) -> Result<()> {
+) {
     let Some(current_frame) = current_frame.inner.as_ref() else {
-        return Ok(());
+        return;
     };
     let surface_texture_size = current_frame.surface_texture.texture.size();
 
@@ -240,14 +235,9 @@ fn render(
     );
 
     renderer.enqueue_command_buffer(encoder.finish());
-    Ok(())
 }
 
-fn egui_events(
-    egui_context: Res<EguiContext>,
-    window: Res<Window>,
-    rx: EventRx<WinitEvent>,
-) -> Result<()> {
+fn egui_events(egui_context: Res<EguiContext>, window: Res<Window>, rx: EventRx<WinitEvent>) {
     for event in rx.iter() {
         if let winit::event::Event::WindowEvent { window_id, event } = &event.event {
             if window.id() == *window_id {
@@ -255,6 +245,4 @@ fn egui_events(
             }
         }
     }
-
-    Ok(())
 }

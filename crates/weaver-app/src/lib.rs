@@ -7,7 +7,7 @@ use weaver_ecs::{
     change::WorldTicks,
     component::{Res, ResMut, Resource},
     reflect::registry::{TypeRegistry, Typed},
-    system::IntoSystem,
+    system::{IntoSystem, System},
     system_schedule::SystemStage,
     world::{FromWorld, World},
 };
@@ -175,31 +175,51 @@ impl SubApp {
         self
     }
 
-    pub fn add_system<S: SystemStage, M: 'static>(
-        &mut self,
-        system: impl IntoSystem<M>,
-        stage: S,
-    ) -> &mut Self {
+    pub fn add_system<T, M, S>(&mut self, system: S, stage: T) -> &mut Self
+    where
+        T: SystemStage,
+        M: 'static,
+        S: IntoSystem<M>,
+        S::System: System<Output = ()>,
+    {
         self.world.add_system(system, stage);
         self
     }
 
-    pub fn add_system_before<S: SystemStage, M1: 'static, M2: 'static>(
+    pub fn add_system_before<T, M1, M2, S, BEFORE>(
         &mut self,
-        system: impl IntoSystem<M1>,
-        before: impl IntoSystem<M2>,
-        stage: S,
-    ) -> &mut Self {
+        system: S,
+        before: BEFORE,
+        stage: T,
+    ) -> &mut Self
+    where
+        T: SystemStage,
+        M1: 'static,
+        M2: 'static,
+        S: IntoSystem<M1>,
+        BEFORE: IntoSystem<M2>,
+        S::System: System<Output = ()>,
+        BEFORE::System: System<Output = ()>,
+    {
         self.world.add_system_before(system, before, stage);
         self
     }
 
-    pub fn add_system_after<S: SystemStage, M1: 'static, M2: 'static>(
+    pub fn add_system_after<T, M1, M2, S, AFTER>(
         &mut self,
-        system: impl IntoSystem<M1>,
-        after: impl IntoSystem<M2>,
-        stage: S,
-    ) -> &mut Self {
+        system: S,
+        after: AFTER,
+        stage: T,
+    ) -> &mut Self
+    where
+        T: SystemStage,
+        M1: 'static,
+        M2: 'static,
+        S: IntoSystem<M1>,
+        AFTER: IntoSystem<M2>,
+        S::System: System<Output = ()>,
+        AFTER::System: System<Output = ()>,
+    {
         self.world.add_system_after(system, after, stage);
         self
     }
@@ -388,9 +408,8 @@ impl App {
     }
 
     pub fn add_event<T: Event>(&mut self) -> &mut Self {
-        fn clear_events<T: Event>(events: Res<Events<T>>, world_ticks: WorldTicks) -> Result<()> {
+        fn clear_events<T: Event>(events: Res<Events<T>>, world_ticks: WorldTicks) {
             events.update(world_ticks.change_tick);
-            Ok(())
         }
         self.insert_resource(Events::<T>::new());
         self.add_system(clear_events::<T>, FinishFrame);
@@ -409,31 +428,51 @@ impl App {
             .send(event);
     }
 
-    pub fn add_system<S: SystemStage, M: 'static>(
-        &mut self,
-        system: impl IntoSystem<M>,
-        stage: S,
-    ) -> &mut Self {
+    pub fn add_system<T, M, S>(&mut self, system: S, stage: T) -> &mut Self
+    where
+        T: SystemStage,
+        M: 'static,
+        S: IntoSystem<M>,
+        S::System: System<Output = ()>,
+    {
         self.main_app_mut().add_system(system, stage);
         self
     }
 
-    pub fn add_system_before<S: SystemStage, M1: 'static, M2: 'static>(
+    pub fn add_system_before<T, M1, M2, S, BEFORE>(
         &mut self,
-        system: impl IntoSystem<M1>,
-        before: impl IntoSystem<M2>,
-        stage: S,
-    ) -> &mut Self {
+        system: S,
+        before: BEFORE,
+        stage: T,
+    ) -> &mut Self
+    where
+        T: SystemStage,
+        M1: 'static,
+        M2: 'static,
+        S: IntoSystem<M1>,
+        BEFORE: IntoSystem<M2>,
+        S::System: System<Output = ()>,
+        BEFORE::System: System<Output = ()>,
+    {
         self.main_app_mut().add_system_before(system, before, stage);
         self
     }
 
-    pub fn add_system_after<S: SystemStage, M1: 'static, M2: 'static>(
+    pub fn add_system_after<T, M1, M2, S, AFTER>(
         &mut self,
-        system: impl IntoSystem<M1>,
-        after: impl IntoSystem<M2>,
-        stage: S,
-    ) -> &mut Self {
+        system: S,
+        after: AFTER,
+        stage: T,
+    ) -> &mut Self
+    where
+        T: SystemStage,
+        M1: 'static,
+        M2: 'static,
+        S: IntoSystem<M1>,
+        AFTER: IntoSystem<M2>,
+        S::System: System<Output = ()>,
+        AFTER::System: System<Output = ()>,
+    {
         self.main_app_mut().add_system_after(system, after, stage);
         self
     }

@@ -30,13 +30,15 @@ impl SystemAccess {
 }
 
 pub trait System {
+    type Output;
+
     fn name(&self) -> &str {
         std::any::type_name::<Self>()
     }
     fn access(&self) -> SystemAccess;
     #[allow(unused)]
     fn initialize(&mut self, world: &mut World) {}
-    fn run(&mut self, world: &mut World) -> Result<()>;
+    fn run(&mut self, world: &mut World) -> Self::Output;
     #[allow(unused)]
     fn can_run(&self, world: &World) -> bool {
         true
@@ -560,8 +562,9 @@ impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S
 
 pub trait SystemParamFunction<M>: 'static {
     type Param: SystemParam + 'static;
+    type Output;
 
-    fn run(&mut self, param: SystemParamItem<Self::Param>) -> Result<()>;
+    fn run(&mut self, param: SystemParamItem<Self::Param>) -> Self::Output;
 }
 
 pub struct FunctionSystem<M, F>
@@ -593,6 +596,8 @@ where
     M: 'static,
     F: SystemParamFunction<M>,
 {
+    type Output = F::Output;
+
     fn name(&self) -> &str {
         std::any::type_name::<F>()
     }
@@ -609,7 +614,7 @@ where
         F::Param::access()
     }
 
-    fn run(&mut self, world: &mut World) -> Result<()> {
+    fn run(&mut self, world: &mut World) -> Self::Output {
         // validate access
         self.access();
         let param_state = self.param_state.as_mut().unwrap();
@@ -619,9 +624,9 @@ where
         // - We have validated that the access is safe.
         let fetch =
             unsafe { F::Param::fetch(&mut param_state.state, world.as_unsafe_world_cell()) };
-        self.func.run(fetch)?;
+        let out = self.func.run(fetch);
         F::Param::apply(&mut param_state.state, world);
-        Ok(())
+        out
     }
 
     fn can_run(&self, world: &World) -> bool {
@@ -654,20 +659,21 @@ where
 macro_rules! impl_function_system {
     ($($param:ident),*) => {
         #[allow(unused, non_snake_case)]
-        impl<Func, $($param,)*> SystemParamFunction<fn($($param,)*)> for Func
+        impl<Func, Output, $($param,)*> SystemParamFunction<fn($($param,)*)> for Func
         where for<'a> &'a mut Func:
-            FnMut($($param),*) -> Result<()>
-            + FnMut($(SystemParamItem<$param>),*) -> Result<()>,
+            FnMut($($param),*) -> Output
+            + FnMut($(SystemParamItem<$param>),*) -> Output,
             $($param: SystemParam + 'static),*,
             Func: 'static,
         {
             type Param = ($($param),*);
+            type Output = Output;
 
-            fn run(&mut self, param: SystemParamItem<Self::Param>) -> Result<()> {
-                fn inner<$($param,)*>(
-                    mut func: impl FnMut($($param),*) -> Result<()>,
+            fn run(&mut self, param: SystemParamItem<Self::Param>) -> Output {
+                fn inner<Output, $($param,)*>(
+                    mut func: impl FnMut($($param),*) -> Output,
                     param: ($($param),*),
-                ) -> Result<()> {
+                ) -> Output {
                     let ($($param),*) = param;
                     func($($param),*)
                 }
@@ -704,7 +710,7 @@ pub fn assert_is_system<Marker>(_: impl IntoSystem<Marker>) {}
 
 #[derive(Default)]
 pub struct SystemGraph {
-    systems: StableDiGraph<SharedLock<Box<dyn System>>, ()>,
+    systems: StableDiGraph<SharedLock<Box<dyn System<Output = ()>>>, ()>,
     index_cache: FxHashMap<TypeId, NodeIndex>,
 }
 
@@ -713,6 +719,7 @@ impl SystemGraph {
     where
         M: 'static,
         S: IntoSystem<M>,
+        S::System: System<Output = ()>,
     {
         let node = self
             .systems
@@ -739,6 +746,8 @@ impl SystemGraph {
         M2: 'static,
         S1: IntoSystem<M1>,
         S2: IntoSystem<M2>,
+        S1::System: System<Output = ()>,
+        S2::System: System<Output = ()>,
     {
         let node = self.add_system(system);
         let parent = self.index_cache[&TypeId::of::<S2>()];
@@ -751,6 +760,8 @@ impl SystemGraph {
         M2: 'static,
         S1: IntoSystem<M1>,
         S2: IntoSystem<M2>,
+        S1::System: System<Output = ()>,
+        S2::System: System<Output = ()>,
     {
         let node = self.add_system(system);
         let child = self.index_cache[&TypeId::of::<S2>()];
@@ -879,7 +890,7 @@ impl SystemGraph {
             }
             log::trace!("Running system: {}", system.read().name());
             system.write().initialize(world);
-            system.write().run(world)?;
+            system.write().run(world);
         }
 
         Ok(())

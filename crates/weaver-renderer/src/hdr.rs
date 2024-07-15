@@ -256,10 +256,9 @@ impl Plugin for HdrPlugin {
     }
 }
 
-pub fn init_hdr_render_target(world: &mut World) -> Result<()> {
+pub fn init_hdr_render_target(world: &mut World) {
     if !world.has_resource::<HdrRenderTarget>() {
         let target = HdrRenderTarget::from_world(world);
         world.insert_resource(target);
     }
-    Ok(())
 }

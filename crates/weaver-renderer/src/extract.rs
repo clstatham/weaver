@@ -115,7 +115,7 @@ impl<T: ExtractComponent> Plugin for ExtractComponentPlugin<T> {
 pub fn extract_render_component<T: ExtractComponent>(
     render_world: &mut World,
     query: Extract<Query<T::ExtractQueryFetch, T::ExtractQueryFilter>>,
-) -> Result<()> {
+) {
     for (entity, item) in query.iter() {
         if let Some(component) = T::extract_render_component(item) {
             {
@@ -134,8 +134,6 @@ pub fn extract_render_component<T: ExtractComponent>(
             render_world.insert_component(entity, component);
         }
     }
-
-    Ok(())
 }
 
 pub trait ExtractResource: Resource {
@@ -183,7 +181,7 @@ pub fn extract_render_resource<T: ExtractResource>(
     mut commands: Commands,
     main_resource: Extract<Option<Res<T::Source>>>,
     target_resource: Option<ResMut<T>>,
-) -> Result<()> {
+) {
     if let Some(source) = main_resource.as_ref() {
         if let Some(mut target_resource) = target_resource {
             // update resource
@@ -196,8 +194,6 @@ pub fn extract_render_resource<T: ExtractResource>(
             );
         }
     }
-
-    Ok(())
 }
 
 pub fn render_extract(main_world: &mut World, render_world: &mut World) -> Result<()> {

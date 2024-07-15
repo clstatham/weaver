@@ -52,17 +52,15 @@ impl Plugin for LogFrameTimePlugin {
     }
 }
 
-fn update_frame_time(mut frame_time: ResMut<FrameTime>) -> Result<()> {
+fn update_frame_time(mut frame_time: ResMut<FrameTime>) {
     let now = std::time::Instant::now();
     frame_time.frame_time = now.duration_since(frame_time.last_update).as_secs_f32();
     frame_time.fps = 1.0 / frame_time.frame_time;
     frame_time.last_update = now;
     frame_time.frame_count += 1;
-
-    Ok(())
 }
 
-fn log_frame_time(frame_time: Res<FrameTime>, mut logger: ResMut<FrameTimeLogger>) -> Result<()> {
+fn log_frame_time(frame_time: Res<FrameTime>, mut logger: ResMut<FrameTimeLogger>) {
     let now = std::time::Instant::now();
     if now.duration_since(logger.last_log) >= logger.log_interval {
         log::info!(
@@ -72,6 +70,4 @@ fn log_frame_time(frame_time: Res<FrameTime>, mut logger: ResMut<FrameTimeLogger
         );
         logger.last_log = now;
     }
-
-    Ok(())
 }

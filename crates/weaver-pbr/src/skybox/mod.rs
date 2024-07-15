@@ -574,11 +574,10 @@ impl Plugin for SkyboxPlugin {
     }
 }
 
-pub fn init_gpu_skybox(world: &mut World) -> Result<()> {
+pub fn init_gpu_skybox(world: &mut World) {
     if !world.has_resource::<GpuSkybox>() && world.has_resource::<Skybox>() {
         world.init_resource::<GpuSkybox>();
     }
-    Ok(())
 }
 
 pub struct SkyboxNodePlugin;

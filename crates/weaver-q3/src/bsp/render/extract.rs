@@ -19,7 +19,7 @@ use weaver_renderer::{
     texture::{texture_format, GpuTexture},
     WgpuDevice, WgpuQueue,
 };
-use weaver_util::{FxHashMap, Result};
+use weaver_util::FxHashMap;
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -243,9 +243,9 @@ pub fn extract_bsps(
     mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
-) -> Result<()> {
+) {
     if world.has_resource::<ExtractedBsp>() {
-        return Ok(());
+        return;
     }
 
     let mut nodes = vec![None; bsp.nodes.len()];
@@ -439,8 +439,6 @@ pub fn extract_bsps(
     };
 
     world.insert_resource(extracted_bsp);
-
-    Ok(())
 }
 
 fn recursively_generate_batch_data(

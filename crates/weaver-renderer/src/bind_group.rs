@@ -149,7 +149,7 @@ fn create_component_bind_group<T: Component + CreateBindGroup>(
     mut layout_cache: ResMut<BindGroupLayoutCache>,
     item_query: Query<&mut T>,
     bind_group_query: Query<&BindGroup<T>>,
-) -> Result<()> {
+) {
     for (entity, mut item) in item_query.iter() {
         let mut stale = false;
         if item.bind_group_stale() {
@@ -163,8 +163,6 @@ fn create_component_bind_group<T: Component + CreateBindGroup>(
             commands.insert_component(entity, bind_group);
         }
     }
-
-    Ok(())
 }
 
 pub struct ResourceBindGroupPlugin<T: Resource + CreateBindGroup>(std::marker::PhantomData<T>);
@@ -188,7 +186,7 @@ fn create_resource_bind_group<T: Resource + CreateBindGroup>(
     bind_group: Option<Res<BindGroup<T>>>,
     device: Res<WgpuDevice>,
     mut layout_cache: ResMut<BindGroupLayoutCache>,
-) -> Result<()> {
+) {
     let mut stale = false;
     if data.bind_group_stale() {
         commands.remove_resource::<BindGroup<T>>();
@@ -199,8 +197,6 @@ fn create_resource_bind_group<T: Resource + CreateBindGroup>(
         data.set_bind_group_stale(false);
         commands.insert_resource(bind_group);
     }
-
-    Ok(())
 }
 
 #[derive(Default, Resource)]
@@ -256,7 +252,7 @@ fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
     asset_bind_groups: Res<ExtractedAssetBindGroups>,
     mut layout_cache: ResMut<BindGroupLayoutCache>,
     bind_group_handle_query: Query<&Handle<BindGroup<T>>>,
-) -> Result<()> {
+) {
     for (entity, handle) in query.iter() {
         // check for bind group staleness
         let mut stale = false;
@@ -297,6 +293,4 @@ fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
             commands.insert_component(entity, bind_group_handle);
         }
     }
-
-    Ok(())
 }

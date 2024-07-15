@@ -345,7 +345,7 @@ pub fn extract_camera_bind_groups(
     query: Query<(&GpuCamera, Option<&mut CameraBindGroup>)>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
-) -> Result<()> {
+) {
     for (entity, (gpu_camera, mut bind_group)) in query.iter() {
         let camera_uniform = CameraUniform::from(&gpu_camera.camera);
         if let Some(bind_group) = bind_group.as_mut() {
@@ -361,8 +361,6 @@ pub fn extract_camera_bind_groups(
             commands.insert_component(entity, bind_group);
         }
     }
-
-    Ok(())
 }
 
 pub fn insert_view_target(
@@ -370,19 +368,15 @@ pub fn insert_view_target(
     current_frame: Res<CurrentFrame>,
     hdr_target: Res<HdrRenderTarget>,
     query: Query<&GpuCamera>,
-) -> Result<()> {
+) {
     for gpu_camera in query.entity_iter() {
         let view_target = ViewTarget::from((&*current_frame, &*hdr_target));
         commands.insert_component(gpu_camera, view_target);
     }
-
-    Ok(())
 }
 
-pub fn remove_view_target(mut commands: Commands, query: Query<&GpuCamera>) -> Result<()> {
+pub fn remove_view_target(mut commands: Commands, query: Query<&GpuCamera>) {
     for gpu_camera in query.entity_iter() {
         commands.remove_component::<ViewTarget>(gpu_camera);
     }
-
-    Ok(())
 }

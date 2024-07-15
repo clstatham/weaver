@@ -96,9 +96,8 @@ impl Plugin for TimePlugin {
     }
 }
 
-fn update_time(mut time: ResMut<Time>) -> Result<()> {
+fn update_time(mut time: ResMut<Time>) {
     time.update();
-    Ok(())
 }
 
 pub struct FixedUpdatePlugin<Label: 'static> {
@@ -131,7 +130,6 @@ impl<Label: Send + Sync + 'static> Plugin for FixedUpdatePlugin<Label> {
 fn update_fixed_timestep<Label: Send + Sync + 'static>(
     time: Res<Time>,
     mut fixed_timestep: ResMut<FixedTimestep<Label>>,
-) -> Result<()> {
+) {
     fixed_timestep.update(&time);
-    Ok(())
 }

@@ -8,7 +8,7 @@ use weaver_util::{lock::Lock, warn_once, Result};
 
 use crate::prelude::{
     Bundle, IntoSystem, MultiResource, NonSend, NonSendResources, QueryFetch, QueryFilter,
-    QueryState, Res, ResMut, Resource, Resources, SystemSchedule, SystemStage, Tick,
+    QueryState, Res, ResMut, Resource, Resources, System, SystemSchedule, SystemStage, Tick,
 };
 
 use super::{
@@ -216,6 +216,22 @@ impl World {
         T::fetch(self)
     }
 
+    /// Attempts to run the given system once. If the system cannot run (such as due to missing resources, for example), `None` is returned, otherwise the output of the system is returned.
+    pub fn run_system<M, S, O>(&mut self, system: S) -> Option<O>
+    where
+        M: 'static,
+        S: IntoSystem<M>,
+        S::System: System<Output = O>,
+    {
+        let mut system = Box::new(system).into_system();
+        if system.can_run(self) {
+            system.initialize(self);
+            Some(system.run(self))
+        } else {
+            None
+        }
+    }
+
     pub fn init_resource<T: Resource + FromWorld>(&mut self) {
         if self.has_resource::<T>() {
             warn_once!(
@@ -299,7 +315,13 @@ impl World {
         self.systems.add_stage_after::<T, U>();
     }
 
-    pub fn add_system<S: SystemStage, M: 'static>(&mut self, system: impl IntoSystem<M>, stage: S) {
+    pub fn add_system<T, S, M>(&mut self, system: S, stage: T)
+    where
+        T: SystemStage,
+        S: IntoSystem<M>,
+        S::System: System<Output = ()>,
+        M: 'static,
+    {
         if self.has_system(&system, &stage) {
             warn_once!(
                 "System {} already added to schedule; not adding it again",
@@ -310,12 +332,16 @@ impl World {
         self.systems.add_system(system, stage);
     }
 
-    pub fn add_system_before<S: SystemStage, M1: 'static, M2: 'static>(
-        &mut self,
-        system: impl IntoSystem<M1>,
-        before: impl IntoSystem<M2>,
-        stage: S,
-    ) {
+    pub fn add_system_before<T, M1, M2, S, BEFORE>(&mut self, system: S, before: BEFORE, stage: T)
+    where
+        T: SystemStage,
+        M1: 'static,
+        M2: 'static,
+        S: IntoSystem<M1>,
+        BEFORE: IntoSystem<M2>,
+        S::System: System<Output = ()>,
+        BEFORE::System: System<Output = ()>,
+    {
         if self.has_system(&system, &stage) {
             warn_once!(
                 "System {} already added to schedule; not adding it again",
@@ -326,12 +352,16 @@ impl World {
         self.systems.add_system_before(system, before, stage);
     }
 
-    pub fn add_system_after<S: SystemStage, M1: 'static, M2: 'static>(
-        &mut self,
-        system: impl IntoSystem<M1>,
-        after: impl IntoSystem<M2>,
-        stage: S,
-    ) {
+    pub fn add_system_after<T, M1, M2, S, AFTER>(&mut self, system: S, after: AFTER, stage: T)
+    where
+        T: SystemStage,
+        M1: 'static,
+        M2: 'static,
+        S: IntoSystem<M1>,
+        AFTER: IntoSystem<M2>,
+        S::System: System<Output = ()>,
+        AFTER::System: System<Output = ()>,
+    {
         if self.has_system(&system, &stage) {
             warn_once!(
                 "System {} already added to schedule; not adding it again",
@@ -422,12 +452,11 @@ mod tests {
     struct Update1;
     impl SystemStage for Update1 {}
 
-    fn position_system_shared(query: Query<(&mut Position, &Velocity)>) -> Result<()> {
+    fn position_system_shared(query: Query<(&mut Position, &Velocity)>) {
         for (_entity, (mut position, velocity)) in query.iter() {
             position.x += velocity.dx;
             position.y += velocity.dy;
         }
-        Ok(())
     }
 
     #[test]

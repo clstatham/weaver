@@ -3,7 +3,7 @@ use std::any::TypeId;
 use weaver_util::{FxHashMap, Result};
 
 use crate::{
-    prelude::{IntoSystem, World},
+    prelude::{IntoSystem, System, World},
     system::SystemGraph,
 };
 
@@ -65,37 +65,47 @@ impl SystemSchedule {
             .insert(TypeId::of::<T>(), SystemGraph::default());
     }
 
-    pub fn add_system<S: SystemStage, M: 'static>(
-        &mut self,
-        system: impl IntoSystem<M>,
-        _stage: S,
-    ) {
+    pub fn add_system<T, S, M>(&mut self, system: S, _stage: T)
+    where
+        T: SystemStage,
+        S: IntoSystem<M>,
+        S::System: System<Output = ()>,
+        M: 'static,
+    {
         self.systems
-            .get_mut(&TypeId::of::<S>())
+            .get_mut(&TypeId::of::<T>())
             .expect("System stage not found")
             .add_system(system);
     }
 
-    pub fn add_system_before<S: SystemStage, M1: 'static, M2: 'static>(
-        &mut self,
-        system: impl IntoSystem<M1>,
-        before: impl IntoSystem<M2>,
-        _stage: S,
-    ) {
+    pub fn add_system_before<T, S, BEFORE, M1, M2>(&mut self, system: S, before: BEFORE, _stage: T)
+    where
+        T: SystemStage,
+        S: IntoSystem<M1>,
+        BEFORE: IntoSystem<M2>,
+        S::System: System<Output = ()>,
+        BEFORE::System: System<Output = ()>,
+        M1: 'static,
+        M2: 'static,
+    {
         self.systems
-            .get_mut(&TypeId::of::<S>())
+            .get_mut(&TypeId::of::<T>())
             .expect("System stage not found")
             .add_system_before(system, before);
     }
 
-    pub fn add_system_after<S: SystemStage, M1: 'static, M2: 'static>(
-        &mut self,
-        system: impl IntoSystem<M1>,
-        after: impl IntoSystem<M2>,
-        _stage: S,
-    ) {
+    pub fn add_system_after<T, S, AFTER, M1, M2>(&mut self, system: S, after: AFTER, _stage: T)
+    where
+        T: SystemStage,
+        S: IntoSystem<M1>,
+        AFTER: IntoSystem<M2>,
+        S::System: System<Output = ()>,
+        AFTER::System: System<Output = ()>,
+        M1: 'static,
+        M2: 'static,
+    {
         self.systems
-            .get_mut(&TypeId::of::<S>())
+            .get_mut(&TypeId::of::<T>())
             .expect("System stage not found")
             .add_system_after(system, after);
     }

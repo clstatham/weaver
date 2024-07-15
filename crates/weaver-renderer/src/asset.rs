@@ -91,7 +91,7 @@ fn extract_render_asset<T: RenderAsset>(
     mut render_assets: ResMut<Assets<T>>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
-) -> Result<()> {
+) {
     // query for handles to the base asset
     for (entity, handle) in query.iter() {
         if !extracted_assets.contains(&handle.into_untyped()) {
@@ -127,11 +127,11 @@ fn extract_render_asset<T: RenderAsset>(
             // update the asset
             let base_asset = main_world_assets.get(*handle).unwrap();
             let mut render_asset = render_assets.get_mut(render_handle).unwrap();
-            render_asset.update_render_asset(&base_asset, param.item_mut(), &device, &queue)?;
+            render_asset
+                .update_render_asset(&base_asset, param.item_mut(), &device, &queue)
+                .unwrap();
 
             commands.insert_component(entity, render_handle);
         }
     }
-
-    Ok(())
 }

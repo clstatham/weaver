@@ -275,7 +275,7 @@ pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
     >,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
-) -> Result<()> {
+) {
     let draw_fn_id = draw_fns
         .read()
         .get_id::<RenderCommandState<I, C>>()
@@ -323,6 +323,4 @@ pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
 
     batched_instance_buffer.enqueue_update(&device, &queue);
     device.poll(wgpu::Maintain::Wait);
-
-    Ok(())
 }
