@@ -1,5 +1,7 @@
 use std::{any::TypeId, marker::PhantomData};
 
+use weaver_util::FxHashSet;
+
 use crate::prelude::{
     Archetype, SystemAccess, SystemParam, Tick, Ticks, TicksMut, UnsafeWorldCell,
 };
@@ -54,7 +56,7 @@ impl<T: Component> QueryFetch for &T {
         }
 
         let column = archetype.get_column::<T>()?.into_inner();
-        let index = column.dense_index_of(entity.as_usize())?;
+        let index = column.dense_index_of(entity.id())?;
         let ticks = Ticks {
             added: column.dense_added_ticks[index].read(),
             changed: column.dense_changed_ticks[index].read(),
@@ -81,7 +83,7 @@ impl<T: Component> QueryFetch for &T {
                     column
                         .into_inner()
                         .sparse_iter()
-                        .map(|entity| Entity::from_usize(*entity))
+                        .map(|entity| world.find_entity_by_id(entity).unwrap())
                 })
             })
             .flatten()
@@ -114,7 +116,7 @@ impl<T: Component> QueryFetch for &T {
                                 .downcast_ref()
                                 .unwrap();
                             let item = Ref::new(data, ticks);
-                            let entity = Entity::from_usize(entity);
+                            let entity = world.find_entity_by_id(entity).unwrap();
                             (entity, item)
                         })
                 })
@@ -146,7 +148,7 @@ impl<T: Component> QueryFetch for &mut T {
         }
 
         let column = archetype.get_column::<T>()?.into_inner();
-        let index = column.dense_index_of(entity.as_usize())?;
+        let index = column.dense_index_of(entity.id())?;
         let ticks = TicksMut {
             added: column.dense_added_ticks[index].write(),
             changed: column.dense_changed_ticks[index].write(),
@@ -188,7 +190,7 @@ impl<T: Component> QueryFetch for &mut T {
                                 .downcast_mut()
                                 .unwrap();
                             let item = Mut::new(data, ticks);
-                            let entity = Entity::from_usize(entity);
+                            let entity = world.find_entity_by_id(entity).unwrap();
                             (entity, item)
                         })
                 })
@@ -208,7 +210,7 @@ impl<T: Component> QueryFetch for &mut T {
                     column
                         .into_inner()
                         .sparse_iter()
-                        .map(|entity| Entity::from_usize(*entity))
+                        .map(|entity| world.find_entity_by_id(entity).unwrap())
                 })
             })
             .flatten()
@@ -504,8 +506,8 @@ where
     fn access() -> SystemAccess {
         SystemAccess {
             exclusive: false,
-            resources_read: Vec::new(),
-            resources_written: Vec::new(),
+            resources_read: FxHashSet::default(),
+            resources_written: FxHashSet::default(),
             components_read: Q::access()
                 .iter()
                 .filter_map(|(ty, access)| {

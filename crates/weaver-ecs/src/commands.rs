@@ -1,4 +1,4 @@
-use crate::prelude::{Bundle, Component, Entity, Resource, SystemParam, UnsafeWorldCell};
+use crate::prelude::{Bundle, Component, Entity, Res, Resource, SystemParam, UnsafeWorldCell};
 
 use weaver_util::SyncCell;
 
@@ -38,19 +38,22 @@ impl CommandQueue {
     }
 }
 
-pub struct Commands<'s> {
+pub struct Commands<'w, 's> {
     queue: &'s mut CommandQueue,
+    world: &'w World,
 }
 
-impl<'s> Commands<'s> {
+impl<'w, 's> Commands<'w, 's> {
     pub fn push<T: Command>(&mut self, command: T) {
         self.queue.push(command);
     }
 
-    pub fn spawn<T: Bundle>(&mut self, bundle: T) {
+    pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
+        let entity = self.world.entities().reserve();
         self.push(move |world: &mut World| {
-            world.spawn(bundle);
+            world.insert_bundle(entity, bundle);
         });
+        entity
     }
 
     pub fn insert_component<T: Component>(&mut self, entity: Entity, component: T) {
@@ -82,11 +85,15 @@ impl<'s> Commands<'s> {
             world.remove_resource::<T>();
         });
     }
+
+    pub fn get_resource<T: Resource>(&self) -> Option<Res<T>> {
+        self.world.get_resource::<T>()
+    }
 }
 
-unsafe impl SystemParam for Commands<'_> {
+unsafe impl SystemParam for Commands<'_, '_> {
     type State = SyncCell<CommandQueue>;
-    type Item<'w, 's> = Commands<'s>;
+    type Item<'w, 's> = Commands<'w, 's>;
 
     fn validate_access(access: &crate::prelude::SystemAccess) -> bool {
         !access.exclusive
@@ -105,13 +112,17 @@ unsafe impl SystemParam for Commands<'_> {
 
     unsafe fn fetch<'w, 's>(
         state: &'s mut Self::State,
-        _world: UnsafeWorldCell<'w>,
+        world: UnsafeWorldCell<'w>,
     ) -> Self::Item<'w, 's> {
-        Commands { queue: state.get() }
+        Commands {
+            queue: state.get(),
+            world: unsafe { world.world() },
+        }
     }
 
     #[inline(never)]
     fn apply(state: &mut Self::State, world: &mut World) {
+        world.entities_mut().flush();
         state.get().execute(world);
     }
 }

@@ -2,7 +2,7 @@ use std::any::TypeId;
 
 use crate::{
     component::{Res, ResMut},
-    prelude::{NonSend, Resource, UnsafeWorldCell, World},
+    prelude::{Resource, UnsafeWorldCell, World},
 };
 use petgraph::{prelude::*, visit::Topo};
 use weaver_util::{
@@ -10,12 +10,13 @@ use weaver_util::{
     {anyhow, FxHashMap, FxHashSet, Result},
 };
 
+/// A system access descriptor, indicating what resources and components a system reads and writes. This is used to validate system access at runtime.
 #[derive(Default, Clone)]
 pub struct SystemAccess {
-    pub resources_read: Vec<TypeId>,
-    pub resources_written: Vec<TypeId>,
-    pub components_read: Vec<TypeId>,
-    pub components_written: Vec<TypeId>,
+    pub resources_read: FxHashSet<TypeId>,
+    pub resources_written: FxHashSet<TypeId>,
+    pub components_read: FxHashSet<TypeId>,
+    pub components_written: FxHashSet<TypeId>,
     pub exclusive: bool,
 }
 
@@ -27,31 +28,87 @@ impl SystemAccess {
         self.components_written.extend(other.components_written);
         self.exclusive |= other.exclusive;
     }
+
+    /// Returns true if the access is compatible with another access descriptor.
+    /// Two accesses are compatible if they do not mutably access the same resource or component.
+    pub fn is_compatible(&self, other: &Self) -> bool {
+        for resource in &other.resources_written {
+            if self.resources_read.contains(resource) {
+                return false;
+            }
+            if self.resources_written.contains(resource) {
+                return false;
+            }
+        }
+
+        for resource in &self.resources_written {
+            if other.resources_read.contains(resource) {
+                return false;
+            }
+            if other.resources_written.contains(resource) {
+                return false;
+            }
+        }
+
+        for component in &other.components_written {
+            if self.components_read.contains(component) {
+                return false;
+            }
+            if self.components_written.contains(component) {
+                return false;
+            }
+        }
+
+        for component in &self.components_written {
+            if other.components_read.contains(component) {
+                return false;
+            }
+            if other.components_written.contains(component) {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
+/// A single unit of work that can be executed on a world.
 pub trait System {
     type Output;
 
+    /// Returns the name of the system.
     fn name(&self) -> &str {
         std::any::type_name::<Self>()
     }
+
+    /// Returns the system access descriptor, describing what resources and components the system requires access to.
     fn access(&self) -> SystemAccess;
     #[allow(unused)]
+
+    /// Initializes the system state.
     fn initialize(&mut self, world: &mut World) {}
+
+    /// Runs the system on the world.
     fn run(&mut self, world: &mut World) -> Self::Output;
+
+    /// Returns true if the system can run on the world in its current state.
     #[allow(unused)]
     fn can_run(&self, world: &World) -> bool {
         true
     }
 }
 
+/// A type that can be converted into a system.
 pub trait IntoSystem<Marker>: 'static {
     type System: System;
 
+    /// Returns the name of the system.
     fn name(&self) -> &str {
         std::any::type_name::<Self>()
     }
-    fn into_system(self: Box<Self>) -> Box<Self::System>;
+
+    /// Converts the type into a boxed system.
+    fn into_system(self) -> Box<Self::System>;
 }
 
 pub struct SystemState<P: SystemParam + 'static> {
@@ -85,10 +142,6 @@ impl<P: SystemParam> SystemState<P> {
 unsafe impl<P: SystemParam> SystemParam for SystemState<P> {
     type State = P::State;
     type Item<'w, 's> = P::Item<'w, 's>;
-
-    fn validate_access(access: &SystemAccess) -> bool {
-        P::validate_access(access)
-    }
 
     fn access() -> SystemAccess {
         P::access()
@@ -137,10 +190,6 @@ unsafe impl<'w2, 's2, P: SystemParam> SystemParam for SystemParamWrapper<'w2, 's
     type State = P::State;
     type Item<'w, 's> = SystemParamWrapper<'w, 's, P>;
 
-    fn validate_access(access: &SystemAccess) -> bool {
-        P::validate_access(access)
-    }
-
     fn access() -> SystemAccess {
         P::access()
     }
@@ -172,7 +221,9 @@ pub unsafe trait SystemParam {
     type State: Sized + Send + Sync;
     type Item<'w, 's>: SystemParam<State = Self::State>;
 
-    fn validate_access(access: &SystemAccess) -> bool;
+    fn validate_access(access: &SystemAccess) -> bool {
+        Self::access().is_compatible(access)
+    }
 
     fn access() -> SystemAccess;
 
@@ -215,10 +266,6 @@ unsafe impl<T: SystemParam> SystemParam for ParamSet<'_, '_, T> {
     type State = T::State;
     type Item<'w, 's> = T::Item<'w, 's>;
 
-    fn validate_access(access: &SystemAccess) -> bool {
-        T::validate_access(access)
-    }
-
     fn access() -> SystemAccess {
         T::access()
     }
@@ -243,19 +290,12 @@ unsafe impl SystemParam for () {
     type State = ();
     type Item<'w, 's> = ();
 
-    fn validate_access(_access: &SystemAccess) -> bool {
-        true
-    }
-
     fn init_state(_: &mut World) -> Self::State {}
 
     fn access() -> SystemAccess {
         SystemAccess {
             exclusive: false,
-            resources_read: Vec::new(),
-            resources_written: Vec::new(),
-            components_read: Vec::new(),
-            components_written: Vec::new(),
+            ..Default::default()
         }
     }
 
@@ -274,22 +314,13 @@ unsafe impl<T: Resource> SystemParam for Res<'_, T> {
     type State = ();
     type Item<'w, 's> = Res<'w, T>;
 
-    fn validate_access(access: &SystemAccess) -> bool {
-        if access.resources_written.contains(&TypeId::of::<T>()) {
-            return false;
-        }
-        true
-    }
-
     fn init_state(_: &mut World) -> Self::State {}
 
     fn access() -> SystemAccess {
         SystemAccess {
             exclusive: false,
-            resources_read: vec![TypeId::of::<T>()],
-            resources_written: Vec::new(),
-            components_read: Vec::new(),
-            components_written: Vec::new(),
+            resources_read: FxHashSet::from_iter([TypeId::of::<T>()]),
+            ..Default::default()
         }
     }
 
@@ -316,22 +347,13 @@ unsafe impl<T: Resource> SystemParam for Option<Res<'_, T>> {
     type State = ();
     type Item<'w, 's> = Option<Res<'w, T>>;
 
-    fn validate_access(access: &SystemAccess) -> bool {
-        if access.resources_written.contains(&TypeId::of::<T>()) {
-            return false;
-        }
-        true
-    }
-
     fn init_state(_: &mut World) -> Self::State {}
 
     fn access() -> SystemAccess {
         SystemAccess {
             exclusive: false,
-            resources_read: vec![TypeId::of::<T>()],
-            resources_written: Vec::new(),
-            components_read: Vec::new(),
-            components_written: Vec::new(),
+            resources_read: FxHashSet::from_iter([TypeId::of::<T>()]),
+            ..Default::default()
         }
     }
 
@@ -354,24 +376,13 @@ unsafe impl<T: Resource> SystemParam for ResMut<'_, T> {
     type State = ();
     type Item<'w, 's> = ResMut<'w, T>;
 
-    fn validate_access(access: &SystemAccess) -> bool {
-        if access.resources_read.contains(&TypeId::of::<T>())
-            || access.resources_written.contains(&TypeId::of::<T>())
-        {
-            return false;
-        }
-        true
-    }
-
     fn init_state(_: &mut World) -> Self::State {}
 
     fn access() -> SystemAccess {
         SystemAccess {
             exclusive: false,
-            resources_read: Vec::new(),
-            resources_written: vec![TypeId::of::<T>()],
-            components_read: Vec::new(),
-            components_written: Vec::new(),
+            resources_written: FxHashSet::from_iter([TypeId::of::<T>()]),
+            ..Default::default()
         }
     }
 
@@ -398,24 +409,13 @@ unsafe impl<T: Resource> SystemParam for Option<ResMut<'_, T>> {
     type State = ();
     type Item<'w, 's> = Option<ResMut<'w, T>>;
 
-    fn validate_access(access: &SystemAccess) -> bool {
-        if access.resources_read.contains(&TypeId::of::<T>())
-            || access.resources_written.contains(&TypeId::of::<T>())
-        {
-            return false;
-        }
-        true
-    }
-
     fn init_state(_: &mut World) -> Self::State {}
 
     fn access() -> SystemAccess {
         SystemAccess {
             exclusive: false,
-            resources_read: Vec::new(),
-            resources_written: vec![TypeId::of::<T>()],
-            components_read: Vec::new(),
-            components_written: Vec::new(),
+            resources_written: FxHashSet::from_iter([TypeId::of::<T>()]),
+            ..Default::default()
         }
     }
 
@@ -434,46 +434,6 @@ unsafe impl<T: Resource> SystemParam for Option<ResMut<'_, T>> {
     }
 }
 
-unsafe impl<T: 'static> SystemParam for NonSend<'_, T> {
-    type State = ();
-    type Item<'w, 's> = NonSend<'w, T>;
-
-    fn validate_access(access: &SystemAccess) -> bool {
-        if access.resources_read.contains(&TypeId::of::<T>())
-            || access.resources_written.contains(&TypeId::of::<T>())
-        {
-            return false;
-        }
-        true
-    }
-
-    fn init_state(_: &mut World) -> Self::State {}
-
-    fn access() -> SystemAccess {
-        SystemAccess {
-            exclusive: false,
-            resources_read: Vec::new(),
-            resources_written: vec![TypeId::of::<T>()],
-            components_read: Vec::new(),
-            components_written: Vec::new(),
-        }
-    }
-
-    /// # Safety
-    ///
-    /// Caller must ensure that the resource exists and that we have exclusive access to it
-    unsafe fn fetch<'w, 's>(
-        _: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        unsafe { world.world().get_non_send_resource().unwrap() }
-    }
-
-    fn can_run(_world: &World) -> bool {
-        true
-    }
-}
-
 macro_rules! impl_system_param_tuple {
     ($($param:ident),*) => {
         #[allow(unused, non_snake_case)]
@@ -484,32 +444,17 @@ macro_rules! impl_system_param_tuple {
             type State = ($($param::State),*);
             type Item<'w, 's> = ($($param::Item<'w, 's>),*);
 
-            fn validate_access(access: &SystemAccess) -> bool {
-                $(
-                    if !$param::validate_access(access) {
-                        return false;
-                    }
-                )*
-
-                true
-            }
-
             fn init_state(world: &mut World) -> Self::State {
                 ($($param::init_state(world)),*)
             }
 
             fn access() -> SystemAccess {
-                let mut access = SystemAccess {
-                    exclusive: false,
-                    resources_read: Vec::new(),
-                    resources_written: Vec::new(),
-                    components_read: Vec::new(),
-                    components_written: Vec::new(),
-                };
+                let mut access = SystemAccess::default();
 
                 $(
-                    assert!($param::validate_access(&access), "SystemParam validation failed for {}", std::any::type_name::<$param>());
-                    access.extend($param::access());
+                    let a = $param::access();
+                    assert!(a.is_compatible(&access), "SystemParam validation failed for {}", std::any::type_name::<$param>());
+                    access.extend(a);
                 )*
 
                 access
@@ -647,10 +592,10 @@ where
         std::any::type_name::<F>()
     }
 
-    fn into_system(self: Box<Self>) -> Box<Self::System> {
+    fn into_system(self) -> Box<Self::System> {
         Box::new(FunctionSystem {
             param_state: None,
-            func: *self,
+            func: self,
             _marker: std::marker::PhantomData,
         })
     }
@@ -715,64 +660,69 @@ pub struct SystemGraph {
 }
 
 impl SystemGraph {
+    /// Adds a system to the graph.
     pub fn add_system<M, S>(&mut self, system: S) -> NodeIndex
     where
         M: 'static,
         S: IntoSystem<M>,
         S::System: System<Output = ()>,
     {
-        let node = self
-            .systems
-            .add_node(SharedLock::new(Box::new(system).into_system()));
+        let node = self.systems.add_node(SharedLock::new(system.into_system()));
         self.index_cache.insert(TypeId::of::<S>(), node);
         node
     }
 
-    pub fn add_edge<M1, M2, S1, S2>(&mut self, _parent: S1, _child: S2)
+    /// Adds a dependency between two systems in the graph.
+    pub fn add_edge<M1, M2, BEFORE, AFTER>(&mut self, _before: BEFORE, _after: AFTER)
     where
         M1: 'static,
         M2: 'static,
-        S1: IntoSystem<M1>,
-        S2: IntoSystem<M2>,
+        BEFORE: IntoSystem<M1>,
+        AFTER: IntoSystem<M2>,
     {
-        let parent = self.index_cache[&TypeId::of::<S1>()];
-        let child = self.index_cache[&TypeId::of::<S2>()];
+        let parent = self.index_cache[&TypeId::of::<BEFORE>()];
+        let child = self.index_cache[&TypeId::of::<AFTER>()];
         self.systems.add_edge(parent, child, ());
     }
 
-    pub fn add_system_after<M1, M2, S1, S2>(&mut self, system: S1, _after: S2)
+    /// Adds a system to the graph that will always run after another system.
+    pub fn add_system_after<M1, M2, S, AFTER>(&mut self, system: S, _after: AFTER)
     where
         M1: 'static,
         M2: 'static,
-        S1: IntoSystem<M1>,
-        S2: IntoSystem<M2>,
-        S1::System: System<Output = ()>,
-        S2::System: System<Output = ()>,
+        S: IntoSystem<M1>,
+        AFTER: IntoSystem<M2>,
+        S::System: System<Output = ()>,
+        AFTER::System: System<Output = ()>,
     {
         let node = self.add_system(system);
-        let parent = self.index_cache[&TypeId::of::<S2>()];
+        let parent = self.index_cache[&TypeId::of::<AFTER>()];
         self.systems.add_edge(parent, node, ());
     }
 
-    pub fn add_system_before<M1, M2, S1, S2>(&mut self, system: S1, _before: S2)
+    /// Adds a system to the graph that will always run before another system.
+    pub fn add_system_before<M1, M2, S, BEFORE>(&mut self, system: S, _before: BEFORE)
     where
         M1: 'static,
         M2: 'static,
-        S1: IntoSystem<M1>,
-        S2: IntoSystem<M2>,
-        S1::System: System<Output = ()>,
-        S2::System: System<Output = ()>,
+        S: IntoSystem<M1>,
+        BEFORE: IntoSystem<M2>,
+        S::System: System<Output = ()>,
+        BEFORE::System: System<Output = ()>,
     {
         let node = self.add_system(system);
-        let child = self.index_cache[&TypeId::of::<S2>()];
+        let child = self.index_cache[&TypeId::of::<BEFORE>()];
         self.systems.add_edge(node, child, ());
     }
 
+    /// Returns true if the graph contains the system.
     pub fn has_system<M: 'static, S: IntoSystem<M>>(&self, _system: &S) -> bool {
         self.index_cache.contains_key(&TypeId::of::<S>())
     }
 
-    pub fn get_layers(&self) -> Vec<Vec<NodeIndex>> {
+    /// Sorts the graph based on system dependencies, returning a list of layers where each layer contains systems that can be run in parallel.
+    /// This will respect existing system dependencies, and will not add any new ones.
+    fn get_layers(&self) -> Vec<Vec<NodeIndex>> {
         let mut schedule = Topo::new(&self.systems);
 
         let mut seen = FxHashSet::default();
@@ -817,6 +767,7 @@ impl SystemGraph {
         layers
     }
 
+    /// Resolves system dependencies, ensuring that no system mutably accesses the same resource or component at the same time as another system.
     pub fn resolve_dependencies(&mut self, depth: usize) -> Result<()> {
         if depth == 0 {
             return Err(anyhow!("Cyclic system dependency detected"));
@@ -880,6 +831,7 @@ impl SystemGraph {
         Ok(())
     }
 
+    /// Runs all systems in the graph one-by-one in topological order, ensuring that all dependencies are respected.
     pub fn run(&mut self, world: &mut World) -> Result<()> {
         let mut schedule = Topo::new(&self.systems);
         while let Some(node) = schedule.next(&self.systems) {

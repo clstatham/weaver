@@ -1,14 +1,14 @@
 use std::{
     cell::UnsafeCell,
     marker::PhantomData,
-    sync::atomic::{AtomicU32, AtomicU64, Ordering},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
-use weaver_util::{lock::Lock, warn_once, Result};
+use weaver_util::{warn_once, Result};
 
 use crate::prelude::{
-    Bundle, IntoSystem, MultiResource, NonSend, NonSendResources, QueryFetch, QueryFilter,
-    QueryState, Res, ResMut, Resource, Resources, System, SystemSchedule, SystemStage, Tick,
+    Bundle, Entities, IntoSystem, MultiResource, QueryFetch, QueryFilter, QueryState, Res, ResMut,
+    Resource, Resources, System, SystemStage, Systems, Tick,
 };
 
 use super::{
@@ -25,10 +25,25 @@ pub struct UnsafeWorldCell<'a>(
 );
 
 impl<'a> UnsafeWorldCell<'a> {
+    /// Creates a new `UnsafeWorldCell` from a mutable reference to the world.
+    /// This is the correct way to create an `UnsafeWorldCell` for exclusive access to the world.
+    ///
+    /// # Safety
+    ///
+    /// Callers must ensure that no other references to the world are held for the lifetime of the `UnsafeWorldCell`.
     pub fn new_exclusive(world: &'a mut World) -> Self {
         Self(world as *mut _, PhantomData, PhantomData)
     }
 
+    /// Creates a new `UnsafeWorldCell` from a shared reference to the world.
+    /// This is the correct way to create an `UnsafeWorldCell` for shared (read-only) access to the world.
+    ///
+    /// The `UnsafeWorldCell` created from this function must NOT be used to access the world mutably.
+    ///
+    /// # Safety
+    ///
+    /// Callers mut ensure that no mutable references to the world are held for the lifetime of the `UnsafeWorldCell`,
+    /// and that the world is not accessed mutably for the lifetime of the `UnsafeWorldCell`.
     pub fn new_shared(world: &'a World) -> Self {
         Self(world as *const _ as *mut _, PhantomData, PhantomData)
     }
@@ -47,6 +62,22 @@ impl<'a> UnsafeWorldCell<'a> {
     /// Callers must ensure that the world is not accessed concurrently, and that no other references to the world are held.
     pub unsafe fn world_mut(self) -> &'a mut World {
         unsafe { &mut *self.0 }
+    }
+
+    /// # Safety
+    ///
+    /// This function is unsafe because it dereferences the pointer to the world.
+    /// Callers must ensure that the world is not accessed concurrently, and that no mutable references to the world are held.
+    pub unsafe fn entities(self) -> &'a Entities {
+        unsafe { self.world().entities() }
+    }
+
+    /// # Safety
+    ///
+    /// This function is unsafe because it dereferences the pointer to the world.
+    /// Callers must ensure that the world is not accessed concurrently, and that no mutable references to the world are held.
+    pub unsafe fn entities_mut(self) -> &'a mut Entities {
+        unsafe { self.world_mut().entities_mut() }
     }
 
     /// # Safety
@@ -73,14 +104,12 @@ impl<'a> UnsafeWorldCell<'a> {
 }
 
 pub struct World {
-    next_entity: AtomicU32,
-    free_entities: Lock<Vec<Entity>>,
+    entities: Entities,
     storage: Storage,
     resources: Resources,
-    non_send_resources: NonSendResources,
     change_tick: AtomicU64,
     last_change_tick: Tick,
-    systems: SystemSchedule,
+    systems: Systems,
 }
 
 unsafe impl Send for World {}
@@ -89,48 +118,76 @@ unsafe impl Sync for World {}
 impl Default for World {
     fn default() -> Self {
         Self {
-            next_entity: AtomicU32::new(0),
-            free_entities: Lock::new(Vec::new()),
+            entities: Entities::default(),
             storage: Storage::new(),
             resources: Resources::default(),
-            non_send_resources: NonSendResources::default(),
             change_tick: AtomicU64::new(0),
             last_change_tick: Tick::new(0),
-            systems: SystemSchedule::default(),
+            systems: Systems::default(),
         }
     }
 }
 
 impl World {
+    /// Creates a new world.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Creates an `UnsafeWorldCell` for shared (read-only) access to the world.
+    /// This is the correct way to create an `UnsafeWorldCell` for shared (read-only) access to the world.
+    /// The `UnsafeWorldCell` created from this function must NOT be used to access the world mutably.
+    ///
+    /// # Safety
+    ///
+    /// Callers mut ensure that no mutable references to the world are held for the lifetime of the `UnsafeWorldCell`,
+    /// and that the world is not accessed mutably for the lifetime of the `UnsafeWorldCell`.
     pub fn as_unsafe_world_cell_readonly(&self) -> UnsafeWorldCell {
         UnsafeWorldCell::new_shared(self)
     }
 
+    /// Creates an `UnsafeWorldCell` for exclusive access to the world.
+    /// This is the correct way to create an `UnsafeWorldCell` for exclusive access to the world.
+    ///
+    /// # Safety
+    ///
+    /// Callers must ensure that no other references to the world are held for the lifetime of the `UnsafeWorldCell`.
     pub fn as_unsafe_world_cell(&mut self) -> UnsafeWorldCell {
         UnsafeWorldCell::new_exclusive(self)
     }
 
+    /// Returns a reference to the world's component storage.
     pub fn storage(&self) -> &Storage {
         &self.storage
     }
 
+    /// Returns a mutable reference to the world's component storage.
     pub fn storage_mut(&mut self) -> &mut Storage {
         &mut self.storage
     }
 
-    pub fn create_entity(&self) -> Entity {
-        if let Some(entity) = self.free_entities.write().pop() {
-            Entity::new(entity.id(), entity.generation() + 1)
-        } else {
-            let id = self.next_entity.fetch_add(1, Ordering::Relaxed);
-            Entity::new(id, 0)
-        }
+    pub fn entities(&self) -> &Entities {
+        &self.entities
     }
 
+    pub fn entities_mut(&mut self) -> &mut Entities {
+        &mut self.entities
+    }
+
+    /// Creates a new entity in the world.
+    pub fn create_entity(&mut self) -> Entity {
+        self.entities.alloc()
+    }
+
+    pub fn insert_entity(&mut self, entity: Entity) {
+        self.entities.alloc_at(entity);
+    }
+
+    pub fn find_entity_by_id(&self, id: u32) -> Option<Entity> {
+        self.entities.find_by_id(id)
+    }
+
+    /// Creates a new entity in the world and adds the bundle of components to it.
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
         let entity = self.create_entity();
         let change_tick = self.change_tick();
@@ -138,11 +195,13 @@ impl World {
         entity
     }
 
+    /// Destroys the entity and all its components in the world.
     pub fn destroy_entity(&mut self, entity: Entity) {
         self.storage.remove_entity(entity);
-        self.free_entities.write().push(entity);
+        self.entities.free(entity);
     }
 
+    /// Inserts a component into the entity in the world.
     pub fn insert_component<T: Component>(&mut self, entity: Entity, component: T) {
         self.storage.insert_component(
             entity,
@@ -152,15 +211,18 @@ impl World {
         )
     }
 
+    /// Inserts a bundle of components into the entity in the world.
     pub fn insert_bundle<T: Bundle>(&mut self, entity: Entity, bundle: T) {
         let change_tick = self.change_tick();
         self.storage.insert_bundle(entity, bundle, change_tick)
     }
 
+    /// Removes a component from the entity in the world.
     pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {
         self.storage.remove_component::<T>(entity)
     }
 
+    /// Gets a shared reference to a component from the entity in the world.
     pub fn get_component<T: Component>(&self, entity: Entity) -> Option<Ref<T>> {
         let last_change_tick = self.last_change_tick();
         let change_tick = self.read_change_tick();
@@ -168,6 +230,7 @@ impl World {
             .get_component::<T>(entity, last_change_tick, change_tick)
     }
 
+    /// Gets a mutable reference to a component from the entity in the world.
     pub fn get_component_mut<T: Component>(&self, entity: Entity) -> Option<Mut<T>> {
         let last_change_tick = self.last_change_tick();
         let change_tick = self.read_change_tick();
@@ -175,29 +238,35 @@ impl World {
             .get_component_mut::<T>(entity, last_change_tick, change_tick)
     }
 
+    /// Checks if the entity in the world has a certain type of component.
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
         self.storage.has_component::<T>(entity)
     }
 
+    /// Queries the world for entities with components that match the query.
     pub fn query<Q: QueryFetch>(&self) -> QueryState<Q, ()> {
         QueryState::new(self)
     }
 
+    /// Queries the world for entities with components that match the query and filter.
     pub fn query_filtered<Q: QueryFetch, F: QueryFilter>(&self) -> QueryState<Q, F> {
         QueryState::new(self)
     }
 
+    /// Gets a shared reference to a resource from the world.
     pub fn get_resource<T: Resource>(&self) -> Option<Res<'_, T>> {
         self.resources
             .get::<T>(self.last_change_tick, self.read_change_tick())
     }
 
+    /// Gets a mutable reference to a resource from the world.
     pub fn get_resource_mut<T: Resource>(&mut self) -> Option<ResMut<'_, T>> {
         let change_tick = self.change_tick();
         self.resources
             .get_mut::<T>(self.last_change_tick, change_tick)
     }
 
+    /// Checks if the world has a certain type of resource.
     pub fn has_resource<T: Resource>(&self) -> bool {
         self.resources.contains::<T>()
     }
@@ -223,7 +292,7 @@ impl World {
         S: IntoSystem<M>,
         S::System: System<Output = O>,
     {
-        let mut system = Box::new(system).into_system();
+        let mut system = system.into_system();
         if system.can_run(self) {
             system.initialize(self);
             Some(system.run(self))
@@ -232,6 +301,8 @@ impl World {
         }
     }
 
+    /// Initializes a resource in the world. The resource is initialized using its implementation of `FromWorld`.
+    /// If the resource has already been initialized, a warning is logged and the resource is not initialized again.
     pub fn init_resource<T: Resource + FromWorld>(&mut self) {
         if self.has_resource::<T>() {
             warn_once!(
@@ -244,6 +315,8 @@ impl World {
         self.insert_resource(resource);
     }
 
+    /// Inserts a resource into the world.
+    /// If the resource has already been inserted, a warning is logged and the resource is not inserted again.
     pub fn insert_resource<T: Resource>(&mut self, component: T) {
         if self.has_resource::<T>() {
             warn_once!(
@@ -256,65 +329,62 @@ impl World {
         self.resources.insert(component, change_tick)
     }
 
+    /// Removes a resource from the world.
     pub fn remove_resource<T: Resource>(&mut self) -> Option<T> {
         self.resources.remove::<T>().map(|(resource, _)| resource)
     }
 
-    pub fn insert_non_send_resource<T: 'static>(&mut self, component: T) {
-        if self.non_send_resources.contains::<T>() {
-            warn_once!(
-                "Non-send resource {} already inserted; not inserting it again",
-                std::any::type_name::<T>(),
-            );
-            return;
-        }
-        self.non_send_resources.insert(component)
-    }
-
-    pub fn get_non_send_resource<T: 'static>(&self) -> Option<NonSend<T>> {
-        self.non_send_resources.get::<T>()
-    }
-
+    /// Increments the world's change tick, marking a change in the world.
     pub fn increment_change_tick(&mut self) {
         self.last_change_tick = Tick::new(self.change_tick.fetch_add(1, Ordering::AcqRel));
     }
 
+    /// Returns the world's change tick. The change tick is acquired via an atomic load.
     pub fn read_change_tick(&self) -> Tick {
         Tick::new(self.change_tick.load(Ordering::Acquire))
     }
 
+    /// Returns the world's change tick. The change tick is acquired immediately via mutable borrow.
     pub fn change_tick(&mut self) -> Tick {
         Tick::new(*self.change_tick.get_mut())
     }
 
+    /// Returns the world's last change tick.
     pub fn last_change_tick(&self) -> Tick {
         self.last_change_tick
     }
 
+    /// Pushes a system stage to the end of the "init" system schedule.
     pub fn push_init_stage<T: SystemStage>(&mut self) {
         self.systems.push_init_stage::<T>();
     }
 
+    /// Pushes a system stage to the end of the "update" system schedule.
     pub fn push_update_stage<T: SystemStage>(&mut self) {
         self.systems.push_update_stage::<T>();
     }
 
+    /// Pushes a system stage to the end of the "shutdown" system schedule.
     pub fn push_shutdown_stage<T: SystemStage>(&mut self) {
         self.systems.push_shutdown_stage::<T>();
     }
 
+    /// Pushes a system stage must be run manually using [`World::run_stage`].
     pub fn push_manual_stage<T: SystemStage>(&mut self) {
         self.systems.push_manual_stage::<T>();
     }
 
-    pub fn add_stage_before<T: SystemStage, U: SystemStage>(&mut self) {
-        self.systems.add_stage_before::<T, U>();
+    /// Adds an "update" system stage before another "update" system stage.
+    pub fn add_update_stage_before<T: SystemStage, BEFORE: SystemStage>(&mut self) {
+        self.systems.add_update_stage_before::<T, BEFORE>();
     }
 
-    pub fn add_stage_after<T: SystemStage, U: SystemStage>(&mut self) {
-        self.systems.add_stage_after::<T, U>();
+    /// Adds an "update" system stage after another "update" system stage.
+    pub fn add_update_stage_after<T: SystemStage, AFTER: SystemStage>(&mut self) {
+        self.systems.add_update_stage_after::<T, AFTER>();
     }
 
+    /// Adds a system to the given system stage. If the system has already been added to the stage, a warning is logged and the system is not added again.
     pub fn add_system<T, S, M>(&mut self, system: S, stage: T)
     where
         T: SystemStage,
@@ -332,6 +402,7 @@ impl World {
         self.systems.add_system(system, stage);
     }
 
+    /// Adds a system before another system in the given system stage. If the system has already been added to the stage, a warning is logged and the system is not added again.
     pub fn add_system_before<T, M1, M2, S, BEFORE>(&mut self, system: S, before: BEFORE, stage: T)
     where
         T: SystemStage,
@@ -352,6 +423,7 @@ impl World {
         self.systems.add_system_before(system, before, stage);
     }
 
+    /// Adds a system after another system in the given system stage. If the system has already been added to the stage, a warning is logged and the system is not added again.
     pub fn add_system_after<T, M1, M2, S, AFTER>(&mut self, system: S, after: AFTER, stage: T)
     where
         T: SystemStage,
@@ -372,6 +444,7 @@ impl World {
         self.systems.add_system_after(system, after, stage);
     }
 
+    /// Checks if the system has been added to the given system stage.
     pub fn has_system<M: 'static>(
         &self,
         system: &impl IntoSystem<M>,
@@ -380,6 +453,7 @@ impl World {
         self.systems.has_system(system, stage)
     }
 
+    /// Runs the "init" system schedule once.
     pub fn init(&mut self) -> Result<()> {
         let mut systems = std::mem::take(&mut self.systems);
         systems.run_init(self)?;
@@ -387,6 +461,7 @@ impl World {
         Ok(())
     }
 
+    /// Runs the "update" system schedule once.
     pub fn update(&mut self) -> Result<()> {
         let mut systems = std::mem::take(&mut self.systems);
         systems.run_update(self)?;
@@ -394,6 +469,7 @@ impl World {
         Ok(())
     }
 
+    /// Runs the "shutdown" system schedule once.
     pub fn shutdown(&mut self) -> Result<()> {
         let mut systems = std::mem::take(&mut self.systems);
         systems.run_shutdown(self)?;
@@ -401,6 +477,7 @@ impl World {
         Ok(())
     }
 
+    /// Runs the given system stage once.
     pub fn run_stage<S: SystemStage>(&mut self) -> Result<()> {
         let mut systems = std::mem::take(&mut self.systems);
         systems.run_stage::<S>(self)?;
@@ -409,6 +486,7 @@ impl World {
     }
 }
 
+/// A trait for creating a new instance of a type from a world.
 pub trait FromWorld {
     fn from_world(world: &mut World) -> Self;
 }
@@ -421,6 +499,8 @@ impl<T: Default> FromWorld for T {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+
     use weaver_ecs_macros::Component;
     use weaver_reflect_macros::Reflect;
 
@@ -464,25 +544,25 @@ mod tests {
         let mut world = World::new();
         let entity = world.create_entity();
         assert_eq!(entity.id(), 0);
-        assert_eq!(entity.generation(), 0);
-
-        let entity = world.create_entity();
-        assert_eq!(entity.id(), 1);
-        assert_eq!(entity.generation(), 0);
-
-        let entity = world.create_entity();
-        assert_eq!(entity.id(), 2);
-        assert_eq!(entity.generation(), 0);
-
-        world.destroy_entity(Entity::new(1, 0));
+        assert_eq!(entity.generation(), 1);
 
         let entity = world.create_entity();
         assert_eq!(entity.id(), 1);
         assert_eq!(entity.generation(), 1);
 
         let entity = world.create_entity();
+        assert_eq!(entity.id(), 2);
+        assert_eq!(entity.generation(), 1);
+
+        world.destroy_entity(Entity::new(1, NonZeroU32::MIN));
+
+        let entity = world.create_entity();
+        assert_eq!(entity.id(), 1);
+        assert_eq!(entity.generation(), 2);
+
+        let entity = world.create_entity();
         assert_eq!(entity.id(), 3);
-        assert_eq!(entity.generation(), 0);
+        assert_eq!(entity.generation(), 1);
     }
 
     #[test]

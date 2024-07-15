@@ -10,7 +10,7 @@ use crate::{
 pub trait SystemStage: 'static {}
 
 #[derive(Default)]
-pub struct SystemSchedule {
+pub struct Systems {
     init_stages: Vec<TypeId>,
     update_stages: Vec<TypeId>,
     shutdown_stages: Vec<TypeId>,
@@ -18,7 +18,7 @@ pub struct SystemSchedule {
     systems: FxHashMap<TypeId, SystemGraph>,
 }
 
-impl SystemSchedule {
+impl Systems {
     pub fn push_update_stage<T: SystemStage>(&mut self) {
         self.update_stages.push(TypeId::of::<T>());
         self.systems
@@ -43,22 +43,22 @@ impl SystemSchedule {
             .insert(TypeId::of::<T>(), SystemGraph::default());
     }
 
-    pub fn add_stage_before<T: SystemStage, U: SystemStage>(&mut self) {
+    pub fn add_update_stage_before<T: SystemStage, BEFORE: SystemStage>(&mut self) {
         let index = self
             .update_stages
             .iter()
-            .position(|stage| *stage == TypeId::of::<U>())
+            .position(|stage| *stage == TypeId::of::<BEFORE>())
             .expect("System stage not found");
         self.update_stages.insert(index, TypeId::of::<T>());
         self.systems
             .insert(TypeId::of::<T>(), SystemGraph::default());
     }
 
-    pub fn add_stage_after<T: SystemStage, U: SystemStage>(&mut self) {
+    pub fn add_update_stage_after<T: SystemStage, AFTER: SystemStage>(&mut self) {
         let index = self
             .update_stages
             .iter()
-            .position(|stage| *stage == TypeId::of::<U>())
+            .position(|stage| *stage == TypeId::of::<AFTER>())
             .expect("System stage not found");
         self.update_stages.insert(index + 1, TypeId::of::<T>());
         self.systems

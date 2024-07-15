@@ -10,7 +10,10 @@ use weaver_ecs::{
     system::{SystemAccess, SystemParam},
     world::World,
 };
-use weaver_util::lock::{Read, SharedLock};
+use weaver_util::{
+    lock::{Read, SharedLock},
+    FxHashSet,
+};
 
 pub mod prelude {
     pub use super::{Event, EventRx, EventTx};
@@ -197,10 +200,8 @@ unsafe impl<T: Event> SystemParam for EventTx<T> {
     fn access() -> SystemAccess {
         SystemAccess {
             exclusive: false,
-            resources_read: Vec::new(),
-            resources_written: vec![TypeId::of::<Events<T>>()],
-            components_read: Vec::new(),
-            components_written: Vec::new(),
+            resources_written: FxHashSet::from_iter([TypeId::of::<Events<T>>()]),
+            ..Default::default()
         }
     }
 
@@ -242,10 +243,8 @@ unsafe impl<T: Event> SystemParam for EventRx<T> {
     fn access() -> SystemAccess {
         SystemAccess {
             exclusive: false,
-            resources_read: Vec::new(),
-            resources_written: vec![TypeId::of::<Events<T>>()],
-            components_read: Vec::new(),
-            components_written: Vec::new(),
+            resources_written: FxHashSet::from_iter([TypeId::of::<Events<T>>()]),
+            ..Default::default()
         }
     }
 

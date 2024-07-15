@@ -28,6 +28,10 @@ impl<T> Lock<T> {
     pub fn try_write(&self) -> Option<Write<'_, T>> {
         Write::try_new(self)
     }
+
+    pub fn into_inner(self) -> T {
+        RwLock::into_inner(self.0)
+    }
 }
 
 impl<T: Clone> From<T> for Lock<T> {

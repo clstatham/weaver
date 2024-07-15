@@ -63,7 +63,6 @@ fn main() -> Result<()> {
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
         .insert_resource(Filesystem::default().with_pk3s_from_dir("assets/q3")?)
         .init_resource::<FpsHistory>()
-        .add_plugin(FixedUpdatePlugin::<FpsHistory>::new(1.0 / 50.0, 1.0))?
         .add_system(load_shaders, Init)
         .add_system_after(setup, load_shaders, Init)
         .add_system(camera::update_camera, Update)
@@ -105,42 +104,40 @@ fn setup(
 }
 
 fn fps_ui(
-    mut time: ResMut<FixedTimestep<FpsHistory>>,
+    time: Res<Time>,
     frame_time: Res<FrameTime>,
     mut history: ResMut<FpsHistory>,
     egui_ctx: Res<EguiContext>,
 ) {
     egui_ctx.with_ctx(|ctx| {
-        egui::Window::new("FPS")
+        egui::Window::new("Frame Time")
             .default_height(200.0)
             .show(ctx, |ui| {
-                history.smoothing_buffer.push(frame_time.fps);
+                history.smoothing_buffer.push(frame_time.frame_time);
 
-                let smoothed_fps = history.smoothing_buffer.iter().copied().sum::<f32>()
-                    / history.smoothing_buffer.len() as f32;
+                if time.total_time > 1.0 && history.smoothing_buffer.len() > 100 {
+                    let smoothed_fps = history.smoothing_buffer.iter().copied().sum::<f32>()
+                        / history.smoothing_buffer.len() as f32;
 
-                if time.ready() {
                     history.smoothing_buffer.clear();
 
                     history.history.push_back(smoothed_fps);
-                    if history.history.len() > 1000 {
+                    if history.history.len() > 100 {
                         history.history.pop_front();
                     }
 
                     history.display_fps = smoothed_fps;
-
-                    time.clear_accumulator();
                 }
 
-                ui.label(format!("FPS: {:.2}", history.display_fps));
+                ui.label(format!("Frame Time: {:.4}ms", history.display_fps * 1000.0));
                 ui.separator();
 
-                let plot = egui_plot::Plot::new("FPS");
+                let plot = egui_plot::Plot::new("Frame Time (ms)");
                 let points = history
                     .history
                     .iter()
                     .enumerate()
-                    .map(|(i, &fps)| [i as f64, fps as f64])
+                    .map(|(i, &fps)| [i as f64, fps as f64 * 1000.0])
                     .collect::<Vec<_>>();
                 plot.show(ui, |plot| {
                     plot.line(egui_plot::Line::new(points).color(egui::Color32::LIGHT_GREEN));

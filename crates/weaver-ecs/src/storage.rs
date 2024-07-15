@@ -1,14 +1,14 @@
-use std::{any::TypeId, cell::UnsafeCell, ops::Deref};
+use std::{any::TypeId, cell::UnsafeCell, hash::BuildHasherDefault, ops::Deref};
 
 use weaver_util::{
     lock::{Lock, Read, Write},
     prelude::FxHashMap,
-    TypeIdMap,
+    HashMap, TypeIdMap,
 };
 
 use crate::prelude::{
-    Bundle, ChangeDetection, ChangeDetectionMut, ComponentTicks, EntityMap, EntitySet, Tick, Ticks,
-    TicksMut,
+    Bundle, ChangeDetection, ChangeDetectionMut, ComponentTicks, EntityHasher, EntityMap,
+    EntitySet, Tick, Ticks, TicksMut,
 };
 
 use super::{component::Component, entity::Entity};
@@ -66,161 +66,69 @@ impl Data {
     }
 }
 
-pub struct SparseSet<T> {
+pub struct Column<T> {
     pub(crate) dense: Vec<T>,
     pub(crate) dense_added_ticks: Vec<Lock<Tick>>,
     pub(crate) dense_changed_ticks: Vec<Lock<Tick>>,
-    sparse: Vec<Option<usize>>,
-    indices: Vec<usize>,
+    sparse: HashMap<u32, usize, BuildHasherDefault<EntityHasher>>,
 }
 
-impl<T> Default for SparseSet<T> {
+impl<T> Default for Column<T> {
     fn default() -> Self {
         Self {
             dense: Vec::new(),
             dense_added_ticks: Vec::new(),
             dense_changed_ticks: Vec::new(),
-            sparse: Vec::new(),
-            indices: Vec::new(),
+            sparse: HashMap::default(),
         }
     }
 }
 
-impl<T> SparseSet<T> {
-    pub fn new() -> Self {
-        Self::default()
+impl<T> Column<T> {
+    pub fn insert(&mut self, index: usize, data: T, ticks: ComponentTicks) {
+        let dense_index = self.dense.len();
+
+        self.dense.push(data);
+        self.dense_added_ticks.push(Lock::new(ticks.added));
+        self.dense_changed_ticks.push(Lock::new(ticks.changed));
+
+        self.sparse.insert(index as u32, dense_index);
     }
 
-    pub fn dense_index_of(&self, id: usize) -> Option<usize> {
-        self.sparse.get(id).copied().flatten()
-    }
+    pub fn remove(&mut self, index: usize) -> Option<(T, ComponentTicks)> {
+        let dense_index = self.sparse.remove(&(index as u32))?;
 
-    pub fn insert(&mut self, id: usize, data: T, ticks: ComponentTicks) {
-        match self.dense_index_of(id) {
-            Some(index) => {
-                self.dense[index] = data;
-                *self.dense_added_ticks[index].write() = ticks.added;
-                *self.dense_changed_ticks[index].write() = ticks.changed;
-            }
-            None => {
-                let index = self.dense.len();
+        let last = self.dense.len() - 1;
+        let data = self.dense.swap_remove(dense_index);
 
-                self.dense.push(data);
-                self.dense_added_ticks.push(Lock::new(ticks.added));
-                self.dense_changed_ticks.push(Lock::new(ticks.changed));
+        let added = self.dense_added_ticks.swap_remove(dense_index);
+        let changed = self.dense_changed_ticks.swap_remove(dense_index);
 
-                if id >= self.sparse.len() {
-                    self.sparse.resize(id + 1, None);
-                }
-                self.sparse[id] = Some(index);
-                self.indices.push(id);
-            }
-        }
-    }
-
-    pub fn remove(&mut self, id: usize) -> Option<(T, ComponentTicks)> {
-        if id >= self.sparse.len() {
-            return None;
-        }
-
-        let index = self.sparse[id].take()?;
-
-        let value = self.dense.swap_remove(index);
-        let _ = self.indices.swap_remove(index);
-
-        if index < self.dense.len() {
-            let swapped = self.indices[index];
-            self.sparse[swapped] = Some(index);
+        if dense_index != last {
+            self.sparse.insert(index as u32, dense_index);
         }
 
         Some((
-            value,
+            data,
             ComponentTicks {
-                added: *self.dense_added_ticks[index].read(),
-                changed: *self.dense_changed_ticks[index].read(),
+                added: Lock::into_inner(added),
+                changed: Lock::into_inner(changed),
             },
         ))
     }
 
-    pub fn get(&self, id: usize) -> Option<&T> {
-        if id >= self.sparse.len() {
-            return None;
-        }
-
-        let dense_index = self.sparse[id]?;
-        self.dense.get(dense_index)
+    pub fn get(&self, index: u32) -> Option<&T> {
+        self.sparse
+            .get(&index)
+            .map(|&dense_index| &self.dense[dense_index])
     }
 
-    pub fn get_mut(&mut self, id: usize, change_tick: Tick) -> Option<&mut T> {
-        if id >= self.sparse.len() {
-            return None;
-        }
-
-        let dense_index = self.sparse[id]?;
-
-        *self.dense_changed_ticks[dense_index].write() = change_tick;
-
-        self.dense.get_mut(dense_index)
+    pub fn contains(&self, index: u32) -> bool {
+        self.sparse.contains_key(&index)
     }
 
-    pub fn contains(&self, id: usize) -> bool {
-        self.sparse.get(id).copied().flatten().is_some()
-    }
-
-    pub fn iter(&self) -> std::slice::Iter<'_, T> {
-        self.dense.iter()
-    }
-
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
-        self.dense.iter_mut()
-    }
-
-    pub fn iter_with_ticks(&self) -> impl Iterator<Item = (&T, Read<Tick>, Read<Tick>)> + '_ {
-        self.dense
-            .iter()
-            .zip(self.dense_added_ticks.iter())
-            .zip(self.dense_changed_ticks.iter())
-            .map(|((data, added), changed)| (data, added.read(), changed.read()))
-    }
-
-    pub fn sparse_iter(&self) -> std::slice::Iter<'_, usize> {
-        self.indices.iter()
-    }
-
-    pub fn sparse_iter_with_ticks(
-        &self,
-    ) -> impl Iterator<Item = (usize, Read<Tick>, Read<Tick>)> + '_ {
-        self.indices.iter().map(move |&index| {
-            let dense_index = self.dense_index_of(index).unwrap();
-            (
-                index,
-                self.dense_added_ticks[dense_index].read(),
-                self.dense_changed_ticks[dense_index].read(),
-            )
-        })
-    }
-
-    pub fn sparse_iter_with_ticks_mut(
-        &self,
-    ) -> impl Iterator<Item = (usize, Write<Tick>, Write<Tick>)> + '_ {
-        self.indices.iter().map(|&index| {
-            let dense_index = self.dense_index_of(index).unwrap();
-            (
-                index,
-                self.dense_added_ticks[dense_index].write(),
-                self.dense_changed_ticks[dense_index].write(),
-            )
-        })
-    }
-
-    pub fn sparse_index_of(&self, index: usize) -> Option<usize> {
-        self.indices.get(index).copied()
-    }
-
-    pub fn clear(&mut self) {
-        self.dense.clear();
-        self.sparse.clear();
-        self.indices.clear();
+    pub fn dense_index_of(&self, index: u32) -> Option<usize> {
+        self.sparse.get(&index).copied()
     }
 
     pub fn len(&self) -> usize {
@@ -230,25 +138,57 @@ impl<T> SparseSet<T> {
     pub fn is_empty(&self) -> bool {
         self.dense.is_empty()
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.dense.iter()
+    }
+
+    pub fn sparse_iter(&self) -> impl Iterator<Item = u32> + '_ {
+        self.sparse.keys().copied()
+    }
+
+    pub fn sparse_iter_with_ticks(
+        &self,
+    ) -> impl Iterator<Item = (u32, Read<Tick>, Read<Tick>)> + '_ {
+        self.sparse.iter().map(move |(index, dense_index)| {
+            (
+                *index,
+                self.dense_added_ticks[*dense_index].read(),
+                self.dense_changed_ticks[*dense_index].read(),
+            )
+        })
+    }
+
+    pub fn sparse_iter_with_ticks_mut(
+        &self,
+    ) -> impl Iterator<Item = (u32, Write<Tick>, Write<Tick>)> + '_ {
+        self.sparse.iter().map(move |(index, dense_index)| {
+            (
+                *index,
+                self.dense_added_ticks[*dense_index].write(),
+                self.dense_changed_ticks[*dense_index].write(),
+            )
+        })
+    }
 }
 
 #[derive(Clone)]
 pub struct ColumnRef<'w> {
-    column: &'w SparseSet<UnsafeCell<Data>>,
+    column: &'w Column<UnsafeCell<Data>>,
 }
 
 impl<'w> ColumnRef<'w> {
-    pub fn new(column: &'w SparseSet<UnsafeCell<Data>>) -> Self {
+    pub fn new(column: &'w Column<UnsafeCell<Data>>) -> Self {
         Self { column }
     }
 
-    pub fn into_inner(self) -> &'w SparseSet<UnsafeCell<Data>> {
+    pub fn into_inner(self) -> &'w Column<UnsafeCell<Data>> {
         self.column
     }
 }
 
 impl<'w> Deref for ColumnRef<'w> {
-    type Target = SparseSet<UnsafeCell<Data>>;
+    type Target = Column<UnsafeCell<Data>>;
 
     fn deref(&self) -> &Self::Target {
         self.column
@@ -257,7 +197,7 @@ impl<'w> Deref for ColumnRef<'w> {
 
 #[derive(Default)]
 pub struct Archetype {
-    columns: TypeIdMap<SparseSet<UnsafeCell<Data>>>,
+    columns: TypeIdMap<Column<UnsafeCell<Data>>>,
     entities: EntitySet,
 }
 
@@ -276,7 +216,7 @@ impl Archetype {
         self.entities.insert(entity);
 
         self.columns.get_mut(&type_id).unwrap().insert(
-            entity.as_usize(),
+            entity.id() as usize,
             UnsafeCell::new(data),
             ticks,
         );
@@ -289,7 +229,7 @@ impl Archetype {
             .values_mut()
             .filter_map(|column| {
                 column
-                    .remove(entity.as_usize())
+                    .remove(entity.id() as usize)
                     .map(|(data, ticks)| (data.into_inner(), ticks))
             })
             .collect()
@@ -311,7 +251,7 @@ impl Archetype {
     pub fn has_component_by_type_id(&self, entity: Entity, type_id: TypeId) -> bool {
         self.columns
             .get(&type_id)
-            .map(|c| c.contains(entity.as_usize()))
+            .map(|c| c.contains(entity.id()))
             .unwrap_or(false)
     }
 
@@ -322,7 +262,7 @@ impl Archetype {
     pub fn contains_entity(&self, entity: Entity) -> bool {
         self.columns
             .values()
-            .any(|column| column.contains(entity.as_usize()))
+            .any(|column| column.contains(entity.id()))
     }
 
     pub fn len(&self) -> usize {
@@ -524,7 +464,7 @@ impl Storage {
 
             archetype.columns = data
                 .iter()
-                .map(|data| (data.0.type_id(), SparseSet::new()))
+                .map(|data| (data.0.type_id(), Column::default()))
                 .collect();
 
             self.archetypes.insert(archetype_id, archetype);
@@ -608,7 +548,7 @@ impl Storage {
 
                 archetype.columns = data
                     .iter()
-                    .map(|data| (data.0.type_id(), SparseSet::new()))
+                    .map(|data| (data.0.type_id(), Column::default()))
                     .collect();
 
                 self.archetypes.insert(archetype_id, archetype);
@@ -660,10 +600,10 @@ impl Storage {
         if archetype
             .columns
             .get(&TypeId::of::<T>())?
-            .contains(entity.as_usize())
+            .contains(entity.id())
         {
             let column = &archetype.columns[&TypeId::of::<T>()];
-            let dense_index = column.dense_index_of(entity.as_usize()).unwrap();
+            let dense_index = column.dense_index_of(entity.id()).unwrap();
             let ticks = Ticks {
                 added: column.dense_added_ticks[dense_index].read(),
                 changed: column.dense_changed_ticks[dense_index].read(),
@@ -694,10 +634,10 @@ impl Storage {
         if archetype
             .columns
             .get(&TypeId::of::<T>())?
-            .contains(entity.as_usize())
+            .contains(entity.id())
         {
             let column = archetype.columns.get(&TypeId::of::<T>()).unwrap();
-            let dense_index = column.dense_index_of(entity.as_usize()).unwrap();
+            let dense_index = column.dense_index_of(entity.id()).unwrap();
             let ticks = TicksMut {
                 added: column.dense_added_ticks[dense_index].write(),
                 changed: column.dense_changed_ticks[dense_index].write(),

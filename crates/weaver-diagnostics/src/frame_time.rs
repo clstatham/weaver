@@ -64,7 +64,7 @@ fn log_frame_time(frame_time: Res<FrameTime>, mut logger: ResMut<FrameTimeLogger
     let now = std::time::Instant::now();
     if now.duration_since(logger.last_log) >= logger.log_interval {
         log::info!(
-            "Frame time: {:.2}ms, FPS: {:.2}",
+            "Frame time: {:.4}ms, FPS: {:.2}",
             frame_time.frame_time * 1000.0,
             frame_time.fps
         );

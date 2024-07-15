@@ -1,5 +1,5 @@
 use std::{
-    any::{Any, TypeId},
+    any::TypeId,
     cell::UnsafeCell,
     ops::{Deref, DerefMut},
 };
@@ -279,85 +279,6 @@ impl Resources {
     }
 
     pub fn contains<T: Resource>(&self) -> bool {
-        self.resources.contains_key(&TypeId::of::<T>())
-    }
-}
-
-pub struct NonSend<'r, T: 'static> {
-    pub(crate) value: &'r T,
-    pub(crate) _marker: std::marker::PhantomData<*const ()>,
-}
-
-impl<'r, T: 'static> NonSend<'r, T> {
-    #[inline]
-    pub fn into_inner(self) -> &'r T {
-        self.value
-    }
-}
-
-impl<'r, T> Deref for NonSend<'r, T>
-where
-    T: 'static,
-{
-    type Target = T;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.value
-    }
-}
-
-pub struct NonSendResourceData {
-    data: UnsafeCell<Box<dyn Any>>,
-}
-
-#[derive(Default)]
-pub struct NonSendResources {
-    resources: TypeIdMap<NonSendResourceData>,
-}
-
-impl NonSendResources {
-    pub fn insert<T: 'static>(&mut self, resource: T) {
-        let type_id = TypeId::of::<T>();
-        if let Some(data) = self.resources.get_mut(&type_id) {
-            let _ = std::mem::replace(&mut data.data, UnsafeCell::new(Box::new(resource)));
-        } else {
-            self.resources.insert(
-                type_id,
-                NonSendResourceData {
-                    data: UnsafeCell::new(Box::new(resource)),
-                },
-            );
-        }
-    }
-
-    pub fn get<T: 'static>(&self) -> Option<NonSend<'_, T>> {
-        self.resources
-            .get(&TypeId::of::<T>())
-            .map(|resource| NonSend {
-                value: unsafe { &*resource.data.get() }.downcast_ref().unwrap(),
-                _marker: std::marker::PhantomData,
-            })
-    }
-
-    pub fn get_mut<T: 'static>(&mut self) -> Option<&mut T> {
-        self.resources
-            .get_mut(&TypeId::of::<T>())
-            .map(|resource| unsafe { &mut *resource.data.get() }.downcast_mut().unwrap())
-    }
-
-    pub fn remove<T: 'static>(&mut self) -> Option<T> {
-        self.resources.remove(&TypeId::of::<T>()).map(|resource| {
-            *resource.data.into_inner().downcast().unwrap_or_else(|_| {
-                panic!(
-                    "Failed to downcast resource: {}",
-                    std::any::type_name::<T>()
-                )
-            })
-        })
-    }
-
-    pub fn contains<T: 'static>(&self) -> bool {
         self.resources.contains_key(&TypeId::of::<T>())
     }
 }

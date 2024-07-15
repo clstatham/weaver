@@ -166,12 +166,12 @@ impl SubApp {
     }
 
     pub fn add_update_stage_before<T: SystemStage, U: SystemStage>(&mut self) -> &mut Self {
-        self.world.add_stage_before::<T, U>();
+        self.world.add_update_stage_before::<T, U>();
         self
     }
 
     pub fn add_update_stage_after<T: SystemStage, U: SystemStage>(&mut self) -> &mut Self {
-        self.world.add_stage_after::<T, U>();
+        self.world.add_update_stage_after::<T, U>();
         self
     }
 

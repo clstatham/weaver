@@ -131,6 +131,7 @@ pub fn extract_render_component<T: ExtractComponent>(
                 std::any::type_name::<T>()
             );
 
+            render_world.insert_entity(entity);
             render_world.insert_component(entity, component);
         }
     }
