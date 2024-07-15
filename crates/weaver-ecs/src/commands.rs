@@ -1,4 +1,4 @@
-use crate::prelude::{Bundle, Component, Entity, Res, Resource, SystemParam, UnsafeWorldCell};
+use crate::prelude::{Bundle, Component, Entities, Entity, Resource, SystemParam, UnsafeWorldCell};
 
 use weaver_util::SyncCell;
 
@@ -40,7 +40,7 @@ impl CommandQueue {
 
 pub struct Commands<'w, 's> {
     queue: &'s mut CommandQueue,
-    world: &'w World,
+    entities: &'w Entities,
 }
 
 impl<'w, 's> Commands<'w, 's> {
@@ -49,7 +49,7 @@ impl<'w, 's> Commands<'w, 's> {
     }
 
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
-        let entity = self.world.entities().reserve();
+        let entity = self.entities.reserve();
         self.push(move |world: &mut World| {
             world.insert_bundle(entity, bundle);
         });
@@ -85,10 +85,6 @@ impl<'w, 's> Commands<'w, 's> {
             world.remove_resource::<T>();
         });
     }
-
-    pub fn get_resource<T: Resource>(&self) -> Option<Res<T>> {
-        self.world.get_resource::<T>()
-    }
 }
 
 unsafe impl SystemParam for Commands<'_, '_> {
@@ -116,7 +112,7 @@ unsafe impl SystemParam for Commands<'_, '_> {
     ) -> Self::Item<'w, 's> {
         Commands {
             queue: state.get(),
-            world: unsafe { world.world() },
+            entities: unsafe { world.world().entities() },
         }
     }
 
