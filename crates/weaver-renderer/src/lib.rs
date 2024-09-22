@@ -237,7 +237,6 @@ fn create_surface(render_world: &mut World, window: &Window) -> Result<()> {
 
     let mut required_limits = wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits());
     required_limits.max_push_constant_size = 256;
-    // required_limits.max_sampled_textures_per_shader_stage = 32;
 
     let (device, queue) = pollster::block_on(adapter.request_device(
         &wgpu::DeviceDescriptor {
