@@ -68,7 +68,6 @@ fn main() -> Result<()> {
         .add_system(camera::update_camera, Update)
         .add_system(camera::update_aspect_ratio, Update)
         .add_system(fps_ui, Update)
-        .add_system(test_world_view, Update)
         .run()
 }
 
