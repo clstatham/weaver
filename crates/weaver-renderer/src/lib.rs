@@ -22,7 +22,7 @@ use weaver_app::{plugin::Plugin, App, AppLabel, SubApp};
 use weaver_ecs::{
     commands::Commands,
     component::{Res, ResMut},
-    prelude::Resource,
+    prelude::{Resource, WorldView},
     query::Query,
     reflect::registry::TypeRegistry,
     system_schedule::SystemStage,
@@ -567,7 +567,7 @@ fn resize_surface(
     mut commands: Commands,
     events: EventRx<WindowResized>,
     mut window_size: ResMut<WindowSize>,
-    view_targets: Query<&ViewTarget>,
+    view_targets: WorldView<&ViewTarget>,
     mut current_frame: ResMut<CurrentFrame>,
     mut renderer: ResMut<Renderer>,
     device: Res<WgpuDevice>,

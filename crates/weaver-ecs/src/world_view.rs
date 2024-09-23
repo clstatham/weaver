@@ -133,6 +133,10 @@ where
         }
     }
 
+    pub fn entity_iter(&self) -> impl Iterator<Item = Entity> + '_ {
+        self.entities.iter().copied()
+    }
+
     pub fn get(&self, entity: Entity) -> Option<Q::Item<'w>> {
         if self.entities.contains(&entity) {
             unsafe { Q::fetch::<F>(self.world.world(), entity) }

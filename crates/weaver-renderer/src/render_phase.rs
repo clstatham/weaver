@@ -4,7 +4,7 @@ use weaver_app::plugin::Plugin;
 use weaver_ecs::{
     component::{Res, ResMut},
     entity::{Entity, EntityMap},
-    prelude::Resource,
+    prelude::{Resource, WorldView},
     query::{Query, QueryFetch, QueryFilter},
     world::{FromWorld, World},
 };
@@ -152,7 +152,7 @@ pub trait GetBatchData: 'static {
     type UpdateQueryFetch: QueryFetch + 'static;
     type UpdateQueryFilter: QueryFilter + 'static;
 
-    fn update(&mut self, query: Query<Self::UpdateQueryFetch, Self::UpdateQueryFilter>);
+    fn update(&mut self, query: WorldView<Self::UpdateQueryFetch, Self::UpdateQueryFilter>);
 
     fn get_batch_data(&self, query_item: Entity) -> Option<Self::BufferData>;
 }
@@ -268,8 +268,8 @@ pub fn batch_and_prepare<I: BinnedDrawItem, C: RenderCommand<I>>(
     draw_fns: Res<DrawFunctions<I>>,
     mut batched_instance_buffer: ResMut<BatchedInstanceBuffer<I, C>>,
     mut instances: ResMut<I::Instances>,
-    item_query: Query<I::QueryFetch, I::QueryFilter>,
-    instance_update_query: Query<
+    item_query: WorldView<I::QueryFetch, I::QueryFilter>,
+    instance_update_query: WorldView<
         <I::Instances as GetBatchData>::UpdateQueryFetch,
         <I::Instances as GetBatchData>::UpdateQueryFilter,
     >,

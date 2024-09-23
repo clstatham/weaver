@@ -8,7 +8,7 @@ use weaver_core::{prelude::Mat4, transform::Transform};
 use weaver_ecs::{
     component::Res,
     entity::{Entity, EntityMap},
-    prelude::{Query, QueryFetch, Resource, World},
+    prelude::{Query, QueryFetch, Resource, World, WorldView},
     storage::Ref,
     system::SystemParamItem,
     world::FromWorld,
@@ -65,7 +65,7 @@ impl GetBatchData for PbrMeshInstances {
     );
     type UpdateQueryFilter = ();
 
-    fn update(&mut self, query: Query<Self::UpdateQueryFetch>) {
+    fn update(&mut self, query: WorldView<Self::UpdateQueryFetch>) {
         self.0.clear();
         for (entity, (mesh, material, transform)) in query.iter() {
             self.0.insert(

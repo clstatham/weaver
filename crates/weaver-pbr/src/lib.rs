@@ -16,6 +16,7 @@ use weaver_core::{texture::Texture, transform::Transform};
 use weaver_ecs::{
     component::{Res, ResMut},
     entity::Entity,
+    prelude::WorldView,
     query::{Query, With},
     storage::Ref,
     world::World,
@@ -185,7 +186,7 @@ pub(crate) fn init_pbr_lighting_information(world: &mut World, _skybox: Res<Skyb
 
 pub(crate) fn update_pbr_lighting_information(
     mut lighting: ResMut<PbrLightingInformation>,
-    lights: Query<(&PointLight, Option<&Transform>)>,
+    lights: WorldView<(&PointLight, Option<&Transform>)>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
 ) {
@@ -204,7 +205,7 @@ pub(crate) fn update_pbr_lighting_information(
 
 pub fn extract_pbr_camera_phase(
     mut binned_phases: ResMut<BinnedRenderPhases<PbrDrawItem>>,
-    cameras: Query<&GpuCamera, With<ViewTarget>>,
+    cameras: Query<&GpuCamera, With<ViewTarget>>, // DO NOT CHANGE TO WorldView
 ) {
     let mut live_entities = HashSet::new();
 

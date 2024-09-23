@@ -6,7 +6,9 @@ use weaver_core::{prelude::Mat4, transform::Transform};
 use weaver_ecs::{
     component::Res,
     entity::EntityMap,
-    prelude::{Component, Entity, QueryFetchItem, Reflect, Resource, SystemParamItem, World},
+    prelude::{
+        Component, Entity, QueryFetchItem, Reflect, Resource, SystemParamItem, World, WorldView,
+    },
     query::Query,
     storage::Ref,
 };
@@ -108,7 +110,7 @@ impl GetBatchData for PrepassMeshInstances {
     );
     type UpdateQueryFilter = ();
 
-    fn update(&mut self, query: Query<Self::UpdateQueryFetch>) {
+    fn update(&mut self, query: WorldView<Self::UpdateQueryFetch>) {
         self.instances.clear();
         for (entity, (mesh, material, transform)) in query.iter() {
             self.instances.insert(
