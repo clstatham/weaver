@@ -14,7 +14,7 @@ use super::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum QueryAccess {
+pub enum QueryFetchAccess {
     ReadOnly,
     ReadWrite,
 }
@@ -22,7 +22,7 @@ pub enum QueryAccess {
 pub trait QueryFetch: Send + Sync {
     type Item<'w>;
 
-    fn access() -> &'static [(TypeId, QueryAccess)];
+    fn access() -> &'static [(TypeId, QueryFetchAccess)];
 
     fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Self::Item<'_>>;
 
@@ -40,9 +40,10 @@ pub trait QueryFetch: Send + Sync {
 impl<T: Component> QueryFetch for &T {
     type Item<'w> = Ref<'w, T>;
 
-    fn access() -> &'static [(TypeId, QueryAccess)] {
-        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
-        ACCESS.get_or_init(|| vec![(TypeId::of::<T>(), QueryAccess::ReadOnly)])
+    fn access() -> &'static [(TypeId, QueryFetchAccess)] {
+        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFetchAccess)>> =
+            std::sync::OnceLock::new();
+        ACCESS.get_or_init(|| vec![(TypeId::of::<T>(), QueryFetchAccess::ReadOnly)])
     }
 
     fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Ref<'_, T>> {
@@ -132,9 +133,10 @@ impl<T: Component> QueryFetch for &T {
 impl<T: Component> QueryFetch for &mut T {
     type Item<'w> = Mut<'w, T>;
 
-    fn access() -> &'static [(TypeId, QueryAccess)] {
-        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
-        ACCESS.get_or_init(|| vec![(TypeId::of::<T>(), QueryAccess::ReadWrite)])
+    fn access() -> &'static [(TypeId, QueryFetchAccess)] {
+        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFetchAccess)>> =
+            std::sync::OnceLock::new();
+        ACCESS.get_or_init(|| vec![(TypeId::of::<T>(), QueryFetchAccess::ReadWrite)])
     }
 
     fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Mut<'_, T>> {
@@ -225,8 +227,9 @@ pub type QueryFetchItem<'w, T> = <T as QueryFetch>::Item<'w>;
 
 impl QueryFetch for () {
     type Item<'w> = ();
-    fn access() -> &'static [(TypeId, QueryAccess)] {
-        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
+    fn access() -> &'static [(TypeId, QueryFetchAccess)] {
+        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFetchAccess)>> =
+            std::sync::OnceLock::new();
         ACCESS.get_or_init(Vec::new)
     }
 
@@ -266,7 +269,7 @@ impl QueryFetch for () {
 
 impl<T: QueryFetch> QueryFetch for Option<T> {
     type Item<'w> = Option<T::Item<'w>>;
-    fn access() -> &'static [(TypeId, QueryAccess)] {
+    fn access() -> &'static [(TypeId, QueryFetchAccess)] {
         T::access()
     }
 
@@ -302,8 +305,8 @@ macro_rules! impl_query_fetch {
                 <$param as QueryFetch>::Item<'w>,
                 )*);
 
-            fn access() -> &'static [(TypeId, QueryAccess)] {
-                static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryAccess)>> = std::sync::OnceLock::new();
+            fn access() -> &'static [(TypeId, QueryFetchAccess)] {
+                static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFetchAccess)>> = std::sync::OnceLock::new();
                 ACCESS.get_or_init(|| vec![$($param::access(),)*].concat())
             }
 
@@ -356,11 +359,24 @@ impl_query_fetch!(A, B, C, D, E, F);
 impl_query_fetch!(A, B, C, D, E, F, G);
 impl_query_fetch!(A, B, C, D, E, F, G, H);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryFilterAccess {
+    With,
+    Without,
+}
+
 pub trait QueryFilter: Send + Sync {
+    fn access() -> &'static [(TypeId, QueryFilterAccess)];
     fn test_archetype(archetype: &Archetype) -> bool;
 }
 
 impl QueryFilter for () {
+    fn access() -> &'static [(TypeId, QueryFilterAccess)] {
+        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFilterAccess)>> =
+            std::sync::OnceLock::new();
+        ACCESS.get_or_init(Vec::new)
+    }
+
     fn test_archetype(_: &Archetype) -> bool {
         true
     }
@@ -369,6 +385,11 @@ impl QueryFilter for () {
 macro_rules! impl_query_filter {
     ($($param:ident),*) => {
         impl<$($param: QueryFilter),*> QueryFilter for ($($param,)*) {
+            fn access() -> &'static [(TypeId, QueryFilterAccess)] {
+                static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFilterAccess)>> = std::sync::OnceLock::new();
+                ACCESS.get_or_init(|| vec![$($param::access(),)*].concat())
+            }
+
             fn test_archetype(archetype: &Archetype) -> bool {
                 $(
                     $param::test_archetype(archetype) &&
@@ -391,6 +412,12 @@ impl_query_filter!(A, B, C, D, E, F, G, H);
 pub struct With<T: Component>(PhantomData<T>);
 
 impl<T: Component> QueryFilter for With<T> {
+    fn access() -> &'static [(TypeId, QueryFilterAccess)] {
+        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFilterAccess)>> =
+            std::sync::OnceLock::new();
+        ACCESS.get_or_init(|| vec![(TypeId::of::<T>(), QueryFilterAccess::With)])
+    }
+
     fn test_archetype(archetype: &Archetype) -> bool {
         archetype.contains_component_by_type_id(TypeId::of::<T>())
     }
@@ -399,6 +426,12 @@ impl<T: Component> QueryFilter for With<T> {
 pub struct Without<T: Component>(PhantomData<T>);
 
 impl<T: Component> QueryFilter for Without<T> {
+    fn access() -> &'static [(TypeId, QueryFilterAccess)] {
+        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFilterAccess)>> =
+            std::sync::OnceLock::new();
+        ACCESS.get_or_init(|| vec![(TypeId::of::<T>(), QueryFilterAccess::Without)])
+    }
+
     fn test_archetype(archetype: &Archetype) -> bool {
         !archetype.contains_component_by_type_id(TypeId::of::<T>())
     }
@@ -511,7 +544,7 @@ where
             components_read: Q::access()
                 .iter()
                 .filter_map(|(ty, access)| {
-                    if let QueryAccess::ReadOnly = access {
+                    if let QueryFetchAccess::ReadOnly = access {
                         Some(*ty)
                     } else {
                         None
@@ -521,7 +554,7 @@ where
             components_written: Q::access()
                 .iter()
                 .filter_map(|(ty, access)| {
-                    if let QueryAccess::ReadWrite = access {
+                    if let QueryFetchAccess::ReadWrite = access {
                         Some(*ty)
                     } else {
                         None

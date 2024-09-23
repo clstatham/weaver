@@ -8,7 +8,7 @@ use weaver_util::{warn_once, Result};
 
 use crate::prelude::{
     Bundle, Entities, IntoSystem, MultiResource, QueryFetch, QueryFilter, QueryState, Res, ResMut,
-    Resource, Resources, System, SystemStage, Systems, Tick,
+    Resource, Resources, System, SystemStage, Systems, Tick, WorldView,
 };
 
 use super::{
@@ -251,6 +251,14 @@ impl World {
     /// Queries the world for entities with components that match the query and filter.
     pub fn query_filtered<Q: QueryFetch, F: QueryFilter>(&self) -> QueryState<Q, F> {
         QueryState::new(self)
+    }
+
+    pub fn world_view<Q: QueryFetch>(&self) -> WorldView<Q, ()> {
+        WorldView::new(self.as_unsafe_world_cell_readonly())
+    }
+
+    pub fn world_view_filtered<Q: QueryFetch, F: QueryFilter>(&self) -> WorldView<Q, F> {
+        WorldView::new(self.as_unsafe_world_cell_readonly())
     }
 
     /// Gets a shared reference to a resource from the world.

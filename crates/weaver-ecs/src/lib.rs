@@ -12,6 +12,7 @@ pub mod storage;
 pub mod system;
 pub mod system_schedule;
 pub mod world;
+pub mod world_view;
 
 pub mod prelude {
     pub use crate::bundle::*;
@@ -25,6 +26,7 @@ pub mod prelude {
     pub use crate::system::*;
     pub use crate::system_schedule::*;
     pub use crate::world::*;
+    pub use crate::world_view::*;
     pub use weaver_ecs_macros::*;
     pub use weaver_reflect_macros::*;
 }

@@ -453,7 +453,7 @@ macro_rules! impl_system_param_tuple {
 
                 $(
                     let a = $param::access();
-                    assert!(a.is_compatible(&access), "SystemParam validation failed for {}", std::any::type_name::<$param>());
+                    debug_assert!(a.is_compatible(&access), "SystemParam validation failed for {}", std::any::type_name::<$param>());
                     access.extend(a);
                 )*
 
