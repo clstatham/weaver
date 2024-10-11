@@ -63,20 +63,21 @@ fn main() -> Result<()> {
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
         .insert_resource(Filesystem::default().with_pk3s_from_dir("assets/q3")?)
         .init_resource::<FpsHistory>()
-        .add_system(load_shaders, Init)
-        .add_system_after(setup, load_shaders, Init)
+        .add_system(setup, Init)
+        // .add_system(load_shaders, Init)
+        // .add_system_after(setup, load_shaders, Init)
         .add_system(camera::update_camera, Update)
         .add_system(camera::update_aspect_ratio, Update)
         .add_system(fps_ui, Update)
         .run()
 }
 
-fn load_shaders(mut fs: ResMut<Filesystem>, mut cache: ResMut<LexedShaderCache>) {
-    cache.load_all("scripts", &mut fs).unwrap();
-    let mut shaders = cache.shader_names().collect::<Vec<_>>();
-    shaders.sort();
-    log::debug!("Loaded shaders: {:#?}", shaders);
-}
+// fn load_shaders(mut fs: ResMut<Filesystem>, mut cache: ResMut<LexedShaderCache>) {
+//     cache.load_all("scripts", &mut fs).unwrap();
+//     let mut shaders = cache.shader_names().collect::<Vec<_>>();
+//     shaders.sort();
+//     log::debug!("Loaded shaders: {:#?}", shaders);
+// }
 
 fn setup(mut commands: Commands, mut bsp_loader: ResMut<AssetLoadQueue<Bsp, BspLoader>>) {
     commands.spawn((

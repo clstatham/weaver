@@ -3,6 +3,7 @@ use std::{collections::HashSet, ops::Range};
 use assets::material_mesh::{LoadedModelWithMaterials, ObjMaterialModelLoader};
 use light::{PointLight, PointLightPlugin};
 use material::{GpuMaterial, MaterialPlugin, BLACK_TEXTURE, ERROR_TEXTURE, WHITE_TEXTURE};
+use prelude::Material;
 use render::{PbrLightingInformation, PbrMeshInstances, PbrNode, PbrNodeLabel, PbrRenderCommand};
 use skybox::{Skybox, SkyboxNodeLabel, SkyboxNodePlugin, SkyboxPlugin};
 use weaver_app::prelude::*;
@@ -107,6 +108,7 @@ pub struct PbrPlugin;
 
 impl Plugin for PbrPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
+        app.add_asset::<Material>();
         app.add_asset_loader::<LoadedModelWithMaterials, ObjMaterialModelLoader>();
 
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();

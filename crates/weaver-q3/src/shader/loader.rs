@@ -64,7 +64,7 @@ impl LexedShaderCache {
         self.0.keys().map(String::as_str)
     }
 
-    pub fn load_all(&mut self, dirname: &str, fs: &mut Filesystem) -> Result<()> {
+    pub fn load_all(&mut self, dirname: &str, fs: &Filesystem) -> Result<()> {
         for path in fs.read_dir(dirname)? {
             if path.is_dir() {
                 continue;

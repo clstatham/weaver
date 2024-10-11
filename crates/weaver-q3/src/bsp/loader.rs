@@ -259,6 +259,8 @@ impl Loader<Bsp> for BspLoader {
 
         let mut bsp = Bsp::with_capacity(meshes_and_textures.nodes.len(), gen.file.vis_data);
 
+        self.lexed_shader_cache.write().load_all("scripts", fs)?;
+
         let mut mesh_load_queue = load_queues
             .get_load_queue::<Mesh, MeshBoxedLoader>()
             .unwrap();
