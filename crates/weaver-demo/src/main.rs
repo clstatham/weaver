@@ -19,7 +19,6 @@ use weaver_q3::{
         render::BspRenderNodeLabel,
     },
     pk3::Pk3Filesystem,
-    shader::loader::LexedShaderCache,
     Q3Plugin,
 };
 use weaver_renderer::{

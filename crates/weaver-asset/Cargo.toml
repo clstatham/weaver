@@ -8,6 +8,7 @@ log = "0.4"
 atomic_refcell = "0.1.13"
 zip = "2.1"
 petgraph = "0.6.5"
+pollster = "0.3.0"
 
 weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }

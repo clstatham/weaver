@@ -8,7 +8,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use petgraph::prelude::*;
 use weaver_app::{App, SubApp};
 use weaver_ecs::{
     prelude::{reflect_trait, Component, Res, ResMut, Resource, SystemStage},
@@ -21,8 +20,8 @@ use zip::ZipArchive;
 
 pub mod prelude {
     pub use crate::{
-        Asset, AssetLoadQueue, AssetLoadQueues, Assets, Handle, Loader, ReflectAsset,
-        UntypedHandle, Url,
+        load_all_assets, Asset, AssetLoadQueue, AssetLoadQueues, Assets, Handle, Loader,
+        ReflectAsset, UntypedHandle, Url,
     };
     pub use weaver_asset_macros::Asset;
 }
@@ -554,7 +553,7 @@ impl<T: Asset, L: Loader<T>> AssetLoadQueue<T, L> {
             match loader.load(request.source, fs, &load_queues) {
                 Ok(asset) => loaded_assets.push((request.handle, asset)),
                 Err(err) => {
-                    log::error!("Failed to load asset: {:?}", err);
+                    log::error!("Failed to load asset: {}", err);
                 }
             }
         }
@@ -594,6 +593,9 @@ impl SystemStage for AssetLoad {}
 pub trait AssetApp {
     fn add_asset<T: Asset>(&mut self) -> &mut Self;
     fn add_asset_loader<T: Asset, L: Loader<T>>(&mut self) -> &mut Self;
+    fn add_asset_load_dependency<T: Asset, L: Loader<T>, D: Asset, DL: Loader<D>>(
+        &mut self,
+    ) -> &mut Self;
 }
 
 impl AssetApp for SubApp {
@@ -618,6 +620,17 @@ impl AssetApp for SubApp {
         }
         self
     }
+
+    fn add_asset_load_dependency<T: Asset, L: Loader<T>, D: Asset, DL: Loader<D>>(
+        &mut self,
+    ) -> &mut Self {
+        self.world_mut().add_system_dependency(
+            AssetLoad,
+            load_all_assets::<T, L>,
+            load_all_assets::<D, DL>,
+        );
+        self
+    }
 }
 
 impl AssetApp for App {
@@ -630,14 +643,23 @@ impl AssetApp for App {
         self.main_app_mut().add_asset_loader::<T, L>();
         self
     }
+
+    fn add_asset_load_dependency<T: Asset, L: Loader<T>, Dep: Asset, DepLoader: Loader<Dep>>(
+        &mut self,
+    ) -> &mut Self {
+        self.main_app_mut()
+            .add_asset_load_dependency::<T, L, Dep, DepLoader>();
+        self
+    }
 }
 
-fn load_all_assets<T: Asset, L: Loader<T>>(
+pub fn load_all_assets<T: Asset, L: Loader<T>>(
     world: &mut World,
     mut load_queue: ResMut<AssetLoadQueue<T, L>>,
     mut assets: ResMut<Assets<T>>,
     fs: Res<Filesystem>,
 ) {
+    log::debug!("Loading all assets of type: {}", std::any::type_name::<T>());
     let loader = L::from_world(world);
     load_queue
         .load_all(&loader, &fs, &mut assets, world)

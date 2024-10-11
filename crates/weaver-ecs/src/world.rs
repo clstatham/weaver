@@ -396,6 +396,24 @@ impl World {
         self.systems.add_update_stage_after::<T, AFTER>();
     }
 
+    pub fn add_system_dependency<STAGE, M1, M2, S1, S2>(
+        &mut self,
+        stage: STAGE,
+        system: S1,
+        dependency: S2,
+    ) where
+        STAGE: SystemStage,
+        M1: 'static,
+        M2: 'static,
+        S1: IntoSystem<M1>,
+        S2: IntoSystem<M2>,
+        S1::System: System<Output = ()>,
+        S2::System: System<Output = ()>,
+    {
+        self.systems
+            .add_system_dependency(stage, system, dependency);
+    }
+
     /// Adds a system to the given system stage. If the system has already been added to the stage, a warning is logged and the system is not added again.
     pub fn add_system<T, S, M>(&mut self, system: S, stage: T)
     where

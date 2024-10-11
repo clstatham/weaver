@@ -69,6 +69,24 @@ impl Systems {
             .insert(TypeId::of::<T>(), SystemGraph::default());
     }
 
+    pub fn add_system_dependency<STAGE, BEFORE, AFTER, M1, M2>(
+        &mut self,
+        _stage: STAGE,
+        before: BEFORE,
+        after: AFTER,
+    ) where
+        STAGE: SystemStage,
+        BEFORE: IntoSystem<M1>,
+        AFTER: IntoSystem<M2>,
+        M1: 'static,
+        M2: 'static,
+    {
+        self.systems
+            .get_mut(&TypeId::of::<STAGE>())
+            .expect("System stage not found")
+            .add_edge::<M1, M2, BEFORE, AFTER>(before, after);
+    }
+
     pub fn add_system<T, S, M>(&mut self, system: S, _stage: T)
     where
         T: SystemStage,

@@ -3235,6 +3235,7 @@ dependencies = [
  "atomic_refcell",
  "log",
  "petgraph",
+ "pollster",
  "weaver-app",
  "weaver-asset-macros",
  "weaver-ecs",

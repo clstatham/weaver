@@ -296,7 +296,9 @@ impl Loader<Bsp> for BspLoader {
                             shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
                         } else if let Some(shader) = lexed_shader_cache.get(texture_name) {
                             let shader = self.load_shader_from_lexed(shader.clone(), load_queues);
+
                             let shader = shader_load_queue.enqueue(shader);
+
                             loaded_shader_cache.insert(texture_name.to_string(), shader);
                             shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
                         } else {
