@@ -1,23 +1,28 @@
 use std::{
     cell::UnsafeCell,
     fmt::Debug,
+    fs::File,
     hash::{Hash, Hasher},
+    io::{BufReader, Read},
     ops::{Deref, DerefMut},
+    path::{Path, PathBuf},
 };
 
-use loading::{Loadable, Loader};
+use petgraph::prelude::*;
 use weaver_app::{App, SubApp};
-use weaver_ecs::prelude::{reflect_trait, Component, Resource};
-use weaver_util::{
-    define_atomic_id, {anyhow, impl_downcast, DowncastSync, Error, FxHashMap, Result},
+use weaver_ecs::{
+    prelude::{reflect_trait, Component, Res, ResMut, Resource, SystemStage},
+    world::{FromWorld, UnsafeWorldCell, World},
 };
-
-pub mod loading;
+use weaver_util::{
+    anyhow, define_atomic_id, impl_downcast, DowncastSync, Error, FxHashMap, Lock, Result,
+};
+use zip::ZipArchive;
 
 pub mod prelude {
     pub use crate::{
-        loading::{AssetLoader, Loader},
-        Asset, Assets, Handle, ReflectAsset, UntypedHandle,
+        Asset, AssetLoadQueue, AssetLoadQueues, Assets, Handle, Loader, ReflectAsset,
+        UntypedHandle, Url,
     };
     pub use weaver_asset_macros::Asset;
 }
@@ -29,8 +34,9 @@ pub trait Asset: DowncastSync {}
 impl_downcast!(Asset);
 
 impl Asset for () {}
+impl<T: Asset> Asset for Vec<T> {}
 
-#[derive(Component)]
+#[derive(Component, Resource)]
 pub struct Handle<T: Asset> {
     id: AssetId,
     _marker: std::marker::PhantomData<T>,
@@ -194,7 +200,7 @@ pub struct Assets<T: Asset> {
     storage: FxHashMap<AssetId, UnsafeCell<T>>,
 }
 
-// SAFETY: Assets are Sync and we validate access to them before using them.
+// SAFETY: `Asset` implementors are Sync and we validate access to them before using them.
 unsafe impl<T: Asset> Sync for Assets<T> {}
 
 impl<T: Asset> Assets<T> {
@@ -245,10 +251,349 @@ impl<T: Asset> Assets<T> {
     }
 }
 
+#[derive(Debug)]
+pub struct Url(PathBuf);
+
+impl Url {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self(path.into())
+    }
+
+    pub fn path(&self) -> &PathBuf {
+        &self.0
+    }
+}
+
+impl From<PathBuf> for Url {
+    fn from(path: PathBuf) -> Self {
+        Self(path)
+    }
+}
+
+impl From<&str> for Url {
+    fn from(path: &str) -> Self {
+        Self(path.into())
+    }
+}
+
+/// Virtual filesystem created from one or more directories or archives.
+#[derive(Default, Resource)]
+pub struct Filesystem {
+    roots: Vec<PathBuf>,
+    archives: Vec<Lock<ZipArchive<BufReader<File>>>>,
+}
+
+impl Filesystem {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_root(mut self, root: impl AsRef<Path>) -> Self {
+        self.add_root(root);
+        self
+    }
+
+    pub fn with_archive(mut self, archive: impl AsRef<Path>) -> Result<Self> {
+        self.add_archive(archive)?;
+        Ok(self)
+    }
+
+    pub fn add_root(&mut self, root: impl AsRef<Path>) {
+        self.roots.push(root.as_ref().to_path_buf());
+    }
+
+    pub fn add_archive(&mut self, archive: impl AsRef<Path>) -> Result<()> {
+        let archive = File::open(archive)?;
+        let archive = BufReader::new(archive);
+        let archive = ZipArchive::new(archive)?;
+        self.archives.push(Lock::new(archive));
+        Ok(())
+    }
+
+    pub fn read_dir(&self, dir_path: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
+        let dir_path = dir_path.as_ref();
+        for root in self.roots.iter() {
+            let full_path = root.join(dir_path);
+            if full_path.exists() {
+                let mut entries = std::fs::read_dir(full_path)?
+                    .map(|entry| entry.map(|e| e.path()))
+                    .collect::<Result<Vec<_>, _>>()?;
+                entries.sort();
+                return Ok(entries);
+            }
+        }
+
+        let mut files = Vec::new();
+
+        for archive in self.archives.iter() {
+            let mut archive = archive.write();
+
+            for i in 0..archive.len() {
+                let file = archive.by_index(i)?;
+                let path = file.enclosed_name().unwrap();
+                if path.starts_with(dir_path) {
+                    files.push(path);
+                }
+            }
+        }
+
+        if !files.is_empty() {
+            return Ok(files);
+        }
+
+        Err(anyhow!("Failed to list directory: {:?}", dir_path))
+    }
+
+    pub fn exists(&self, path: impl AsRef<Path>) -> bool {
+        let path = path.as_ref();
+        for root in self.roots.iter() {
+            let full_path = root.join(path);
+            if full_path.exists() {
+                return true;
+            }
+        }
+
+        for archive in self.archives.iter() {
+            let mut archive = archive.write();
+            if archive.by_name(path.as_os_str().to_str().unwrap()).is_ok() {
+                return true;
+            };
+        }
+
+        false
+    }
+
+    pub fn read_sub_path(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
+        let path = path.as_ref();
+        for root in self.roots.iter() {
+            let full_path = root.join(path);
+            if full_path.exists() {
+                return Ok(std::fs::read(full_path)?);
+            }
+        }
+
+        for archive in self.archives.iter() {
+            let mut archive = archive.write();
+            if let Ok(mut sub_path) = archive.by_name(path.as_os_str().to_str().unwrap()) {
+                let mut buf = Vec::new();
+                sub_path.read_to_end(&mut buf)?;
+                return Ok(buf);
+            };
+        }
+
+        Err(anyhow!("Failed to read sub path: {:?}", path))
+    }
+}
+
+pub enum LoadSource {
+    Url(Url),
+    Bytes(Vec<u8>),
+    BoxedAsset(Box<dyn Asset>),
+}
+
+impl LoadSource {
+    pub fn from_url(url: Url) -> Self {
+        Self::Url(url)
+    }
+
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self::Bytes(bytes)
+    }
+
+    pub fn as_url(&self) -> Option<&Url> {
+        match self {
+            LoadSource::Url(url) => Some(url),
+            _ => None,
+        }
+    }
+
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        match self {
+            LoadSource::Bytes(bytes) => Some(bytes),
+            _ => None,
+        }
+    }
+
+    pub fn as_path(&self) -> Option<&Path> {
+        match self {
+            LoadSource::Url(url) => Some(url.path()),
+            _ => None,
+        }
+    }
+}
+
+impl From<Url> for LoadSource {
+    fn from(url: Url) -> Self {
+        Self::Url(url)
+    }
+}
+
+impl From<Vec<u8>> for LoadSource {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self::Bytes(bytes)
+    }
+}
+
+impl From<Box<dyn Asset>> for LoadSource {
+    fn from(asset: Box<dyn Asset>) -> Self {
+        Self::BoxedAsset(asset)
+    }
+}
+
+impl<T: Asset> From<T> for LoadSource {
+    fn from(asset: T) -> Self {
+        Self::BoxedAsset(Box::new(asset))
+    }
+}
+
+impl From<&str> for LoadSource {
+    fn from(path: &str) -> Self {
+        Self::Url(Url::from(path))
+    }
+}
+
+impl From<&Path> for LoadSource {
+    fn from(path: &Path) -> Self {
+        Self::Url(Url::new(path.to_path_buf()))
+    }
+}
+
+impl Debug for LoadSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LoadSource::Url(url) => write!(f, "Url({:?})", url),
+            LoadSource::Bytes(bytes) => write!(f, "Bytes({} bytes)", bytes.len()),
+            LoadSource::BoxedAsset(_) => write!(f, "Dyn(Asset)"),
+        }
+    }
+}
+
+pub trait Loader<T: Asset>: FromWorld + Send + Sync + 'static {
+    fn load(
+        &self,
+        source: LoadSource,
+        fs: &Filesystem,
+        load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<T>;
+}
+
+pub struct AssetLoadRequest<T: Asset, L: Loader<T>> {
+    handle: Handle<T>,
+    source: LoadSource,
+    _marker: std::marker::PhantomData<L>,
+}
+
+#[derive(Resource)]
+pub struct AssetLoadQueue<T: Asset, L: Loader<T>> {
+    queue: Vec<AssetLoadRequest<T, L>>,
+}
+
+impl<T: Asset, L: Loader<T>> Default for AssetLoadQueue<T, L> {
+    fn default() -> Self {
+        Self { queue: Vec::new() }
+    }
+}
+
+impl<T: Asset, L: Loader<T>> AssetLoadQueue<T, L> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn enqueue(&mut self, source: impl Into<LoadSource>) -> Handle<T> {
+        let handle = Handle::from_raw(AssetId::new());
+        self.queue.push(AssetLoadRequest {
+            handle,
+            source: source.into(),
+            _marker: std::marker::PhantomData,
+        });
+        handle
+    }
+
+    pub fn push(&mut self, request: AssetLoadRequest<T, L>) {
+        self.queue.push(request);
+    }
+
+    pub fn pop(&mut self) -> Option<AssetLoadRequest<T, L>> {
+        self.queue.pop()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.queue.len()
+    }
+
+    pub fn clear(&mut self) {
+        self.queue.clear();
+    }
+
+    pub fn drain(&mut self) -> impl Iterator<Item = AssetLoadRequest<T, L>> + '_ {
+        self.queue.drain(..)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &AssetLoadRequest<T, L>> {
+        self.queue.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut AssetLoadRequest<T, L>> {
+        self.queue.iter_mut()
+    }
+
+    pub fn load_all(
+        &mut self,
+        loader: &L,
+        fs: &Filesystem,
+        assets: &mut Assets<T>,
+        world: &mut World,
+    ) -> Result<()> {
+        let mut loaded_assets = Vec::new();
+        let load_queues = AssetLoadQueues::new(world);
+        for request in self.queue.drain(..) {
+            match loader.load(request.source, fs, &load_queues) {
+                Ok(asset) => loaded_assets.push((request.handle, asset)),
+                Err(err) => {
+                    log::error!("Failed to load asset: {:?}", err);
+                }
+            }
+        }
+
+        for (handle, asset) in loaded_assets {
+            assets.insert_manual(asset, handle.id);
+        }
+        Ok(())
+    }
+
+    // todo: load_all_async?
+}
+
+pub struct AssetLoadQueues<'w> {
+    world: UnsafeWorldCell<'w>,
+}
+
+impl<'w> AssetLoadQueues<'w> {
+    pub fn new(world: &'w mut World) -> Self {
+        Self {
+            world: world.as_unsafe_world_cell(),
+        }
+    }
+
+    pub fn get_load_queue<T: Asset, L: Loader<T>>(
+        &self,
+    ) -> Option<ResMut<'w, AssetLoadQueue<T, L>>> {
+        // SAFETY: We are borrowing the world mutably for the lifetime 'w of this struct.
+        // TODO: Verify that no load queues are borrowed twice at the same time.
+        unsafe { self.world.get_resource_mut() }
+    }
+}
+
+pub struct AssetLoad;
+impl SystemStage for AssetLoad {}
+
 pub trait AssetApp {
     fn add_asset<T: Asset>(&mut self) -> &mut Self;
-    fn add_asset_loader<T: Asset + Loadable, L: Loader<T>>(&mut self) -> &mut Self;
-    fn add_resource_loader<T: Resource + Loadable, L: Loader<T>>(&mut self) -> &mut Self;
+    fn add_asset_loader<T: Asset, L: Loader<T>>(&mut self) -> &mut Self;
 }
 
 impl AssetApp for SubApp {
@@ -259,16 +604,18 @@ impl AssetApp for SubApp {
         self
     }
 
-    fn add_asset_loader<T: Loadable + Asset, L: Loader<T>>(&mut self) -> &mut Self {
+    fn add_asset_loader<T: Asset, L: Loader<T>>(&mut self) -> &mut Self {
         self.add_asset::<T>();
-        let loader = L::from_world(self.world_mut());
-        self.insert_resource(loader);
-        self
-    }
 
-    fn add_resource_loader<T: Resource + Loadable, L: Loader<T>>(&mut self) -> &mut Self {
-        let loader = L::from_world(self.world_mut());
-        self.insert_resource(loader);
+        if !self.has_resource::<AssetLoadQueue<T, L>>() {
+            self.insert_resource(AssetLoadQueue::<T, L>::new());
+
+            if !self.has_system_stage::<AssetLoad>() {
+                self.push_init_stage::<AssetLoad>();
+            }
+
+            self.add_system(load_all_assets::<T, L>, AssetLoad);
+        }
         self
     }
 }
@@ -279,13 +626,20 @@ impl AssetApp for App {
         self
     }
 
-    fn add_asset_loader<T: Loadable + Asset, L: Loader<T>>(&mut self) -> &mut Self {
+    fn add_asset_loader<T: Asset, L: Loader<T>>(&mut self) -> &mut Self {
         self.main_app_mut().add_asset_loader::<T, L>();
         self
     }
+}
 
-    fn add_resource_loader<T: Resource + Loadable, L: Loader<T>>(&mut self) -> &mut Self {
-        self.main_app_mut().add_resource_loader::<T, L>();
-        self
-    }
+fn load_all_assets<T: Asset, L: Loader<T>>(
+    world: &mut World,
+    mut load_queue: ResMut<AssetLoadQueue<T, L>>,
+    mut assets: ResMut<Assets<T>>,
+    fs: Res<Filesystem>,
+) {
+    let loader = L::from_world(world);
+    load_queue
+        .load_all(&loader, &fs, &mut assets, world)
+        .unwrap();
 }

@@ -3233,6 +3233,8 @@ name = "weaver-asset"
 version = "0.1.0"
 dependencies = [
  "atomic_refcell",
+ "log",
+ "petgraph",
  "weaver-app",
  "weaver-asset-macros",
  "weaver-ecs",

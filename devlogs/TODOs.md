@@ -1,0 +1,10 @@
+- Stateful Systems and Queries
+	- Init once, reuse/update stateful resources between runs
+- Custom game states / system stages instead of hardcoded builtin ones
+- Make renderer make more sense
+	- Refactor DrawFns, RenderCommands, batching
+	- Don't assume every camera wants to render the whole scene
+- Upstream various `weaver-q3` functionality and ideas
+	- More complex asset loading, processing, and generation
+		- Load queues, async loading
+		- Asset load notification event

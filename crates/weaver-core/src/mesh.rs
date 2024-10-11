@@ -1,8 +1,7 @@
 use glam::{Vec2, Vec3, Vec4};
 use weaver_asset::{
-    loading::LoadCtx,
     prelude::{Asset, Loader},
-    ReflectAsset,
+    AssetLoadQueues, Filesystem, LoadSource, ReflectAsset,
 };
 use weaver_ecs::prelude::{Reflect, Resource};
 use weaver_util::{anyhow, bail, Result};
@@ -86,26 +85,37 @@ impl Mesh {
 pub struct ObjMeshLoader;
 
 impl Loader<Mesh> for ObjMeshLoader {
-    fn load(&self, ctx: &mut LoadCtx) -> Result<Mesh> {
-        let meshes = load_obj(ctx)?;
+    fn load(
+        &self,
+        source: LoadSource,
+        fs: &Filesystem,
+        _load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<Mesh> {
+        let meshes = load_obj(&source, fs)?;
         if meshes.len() != 1 {
-            bail!(
-                "expected exactly one mesh in OBJ file: {:?}",
-                ctx.original_path()
-            );
+            bail!("expected exactly one mesh in OBJ file: {:?}", &source);
         }
         Ok(meshes.into_iter().next().unwrap())
     }
 }
 
 impl Loader<Vec<Mesh>> for ObjMeshLoader {
-    fn load(&self, ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
-        load_obj(ctx)
+    fn load(
+        &self,
+        source: LoadSource,
+        fs: &Filesystem,
+        _load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<Vec<Mesh>> {
+        load_obj(&source, fs)
     }
 }
 
-pub fn load_obj(ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
-    let bytes = ctx.read_original()?;
+pub fn load_obj(source: &LoadSource, fs: &Filesystem) -> Result<Vec<Mesh>> {
+    let bytes = match source {
+        LoadSource::Url(url) => fs.read_sub_path(url.path())?,
+        LoadSource::Bytes(bytes) => bytes.clone(), // todo: avoid clone
+        _ => bail!("unsupported load source: {:?}", source),
+    };
     let (models, _) = tobj::load_obj_buf(
         &mut std::io::Cursor::new(bytes),
         &tobj::LoadOptions {
@@ -118,10 +128,7 @@ pub fn load_obj(ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
     )?;
 
     if models.is_empty() {
-        bail!(
-            "expected at least one model in OBJ file: {:?}",
-            ctx.original_path()
-        );
+        bail!("expected at least one model in OBJ file: {:?}", source);
     }
 
     let mut meshes = Vec::with_capacity(models.len());
@@ -178,33 +185,41 @@ pub fn load_obj(ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
 pub struct GltfMeshLoader;
 
 impl Loader<Mesh> for GltfMeshLoader {
-    fn load(&self, ctx: &mut LoadCtx) -> Result<Mesh> {
-        let meshes = load_gltf(ctx)?;
+    fn load(
+        &self,
+        source: LoadSource,
+        fs: &Filesystem,
+        _load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<Mesh> {
+        let meshes = load_gltf(&source, fs)?;
         if meshes.len() != 1 {
-            bail!(
-                "expected exactly one mesh in GLTF file: {:?}",
-                ctx.original_path()
-            );
+            bail!("expected exactly one mesh in GLTF file: {:?}", source);
         }
         Ok(meshes.into_iter().next().unwrap())
     }
 }
 
 impl Loader<Vec<Mesh>> for GltfMeshLoader {
-    fn load(&self, ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
-        load_gltf(ctx)
+    fn load(
+        &self,
+        source: LoadSource,
+        fs: &Filesystem,
+        _load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<Vec<Mesh>> {
+        load_gltf(&source, fs)
     }
 }
 
-pub fn load_gltf(ctx: &mut LoadCtx) -> Result<Vec<Mesh>> {
-    let bytes = ctx.read_original()?;
+pub fn load_gltf(source: &LoadSource, fs: &Filesystem) -> Result<Vec<Mesh>> {
+    let bytes = match source {
+        LoadSource::Url(url) => fs.read_sub_path(url.path())?,
+        LoadSource::Bytes(bytes) => bytes.clone(), // todo: avoid clone
+        _ => bail!("unsupported load source: {:?}", source),
+    };
     let (gltf, buffers, _) = gltf::import_slice(bytes)?;
 
     if gltf.meshes().count() == 0 {
-        bail!(
-            "expected at least one mesh in GLTF file: {:?}",
-            ctx.original_path()
-        );
+        bail!("expected at least one mesh in GLTF file: {:?}", source);
     }
 
     let mut meshes = Vec::new();

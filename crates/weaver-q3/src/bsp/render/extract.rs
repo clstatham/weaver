@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use encase::ShaderType;
-use weaver_asset::Assets;
+use weaver_asset::{Assets, Handle};
 use weaver_core::{
     mesh::Mesh,
     prelude::{Vec2, Vec3},
@@ -234,7 +234,8 @@ pub struct BatchedShaderStages {
 #[allow(clippy::too_many_arguments)]
 pub fn extract_bsps(
     world: &mut World,
-    bsp: Extract<Res<'static, Bsp>>,
+    bsp: Extract<Res<'static, Handle<Bsp>>>,
+    bsp_assets: Extract<Res<'static, Assets<Bsp>>>,
     source_meshes: Extract<Res<Assets<Mesh>>>,
     source_shaders: Extract<Res<'static, Assets<LoadedShader>>>,
     source_textures: Extract<Res<'static, Assets<Texture>>>,
@@ -247,6 +248,8 @@ pub fn extract_bsps(
     if world.has_resource::<ExtractedBsp>() {
         return;
     }
+
+    let bsp = bsp_assets.get(**bsp).unwrap();
 
     let mut nodes = vec![None; bsp.nodes.len()];
     let mut shader_meshes = FxHashMap::default();

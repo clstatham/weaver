@@ -5,7 +5,7 @@ use weaver_ecs::{
     component::{Res, ResMut},
     entity::{Entity, EntityMap},
     prelude::{Resource, WorldView},
-    query::{Query, QueryFetch, QueryFilter},
+    query::{QueryFetch, QueryFilter},
     world::{FromWorld, World},
 };
 use weaver_util::{

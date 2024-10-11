@@ -1,16 +1,10 @@
-use weaver_asset::{
-    loading::{Filesystem, LoadCtx, Loader},
-    prelude::Asset,
-    Assets, Handle,
-};
+use weaver_asset::{prelude::Asset, AssetLoadQueues, Filesystem, Handle, LoadSource, Loader, Url};
 use weaver_core::texture::{Texture, TextureLoader};
 use weaver_ecs::prelude::Resource;
-use weaver_pbr::material::{ERROR_TEXTURE, WHITE_TEXTURE};
-use weaver_util::{
-    warn_once, {anyhow, FxHashMap, Result},
-};
+use weaver_pbr::material::ERROR_TEXTURE;
+use weaver_util::{anyhow, FxHashMap, Result};
 
-use crate::shader::{lexer::LexedShaderGlobalParam, parser::parse_shaders_manual};
+use crate::shader::parser::parse_shaders_manual;
 
 use super::lexer::{LexedShader, LexedShaderStage, Map, ShaderStageParam};
 
@@ -132,106 +126,31 @@ impl LoadedShader {
 
         Self { shader, textures }
     }
-
-    pub fn load_from_lexed(shader: LexedShader, load_ctx: &mut LoadCtx) -> Self {
-        let mut textures = FxHashMap::default();
-
-        let mut texture_cache = load_ctx.get_resource_mut::<TextureCache>().unwrap();
-
-        for param in &shader.global_params {
-            if let LexedShaderGlobalParam::EditorImage(path) = param {
-                let stripped = strip_extension(path);
-                let map = Map::Path(stripped.to_string());
-                if textures.contains_key(&map) {
-                    continue;
-                }
-                if let Some(handle) = texture_cache.get(stripped) {
-                    textures.insert(map, handle);
-                    continue;
-                }
-                let handle = match load_ctx.load_asset::<_, TryEverythingTextureLoader>(stripped) {
-                    Ok(texture) => {
-                        log::debug!("Loaded texture: {}", stripped);
-                        let mut texture_assets =
-                            load_ctx.get_resource_mut::<Assets<Texture>>().unwrap();
-                        let handle = texture_assets.insert(texture);
-                        load_ctx.drop_resource_mut(texture_assets);
-                        handle
-                    }
-                    Err(e) => {
-                        warn_once!("Failed to load texture: {}", e);
-                        ERROR_TEXTURE
-                    }
-                };
-                texture_cache.insert(stripped.to_string(), handle);
-                textures.insert(map, handle);
-            }
-        }
-
-        for stage in &shader.stages {
-            for directive in &stage.params {
-                if let ShaderStageParam::Map(map) = directive {
-                    match map {
-                        Map::Path(path) => {
-                            let stripped = strip_extension(path);
-                            let map = Map::Path(stripped.to_string());
-                            if textures.contains_key(&map) {
-                                continue;
-                            }
-                            if let Some(handle) = texture_cache.get(stripped) {
-                                textures.insert(map, handle);
-                                continue;
-                            }
-                            let handle = match load_ctx
-                                .load_asset::<_, TryEverythingTextureLoader>(stripped)
-                            {
-                                Ok(texture) => {
-                                    log::debug!("Loaded texture: {}", stripped);
-                                    let mut texture_assets =
-                                        load_ctx.get_resource_mut::<Assets<Texture>>().unwrap();
-                                    let handle = texture_assets.insert(texture);
-                                    load_ctx.drop_resource_mut(texture_assets);
-                                    handle
-                                }
-                                Err(e) => {
-                                    warn_once!("Failed to load texture: {}", e);
-                                    ERROR_TEXTURE
-                                }
-                            };
-                            texture_cache.insert(stripped.to_string(), handle);
-                            textures.insert(map, handle);
-                        }
-                        Map::WhiteImage => {
-                            textures.insert(Map::WhiteImage, WHITE_TEXTURE);
-                        }
-                        Map::Lightmap => {
-                            textures.insert(Map::Lightmap, WHITE_TEXTURE);
-                        }
-                    }
-                }
-            }
-        }
-
-        load_ctx.drop_resource_mut(texture_cache);
-
-        Self { shader, textures }
-    }
 }
 
 #[derive(Resource, Default)]
 pub struct TryEverythingTextureLoader;
 
 impl Loader<Texture> for TryEverythingTextureLoader {
-    fn load(&self, ctx: &mut LoadCtx<'_, '_>) -> Result<Texture> {
-        let path = ctx.original_path().to_path_buf();
+    fn load(
+        &self,
+        source: LoadSource,
+        fs: &Filesystem,
+        load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<Texture> {
+        let path = source.as_path().unwrap();
 
         let extensions = ["png", "tga", "jpg", "jpeg", "pcx", "bmp"];
         for ext in &extensions {
             let path = path.with_extension(ext);
-            if let Ok(texture) = ctx.load_asset::<_, TextureLoader>(&path) {
+            if let Ok(texture) =
+                TextureLoader.load(LoadSource::Url(Url::new(path)), fs, load_queues)
+            {
                 return Ok(texture);
             }
         }
+
+        // dbg!(fs.read_dir(path.parent().unwrap())?);
 
         Err(anyhow!("Failed to load texture: {:?}", path))
     }

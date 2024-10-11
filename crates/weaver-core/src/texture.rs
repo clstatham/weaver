@@ -1,9 +1,9 @@
 use weaver_asset::{
-    loading::LoadCtx,
     prelude::{Asset, Loader},
+    AssetLoadQueues, Filesystem, LoadSource,
 };
 use weaver_ecs::prelude::Resource;
-use weaver_util::Result;
+use weaver_util::{anyhow, Result};
 
 #[derive(Debug, Clone, Asset)]
 pub struct Texture {
@@ -69,8 +69,22 @@ impl Texture {
 pub struct TextureLoader;
 
 impl Loader<Texture> for TextureLoader {
-    fn load(&self, ctx: &mut LoadCtx) -> Result<Texture> {
-        let bytes = ctx.read_original()?;
+    fn load(
+        &self,
+        source: LoadSource,
+        fs: &Filesystem,
+        _load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<Texture> {
+        let bytes = match source {
+            LoadSource::Url(url) => fs.read_sub_path(url.path())?,
+            LoadSource::Bytes(bytes) => bytes,
+            LoadSource::BoxedAsset(dyn_asset) => {
+                return dyn_asset
+                    .downcast()
+                    .map(|texture: Box<Texture>| *texture)
+                    .map_err(|_| anyhow!("Failed to downcast LoadSource::BoxedAsset to Texture"));
+            }
+        };
         // check if it's a tga file
         if let Ok(image) = image::load_from_memory_with_format(&bytes, image::ImageFormat::Tga) {
             log::trace!(

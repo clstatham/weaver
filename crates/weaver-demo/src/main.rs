@@ -8,7 +8,7 @@ use weaver::{
     weaver_renderer::{camera::Camera, RendererPlugin},
     weaver_winit::WinitPlugin,
 };
-use weaver_asset::loading::Filesystem;
+use weaver_asset::Filesystem;
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::{FrameTime, LogFrameTimePlugin};
 use weaver_egui::{egui, EguiContext, EguiPlugin};
@@ -78,11 +78,7 @@ fn load_shaders(mut fs: ResMut<Filesystem>, mut cache: ResMut<LexedShaderCache>)
     log::debug!("Loaded shaders: {:#?}", shaders);
 }
 
-fn setup(
-    mut commands: Commands,
-    bsp_loader: AssetLoader<Bsp, BspLoader>,
-    mut fs: ResMut<Filesystem>,
-) {
+fn setup(mut commands: Commands, mut bsp_loader: ResMut<AssetLoadQueue<Bsp, BspLoader>>) {
     commands.spawn((
         Camera::default(),
         camera::FlyCameraController {
@@ -97,9 +93,7 @@ fn setup(
         PrimaryCamera,
     ));
 
-    let bsp = bsp_loader
-        .load_from_filesystem(&mut fs, "maps/q3dm1.bsp")
-        .unwrap();
+    let bsp = bsp_loader.enqueue("maps/q3dm1.bsp");
     commands.insert_resource(bsp);
 }
 

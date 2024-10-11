@@ -1,15 +1,8 @@
 use encase::ShaderType;
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{
-    loading::{LoadCtx, Loader},
-    prelude::Asset,
-    Assets, Handle, ReflectAsset,
-};
+use weaver_asset::{prelude::Asset, Assets, Handle, ReflectAsset};
 use weaver_core::{color::Color, texture::Texture};
-use weaver_ecs::{
-    component::Res,
-    prelude::{Reflect, Resource},
-};
+use weaver_ecs::{component::Res, prelude::Reflect};
 use weaver_renderer::{
     asset::{ExtractRenderAssetPlugin, RenderAsset},
     bind_group::{AssetBindGroupPlugin, BindGroupLayout, CreateBindGroup},
@@ -18,7 +11,7 @@ use weaver_renderer::{
     prelude::*,
     texture::{texture_format, GpuTexture},
 };
-use weaver_util::{anyhow, bail, Result};
+use weaver_util::Result;
 
 pub const WHITE_TEXTURE: Handle<Texture> =
     Handle::from_uuid(171952135557955961317447623731106286307);
@@ -78,126 +71,6 @@ impl From<Handle<Texture>> for Material {
             ao_texture: WHITE_TEXTURE,
             texture_scale: 1.0,
         }
-    }
-}
-
-#[derive(Resource, Default)]
-pub struct GltfMaterialLoader;
-
-impl Loader<Material> for GltfMaterialLoader {
-    fn load(&self, ctx: &mut LoadCtx) -> Result<Material> {
-        let bytes = ctx.read_original()?;
-        let (document, _buffers, images) = gltf::import_slice(bytes)?;
-        if document.materials().count() != 1 {
-            bail!("Material file must contain exactly one material");
-        }
-
-        let material = document.materials().next().unwrap();
-        let metallic = material.pbr_metallic_roughness().metallic_factor();
-        let roughness = material.pbr_metallic_roughness().roughness_factor();
-        let ao = material
-            .occlusion_texture()
-            .map_or(1.0, |info| info.strength());
-        let diffuse = material.pbr_metallic_roughness().base_color_factor();
-        let diffuse_texture = material
-            .pbr_metallic_roughness()
-            .base_color_texture()
-            .map(|info| images[info.texture().index()].clone());
-        let normal_texture = material
-            .normal_texture()
-            .map(|info| images[info.texture().index()].clone());
-        let metallic_roughness_texture = material
-            .pbr_metallic_roughness()
-            .metallic_roughness_texture()
-            .map(|info| images[info.texture().index()].clone());
-        let ao_texture = material
-            .occlusion_texture()
-            .map(|info| images[info.texture().index()].clone());
-
-        let diffuse_texture =
-            diffuse_texture.ok_or_else(|| anyhow!("Material must have a diffuse texture"))?;
-        let normal_texture =
-            normal_texture.ok_or_else(|| anyhow!("Material must have a normal texture"))?;
-        let metallic_roughness_texture = metallic_roughness_texture
-            .ok_or_else(|| anyhow!("Material must have a metallic roughness texture"))?;
-        let ao_texture = ao_texture.ok_or_else(|| anyhow!("Material must have an AO texture"))?;
-
-        let diffuse_texture = match diffuse_texture.format {
-            gltf::image::Format::R8G8B8 => Texture::from_rgb8(
-                &diffuse_texture.pixels,
-                diffuse_texture.width,
-                diffuse_texture.height,
-            ),
-            gltf::image::Format::R8G8B8A8 => Texture::from_rgba8(
-                &diffuse_texture.pixels,
-                diffuse_texture.width,
-                diffuse_texture.height,
-            ),
-            format => bail!(
-                "Diffuse texture must be in RGB8 or RGBA8 format (got {:?})",
-                format
-            ),
-        };
-        let normal_texture = match normal_texture.format {
-            gltf::image::Format::R8G8B8 => Texture::from_rgb8(
-                &normal_texture.pixels,
-                normal_texture.width,
-                normal_texture.height,
-            ),
-            gltf::image::Format::R8G8B8A8 => Texture::from_rgba8(
-                &normal_texture.pixels,
-                normal_texture.width,
-                normal_texture.height,
-            ),
-            format => bail!(
-                "Normal texture must be in RGB8 or RGBA8 format (got {:?})",
-                format
-            ),
-        };
-        let metallic_roughness_texture = match metallic_roughness_texture.format {
-            gltf::image::Format::R8G8B8 => Texture::from_rgb8(
-                &metallic_roughness_texture.pixels,
-                metallic_roughness_texture.width,
-                metallic_roughness_texture.height,
-            ),
-            gltf::image::Format::R8G8B8A8 => Texture::from_rgba8(
-                &metallic_roughness_texture.pixels,
-                metallic_roughness_texture.width,
-                metallic_roughness_texture.height,
-            ),
-            format => bail!(
-                "Metallic/Roughness texture must be in RGB8 or RGBA8 format (got {:?})",
-                format
-            ),
-        };
-        let ao_texture = match ao_texture.format {
-            gltf::image::Format::R8G8B8 => {
-                Texture::from_rgb8(&ao_texture.pixels, ao_texture.width, ao_texture.height)
-            }
-            gltf::image::Format::R8G8B8A8 => {
-                Texture::from_rgba8(&ao_texture.pixels, ao_texture.width, ao_texture.height)
-            }
-            format => bail!(
-                "Ambient Occlusion texture must be in RGB8 or RGBA8 format (got {:?})",
-                format
-            ),
-        };
-
-        let mut textures = ctx.get_resource_mut::<Assets<Texture>>().unwrap();
-
-        let material = Material {
-            diffuse: diffuse.into(),
-            diffuse_texture: textures.insert(diffuse_texture),
-            normal_texture: textures.insert(normal_texture),
-            metallic,
-            roughness,
-            metallic_roughness_texture: textures.insert(metallic_roughness_texture),
-            ao,
-            ao_texture: textures.insert(ao_texture),
-            texture_scale: 1.0,
-        };
-
-        Ok(material)
     }
 }
 

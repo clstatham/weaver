@@ -8,7 +8,7 @@ use weaver_core::{prelude::Mat4, transform::Transform};
 use weaver_ecs::{
     component::Res,
     entity::{Entity, EntityMap},
-    prelude::{Query, QueryFetch, Resource, World, WorldView},
+    prelude::{QueryFetch, Resource, World, WorldView},
     storage::Ref,
     system::SystemParamItem,
     world::FromWorld,

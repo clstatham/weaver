@@ -19,6 +19,10 @@ pub struct Systems {
 }
 
 impl Systems {
+    pub fn has_stage<T: SystemStage>(&self) -> bool {
+        self.systems.contains_key(&TypeId::of::<T>())
+    }
+
     pub fn push_update_stage<T: SystemStage>(&mut self) {
         self.update_stages.push(TypeId::of::<T>());
         self.systems

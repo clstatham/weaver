@@ -145,6 +145,10 @@ impl SubApp {
         Ok(self)
     }
 
+    pub fn has_system_stage<T: SystemStage>(&self) -> bool {
+        self.world.has_system_stage::<T>()
+    }
+
     pub fn push_init_stage<T: SystemStage>(&mut self) -> &mut Self {
         self.world.push_init_stage::<T>();
         self

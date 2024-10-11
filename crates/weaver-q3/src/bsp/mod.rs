@@ -1,7 +1,10 @@
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::AssetApp;
+use weaver_core::mesh::Mesh;
 use weaver_renderer::RenderApp;
 use weaver_util::Result;
+
+use crate::shader::loader::LoadedShader;
 
 pub mod generator;
 pub mod loader;
@@ -12,7 +15,9 @@ pub struct BspPlugin;
 
 impl Plugin for BspPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_resource_loader::<loader::Bsp, loader::BspLoader>();
+        app.add_asset_loader::<Mesh, loader::MeshBoxedLoader>();
+        app.add_asset_loader::<LoadedShader, loader::ShaderBoxedLoader>();
+        app.add_asset_loader::<loader::Bsp, loader::BspLoader>();
 
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.add_plugin(render::BspRenderPlugin)?;

@@ -1,13 +1,13 @@
-use weaver_asset::{loading::LoadCtx, prelude::*};
+use weaver_asset::{prelude::*, Filesystem, LoadSource};
 use weaver_core::{
     mesh::{calculate_normals, calculate_tangents, Mesh, Vertex},
     prelude::{Vec2, Vec3, Vec4},
-    texture::Texture,
+    texture::{Texture, TextureLoader},
 };
 use weaver_ecs::prelude::Resource;
 use weaver_util::{anyhow, bail, Result};
 
-use crate::prelude::Material;
+use crate::prelude::{Material, BLACK_TEXTURE, WHITE_TEXTURE};
 
 #[derive(Asset)]
 pub struct LoadedModelWithMaterials {
@@ -42,13 +42,22 @@ impl LoadedMaterialMeshPrimitive {
 pub struct ObjMaterialModelLoader;
 
 impl Loader<LoadedModelWithMaterials> for ObjMaterialModelLoader {
-    fn load(&self, ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWithMaterials> {
-        load_obj_material_mesh(ctx)
+    fn load(
+        &self,
+        source: LoadSource,
+        fs: &Filesystem,
+        load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<LoadedModelWithMaterials> {
+        load_obj_material_mesh(&source, fs, load_queues)
     }
 }
 
-pub fn load_obj_material_mesh(ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWithMaterials> {
-    let bytes = ctx.read_original()?;
+pub fn load_obj_material_mesh(
+    source: &LoadSource,
+    fs: &Filesystem,
+    load_queues: &AssetLoadQueues<'_>,
+) -> Result<LoadedModelWithMaterials> {
+    let bytes = fs.read_sub_path(source.as_url().unwrap().path())?;
     let (models, materials) = tobj::load_obj_buf(
         &mut std::io::Cursor::new(bytes),
         &tobj::LoadOptions {
@@ -58,8 +67,7 @@ pub fn load_obj_material_mesh(ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWi
             ignore_lines: true,
         },
         |mtl_path| {
-            let bytes = ctx
-                .filesystem()
+            let bytes = fs
                 .read_sub_path(mtl_path.as_os_str().to_str().unwrap())
                 .map_err(|e| {
                     log::error!("Failed to open MTL file: {:?}", e);
@@ -71,9 +79,6 @@ pub fn load_obj_material_mesh(ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWi
     let materials = materials?;
 
     let mut primitives = Vec::with_capacity(models.len());
-
-    let black_texture = Texture::from_rgba8(&[0, 0, 0, 255], 1, 1);
-    let white_texture = Texture::from_rgba8(&[255, 255, 255, 255], 1, 1);
 
     for model in &models {
         let mesh = &model.mesh;
@@ -121,70 +126,56 @@ pub fn load_obj_material_mesh(ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWi
 
         match material {
             Some(material) => {
+                let mut texture_load_queue = load_queues
+                    .get_load_queue::<Texture, TextureLoader>()
+                    .unwrap();
+
                 let diffuse = material.diffuse.unwrap_or([1.0, 1.0, 1.0]);
                 let diffuse_texture = match &material.diffuse_texture {
-                    Some(texture) => {
-                        let bytes = ctx.filesystem().read_sub_path(texture)?;
-                        let rgba8 = image::load_from_memory(&bytes)?.to_rgba8();
-                        Texture::from_rgba8(&rgba8, rgba8.width(), rgba8.height())
-                    }
+                    Some(texture) => texture_load_queue.enqueue(Url::new(texture)),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have a diffuse texture");
-                        white_texture.clone()
+                        WHITE_TEXTURE
                     }
                 };
                 let normal_texture = match &material.normal_texture {
-                    Some(texture) => {
-                        let bytes = ctx.filesystem().read_sub_path(texture)?;
-                        let rgba8 = image::load_from_memory(&bytes)?.to_rgba8();
-                        Texture::from_rgba8(&rgba8, rgba8.width(), rgba8.height())
-                    }
+                    Some(texture) => texture_load_queue.enqueue(Url::new(texture)),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have a normal texture");
-                        black_texture.clone()
+                        BLACK_TEXTURE
                     }
                 };
                 let ao = material.ambient.unwrap_or([1.0, 1.0, 1.0]);
                 let ao_texture = match &material.ambient_texture {
-                    Some(texture) => {
-                        let bytes = ctx.filesystem().read_sub_path(texture)?;
-                        let rgba8 = image::load_from_memory(&bytes)?.to_rgba8();
-                        Texture::from_rgba8(&rgba8, rgba8.width(), rgba8.height())
-                    }
+                    Some(texture) => texture_load_queue.enqueue(Url::new(texture)),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have an AO texture");
-                        white_texture.clone()
+                        WHITE_TEXTURE
                     }
                 };
 
                 let metallic = material.shininess.unwrap_or(0.0);
                 let metallic_roughness_texture = match &material.shininess_texture {
-                    Some(texture) => {
-                        let bytes = ctx.filesystem().read_sub_path(texture)?;
-                        let rgba8 = image::load_from_memory(&bytes)?.to_rgba8();
-                        Texture::from_rgba8(&rgba8, rgba8.width(), rgba8.height())
-                    }
+                    Some(texture) => texture_load_queue.enqueue(Url::new(texture)),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have a metallic roughness texture");
-                        black_texture.clone()
+                        BLACK_TEXTURE
                     }
                 };
 
-                let mut textures = ctx.get_resource_mut::<Assets<Texture>>().unwrap();
-
                 let material = Material {
                     diffuse: diffuse.into(),
-                    diffuse_texture: textures.insert(diffuse_texture),
-                    normal_texture: textures.insert(normal_texture),
+                    diffuse_texture,
+                    normal_texture,
                     metallic: metallic / 100.0,
                     roughness: 0.0,
-                    metallic_roughness_texture: textures.insert(metallic_roughness_texture),
+                    metallic_roughness_texture,
                     ao: ao.into_iter().sum::<f32>() / 3.0,
-                    ao_texture: textures.insert(ao_texture),
+                    ao_texture,
                     texture_scale: 1.0,
                 };
 
@@ -196,17 +187,15 @@ pub fn load_obj_material_mesh(ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWi
             None => {
                 log::warn!("Model does not have a material");
 
-                let mut textures = ctx.get_resource_mut::<Assets<Texture>>().unwrap();
-
                 let material = Material {
                     diffuse: [1.0, 1.0, 1.0].into(),
-                    diffuse_texture: textures.insert(white_texture.clone()),
-                    normal_texture: textures.insert(black_texture.clone()),
+                    diffuse_texture: WHITE_TEXTURE,
+                    normal_texture: BLACK_TEXTURE,
                     metallic: 0.0,
                     roughness: 0.0,
-                    metallic_roughness_texture: textures.insert(black_texture.clone()),
+                    metallic_roughness_texture: BLACK_TEXTURE,
                     ao: 1.0,
-                    ao_texture: textures.insert(white_texture.clone()),
+                    ao_texture: WHITE_TEXTURE,
                     texture_scale: 1.0,
                 };
 
@@ -225,22 +214,33 @@ pub fn load_obj_material_mesh(ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWi
 pub struct GltfMaterialModelLoader;
 
 impl Loader<LoadedModelWithMaterials> for GltfMaterialModelLoader {
-    fn load(&self, ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWithMaterials> {
-        load_gltf_material_mesh(ctx)
+    fn load(
+        &self,
+        source: LoadSource,
+        fs: &Filesystem,
+        load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<LoadedModelWithMaterials> {
+        load_gltf_material_mesh(&source, fs, load_queues)
     }
 }
 
-pub fn load_gltf_material_mesh(ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelWithMaterials> {
-    let bytes = ctx.read_original()?;
+pub fn load_gltf_material_mesh(
+    source: &LoadSource,
+    fs: &Filesystem,
+    load_queues: &AssetLoadQueues<'_>,
+) -> Result<LoadedModelWithMaterials> {
+    let bytes = fs.read_sub_path(source.as_url().unwrap().path())?;
     let (document, buffers, images) = gltf::import_slice(bytes)?;
 
     let mut primitives = Vec::new();
 
-    let mut textures = ctx.get_resource_mut::<Assets<Texture>>().unwrap();
+    let mut texture_load_queue = load_queues
+        .get_load_queue::<Texture, TextureLoader>()
+        .unwrap();
 
     for mesh in document.meshes() {
         for primitive in mesh.primitives() {
-            let material = load_material(primitive.material(), &images, &mut textures)?;
+            let material = load_material(primitive.material(), &images, &mut texture_load_queue)?;
 
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
@@ -294,7 +294,7 @@ pub fn load_gltf_material_mesh(ctx: &mut LoadCtx<'_, '_>) -> Result<LoadedModelW
 fn load_material(
     material: gltf::Material,
     images: &[gltf::image::Data],
-    textures: &mut Assets<Texture>,
+    texture_load_queue: &mut AssetLoadQueue<Texture, TextureLoader>,
 ) -> Result<Material> {
     let metallic = material.pbr_metallic_roughness().metallic_factor();
     let roughness = material.pbr_metallic_roughness().roughness_factor();
@@ -388,13 +388,16 @@ fn load_material(
 
     let material = Material {
         diffuse: diffuse.into(),
-        diffuse_texture: textures.insert(diffuse_texture),
-        normal_texture: textures.insert(normal_texture),
+        diffuse_texture: texture_load_queue
+            .enqueue(LoadSource::BoxedAsset(Box::new(diffuse_texture))),
+        normal_texture: texture_load_queue
+            .enqueue(LoadSource::BoxedAsset(Box::new(normal_texture))),
         metallic,
         roughness,
-        metallic_roughness_texture: textures.insert(metallic_roughness_texture),
+        metallic_roughness_texture: texture_load_queue
+            .enqueue(LoadSource::BoxedAsset(Box::new(metallic_roughness_texture))),
         ao,
-        ao_texture: textures.insert(ao_texture),
+        ao_texture: texture_load_queue.enqueue(LoadSource::BoxedAsset(Box::new(ao_texture))),
         texture_scale: 1.0,
     };
 

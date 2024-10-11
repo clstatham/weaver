@@ -23,7 +23,6 @@ use weaver_ecs::{
     commands::Commands,
     component::{Res, ResMut},
     prelude::{Resource, WorldView},
-    query::Query,
     reflect::registry::TypeRegistry,
     system_schedule::SystemStage,
     world::World,

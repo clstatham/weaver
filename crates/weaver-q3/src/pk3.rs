@@ -1,4 +1,4 @@
-use weaver_asset::loading::Filesystem;
+use weaver_asset::Filesystem;
 use weaver_util::Result;
 
 pub trait Pk3Filesystem {

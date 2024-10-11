@@ -362,6 +362,10 @@ impl World {
         self.last_change_tick
     }
 
+    pub fn has_system_stage<T: SystemStage>(&self) -> bool {
+        self.systems.has_stage::<T>()
+    }
+
     /// Pushes a system stage to the end of the "init" system schedule.
     pub fn push_init_stage<T: SystemStage>(&mut self) {
         self.systems.push_init_stage::<T>();

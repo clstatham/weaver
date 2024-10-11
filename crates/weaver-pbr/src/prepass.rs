@@ -9,7 +9,6 @@ use weaver_ecs::{
     prelude::{
         Component, Entity, QueryFetchItem, Reflect, Resource, SystemParamItem, World, WorldView,
     },
-    query::Query,
     storage::Ref,
 };
 use weaver_renderer::{
