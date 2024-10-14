@@ -148,8 +148,6 @@ impl Loader<Texture> for TryEverythingTextureLoader {
             }
         }
 
-        // dbg!(fs.read_dir(path.parent().unwrap())?);
-
         Err(anyhow!("Failed to load texture: {:?}", path))
     }
 }
