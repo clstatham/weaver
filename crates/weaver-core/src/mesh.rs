@@ -112,7 +112,7 @@ impl Loader<Vec<Mesh>> for ObjMeshLoader {
 
 pub fn load_obj(source: &LoadSource, fs: &Filesystem) -> Result<Vec<Mesh>> {
     let bytes = match source {
-        LoadSource::Url(url) => fs.read_sub_path(url.path())?,
+        LoadSource::Path(path) => fs.read_sub_path(path)?,
         LoadSource::Bytes(bytes) => bytes.clone(), // todo: avoid clone
         _ => bail!("unsupported load source: {:?}", source),
     };
@@ -212,7 +212,7 @@ impl Loader<Vec<Mesh>> for GltfMeshLoader {
 
 pub fn load_gltf(source: &LoadSource, fs: &Filesystem) -> Result<Vec<Mesh>> {
     let bytes = match source {
-        LoadSource::Url(url) => fs.read_sub_path(url.path())?,
+        LoadSource::Path(path) => fs.read_sub_path(path)?,
         LoadSource::Bytes(bytes) => bytes.clone(), // todo: avoid clone
         _ => bail!("unsupported load source: {:?}", source),
     };

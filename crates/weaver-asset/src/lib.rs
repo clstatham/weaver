@@ -21,7 +21,7 @@ use zip::ZipArchive;
 pub mod prelude {
     pub use crate::{
         load_all_assets, Asset, AssetLoadQueue, AssetLoadQueues, Assets, Handle, Loader,
-        ReflectAsset, UntypedHandle, Url,
+        ReflectAsset, UntypedHandle,
     };
     pub use weaver_asset_macros::Asset;
 }
@@ -250,31 +250,6 @@ impl<T: Asset> Assets<T> {
     }
 }
 
-#[derive(Debug)]
-pub struct Url(PathBuf);
-
-impl Url {
-    pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self(path.into())
-    }
-
-    pub fn path(&self) -> &PathBuf {
-        &self.0
-    }
-}
-
-impl From<PathBuf> for Url {
-    fn from(path: PathBuf) -> Self {
-        Self(path)
-    }
-}
-
-impl From<&str> for Url {
-    fn from(path: &str) -> Self {
-        Self(path.into())
-    }
-}
-
 /// Virtual filesystem created from one or more directories or archives.
 #[derive(Default, Resource)]
 pub struct Filesystem {
@@ -385,25 +360,18 @@ impl Filesystem {
 }
 
 pub enum LoadSource {
-    Url(Url),
+    Path(PathBuf),
     Bytes(Vec<u8>),
     BoxedAsset(Box<dyn Asset>),
 }
 
 impl LoadSource {
-    pub fn from_url(url: Url) -> Self {
-        Self::Url(url)
+    pub fn from_path(path: impl Into<PathBuf>) -> Self {
+        Self::Path(path.into())
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         Self::Bytes(bytes)
-    }
-
-    pub fn as_url(&self) -> Option<&Url> {
-        match self {
-            LoadSource::Url(url) => Some(url),
-            _ => None,
-        }
     }
 
     pub fn as_bytes(&self) -> Option<&[u8]> {
@@ -415,15 +383,15 @@ impl LoadSource {
 
     pub fn as_path(&self) -> Option<&Path> {
         match self {
-            LoadSource::Url(url) => Some(url.path()),
+            LoadSource::Path(path) => Some(path),
             _ => None,
         }
     }
 }
 
-impl From<Url> for LoadSource {
-    fn from(url: Url) -> Self {
-        Self::Url(url)
+impl From<PathBuf> for LoadSource {
+    fn from(path: PathBuf) -> Self {
+        Self::Path(path)
     }
 }
 
@@ -447,20 +415,20 @@ impl<T: Asset> From<T> for LoadSource {
 
 impl From<&str> for LoadSource {
     fn from(path: &str) -> Self {
-        Self::Url(Url::from(path))
+        Self::Path(PathBuf::from(path))
     }
 }
 
 impl From<&Path> for LoadSource {
     fn from(path: &Path) -> Self {
-        Self::Url(Url::new(path.to_path_buf()))
+        Self::Path(path.to_path_buf())
     }
 }
 
 impl Debug for LoadSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LoadSource::Url(url) => write!(f, "Url({:?})", url),
+            LoadSource::Path(path) => write!(f, "Path({:?})", path),
             LoadSource::Bytes(bytes) => write!(f, "Bytes({} bytes)", bytes.len()),
             LoadSource::BoxedAsset(_) => write!(f, "Dyn(Asset)"),
         }

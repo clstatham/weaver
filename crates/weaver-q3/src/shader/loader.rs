@@ -1,4 +1,4 @@
-use weaver_asset::{prelude::Asset, AssetLoadQueues, Filesystem, Handle, LoadSource, Loader, Url};
+use weaver_asset::{prelude::Asset, AssetLoadQueues, Filesystem, Handle, LoadSource, Loader};
 use weaver_core::texture::{Texture, TextureLoader};
 use weaver_ecs::prelude::Resource;
 use weaver_pbr::material::ERROR_TEXTURE;
@@ -143,9 +143,7 @@ impl Loader<Texture> for TryEverythingTextureLoader {
         let extensions = ["png", "tga", "jpg", "jpeg", "pcx", "bmp"];
         for ext in &extensions {
             let path = path.with_extension(ext);
-            if let Ok(texture) =
-                TextureLoader.load(LoadSource::Url(Url::new(path)), fs, load_queues)
-            {
+            if let Ok(texture) = TextureLoader.load(LoadSource::Path(path), fs, load_queues) {
                 return Ok(texture);
             }
         }

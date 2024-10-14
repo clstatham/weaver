@@ -76,7 +76,7 @@ impl Loader<Texture> for TextureLoader {
         _load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Texture> {
         let bytes = match source {
-            LoadSource::Url(url) => fs.read_sub_path(url.path())?,
+            LoadSource::Path(path) => fs.read_sub_path(path)?,
             LoadSource::Bytes(bytes) => bytes,
             LoadSource::BoxedAsset(dyn_asset) => {
                 return dyn_asset

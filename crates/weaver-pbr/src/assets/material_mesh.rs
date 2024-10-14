@@ -57,7 +57,7 @@ pub fn load_obj_material_mesh(
     fs: &Filesystem,
     load_queues: &AssetLoadQueues<'_>,
 ) -> Result<LoadedModelWithMaterials> {
-    let bytes = fs.read_sub_path(source.as_url().unwrap().path())?;
+    let bytes = fs.read_sub_path(source.as_path().unwrap())?;
     let (models, materials) = tobj::load_obj_buf(
         &mut std::io::Cursor::new(bytes),
         &tobj::LoadOptions {
@@ -132,7 +132,7 @@ pub fn load_obj_material_mesh(
 
                 let diffuse = material.diffuse.unwrap_or([1.0, 1.0, 1.0]);
                 let diffuse_texture = match &material.diffuse_texture {
-                    Some(texture) => texture_load_queue.enqueue(Url::new(texture)),
+                    Some(texture) => texture_load_queue.enqueue(texture.as_str()),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have a diffuse texture");
@@ -140,7 +140,7 @@ pub fn load_obj_material_mesh(
                     }
                 };
                 let normal_texture = match &material.normal_texture {
-                    Some(texture) => texture_load_queue.enqueue(Url::new(texture)),
+                    Some(texture) => texture_load_queue.enqueue(texture.as_str()),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have a normal texture");
@@ -149,7 +149,7 @@ pub fn load_obj_material_mesh(
                 };
                 let ao = material.ambient.unwrap_or([1.0, 1.0, 1.0]);
                 let ao_texture = match &material.ambient_texture {
-                    Some(texture) => texture_load_queue.enqueue(Url::new(texture)),
+                    Some(texture) => texture_load_queue.enqueue(texture.as_str()),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have an AO texture");
@@ -159,7 +159,7 @@ pub fn load_obj_material_mesh(
 
                 let metallic = material.shininess.unwrap_or(0.0);
                 let metallic_roughness_texture = match &material.shininess_texture {
-                    Some(texture) => texture_load_queue.enqueue(Url::new(texture)),
+                    Some(texture) => texture_load_queue.enqueue(texture.as_str()),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have a metallic roughness texture");
@@ -229,7 +229,7 @@ pub fn load_gltf_material_mesh(
     fs: &Filesystem,
     load_queues: &AssetLoadQueues<'_>,
 ) -> Result<LoadedModelWithMaterials> {
-    let bytes = fs.read_sub_path(source.as_url().unwrap().path())?;
+    let bytes = fs.read_sub_path(source.as_path().unwrap())?;
     let (document, buffers, images) = gltf::import_slice(bytes)?;
 
     let mut primitives = Vec::new();

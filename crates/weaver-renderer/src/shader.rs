@@ -46,7 +46,7 @@ impl Loader<Shader> for ShaderLoader {
         _fs: &Filesystem,
         _load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Shader> {
-        Ok(Shader::new(source.as_url().unwrap().path()))
+        Ok(Shader::new(source.as_path().unwrap()))
     }
 }
 
