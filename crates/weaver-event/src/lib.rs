@@ -82,6 +82,13 @@ impl<T: Event> Events<T> {
     pub fn send(&self, event: T) {
         self.front_buffer.write().push_back(event);
     }
+
+    pub fn send_default(&self)
+    where
+        T: Default,
+    {
+        self.send(T::default());
+    }
 }
 
 pub struct EventTx<T: Event> {

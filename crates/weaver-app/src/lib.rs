@@ -190,6 +190,25 @@ impl SubApp {
         self
     }
 
+    pub fn add_system_dependency<T, M1, M2, S, DEPENDENCY>(
+        &mut self,
+        system: S,
+        dependency: DEPENDENCY,
+        stage: T,
+    ) -> &mut Self
+    where
+        T: SystemStage,
+        M1: 'static,
+        M2: 'static,
+        S: IntoSystem<M1>,
+        DEPENDENCY: IntoSystem<M2>,
+        S::System: System<Output = ()>,
+        DEPENDENCY::System: System<Output = ()>,
+    {
+        self.world.add_system_dependency(system, dependency, stage);
+        self
+    }
+
     pub fn add_system_before<T, M1, M2, S, BEFORE>(
         &mut self,
         system: S,

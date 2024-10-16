@@ -13,6 +13,7 @@ use weaver_ecs::{
     prelude::{reflect_trait, Component, Res, ResMut, Resource, SystemStage},
     world::{FromWorld, UnsafeWorldCell, World},
 };
+use weaver_event::{Event, Events};
 use weaver_util::{
     anyhow, define_atomic_id, impl_downcast, DowncastSync, Error, FxHashMap, Lock, Result,
 };
@@ -20,8 +21,7 @@ use zip::ZipArchive;
 
 pub mod prelude {
     pub use crate::{
-        load_all_assets, Asset, AssetLoadQueue, AssetLoadQueues, Assets, Handle, Loader,
-        ReflectAsset, UntypedHandle,
+        Asset, AssetLoadQueue, AssetLoadQueues, Assets, Handle, Loader, ReflectAsset, UntypedHandle,
     };
     pub use weaver_asset_macros::Asset;
 }
@@ -194,7 +194,7 @@ impl<'w, T: Asset> DerefMut for AssetMut<'w, T> {
     }
 }
 
-#[derive(Default, Resource)]
+#[derive(Resource)]
 pub struct Assets<T: Asset> {
     storage: FxHashMap<AssetId, UnsafeCell<T>>,
 }
@@ -202,11 +202,17 @@ pub struct Assets<T: Asset> {
 // SAFETY: `Asset` implementors are Sync and we validate access to them before using them.
 unsafe impl<T: Asset> Sync for Assets<T> {}
 
-impl<T: Asset> Assets<T> {
-    pub fn new() -> Self {
+impl<T: Asset> Default for Assets<T> {
+    fn default() -> Self {
         Self {
             storage: FxHashMap::default(),
         }
+    }
+}
+
+impl<T: Asset> Assets<T> {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn insert_manual(&mut self, asset: T, id: AssetId) -> Handle<T> {
@@ -389,6 +395,19 @@ impl LoadSource {
     }
 }
 
+impl Hash for LoadSource {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            LoadSource::Path(path) => path.hash(state),
+            LoadSource::Bytes(bytes) => bytes.hash(state),
+            LoadSource::BoxedAsset(asset) => {
+                log::warn!("Hashing a BoxedAsset which is not recommended");
+                std::ptr::hash(asset.as_ref() as *const dyn Asset, state);
+            }
+        }
+    }
+}
+
 impl From<PathBuf> for LoadSource {
     fn from(path: PathBuf) -> Self {
         Self::Path(path)
@@ -450,6 +469,33 @@ pub struct AssetLoadRequest<T: Asset, L: Loader<T>> {
     _marker: std::marker::PhantomData<L>,
 }
 
+impl<T: Asset, L: Loader<T>> AssetLoadRequest<T, L> {
+    pub fn new(handle: Handle<T>, source: LoadSource) -> Self {
+        Self {
+            handle,
+            source,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    pub fn handle(&self) -> Handle<T> {
+        self.handle
+    }
+
+    pub fn source(&self) -> &LoadSource {
+        &self.source
+    }
+}
+
+impl<T: Asset, L: Loader<T>> Debug for AssetLoadRequest<T, L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AssetLoadRequest")
+            .field("handle", &self.handle)
+            .field("source", &self.source)
+            .finish()
+    }
+}
+
 #[derive(Resource)]
 pub struct AssetLoadQueue<T: Asset, L: Loader<T>> {
     queue: Vec<AssetLoadRequest<T, L>>,
@@ -507,32 +553,6 @@ impl<T: Asset, L: Loader<T>> AssetLoadQueue<T, L> {
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut AssetLoadRequest<T, L>> {
         self.queue.iter_mut()
     }
-
-    pub fn load_all(
-        &mut self,
-        loader: &L,
-        fs: &Filesystem,
-        assets: &mut Assets<T>,
-        world: &mut World,
-    ) -> Result<()> {
-        let mut loaded_assets = Vec::new();
-        let load_queues = AssetLoadQueues::new(world);
-        for request in self.queue.drain(..) {
-            match loader.load(request.source, fs, &load_queues) {
-                Ok(asset) => loaded_assets.push((request.handle, asset)),
-                Err(err) => {
-                    log::error!("Failed to load asset: {}", err);
-                }
-            }
-        }
-
-        for (handle, asset) in loaded_assets {
-            assets.insert_manual(asset, handle.id);
-        }
-        Ok(())
-    }
-
-    // todo: load_all_async?
 }
 
 pub struct AssetLoadQueues<'w> {
@@ -555,6 +575,44 @@ impl<'w> AssetLoadQueues<'w> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AssetLoaded<T: Asset, L: Loader<T>> {
+    id: AssetId,
+    _marker: std::marker::PhantomData<(T, L)>,
+}
+impl<T: Asset, L: Loader<T>> Event for AssetLoaded<T, L> {}
+impl<T: Asset, L: Loader<T>> AssetLoaded<T, L> {
+    pub fn new(id: AssetId) -> Self {
+        Self {
+            id,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+#[derive(Resource, Default)]
+pub struct AssetLoadStatus {
+    load_status: Lock<FxHashMap<AssetId, bool>>,
+}
+
+impl AssetLoadStatus {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn manually_set_loaded<T: Asset>(&self, handle: Handle<T>) {
+        self.load_status.write().insert(handle.id, true);
+    }
+
+    pub fn is_loaded<T: Asset>(&self, handle: Handle<T>) -> bool {
+        self.load_status
+            .read()
+            .get(&handle.id)
+            .copied()
+            .unwrap_or(false)
+    }
+}
+
 pub struct AssetLoad;
 impl SystemStage for AssetLoad {}
 
@@ -569,7 +627,10 @@ pub trait AssetApp {
 impl AssetApp for SubApp {
     fn add_asset<T: Asset>(&mut self) -> &mut Self {
         if !self.has_resource::<Assets<T>>() {
-            self.insert_resource(Assets::<T>::new());
+            self.init_resource::<Assets<T>>();
+        }
+        if !self.has_resource::<AssetLoadStatus>() {
+            self.init_resource::<AssetLoadStatus>();
         }
         self
     }
@@ -578,7 +639,9 @@ impl AssetApp for SubApp {
         self.add_asset::<T>();
 
         if !self.has_resource::<AssetLoadQueue<T, L>>() {
-            self.insert_resource(AssetLoadQueue::<T, L>::new());
+            self.init_resource::<AssetLoadQueue<T, L>>();
+
+            self.init_resource::<Events<AssetLoaded<T, L>>>();
 
             if !self.has_system_stage::<AssetLoad>() {
                 self.push_init_stage::<AssetLoad>();
@@ -592,11 +655,7 @@ impl AssetApp for SubApp {
     fn add_asset_load_dependency<T: Asset, L: Loader<T>, D: Asset, DL: Loader<D>>(
         &mut self,
     ) -> &mut Self {
-        self.world_mut().add_system_dependency(
-            AssetLoad,
-            load_all_assets::<T, L>,
-            load_all_assets::<D, DL>,
-        );
+        self.add_system_dependency(load_all_assets::<T, L>, load_all_assets::<D, DL>, AssetLoad);
         self
     }
 }
@@ -621,15 +680,32 @@ impl AssetApp for App {
     }
 }
 
-pub fn load_all_assets<T: Asset, L: Loader<T>>(
+fn load_all_assets<T: Asset, L: Loader<T>>(
     world: &mut World,
     mut load_queue: ResMut<AssetLoadQueue<T, L>>,
     mut assets: ResMut<Assets<T>>,
     fs: Res<Filesystem>,
+    load_events: Res<Events<AssetLoaded<T, L>>>,
+    load_status: Res<AssetLoadStatus>,
 ) {
     log::debug!("Loading all assets of type: {}", std::any::type_name::<T>());
     let loader = L::from_world(world);
-    load_queue
-        .load_all(&loader, &fs, &mut assets, world)
-        .unwrap();
+    let load_queues = AssetLoadQueues::new(world);
+    for request in load_queue.drain() {
+        if assets.get(request.handle).is_some() || load_status.is_loaded(request.handle) {
+            continue;
+        }
+
+        log::trace!("Loading asset: {:?}", request);
+        match loader.load(request.source, &fs, &load_queues) {
+            Ok(asset) => {
+                let handle = assets.insert_manual(asset, request.handle.id);
+                load_status.manually_set_loaded(handle);
+                load_events.send(AssetLoaded::new(handle.id));
+            }
+            Err(err) => {
+                log::error!("Failed to load asset: {}", err);
+            }
+        }
+    }
 }

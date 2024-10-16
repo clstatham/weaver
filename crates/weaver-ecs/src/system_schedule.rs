@@ -71,9 +71,9 @@ impl Systems {
 
     pub fn add_system_dependency<STAGE, BEFORE, AFTER, M1, M2>(
         &mut self,
-        _stage: STAGE,
         before: BEFORE,
         after: AFTER,
+        _stage: STAGE,
     ) where
         STAGE: SystemStage,
         BEFORE: IntoSystem<M1>,
@@ -147,7 +147,7 @@ impl Systems {
         self.systems
             .get_mut(&TypeId::of::<S>())
             .expect("System stage not found")
-            .run(world)
+            .run_single_threaded(world)
     }
 
     pub fn run_init(&mut self, world: &mut World) -> Result<()> {
@@ -155,7 +155,7 @@ impl Systems {
             self.systems
                 .get_mut(stage)
                 .expect("System stage not found")
-                .run(world)?;
+                .run_single_threaded(world)?;
         }
         Ok(())
     }
@@ -165,7 +165,7 @@ impl Systems {
             self.systems
                 .get_mut(stage)
                 .expect("System stage not found")
-                .run(world)?;
+                .run_single_threaded(world)?;
         }
         Ok(())
     }
@@ -175,7 +175,7 @@ impl Systems {
             self.systems
                 .get_mut(stage)
                 .expect("System stage not found")
-                .run(world)?;
+                .run_single_threaded(world)?;
         }
         Ok(())
     }

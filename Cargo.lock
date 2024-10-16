@@ -3239,6 +3239,7 @@ dependencies = [
  "weaver-app",
  "weaver-asset-macros",
  "weaver-ecs",
+ "weaver-event",
  "weaver-util",
  "zip",
 ]

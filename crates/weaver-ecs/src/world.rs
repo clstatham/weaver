@@ -24,6 +24,10 @@ pub struct UnsafeWorldCell<'a>(
     PhantomData<&'a UnsafeCell<World>>,
 );
 
+// Safety: UnsafeWorldCell is Send and Sync because &World and &mut World are Send and Sync.
+unsafe impl<'a> Send for UnsafeWorldCell<'a> {}
+unsafe impl<'a> Sync for UnsafeWorldCell<'a> {}
+
 impl<'a> UnsafeWorldCell<'a> {
     /// Creates a new `UnsafeWorldCell` from a mutable reference to the world.
     /// This is the correct way to create an `UnsafeWorldCell` for exclusive access to the world.
@@ -398,9 +402,9 @@ impl World {
 
     pub fn add_system_dependency<STAGE, M1, M2, S1, S2>(
         &mut self,
-        stage: STAGE,
         system: S1,
         dependency: S2,
+        stage: STAGE,
     ) where
         STAGE: SystemStage,
         M1: 'static,
@@ -411,7 +415,7 @@ impl World {
         S2::System: System<Output = ()>,
     {
         self.systems
-            .add_system_dependency(stage, system, dependency);
+            .add_system_dependency(system, dependency, stage);
     }
 
     /// Adds a system to the given system stage. If the system has already been added to the stage, a warning is logged and the system is not added again.

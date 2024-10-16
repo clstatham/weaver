@@ -14,3 +14,4 @@ weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }
 weaver-app = { path = "../weaver-app" }
 weaver-asset-macros = { path = "../weaver-asset-macros" }
+weaver-event = { path = "../weaver-event" }

@@ -73,7 +73,7 @@ impl SystemAccess {
 }
 
 /// A single unit of work that can be executed on a world.
-pub trait System {
+pub trait System: Send + Sync {
     type Output;
 
     /// Returns the name of the system.
@@ -505,7 +505,7 @@ impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
 
-pub trait SystemParamFunction<M>: 'static {
+pub trait SystemParamFunction<M>: 'static + Send + Sync {
     type Param: SystemParam + 'static;
     type Output;
 
@@ -609,7 +609,7 @@ macro_rules! impl_function_system {
             FnMut($($param),*) -> Output
             + FnMut($(SystemParamItem<$param>),*) -> Output,
             $($param: SystemParam + 'static),*,
-            Func: 'static,
+            Func: 'static + Send + Sync,
         {
             type Param = ($($param),*);
             type Output = Output;
@@ -832,10 +832,10 @@ impl SystemGraph {
     }
 
     /// Runs all systems in the graph one-by-one in topological order, ensuring that all dependencies are respected.
-    pub fn run(&mut self, world: &mut World) -> Result<()> {
+    pub fn run_single_threaded(&mut self, world: &mut World) -> Result<()> {
         let mut schedule = Topo::new(&self.systems);
         while let Some(node) = schedule.next(&self.systems) {
-            let system = &mut self.systems[node];
+            let system = &self.systems[node];
             if !system.read().can_run(world) {
                 log::trace!("Skipping system: {}", system.read().name());
                 continue;
