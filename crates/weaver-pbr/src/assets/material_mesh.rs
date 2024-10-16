@@ -126,13 +126,11 @@ pub fn load_obj_material_mesh(
 
         match material {
             Some(material) => {
-                let mut texture_load_queue = load_queues
-                    .get_load_queue::<Texture, TextureLoader>()
-                    .unwrap();
-
                 let diffuse = material.diffuse.unwrap_or([1.0, 1.0, 1.0]);
                 let diffuse_texture = match &material.diffuse_texture {
-                    Some(texture) => texture_load_queue.enqueue(texture.as_str()),
+                    Some(texture) => load_queues
+                        .enqueue::<_, TextureLoader>(texture.as_str())
+                        .unwrap(),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have a diffuse texture");
@@ -140,7 +138,9 @@ pub fn load_obj_material_mesh(
                     }
                 };
                 let normal_texture = match &material.normal_texture {
-                    Some(texture) => texture_load_queue.enqueue(texture.as_str()),
+                    Some(texture) => load_queues
+                        .enqueue::<_, TextureLoader>(texture.as_str())
+                        .unwrap(),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have a normal texture");
@@ -149,7 +149,9 @@ pub fn load_obj_material_mesh(
                 };
                 let ao = material.ambient.unwrap_or([1.0, 1.0, 1.0]);
                 let ao_texture = match &material.ambient_texture {
-                    Some(texture) => texture_load_queue.enqueue(texture.as_str()),
+                    Some(texture) => load_queues
+                        .enqueue::<_, TextureLoader>(texture.as_str())
+                        .unwrap(),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have an AO texture");
@@ -159,7 +161,9 @@ pub fn load_obj_material_mesh(
 
                 let metallic = material.shininess.unwrap_or(0.0);
                 let metallic_roughness_texture = match &material.shininess_texture {
-                    Some(texture) => texture_load_queue.enqueue(texture.as_str()),
+                    Some(texture) => load_queues
+                        .enqueue::<_, TextureLoader>(texture.as_str())
+                        .unwrap(),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have a metallic roughness texture");

@@ -172,10 +172,9 @@ impl BspLoader {
                     textures.insert(map, handle);
                     continue;
                 }
-                let mut texture_load_queue = load_queues
-                    .get_load_queue::<Texture, TryEverythingTextureLoader>()
+                let handle = load_queues
+                    .enqueue::<_, TryEverythingTextureLoader>(path.as_str())
                     .unwrap();
-                let handle = texture_load_queue.enqueue(path.as_str());
                 texture_cache.insert(stripped.to_string(), handle);
                 textures.insert(map, handle);
             }
@@ -195,10 +194,9 @@ impl BspLoader {
                                 textures.insert(map, handle);
                                 continue;
                             }
-                            let mut texture_load_queue = load_queues
-                                .get_load_queue::<Texture, TryEverythingTextureLoader>()
+                            let handle = load_queues
+                                .enqueue::<_, TryEverythingTextureLoader>(path.as_str())
                                 .unwrap();
-                            let handle = texture_load_queue.enqueue(path.as_str());
                             texture_cache.insert(stripped.to_string(), handle);
                             textures.insert(map, handle);
                         }

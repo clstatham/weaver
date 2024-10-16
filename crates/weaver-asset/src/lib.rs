@@ -573,6 +573,14 @@ impl<'w> AssetLoadQueues<'w> {
         // TODO: Verify that no load queues are borrowed twice at the same time.
         unsafe { self.world.get_resource_mut() }
     }
+
+    pub fn enqueue<T: Asset, L: Loader<T>>(
+        &self,
+        source: impl Into<LoadSource>,
+    ) -> Option<Handle<T>> {
+        self.get_load_queue::<T, L>()
+            .map(|mut load_queue| load_queue.enqueue(source))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
