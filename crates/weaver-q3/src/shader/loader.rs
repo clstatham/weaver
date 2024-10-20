@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use weaver_asset::{prelude::Asset, AssetLoadQueues, Filesystem, Handle, LoadSource, Loader};
+use weaver_asset::prelude::*;
 use weaver_core::texture::{Texture, TextureLoader};
 use weaver_ecs::prelude::Resource;
 use weaver_pbr::material::ERROR_TEXTURE;

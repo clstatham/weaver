@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use weaver_app::{plugin::Plugin, App, SubApp};
+use weaver_app::{App, SubApp};
 use weaver_ecs::{
     prelude::{reflect_trait, Component, Res, ResMut, Resource, SystemStage},
     world::{FromWorld, UnsafeWorldCell, World},
@@ -22,7 +22,8 @@ use zip::ZipArchive;
 
 pub mod prelude {
     pub use crate::{
-        Asset, AssetLoadQueue, AssetLoadQueues, Assets, Handle, Loader, ReflectAsset, UntypedHandle,
+        Asset, AssetLoadQueue, AssetLoadQueues, Assets, BoxLoader, Filesystem, Handle, Loader,
+        ReflectAsset, UntypedHandle,
     };
     pub use weaver_asset_macros::Asset;
 }
@@ -609,13 +610,6 @@ impl AssetApp for SubApp {
     }
 
     fn add_asset_loader<T: Asset, L: Loader<T, S>, S: LoadSource>(&mut self) -> &mut Self {
-        if !self.has_resource::<Assets<T>>() {
-            self.init_resource::<Assets<T>>();
-        }
-        if !self.has_resource::<AssetLoadStatus>() {
-            self.init_resource::<AssetLoadStatus>();
-        }
-
         if !self.has_resource::<AssetLoadQueue<T, L, S>>() {
             self.init_resource::<AssetLoadQueue<T, L, S>>();
 

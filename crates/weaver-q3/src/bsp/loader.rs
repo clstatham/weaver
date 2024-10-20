@@ -1,10 +1,8 @@
 use std::path::PathBuf;
 
 use nom::Finish;
-use weaver_asset::{
-    prelude::Asset, AssetLoadQueues, BoxLoader, Filesystem, Handle, LoadSource, Loader,
-};
-use weaver_core::{mesh::Mesh, prelude::Vec3, texture::Texture};
+use weaver_asset::prelude::*;
+use weaver_core::{mesh::Mesh, prelude::Vec3};
 use weaver_ecs::prelude::Resource;
 use weaver_pbr::prelude::WHITE_TEXTURE;
 use weaver_util::{anyhow, FxHashMap, Lock, Result};

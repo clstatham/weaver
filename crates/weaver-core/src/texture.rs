@@ -5,7 +5,7 @@ use weaver_asset::{
     AssetLoadQueues, Filesystem, LoadSource,
 };
 use weaver_ecs::prelude::Resource;
-use weaver_util::{anyhow, Result};
+use weaver_util::Result;
 
 #[derive(Debug, Clone, Asset)]
 pub struct Texture {
@@ -107,7 +107,7 @@ fn load_texture_common(bytes: &[u8]) -> Result<Texture> {
             image.height(),
         ));
     }
-    let image = image::load_from_memory(&bytes)?;
+    let image = image::load_from_memory(bytes)?;
     let image = image.to_rgba8();
     log::trace!(
         "Successfully loaded texture with dimensions {}x{}",

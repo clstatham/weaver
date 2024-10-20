@@ -5,10 +5,7 @@ use std::{
 };
 
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
-use weaver_asset::{
-    prelude::{Asset, Loader},
-    AssetLoadQueues, Filesystem, LoadSource,
-};
+use weaver_asset::prelude::*;
 use weaver_ecs::prelude::Resource;
 use weaver_util::{bail, Result};
 

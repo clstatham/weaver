@@ -94,7 +94,7 @@ impl Loader<Mesh, PathBuf> for ObjMeshLoader<PathBuf> {
         _load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Mesh> {
         let bytes = fs.read_sub_path(&source)?;
-        let meshes = load_obj(&bytes, fs)?;
+        let meshes = load_obj(&bytes)?;
         if meshes.len() != 1 {
             bail!("expected exactly one mesh in OBJ file: {:?}", &source);
         }
@@ -106,10 +106,10 @@ impl Loader<Mesh, Vec<u8>> for ObjMeshLoader<Vec<u8>> {
     fn load(
         &self,
         source: Vec<u8>,
-        fs: &Filesystem,
+        _fs: &Filesystem,
         _load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Mesh> {
-        load_obj(&source, fs)?
+        load_obj(&source)?
             .into_iter()
             .next()
             .ok_or_else(|| anyhow!("expected exactly one mesh in OBJ file"))
@@ -124,7 +124,7 @@ impl Loader<Vec<Mesh>, PathBuf> for ObjMeshLoader<PathBuf> {
         _load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Vec<Mesh>> {
         let bytes = fs.read_sub_path(&source)?;
-        load_obj(&bytes, fs)
+        load_obj(&bytes)
     }
 }
 
@@ -132,14 +132,14 @@ impl Loader<Vec<Mesh>, Vec<u8>> for ObjMeshLoader<Vec<u8>> {
     fn load(
         &self,
         source: Vec<u8>,
-        fs: &Filesystem,
+        _fs: &Filesystem,
         _load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Vec<Mesh>> {
-        load_obj(&source, fs)
+        load_obj(&source)
     }
 }
 
-pub fn load_obj(bytes: &[u8], fs: &Filesystem) -> Result<Vec<Mesh>> {
+pub fn load_obj(bytes: &[u8]) -> Result<Vec<Mesh>> {
     let (models, _) = tobj::load_obj_buf(
         &mut std::io::Cursor::new(bytes),
         &tobj::LoadOptions {
@@ -228,7 +228,7 @@ impl Loader<Mesh, Vec<u8>> for GltfMeshLoader<Vec<u8>> {
     fn load(
         &self,
         source: Vec<u8>,
-        fs: &Filesystem,
+        _fs: &Filesystem,
         _load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Mesh> {
         load_gltf(&source)?
@@ -254,7 +254,7 @@ impl Loader<Vec<Mesh>, Vec<u8>> for GltfMeshLoader<Vec<u8>> {
     fn load(
         &self,
         source: Vec<u8>,
-        fs: &Filesystem,
+        _fs: &Filesystem,
         _load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Vec<Mesh>> {
         load_gltf(&source)
