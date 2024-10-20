@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use nom::Finish;
-use weaver_asset::{prelude::Asset, AssetLoadQueues, Filesystem, Handle, LoadSource, Loader};
+use weaver_asset::{
+    prelude::Asset, AssetLoadQueues, BoxLoader, Filesystem, Handle, LoadSource, Loader,
+};
 use weaver_core::{mesh::Mesh, prelude::Vec3, texture::Texture};
 use weaver_ecs::prelude::Resource;
 use weaver_pbr::prelude::WHITE_TEXTURE;
@@ -104,46 +106,6 @@ impl Bsp {
     }
 }
 
-#[derive(Resource, Default)]
-pub struct MeshBoxedLoader;
-
-impl Loader<Mesh> for MeshBoxedLoader {
-    fn load(
-        &self,
-        source: LoadSource,
-        _fs: &Filesystem,
-        _load_queues: &AssetLoadQueues<'_>,
-    ) -> Result<Mesh> {
-        let LoadSource::BoxedAsset(dyn_asset) = source else {
-            return Err(anyhow!("Expected boxed asset"));
-        };
-
-        Ok(*dyn_asset
-            .downcast()
-            .map_err(|_| anyhow!("Failed to downcast LoadSource::BoxedAsset to Mesh"))?)
-    }
-}
-
-#[derive(Resource, Default)]
-pub struct ShaderBoxedLoader;
-
-impl Loader<LoadedShader> for ShaderBoxedLoader {
-    fn load(
-        &self,
-        source: LoadSource,
-        _fs: &Filesystem,
-        _load_queues: &AssetLoadQueues<'_>,
-    ) -> Result<LoadedShader> {
-        let LoadSource::BoxedAsset(dyn_asset) = source else {
-            return Err(anyhow!("Expected boxed asset"));
-        };
-
-        Ok(*dyn_asset
-            .downcast()
-            .map_err(|_| anyhow!("Failed to downcast LoadSource::BoxedAsset to LoadedShader"))?)
-    }
-}
-
 #[derive(Default, Resource)]
 pub struct BspLoader {
     lexed_shader_cache: Lock<LexedShaderCache>,
@@ -173,7 +135,7 @@ impl BspLoader {
                     continue;
                 }
                 let handle = load_queues
-                    .enqueue::<_, TryEverythingTextureLoader>(path.as_str())
+                    .enqueue::<_, TryEverythingTextureLoader, _>(path.into())
                     .unwrap();
                 texture_cache.insert(stripped.to_string(), handle);
                 textures.insert(map, handle);
@@ -195,7 +157,7 @@ impl BspLoader {
                                 continue;
                             }
                             let handle = load_queues
-                                .enqueue::<_, TryEverythingTextureLoader>(path.as_str())
+                                .enqueue::<_, TryEverythingTextureLoader, _>(path.into())
                                 .unwrap();
                             texture_cache.insert(stripped.to_string(), handle);
                             textures.insert(map, handle);
@@ -215,15 +177,15 @@ impl BspLoader {
     }
 }
 
-impl Loader<Bsp> for BspLoader {
+impl Loader<Bsp, PathBuf> for BspLoader {
     // TODO: clean this up
     fn load(
         &self,
-        source: LoadSource,
+        source: PathBuf,
         fs: &Filesystem,
         load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Bsp> {
-        let bytes = fs.read_sub_path(source.as_path().unwrap())?;
+        let bytes = fs.read_sub_path(source)?;
         let (_, bsp_file) = bsp_file(bytes.as_slice())
             .finish()
             .map_err(|e| anyhow!("Failed to parse bsp file: {:?}", e.code))?;
@@ -259,11 +221,11 @@ impl Loader<Bsp> for BspLoader {
         self.lexed_shader_cache.write().load_all("scripts", fs)?;
 
         let mut mesh_load_queue = load_queues
-            .get_load_queue::<Mesh, MeshBoxedLoader>()
+            .get_load_queue::<_, BoxLoader<Mesh>, Mesh>()
             .unwrap();
 
         let mut shader_load_queue = load_queues
-            .get_load_queue::<LoadedShader, ShaderBoxedLoader>()
+            .get_load_queue::<_, BoxLoader<LoadedShader>, LoadedShader>()
             .unwrap();
 
         for (node_index, node) in meshes_and_textures.nodes.into_iter().enumerate() {
@@ -308,7 +270,7 @@ impl Loader<Bsp> for BspLoader {
                             } else {
                                 // try to load it again
                                 let mut texture_load_queue = load_queues
-                                    .get_load_queue::<Texture, TryEverythingTextureLoader>()
+                                    .get_load_queue::<_, TryEverythingTextureLoader, _>()
                                     .unwrap();
                                 let texture = texture_load_queue.enqueue(texture.to_str().unwrap());
                                 let shader =

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use glam::{Vec2, Vec3, Vec4};
 use weaver_asset::{
     prelude::{Asset, Loader},
@@ -82,16 +84,17 @@ impl Mesh {
 }
 
 #[derive(Resource, Default)]
-pub struct ObjMeshLoader;
+pub struct ObjMeshLoader<S: LoadSource>(std::marker::PhantomData<S>);
 
-impl Loader<Mesh> for ObjMeshLoader {
+impl Loader<Mesh, PathBuf> for ObjMeshLoader<PathBuf> {
     fn load(
         &self,
-        source: LoadSource,
+        source: PathBuf,
         fs: &Filesystem,
         _load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Mesh> {
-        let meshes = load_obj(&source, fs)?;
+        let bytes = fs.read_sub_path(&source)?;
+        let meshes = load_obj(&bytes, fs)?;
         if meshes.len() != 1 {
             bail!("expected exactly one mesh in OBJ file: {:?}", &source);
         }
@@ -99,10 +102,36 @@ impl Loader<Mesh> for ObjMeshLoader {
     }
 }
 
-impl Loader<Vec<Mesh>> for ObjMeshLoader {
+impl Loader<Mesh, Vec<u8>> for ObjMeshLoader<Vec<u8>> {
     fn load(
         &self,
-        source: LoadSource,
+        source: Vec<u8>,
+        fs: &Filesystem,
+        _load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<Mesh> {
+        load_obj(&source, fs)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("expected exactly one mesh in OBJ file"))
+    }
+}
+
+impl Loader<Vec<Mesh>, PathBuf> for ObjMeshLoader<PathBuf> {
+    fn load(
+        &self,
+        source: PathBuf,
+        fs: &Filesystem,
+        _load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<Vec<Mesh>> {
+        let bytes = fs.read_sub_path(&source)?;
+        load_obj(&bytes, fs)
+    }
+}
+
+impl Loader<Vec<Mesh>, Vec<u8>> for ObjMeshLoader<Vec<u8>> {
+    fn load(
+        &self,
+        source: Vec<u8>,
         fs: &Filesystem,
         _load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Vec<Mesh>> {
@@ -110,12 +139,7 @@ impl Loader<Vec<Mesh>> for ObjMeshLoader {
     }
 }
 
-pub fn load_obj(source: &LoadSource, fs: &Filesystem) -> Result<Vec<Mesh>> {
-    let bytes = match source {
-        LoadSource::Path(path) => fs.read_sub_path(path)?,
-        LoadSource::Bytes(bytes) => bytes.clone(), // todo: avoid clone
-        _ => bail!("unsupported load source: {:?}", source),
-    };
+pub fn load_obj(bytes: &[u8], fs: &Filesystem) -> Result<Vec<Mesh>> {
     let (models, _) = tobj::load_obj_buf(
         &mut std::io::Cursor::new(bytes),
         &tobj::LoadOptions {
@@ -128,7 +152,7 @@ pub fn load_obj(source: &LoadSource, fs: &Filesystem) -> Result<Vec<Mesh>> {
     )?;
 
     if models.is_empty() {
-        bail!("expected at least one model in OBJ file: {:?}", source);
+        bail!("expected at least one model in OBJ file");
     }
 
     let mut meshes = Vec::with_capacity(models.len());
@@ -182,44 +206,66 @@ pub fn load_obj(source: &LoadSource, fs: &Filesystem) -> Result<Vec<Mesh>> {
 }
 
 #[derive(Resource, Default)]
-pub struct GltfMeshLoader;
+pub struct GltfMeshLoader<S: LoadSource>(std::marker::PhantomData<S>);
 
-impl Loader<Mesh> for GltfMeshLoader {
+impl Loader<Mesh, PathBuf> for GltfMeshLoader<PathBuf> {
     fn load(
         &self,
-        source: LoadSource,
+        source: PathBuf,
         fs: &Filesystem,
         _load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Mesh> {
-        let meshes = load_gltf(&source, fs)?;
+        let bytes = fs.read_sub_path(&source)?;
+        let meshes = load_gltf(&bytes)?;
         if meshes.len() != 1 {
-            bail!("expected exactly one mesh in GLTF file: {:?}", source);
+            bail!("expected exactly one mesh in GLTF file: {:?}", &source);
         }
         Ok(meshes.into_iter().next().unwrap())
     }
 }
 
-impl Loader<Vec<Mesh>> for GltfMeshLoader {
+impl Loader<Mesh, Vec<u8>> for GltfMeshLoader<Vec<u8>> {
     fn load(
         &self,
-        source: LoadSource,
+        source: Vec<u8>,
         fs: &Filesystem,
         _load_queues: &AssetLoadQueues<'_>,
-    ) -> Result<Vec<Mesh>> {
-        load_gltf(&source, fs)
+    ) -> Result<Mesh> {
+        load_gltf(&source)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("expected exactly one mesh in GLTF file"))
     }
 }
 
-pub fn load_gltf(source: &LoadSource, fs: &Filesystem) -> Result<Vec<Mesh>> {
-    let bytes = match source {
-        LoadSource::Path(path) => fs.read_sub_path(path)?,
-        LoadSource::Bytes(bytes) => bytes.clone(), // todo: avoid clone
-        _ => bail!("unsupported load source: {:?}", source),
-    };
+impl Loader<Vec<Mesh>, PathBuf> for GltfMeshLoader<PathBuf> {
+    fn load(
+        &self,
+        source: PathBuf,
+        fs: &Filesystem,
+        _load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<Vec<Mesh>> {
+        let bytes = fs.read_sub_path(&source)?;
+        load_gltf(&bytes)
+    }
+}
+
+impl Loader<Vec<Mesh>, Vec<u8>> for GltfMeshLoader<Vec<u8>> {
+    fn load(
+        &self,
+        source: Vec<u8>,
+        fs: &Filesystem,
+        _load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<Vec<Mesh>> {
+        load_gltf(&source)
+    }
+}
+
+pub fn load_gltf(bytes: &[u8]) -> Result<Vec<Mesh>> {
     let (gltf, buffers, _) = gltf::import_slice(bytes)?;
 
     if gltf.meshes().count() == 0 {
-        bail!("expected at least one mesh in GLTF file: {:?}", source);
+        bail!("expected at least one mesh in GLTF file");
     }
 
     let mut meshes = Vec::new();

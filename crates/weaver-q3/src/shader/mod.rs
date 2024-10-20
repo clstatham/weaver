@@ -21,7 +21,7 @@ impl Plugin for ShaderPlugin {
         app.init_resource::<TextureCache>();
         app.init_resource::<LexedShaderCache>();
         app.init_resource::<LoadedShaderCache>();
-        app.add_asset_loader::<Texture, TryEverythingTextureLoader>();
+        app.add_asset_loader::<Texture, TryEverythingTextureLoader, _>();
         app.add_asset::<LexedShader>();
         let mut shaders = Assets::<LoadedShader>::new();
         shaders.insert_manual(

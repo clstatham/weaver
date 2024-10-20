@@ -1,4 +1,6 @@
-use weaver_asset::{prelude::*, Filesystem, LoadSource};
+use std::path::PathBuf;
+
+use weaver_asset::{prelude::*, BoxLoader, BoxedAsset, Filesystem, LoadSource};
 use weaver_core::{
     mesh::{calculate_normals, calculate_tangents, Mesh, Vertex},
     prelude::{Vec2, Vec3, Vec4},
@@ -41,10 +43,10 @@ impl LoadedMaterialMeshPrimitive {
 #[derive(Resource, Default)]
 pub struct ObjMaterialModelLoader;
 
-impl Loader<LoadedModelWithMaterials> for ObjMaterialModelLoader {
+impl Loader<LoadedModelWithMaterials, PathBuf> for ObjMaterialModelLoader {
     fn load(
         &self,
-        source: LoadSource,
+        source: PathBuf,
         fs: &Filesystem,
         load_queues: &AssetLoadQueues<'_>,
     ) -> Result<LoadedModelWithMaterials> {
@@ -53,11 +55,11 @@ impl Loader<LoadedModelWithMaterials> for ObjMaterialModelLoader {
 }
 
 pub fn load_obj_material_mesh(
-    source: &LoadSource,
+    source: &PathBuf,
     fs: &Filesystem,
     load_queues: &AssetLoadQueues<'_>,
 ) -> Result<LoadedModelWithMaterials> {
-    let bytes = fs.read_sub_path(source.as_path().unwrap())?;
+    let bytes = fs.read_sub_path(source)?;
     let (models, materials) = tobj::load_obj_buf(
         &mut std::io::Cursor::new(bytes),
         &tobj::LoadOptions {
@@ -129,7 +131,7 @@ pub fn load_obj_material_mesh(
                 let diffuse = material.diffuse.unwrap_or([1.0, 1.0, 1.0]);
                 let diffuse_texture = match &material.diffuse_texture {
                     Some(texture) => load_queues
-                        .enqueue::<_, TextureLoader>(texture.as_str())
+                        .enqueue::<_, TextureLoader<PathBuf>, _>(texture.into())
                         .unwrap(),
                     None => {
                         #[cfg(debug_assertions)]
@@ -139,7 +141,7 @@ pub fn load_obj_material_mesh(
                 };
                 let normal_texture = match &material.normal_texture {
                     Some(texture) => load_queues
-                        .enqueue::<_, TextureLoader>(texture.as_str())
+                        .enqueue::<_, TextureLoader<PathBuf>, _>(texture.into())
                         .unwrap(),
                     None => {
                         #[cfg(debug_assertions)]
@@ -150,7 +152,7 @@ pub fn load_obj_material_mesh(
                 let ao = material.ambient.unwrap_or([1.0, 1.0, 1.0]);
                 let ao_texture = match &material.ambient_texture {
                     Some(texture) => load_queues
-                        .enqueue::<_, TextureLoader>(texture.as_str())
+                        .enqueue::<_, TextureLoader<PathBuf>, _>(texture.into())
                         .unwrap(),
                     None => {
                         #[cfg(debug_assertions)]
@@ -162,7 +164,7 @@ pub fn load_obj_material_mesh(
                 let metallic = material.shininess.unwrap_or(0.0);
                 let metallic_roughness_texture = match &material.shininess_texture {
                     Some(texture) => load_queues
-                        .enqueue::<_, TextureLoader>(texture.as_str())
+                        .enqueue::<_, TextureLoader<PathBuf>, _>(texture.into())
                         .unwrap(),
                     None => {
                         #[cfg(debug_assertions)]
@@ -217,10 +219,10 @@ pub fn load_obj_material_mesh(
 #[derive(Resource, Default)]
 pub struct GltfMaterialModelLoader;
 
-impl Loader<LoadedModelWithMaterials> for GltfMaterialModelLoader {
+impl Loader<LoadedModelWithMaterials, PathBuf> for GltfMaterialModelLoader {
     fn load(
         &self,
-        source: LoadSource,
+        source: PathBuf,
         fs: &Filesystem,
         load_queues: &AssetLoadQueues<'_>,
     ) -> Result<LoadedModelWithMaterials> {
@@ -229,17 +231,17 @@ impl Loader<LoadedModelWithMaterials> for GltfMaterialModelLoader {
 }
 
 pub fn load_gltf_material_mesh(
-    source: &LoadSource,
+    source: &PathBuf,
     fs: &Filesystem,
     load_queues: &AssetLoadQueues<'_>,
 ) -> Result<LoadedModelWithMaterials> {
-    let bytes = fs.read_sub_path(source.as_path().unwrap())?;
+    let bytes = fs.read_sub_path(source)?;
     let (document, buffers, images) = gltf::import_slice(bytes)?;
 
     let mut primitives = Vec::new();
 
     let mut texture_load_queue = load_queues
-        .get_load_queue::<Texture, TextureLoader>()
+        .get_load_queue::<_, BoxLoader<Texture>, _>()
         .unwrap();
 
     for mesh in document.meshes() {
@@ -298,7 +300,7 @@ pub fn load_gltf_material_mesh(
 fn load_material(
     material: gltf::Material,
     images: &[gltf::image::Data],
-    texture_load_queue: &mut AssetLoadQueue<Texture, TextureLoader>,
+    texture_load_queue: &mut AssetLoadQueue<Texture, BoxLoader<Texture>, Texture>,
 ) -> Result<Material> {
     let metallic = material.pbr_metallic_roughness().metallic_factor();
     let roughness = material.pbr_metallic_roughness().roughness_factor();
@@ -392,16 +394,13 @@ fn load_material(
 
     let material = Material {
         diffuse: diffuse.into(),
-        diffuse_texture: texture_load_queue
-            .enqueue(LoadSource::BoxedAsset(Box::new(diffuse_texture))),
-        normal_texture: texture_load_queue
-            .enqueue(LoadSource::BoxedAsset(Box::new(normal_texture))),
+        diffuse_texture: texture_load_queue.enqueue(diffuse_texture),
+        normal_texture: texture_load_queue.enqueue(normal_texture),
         metallic,
         roughness,
-        metallic_roughness_texture: texture_load_queue
-            .enqueue(LoadSource::BoxedAsset(Box::new(metallic_roughness_texture))),
+        metallic_roughness_texture: texture_load_queue.enqueue(metallic_roughness_texture),
         ao,
-        ao_texture: texture_load_queue.enqueue(LoadSource::BoxedAsset(Box::new(ao_texture))),
+        ao_texture: texture_load_queue.enqueue(ao_texture),
         texture_scale: 1.0,
     };
 

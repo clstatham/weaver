@@ -1,5 +1,8 @@
+use std::path::PathBuf;
+
 use color::Color;
 use mesh::Mesh;
+use texture::{Texture, TextureLoader};
 use transform::Transform;
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::AssetApp;
@@ -36,9 +39,15 @@ impl Plugin for CoreTypesPlugin {
         app.register_type::<geometry::Ray>();
         app.register_type::<geometry::Aabb>();
 
-        app.add_asset_loader::<texture::Texture, texture::TextureLoader>();
-        app.add_asset_loader::<Mesh, mesh::ObjMeshLoader>();
-        app.add_asset_loader::<Mesh, mesh::GltfMeshLoader>();
+        app.add_asset::<Texture>();
+        app.add_asset::<Mesh>();
+
+        app.add_asset_loader::<Texture, TextureLoader<PathBuf>, _>();
+        app.add_asset_loader::<Texture, TextureLoader<Vec<u8>>, _>();
+        app.add_asset_loader::<Mesh, mesh::ObjMeshLoader<PathBuf>, _>();
+        app.add_asset_loader::<Mesh, mesh::ObjMeshLoader<Vec<u8>>, _>();
+        app.add_asset_loader::<Mesh, mesh::GltfMeshLoader<PathBuf>, _>();
+        app.add_asset_loader::<Mesh, mesh::GltfMeshLoader<Vec<u8>>, _>();
         Ok(())
     }
 }

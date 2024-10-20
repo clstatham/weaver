@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use weaver_asset::{prelude::Asset, AssetLoadQueues, Filesystem, Handle, LoadSource, Loader};
 use weaver_core::texture::{Texture, TextureLoader};
 use weaver_ecs::prelude::Resource;
@@ -131,23 +133,21 @@ impl LoadedShader {
 #[derive(Resource, Default)]
 pub struct TryEverythingTextureLoader;
 
-impl Loader<Texture> for TryEverythingTextureLoader {
+impl Loader<Texture, PathBuf> for TryEverythingTextureLoader {
     fn load(
         &self,
-        source: LoadSource,
+        source: PathBuf,
         fs: &Filesystem,
         load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Texture> {
-        let path = source.as_path().unwrap();
-
         let extensions = ["png", "tga", "jpg", "jpeg", "pcx", "bmp"];
         for ext in &extensions {
-            let path = path.with_extension(ext);
-            if let Ok(texture) = TextureLoader.load(LoadSource::Path(path), fs, load_queues) {
+            let path = source.with_extension(ext);
+            if let Ok(texture) = TextureLoader::<PathBuf>::default().load(path, fs, load_queues) {
                 return Ok(texture);
             }
         }
 
-        Err(anyhow!("Failed to load texture: {:?}", path))
+        Err(anyhow!("Failed to load texture: {:?}", source))
     }
 }

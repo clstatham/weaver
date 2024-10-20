@@ -39,14 +39,14 @@ impl Shader {
 #[derive(Resource, Default)]
 pub struct ShaderLoader;
 
-impl Loader<Shader> for ShaderLoader {
+impl Loader<Shader, PathBuf> for ShaderLoader {
     fn load(
         &self,
-        source: LoadSource,
+        source: PathBuf,
         _fs: &Filesystem,
         _load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Shader> {
-        Ok(Shader::new(source.as_path().unwrap()))
+        Ok(Shader::new(source))
     }
 }
 

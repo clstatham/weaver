@@ -109,7 +109,7 @@ pub struct PbrPlugin;
 impl Plugin for PbrPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_asset::<Material>();
-        app.add_asset_loader::<LoadedModelWithMaterials, ObjMaterialModelLoader>();
+        app.add_asset_loader::<LoadedModelWithMaterials, ObjMaterialModelLoader, _>();
 
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.add_plugin(MaterialPlugin)?;

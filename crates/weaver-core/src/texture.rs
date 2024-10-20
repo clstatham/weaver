@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use weaver_asset::{
     prelude::{Asset, Loader},
     AssetLoadQueues, Filesystem, LoadSource,
@@ -66,45 +68,51 @@ impl Texture {
 }
 
 #[derive(Resource, Default)]
-pub struct TextureLoader;
+pub struct TextureLoader<S: LoadSource>(std::marker::PhantomData<S>);
 
-impl Loader<Texture> for TextureLoader {
+impl Loader<Texture, PathBuf> for TextureLoader<PathBuf> {
     fn load(
         &self,
-        source: LoadSource,
+        source: PathBuf,
         fs: &Filesystem,
         _load_queues: &AssetLoadQueues<'_>,
     ) -> Result<Texture> {
-        let bytes = match source {
-            LoadSource::Path(path) => fs.read_sub_path(path)?,
-            LoadSource::Bytes(bytes) => bytes,
-            LoadSource::BoxedAsset(dyn_asset) => {
-                return dyn_asset
-                    .downcast()
-                    .map(|texture: Box<Texture>| *texture)
-                    .map_err(|_| anyhow!("Failed to downcast LoadSource::BoxedAsset to Texture"));
-            }
-        };
-        // check if it's a tga file
-        if let Ok(image) = image::load_from_memory_with_format(&bytes, image::ImageFormat::Tga) {
-            log::trace!(
-                "Successfully loaded TGA texture with dimensions {}x{}",
-                image.width(),
-                image.height()
-            );
-            return Ok(Texture::from_rgba8(
-                &image.to_rgba8(),
-                image.width(),
-                image.height(),
-            ));
-        }
-        let image = image::load_from_memory(&bytes)?;
-        let image = image.to_rgba8();
+        let bytes = fs.read_sub_path(&source)?;
+        load_texture_common(&bytes)
+    }
+}
+
+impl Loader<Texture, Vec<u8>> for TextureLoader<Vec<u8>> {
+    fn load(
+        &self,
+        source: Vec<u8>,
+        _fs: &Filesystem,
+        _load_queues: &AssetLoadQueues<'_>,
+    ) -> Result<Texture> {
+        load_texture_common(&source)
+    }
+}
+
+fn load_texture_common(bytes: &[u8]) -> Result<Texture> {
+    // check if it's a tga file
+    if let Ok(image) = image::load_from_memory_with_format(bytes, image::ImageFormat::Tga) {
         log::trace!(
-            "Successfully loaded texture with dimensions {}x{}",
+            "Successfully loaded TGA texture with dimensions {}x{}",
             image.width(),
             image.height()
         );
-        Ok(Texture::from_rgba8(&image, image.width(), image.height()))
+        return Ok(Texture::from_rgba8(
+            &image.to_rgba8(),
+            image.width(),
+            image.height(),
+        ));
     }
+    let image = image::load_from_memory(&bytes)?;
+    let image = image.to_rgba8();
+    log::trace!(
+        "Successfully loaded texture with dimensions {}x{}",
+        image.width(),
+        image.height()
+    );
+    Ok(Texture::from_rgba8(&image, image.width(), image.height()))
 }
