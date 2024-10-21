@@ -56,6 +56,6 @@
 			- Pushing a load operation to a `LoadQueue` is really fast and can be done anytime we want
 			- The actual loads happen all at the same time, in the `AssetLoad` system stage, with sequential calls to the `load_all_assets()` system
 			- Because `load_all_assets()` is a regular ECS system, we can use the existing system dependency graph to ensure assets are loaded in the correct order
+		- Assets can be loaded in parallel on multiple threads!
 	- What problems does the new method have?
 		- Very verbose and generic API which can be ugly to write
-		- No current support for asynchronous loading, although this is a step in the right direction towards that
