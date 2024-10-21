@@ -2,6 +2,7 @@ use std::{
     any::TypeId,
     cell::UnsafeCell,
     ops::{Deref, DerefMut},
+    sync::Arc,
 };
 
 use weaver_reflect_macros::reflect_trait;
@@ -22,6 +23,9 @@ impl_downcast!(Component);
 #[reflect_trait]
 pub trait Resource: DowncastSync {}
 impl_downcast!(Resource);
+
+impl<T: Resource> Resource for SharedLock<T> {}
+impl<T: Resource> Resource for Arc<T> {}
 
 pub struct Res<'r, T: Resource> {
     pub(crate) value: &'r T,

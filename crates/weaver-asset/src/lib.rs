@@ -7,6 +7,7 @@ use std::{
     marker::PhantomData,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use weaver_app::{App, SubApp};
@@ -22,8 +23,8 @@ use zip::ZipArchive;
 
 pub mod prelude {
     pub use crate::{
-        Asset, AssetLoadQueue, AssetLoadQueues, Assets, BoxLoader, Filesystem, Handle, Loader,
-        ReflectAsset, UntypedHandle,
+        Asset, AssetLoadQueue, AssetLoadQueues, Assets, DirectLoader, Filesystem, Handle, Loader,
+        PathAndFilesystem, ReflectAsset, UntypedHandle,
     };
     pub use weaver_asset_macros::Asset;
 }
@@ -149,6 +150,7 @@ impl<T: Asset> TryFrom<UntypedHandle> for Handle<T> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct AssetRef<'w, T: Asset> {
     asset: &'w T,
 }
@@ -367,34 +369,56 @@ impl Filesystem {
     }
 }
 
+#[derive(Clone)]
+pub struct PathAndFilesystem {
+    pub path: PathBuf,
+    pub fs: Arc<Filesystem>,
+}
+
+impl PathAndFilesystem {
+    pub fn new(path: impl AsRef<Path>, fs: Arc<Filesystem>) -> Self {
+        Self {
+            path: path.as_ref().to_path_buf(),
+            fs,
+        }
+    }
+
+    pub fn read(&self) -> Result<Vec<u8>> {
+        self.fs.read_sub_path(&self.path)
+    }
+}
+
+impl From<(PathBuf, Arc<Filesystem>)> for PathAndFilesystem {
+    fn from((path, fs): (PathBuf, Arc<Filesystem>)) -> Self {
+        Self { path, fs }
+    }
+}
+
 pub type BoxedAsset = Box<dyn Asset>;
 
 pub trait LoadSource: Send + Sync + 'static {}
 
 impl LoadSource for PathBuf {}
+impl LoadSource for PathAndFilesystem {}
 impl LoadSource for Vec<u8> {}
 impl LoadSource for BoxedAsset {}
 impl<T: Asset> LoadSource for T {}
 
 pub trait Loader<T: Asset, S: LoadSource>: FromWorld + Send + Sync + 'static {
-    fn load(&self, source: S, fs: &Filesystem, load_queues: &AssetLoadQueues<'_>) -> Result<T>;
+    fn load(&self, source: S, load_queues: &AssetLoadQueues<'_>) -> Result<T>;
 }
 
-pub struct BoxLoader<T: Asset>(PhantomData<T>);
+#[derive(Clone, Copy)]
+pub struct DirectLoader<T: Asset>(PhantomData<T>);
 
-impl<T: Asset> Default for BoxLoader<T> {
+impl<T: Asset> Default for DirectLoader<T> {
     fn default() -> Self {
         Self(PhantomData)
     }
 }
 
-impl<T: Asset> Loader<T, BoxedAsset> for BoxLoader<T> {
-    fn load(
-        &self,
-        source: BoxedAsset,
-        _fs: &Filesystem,
-        _load_queues: &AssetLoadQueues<'_>,
-    ) -> Result<T> {
+impl<T: Asset> Loader<T, BoxedAsset> for DirectLoader<T> {
+    fn load(&self, source: BoxedAsset, _load_queues: &AssetLoadQueues<'_>) -> Result<T> {
         source
             .downcast()
             .map_err(|_| anyhow!("failed to downcast asset"))
@@ -402,8 +426,8 @@ impl<T: Asset> Loader<T, BoxedAsset> for BoxLoader<T> {
     }
 }
 
-impl<T: Asset> Loader<T, T> for BoxLoader<T> {
-    fn load(&self, source: T, _fs: &Filesystem, _load_queues: &AssetLoadQueues<'_>) -> Result<T> {
+impl<T: Asset> Loader<T, T> for DirectLoader<T> {
+    fn load(&self, source: T, _load_queues: &AssetLoadQueues<'_>) -> Result<T> {
         Ok(source)
     }
 }
@@ -511,20 +535,16 @@ impl<'w> AssetLoadQueues<'w> {
         }
     }
 
-    pub fn get_load_queue<T: Asset, L: Loader<T, S>, S: LoadSource>(
-        &self,
-    ) -> Option<ResMut<'w, AssetLoadQueue<T, L, S>>> {
-        // SAFETY: We are borrowing the world mutably for the lifetime 'w of this struct.
-        // TODO: Verify that no load queues are borrowed twice at the same time.
-        unsafe { self.world.get_resource_mut() }
-    }
-
     pub fn enqueue<T: Asset, L: Loader<T, S>, S: LoadSource>(
         &self,
         source: S,
     ) -> Option<Handle<T>> {
-        self.get_load_queue::<T, L, S>()
+        unsafe { self.world.get_resource_mut::<AssetLoadQueue<T, L, S>>() }
             .map(|mut load_queue| load_queue.enqueue(source))
+    }
+
+    pub fn enqueue_direct<T: Asset>(&self, source: T) -> Option<Handle<T>> {
+        self.enqueue::<T, DirectLoader<T>, T>(source)
     }
 }
 
@@ -600,11 +620,11 @@ impl AssetApp for SubApp {
         if !self.has_resource::<AssetLoadStatus>() {
             self.init_resource::<AssetLoadStatus>();
         }
-        if !self.has_resource::<AssetLoadQueue<T, BoxLoader<T>, BoxedAsset>>() {
-            self.add_asset_loader::<T, BoxLoader<T>, BoxedAsset>();
+        if !self.has_resource::<AssetLoadQueue<T, DirectLoader<T>, BoxedAsset>>() {
+            self.add_asset_loader::<T, DirectLoader<T>, BoxedAsset>();
         }
-        if !self.has_resource::<AssetLoadQueue<T, BoxLoader<T>, T>>() {
-            self.add_asset_loader::<T, BoxLoader<T>, T>();
+        if !self.has_resource::<AssetLoadQueue<T, DirectLoader<T>, T>>() {
+            self.add_asset_loader::<T, DirectLoader<T>, T>();
         }
         self
     }
@@ -616,7 +636,7 @@ impl AssetApp for SubApp {
             self.init_resource::<Events<AssetLoaded<T>>>();
 
             if !self.has_system_stage::<AssetLoad>() {
-                self.push_init_stage::<AssetLoad>();
+                self.push_update_stage::<AssetLoad>();
             }
 
             self.add_system(load_all_assets::<T, L, S>, AssetLoad);
@@ -674,10 +694,12 @@ fn load_all_assets<T: Asset, L: Loader<T, S>, S: LoadSource>(
     world: &mut World,
     mut load_queue: ResMut<AssetLoadQueue<T, L, S>>,
     mut assets: ResMut<Assets<T>>,
-    fs: Res<Filesystem>,
     load_events: Res<Events<AssetLoaded<T>>>,
     load_status: Res<AssetLoadStatus>,
 ) {
+    if load_queue.is_empty() {
+        return;
+    }
     log::debug!("Loading all assets of type: {}", std::any::type_name::<T>());
     let loader = L::from_world(world);
     let load_queues = AssetLoadQueues::new(world);
@@ -687,7 +709,7 @@ fn load_all_assets<T: Asset, L: Loader<T, S>, S: LoadSource>(
         }
 
         log::trace!("Loading asset: {:?}", request);
-        match loader.load(request.source, &fs, &load_queues) {
+        match loader.load(request.source, &load_queues) {
             Ok(asset) => {
                 let handle = assets.insert_manual(asset, request.handle.id);
                 load_status.manually_set_loaded(handle);

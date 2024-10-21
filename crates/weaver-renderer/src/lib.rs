@@ -479,6 +479,7 @@ pub fn begin_render(
     let frame = match surface.get_current_texture() {
         Ok(frame) => frame,
         Err(e) => {
+            // TODO: FIXME: This could happen when the window is moved to a different monitor
             panic!("Failed to acquire next surface texture: {}", e);
         }
     };

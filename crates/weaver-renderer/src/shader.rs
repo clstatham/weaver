@@ -37,12 +37,7 @@ impl Shader {
 pub struct ShaderLoader;
 
 impl Loader<Shader, PathBuf> for ShaderLoader {
-    fn load(
-        &self,
-        source: PathBuf,
-        _fs: &Filesystem,
-        _load_queues: &AssetLoadQueues<'_>,
-    ) -> Result<Shader> {
+    fn load(&self, source: PathBuf, _load_queues: &AssetLoadQueues<'_>) -> Result<Shader> {
         Ok(Shader::new(source))
     }
 }

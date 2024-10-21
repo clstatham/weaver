@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use nom::Finish;
 use weaver_asset::prelude::*;
@@ -115,6 +115,7 @@ impl BspLoader {
     fn load_shader_from_lexed(
         &self,
         shader: LexedShader,
+        fs: Arc<Filesystem>,
         load_queues: &AssetLoadQueues<'_>,
     ) -> LoadedShader {
         let mut textures = FxHashMap::default();
@@ -133,7 +134,7 @@ impl BspLoader {
                     continue;
                 }
                 let handle = load_queues
-                    .enqueue::<_, TryEverythingTextureLoader, _>(path.into())
+                    .enqueue::<_, TryEverythingTextureLoader, _>((path.into(), fs.clone()).into())
                     .unwrap();
                 texture_cache.insert(stripped.to_string(), handle);
                 textures.insert(map, handle);
@@ -155,7 +156,9 @@ impl BspLoader {
                                 continue;
                             }
                             let handle = load_queues
-                                .enqueue::<_, TryEverythingTextureLoader, _>(path.into())
+                                .enqueue::<_, TryEverythingTextureLoader, _>(
+                                    (path.into(), fs.clone()).into(),
+                                )
                                 .unwrap();
                             texture_cache.insert(stripped.to_string(), handle);
                             textures.insert(map, handle);
@@ -175,15 +178,10 @@ impl BspLoader {
     }
 }
 
-impl Loader<Bsp, PathBuf> for BspLoader {
+impl Loader<Bsp, PathAndFilesystem> for BspLoader {
     // TODO: clean this up
-    fn load(
-        &self,
-        source: PathBuf,
-        fs: &Filesystem,
-        load_queues: &AssetLoadQueues<'_>,
-    ) -> Result<Bsp> {
-        let bytes = fs.read_sub_path(source)?;
+    fn load(&self, source: PathAndFilesystem, load_queues: &AssetLoadQueues<'_>) -> Result<Bsp> {
+        let bytes = source.read()?;
         let (_, bsp_file) = bsp_file(bytes.as_slice())
             .finish()
             .map_err(|e| anyhow!("Failed to parse bsp file: {:?}", e.code))?;
@@ -216,15 +214,9 @@ impl Loader<Bsp, PathBuf> for BspLoader {
 
         let mut bsp = Bsp::with_capacity(meshes_and_textures.nodes.len(), gen.file.vis_data);
 
-        self.lexed_shader_cache.write().load_all("scripts", fs)?;
-
-        let mut mesh_load_queue = load_queues
-            .get_load_queue::<_, BoxLoader<Mesh>, Mesh>()
-            .unwrap();
-
-        let mut shader_load_queue = load_queues
-            .get_load_queue::<_, BoxLoader<LoadedShader>, LoadedShader>()
-            .unwrap();
+        self.lexed_shader_cache
+            .write()
+            .load_all("scripts", &source.fs)?;
 
         for (node_index, node) in meshes_and_textures.nodes.into_iter().enumerate() {
             let Some(node) = node else {
@@ -242,7 +234,7 @@ impl Loader<Bsp, PathBuf> for BspLoader {
                 } => {
                     let mut shader_meshes = Vec::with_capacity(meshes_and_textures.len());
                     for (mesh, texture, typ) in meshes_and_textures {
-                        let mesh = mesh_load_queue.enqueue(mesh);
+                        let mesh = load_queues.enqueue_direct(mesh).unwrap();
                         let texture_name = texture.to_str().unwrap();
                         let texture_name = strip_extension(texture_name);
 
@@ -252,9 +244,13 @@ impl Loader<Bsp, PathBuf> for BspLoader {
                         if let Some(shader) = loaded_shader_cache.get(texture_name) {
                             shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
                         } else if let Some(shader) = lexed_shader_cache.get(texture_name) {
-                            let shader = self.load_shader_from_lexed(shader.clone(), load_queues);
+                            let shader = self.load_shader_from_lexed(
+                                shader.clone(),
+                                source.fs.clone(),
+                                load_queues,
+                            );
 
-                            let shader = shader_load_queue.enqueue(shader);
+                            let shader = load_queues.enqueue_direct(shader).unwrap();
 
                             loaded_shader_cache.insert(texture_name.to_string(), shader);
                             shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
@@ -263,17 +259,18 @@ impl Loader<Bsp, PathBuf> for BspLoader {
                             if let Some(texture) = texture_cache.get(texture_name) {
                                 let shader =
                                     LoadedShader::make_simple_textured(texture, texture_name);
-                                let shader = shader_load_queue.enqueue(shader);
+                                let shader = load_queues.enqueue_direct(shader).unwrap();
                                 shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
                             } else {
-                                // try to load it again
-                                let mut texture_load_queue = load_queues
-                                    .get_load_queue::<_, TryEverythingTextureLoader, _>()
+                                let texture = load_queues
+                                    .enqueue::<_, TryEverythingTextureLoader, _>(
+                                        (texture.to_str().unwrap().into(), source.fs.clone())
+                                            .into(),
+                                    )
                                     .unwrap();
-                                let texture = texture_load_queue.enqueue(texture.to_str().unwrap());
                                 let shader =
                                     LoadedShader::make_simple_textured(texture, texture_name);
-                                let shader = shader_load_queue.enqueue(shader);
+                                let shader = load_queues.enqueue_direct(shader).unwrap();
                                 shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
                             }
                         }

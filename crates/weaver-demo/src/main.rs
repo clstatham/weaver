@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, path::PathBuf};
+use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 
 use weaver::{
     prelude::*,
@@ -41,7 +41,7 @@ fn main() -> Result<()> {
     App::new()
         .add_plugin(CoreTypesPlugin)?
         .add_plugin(WinitPlugin {
-            initial_size: (1600, 900),
+            initial_size: (1920, 1080),
             window_title: "Weaver",
         })?
         .add_plugin(TimePlugin)?
@@ -60,7 +60,9 @@ fn main() -> Result<()> {
             app.add_render_main_graph_edge(BspRenderNodeLabel, GizmoNodeLabel);
         })
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
-        .insert_resource(Filesystem::default().with_pk3s_from_dir("assets/q3")?)
+        .insert_resource(Arc::new(
+            Filesystem::default().with_pk3s_from_dir("assets/q3")?,
+        ))
         .init_resource::<FpsHistory>()
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)
@@ -69,7 +71,11 @@ fn main() -> Result<()> {
         .run()
 }
 
-fn setup(mut commands: Commands, mut bsp_loader: ResMut<AssetLoadQueue<Bsp, BspLoader, PathBuf>>) {
+fn setup(
+    mut commands: Commands,
+    fs: Res<Arc<Filesystem>>,
+    mut bsp_loader: ResMut<AssetLoadQueue<Bsp, BspLoader, PathAndFilesystem>>,
+) {
     commands.spawn((
         Camera::default(),
         camera::FlyCameraController {
@@ -84,7 +90,7 @@ fn setup(mut commands: Commands, mut bsp_loader: ResMut<AssetLoadQueue<Bsp, BspL
         PrimaryCamera,
     ));
 
-    let bsp = bsp_loader.enqueue("maps/q3dm1.bsp");
+    let bsp = bsp_loader.enqueue(("maps/q3dm1.bsp".into(), fs.clone()));
     commands.insert_resource(bsp);
 }
 

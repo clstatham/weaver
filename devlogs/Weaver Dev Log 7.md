@@ -35,7 +35,14 @@
 		- Assets that depended on other assets would have no way to indicate what other assets they needed ahead of time, and they would just be loaded immediately as they were needed
 - New and improved asset loading pipeline, after working on the BSP loader
 	- `AssetId`, `Handle`, `Assets`, `Filesystem`, and `Loader` are mostly the same
+		- `Loader` takes a new type parameter...
 	- `LoadSource` trait
+		- One of the distinguishing type parameters for a `Loader` indicating what the `Asset` is being loaded from
+		- The appropriate `LoadSource` is passed to the `Loader`'s `load()` implementation
 	- `AssetLoadQueue` resource
-		- Generic over the type of `Asset` and type of `Loader` that it is responsible for
+		- Generic over the type of `Asset`, type of `Loader`, and type of `LoadSource` that it is responsible for
 		- Simply contains a queue of `AssetLoadRequests` that keep track of the `Handle`s and `LoadSource`s of assets that are scheduled for loading
+		- Hands out "temporary" `Handle`s that don't yet point to loaded assets
+	- `load_all_assets()` system
+		- Drains the `AssetLoadQueue` for a particular combination of `Asset`, `Loader`, and `LoadSource`, calling `load()` on each `LoadSource` and inserting successfully loaded `Asset` into their `Assets` storage resource
+		- Runs automatically
