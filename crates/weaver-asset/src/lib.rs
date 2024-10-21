@@ -13,7 +13,7 @@ use std::{
 use weaver_app::{App, SubApp};
 use weaver_ecs::{
     prelude::{reflect_trait, Component, Res, ResMut, Resource, SystemStage},
-    world::{FromWorld, UnsafeWorldCell, World},
+    world::{FromWorld, World},
 };
 use weaver_event::{Event, Events};
 use weaver_util::{
@@ -467,12 +467,14 @@ impl<T: Asset, L: Loader<T, S>, S: LoadSource> Debug for AssetLoadRequest<T, L, 
 
 #[derive(Resource)]
 pub struct AssetLoadQueue<T: Asset, L: Loader<T, S>, S: LoadSource> {
-    queue: Vec<AssetLoadRequest<T, L, S>>,
+    queue: Lock<Vec<AssetLoadRequest<T, L, S>>>,
 }
 
 impl<T: Asset, L: Loader<T, S>, S: LoadSource> Default for AssetLoadQueue<T, L, S> {
     fn default() -> Self {
-        Self { queue: Vec::new() }
+        Self {
+            queue: Lock::new(Vec::new()),
+        }
     }
 }
 
@@ -481,9 +483,9 @@ impl<T: Asset, L: Loader<T, S>, S: LoadSource> AssetLoadQueue<T, L, S> {
         Self::default()
     }
 
-    pub fn enqueue(&mut self, source: impl Into<S>) -> Handle<T> {
+    pub fn enqueue(&self, source: impl Into<S>) -> Handle<T> {
         let handle = Handle::from_raw(AssetId::new());
-        self.queue.push(AssetLoadRequest {
+        self.queue.write().push(AssetLoadRequest {
             handle,
             source: source.into(),
             _marker: PhantomData,
@@ -491,56 +493,44 @@ impl<T: Asset, L: Loader<T, S>, S: LoadSource> AssetLoadQueue<T, L, S> {
         handle
     }
 
-    pub fn push(&mut self, request: AssetLoadRequest<T, L, S>) {
-        self.queue.push(request);
+    pub fn push(&self, request: AssetLoadRequest<T, L, S>) {
+        self.queue.write().push(request);
     }
 
-    pub fn pop(&mut self) -> Option<AssetLoadRequest<T, L, S>> {
-        self.queue.pop()
+    pub fn pop(&self) -> Option<AssetLoadRequest<T, L, S>> {
+        self.queue.write().pop()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.queue.is_empty()
+        self.queue.read().is_empty()
     }
 
     pub fn len(&self) -> usize {
-        self.queue.len()
+        self.queue.read().len()
     }
 
-    pub fn clear(&mut self) {
-        self.queue.clear();
-    }
-
-    pub fn drain(&mut self) -> impl Iterator<Item = AssetLoadRequest<T, L, S>> + '_ {
-        self.queue.drain(..)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &AssetLoadRequest<T, L, S>> {
-        self.queue.iter()
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut AssetLoadRequest<T, L, S>> {
-        self.queue.iter_mut()
+    pub fn clear(&self) {
+        self.queue.write().clear();
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct AssetLoadQueues<'w> {
-    world: UnsafeWorldCell<'w>,
+    world: &'w World,
 }
 
 impl<'w> AssetLoadQueues<'w> {
-    pub fn new(world: &'w mut World) -> Self {
-        Self {
-            world: world.as_unsafe_world_cell(),
-        }
+    pub fn new(world: &'w World) -> Self {
+        Self { world }
     }
 
     pub fn enqueue<T: Asset, L: Loader<T, S>, S: LoadSource>(
         &self,
         source: S,
     ) -> Option<Handle<T>> {
-        unsafe { self.world.get_resource_mut::<AssetLoadQueue<T, L, S>>() }
-            .map(|mut load_queue| load_queue.enqueue(source))
+        self.world
+            .get_resource::<AssetLoadQueue<T, L, S>>()
+            .map(|load_queue| load_queue.enqueue(source))
     }
 
     pub fn enqueue_direct<T: Asset>(&self, source: T) -> Option<Handle<T>> {
@@ -692,7 +682,7 @@ impl AssetApp for App {
 
 fn load_all_assets<T: Asset, L: Loader<T, S>, S: LoadSource>(
     world: &mut World,
-    mut load_queue: ResMut<AssetLoadQueue<T, L, S>>,
+    load_queue: Res<AssetLoadQueue<T, L, S>>,
     mut assets: ResMut<Assets<T>>,
     load_events: Res<Events<AssetLoaded<T>>>,
     load_status: Res<AssetLoadStatus>,
@@ -701,23 +691,41 @@ fn load_all_assets<T: Asset, L: Loader<T, S>, S: LoadSource>(
         return;
     }
     log::debug!("Loading all assets of type: {}", std::any::type_name::<T>());
-    let loader = L::from_world(world);
+
+    let loader = Arc::new(L::from_world(world));
+
+    let n = load_queue.len();
     let load_queues = AssetLoadQueues::new(world);
-    for request in load_queue.drain() {
-        if assets.get(request.handle).is_some() || load_status.is_loaded(request.handle) {
-            continue;
+
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(n);
+
+        for _ in 0..n {
+            let request = load_queue.pop().unwrap();
+            if assets.get(request.handle).is_some() || load_status.is_loaded(request.handle) {
+                continue;
+            }
+
+            log::trace!("Loading asset: {:?}", request);
+            let loader = loader.clone();
+            let join_handle =
+                scope.spawn(move || match loader.load(request.source, &load_queues) {
+                    Ok(asset) => Some(asset),
+                    Err(err) => {
+                        log::error!("Failed to load asset: {}", err);
+                        None
+                    }
+                });
+
+            handles.push((request.handle, join_handle));
         }
 
-        log::trace!("Loading asset: {:?}", request);
-        match loader.load(request.source, &load_queues) {
-            Ok(asset) => {
-                let handle = assets.insert_manual(asset, request.handle.id);
+        for (handle, join_handle) in handles {
+            if let Some(asset) = join_handle.join().unwrap() {
+                assets.insert_manual(asset, handle.id);
                 load_status.manually_set_loaded(handle);
                 load_events.send(AssetLoaded::new(handle.id));
             }
-            Err(err) => {
-                log::error!("Failed to load asset: {}", err);
-            }
         }
-    }
+    });
 }

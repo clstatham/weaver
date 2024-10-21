@@ -74,7 +74,7 @@ fn main() -> Result<()> {
 fn setup(
     mut commands: Commands,
     fs: Res<Arc<Filesystem>>,
-    mut bsp_loader: ResMut<AssetLoadQueue<Bsp, BspLoader, PathAndFilesystem>>,
+    bsp_loader: Res<AssetLoadQueue<Bsp, BspLoader, PathAndFilesystem>>,
 ) {
     commands.spawn((
         Camera::default(),
