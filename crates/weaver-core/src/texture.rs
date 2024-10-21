@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use weaver_asset::{
     prelude::{Asset, Loader},
-    AssetLoadQueues, Filesystem, LoadSource, PathAndFilesystem,
+    AssetLoadQueues, LoadSource, PathAndFilesystem,
 };
 use weaver_ecs::prelude::Resource;
 use weaver_util::Result;

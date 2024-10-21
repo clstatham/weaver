@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use glam::{Vec2, Vec3, Vec4};
 use weaver_asset::{
     prelude::{Asset, Loader},
-    AssetLoadQueues, Filesystem, LoadSource, PathAndFilesystem, ReflectAsset,
+    AssetLoadQueues, LoadSource, PathAndFilesystem, ReflectAsset,
 };
 use weaver_ecs::prelude::{Reflect, Resource};
 use weaver_util::{anyhow, bail, Result};

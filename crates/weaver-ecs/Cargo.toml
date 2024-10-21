@@ -9,7 +9,7 @@ petgraph = "0.6.5"
 itertools = "0.13.0"
 static_assertions = "1.1.0"
 glam = "0.27.0"
-rayon = "1.5.1"
+rayon = "1.10.0"
 atomic_refcell = "0.1.13"
 
 weaver-util = { path = "../weaver-util" }

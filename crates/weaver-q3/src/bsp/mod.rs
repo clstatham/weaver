@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use loader::{Bsp, BspLoader};
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{AssetApp, DirectLoader, PathAndFilesystem};

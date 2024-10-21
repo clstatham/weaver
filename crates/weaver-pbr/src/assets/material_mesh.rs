@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use weaver_asset::{prelude::*, Filesystem, PathAndFilesystem};
+use weaver_asset::prelude::*;
 use weaver_core::{
     mesh::{calculate_normals, calculate_tangents, Mesh, Vertex},
     prelude::{Vec2, Vec3, Vec4},

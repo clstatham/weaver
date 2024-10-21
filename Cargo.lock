@@ -3222,7 +3222,6 @@ dependencies = [
  "log",
  "petgraph",
  "rayon",
- "rustc-hash 1.1.0",
  "weaver-ecs",
  "weaver-event",
  "weaver-util",

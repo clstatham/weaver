@@ -1,7 +1,6 @@
 use std::any::TypeId;
 
 use plugin::Plugin;
-use rustc_hash::FxHashMap;
 
 use weaver_ecs::{
     change::WorldTicks,
@@ -12,7 +11,7 @@ use weaver_ecs::{
     world::{FromWorld, World},
 };
 use weaver_event::{Event, Events, ManuallyUpdatedEvents};
-use weaver_util::Result;
+use weaver_util::{FxHashMap, Result};
 
 pub mod plugin;
 

@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, path::PathBuf, sync::Arc};
+use std::{collections::VecDeque, sync::Arc};
 
 use weaver::{
     prelude::*,
