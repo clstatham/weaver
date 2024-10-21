@@ -601,7 +601,7 @@ pub fn lightmap(input: &[u8]) -> IResult<&[u8], Lightmap> {
     let (input, map) = count(
         count(
             count(ubyte, 3)
-                .map(|rgb| [rgb[0], rgb[1], rgb[2]]), 
+                .map(|rgb| [rgb[0], rgb[1], rgb[2]]),
             128),
         128,
     )(input)?;
@@ -700,8 +700,6 @@ pub struct BspFile {
 
 pub fn bsp_file(input: &[u8]) -> IResult<&[u8], BspFile> {
     let (_, header) = bsp_header(input)?;
-
-    log::debug!("Parsing bsp file with header: {:#?}", header);
 
     let BspHeader {
         magic: _,

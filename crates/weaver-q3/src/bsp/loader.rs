@@ -187,29 +187,6 @@ impl Loader<Bsp, PathAndFilesystem> for BspLoader {
             .finish()
             .map_err(|e| anyhow!("Failed to parse bsp file: {:?}", e.code))?;
 
-        log::debug!("Loaded bsp file version {}", bsp_file.header.version);
-        log::debug!(">>> Header: {:#?}", bsp_file.header);
-        log::debug!(">>> {} textures", bsp_file.textures.len());
-        log::debug!(">>> {} planes", bsp_file.planes.len());
-        log::debug!(">>> {} nodes", bsp_file.nodes.len());
-        log::debug!(">>> {} leafs", bsp_file.leafs.len());
-        log::debug!(">>> {} leaf faces", bsp_file.leaf_faces.len());
-        log::debug!(">>> {} leaf brushes", bsp_file.leaf_brushes.len());
-        log::debug!(">>> {} models", bsp_file.models.len());
-        log::debug!(">>> {} brushes", bsp_file.brushes.len());
-        log::debug!(">>> {} brush sides", bsp_file.brush_sides.len());
-        log::debug!(">>> {} vertices", bsp_file.verts.len());
-        log::debug!(">>> {} mesh vertices", bsp_file.mesh_verts.len());
-        log::debug!(">>> {} effects", bsp_file.effects.len());
-        log::debug!(">>> {} faces", bsp_file.faces.len());
-        log::debug!(">>> {} lightmaps", bsp_file.lightmaps.len());
-        log::debug!(">>> {} light volumes", bsp_file.light_vols.len());
-        log::debug!(
-            ">>> {} vis data vecs of {} bytes each",
-            bsp_file.vis_data.num_vecs,
-            bsp_file.vis_data.size_vecs
-        );
-
         let gen = GenBsp::build(bsp_file);
         let meshes_and_textures = gen.generate_meshes();
 
