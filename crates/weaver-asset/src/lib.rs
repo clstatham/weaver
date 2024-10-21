@@ -65,9 +65,9 @@ impl<T: Asset> Handle<T> {
         }
     }
 
-    pub const fn from_uuid(uuid: u128) -> Self {
+    pub const fn from_u128(uuid: u128) -> Self {
         Self {
-            id: AssetId::from_u64(uuid as u64),
+            id: AssetId::from_u128(uuid),
             _marker: PhantomData,
         }
     }
@@ -444,19 +444,14 @@ impl<T: Asset> Loader<T, T> for DirectLoader<T> {
     }
 }
 
-pub struct AssetLoadRequest<T: Asset, L: Loader<T, S>, S: LoadSource> {
+pub struct AssetLoadRequest<T: Asset, S: LoadSource> {
     handle: Handle<T>,
     source: S,
-    _marker: PhantomData<L>,
 }
 
-impl<T: Asset, L: Loader<T, S>, S: LoadSource> AssetLoadRequest<T, L, S> {
+impl<T: Asset, S: LoadSource> AssetLoadRequest<T, S> {
     pub fn new(handle: Handle<T>, source: S) -> Self {
-        Self {
-            handle,
-            source,
-            _marker: PhantomData,
-        }
+        Self { handle, source }
     }
 
     pub fn handle(&self) -> Handle<T> {
@@ -468,7 +463,7 @@ impl<T: Asset, L: Loader<T, S>, S: LoadSource> AssetLoadRequest<T, L, S> {
     }
 }
 
-impl<T: Asset, L: Loader<T, S>, S: LoadSource> Debug for AssetLoadRequest<T, L, S> {
+impl<T: Asset, S: LoadSource> Debug for AssetLoadRequest<T, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let source = if let Some(s) = self.source.as_str() {
             s
@@ -484,13 +479,15 @@ impl<T: Asset, L: Loader<T, S>, S: LoadSource> Debug for AssetLoadRequest<T, L, 
 
 #[derive(Resource)]
 pub struct AssetLoadQueue<T: Asset, L: Loader<T, S>, S: LoadSource> {
-    queue: Lock<Vec<AssetLoadRequest<T, L, S>>>,
+    queue: Lock<Vec<AssetLoadRequest<T, S>>>,
+    _marker: PhantomData<L>,
 }
 
 impl<T: Asset, L: Loader<T, S>, S: LoadSource> Default for AssetLoadQueue<T, L, S> {
     fn default() -> Self {
         Self {
             queue: Lock::new(Vec::new()),
+            _marker: PhantomData,
         }
     }
 }
@@ -505,16 +502,15 @@ impl<T: Asset, L: Loader<T, S>, S: LoadSource> AssetLoadQueue<T, L, S> {
         self.queue.write().push(AssetLoadRequest {
             handle,
             source: source.into(),
-            _marker: PhantomData,
         });
         handle
     }
 
-    pub fn push(&self, request: AssetLoadRequest<T, L, S>) {
+    pub fn push(&self, request: AssetLoadRequest<T, S>) {
         self.queue.write().push(request);
     }
 
-    pub fn pop(&self) -> Option<AssetLoadRequest<T, L, S>> {
+    pub fn pop(&self) -> Option<AssetLoadRequest<T, S>> {
         self.queue.write().pop()
     }
 

@@ -30,3 +30,19 @@ pub type TypeIdMap<T> = hashbrown::HashMap<TypeId, T, BuildHasherDefault<TypeIdH
 
 pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
 pub type FxHashSet<T> = hashbrown::HashSet<T, rustc_hash::FxBuildHasher>;
+
+/// A const non-cryptographically secure hash function for a `u128`.
+/// Uses the FNV-1a algorithm with a 64-bit seed.
+///
+/// This can be used to hash a `u128` (such as a UUID) into a `u64` with a good enough distribution.
+pub const fn fast_hash_u128_const(a: u128) -> u64 {
+    #[cfg(target_pointer_width = "64")]
+    const K: usize = 0xf1357aea2e62a9c5;
+    #[cfg(target_pointer_width = "32")]
+    const K: usize = 0x93d765dd;
+
+    let mut state = 0u64;
+    state = state.wrapping_add(a as u64).wrapping_mul(K as u64);
+    state = state.wrapping_add((a >> 64) as u64).wrapping_mul(K as u64);
+    state
+}

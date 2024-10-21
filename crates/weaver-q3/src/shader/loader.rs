@@ -26,7 +26,7 @@ pub fn make_error_shader(name: &str) -> LoadedShader {
 }
 
 pub const ERROR_SHADER_HANDLE: Handle<LoadedShader> =
-    Handle::from_uuid(330543239317182820506064093680982255445);
+    Handle::from_u128(330543239317182820506064093680982255445);
 
 #[inline]
 pub fn strip_extension(path: &str) -> &str {

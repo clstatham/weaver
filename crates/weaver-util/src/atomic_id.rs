@@ -20,6 +20,10 @@ macro_rules! define_atomic_id {
             pub const fn from_u64(id: u64) -> Self {
                 Self(id)
             }
+
+            pub const fn from_u128(uuid: u128) -> Self {
+                Self($crate::maps::fast_hash_u128_const(uuid))
+            }
         }
 
         impl Into<u64> for $id {

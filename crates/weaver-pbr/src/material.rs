@@ -14,11 +14,11 @@ use weaver_renderer::{
 use weaver_util::Result;
 
 pub const WHITE_TEXTURE: Handle<Texture> =
-    Handle::from_uuid(171952135557955961317447623731106286307);
+    Handle::from_u128(171952135557955961317447623731106286307);
 pub const BLACK_TEXTURE: Handle<Texture> =
-    Handle::from_uuid(29903794803500143808416926793703205514);
+    Handle::from_u128(29903794803500143808416926793703205514);
 pub const ERROR_TEXTURE: Handle<Texture> =
-    Handle::from_uuid(288942464416563327199333453807837020723);
+    Handle::from_u128(288942464416563327199333453807837020723);
 
 #[derive(Reflect, Asset)]
 #[reflect(ReflectAsset)]
