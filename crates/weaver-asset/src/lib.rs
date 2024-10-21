@@ -396,10 +396,22 @@ impl From<(PathBuf, Arc<Filesystem>)> for PathAndFilesystem {
 
 pub type BoxedAsset = Box<dyn Asset>;
 
-pub trait LoadSource: Send + Sync + 'static {}
+pub trait LoadSource: Send + Sync + 'static {
+    fn as_str(&self) -> Option<&str> {
+        None
+    }
+}
 
-impl LoadSource for PathBuf {}
-impl LoadSource for PathAndFilesystem {}
+impl LoadSource for PathBuf {
+    fn as_str(&self) -> Option<&str> {
+        self.to_str()
+    }
+}
+impl LoadSource for PathAndFilesystem {
+    fn as_str(&self) -> Option<&str> {
+        self.path.to_str()
+    }
+}
 impl LoadSource for Vec<u8> {}
 impl LoadSource for BoxedAsset {}
 impl<T: Asset> LoadSource for T {}
@@ -458,9 +470,14 @@ impl<T: Asset, L: Loader<T, S>, S: LoadSource> AssetLoadRequest<T, L, S> {
 
 impl<T: Asset, L: Loader<T, S>, S: LoadSource> Debug for AssetLoadRequest<T, L, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let source = if let Some(s) = self.source.as_str() {
+            s
+        } else {
+            std::any::type_name::<S>()
+        };
         f.debug_struct("AssetLoadRequest")
             .field("handle", &self.handle)
-            .field("source", &std::any::type_name::<S>())
+            .field("source", &source)
             .finish()
     }
 }
@@ -700,26 +717,30 @@ fn load_all_assets<T: Asset, L: Loader<T, S>, S: LoadSource>(
     std::thread::scope(|scope| {
         let mut handles = Vec::with_capacity(n);
 
-        for _ in 0..n {
-            let request = load_queue.pop().unwrap();
+        for request in load_queue.queue.write().drain(..) {
             if assets.get(request.handle).is_some() || load_status.is_loaded(request.handle) {
                 continue;
             }
-
-            log::trace!("Loading asset: {:?}", request);
+            let request_str = format!("{:?}", request);
+            log::trace!("Loading asset: {request_str}");
             let loader = loader.clone();
-            let join_handle = scope.spawn(move || loader.load(request.source, &load_queues));
+            let join_handle =
+                scope.spawn(move || match loader.load(request.source, &load_queues) {
+                    Ok(asset) => Some(asset),
+                    Err(err) => {
+                        log::error!("Failed to load asset: {request_str}: {err}");
+                        None
+                    }
+                });
 
             handles.push((request.handle, join_handle));
         }
 
         for (handle, join_handle) in handles {
-            if let Ok(asset) = join_handle.join().unwrap() {
+            if let Some(asset) = join_handle.join().unwrap() {
                 assets.insert_manual(asset, handle.id);
                 load_status.manually_set_loaded(handle);
                 load_events.send(AssetLoaded::new(handle.id));
-            } else {
-                log::error!("Failed to load asset: {:?}", handle);
             }
         }
     });
