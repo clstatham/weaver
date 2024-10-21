@@ -130,9 +130,10 @@ pub fn load_obj_material_mesh(
                 let diffuse = material.diffuse.unwrap_or([1.0, 1.0, 1.0]);
                 let diffuse_texture = match &material.diffuse_texture {
                     Some(texture) => load_queues
-                        .enqueue::<_, TextureLoader<PathBuf>, _>(
-                            (texture.into(), source.fs.clone()).into(),
-                        )
+                        .enqueue::<_, TextureLoader<PathBuf>, _>((
+                            texture.into(),
+                            source.fs.clone(),
+                        ))
                         .unwrap(),
                     None => {
                         #[cfg(debug_assertions)]
@@ -142,9 +143,10 @@ pub fn load_obj_material_mesh(
                 };
                 let normal_texture = match &material.normal_texture {
                     Some(texture) => load_queues
-                        .enqueue::<_, TextureLoader<PathBuf>, _>(
-                            (texture.into(), source.fs.clone()).into(),
-                        )
+                        .enqueue::<_, TextureLoader<PathBuf>, _>((
+                            texture.into(),
+                            source.fs.clone(),
+                        ))
                         .unwrap(),
                     None => {
                         #[cfg(debug_assertions)]
@@ -155,9 +157,10 @@ pub fn load_obj_material_mesh(
                 let ao = material.ambient.unwrap_or([1.0, 1.0, 1.0]);
                 let ao_texture = match &material.ambient_texture {
                     Some(texture) => load_queues
-                        .enqueue::<_, TextureLoader<PathBuf>, _>(
-                            (texture.into(), source.fs.clone()).into(),
-                        )
+                        .enqueue::<_, TextureLoader<PathBuf>, _>((
+                            texture.into(),
+                            source.fs.clone(),
+                        ))
                         .unwrap(),
                     None => {
                         #[cfg(debug_assertions)]
@@ -169,9 +172,10 @@ pub fn load_obj_material_mesh(
                 let metallic = material.shininess.unwrap_or(0.0);
                 let metallic_roughness_texture = match &material.shininess_texture {
                     Some(texture) => load_queues
-                        .enqueue::<_, TextureLoader<PathBuf>, _>(
-                            (texture.into(), source.fs.clone()).into(),
-                        )
+                        .enqueue::<_, TextureLoader<PathBuf>, _>((
+                            texture.into(),
+                            source.fs.clone(),
+                        ))
                         .unwrap(),
                     None => {
                         #[cfg(debug_assertions)]

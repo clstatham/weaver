@@ -526,15 +526,15 @@ impl<'w> AssetLoadQueues<'w> {
 
     pub fn enqueue<T: Asset, L: Loader<T, S>, S: LoadSource>(
         &self,
-        source: S,
+        source: impl Into<S>,
     ) -> Option<Handle<T>> {
         self.world
             .get_resource::<AssetLoadQueue<T, L, S>>()
             .map(|load_queue| load_queue.enqueue(source))
     }
 
-    pub fn enqueue_direct<T: Asset>(&self, source: T) -> Option<Handle<T>> {
-        self.enqueue::<T, DirectLoader<T>, T>(source)
+    pub fn enqueue_direct<T: Asset>(&self, source: impl Into<T>) -> Option<Handle<T>> {
+        self.enqueue::<T, DirectLoader<T>, T>(source.into())
     }
 }
 

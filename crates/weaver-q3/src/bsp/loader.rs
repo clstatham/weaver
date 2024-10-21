@@ -134,7 +134,7 @@ impl BspLoader {
                     continue;
                 }
                 let handle = load_queues
-                    .enqueue::<_, TryEverythingTextureLoader, _>((path.into(), fs.clone()).into())
+                    .enqueue::<_, TryEverythingTextureLoader, _>((path.into(), fs.clone()))
                     .unwrap();
                 texture_cache.insert(stripped.to_string(), handle);
                 textures.insert(map, handle);
@@ -156,9 +156,10 @@ impl BspLoader {
                                 continue;
                             }
                             let handle = load_queues
-                                .enqueue::<_, TryEverythingTextureLoader, _>(
-                                    (path.into(), fs.clone()).into(),
-                                )
+                                .enqueue::<_, TryEverythingTextureLoader, _>((
+                                    path.into(),
+                                    fs.clone(),
+                                ))
                                 .unwrap();
                             texture_cache.insert(stripped.to_string(), handle);
                             textures.insert(map, handle);
@@ -263,10 +264,10 @@ impl Loader<Bsp, PathAndFilesystem> for BspLoader {
                                 shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
                             } else {
                                 let texture = load_queues
-                                    .enqueue::<_, TryEverythingTextureLoader, _>(
-                                        (texture.to_str().unwrap().into(), source.fs.clone())
-                                            .into(),
-                                    )
+                                    .enqueue::<_, TryEverythingTextureLoader, _>((
+                                        texture.to_str().unwrap().into(),
+                                        source.fs.clone(),
+                                    ))
                                     .unwrap();
                                 let shader =
                                     LoadedShader::make_simple_textured(texture, texture_name);
