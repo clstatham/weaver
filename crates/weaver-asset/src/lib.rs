@@ -708,23 +708,18 @@ fn load_all_assets<T: Asset, L: Loader<T, S>, S: LoadSource>(
 
             log::trace!("Loading asset: {:?}", request);
             let loader = loader.clone();
-            let join_handle =
-                scope.spawn(move || match loader.load(request.source, &load_queues) {
-                    Ok(asset) => Some(asset),
-                    Err(err) => {
-                        log::error!("Failed to load asset: {}", err);
-                        None
-                    }
-                });
+            let join_handle = scope.spawn(move || loader.load(request.source, &load_queues));
 
             handles.push((request.handle, join_handle));
         }
 
         for (handle, join_handle) in handles {
-            if let Some(asset) = join_handle.join().unwrap() {
+            if let Ok(asset) = join_handle.join().unwrap() {
                 assets.insert_manual(asset, handle.id);
                 load_status.manually_set_loaded(handle);
                 load_events.send(AssetLoaded::new(handle.id));
+            } else {
+                log::error!("Failed to load asset: {:?}", handle);
             }
         }
     });
