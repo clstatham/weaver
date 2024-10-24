@@ -484,7 +484,7 @@ where
     F: QueryFilter + 'w,
 {
     pub(crate) state: &'s QueryState<Q, F>,
-    pub(crate) world: UnsafeWorldCell<'w>,
+    pub(crate) world: &'w World,
 }
 
 unsafe impl<Q: QueryFetch, F: QueryFilter> Send for Query<'_, '_, Q, F> {}
@@ -496,15 +496,15 @@ where
     F: QueryFilter,
 {
     pub fn get(&self, entity: Entity) -> Option<Q::Item<'w>> {
-        unsafe { self.state.get(self.world.world(), entity) }
+        self.state.get(self.world, entity)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Entity, Q::Item<'w>)> + '_ {
-        unsafe { self.state.iter(self.world.world()) }
+        self.state.iter(self.world)
     }
 
     pub fn entity_iter(&self) -> impl Iterator<Item = Entity> + '_ {
-        unsafe { Q::entity_iter::<F>(self.world.world()) }
+        Q::entity_iter::<F>(self.world)
     }
 }
 
@@ -568,7 +568,10 @@ where
         state: &'s mut Self::State,
         world: UnsafeWorldCell<'w>,
     ) -> Self::Item<'w, 's> {
-        Query { state, world }
+        Query {
+            state,
+            world: unsafe { world.world() },
+        }
     }
 
     fn can_run(_world: &World) -> bool {

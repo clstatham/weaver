@@ -7,7 +7,7 @@
 - Upstream various `weaver-q3` functionality and ideas
 	- More complex asset loading, processing, and generation
 		- ~~Load queues~~
-		- Async asset loading
+		- ~~Async asset loading~~
 		- ~~Asset load notification event~~
 		- ~~Asset load status resource~~
 		- Asset preprocessor / generator traits?

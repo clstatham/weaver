@@ -534,6 +534,10 @@ where
             _marker: std::marker::PhantomData,
         }
     }
+
+    pub fn param_state(&self) -> Option<&SystemState<F::Param>> {
+        self.param_state.as_ref()
+    }
 }
 
 impl<M, F> System for FunctionSystem<M, F>
@@ -560,8 +564,6 @@ where
     }
 
     fn run(&mut self, world: &mut World) -> Self::Output {
-        // validate access
-        self.access();
         let param_state = self.param_state.as_mut().unwrap();
 
         // SAFETY:

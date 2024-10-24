@@ -90,7 +90,7 @@ fn setup(
         PrimaryCamera,
     ));
 
-    let bsp = bsp_loader.enqueue(("maps/q3dm1.bsp".into(), fs.clone()));
+    let bsp = bsp_loader.enqueue(("maps/q3dm6.bsp".into(), fs.clone()));
     commands.insert_resource(bsp);
 }
 
