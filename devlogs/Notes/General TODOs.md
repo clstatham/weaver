@@ -4,10 +4,4 @@
 - Make renderer make more sense
 	- Refactor DrawFns, RenderCommands, batching
 	- Don't assume every camera wants to render the whole scene
-- Upstream various `weaver-q3` functionality and ideas
-	- More complex asset loading, processing, and generation
-		- ~~Load queues~~
-		- ~~Async asset loading~~
-		- ~~Asset load notification event~~
-		- ~~Asset load status resource~~
-		- Asset preprocessor / generator traits?
+- weaver-task: Task pools and thread managers (a la Bevy)

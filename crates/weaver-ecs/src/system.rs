@@ -577,7 +577,7 @@ where
     }
 
     fn can_run(&self, world: &World) -> bool {
-        F::Param::can_run(world)
+        self.param_state.is_some() && F::Param::can_run(world)
     }
 }
 
@@ -838,12 +838,13 @@ impl SystemGraph {
         let mut schedule = Topo::new(&self.systems);
         while let Some(node) = schedule.next(&self.systems) {
             let system = &self.systems[node];
+            system.write().initialize(world);
             if !system.read().can_run(world) {
-                log::trace!("Skipping system: {}", system.read().name());
+                log::debug!("Skipping system: {}", system.read().name());
                 continue;
             }
             log::trace!("Running system: {}", system.read().name());
-            system.write().initialize(world);
+
             system.write().run(world);
         }
 

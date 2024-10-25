@@ -163,6 +163,7 @@ impl ShaderPipeline {
             &wgpu::RenderPipelineDescriptor {
                 label: Some("Q3 Shader Stage Pipeline"),
                 layout: Some(&layout),
+                cache: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "vs_main",
@@ -177,6 +178,7 @@ impl ShaderPipeline {
                             4 => Uint32, // Texture Index
                         ],
                     }],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
@@ -189,6 +191,7 @@ impl ShaderPipeline {
                         }),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,

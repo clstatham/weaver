@@ -242,6 +242,7 @@ impl CreateRenderPipeline for PbrNode {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("PBR Pipeline"),
             layout: Some(cached_layout),
+            cache: None,
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
@@ -271,6 +272,7 @@ impl CreateRenderPipeline for PbrNode {
                         },
                     ],
                 }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -280,6 +282,7 @@ impl CreateRenderPipeline for PbrNode {
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 cull_mode: Some(wgpu::Face::Back),
@@ -424,7 +427,6 @@ impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
         let lights_bind_group = lights_bind_group.into_inner();
 
         let camera_bind_group = view_query;
-        let camera_bind_group = camera_bind_group.into_inner();
 
         let mesh = mesh_assets.get(item.key.mesh).unwrap();
         let mesh = mesh.into_inner();

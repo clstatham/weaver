@@ -1,9 +1,11 @@
-use std::{any::TypeId, cell::UnsafeCell, hash::BuildHasherDefault, ops::Deref};
+use std::{any::TypeId, hash::BuildHasherDefault, ops::Deref};
 
+use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use weaver_util::{
+    bail,
     lock::{Lock, Read, Write},
     prelude::FxHashMap,
-    HashMap, TypeIdMap,
+    HashMap, Result, TypeIdMap,
 };
 
 use crate::prelude::{
@@ -15,21 +17,21 @@ use super::{component::Component, entity::Entity};
 
 pub struct Data {
     pub type_id: TypeId,
-    pub data: Box<dyn Component>,
+    pub data: AtomicRefCell<Box<dyn Component>>,
 }
 
 impl Data {
     pub fn new<T: Component>(data: T) -> Self {
         Self {
             type_id: TypeId::of::<T>(),
-            data: Box::new(data),
+            data: AtomicRefCell::new(Box::new(data)),
         }
     }
 
     pub fn new_dynamic(data: Box<dyn Component>) -> Self {
         Self {
             type_id: (*data).as_any().type_id(),
-            data,
+            data: AtomicRefCell::new(data),
         }
     }
 
@@ -41,51 +43,73 @@ impl Data {
         self.type_id == TypeId::of::<T>()
     }
 
-    pub fn get_data(&self) -> &dyn Component {
-        &*self.data
+    pub fn borrow_data(&self) -> Result<AtomicRef<Box<dyn Component>>> {
+        if let Ok(data) = self.data.try_borrow() {
+            Ok(data)
+        } else {
+            bail!("component borrow failed: already borrowed");
+        }
+    }
+
+    pub fn borrow_data_mut(&self) -> Result<AtomicRefMut<Box<dyn Component>>> {
+        if let Ok(data) = self.data.try_borrow_mut() {
+            Ok(data)
+        } else {
+            bail!("component borrow failed: already borrowed");
+        }
     }
 
     pub fn get_data_mut(&mut self) -> &mut dyn Component {
-        &mut *self.data
+        self.data.get_mut().as_mut()
     }
 
     pub fn set_data(&mut self, data: Box<dyn Component>) {
-        self.data = data;
+        self.data = AtomicRefCell::new(data);
     }
 
     pub fn into_data(self) -> Box<dyn Component> {
-        self.data
+        self.data.into_inner()
     }
 
-    pub fn downcast_ref<T: Component>(&self) -> Option<&T> {
-        (*self.data).downcast_ref()
+    pub fn try_downcast_ref<T: Component>(&self) -> Result<AtomicRef<T>> {
+        if !self.is::<T>() {
+            bail!("downcast failed: expected {}", std::any::type_name::<T>());
+        }
+
+        if let Ok(data) = self.data.try_borrow() {
+            Ok(AtomicRef::map(data, |data| {
+                data.downcast_ref::<T>().expect("downcast failed")
+            }))
+        } else {
+            bail!("component borrow failed: already borrowed");
+        }
     }
 
-    pub fn downcast_mut<T: Component>(&mut self) -> Option<&mut T> {
-        (*self.data).downcast_mut()
+    pub fn try_downcast_mut<T: Component>(&self) -> Result<AtomicRefMut<T>> {
+        if !self.is::<T>() {
+            bail!("downcast failed: expected {}", std::any::type_name::<T>());
+        }
+
+        if let Ok(data) = self.data.try_borrow_mut() {
+            Ok(AtomicRefMut::map(data, |data| {
+                data.downcast_mut::<T>().expect("downcast failed")
+            }))
+        } else {
+            bail!("component borrow failed: already borrowed");
+        }
     }
 }
 
-pub struct Column<T> {
-    pub(crate) dense: Vec<T>,
+#[derive(Default)]
+pub struct Column {
+    pub(crate) dense: Vec<Data>,
     pub(crate) dense_added_ticks: Vec<Lock<Tick>>,
     pub(crate) dense_changed_ticks: Vec<Lock<Tick>>,
     sparse: HashMap<u32, usize, BuildHasherDefault<EntityHasher>>,
 }
 
-impl<T> Default for Column<T> {
-    fn default() -> Self {
-        Self {
-            dense: Vec::new(),
-            dense_added_ticks: Vec::new(),
-            dense_changed_ticks: Vec::new(),
-            sparse: HashMap::default(),
-        }
-    }
-}
-
-impl<T> Column<T> {
-    pub fn insert(&mut self, index: usize, data: T, ticks: ComponentTicks) {
+impl Column {
+    pub fn insert(&mut self, index: usize, data: Data, ticks: ComponentTicks) {
         let dense_index = self.dense.len();
 
         self.dense.push(data);
@@ -95,7 +119,7 @@ impl<T> Column<T> {
         self.sparse.insert(index as u32, dense_index);
     }
 
-    pub fn remove(&mut self, index: usize) -> Option<(T, ComponentTicks)> {
+    pub fn remove(&mut self, index: usize) -> Option<(Data, ComponentTicks)> {
         let dense_index = self.sparse.remove(&(index as u32))?;
 
         let last = self.dense.len() - 1;
@@ -117,7 +141,7 @@ impl<T> Column<T> {
         ))
     }
 
-    pub fn get(&self, index: u32) -> Option<&T> {
+    pub fn get(&self, index: u32) -> Option<&Data> {
         self.sparse
             .get(&index)
             .map(|&dense_index| &self.dense[dense_index])
@@ -139,7 +163,7 @@ impl<T> Column<T> {
         self.dense.is_empty()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
+    pub fn iter(&self) -> impl Iterator<Item = &Data> {
         self.dense.iter()
     }
 
@@ -174,21 +198,21 @@ impl<T> Column<T> {
 
 #[derive(Clone)]
 pub struct ColumnRef<'w> {
-    column: &'w Column<UnsafeCell<Data>>,
+    column: &'w Column,
 }
 
 impl<'w> ColumnRef<'w> {
-    pub fn new(column: &'w Column<UnsafeCell<Data>>) -> Self {
+    pub fn new(column: &'w Column) -> Self {
         Self { column }
     }
 
-    pub fn into_inner(self) -> &'w Column<UnsafeCell<Data>> {
+    pub fn into_inner(self) -> &'w Column {
         self.column
     }
 }
 
 impl<'w> Deref for ColumnRef<'w> {
-    type Target = Column<UnsafeCell<Data>>;
+    type Target = Column;
 
     fn deref(&self) -> &Self::Target {
         self.column
@@ -197,7 +221,7 @@ impl<'w> Deref for ColumnRef<'w> {
 
 #[derive(Default)]
 pub struct Archetype {
-    columns: TypeIdMap<Column<UnsafeCell<Data>>>,
+    columns: TypeIdMap<Column>,
     entities: EntitySet,
 }
 
@@ -215,11 +239,10 @@ impl Archetype {
 
         self.entities.insert(entity);
 
-        self.columns.get_mut(&type_id).unwrap().insert(
-            entity.id() as usize,
-            UnsafeCell::new(data),
-            ticks,
-        );
+        self.columns
+            .get_mut(&type_id)
+            .unwrap()
+            .insert(entity.id() as usize, data, ticks);
     }
 
     pub fn remove(&mut self, entity: Entity) -> Vec<(Data, ComponentTicks)> {
@@ -227,11 +250,7 @@ impl Archetype {
 
         self.columns
             .values_mut()
-            .filter_map(|column| {
-                column
-                    .remove(entity.id() as usize)
-                    .map(|(data, ticks)| (data.into_inner(), ticks))
-            })
+            .filter_map(|column| column.remove(entity.id() as usize))
             .collect()
     }
 
@@ -310,16 +329,16 @@ impl Archetype {
 }
 
 pub struct Ref<'w, T: Component> {
-    data: &'w T,
+    data: AtomicRef<'w, T>,
     ticks: Ticks<'w>,
 }
 
 impl<'w, T: Component> Ref<'w, T> {
-    pub(crate) fn new(data: &'w T, ticks: Ticks<'w>) -> Self {
+    pub(crate) fn new(data: AtomicRef<'w, T>, ticks: Ticks<'w>) -> Self {
         Self { data, ticks }
     }
 
-    pub fn into_inner(self) -> &'w T {
+    pub fn into_inner(self) -> AtomicRef<'w, T> {
         self.data
     }
 }
@@ -328,7 +347,7 @@ impl<'w, T: Component> std::ops::Deref for Ref<'w, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.data
+        &self.data
     }
 }
 
@@ -351,16 +370,16 @@ impl<'w, T: Component> ChangeDetection for Ref<'w, T> {
 }
 
 pub struct Mut<'w, T: Component> {
-    data: &'w mut T,
+    data: AtomicRefMut<'w, T>,
     ticks: TicksMut<'w>,
 }
 
 impl<'w, T: Component> Mut<'w, T> {
-    pub(crate) fn new(data: &'w mut T, ticks: TicksMut<'w>) -> Self {
+    pub(crate) fn new(data: AtomicRefMut<'w, T>, ticks: TicksMut<'w>) -> Self {
         Self { data, ticks }
     }
 
-    pub fn into_inner(self) -> &'w mut T {
+    pub fn into_inner(self) -> AtomicRefMut<'w, T> {
         self.data
     }
 }
@@ -369,14 +388,14 @@ impl<'w, T: Component> std::ops::Deref for Mut<'w, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.data
+        &self.data
     }
 }
 
 impl<'w, T: Component> std::ops::DerefMut for Mut<'w, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.set_changed();
-        self.data
+        &mut self.data
     }
 }
 
@@ -402,7 +421,7 @@ impl<'w, T: Component> ChangeDetectionMut for Mut<'w, T> {
     type Inner = T;
 
     fn bypass_change_detection(&mut self) -> &mut Self::Inner {
-        self.data
+        &mut self.data
     }
 
     fn set_changed(&mut self) {
@@ -610,11 +629,7 @@ impl Storage {
                 last_run,
                 this_run,
             };
-            let data = unsafe {
-                (*column.dense[dense_index].get())
-                    .downcast_ref::<T>()
-                    .unwrap()
-            };
+            let data = column.dense[dense_index].try_downcast_ref::<T>().unwrap();
             Some(Ref::new(data, ticks))
         } else {
             None
@@ -644,11 +659,7 @@ impl Storage {
                 last_run,
                 this_run,
             };
-            let data = unsafe {
-                (*column.dense[dense_index].get())
-                    .downcast_mut::<T>()
-                    .unwrap()
-            };
+            let data = column.dense[dense_index].try_downcast_mut::<T>().unwrap();
             Some(Mut::new(data, ticks))
         } else {
             None

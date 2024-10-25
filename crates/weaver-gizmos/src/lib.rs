@@ -362,10 +362,12 @@ impl GizmoRenderNode {
             &wgpu::RenderPipelineDescriptor {
                 label: Some("GizmoRenderPipeline"),
                 layout: Some(&layout),
+                cache: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "vs_main",
                     buffers: &[VERTEX_BUFFER_LAYOUT],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
@@ -375,6 +377,7 @@ impl GizmoRenderNode {
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology: primitive_topology,

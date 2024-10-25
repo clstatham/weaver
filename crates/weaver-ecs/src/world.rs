@@ -297,22 +297,6 @@ impl World {
         T::fetch(self)
     }
 
-    /// Attempts to run the given system once. If the system cannot run (such as due to missing resources, for example), `None` is returned, otherwise the output of the system is returned.
-    pub fn run_system<M, S, O>(&mut self, system: S) -> Option<O>
-    where
-        M: 'static,
-        S: IntoSystem<M>,
-        S::System: System<Output = O>,
-    {
-        let mut system = system.into_system();
-        if system.can_run(self) {
-            system.initialize(self);
-            Some(system.run(self))
-        } else {
-            None
-        }
-    }
-
     /// Initializes a resource in the world. The resource is initialized using its implementation of `FromWorld`.
     /// If the resource has already been initialized, a warning is logged and the resource is not initialized again.
     pub fn init_resource<T: Resource + FromWorld>(&mut self) {

@@ -64,9 +64,7 @@ impl<T: Component> QueryFetch for &T {
             last_run: world.last_change_tick(),
             this_run: world.read_change_tick(),
         };
-        let data = unsafe { &*column.dense[index].get() }
-            .downcast_ref()
-            .unwrap();
+        let data = column.dense[index].try_downcast_ref().unwrap();
         let item = Ref::new(data, ticks);
 
         Some(item)
@@ -113,9 +111,7 @@ impl<T: Component> QueryFetch for &T {
                                 last_run,
                                 this_run,
                             };
-                            let data = unsafe { &*column.get(entity).unwrap().get() }
-                                .downcast_ref()
-                                .unwrap();
+                            let data = column.get(entity).unwrap().try_downcast_ref().unwrap();
                             let item = Ref::new(data, ticks);
                             let entity = world.find_entity_by_id(entity).unwrap();
                             (entity, item)
@@ -157,9 +153,7 @@ impl<T: Component> QueryFetch for &mut T {
             last_run: world.last_change_tick(),
             this_run: world.read_change_tick(),
         };
-        let data = unsafe { &mut *column.dense[index].get() }
-            .downcast_mut()
-            .unwrap();
+        let data = column.dense[index].try_downcast_mut().unwrap();
         let item = Mut::new(data, ticks);
 
         Some(item)
@@ -188,9 +182,7 @@ impl<T: Component> QueryFetch for &mut T {
                                 last_run,
                                 this_run,
                             };
-                            let data = unsafe { &mut *column.get(entity).unwrap().get() }
-                                .downcast_mut()
-                                .unwrap();
+                            let data = column.get(entity).unwrap().try_downcast_mut().unwrap();
                             let item = Mut::new(data, ticks);
                             let entity = world.find_entity_by_id(entity).unwrap();
                             (entity, item)

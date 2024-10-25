@@ -34,8 +34,14 @@ impl EguiContext {
     pub fn new(device: &wgpu::Device, window: &winit::window::Window) -> Self {
         let ctx = Context::default();
         let viewport_id = ctx.viewport_id();
-        let state = SharedLock::new(State::new(ctx, viewport_id, window, None, None));
-        let renderer = SharedLock::new(Renderer::new(device, texture_format::VIEW_FORMAT, None, 1));
+        let state = SharedLock::new(State::new(ctx, viewport_id, window, None, None, None));
+        let renderer = SharedLock::new(Renderer::new(
+            device,
+            texture_format::VIEW_FORMAT,
+            None,
+            1,
+            false,
+        ));
 
         Self {
             state,
@@ -59,11 +65,11 @@ impl EguiContext {
 
     pub fn begin_frame(&self, window: &winit::window::Window) {
         let raw_input = self.state.write().take_egui_input(window);
-        self.state.read().egui_ctx().begin_frame(raw_input);
+        self.state.read().egui_ctx().begin_pass(raw_input);
     }
 
     pub fn end_frame(&self) {
-        *self.full_output.write() = Some(self.state.read().egui_ctx().end_frame());
+        *self.full_output.write() = Some(self.state.read().egui_ctx().end_pass());
     }
 
     pub fn with_ctx<F, R>(&self, f: F) -> R
@@ -140,20 +146,22 @@ impl EguiContext {
             .update_buffers(device, queue, encoder, &tris, screen_descriptor);
 
         let renderer = self.renderer.read();
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("egui render pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: window_surface_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
+        let mut render_pass = encoder
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("egui render pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: window_surface_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            })
+            .forget_lifetime();
 
         renderer.render(&mut render_pass, &tris, screen_descriptor);
         drop(render_pass);

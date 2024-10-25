@@ -164,10 +164,12 @@ impl CreateRenderPipeline for HdrNode {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("HDR Render Pipeline"),
             layout: Some(cached_layout),
+            cache: None,
             vertex: wgpu::VertexState {
                 module: &shader_module,
                 entry_point: "vs_main",
                 buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader_module,
@@ -177,6 +179,7 @@ impl CreateRenderPipeline for HdrNode {
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,

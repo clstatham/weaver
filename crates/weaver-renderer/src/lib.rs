@@ -245,6 +245,7 @@ fn create_surface(render_world: &mut World, window: &Window) -> Result<()> {
                 | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
             required_limits,
             label: None,
+            memory_hints: wgpu::MemoryHints::Performance,
         },
         None,
     ))

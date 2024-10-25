@@ -5,8 +5,8 @@ edition = "2021"
 
 [dependencies]
 log = "0.4.14"
-naga_oil = "0.13"
-wgpu = { version = "0.19.4", features = ["naga-ir"] }
+naga_oil = "0.15"
+wgpu = { version = "22.1", features = ["naga-ir"] }
 glam = { version = "0.27.0", features = ["bytemuck"] }
 encase = { version = "0.8", features = ["glam"] }
 bytemuck = { version = "1.16", features = ["derive"] }

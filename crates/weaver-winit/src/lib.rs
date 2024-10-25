@@ -8,7 +8,7 @@ use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::ControlFlow,
-    window::WindowBuilder,
+    window::WindowAttributes,
 };
 
 pub mod prelude {
@@ -65,10 +65,11 @@ impl Default for WinitPlugin {
 impl Plugin for WinitPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         let event_loop = winit::event_loop::EventLoop::new()?;
-        let window = WindowBuilder::new()
-            .with_title(self.window_title)
-            .with_inner_size(LogicalSize::new(self.initial_size.0, self.initial_size.1))
-            .build(&event_loop)?;
+        let window = event_loop.create_window(
+            WindowAttributes::default()
+                .with_title(self.window_title)
+                .with_inner_size(LogicalSize::new(self.initial_size.0, self.initial_size.1)),
+        )?;
 
         let window = Window {
             window: Arc::new(window),

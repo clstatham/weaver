@@ -335,6 +335,8 @@ impl CreateComputePipeline for GpuSkybox {
             layout: Some(cached_layout),
             module: &module,
             entry_point: "load",
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
         });
 
         ComputePipeline::new(pipeline)
@@ -468,10 +470,12 @@ impl CreateRenderPipeline for SkyboxNode {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Skybox Render Pipeline"),
             layout: Some(cached_layout),
+            cache: None,
             vertex: wgpu::VertexState {
                 module: &module,
                 entry_point: "vs_main",
                 buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &module,
@@ -481,6 +485,7 @@ impl CreateRenderPipeline for SkyboxNode {
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
