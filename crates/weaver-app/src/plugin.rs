@@ -2,6 +2,7 @@ use weaver_util::{impl_downcast, DowncastSync, Result};
 
 use crate::App;
 
+#[allow(unused_variables)]
 pub trait Plugin: DowncastSync {
     fn name(&self) -> &str {
         std::any::type_name::<Self>()
@@ -9,12 +10,10 @@ pub trait Plugin: DowncastSync {
 
     fn build(&self, app: &mut App) -> Result<()>;
 
-    #[allow(unused_variables)]
     fn finish(&self, app: &mut App) -> Result<()> {
         Ok(())
     }
 
-    #[allow(unused_variables)]
     fn ready(&self, app: &App) -> bool {
         true
     }

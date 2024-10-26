@@ -11,7 +11,7 @@ use weaver_ecs::{
     world::{FromWorld, World},
 };
 use weaver_event::{Event, Events, ManuallyUpdatedEvents};
-use weaver_util::{FxHashMap, Result};
+use weaver_util::{maps::TypeIdSet, FxHashMap, Result};
 
 pub mod plugin;
 
@@ -60,7 +60,8 @@ pub trait AppLabel: 'static {}
 
 pub struct SubApp {
     world: World,
-    plugins: Vec<Box<dyn Plugin>>,
+    plugins: Vec<(TypeId, Box<dyn Plugin>)>,
+    unready_plugins: TypeIdSet,
     extract_fn: Option<ExtractFn>,
 }
 
@@ -71,6 +72,7 @@ impl Default for SubApp {
         Self {
             world,
             plugins: Vec::new(),
+            unready_plugins: TypeIdSet::default(),
             extract_fn: None,
         }
     }
@@ -94,12 +96,23 @@ impl SubApp {
 
     pub fn finish_plugins(&mut self) {
         let plugins = std::mem::take(&mut self.plugins);
-        for plugin in plugins.iter() {
-            self.as_app(|app| {
-                log::debug!("Finishing plugin: {:?}", plugin.name());
-                plugin.finish(app)
-            })
-            .unwrap();
+        let unready_plugins = self.unready_plugins.clone();
+        for type_id in unready_plugins.iter() {
+            let (_, plugin) = plugins.iter().find(|(id, _)| *id == *type_id).unwrap();
+            let ready = self
+                .as_app(|app| -> Result<bool> {
+                    if !plugin.ready(app) {
+                        log::debug!("Plugin is not ready: {:?}", plugin.name());
+                        return Ok(false);
+                    }
+                    log::debug!("Finishing plugin: {:?}", plugin.name());
+                    plugin.finish(app)?;
+                    Ok(true)
+                })
+                .unwrap();
+            if ready {
+                self.unready_plugins.remove(type_id);
+            }
         }
         self.plugins = plugins;
     }
@@ -130,7 +143,7 @@ impl SubApp {
         if self
             .plugins
             .iter()
-            .any(|plugin| (**plugin).type_id() == TypeId::of::<T>())
+            .any(|(_, plugin)| (**plugin).type_id() == TypeId::of::<T>())
         {
             log::warn!("Plugin already added: {:?}", plugin.name());
             return Ok(self);
@@ -139,7 +152,8 @@ impl SubApp {
         log::debug!("Adding plugin: {:?}", plugin.name());
         self.as_app(|app| plugin.build(app))?;
 
-        self.plugins.push(Box::new(plugin));
+        self.plugins.push((TypeId::of::<T>(), Box::new(plugin)));
+        self.unready_plugins.insert(TypeId::of::<T>());
 
         Ok(self)
     }
@@ -323,7 +337,8 @@ impl SubApps {
 }
 
 pub struct App {
-    plugins: Vec<Box<dyn Plugin>>,
+    plugins: Vec<(TypeId, Box<dyn Plugin>)>,
+    unready_plugins: TypeIdSet,
     runner: Option<Box<dyn Runner>>,
     sub_apps: SubApps,
 }
@@ -333,6 +348,7 @@ impl App {
         Self {
             runner: None,
             plugins: Vec::new(),
+            unready_plugins: TypeIdSet::default(),
             sub_apps: SubApps {
                 main: SubApp::new(),
                 sub_apps: FxHashMap::default(),
@@ -367,7 +383,7 @@ impl App {
         if self
             .plugins
             .iter()
-            .any(|plugin| (**plugin).type_id() == TypeId::of::<T>())
+            .any(|(_, plugin)| (**plugin).type_id() == TypeId::of::<T>())
         {
             log::warn!("Plugin already added: {:?}", plugin.name());
             return Ok(self);
@@ -376,7 +392,8 @@ impl App {
         log::debug!("Adding plugin: {:?}", plugin.name());
         plugin.build(self)?;
 
-        self.plugins.push(Box::new(plugin));
+        self.plugins.push((TypeId::of::<T>(), Box::new(plugin)));
+        self.unready_plugins.insert(TypeId::of::<T>());
         Ok(self)
     }
 
@@ -500,10 +517,15 @@ impl App {
     }
 
     pub fn init(&mut self) {
+        self.finish_plugins();
         self.sub_apps.init();
     }
 
     pub fn update(&mut self) {
+        while !self.unready_plugins.is_empty() {
+            self.finish_plugins();
+        }
+
         self.sub_apps.update();
     }
 
@@ -511,16 +533,24 @@ impl App {
         self.sub_apps.shutdown();
     }
 
+    pub fn finish_plugins(&mut self) {
+        let plugins = std::mem::take(&mut self.plugins);
+        let unready_plugins = self.unready_plugins.clone();
+        for type_id in unready_plugins.iter() {
+            let (_, plugin) = plugins.iter().find(|(id, _)| *id == *type_id).unwrap();
+            let ready = plugin.ready(self);
+            if ready {
+                log::debug!("Finishing plugin: {:?}", plugin.name());
+                plugin.finish(self).unwrap();
+                self.unready_plugins.remove(type_id);
+            }
+        }
+        self.plugins = plugins;
+    }
+
     pub fn run(&mut self) -> Result<()> {
         if let Some(runner) = self.runner.take() {
-            let plugins = std::mem::take(&mut self.plugins);
-            for plugin in plugins.iter() {
-                log::debug!("Finishing plugin: {:?}", plugin.name());
-                plugin.finish(self)?;
-            }
-            self.plugins = plugins;
-
-            self.sub_apps.finish_plugins();
+            self.finish_plugins();
 
             let result = runner.run(self);
 

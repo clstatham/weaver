@@ -65,22 +65,14 @@ impl Default for WinitPlugin {
 impl Plugin for WinitPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         let event_loop = winit::event_loop::EventLoop::new()?;
-        let window = event_loop.create_window(
-            WindowAttributes::default()
-                .with_title(self.window_title)
-                .with_inner_size(LogicalSize::new(self.initial_size.0, self.initial_size.1)),
-        )?;
-
-        let window = Window {
-            window: Arc::new(window),
-        };
-        app.main_app_mut().world_mut().insert_resource(window);
+        app.set_runner(WinitRunner {
+            event_loop: Lock::new(Some(event_loop)),
+            window_title: self.window_title,
+            initial_size: self.initial_size,
+        });
         app.main_app_mut().insert_resource(WindowSize {
             width: self.initial_size.0,
             height: self.initial_size.1,
-        });
-        app.set_runner(WinitRunner {
-            event_loop: Lock::new(Some(event_loop)),
         });
         app.add_event::<WinitEvent>();
         app.add_event::<WindowResized>();
@@ -90,6 +82,8 @@ impl Plugin for WinitPlugin {
 
 struct WinitRunner {
     event_loop: Lock<Option<winit::event_loop::EventLoop<()>>>,
+    window_title: &'static str,
+    initial_size: (u32, u32),
 }
 
 impl Runner for WinitRunner {
@@ -98,60 +92,116 @@ impl Runner for WinitRunner {
 
         let event_loop = self.event_loop.write().take().unwrap();
 
-        event_loop.run(move |event, event_loop_window| {
-            event_loop_window.set_control_flow(ControlFlow::Poll);
+        let mut winit_app = WinitRunnerApp {
+            app,
+            window_title: self.window_title,
+            initial_size: self.initial_size,
+        };
 
-            app.send_event(WinitEvent {
-                event: event.clone(),
-            });
-
-            match &event {
-                Event::DeviceEvent { event, .. } => {
-                    if let Some(mut input) = app.main_app_mut().get_resource_mut::<Input>() {
-                        input.update_device(event);
-                    }
-                }
-                Event::WindowEvent { event, window_id } => {
-                    if let Some(window) = app.main_app().world().get_resource::<Window>() {
-                        if window.id() != *window_id {
-                            return;
-                        }
-
-                        window.request_redraw();
-                    }
-
-                    if let Some(mut input) = app.main_app_mut().get_resource_mut::<Input>() {
-                        input.update_window(event);
-                    }
-
-                    match event {
-                        WindowEvent::Resized(size) => {
-                            app.send_event(WindowResized {
-                                width: size.width,
-                                height: size.height,
-                            });
-
-                            if let Some(mut window_size) =
-                                app.main_app_mut().get_resource_mut::<WindowSize>()
-                            {
-                                window_size.width = size.width;
-                                window_size.height = size.height;
-                            }
-                        }
-                        WindowEvent::CloseRequested => {
-                            app.shutdown();
-                            event_loop_window.exit();
-                        }
-                        WindowEvent::RedrawRequested => {
-                            app.update();
-                        }
-                        _ => {}
-                    }
-                }
-                _ => {}
-            }
-        })?;
+        event_loop.run_app(&mut winit_app)?;
 
         Ok(())
+    }
+}
+
+struct WinitRunnerApp<'app> {
+    app: &'app mut App,
+    window_title: &'static str,
+    initial_size: (u32, u32),
+}
+
+impl<'app> winit::application::ApplicationHandler for WinitRunnerApp<'app> {
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        let window = event_loop
+            .create_window(
+                WindowAttributes::default()
+                    .with_title(self.window_title)
+                    .with_inner_size(LogicalSize::new(self.initial_size.0, self.initial_size.1)),
+            )
+            .unwrap();
+        let window = Window {
+            window: Arc::new(window),
+        };
+        if self.app.main_app().world().has_resource::<Window>() {
+            self.app
+                .main_app_mut()
+                .world_mut()
+                .remove_resource::<Window>();
+        }
+        self.app.main_app_mut().world_mut().insert_resource(window);
+
+        self.app.finish_plugins();
+    }
+
+    fn device_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        device_id: winit::event::DeviceId,
+        event: winit::event::DeviceEvent,
+    ) {
+        event_loop.set_control_flow(ControlFlow::Poll);
+
+        self.app.send_event(WinitEvent {
+            event: Event::DeviceEvent {
+                device_id,
+                event: event.clone(),
+            },
+        });
+
+        if let Some(mut input) = self.app.main_app_mut().get_resource_mut::<Input>() {
+            input.update_device(&event);
+        }
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        window_id: winit::window::WindowId,
+        event: WindowEvent,
+    ) {
+        event_loop.set_control_flow(ControlFlow::Poll);
+
+        self.app.send_event(WinitEvent {
+            event: Event::WindowEvent {
+                window_id,
+                event: event.clone(),
+            },
+        });
+
+        if let Some(window) = self.app.main_app().world().get_resource::<Window>() {
+            if window.id() != window_id {
+                return;
+            }
+
+            window.request_redraw();
+        }
+
+        if let Some(mut input) = self.app.main_app_mut().get_resource_mut::<Input>() {
+            input.update_window(&event);
+        }
+
+        match event {
+            WindowEvent::Resized(size) => {
+                self.app.send_event(WindowResized {
+                    width: size.width,
+                    height: size.height,
+                });
+
+                if let Some(mut window_size) =
+                    self.app.main_app_mut().get_resource_mut::<WindowSize>()
+                {
+                    window_size.width = size.width;
+                    window_size.height = size.height;
+                }
+            }
+            WindowEvent::CloseRequested => {
+                self.app.shutdown();
+                event_loop.exit();
+            }
+            WindowEvent::RedrawRequested => {
+                self.app.update();
+            }
+            _ => {}
+        }
     }
 }

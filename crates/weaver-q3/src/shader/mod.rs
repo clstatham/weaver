@@ -6,7 +6,7 @@ use render::{ShaderBindGroupLayout, ShaderPipelineCache};
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{AssetApp, Assets};
 use weaver_core::texture::Texture;
-use weaver_renderer::RenderApp;
+use weaver_renderer::{RenderApp, WgpuDevice};
 use weaver_util::Result;
 
 pub mod lexer;
@@ -42,6 +42,10 @@ pub struct ShaderRenderAppPlugin;
 impl Plugin for ShaderRenderAppPlugin {
     fn build(&self, _app: &mut App) -> Result<()> {
         Ok(())
+    }
+
+    fn ready(&self, app: &App) -> bool {
+        app.has_resource::<WgpuDevice>()
     }
 
     fn finish(&self, render_app: &mut App) -> Result<()> {

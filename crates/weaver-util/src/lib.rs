@@ -19,7 +19,7 @@ pub mod prelude {
         anyhow, bail, debug_once, define_atomic_id, ensure, error_once, indextree, info_once,
         lock::*,
         log_once,
-        maps::{FxHashMap, FxHashSet, TypeIdMap},
+        maps::{FxHashMap, FxHashSet, TypeIdMap, TypeIdSet},
         trace_once, warn_once, Downcast, DowncastSync, Error, Result, SyncCell,
     };
 }

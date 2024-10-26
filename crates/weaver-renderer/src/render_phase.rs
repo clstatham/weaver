@@ -256,6 +256,10 @@ impl<I: BinnedDrawItem, C: RenderCommand<I>> Plugin for BatchedInstanceBufferPlu
         Ok(())
     }
 
+    fn ready(&self, app: &weaver_app::App) -> bool {
+        app.has_resource::<WgpuDevice>()
+    }
+
     fn finish(&self, app: &mut weaver_app::App) -> Result<()> {
         app.init_resource::<BatchedInstanceBuffer<I, C>>();
         Ok(())

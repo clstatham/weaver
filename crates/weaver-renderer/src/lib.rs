@@ -387,6 +387,10 @@ impl Plugin for RendererPlugin {
         Ok(())
     }
 
+    fn ready(&self, main_app: &App) -> bool {
+        main_app.main_app().world().has_resource::<Window>()
+    }
+
     fn finish(&self, main_app: &mut App) -> Result<()> {
         let (main_to_render_tx, main_to_render_rx) = crossbeam_channel::bounded(1);
         let (render_to_main_tx, render_to_main_rx) = crossbeam_channel::bounded(1);
@@ -399,13 +403,14 @@ impl Plugin for RendererPlugin {
             .clone();
         let resized_events = main_app
             .main_app_mut()
+            .world_mut()
             .get_resource_mut::<Events<WindowResized>>()
             .unwrap()
             .into_inner();
 
         let resized_events = resized_events.clone();
 
-        let mut render_app: SubApp = main_app.remove_sub_app::<RenderApp>().unwrap();
+        let mut render_app = main_app.remove_sub_app::<RenderApp>().unwrap();
 
         render_app.insert_resource(WindowSize {
             width: window.inner_size().width,

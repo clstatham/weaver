@@ -627,6 +627,10 @@ impl Plugin for GizmoRenderAppPlugin {
         Ok(())
     }
 
+    fn ready(&self, app: &App) -> bool {
+        app.has_resource::<WgpuDevice>()
+    }
+
     fn finish(&self, render_app: &mut App) -> Result<()> {
         render_app.init_resource::<SolidCubeGizmo>();
         render_app.init_resource::<WireCubeGizmo>();
