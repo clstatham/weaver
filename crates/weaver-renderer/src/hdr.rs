@@ -4,7 +4,6 @@ use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
     component::Res,
     prelude::{ResMut, World},
-    system::IntoSystem,
     world::ConstructFromWorld,
 };
 use weaver_util::Result;

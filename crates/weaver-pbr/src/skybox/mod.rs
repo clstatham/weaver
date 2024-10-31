@@ -9,9 +9,8 @@ use image::codecs::hdr::HdrDecoder;
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
     component::Res,
-    prelude::{Commands, ResMut, System, World},
+    prelude::{Commands, ResMut, World},
     query::Query,
-    system::IntoSystem,
     world::ConstructFromWorld,
 };
 use weaver_renderer::{

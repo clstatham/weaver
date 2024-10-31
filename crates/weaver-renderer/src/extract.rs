@@ -9,7 +9,7 @@ use weaver_ecs::{
     component::{Res, ResMut},
     entity::Entity,
     query::{Query, Queryable, QueryableItem},
-    system::{IntoSystem, SystemAccess, SystemParam, SystemParamItem},
+    system::{SystemAccess, SystemParam, SystemParamItem},
     world::World,
 };
 use weaver_util::Result;

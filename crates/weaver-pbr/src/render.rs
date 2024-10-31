@@ -1,22 +1,10 @@
-use std::path::Path;
-
-use weaver_ecs::{
-    prelude::{Commands, System, World},
-    system::IntoSystem,
-    world::ConstructFromWorld,
-};
+use weaver_ecs::{prelude::World, world::ConstructFromWorld};
 use weaver_renderer::{
-    bind_group::{BindGroupLayout, BindGroupLayoutCache, CreateBindGroup},
-    camera::CameraBindGroup,
-    pipeline::{CreateRenderPipeline, RenderPipeline, RenderPipelineLayout},
+    bind_group::{BindGroupLayout, CreateBindGroup},
     prelude::*,
-    shader::Shader,
-    texture::texture_format,
 };
 
-use crate::{
-    light::GpuPointLightArray, material::GpuMaterial, prelude::irradiance::GpuSkyboxIrradiance,
-};
+use crate::{light::GpuPointLightArray, prelude::irradiance::GpuSkyboxIrradiance};
 
 /// Combined bind group for PBR light arrays and environment maps.
 pub struct PbrLightingInformation {
@@ -232,17 +220,17 @@ impl CreateBindGroup for PbrLightingInformation {
 //     }
 // }
 
-pub(crate) async fn render_pbr(
-    commands: Commands,
-    // mesh_assets: Res<Assets<GpuMesh>>,
-    // material_assets: Res<Assets<BindGroup<GpuMaterial>>>,
-    // pipeline_cache: Res<RenderPipelineCache>,
-    // // mesh_transforms_bind_group: Res<BindGroup<Transform>>,
-    // lights_bind_group: Res<BindGroup<PbrLightingInformation>>,
-    // mut encoder: ResMut<ActiveCommandEncoder>,
-) {
-    // let pipeline = pipeline_cache.get_pipeline_for::<PbrRenderable>().unwrap();
-}
+// pub(crate) async fn render_pbr(
+//     commands: Commands,
+//     // mesh_assets: Res<Assets<GpuMesh>>,
+//     // material_assets: Res<Assets<BindGroup<GpuMaterial>>>,
+//     // pipeline_cache: Res<RenderPipelineCache>,
+//     // // mesh_transforms_bind_group: Res<BindGroup<Transform>>,
+//     // lights_bind_group: Res<BindGroup<PbrLightingInformation>>,
+//     // mut encoder: ResMut<ActiveCommandEncoder>,
+// ) {
+//     // let pipeline = pipeline_cache.get_pipeline_for::<PbrRenderable>().unwrap();
+// }
 
 // impl Renderable for PbrRenderable {
 //     fn render_system() -> Box<dyn System> {

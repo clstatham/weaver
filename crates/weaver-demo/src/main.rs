@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::sync::Arc;
 
 use weaver::{
     prelude::*,
@@ -10,13 +10,11 @@ use weaver::{
 };
 use weaver_asset::Filesystem;
 use weaver_core::CoreTypesPlugin;
-use weaver_diagnostics::frame_time::{FrameTime, LogFrameTimePlugin};
-use weaver_egui::{egui, EguiContext, EguiPlugin};
-use weaver_gizmos::{render_gizmos, GizmoRenderable};
+use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_q3::{
     bsp::{
         loader::{Bsp, BspLoader},
-        render::{render_bsps, BspRenderable},
+        render::render_bsps,
     },
     pk3::Pk3Filesystem,
     Q3Plugin,
@@ -26,26 +24,17 @@ use weaver_renderer::{camera::PrimaryCamera, clear_color::ClearColorPlugin, Rend
 pub mod camera;
 pub mod transform_gizmo;
 
-#[derive(Default)]
-struct FpsHistory {
-    pub history: VecDeque<f32>,
-    pub display_fps: f32,
-    smoothing_buffer: Vec<f32>,
-}
+// #[derive(Default)]
+// struct FpsHistory {
+//     pub history: VecDeque<f32>,
+//     pub display_fps: f32,
+//     smoothing_buffer: Vec<f32>,
+// }
 
 #[main]
 async fn main() -> Result<()> {
     env_logger::init();
 
-    // tokio::runtime::Builder::new_multi_thread()
-    //     .enable_all()
-    //     .build()?
-    //     .block_on(run())?;
-    run().await?;
-    Ok(())
-}
-
-async fn run() -> Result<()> {
     App::new()
         .add_plugin(CoreTypesPlugin)?
         .add_plugin(WinitPlugin {
@@ -73,7 +62,7 @@ async fn run() -> Result<()> {
         .insert_resource(Arc::new(
             Filesystem::default().with_pk3s_from_dir("assets/q3")?,
         ))
-        .init_resource::<FpsHistory>()
+        // .init_resource::<FpsHistory>()
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)
         .add_system(camera::update_aspect_ratio, Update)
@@ -106,45 +95,45 @@ async fn setup(
     commands.insert_resource(bsp).await;
 }
 
-async fn fps_ui(
-    time: Res<Time>,
-    frame_time: Res<FrameTime>,
-    mut history: ResMut<FpsHistory>,
-    egui_ctx: Res<EguiContext>,
-) {
-    egui_ctx.with_ctx(|ctx| {
-        egui::Window::new("Frame Time")
-            .default_height(200.0)
-            .show(ctx, |ui| {
-                history.smoothing_buffer.push(frame_time.frame_time);
+// async fn fps_ui(
+//     time: Res<Time>,
+//     frame_time: Res<FrameTime>,
+//     mut history: ResMut<FpsHistory>,
+//     egui_ctx: Res<EguiContext>,
+// ) {
+//     egui_ctx.with_ctx(|ctx| {
+//         egui::Window::new("Frame Time")
+//             .default_height(200.0)
+//             .show(ctx, |ui| {
+//                 history.smoothing_buffer.push(frame_time.frame_time);
 
-                if time.total_time > 1.0 && history.smoothing_buffer.len() > 100 {
-                    let smoothed_fps = history.smoothing_buffer.iter().copied().sum::<f32>()
-                        / history.smoothing_buffer.len() as f32;
+//                 if time.total_time > 1.0 && history.smoothing_buffer.len() > 100 {
+//                     let smoothed_fps = history.smoothing_buffer.iter().copied().sum::<f32>()
+//                         / history.smoothing_buffer.len() as f32;
 
-                    history.smoothing_buffer.clear();
+//                     history.smoothing_buffer.clear();
 
-                    history.history.push_back(smoothed_fps);
-                    if history.history.len() > 100 {
-                        history.history.pop_front();
-                    }
+//                     history.history.push_back(smoothed_fps);
+//                     if history.history.len() > 100 {
+//                         history.history.pop_front();
+//                     }
 
-                    history.display_fps = smoothed_fps;
-                }
+//                     history.display_fps = smoothed_fps;
+//                 }
 
-                ui.label(format!("Frame Time: {:.4}ms", history.display_fps * 1000.0));
-                ui.separator();
+//                 ui.label(format!("Frame Time: {:.4}ms", history.display_fps * 1000.0));
+//                 ui.separator();
 
-                let plot = egui_plot::Plot::new("Frame Time (ms)");
-                let points = history
-                    .history
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &fps)| [i as f64, fps as f64 * 1000.0])
-                    .collect::<Vec<_>>();
-                plot.show(ui, |plot| {
-                    plot.line(egui_plot::Line::new(points).color(egui::Color32::LIGHT_GREEN));
-                });
-            });
-    });
-}
+//                 let plot = egui_plot::Plot::new("Frame Time (ms)");
+//                 let points = history
+//                     .history
+//                     .iter()
+//                     .enumerate()
+//                     .map(|(i, &fps)| [i as f64, fps as f64 * 1000.0])
+//                     .collect::<Vec<_>>();
+//                 plot.show(ui, |plot| {
+//                     plot.line(egui_plot::Line::new(points).color(egui::Color32::LIGHT_GREEN));
+//                 });
+//             });
+//     });
+// }

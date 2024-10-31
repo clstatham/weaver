@@ -1,11 +1,6 @@
 use weaver_app::{plugin::Plugin, App};
 use weaver_core::color::Color;
-use weaver_ecs::{
-    component::Res,
-    prelude::{ResMut, System},
-    query::Query,
-    system::IntoSystem,
-};
+use weaver_ecs::{component::Res, prelude::ResMut, query::Query};
 use weaver_util::Result;
 
 use crate::{

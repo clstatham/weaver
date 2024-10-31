@@ -1,12 +1,12 @@
 use extract::{extract_bsps, ExtractedBsp};
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{component::Res, prelude::ResMut, query::Query, system::IntoSystem};
+use weaver_ecs::{component::Res, prelude::ResMut, query::Query};
 use weaver_pbr::render::PbrLightingInformation;
 use weaver_renderer::{
     bind_group::BindGroup,
     camera::{CameraBindGroup, ViewTarget},
-    clear_color::{render_clear_color, ClearColorRenderable},
-    hdr::{render_hdr, HdrRenderable},
+    clear_color::render_clear_color,
+    hdr::render_hdr,
     prelude::wgpu,
     resources::ActiveCommandEncoder,
     ExtractStage, Render,

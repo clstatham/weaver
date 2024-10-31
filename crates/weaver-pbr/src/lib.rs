@@ -3,7 +3,7 @@ use light::{PointLight, PointLightPlugin};
 use material::{MaterialPlugin, BLACK_TEXTURE, ERROR_TEXTURE, WHITE_TEXTURE};
 use prelude::Material;
 use render::PbrLightingInformation;
-use skybox::{render_skybox, Skybox, SkyboxPlugin, SkyboxRenderable, SkyboxRenderablePlugin};
+use skybox::{render_skybox, Skybox, SkyboxPlugin, SkyboxRenderablePlugin};
 use weaver_app::prelude::*;
 use weaver_asset::{AssetApp, Assets};
 use weaver_core::{texture::Texture, transform::Transform};
@@ -13,10 +13,7 @@ use weaver_ecs::{
     query::Query,
 };
 use weaver_renderer::{
-    bind_group::ResourceBindGroupPlugin,
-    clear_color::{render_clear_color, ClearColorRenderable},
-    hdr::{render_hdr, HdrRenderable},
-    pipeline::RenderPipelinePlugin,
+    bind_group::ResourceBindGroupPlugin, clear_color::render_clear_color, hdr::render_hdr,
     InitRenderResources, Render, RenderApp, WgpuDevice, WgpuQueue,
 };
 use weaver_util::Result;

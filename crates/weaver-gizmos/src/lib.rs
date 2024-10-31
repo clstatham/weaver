@@ -6,7 +6,6 @@ use weaver_ecs::{
     component::Res,
     prelude::ResMut,
     query::Query,
-    system::IntoSystem,
     world::{ConstructFromWorld, World},
 };
 // use weaver_pbr::render::PbrRenderable;
@@ -14,7 +13,7 @@ use weaver_renderer::{
     bind_group::{BindGroup, CreateBindGroup},
     buffer::{GpuBuffer, GpuBufferVec},
     camera::{CameraBindGroup, ViewTarget},
-    hdr::{render_hdr, HdrRenderTarget, HdrRenderable},
+    hdr::{render_hdr, HdrRenderTarget},
     mesh::primitive::{CubePrimitive, Primitive},
     pipeline::{RenderPipeline, RenderPipelineLayout},
     prelude::*,
