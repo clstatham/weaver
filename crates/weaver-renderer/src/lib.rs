@@ -7,12 +7,15 @@ use std::{
 };
 
 use asset::ExtractedRenderAssets;
-use bind_group::{BindGroupLayoutCache, ExtractedAssetBindGroups};
+use bind_group::{
+    AssetBindGroupStaleness, BindGroupLayoutCache, ComponentBindGroupStaleness,
+    ExtractedAssetBindGroups, ResourceBindGroupStaleness,
+};
 use camera::{CameraPlugin, ViewTarget};
-use graph::RenderGraph;
 use hdr::{HdrPlugin, HdrRenderTarget};
 use mesh::MeshPlugin;
 use pipeline::RenderPipelineCache;
+use resources::ActiveCommandEncoder;
 use texture::{
     texture_format::{DEPTH_FORMAT, VIEW_FORMAT},
     TexturePlugin,
@@ -22,8 +25,8 @@ use weaver_app::{plugin::Plugin, App, AppLabel, SubApp};
 use weaver_ecs::{
     commands::Commands,
     component::{Res, ResMut},
-    prelude::{Resource, WorldView},
-    reflect::registry::TypeRegistry,
+    entity::Entity,
+    query::{Query, With},
     system_schedule::SystemStage,
     world::World,
 };
@@ -36,14 +39,11 @@ pub mod bind_group;
 pub mod buffer;
 pub mod camera;
 pub mod clear_color;
-pub mod draw_fn;
 pub mod extract;
-pub mod graph;
 pub mod hdr;
 pub mod mesh;
 pub mod pipeline;
-pub mod render_command;
-pub mod render_phase;
+pub mod resources;
 pub mod shader;
 pub mod texture;
 pub mod transform;
@@ -51,9 +51,7 @@ pub mod transform;
 pub mod prelude {
     pub use super::{
         camera::{Camera, CameraPlugin},
-        draw_fn::{DrawFn, DrawFnsApp, DrawFunctions},
         extract::ExtractComponent,
-        graph::{RenderGraph, RenderNode, Slot},
         pipeline::{
             ComputePipeline, ComputePipelineLayout, ComputePipelinePlugin, CreateComputePipeline,
             CreateRenderPipeline, RenderPipeline, RenderPipelineLayout, RenderPipelinePlugin,
@@ -135,12 +133,11 @@ pub struct CurrentFrameInner {
     pub depth_view: Arc<wgpu::TextureView>,
 }
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct CurrentFrame {
     pub inner: Option<CurrentFrameInner>,
 }
 
-#[derive(Resource)]
 pub struct WgpuInstance {
     pub instance: wgpu::Instance,
 }
@@ -153,7 +150,6 @@ impl Deref for WgpuInstance {
     }
 }
 
-#[derive(Resource)]
 pub struct WgpuAdapter {
     pub adapter: wgpu::Adapter,
 }
@@ -166,7 +162,6 @@ impl Deref for WgpuAdapter {
     }
 }
 
-#[derive(Resource)]
 pub struct WgpuDevice {
     pub device: wgpu::Device,
 }
@@ -179,7 +174,6 @@ impl Deref for WgpuDevice {
     }
 }
 
-#[derive(Resource)]
 pub struct WgpuQueue {
     pub queue: wgpu::Queue,
 }
@@ -192,7 +186,6 @@ impl Deref for WgpuQueue {
     }
 }
 
-#[derive(Resource)]
 pub struct WindowSurface {
     pub surface: wgpu::Surface<'static>,
 }
@@ -205,7 +198,6 @@ impl Deref for WindowSurface {
     }
 }
 
-#[derive(Resource)]
 pub struct Renderer {
     depth_texture: Option<Arc<wgpu::Texture>>,
     command_buffers: Vec<wgpu::CommandBuffer>,
@@ -311,16 +303,14 @@ impl Renderer {
 pub struct RenderExtractApp;
 impl AppLabel for RenderExtractApp {}
 
-#[derive(Resource)]
 pub struct RenderAppChannels {
     pub main_to_render_tx: crossbeam_channel::Sender<SubApp>,
     pub render_to_main_rx: crossbeam_channel::Receiver<SubApp>,
 }
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct ScratchMainWorld(World);
 
-#[derive(Resource)]
 pub struct MainWorld(World);
 
 impl Deref for MainWorld {
@@ -345,30 +335,51 @@ impl Plugin for RendererPlugin {
 
         let mut render_app = SubApp::new();
 
-        render_app.insert_resource(TypeRegistry::new());
+        render_app.world().init_resource::<CurrentFrame>();
 
-        render_app.init_resource::<CurrentFrame>();
+        render_app.world_mut().push_manual_stage::<ExtractStage>();
+        render_app
+            .world_mut()
+            .push_manual_stage::<ExtractBindGroupStage>();
+        render_app
+            .world_mut()
+            .push_manual_stage::<ExtractPipelineStage>();
 
-        render_app.push_manual_stage::<ExtractStage>();
-        render_app.push_manual_stage::<ExtractBindGroupStage>();
-        render_app.push_manual_stage::<ExtractPipelineStage>();
+        render_app
+            .world_mut()
+            .init_resource::<ComponentBindGroupStaleness>();
+        render_app
+            .world_mut()
+            .init_resource::<ResourceBindGroupStaleness>();
+        render_app
+            .world_mut()
+            .init_resource::<AssetBindGroupStaleness>();
 
-        render_app.push_update_stage::<InitRenderResources>();
-        render_app.push_update_stage::<PreRender>();
-        render_app.push_update_stage::<Render>();
-        render_app.push_update_stage::<PostRender>();
+        render_app
+            .world_mut()
+            .push_manual_stage::<InitRenderResources>();
+        render_app.world_mut().push_manual_stage::<PreRender>();
+        render_app.world_mut().push_manual_stage::<Render>();
+        render_app.world_mut().push_manual_stage::<PostRender>();
 
-        render_app.insert_resource(RenderGraph::new());
+        render_app
+            .world()
+            .insert_resource(RenderPipelineCache::new());
+        render_app
+            .world()
+            .insert_resource(BindGroupLayoutCache::new());
+        render_app
+            .world()
+            .insert_resource(ExtractedRenderAssets::new());
+        render_app
+            .world()
+            .insert_resource(ExtractedAssetBindGroups::new());
 
-        render_app.insert_resource(RenderPipelineCache::new());
-        render_app.insert_resource(BindGroupLayoutCache::new());
-        render_app.insert_resource(ExtractedRenderAssets::new());
-        render_app.insert_resource(ExtractedAssetBindGroups::new());
-
-        render_app.add_system(resize_surface, PreRender);
-        render_app.add_system_after(begin_render, resize_surface, PreRender);
-        render_app.add_system(render_system, Render);
-        render_app.add_system(end_render, PostRender);
+        render_app.world_mut().add_system(resize_surface, PreRender);
+        render_app
+            .world_mut()
+            .add_system_after(begin_render, resize_surface, PreRender);
+        render_app.world_mut().add_system(end_render, PostRender);
 
         render_app.add_plugin(CameraPlugin)?;
         render_app.add_plugin(TransformPlugin)?;
@@ -405,21 +416,20 @@ impl Plugin for RendererPlugin {
             .main_app_mut()
             .world_mut()
             .get_resource_mut::<Events<WindowResized>>()
-            .unwrap()
-            .into_inner();
+            .unwrap();
 
         let resized_events = resized_events.clone();
 
         let mut render_app = main_app.remove_sub_app::<RenderApp>().unwrap();
 
-        render_app.insert_resource(WindowSize {
+        render_app.world().insert_resource(WindowSize {
             width: window.inner_size().width,
             height: window.inner_size().height,
         });
-        render_app.insert_resource(resized_events);
+        render_app.world().insert_resource(resized_events);
         create_surface(render_app.world_mut(), &window).unwrap();
 
-        render_app.insert_resource(window);
+        render_app.world().insert_resource(window);
 
         render_app.finish_plugins();
 
@@ -430,7 +440,7 @@ impl Plugin for RendererPlugin {
             render_to_main_rx,
         });
 
-        std::thread::spawn(move || {
+        tokio::spawn(async move {
             log::trace!("Entering render thread main loop");
 
             loop {
@@ -439,7 +449,26 @@ impl Plugin for RendererPlugin {
                 };
                 log::trace!("Received render app on render thread");
 
-                render_app.update();
+                log::trace!("Running render app stage: InitRenderResources");
+                render_app
+                    .world_mut()
+                    .run_stage::<InitRenderResources>()
+                    .await
+                    .unwrap();
+                log::trace!("Running render app stage: PreRender");
+                render_app
+                    .world_mut()
+                    .run_stage::<PreRender>()
+                    .await
+                    .unwrap();
+                log::trace!("Running render app stage: Render");
+                render_app.world_mut().run_stage::<Render>().await.unwrap();
+                log::trace!("Running render app stage: PostRender");
+                render_app
+                    .world_mut()
+                    .run_stage::<PostRender>()
+                    .await
+                    .unwrap();
 
                 log::trace!("Sending render app back to main thread");
 
@@ -465,8 +494,9 @@ fn renderer_extract(main_world: &mut World, _world: &mut World) -> Result<()> {
     Ok(())
 }
 
-pub fn begin_render(
-    world: &mut World,
+pub async fn begin_render(
+    mut commands: Commands,
+    mut view_targets: Query<(Entity, &ViewTarget)>,
     device: Res<WgpuDevice>,
     mut renderer: ResMut<Renderer>,
     surface: Res<WindowSurface>,
@@ -476,10 +506,12 @@ pub fn begin_render(
         return;
     }
 
-    let view_targets = world.query::<&ViewTarget>();
-    let view_targets = view_targets.entity_iter(world).collect::<Vec<_>>();
+    let view_targets = view_targets
+        .iter()
+        .map(|(entity, _)| entity)
+        .collect::<Vec<_>>();
     for entity in view_targets {
-        world.remove_component::<ViewTarget>(entity);
+        commands.remove_component::<ViewTarget>(entity).await;
     }
 
     let frame = match surface.get_current_texture() {
@@ -539,9 +571,18 @@ pub fn begin_render(
         color_view: Arc::new(color_view),
         depth_view: Arc::new(depth_view),
     });
+
+    let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("Render Encoder"),
+    });
+
+    commands
+        .insert_resource(ActiveCommandEncoder::new(encoder))
+        .await;
 }
 
-pub fn end_render(
+pub async fn end_render(
+    mut commands: Commands,
     mut current_frame: ResMut<CurrentFrame>,
     mut renderer: ResMut<Renderer>,
     queue: Res<WgpuQueue>,
@@ -557,6 +598,12 @@ pub fn end_render(
         surface_texture, ..
     } = current_frame;
 
+    if let Some(encoder) = commands.remove_resource::<ActiveCommandEncoder>().await {
+        renderer.enqueue_command_buffer(encoder.finish());
+    } else {
+        log::warn!("No active command encoder to end render");
+    }
+
     let command_buffers = std::mem::take(&mut renderer.command_buffers);
 
     queue.submit(command_buffers);
@@ -569,11 +616,11 @@ pub fn end_render(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn resize_surface(
+async fn resize_surface(
     mut commands: Commands,
     events: EventRx<WindowResized>,
     mut window_size: ResMut<WindowSize>,
-    view_targets: WorldView<&ViewTarget>,
+    mut view_targets: Query<(Entity, With<ViewTarget>)>,
     mut current_frame: ResMut<CurrentFrame>,
     mut renderer: ResMut<Renderer>,
     device: Res<WgpuDevice>,
@@ -584,12 +631,15 @@ fn resize_surface(
     if let Some(event) = events_vec.pop() {
         let mut has_current_frame = false;
         let mut view_target_entities = Vec::new();
-        let view_targets = view_targets.entity_iter().collect::<Vec<_>>();
+        let view_targets = view_targets
+            .iter()
+            .map(|(entity, _)| entity)
+            .collect::<Vec<_>>();
         if current_frame.inner.take().is_some() {
             has_current_frame = true;
 
             for entity in view_targets {
-                commands.remove_component::<ViewTarget>(entity);
+                commands.remove_component::<ViewTarget>(entity).await;
                 view_target_entities.push(entity);
             }
         }
@@ -659,36 +709,12 @@ fn resize_surface(
             current_frame.inner.replace(current_frame_inner);
             let view_target = ViewTarget::from((&*current_frame, &*hdr_target));
             for view_target_entity in view_target_entities {
-                commands.insert_component(view_target_entity, view_target.clone());
+                commands
+                    .insert_component(view_target_entity, view_target.clone())
+                    .await;
             }
         }
 
         hdr_target.resize(&device, width, height);
     }
-}
-
-pub fn render_system(render_world: &mut World) {
-    let view_targets = render_world.query::<&ViewTarget>();
-    let view_targets = view_targets.entity_iter(render_world).collect::<Vec<_>>();
-    let mut render_graph = render_world.remove_resource::<RenderGraph>().unwrap();
-    render_graph.prepare(render_world).unwrap();
-
-    let mut renderer = render_world.remove_resource::<Renderer>().unwrap();
-
-    let device = render_world.get_resource::<WgpuDevice>().unwrap();
-    let queue = render_world.get_resource::<WgpuQueue>().unwrap();
-
-    // todo: don't assume every camera wants to run the whole main render graph
-    for entity in view_targets {
-        log::trace!("Running render graph for entity: {:?}", entity);
-        render_graph
-            .run(&device, &queue, &mut renderer, render_world, entity)
-            .unwrap();
-    }
-
-    drop((device, queue));
-
-    render_world.insert_resource(renderer);
-
-    render_world.insert_resource(render_graph);
 }

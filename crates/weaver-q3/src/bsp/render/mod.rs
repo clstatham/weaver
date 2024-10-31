@@ -1,19 +1,15 @@
 use extract::{extract_bsps, ExtractedBsp};
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{
-    component::Res,
-    prelude::{SystemParamItem, World},
-    query::QueryFetchItem,
-};
+use weaver_ecs::{component::Res, prelude::ResMut, query::Query, system::IntoSystem};
 use weaver_pbr::render::PbrLightingInformation;
 use weaver_renderer::{
     bind_group::BindGroup,
     camera::{CameraBindGroup, ViewTarget},
-    clear_color::ClearColorLabel,
-    graph::{RenderGraphApp, RenderGraphCtx, ViewNode, ViewNodeRunner},
-    hdr::HdrNodeLabel,
+    clear_color::{render_clear_color, ClearColorRenderable},
+    hdr::{render_hdr, HdrRenderable},
     prelude::wgpu,
-    ExtractStage, RenderLabel,
+    resources::ActiveCommandEncoder,
+    ExtractStage, Render,
 };
 use weaver_util::Result;
 
@@ -21,34 +17,17 @@ use crate::shader::render::ShaderPipelineCache;
 
 pub mod extract;
 
-#[derive(Debug, Clone, Copy)]
-pub struct BspRenderNodeLabel;
-impl RenderLabel for BspRenderNodeLabel {}
-
 #[derive(Default)]
-pub struct BspRenderNode;
+pub struct BspRenderable;
 
-impl ViewNode for BspRenderNode {
-    type Param = (
-        Res<'static, ExtractedBsp>,
-        Res<'static, BindGroup<PbrLightingInformation>>,
-        Res<'static, ShaderPipelineCache>,
-    );
-
-    type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<CameraBindGroup>);
-
-    type ViewQueryFilter = ();
-
-    fn run(
-        &self,
-        _render_world: &World,
-        graph_ctx: &mut RenderGraphCtx,
-        render_ctx: &mut weaver_renderer::graph::RenderCtx,
-        (bsp, lighting_bind_group, shader_pipeline_cache): &SystemParamItem<Self::Param>,
-        (view_target, camera_bind_group): &QueryFetchItem<Self::ViewQueryFetch>,
-    ) -> Result<()> {
-        let encoder = render_ctx.command_encoder();
-
+pub async fn render_bsps(
+    bsp: Res<ExtractedBsp>,
+    lighting_bind_group: Res<BindGroup<PbrLightingInformation>>,
+    shader_pipeline_cache: Res<ShaderPipelineCache>,
+    mut view_target: Query<(&'static ViewTarget, &'static BindGroup<CameraBindGroup>)>,
+    mut encoder: ResMut<ActiveCommandEncoder>,
+) {
+    for (view_target, camera_bind_group) in view_target.iter() {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("BSP Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -71,11 +50,6 @@ impl ViewNode for BspRenderNode {
             timestamp_writes: None,
         });
 
-        log::trace!(
-            "Rendering BSP phase for view entity {:?}",
-            graph_ctx.view_entity
-        );
-
         render_pass.set_bind_group(1, camera_bind_group.bind_group(), &[]);
         render_pass.set_bind_group(2, lighting_bind_group.bind_group(), &[]);
 
@@ -93,8 +67,6 @@ impl ViewNode for BspRenderNode {
 
             render_pass.draw_indexed(0..stages.num_indices, 0, 0..1);
         });
-
-        Ok(())
     }
 }
 
@@ -104,9 +76,19 @@ impl Plugin for BspRenderPlugin {
     fn build(&self, render_app: &mut App) -> Result<()> {
         render_app.add_system(extract_bsps, ExtractStage);
 
-        render_app.add_render_main_graph_node::<ViewNodeRunner<BspRenderNode>>(BspRenderNodeLabel);
-        render_app.add_render_main_graph_edge(ClearColorLabel, BspRenderNodeLabel);
-        render_app.add_render_main_graph_edge(BspRenderNodeLabel, HdrNodeLabel);
+        render_app.add_system(render_bsps, Render);
+
+        render_app.main_app_mut().world_mut().add_system_dependency(
+            render_bsps,
+            render_clear_color,
+            Render,
+        );
+
+        render_app.main_app_mut().world_mut().add_system_dependency(
+            render_hdr,
+            render_bsps,
+            Render,
+        );
 
         Ok(())
     }

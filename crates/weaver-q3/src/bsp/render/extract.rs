@@ -9,8 +9,7 @@ use weaver_core::{
 };
 use weaver_ecs::{
     component::{Res, ResMut},
-    prelude::{Component, Resource},
-    world::World,
+    prelude::Commands,
 };
 use weaver_renderer::{
     bind_group::BindGroupLayoutCache,
@@ -47,7 +46,7 @@ pub struct VertexWithTexIdx {
     pub tex_idx: u32,
 }
 
-#[derive(Debug, Clone, Component)]
+#[derive(Debug, Clone)]
 pub enum ExtractedBspNode {
     Leaf {
         parent: usize,
@@ -79,7 +78,6 @@ pub enum WalkDirection {
     Skip,
 }
 
-#[derive(Resource)]
 pub struct ExtractedBsp {
     pub nodes: Vec<Option<ExtractedBspNode>>,
     pub vis_data: VisData,
@@ -232,20 +230,20 @@ pub struct BatchedShaderStages {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn extract_bsps(
-    world: &mut World,
-    bsp: Extract<Res<'static, Handle<Bsp>>>,
-    bsp_assets: Extract<Res<'static, Assets<Bsp>>>,
+pub async fn extract_bsps(
+    mut commands: Commands,
+    bsp: Extract<Res<Handle<Bsp>>>,
+    bsp_assets: Extract<Res<Assets<Bsp>>>,
     source_meshes: Extract<Res<Assets<Mesh>>>,
-    source_shaders: Extract<Res<'static, Assets<LoadedShader>>>,
-    source_textures: Extract<Res<'static, Assets<Texture>>>,
+    source_shaders: Extract<Res<Assets<LoadedShader>>>,
+    source_textures: Extract<Res<Assets<Texture>>>,
     bind_group_layout: Res<ShaderBindGroupLayout>,
     mut pipeline_cache: ResMut<ShaderPipelineCache>,
     mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
 ) {
-    if world.has_resource::<ExtractedBsp>() {
+    if commands.has_resource::<ExtractedBsp>().await {
         return;
     }
 
@@ -441,7 +439,7 @@ pub fn extract_bsps(
         key_paths,
     };
 
-    world.insert_resource(extracted_bsp);
+    commands.insert_resource(extracted_bsp).await;
 }
 
 fn recursively_generate_batch_data(

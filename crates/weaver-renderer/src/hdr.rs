@@ -3,28 +3,25 @@ use std::{path::Path, sync::Arc};
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::{
     component::Res,
-    prelude::{Resource, World},
-    storage::Ref,
-    system::SystemParamItem,
-    world::FromWorld,
+    prelude::{ResMut, World},
+    system::IntoSystem,
+    world::ConstructFromWorld,
 };
 use weaver_util::Result;
 use weaver_winit::WindowSize;
 
 use crate::{
     bind_group::{BindGroup, BindGroupLayoutCache, CreateBindGroup, ResourceBindGroupPlugin},
-    camera::ViewTarget,
-    graph::{RenderGraphApp, ViewNode, ViewNodeRunner},
     pipeline::{
         CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout,
         RenderPipelinePlugin,
     },
+    resources::ActiveCommandEncoder,
     shader::Shader,
     texture::{texture_format, GpuTexture},
-    CurrentFrame, InitRenderResources, RenderLabel, WgpuDevice,
+    CurrentFrame, Render, WgpuDevice,
 };
 
-#[derive(Resource)]
 pub struct HdrRenderTarget {
     pub texture: GpuTexture,
     pub sampler: Arc<wgpu::Sampler>,
@@ -47,8 +44,8 @@ impl HdrRenderTarget {
     }
 }
 
-impl FromWorld for HdrRenderTarget {
-    fn from_world(world: &mut World) -> Self {
+impl ConstructFromWorld for HdrRenderTarget {
+    fn from_world(world: &World) -> Self {
         let window_size = world.get_resource::<WindowSize>().unwrap();
         let device = world.get_resource::<WgpuDevice>().unwrap();
         let texture = GpuTexture::new(
@@ -124,14 +121,10 @@ impl CreateBindGroup for HdrRenderTarget {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct HdrNodeLabel;
-impl RenderLabel for HdrNodeLabel {}
-
 #[derive(Default)]
-pub struct HdrNode;
+pub struct HdrRenderable;
 
-impl CreateRenderPipeline for HdrNode {
+impl CreateRenderPipeline for HdrRenderable {
     fn create_render_pipeline_layout(
         device: &wgpu::Device,
         bind_group_layout_cache: &mut BindGroupLayoutCache,
@@ -194,52 +187,35 @@ impl CreateRenderPipeline for HdrNode {
     }
 }
 
-impl ViewNode for HdrNode {
-    type Param = (
-        Res<'static, CurrentFrame>,
-        Res<'static, RenderPipelineCache>,
-        Res<'static, BindGroup<HdrRenderTarget>>,
-    );
-    type ViewQueryFetch = &'static ViewTarget;
-    type ViewQueryFilter = ();
+pub async fn render_hdr(
+    mut encoder: ResMut<ActiveCommandEncoder>,
+    current_frame: Res<CurrentFrame>,
+    pipeline_cache: Res<RenderPipelineCache>,
+    bind_group: Res<BindGroup<HdrRenderTarget>>,
+) {
+    let pipeline = pipeline_cache.get_pipeline_for::<HdrRenderable>().unwrap();
+    let Some(current_frame) = current_frame.inner.as_ref() else {
+        return;
+    };
+    {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("HDR Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &current_frame.color_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
 
-    fn run(
-        &self,
-        _render_world: &World,
-        _graph_ctx: &mut crate::graph::RenderGraphCtx,
-        render_ctx: &mut crate::graph::RenderCtx,
-        (current_frame, pipeline_cache, bind_group): &SystemParamItem<Self::Param>,
-        _view_target: &Ref<ViewTarget>,
-    ) -> Result<()> {
-        let pipeline = pipeline_cache.get_pipeline_for::<HdrNode>().unwrap();
-        let Some(current_frame) = current_frame.inner.as_ref() else {
-            return Ok(());
-        };
-        {
-            let mut render_pass =
-                render_ctx
-                    .command_encoder()
-                    .begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("HDR Render Pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &current_frame.color_view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
-
-            render_pass.set_pipeline(pipeline);
-            render_pass.set_bind_group(0, bind_group, &[]);
-            render_pass.draw(0..3, 0..1);
-        }
-
-        Ok(())
+        render_pass.set_pipeline(pipeline);
+        render_pass.set_bind_group(0, &bind_group, &[]);
+        render_pass.draw(0..3, 0..1);
     }
 }
 
@@ -247,21 +223,24 @@ pub struct HdrPlugin;
 
 impl Plugin for HdrPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_plugin(RenderPipelinePlugin::<HdrNode>::default())?;
+        app.add_plugin(RenderPipelinePlugin::<HdrRenderable>::default())?;
         app.add_plugin(ResourceBindGroupPlugin::<HdrRenderTarget>::default())?;
 
-        app.add_system(init_hdr_render_target, InitRenderResources);
+        // app.main_app_mut().add_renderable::<HdrRenderable>();
 
         app.main_app_mut()
-            .add_render_main_graph_node::<ViewNodeRunner<HdrNode>>(HdrNodeLabel);
+            .world_mut()
+            .add_system(render_hdr, Render);
 
         Ok(())
     }
-}
 
-pub fn init_hdr_render_target(world: &mut World) {
-    if !world.has_resource::<HdrRenderTarget>() {
-        let target = HdrRenderTarget::from_world(world);
-        world.insert_resource(target);
+    fn ready(&self, app: &App) -> bool {
+        app.has_resource::<WgpuDevice>()
+    }
+
+    fn finish(&self, app: &mut App) -> Result<()> {
+        app.init_resource::<HdrRenderTarget>();
+        Ok(())
     }
 }

@@ -10,12 +10,12 @@
             "name": "Debug executable 'weaver-demo'",
             "env": {
                 "RUST_BACKTRACE": "1",
-                "RUST_LOG": "info"
+                "RUST_LOG": "trace"
             },
             "cargo": {
                 "env": {
                     "RUST_BACKTRACE": "1",
-                    "RUST_LOG": "info"
+                    "RUST_LOG": "trace"
                 },
                 "args": [
                     "build",

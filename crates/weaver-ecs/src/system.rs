@@ -1,9 +1,14 @@
-use std::any::TypeId;
+use std::{
+    any::{Any, TypeId},
+    future::Future,
+    sync::Arc,
+};
 
 use crate::{
     component::{Res, ResMut},
-    prelude::{Resource, UnsafeWorldCell, World},
+    prelude::World,
 };
+use futures::{future::BoxFuture, FutureExt};
 use petgraph::{prelude::*, visit::Topo};
 use weaver_util::{
     lock::SharedLock,
@@ -74,8 +79,6 @@ impl SystemAccess {
 
 /// A single unit of work that can be executed on a world.
 pub trait System: Send + Sync {
-    type Output;
-
     /// Returns the name of the system.
     fn name(&self) -> &str {
         std::any::type_name::<Self>()
@@ -89,7 +92,7 @@ pub trait System: Send + Sync {
     fn initialize(&mut self, world: &mut World) {}
 
     /// Runs the system on the world.
-    fn run(&mut self, world: &mut World) -> Self::Output;
+    fn run(&self, world: &World) -> BoxFuture<'static, ()>;
 
     /// Returns true if the system can run on the world in its current state.
     #[allow(unused)]
@@ -98,128 +101,49 @@ pub trait System: Send + Sync {
     }
 }
 
-/// A type that can be converted into a system.
-pub trait IntoSystem<Marker>: 'static {
-    type System: System;
-
-    /// Returns the name of the system.
+impl System for Box<dyn System> {
     fn name(&self) -> &str {
-        std::any::type_name::<Self>()
+        self.as_ref().name()
     }
+
+    fn access(&self) -> SystemAccess {
+        self.as_ref().access()
+    }
+
+    fn initialize(&mut self, world: &mut World) {
+        self.as_mut().initialize(world)
+    }
+
+    fn run(&self, world: &World) -> BoxFuture<'static, ()> {
+        self.as_ref().run(world)
+    }
+
+    fn can_run(&self, world: &World) -> bool {
+        self.as_ref().can_run(world)
+    }
+}
+
+/// A type that can be converted into a system.
+pub trait IntoSystem<Marker>: 'static + Send + Sync {
+    type System: System;
 
     /// Converts the type into a boxed system.
     fn into_system(self) -> Box<Self::System>;
 }
 
-pub struct SystemState<P: SystemParam + 'static> {
-    access: SystemAccess,
-    state: P::State,
-}
+impl IntoSystem<Box<dyn System>> for Box<dyn System> {
+    type System = Box<dyn System>;
 
-impl<P: SystemParam> SystemState<P> {
-    pub fn new(world: &mut World) -> Self {
-        Self {
-            access: P::access(),
-            state: P::init_state(world),
-        }
-    }
-
-    pub fn access(&self) -> &SystemAccess {
-        &self.access
-    }
-
-    pub fn get<'w, 's>(&'s mut self, world: UnsafeWorldCell<'w>) -> SystemParamItem<'w, 's, P> {
-        // validate access
-        self.access();
-        unsafe { P::fetch(&mut self.state, world) }
-    }
-
-    pub fn can_run(&self, world: &World) -> bool {
-        P::can_run(world)
-    }
-}
-
-unsafe impl<P: SystemParam> SystemParam for SystemState<P> {
-    type State = P::State;
-    type Item<'w, 's> = P::Item<'w, 's>;
-
-    fn access() -> SystemAccess {
-        P::access()
-    }
-
-    fn init_state(world: &mut World) -> Self::State {
-        P::init_state(world)
-    }
-
-    unsafe fn fetch<'w, 's>(
-        state: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        // validate access
-        P::access();
-        unsafe { P::fetch(state, world) }
-    }
-
-    fn can_run(world: &World) -> bool {
-        P::can_run(world)
-    }
-}
-
-pub struct SystemParamWrapper<'w, 's, P: SystemParam> {
-    item: SystemParamItem<'w, 's, P>,
-}
-
-impl<'w, 's, P: SystemParam> SystemParamWrapper<'w, 's, P> {
-    #[inline]
-    pub fn item(&self) -> &P::Item<'w, 's> {
-        &self.item
-    }
-
-    #[inline]
-    pub fn item_mut(&mut self) -> &mut P::Item<'w, 's> {
-        &mut self.item
-    }
-
-    #[inline]
-    pub fn into_inner(self) -> P::Item<'w, 's> {
-        self.item
-    }
-}
-
-unsafe impl<'w2, 's2, P: SystemParam> SystemParam for SystemParamWrapper<'w2, 's2, P> {
-    type State = P::State;
-    type Item<'w, 's> = SystemParamWrapper<'w, 's, P>;
-
-    fn access() -> SystemAccess {
-        P::access()
-    }
-
-    fn init_state(world: &mut World) -> Self::State {
-        P::init_state(world)
-    }
-
-    unsafe fn fetch<'w, 's>(
-        state: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        unsafe {
-            SystemParamWrapper {
-                item: P::fetch(state, world),
-            }
-        }
-    }
-
-    fn can_run(world: &World) -> bool {
-        P::can_run(world)
+    fn into_system(self) -> Box<Self::System> {
+        Box::new(self)
     }
 }
 
 /// # Safety
 ///
 /// Caller must ensure that all system params being used are valid for simultaneous access.
-pub unsafe trait SystemParam {
-    type State: Sized + Send + Sync;
-    type Item<'w, 's>: SystemParam<State = Self::State>;
+pub trait SystemParam: Send + Sync {
+    type Item: SystemParam;
 
     fn validate_access(access: &SystemAccess) -> bool {
         Self::access().is_compatible(access)
@@ -227,18 +151,7 @@ pub unsafe trait SystemParam {
 
     fn access() -> SystemAccess;
 
-    fn init_state(world: &mut World) -> Self::State;
-
-    /// # Safety
-    ///
-    /// Caller must ensure that all system params being used are valid for simultaneous access.
-    unsafe fn fetch<'w, 's>(
-        state: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's>;
-
-    #[allow(unused)]
-    fn apply(state: &mut Self::State, world: &mut World) {}
+    fn fetch(world: &World) -> Self::Item;
 
     #[allow(unused)]
     fn can_run(world: &World) -> bool {
@@ -246,75 +159,24 @@ pub unsafe trait SystemParam {
     }
 }
 
-pub type SystemParamItem<'w, 's, P> = <P as SystemParam>::Item<'w, 's>;
+pub type SystemParamItem<P> = <P as SystemParam>::Item;
 
-pub struct ParamSet<'w, 's, T: SystemParam> {
-    pub state: &'s mut T::State,
-    _phantom: std::marker::PhantomData<&'w ()>,
-}
-
-impl<'w, 's, T: SystemParam> ParamSet<'w, 's, T> {
-    pub fn new(state: &'s mut T::State) -> Self {
-        Self {
-            state,
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-unsafe impl<T: SystemParam> SystemParam for ParamSet<'_, '_, T> {
-    type State = T::State;
-    type Item<'w, 's> = T::Item<'w, 's>;
+impl SystemParam for () {
+    type Item = ();
 
     fn access() -> SystemAccess {
-        T::access()
+        SystemAccess::default()
     }
 
-    fn init_state(world: &mut World) -> Self::State {
-        T::init_state(world)
-    }
-
-    unsafe fn fetch<'w, 's>(
-        state: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        unsafe { T::fetch(state, world) }
-    }
-
-    fn can_run(world: &World) -> bool {
-        T::can_run(world)
-    }
-}
-
-unsafe impl SystemParam for () {
-    type State = ();
-    type Item<'w, 's> = ();
-
-    fn init_state(_: &mut World) -> Self::State {}
-
-    fn access() -> SystemAccess {
-        SystemAccess {
-            exclusive: false,
-            ..Default::default()
-        }
-    }
-
-    unsafe fn fetch<'w, 's>(
-        _: &'s mut Self::State,
-        _world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-    }
+    fn fetch(_: &World) -> Self::Item {}
 
     fn can_run(_: &World) -> bool {
         true
     }
 }
 
-unsafe impl<T: Resource> SystemParam for Res<'_, T> {
-    type State = ();
-    type Item<'w, 's> = Res<'w, T>;
-
-    fn init_state(_: &mut World) -> Self::State {}
+impl<T: Any + Send + Sync> SystemParam for Res<T> {
+    type Item = Res<T>;
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -324,30 +186,28 @@ unsafe impl<T: Resource> SystemParam for Res<'_, T> {
         }
     }
 
-    /// # Safety
-    ///
-    /// Caller must ensure that the resource exists and that we have shared access to it
-    unsafe fn fetch<'w, 's>(
-        _: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        unsafe { world.get_resource::<T>().unwrap() }
+    fn fetch(world: &World) -> Self::Item {
+        world.get_resource::<T>().unwrap()
+    }
+
+    fn validate_access(access: &SystemAccess) -> bool {
+        !access.resources_written.contains(&TypeId::of::<T>())
     }
 
     fn can_run(world: &World) -> bool {
         if !world.has_resource::<T>() {
-            log::debug!("Res: Missing resource: {}", std::any::type_name::<T>());
+            log::debug!(
+                "Res: Resource {:?} is not available",
+                std::any::type_name::<T>()
+            );
             return false;
         }
         true
     }
 }
 
-unsafe impl<T: Resource> SystemParam for Option<Res<'_, T>> {
-    type State = ();
-    type Item<'w, 's> = Option<Res<'w, T>>;
-
-    fn init_state(_: &mut World) -> Self::State {}
+impl<T: Any + Send + Sync> SystemParam for Option<Res<T>> {
+    type Item = Option<Res<T>>;
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -357,14 +217,12 @@ unsafe impl<T: Resource> SystemParam for Option<Res<'_, T>> {
         }
     }
 
-    /// # Safety
-    ///
-    /// Caller must ensure that the resource exists and that we have shared access to it
-    unsafe fn fetch<'w, 's>(
-        _: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        unsafe { world.get_resource::<T>() }
+    fn fetch(world: &World) -> Self::Item {
+        world.get_resource::<T>()
+    }
+
+    fn validate_access(access: &SystemAccess) -> bool {
+        !access.resources_written.contains(&TypeId::of::<T>())
     }
 
     fn can_run(_world: &World) -> bool {
@@ -372,11 +230,8 @@ unsafe impl<T: Resource> SystemParam for Option<Res<'_, T>> {
     }
 }
 
-unsafe impl<T: Resource> SystemParam for ResMut<'_, T> {
-    type State = ();
-    type Item<'w, 's> = ResMut<'w, T>;
-
-    fn init_state(_: &mut World) -> Self::State {}
+impl<T: Any + Send + Sync> SystemParam for ResMut<T> {
+    type Item = ResMut<T>;
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -386,30 +241,29 @@ unsafe impl<T: Resource> SystemParam for ResMut<'_, T> {
         }
     }
 
-    /// # Safety
-    ///
-    /// Caller must ensure that the resource exists and that we have exclusive access to it
-    unsafe fn fetch<'w, 's>(
-        _: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        unsafe { world.get_resource_mut::<T>().unwrap() }
+    fn fetch(world: &World) -> Self::Item {
+        world.get_resource_mut::<T>().unwrap()
+    }
+
+    fn validate_access(access: &SystemAccess) -> bool {
+        !access.resources_read.contains(&TypeId::of::<T>())
+            && !access.resources_written.contains(&TypeId::of::<T>())
     }
 
     fn can_run(world: &World) -> bool {
         if !world.has_resource::<T>() {
-            log::debug!("ResMut: Missing resource: {}", std::any::type_name::<T>());
+            log::debug!(
+                "ResMut: Resource {:?} is not available",
+                std::any::type_name::<T>()
+            );
             return false;
         }
         true
     }
 }
 
-unsafe impl<T: Resource> SystemParam for Option<ResMut<'_, T>> {
-    type State = ();
-    type Item<'w, 's> = Option<ResMut<'w, T>>;
-
-    fn init_state(_: &mut World) -> Self::State {}
+impl<T: Any + Send + Sync> SystemParam for Option<ResMut<T>> {
+    type Item = Option<ResMut<T>>;
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -419,14 +273,13 @@ unsafe impl<T: Resource> SystemParam for Option<ResMut<'_, T>> {
         }
     }
 
-    /// # Safety
-    ///
-    /// Caller must ensure that the resource exists and that we have exclusive access to it
-    unsafe fn fetch<'w, 's>(
-        _: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        unsafe { world.get_resource_mut::<T>() }
+    fn fetch(world: &World) -> Self::Item {
+        world.get_resource_mut::<T>()
+    }
+
+    fn validate_access(access: &SystemAccess) -> bool {
+        !access.resources_read.contains(&TypeId::of::<T>())
+            && !access.resources_written.contains(&TypeId::of::<T>())
     }
 
     fn can_run(_world: &World) -> bool {
@@ -435,41 +288,21 @@ unsafe impl<T: Resource> SystemParam for Option<ResMut<'_, T>> {
 }
 
 macro_rules! impl_system_param_tuple {
-    ($($param:ident),*) => {
-        #[allow(unused, non_snake_case)]
-        unsafe impl<$($param),*> SystemParam for ($($param),*)
-        where
-            $($param: SystemParam),*
+    ($( $param:ident ),*) => {
+        impl<$( $param: SystemParam ),*> SystemParam for ($( $param, )*)
         {
-            type State = ($($param::State),*);
-            type Item<'w, 's> = ($($param::Item<'w, 's>),*);
-
-            fn init_state(world: &mut World) -> Self::State {
-                ($($param::init_state(world)),*)
-            }
+            type Item = ($( $param::Item, )*);
 
             fn access() -> SystemAccess {
                 let mut access = SystemAccess::default();
-
                 $(
-                    let a = $param::access();
-                    assert!(a.is_compatible(&access), "SystemParam validation failed for {}", std::any::type_name::<$param>());
-                    access.extend(a);
+                    access.extend($param::access());
                 )*
-
                 access
             }
 
-            unsafe fn fetch<'w, 's>(state: &'s mut Self::State, world: UnsafeWorldCell<'w>) -> Self::Item<'w, 's> {
-                let ($($param),*) = state;
-                unsafe { ($($param::fetch($param, world)),*) }
-            }
-
-            fn apply(state: &mut Self::State, world: &mut World) {
-                let ($($param),*) = state;
-                $(
-                    $param::apply($param, world);
-                )*
+            fn fetch(world: &World) -> Self::Item {
+                ($( $param::fetch(world), )*)
             }
 
             fn can_run(world: &World) -> bool {
@@ -478,7 +311,6 @@ macro_rules! impl_system_param_tuple {
                         return false;
                     }
                 )*
-
                 true
             }
         }
@@ -505,11 +337,46 @@ impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
 
+pub struct SystemParamWrapper<S: SystemParam> {
+    pub param: S::Item,
+}
+
+impl<S: SystemParam> SystemParamWrapper<S> {
+    pub fn new(param: S::Item) -> Self {
+        Self { param }
+    }
+
+    pub fn item(&self) -> &S::Item {
+        &self.param
+    }
+
+    pub fn item_mut(&mut self) -> &mut S::Item {
+        &mut self.param
+    }
+}
+
+impl<S: SystemParam> SystemParam for SystemParamWrapper<S> {
+    type Item = SystemParamWrapper<S>;
+
+    fn access() -> SystemAccess {
+        S::access()
+    }
+
+    fn fetch(world: &World) -> Self::Item {
+        SystemParamWrapper {
+            param: S::fetch(world),
+        }
+    }
+
+    fn can_run(world: &World) -> bool {
+        S::can_run(world)
+    }
+}
+
 pub trait SystemParamFunction<M>: 'static + Send + Sync {
     type Param: SystemParam + 'static;
-    type Output;
 
-    fn run(&mut self, param: SystemParamItem<Self::Param>) -> Self::Output;
+    fn run(&self, param: SystemParamItem<Self::Param>) -> impl Future<Output = ()> + Send + Sync;
 }
 
 pub struct FunctionSystem<M, F>
@@ -517,8 +384,7 @@ where
     M: 'static,
     F: SystemParamFunction<M>,
 {
-    param_state: Option<SystemState<F::Param>>,
-    func: F,
+    func: Arc<F>,
     _marker: std::marker::PhantomData<fn() -> M>,
 }
 
@@ -527,16 +393,11 @@ where
     M: 'static,
     F: SystemParamFunction<M>,
 {
-    pub const fn new(func: F) -> Self {
+    pub fn new(func: F) -> Self {
         Self {
-            param_state: None,
-            func,
+            func: Arc::new(func),
             _marker: std::marker::PhantomData,
         }
-    }
-
-    pub fn param_state(&self) -> Option<&SystemState<F::Param>> {
-        self.param_state.as_ref()
     }
 }
 
@@ -545,39 +406,30 @@ where
     M: 'static,
     F: SystemParamFunction<M>,
 {
-    type Output = F::Output;
-
     fn name(&self) -> &str {
         std::any::type_name::<F>()
     }
 
-    fn initialize(&mut self, world: &mut World) {
-        let param_state = SystemState {
-            access: F::Param::access(),
-            state: F::Param::init_state(world),
-        };
-        self.param_state = Some(param_state);
-    }
+    fn initialize(&mut self, _world: &mut World) {}
 
     fn access(&self) -> SystemAccess {
         F::Param::access()
     }
 
-    fn run(&mut self, world: &mut World) -> Self::Output {
-        let param_state = self.param_state.as_mut().unwrap();
-
-        // SAFETY:
-        // - We have mutable access to the World.
-        // - We have validated that the access is safe.
-        let fetch =
-            unsafe { F::Param::fetch(&mut param_state.state, world.as_unsafe_world_cell()) };
-        let out = self.func.run(fetch);
-        F::Param::apply(&mut param_state.state, world);
-        out
+    fn run(&self, world: &World) -> BoxFuture<'static, ()> {
+        let fetch = F::Param::fetch(world);
+        let func = self.func.clone();
+        async move { func.run(fetch).await }.boxed()
+        // async move {
+        //     let mut f = func.write().take().unwrap();
+        //     f.run(fetch).await;
+        //     *func.write() = Some(f);
+        // }
+        // .boxed()
     }
 
     fn can_run(&self, world: &World) -> bool {
-        self.param_state.is_some() && F::Param::can_run(world)
+        F::Param::can_run(world)
     }
 }
 
@@ -590,14 +442,9 @@ where
 {
     type System = FunctionSystem<M, F>;
 
-    fn name(&self) -> &str {
-        std::any::type_name::<F>()
-    }
-
     fn into_system(self) -> Box<Self::System> {
         Box::new(FunctionSystem {
-            param_state: None,
-            func: self,
+            func: Arc::new(self),
             _marker: std::marker::PhantomData,
         })
     }
@@ -606,27 +453,30 @@ where
 macro_rules! impl_function_system {
     ($($param:ident),*) => {
         #[allow(unused, non_snake_case)]
-        impl<Func, Output, $($param,)*> SystemParamFunction<fn($($param,)*)> for Func
-        where for<'a> &'a mut Func:
-            FnMut($($param),*) -> Output
-            + FnMut($(SystemParamItem<$param>),*) -> Output,
+        impl<Func, Fut, $($param,)*> SystemParamFunction<fn($($param,)*)> for Func
+        where for<'a> &'a Func:
+            Fn($($param),*) -> Fut
+            + Fn($(SystemParamItem<$param>),*) -> Fut,
             $($param: SystemParam + 'static),*,
             Func: 'static + Send + Sync,
+            Fut: Future<Output = ()> + Send + Sync,
         {
             type Param = ($($param),*);
-            type Output = Output;
 
-            fn run(&mut self, param: SystemParamItem<Self::Param>) -> Output {
-                fn inner<Output, $($param,)*>(
-                    mut func: impl FnMut($($param),*) -> Output,
+            async fn run(&self, param: SystemParamItem<Self::Param>) {
+                async fn inner<Fut, $($param,)*>(
+                    mut func: impl Fn($($param),*) -> Fut,
                     param: ($($param),*),
-                ) -> Output {
+                )
+                where
+                    Fut: Future<Output = ()> + Send + Sync,
+                {
                     let ($($param),*) = param;
-                    func($($param),*)
+                    func($($param),*).await;
                 }
 
                 let ($($param),*) = param;
-                inner(self, ($($param),*))
+                inner(self, ($($param),*)).await;
             }
         }
     };
@@ -653,11 +503,9 @@ impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R);
 impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S);
 impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
 
-pub fn assert_is_system<Marker>(_: impl IntoSystem<Marker>) {}
-
 #[derive(Default)]
 pub struct SystemGraph {
-    systems: StableDiGraph<SharedLock<Box<dyn System<Output = ()>>>, ()>,
+    systems: StableDiGraph<SharedLock<Box<dyn System>>, ()>,
     index_cache: FxHashMap<TypeId, NodeIndex>,
 }
 
@@ -667,7 +515,7 @@ impl SystemGraph {
     where
         M: 'static,
         S: IntoSystem<M>,
-        S::System: System<Output = ()>,
+        S::System: System,
     {
         let node = self.systems.add_node(SharedLock::new(system.into_system()));
         self.index_cache.insert(TypeId::of::<S>(), node);
@@ -694,8 +542,8 @@ impl SystemGraph {
         M2: 'static,
         S: IntoSystem<M1>,
         AFTER: IntoSystem<M2>,
-        S::System: System<Output = ()>,
-        AFTER::System: System<Output = ()>,
+        S::System: System,
+        AFTER::System: System,
     {
         let node = self.add_system(system);
         let parent = self.index_cache[&TypeId::of::<AFTER>()];
@@ -709,8 +557,8 @@ impl SystemGraph {
         M2: 'static,
         S: IntoSystem<M1>,
         BEFORE: IntoSystem<M2>,
-        S::System: System<Output = ()>,
-        BEFORE::System: System<Output = ()>,
+        S::System: System,
+        BEFORE::System: System,
     {
         let node = self.add_system(system);
         let child = self.index_cache[&TypeId::of::<BEFORE>()];
@@ -833,8 +681,8 @@ impl SystemGraph {
         Ok(())
     }
 
-    /// Runs all systems in the graph one-by-one in topological order, ensuring that all dependencies are respected.
-    pub fn run_single_threaded(&mut self, world: &mut World) -> Result<()> {
+    /// Runs all systems in the graph.
+    pub async fn run(&mut self, world: &mut World) -> Result<()> {
         let mut schedule = Topo::new(&self.systems);
         while let Some(node) = schedule.next(&self.systems) {
             let system = &self.systems[node];
@@ -845,8 +693,13 @@ impl SystemGraph {
             }
             log::trace!("Running system: {}", system.read().name());
 
-            system.write().run(world);
+            let handle = tokio::spawn(system.write().run(world));
+            while !handle.is_finished() {
+                world.apply_commands();
+                tokio::task::yield_now().await;
+            }
         }
+        // world.await_all_tasks().await;
 
         Ok(())
     }

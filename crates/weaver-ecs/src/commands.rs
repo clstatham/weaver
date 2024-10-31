@@ -1,153 +1,99 @@
-use crate::prelude::{Bundle, Component, Entities, Entity, Resource, SystemParam, UnsafeWorldCell};
+use std::any::Any;
+use std::sync::Arc;
 
-use weaver_util::SyncCell;
-
+use crate::bundle::Bundle;
+use crate::entity::Entity;
 use crate::prelude::World;
+use crate::system::{SystemAccess, SystemParam};
+use crate::world::ConstructFromWorld;
 
-pub trait Command: Send + Sync + 'static {
-    fn execute(self: Box<Self>, world: &mut World);
+pub type CommandOp = dyn FnOnce(&mut World) -> Arc<dyn Any + Send + Sync> + Send + Sync;
+
+pub struct Command {
+    pub(crate) op: Box<CommandOp>,
+    pub(crate) tx: async_channel::Sender<Arc<dyn Any + Send + Sync>>,
 }
 
-impl<F> Command for F
-where
-    F: FnOnce(&mut World) + Send + Sync + 'static,
-{
-    fn execute(self: Box<Self>, world: &mut World) {
-        self(world)
-    }
-}
-
-#[derive(Default)]
-pub struct CommandQueue {
-    commands: Vec<Box<dyn Command>>,
-}
-
-impl CommandQueue {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn push<T: Command>(&mut self, command: T) {
-        self.commands.push(Box::new(command));
-    }
-
-    pub fn execute(&mut self, world: &mut World) {
-        for command in self.commands.drain(..) {
-            command.execute(world);
-        }
+impl Command {
+    pub fn run(self, world: &mut World) {
+        let result = (self.op)(world);
+        self.tx.try_send(result).unwrap();
     }
 }
 
-pub struct Commands<'w, 's> {
-    queue: &'s mut CommandQueue,
-    entities: &'w Entities,
+pub struct Commands {
+    pub(crate) tx: async_channel::Sender<Command>,
 }
 
-impl<'w, 's> Commands<'w, 's> {
-    pub fn push<T: Command>(&mut self, command: T) {
-        self.queue.push(command);
+impl Commands {
+    pub async fn run<R: Any + Send + Sync>(
+        &mut self,
+        op: impl FnOnce(&mut World) -> R + Send + Sync + 'static,
+    ) -> R {
+        let (tx, rx) = async_channel::bounded(1);
+
+        self.tx
+            .try_send(Command {
+                op: Box::new(|world| {
+                    let result = op(world);
+                    Arc::new(result)
+                }),
+                tx,
+            })
+            .unwrap();
+
+        let any: Arc<_> = rx.recv().await.unwrap();
+        let arc: Arc<R> = any.downcast().unwrap();
+        Arc::try_unwrap(arc).unwrap_or_else(|_| unreachable!())
     }
 
-    pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
-        let entity = self.entities.reserve();
-        self.push(move |world: &mut World| {
-            world.insert_bundle(entity, bundle);
-        });
-        entity
+    pub async fn has_resource<T: Any + Send + Sync>(&mut self) -> bool {
+        self.run(move |world| world.has_resource::<T>()).await
     }
 
-    pub fn insert_component<T: Component>(&mut self, entity: Entity, component: T) {
-        self.push(move |world: &mut World| {
-            world.insert_component(entity, component);
-        });
-    }
-
-    pub fn insert_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
-        self.push(move |world: &mut World| {
-            world.insert_bundle(entity, bundle);
-        });
-    }
-
-    pub fn remove_component<T: Component>(&mut self, entity: Entity) {
-        self.push(move |world: &mut World| {
-            world.remove_component::<T>(entity);
-        });
-    }
-
-    pub fn insert_resource<T: Resource + Send + Sync>(&mut self, resource: T) {
-        self.push(move |world: &mut World| {
+    pub async fn insert_resource<T: Any + Send + Sync>(&mut self, resource: T) {
+        self.run(move |world| {
             world.insert_resource(resource);
-        });
+        })
+        .await
     }
 
-    pub fn remove_resource<T: Resource>(&mut self) {
-        self.push(move |world: &mut World| {
-            world.remove_resource::<T>();
-        });
-    }
-}
-
-unsafe impl SystemParam for Commands<'_, '_> {
-    type State = SyncCell<CommandQueue>;
-    type Item<'w, 's> = Commands<'w, 's>;
-
-    fn validate_access(access: &crate::prelude::SystemAccess) -> bool {
-        !access.exclusive
+    pub async fn init_resource<T: Any + Send + Sync + ConstructFromWorld>(&mut self) {
+        self.run(move |world| {
+            world.init_resource::<T>();
+        })
+        .await
     }
 
-    fn init_state(_world: &mut World) -> Self::State {
-        SyncCell::new(CommandQueue::new())
+    pub async fn remove_resource<T: Any + Send + Sync>(&mut self) -> Option<T> {
+        self.run(move |world| world.remove_resource::<T>()).await
     }
 
-    fn access() -> crate::prelude::SystemAccess {
-        crate::prelude::SystemAccess {
-            exclusive: false,
-            ..Default::default()
-        }
+    pub async fn insert_component<T: Any + Send + Sync>(&mut self, entity: Entity, component: T) {
+        self.run(move |world| {
+            world.insert_component(entity, component);
+        })
+        .await
     }
 
-    unsafe fn fetch<'w, 's>(
-        state: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        Commands {
-            queue: state.get(),
-            entities: unsafe { world.world().entities() },
-        }
+    pub async fn remove_component<T: Any + Send + Sync>(&mut self, entity: Entity) -> Option<T> {
+        self.run(move |world| world.remove_component::<T>(entity))
+            .await
     }
 
-    #[inline(never)]
-    fn apply(state: &mut Self::State, world: &mut World) {
-        world.entities_mut().flush();
-        state.get().execute(world);
+    pub async fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
+        self.run(move |world| world.spawn(bundle)).await
     }
 }
 
-unsafe impl SystemParam for &mut World {
-    type State = ();
-    type Item<'w, 's> = &'w mut World;
+impl SystemParam for Commands {
+    type Item = Commands;
 
-    fn validate_access(_access: &crate::prelude::SystemAccess) -> bool {
-        true
+    fn access() -> SystemAccess {
+        SystemAccess::default()
     }
 
-    fn init_state(_world: &mut World) -> Self::State {}
-
-    fn access() -> crate::prelude::SystemAccess {
-        crate::prelude::SystemAccess {
-            exclusive: true,
-            ..Default::default()
-        }
-    }
-
-    unsafe fn fetch<'w, 's>(
-        _state: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        unsafe { world.world_mut() }
-    }
-
-    fn can_run(_world: &World) -> bool {
-        true
+    fn fetch(world: &World) -> Self::Item {
+        world.commands()
     }
 }

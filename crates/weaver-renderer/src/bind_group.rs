@@ -1,11 +1,15 @@
-use std::{any::TypeId, ops::Deref, sync::Arc};
+use std::{
+    any::{Any, TypeId},
+    ops::Deref,
+    sync::Arc,
+};
 
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{prelude::Asset, AssetApp, Assets, Handle, UntypedHandle};
+use weaver_asset::{prelude::Asset, AssetApp, AssetId, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
     commands::Commands,
     component::{Res, ResMut},
-    prelude::{Component, Resource},
+    entity::{Entity, EntityMap},
     query::Query,
 };
 use weaver_util::{
@@ -15,7 +19,7 @@ use weaver_util::{
 
 use crate::{asset::RenderAsset, ExtractBindGroupStage, WgpuDevice};
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct BindGroupLayoutCache {
     cache: TypeIdMap<BindGroupLayout>,
 }
@@ -78,6 +82,45 @@ impl Deref for BindGroupLayout {
     }
 }
 
+#[derive(Default)]
+pub struct ComponentBindGroupStaleness(pub EntityMap<bool>);
+
+impl ComponentBindGroupStaleness {
+    pub fn set_stale(&mut self, entity: Entity, stale: bool) {
+        self.0.insert(entity, stale);
+    }
+
+    pub fn is_stale(&self, entity: Entity) -> bool {
+        *self.0.get(&entity).unwrap_or(&false)
+    }
+}
+
+#[derive(Default)]
+pub struct ResourceBindGroupStaleness(pub TypeIdMap<bool>);
+
+impl ResourceBindGroupStaleness {
+    pub fn set_stale<T: Any + Send + Sync>(&mut self, stale: bool) {
+        self.0.insert(TypeId::of::<T>(), stale);
+    }
+
+    pub fn is_stale<T: Any + Send + Sync>(&self) -> bool {
+        *self.0.get(&TypeId::of::<T>()).unwrap_or(&false)
+    }
+}
+
+#[derive(Default)]
+pub struct AssetBindGroupStaleness(pub FxHashMap<AssetId, bool>);
+
+impl AssetBindGroupStaleness {
+    pub fn set_stale(&mut self, asset_id: AssetId, stale: bool) {
+        self.0.insert(asset_id, stale);
+    }
+
+    pub fn is_stale(&self, asset_id: AssetId) -> bool {
+        *self.0.get(&asset_id).unwrap_or(&false)
+    }
+}
+
 pub trait CreateBindGroup: DowncastSync {
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
     where
@@ -87,16 +130,9 @@ pub trait CreateBindGroup: DowncastSync {
         device: &wgpu::Device,
         cached_layout: &BindGroupLayout,
     ) -> wgpu::BindGroup;
-
-    fn bind_group_stale(&self) -> bool {
-        false
-    }
-
-    #[allow(unused_variables)]
-    fn set_bind_group_stale(&mut self, stale: bool) {}
 }
 
-#[derive(Component, Resource, Asset)]
+#[derive(Asset)]
 pub struct BindGroup<T: CreateBindGroup> {
     bind_group: Arc<wgpu::BindGroup>,
     _marker: std::marker::PhantomData<T>,
@@ -128,78 +164,136 @@ where
     }
 }
 
-pub struct ComponentBindGroupPlugin<T: Component + CreateBindGroup>(std::marker::PhantomData<T>);
+pub struct ComponentBindGroupPlugin<T: Any + Send + Sync + CreateBindGroup>(
+    std::marker::PhantomData<T>,
+);
 
-impl<T: Component + CreateBindGroup> Default for ComponentBindGroupPlugin<T> {
+impl<T: Any + Send + Sync + CreateBindGroup> Default for ComponentBindGroupPlugin<T> {
     fn default() -> Self {
         Self(std::marker::PhantomData)
     }
 }
 
-impl<T: Component + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
+impl<T: Any + Send + Sync + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
+        app.init_resource::<ComponentBindGroupsToAdd<T>>();
+        app.init_resource::<ComponentBindGroupsToRemove<T>>();
+
         app.add_system(create_component_bind_group::<T>, ExtractBindGroupStage);
+        app.add_system_after(
+            add_and_remove_component_bind_groups::<T>,
+            create_component_bind_group::<T>,
+            ExtractBindGroupStage,
+        );
         Ok(())
     }
 }
 
-fn create_component_bind_group<T: Component + CreateBindGroup>(
-    mut commands: Commands,
-    device: Res<WgpuDevice>,
-    mut layout_cache: ResMut<BindGroupLayoutCache>,
-    item_query: Query<&mut T>,
-    bind_group_query: Query<&BindGroup<T>>,
-) {
-    for (entity, mut item) in item_query.iter() {
-        let mut stale = false;
-        if item.bind_group_stale() {
-            commands.remove_component::<BindGroup<T>>(entity);
-            stale = true;
-        }
-        if stale || bind_group_query.get(entity).is_none() {
-            let bind_group = BindGroup::new(&device, &*item, &mut layout_cache);
-            item.set_bind_group_stale(false);
-            drop(item);
-            commands.insert_component(entity, bind_group);
+struct ComponentBindGroupsToRemove<T: Any + Send + Sync> {
+    entities: Vec<Entity>,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T: Any + Send + Sync> Default for ComponentBindGroupsToRemove<T> {
+    fn default() -> Self {
+        Self {
+            entities: Vec::new(),
+            _marker: std::marker::PhantomData,
         }
     }
 }
 
-pub struct ResourceBindGroupPlugin<T: Resource + CreateBindGroup>(std::marker::PhantomData<T>);
+struct ComponentBindGroupsToAdd<T: Any + Send + Sync + CreateBindGroup> {
+    items: Vec<(Entity, BindGroup<T>)>,
+    _marker: std::marker::PhantomData<T>,
+}
 
-impl<T: Resource + CreateBindGroup> Default for ResourceBindGroupPlugin<T> {
+impl<T: Any + Send + Sync + CreateBindGroup> Default for ComponentBindGroupsToAdd<T> {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+async fn create_component_bind_group<T: Any + Send + Sync + CreateBindGroup>(
+    device: Res<WgpuDevice>,
+    mut layout_cache: ResMut<BindGroupLayoutCache>,
+    mut item_query: Query<(Entity, &T)>,
+    mut bind_group_query: Query<&BindGroup<T>>,
+    mut staleness: ResMut<ComponentBindGroupStaleness>,
+    mut to_remove: ResMut<ComponentBindGroupsToRemove<T>>,
+    mut to_add: ResMut<ComponentBindGroupsToAdd<T>>,
+) {
+    for (entity, item) in item_query.iter() {
+        let mut stale = false;
+        if staleness.is_stale(entity) {
+            // commands.remove_component::<BindGroup<T>>(entity).await;
+            to_remove.entities.push(entity);
+            stale = true;
+        }
+        if stale || bind_group_query.get(entity).is_none() {
+            let bind_group = BindGroup::new(&device, item, &mut layout_cache);
+            staleness.set_stale(entity, false);
+            // commands.insert_component(entity, bind_group).await;
+            to_add.items.push((entity, bind_group));
+        }
+    }
+}
+
+async fn add_and_remove_component_bind_groups<T: Any + Send + Sync + CreateBindGroup>(
+    mut commands: Commands,
+    mut to_remove: ResMut<ComponentBindGroupsToRemove<T>>,
+    mut to_add: ResMut<ComponentBindGroupsToAdd<T>>,
+) {
+    for entity in to_remove.entities.drain(..) {
+        commands.remove_component::<BindGroup<T>>(entity).await;
+    }
+
+    for (entity, bind_group) in to_add.items.drain(..) {
+        commands.insert_component(entity, bind_group).await;
+    }
+}
+
+pub struct ResourceBindGroupPlugin<T: Any + Send + Sync + CreateBindGroup>(
+    std::marker::PhantomData<T>,
+);
+
+impl<T: Any + Send + Sync + CreateBindGroup> Default for ResourceBindGroupPlugin<T> {
     fn default() -> Self {
         Self(std::marker::PhantomData)
     }
 }
 
-impl<T: Resource + CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
+impl<T: Any + Send + Sync + CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_system(create_resource_bind_group::<T>, ExtractBindGroupStage);
         Ok(())
     }
 }
 
-fn create_resource_bind_group<T: Resource + CreateBindGroup>(
+async fn create_resource_bind_group<T: Any + Send + Sync + CreateBindGroup>(
     mut commands: Commands,
-    mut data: ResMut<T>,
+    data: Res<T>,
     bind_group: Option<Res<BindGroup<T>>>,
     device: Res<WgpuDevice>,
     mut layout_cache: ResMut<BindGroupLayoutCache>,
+    mut staleness: ResMut<ResourceBindGroupStaleness>,
 ) {
     let mut stale = false;
-    if data.bind_group_stale() {
-        commands.remove_resource::<BindGroup<T>>();
+    if staleness.is_stale::<T>() {
+        commands.remove_resource::<BindGroup<T>>().await;
         stale = true;
     }
     if stale || bind_group.is_none() {
         let bind_group = BindGroup::new(&device, &*data, &mut layout_cache);
-        data.set_bind_group_stale(false);
-        commands.insert_resource(bind_group);
+        staleness.set_stale::<T>(false);
+        commands.insert_resource(bind_group).await;
     }
 }
 
-#[derive(Default, Resource)]
+#[derive(Default)]
 pub struct ExtractedAssetBindGroups {
     bind_groups: Lock<FxHashMap<UntypedHandle, UntypedHandle>>,
 }
@@ -243,28 +337,29 @@ impl<T: CreateBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
+async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
     mut commands: Commands,
     device: Res<WgpuDevice>,
-    mut assets: ResMut<Assets<T>>,
+    assets: Res<Assets<T>>,
     mut bind_group_assets: ResMut<Assets<BindGroup<T>>>,
-    query: Query<&Handle<T>>,
+    mut query: Query<(Entity, &Handle<T>)>,
     asset_bind_groups: Res<ExtractedAssetBindGroups>,
     mut layout_cache: ResMut<BindGroupLayoutCache>,
-    bind_group_handle_query: Query<&Handle<BindGroup<T>>>,
+    mut bind_group_handle_query: Query<&Handle<BindGroup<T>>>,
+    mut staleness: ResMut<AssetBindGroupStaleness>,
 ) {
     for (entity, handle) in query.iter() {
         // check for bind group staleness
         let mut stale = false;
-        if let Some(asset) = assets.get(*handle) {
-            if asset.bind_group_stale() {
-                commands.remove_component::<Handle<BindGroup<T>>>(entity);
-                asset_bind_groups
-                    .bind_groups
-                    .write()
-                    .remove(&handle.into_untyped());
-                stale = true;
-            }
+        if staleness.is_stale(handle.id()) {
+            commands
+                .remove_component::<Handle<BindGroup<T>>>(entity)
+                .await;
+            asset_bind_groups
+                .bind_groups
+                .write()
+                .remove(&handle.into_untyped());
+            stale = true;
         }
 
         if bind_group_handle_query.get(entity).is_some() && !stale {
@@ -277,11 +372,10 @@ fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
             .get(&handle.into_untyped())
         {
             let bind_group_handle = Handle::<BindGroup<T>>::try_from(*bind_group_handle).unwrap();
-            drop(handle);
-            commands.insert_component(entity, bind_group_handle);
+            commands.insert_component(entity, bind_group_handle).await;
         } else {
-            let mut asset = assets.get_mut(*handle).unwrap();
-            asset.set_bind_group_stale(false);
+            let asset = assets.get(*handle).unwrap();
+            staleness.set_stale(handle.id(), false);
             let bind_group = BindGroup::new(&device, &*asset, &mut layout_cache);
             log::trace!(
                 "Created bind group for asset: {:?}",
@@ -289,8 +383,7 @@ fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
             );
             let bind_group_handle = bind_group_assets.insert(bind_group);
             asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
-            drop(handle);
-            commands.insert_component(entity, bind_group_handle);
+            commands.insert_component(entity, bind_group_handle).await;
         }
     }
 }

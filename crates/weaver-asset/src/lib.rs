@@ -2,6 +2,7 @@ use std::{
     cell::UnsafeCell,
     fmt::Debug,
     fs::File,
+    future::Future,
     hash::{Hash, Hasher},
     io::{BufReader, Read},
     marker::PhantomData,
@@ -12,8 +13,8 @@ use std::{
 
 use weaver_app::{App, SubApp};
 use weaver_ecs::{
-    prelude::{reflect_trait, Component, Res, ResMut, Resource, SystemStage},
-    world::{FromWorld, World},
+    prelude::{Commands, Res, ResMut, SystemStage},
+    world::{ConstructFromWorld, FromWorld},
 };
 use weaver_event::{Event, Events};
 use weaver_util::{
@@ -23,22 +24,20 @@ use zip::ZipArchive;
 
 pub mod prelude {
     pub use crate::{
-        Asset, AssetLoadQueue, AssetLoadQueues, Assets, DirectLoader, Filesystem, Handle, Loader,
-        PathAndFilesystem, ReflectAsset, UntypedHandle,
+        Asset, AssetLoadQueue, Assets, DirectLoader, Filesystem, Handle, Loader, PathAndFilesystem,
+        UntypedHandle,
     };
     pub use weaver_asset_macros::Asset;
 }
 
 define_atomic_id!(AssetId);
 
-#[reflect_trait]
 pub trait Asset: DowncastSync {}
 impl_downcast!(Asset);
 
 impl Asset for () {}
 impl<T: Asset> Asset for Vec<T> {}
 
-#[derive(Component, Resource)]
 pub struct Handle<T: Asset> {
     id: AssetId,
     _marker: PhantomData<T>,
@@ -198,7 +197,6 @@ impl<'w, T: Asset> DerefMut for AssetMut<'w, T> {
     }
 }
 
-#[derive(Resource)]
 pub struct Assets<T: Asset> {
     storage: FxHashMap<AssetId, UnsafeCell<T>>,
 }
@@ -261,7 +259,7 @@ impl<T: Asset> Assets<T> {
 }
 
 /// Virtual filesystem created from one or more directories or archives.
-#[derive(Default, Resource)]
+#[derive(Default)]
 pub struct Filesystem {
     roots: Vec<PathBuf>,
     archives: Vec<Lock<ZipArchive<BufReader<File>>>>,
@@ -416,8 +414,12 @@ impl LoadSource for Vec<u8> {}
 impl LoadSource for BoxedAsset {}
 impl<T: Asset> LoadSource for T {}
 
-pub trait Loader<T: Asset, S: LoadSource>: FromWorld + Send + Sync + 'static {
-    fn load(&self, source: S, load_queues: &AssetLoadQueues<'_>) -> Result<T>;
+pub trait Loader<T: Asset, S: LoadSource>: ConstructFromWorld + Send + Sync + 'static {
+    fn load(
+        &self,
+        source: S,
+        commands: &mut Commands,
+    ) -> impl Future<Output = Result<T>> + Send + Sync;
 }
 
 #[derive(Clone, Copy)]
@@ -430,7 +432,7 @@ impl<T: Asset> Default for DirectLoader<T> {
 }
 
 impl<T: Asset> Loader<T, BoxedAsset> for DirectLoader<T> {
-    fn load(&self, source: BoxedAsset, _load_queues: &AssetLoadQueues<'_>) -> Result<T> {
+    async fn load(&self, source: BoxedAsset, _commands: &mut Commands) -> Result<T> {
         source
             .downcast()
             .map_err(|_| anyhow!("failed to downcast asset"))
@@ -439,7 +441,7 @@ impl<T: Asset> Loader<T, BoxedAsset> for DirectLoader<T> {
 }
 
 impl<T: Asset> Loader<T, T> for DirectLoader<T> {
-    fn load(&self, source: T, _load_queues: &AssetLoadQueues<'_>) -> Result<T> {
+    async fn load(&self, source: T, _commands: &mut Commands) -> Result<T> {
         Ok(source)
     }
 }
@@ -477,7 +479,6 @@ impl<T: Asset, S: LoadSource> Debug for AssetLoadRequest<T, S> {
     }
 }
 
-#[derive(Resource)]
 pub struct AssetLoadQueue<T: Asset, L: Loader<T, S>, S: LoadSource> {
     queue: Lock<Vec<AssetLoadRequest<T, S>>>,
     _marker: PhantomData<L>,
@@ -527,27 +528,33 @@ impl<T: Asset, L: Loader<T, S>, S: LoadSource> AssetLoadQueue<T, L, S> {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct AssetLoadQueues<'w> {
-    world: &'w World,
+pub trait AssetCommands {
+    fn load_asset<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
+        &mut self,
+        source: impl Into<S> + Send + Sync + 'static,
+    ) -> impl Future<Output = Handle<T>> + Send + Sync;
+    fn load_asset_direct<T: Asset>(
+        &mut self,
+        asset: T,
+    ) -> impl Future<Output = Handle<T>> + Send + Sync;
 }
 
-impl<'w> AssetLoadQueues<'w> {
-    pub fn new(world: &'w World) -> Self {
-        Self { world }
+impl AssetCommands for Commands {
+    async fn load_asset<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
+        &mut self,
+        source: impl Into<S> + Send + Sync + 'static,
+    ) -> Handle<T> {
+        self.run(|world| {
+            world
+                .get_resource::<AssetLoadQueue<T, L, S>>()
+                .map(|load_queue| load_queue.enqueue(source.into()))
+                .unwrap()
+        })
+        .await
     }
 
-    pub fn enqueue<T: Asset, L: Loader<T, S>, S: LoadSource>(
-        &self,
-        source: impl Into<S>,
-    ) -> Option<Handle<T>> {
-        self.world
-            .get_resource::<AssetLoadQueue<T, L, S>>()
-            .map(|load_queue| load_queue.enqueue(source))
-    }
-
-    pub fn enqueue_direct<T: Asset>(&self, source: impl Into<T>) -> Option<Handle<T>> {
-        self.enqueue::<T, DirectLoader<T>, T>(source.into())
+    async fn load_asset_direct<T: Asset>(&mut self, asset: T) -> Handle<T> {
+        self.load_asset::<T, DirectLoader<T>, T>(asset).await
     }
 }
 
@@ -574,7 +581,7 @@ impl<T: Asset> AssetLoaded<T> {
     }
 }
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct AssetLoadStatus {
     load_status: Lock<FxHashMap<AssetId, bool>>,
 }
@@ -617,32 +624,39 @@ pub trait AssetApp {
 
 impl AssetApp for SubApp {
     fn add_asset<T: Asset>(&mut self) -> &mut Self {
-        if !self.has_resource::<Assets<T>>() {
-            self.init_resource::<Assets<T>>();
+        if !self.world().has_resource::<Assets<T>>() {
+            self.world_mut().init_resource::<Assets<T>>();
         }
-        if !self.has_resource::<AssetLoadStatus>() {
-            self.init_resource::<AssetLoadStatus>();
+        if !self.world().has_resource::<AssetLoadStatus>() {
+            self.world_mut().init_resource::<AssetLoadStatus>();
         }
-        if !self.has_resource::<AssetLoadQueue<T, DirectLoader<T>, BoxedAsset>>() {
+        if !self
+            .world()
+            .has_resource::<AssetLoadQueue<T, DirectLoader<T>, BoxedAsset>>()
+        {
             self.add_asset_loader::<T, DirectLoader<T>, BoxedAsset>();
         }
-        if !self.has_resource::<AssetLoadQueue<T, DirectLoader<T>, T>>() {
+        if !self
+            .world()
+            .has_resource::<AssetLoadQueue<T, DirectLoader<T>, T>>()
+        {
             self.add_asset_loader::<T, DirectLoader<T>, T>();
         }
         self
     }
 
     fn add_asset_loader<T: Asset, L: Loader<T, S>, S: LoadSource>(&mut self) -> &mut Self {
-        if !self.has_resource::<AssetLoadQueue<T, L, S>>() {
-            self.init_resource::<AssetLoadQueue<T, L, S>>();
+        if !self.world().has_resource::<AssetLoadQueue<T, L, S>>() {
+            self.world_mut().init_resource::<AssetLoadQueue<T, L, S>>();
 
-            self.init_resource::<Events<AssetLoaded<T>>>();
+            self.world_mut().init_resource::<Events<AssetLoaded<T>>>();
 
-            if !self.has_system_stage::<AssetLoad>() {
-                self.push_update_stage::<AssetLoad>();
+            if !self.world().has_system_stage::<AssetLoad>() {
+                self.world_mut().push_update_stage::<AssetLoad>();
             }
 
-            self.add_system(load_all_assets::<T, L, S>, AssetLoad);
+            self.world_mut()
+                .add_system(load_all_assets::<T, L, S>, AssetLoad);
         }
         self
     }
@@ -657,7 +671,7 @@ impl AssetApp for SubApp {
     >(
         &mut self,
     ) -> &mut Self {
-        self.add_system_dependency(
+        self.world_mut().add_system_dependency(
             load_all_assets::<T, L, S>,
             load_all_assets::<D, DL, DS>,
             AssetLoad,
@@ -693,8 +707,9 @@ impl AssetApp for App {
     }
 }
 
-fn load_all_assets<T: Asset, L: Loader<T, S>, S: LoadSource>(
-    world: &mut World,
+async fn load_all_assets<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
+    mut commands: Commands,
+    loader: FromWorld<L>,
     load_queue: Res<AssetLoadQueue<T, L, S>>,
     mut assets: ResMut<Assets<T>>,
     load_events: Res<Events<AssetLoaded<T>>>,
@@ -705,39 +720,34 @@ fn load_all_assets<T: Asset, L: Loader<T, S>, S: LoadSource>(
     }
     log::debug!("Loading all assets of type: {}", std::any::type_name::<T>());
 
-    let loader = Arc::new(L::from_world(world));
-
     let n = load_queue.len();
-    let load_queues = AssetLoadQueues::new(world);
 
-    std::thread::scope(|scope| {
-        let mut handles = Vec::with_capacity(n);
+    let mut handles = Vec::with_capacity(n);
 
-        for request in load_queue.queue.write().drain(..) {
-            if assets.get(request.handle).is_some() || load_status.is_loaded(request.handle) {
-                continue;
-            }
-            let request_str = format!("{:?}", request);
-            log::trace!("Loading asset: {request_str}");
-            let loader = loader.clone();
-            let join_handle =
-                scope.spawn(move || match loader.load(request.source, &load_queues) {
-                    Ok(asset) => Some(asset),
-                    Err(err) => {
-                        log::error!("Failed to load asset: {request_str}: {err}");
-                        None
-                    }
-                });
-
-            handles.push((request.handle, join_handle));
+    for request in load_queue.queue.write().drain(..) {
+        if assets.get(request.handle).is_some() || load_status.is_loaded(request.handle) {
+            continue;
         }
-
-        for (handle, join_handle) in handles {
-            if let Some(asset) = join_handle.join().unwrap() {
-                assets.insert_manual(asset, handle.id);
-                load_status.manually_set_loaded(handle);
-                load_events.send(AssetLoaded::new(handle.id));
+        let request_str = format!("{:?}", request);
+        log::trace!("Loading asset: {request_str}");
+        let asset = match loader.load(request.source, &mut commands).await {
+            Ok(asset) => Some(asset),
+            Err(err) => {
+                log::error!("Failed to load asset: {request_str}: {err}");
+                None
             }
+        };
+
+        // let asset = todo!();
+
+        handles.push((request.handle, asset));
+    }
+
+    for (handle, asset) in handles {
+        if let Some(asset) = asset {
+            assets.insert_manual(asset, handle.id);
+            load_status.manually_set_loaded(handle);
+            load_events.send(AssetLoaded::new(handle.id));
         }
-    });
+    }
 }

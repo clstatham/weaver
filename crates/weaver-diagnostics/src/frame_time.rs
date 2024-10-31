@@ -1,11 +1,7 @@
 use weaver_app::{plugin::Plugin, App, PreUpdate};
-use weaver_ecs::{
-    component::{Res, ResMut},
-    prelude::Resource,
-};
+use weaver_ecs::component::{Res, ResMut};
 use weaver_util::Result;
 
-#[derive(Resource)]
 pub struct FrameTime {
     pub frame_time: f32,
     pub fps: f32,
@@ -29,7 +25,6 @@ impl Plugin for FrameTimePlugin {
     }
 }
 
-#[derive(Resource)]
 pub struct FrameTimeLogger {
     pub log_interval: std::time::Duration,
     pub last_log: std::time::Instant,
@@ -52,7 +47,7 @@ impl Plugin for LogFrameTimePlugin {
     }
 }
 
-fn update_frame_time(mut frame_time: ResMut<FrameTime>) {
+async fn update_frame_time(mut frame_time: ResMut<FrameTime>) {
     let now = std::time::Instant::now();
     frame_time.frame_time = now.duration_since(frame_time.last_update).as_secs_f32();
     frame_time.fps = 1.0 / frame_time.frame_time;
@@ -60,7 +55,7 @@ fn update_frame_time(mut frame_time: ResMut<FrameTime>) {
     frame_time.frame_count += 1;
 }
 
-fn log_frame_time(frame_time: Res<FrameTime>, mut logger: ResMut<FrameTimeLogger>) {
+async fn log_frame_time(frame_time: Res<FrameTime>, mut logger: ResMut<FrameTimeLogger>) {
     let now = std::time::Instant::now();
     if now.duration_since(logger.last_log) >= logger.log_interval {
         log::info!(

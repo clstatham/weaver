@@ -4,9 +4,8 @@ use egui_winit::{winit, State};
 use weaver_app::{plugin::Plugin, App, PostUpdate, PreUpdate};
 use weaver_ecs::{
     component::{Res, ResMut},
-    prelude::Resource,
+    prelude::Commands,
     system_schedule::SystemStage,
-    world::World,
 };
 use weaver_event::EventRx;
 use weaver_renderer::{
@@ -23,7 +22,7 @@ pub mod prelude {
     pub use egui;
 }
 
-#[derive(Resource, Clone)]
+#[derive(Clone)]
 pub struct EguiContext {
     state: SharedLock<State>,
     renderer: SharedLock<Renderer>,
@@ -183,39 +182,43 @@ impl Plugin for EguiPlugin {
         app.add_system(end_frame, PostUpdate);
         app.add_system(egui_events, PostUpdate);
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
-        render_app.add_system(extract_egui_context, ExtractStage);
-        render_app.add_update_stage_after::<RenderUi, Render>();
-        render_app.add_system(render, RenderUi);
+        render_app
+            .world_mut()
+            .add_system(extract_egui_context, ExtractStage);
+        render_app
+            .world_mut()
+            .add_update_stage_after::<RenderUi, Render>();
+        render_app.world_mut().add_system(render, RenderUi);
 
         Ok(())
     }
 }
 
-fn extract_egui_context(
-    render_world: &mut World,
-    mut main_world: ResMut<MainWorld>,
+async fn extract_egui_context(
+    mut commands: Commands,
+    main_world: Res<MainWorld>,
     window: Res<Window>,
     device: Res<WgpuDevice>,
 ) {
-    if render_world.has_resource::<EguiContext>() {
+    if commands.has_resource::<EguiContext>().await {
         return;
     }
     let egui_context = EguiContext::new(&device, &window);
-    render_world.insert_resource(egui_context.clone());
+    commands.insert_resource(egui_context.clone()).await;
     main_world.insert_resource(egui_context);
 }
 
-pub fn begin_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
+pub async fn begin_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
     egui_context.begin_frame(&window);
 }
 
-pub fn end_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
+pub async fn end_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
     egui_context.end_frame();
 
     egui_context.pre_render_on_main_thread(&window);
 }
 
-fn render(
+async fn render(
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
     current_frame: Res<CurrentFrame>,
@@ -245,7 +248,7 @@ fn render(
     renderer.enqueue_command_buffer(encoder.finish());
 }
 
-fn egui_events(egui_context: Res<EguiContext>, window: Res<Window>, rx: EventRx<WinitEvent>) {
+async fn egui_events(egui_context: Res<EguiContext>, window: Res<Window>, rx: EventRx<WinitEvent>) {
     for event in rx.iter() {
         if let winit::event::Event::WindowEvent { window_id, event } = &event.event {
             if window.id() == *window_id {

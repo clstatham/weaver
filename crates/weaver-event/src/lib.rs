@@ -5,10 +5,8 @@ use std::{
 };
 
 use weaver_ecs::{
-    change::Tick,
-    prelude::{Resource, UnsafeWorldCell},
     system::{SystemAccess, SystemParam},
-    world::World,
+    world::{Tick, World},
 };
 use weaver_util::{
     lock::{Read, SharedLock},
@@ -34,7 +32,6 @@ impl<'a, T: Event> Deref for EventRef<'a, T> {
     }
 }
 
-#[derive(Resource)]
 pub struct Events<T: Event> {
     front_buffer: SharedLock<VecDeque<T>>,
     back_buffer: SharedLock<VecDeque<T>>,
@@ -189,97 +186,50 @@ impl<'a, T: Event> Iterator for EventIter<'a, T> {
     }
 }
 
-unsafe impl<T: Event> SystemParam for EventTx<T> {
-    type State = ();
-    type Item<'w, 's> = Self;
-
-    fn validate_access(access: &SystemAccess) -> bool {
-        !access
-            .resources_read
-            .iter()
-            .any(|r| *r == TypeId::of::<Events<T>>())
-            && !access
-                .resources_written
-                .iter()
-                .any(|r| *r == TypeId::of::<Events<T>>())
-    }
+impl<T: Event> SystemParam for EventTx<T> {
+    type Item = EventTx<T>;
 
     fn access() -> SystemAccess {
         SystemAccess {
-            exclusive: false,
+            exclusive: true,
             resources_written: FxHashSet::from_iter([TypeId::of::<Events<T>>()]),
             ..Default::default()
         }
     }
 
-    fn init_state(_: &mut World) -> Self::State {}
-
-    unsafe fn fetch<'w, 's>(
-        _: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        if let Some(events) = unsafe { world.get_resource::<Events<T>>() } {
+    fn fetch(world: &World) -> Self::Item {
+        if let Some(events) = world.get_resource::<Events<T>>() {
             EventTx::new(events.clone())
-        } else if let Some(manual_events) =
-            unsafe { world.get_resource::<ManuallyUpdatedEvents<T>>() }
-        {
-            EventTx::new(manual_events.events.clone())
         } else {
             panic!("Events resource not found");
         }
     }
 }
 
-unsafe impl<T: Event> SystemParam for EventRx<T> {
-    type State = ();
-    type Item<'w, 's> = Self;
-
-    fn validate_access(access: &SystemAccess) -> bool {
-        !access
-            .resources_read
-            .iter()
-            .any(|r| *r == TypeId::of::<Events<T>>())
-            && !access
-                .resources_written
-                .iter()
-                .any(|r| *r == TypeId::of::<Events<T>>())
-    }
-
-    fn init_state(_: &mut World) -> Self::State {}
+impl<T: Event> SystemParam for EventRx<T> {
+    type Item = EventRx<T>;
 
     fn access() -> SystemAccess {
         SystemAccess {
             exclusive: false,
-            resources_written: FxHashSet::from_iter([TypeId::of::<Events<T>>()]),
+            resources_read: FxHashSet::from_iter([TypeId::of::<Events<T>>()]),
             ..Default::default()
         }
     }
 
-    unsafe fn fetch<'w, 's>(
-        _: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        if let Some(events) = unsafe { world.get_resource::<Events<T>>() } {
+    fn fetch(world: &World) -> Self::Item {
+        if let Some(events) = world.get_resource::<Events<T>>() {
             EventRx::new(
                 events.clone(),
                 world.last_change_tick(),
                 world.read_change_tick(),
             )
-        } else if let Some(manual_events) =
-            unsafe { world.get_resource::<ManuallyUpdatedEvents<T>>() }
-        {
-            EventRx::new(
-                manual_events.events.clone(),
-                world.last_change_tick(),
-                world.read_change_tick(),
-            )
         } else {
             panic!("Events resource not found");
         }
     }
 }
 
-#[derive(Resource)]
 pub struct ManuallyUpdatedEvents<T: Event> {
     pub events: Events<T>,
 }

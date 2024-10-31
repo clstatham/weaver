@@ -2,6 +2,7 @@ pub mod atomic_id;
 pub mod lock;
 pub mod logging;
 pub mod maps;
+pub mod sorted_vec;
 
 pub use crate::lock::*;
 pub use crate::maps::{FxHashMap, FxHashSet, TypeIdMap};
@@ -20,6 +21,7 @@ pub mod prelude {
         lock::*,
         log_once,
         maps::{FxHashMap, FxHashSet, TypeIdMap, TypeIdSet},
+        sorted_vec::SortedVec,
         trace_once, warn_once, Downcast, DowncastSync, Error, Result, SyncCell,
     };
 }

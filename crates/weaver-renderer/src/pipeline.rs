@@ -1,10 +1,7 @@
 use std::{any::TypeId, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{
-    component::{Res, ResMut},
-    prelude::Resource,
-};
+use weaver_ecs::component::{Res, ResMut};
 use weaver_util::{
     define_atomic_id, TypeIdMap, {DowncastSync, FxHashMap, Result},
 };
@@ -13,7 +10,7 @@ use crate::{bind_group::BindGroupLayoutCache, ExtractPipelineStage, WgpuDevice};
 
 define_atomic_id!(PipelineId);
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct RenderPipelineCache {
     layout_cache: FxHashMap<PipelineId, RenderPipelineLayout>,
     pipeline_cache: FxHashMap<PipelineId, RenderPipeline>,
@@ -165,7 +162,7 @@ impl<T: CreateRenderPipeline> Plugin for RenderPipelinePlugin<T> {
     }
 }
 
-fn extract_render_pipeline<T: CreateRenderPipeline>(
+async fn extract_render_pipeline<T: CreateRenderPipeline>(
     device: Res<WgpuDevice>,
     mut pipeline_cache: ResMut<RenderPipelineCache>,
     mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,
@@ -175,7 +172,7 @@ fn extract_render_pipeline<T: CreateRenderPipeline>(
         .unwrap();
 }
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct ComputePipelineCache {
     layout_cache: TypeIdMap<ComputePipelineLayout>,
     pipeline_cache: TypeIdMap<ComputePipeline>,
@@ -332,7 +329,7 @@ impl<T: CreateComputePipeline> Plugin for ComputePipelinePlugin<T> {
     }
 }
 
-fn extract_compute_pipeline<T: CreateComputePipeline>(
+async fn extract_compute_pipeline<T: CreateComputePipeline>(
     device: Res<WgpuDevice>,
     mut pipeline_cache: ResMut<ComputePipelineCache>,
     mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,

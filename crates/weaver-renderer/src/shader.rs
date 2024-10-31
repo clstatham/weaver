@@ -6,7 +6,7 @@ use std::{
 
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
 use weaver_asset::prelude::*;
-use weaver_ecs::prelude::Resource;
+use weaver_ecs::prelude::Commands;
 use weaver_util::{bail, Result};
 
 #[derive(Debug, Clone, Asset)]
@@ -33,11 +33,11 @@ impl Shader {
     }
 }
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct ShaderLoader;
 
 impl Loader<Shader, PathBuf> for ShaderLoader {
-    fn load(&self, source: PathBuf, _load_queues: &AssetLoadQueues<'_>) -> Result<Shader> {
+    async fn load(&self, source: PathBuf, _commands: &mut Commands) -> Result<Shader> {
         Ok(Shader::new(source))
     }
 }

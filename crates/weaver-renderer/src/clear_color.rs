@@ -1,19 +1,22 @@
 use weaver_app::{plugin::Plugin, App};
 use weaver_core::color::Color;
 use weaver_ecs::{
-    component::Res, prelude::Resource, storage::Ref, system::SystemParamItem, world::World,
+    component::Res,
+    prelude::{ResMut, System},
+    query::Query,
+    system::IntoSystem,
 };
 use weaver_util::Result;
 
 use crate::{
     camera::ViewTarget,
     extract::{ExtractResource, ExtractResourcePlugin},
-    graph::{RenderCtx, RenderGraphCtx, ViewNode},
     hdr::HdrRenderTarget,
-    RenderApp, RenderLabel,
+    resources::ActiveCommandEncoder,
+    Render, RenderApp,
 };
 
-#[derive(Resource, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct ClearColor(pub Color);
 
 impl ExtractResource for ClearColor {
@@ -41,25 +44,25 @@ impl Plugin for ClearColorPlugin {
         render_app
             .add_plugin(ExtractResourcePlugin::<ClearColor>::default())
             .unwrap();
+
+        render_app
+            .world_mut()
+            .add_system(render_clear_color, Render);
         Ok(())
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct ClearColorLabel;
-impl RenderLabel for ClearColorLabel {}
-
-pub struct ClearColorNode {
+pub struct ClearColorRenderable {
     pub color: Color,
 }
 
-impl ClearColorNode {
+impl ClearColorRenderable {
     pub fn new(color: Color) -> Self {
         Self { color }
     }
 }
 
-impl Default for ClearColorNode {
+impl Default for ClearColorRenderable {
     fn default() -> Self {
         Self {
             color: Color::BLACK,
@@ -67,58 +70,40 @@ impl Default for ClearColorNode {
     }
 }
 
-impl ViewNode for ClearColorNode {
-    type Param = Res<'static, HdrRenderTarget>;
-    type ViewQueryFetch = &'static ViewTarget;
-    type ViewQueryFilter = ();
+pub async fn render_clear_color(
+    hdr_target: Res<HdrRenderTarget>,
+    mut view_query: Query<&ViewTarget>,
+    mut command_encoder: ResMut<ActiveCommandEncoder>,
+    clear_color: Res<ClearColor>,
+) {
+    let color = wgpu::Color {
+        r: clear_color.0.r as f64,
+        g: clear_color.0.g as f64,
+        b: clear_color.0.b as f64,
+        a: clear_color.0.a as f64,
+    };
 
-    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
-        if let Some(clear_color) = render_world.get_resource_mut::<ClearColor>() {
-            self.color = clear_color.0;
-        }
-        Ok(())
-    }
-
-    fn run(
-        &self,
-        _render_world: &World,
-        _graph_ctx: &mut RenderGraphCtx,
-        render_ctx: &mut RenderCtx,
-        hdr_target: &SystemParamItem<Self::Param>,
-        view_query: &Ref<ViewTarget>,
-    ) -> Result<()> {
-        let color = self.color;
-        let color = wgpu::Color {
-            r: color.r as f64,
-            g: color.g as f64,
-            b: color.b as f64,
-            a: color.a as f64,
-        };
-
-        let _pass = render_ctx
-            .command_encoder()
-            .begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("clear_color"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: hdr_target.color_target(),
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &view_query.depth_target,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
+    for view_query in view_query.iter() {
+        let _pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("clear_color"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: hdr_target.color_target(),
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(color),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &view_query.depth_target,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
                 }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-        Ok(())
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
     }
 }

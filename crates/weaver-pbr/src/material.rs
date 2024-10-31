@@ -1,8 +1,8 @@
 use encase::ShaderType;
 use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{prelude::Asset, Assets, Handle, ReflectAsset};
+use weaver_asset::{prelude::Asset, Assets, Handle};
 use weaver_core::{color::Color, texture::Texture};
-use weaver_ecs::{component::Res, prelude::Reflect};
+use weaver_ecs::component::Res;
 use weaver_renderer::{
     asset::{ExtractRenderAssetPlugin, RenderAsset},
     bind_group::{AssetBindGroupPlugin, BindGroupLayout, CreateBindGroup},
@@ -20,23 +20,18 @@ pub const BLACK_TEXTURE: Handle<Texture> =
 pub const ERROR_TEXTURE: Handle<Texture> =
     Handle::from_u128(288942464416563327199333453807837020723);
 
-#[derive(Reflect, Asset)]
-#[reflect(ReflectAsset)]
+#[derive(Asset)]
 pub struct Material {
     pub diffuse: Color,
-    #[reflect(ignore)]
     pub diffuse_texture: Handle<Texture>,
 
-    #[reflect(ignore)]
     pub normal_texture: Handle<Texture>,
 
     pub metallic: f32,
     pub roughness: f32,
-    #[reflect(ignore)]
     pub metallic_roughness_texture: Handle<Texture>,
 
     pub ao: f32,
-    #[reflect(ignore)]
     pub ao_texture: Handle<Texture>,
 
     pub texture_scale: f32,
@@ -100,7 +95,7 @@ pub struct GpuMaterial {
 
 impl RenderAsset for GpuMaterial {
     type Source = Material;
-    type Param = Extract<'static, 'static, Res<'static, Assets<Texture>>>;
+    type Param = Extract<Res<Assets<Texture>>>;
 
     fn extract_render_asset(
         base_asset: &Material,

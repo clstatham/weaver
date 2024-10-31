@@ -12,32 +12,40 @@ use weaver_asset::Filesystem;
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::{FrameTime, LogFrameTimePlugin};
 use weaver_egui::{egui, EguiContext, EguiPlugin};
-use weaver_gizmos::GizmoNodeLabel;
+use weaver_gizmos::{render_gizmos, GizmoRenderable};
 use weaver_q3::{
     bsp::{
         loader::{Bsp, BspLoader},
-        render::BspRenderNodeLabel,
+        render::{render_bsps, BspRenderable},
     },
     pk3::Pk3Filesystem,
     Q3Plugin,
 };
-use weaver_renderer::{
-    camera::PrimaryCamera, clear_color::ClearColorPlugin, graph::RenderGraphApp, RenderApp,
-};
+use weaver_renderer::{camera::PrimaryCamera, clear_color::ClearColorPlugin, Render, RenderApp};
 
 pub mod camera;
 pub mod transform_gizmo;
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 struct FpsHistory {
     pub history: VecDeque<f32>,
     pub display_fps: f32,
     smoothing_buffer: Vec<f32>,
 }
 
-fn main() -> Result<()> {
+#[main]
+async fn main() -> Result<()> {
     env_logger::init();
 
+    // tokio::runtime::Builder::new_multi_thread()
+    //     .enable_all()
+    //     .build()?
+    //     .block_on(run())?;
+    run().await?;
+    Ok(())
+}
+
+async fn run() -> Result<()> {
     App::new()
         .add_plugin(CoreTypesPlugin)?
         .add_plugin(WinitPlugin {
@@ -47,17 +55,19 @@ fn main() -> Result<()> {
         .add_plugin(TimePlugin)?
         .add_plugin(InputPlugin)?
         .add_plugin(RendererPlugin)?
+        .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
         .add_plugin(PbrPlugin)?
-        .add_plugin(GizmoPlugin)?
-        .add_plugin(EguiPlugin)?
+        // .add_plugin(GizmoPlugin)?
+        // .add_plugin(EguiPlugin)?
         .add_plugin(Q3Plugin)?
         .add_plugin(LogFrameTimePlugin {
             log_interval: std::time::Duration::from_secs(5),
         })?
-        .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
         .configure_sub_app::<RenderApp>(|app| {
-            app.add_render_main_graph_edge(SkyboxNodeLabel, BspRenderNodeLabel);
-            app.add_render_main_graph_edge(BspRenderNodeLabel, GizmoNodeLabel);
+            app.world_mut()
+                .add_system_dependency(render_bsps, render_skybox, Render);
+            // app.world_mut()
+            //     .add_system_dependency(render_gizmos, render_bsps, Render);
         })
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
         .insert_resource(Arc::new(
@@ -67,34 +77,36 @@ fn main() -> Result<()> {
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)
         .add_system(camera::update_aspect_ratio, Update)
-        .add_system(fps_ui, Update)
+        // .add_system(fps_ui, Update)
         .run()
 }
 
-fn setup(
+async fn setup(
     mut commands: Commands,
     fs: Res<Arc<Filesystem>>,
     bsp_loader: Res<AssetLoadQueue<Bsp, BspLoader, PathAndFilesystem>>,
 ) {
-    commands.spawn((
-        Camera::default(),
-        camera::FlyCameraController {
-            aspect: 16.0 / 9.0,
-            speed: 320.0,
-            fov: 70.0f32.to_radians(),
-            near: 0.1,
-            far: 100000.0,
-            sensitivity: 40.0,
-            ..Default::default()
-        },
-        PrimaryCamera,
-    ));
+    commands
+        .spawn((
+            Camera::default(),
+            camera::FlyCameraController {
+                aspect: 16.0 / 9.0,
+                speed: 320.0,
+                fov: 70.0f32.to_radians(),
+                near: 0.1,
+                far: 100000.0,
+                sensitivity: 40.0,
+                ..Default::default()
+            },
+            PrimaryCamera,
+        ))
+        .await;
 
     let bsp = bsp_loader.enqueue(("maps/q3dm6.bsp".into(), fs.clone()));
-    commands.insert_resource(bsp);
+    commands.insert_resource(bsp).await;
 }
 
-fn fps_ui(
+async fn fps_ui(
     time: Res<Time>,
     frame_time: Res<FrameTime>,
     mut history: ResMut<FpsHistory>,

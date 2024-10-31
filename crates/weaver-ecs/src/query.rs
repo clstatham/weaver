@@ -1,666 +1,406 @@
-use std::{any::TypeId, marker::PhantomData};
+use std::any::{Any, TypeId};
 
+use any_vec::AnyVec;
 use weaver_util::FxHashSet;
 
-use crate::prelude::{
-    Archetype, SystemAccess, SystemParam, Tick, Ticks, TicksMut, UnsafeWorldCell,
-};
-
-use super::{
-    component::Component,
+use crate::{
     entity::Entity,
-    storage::{Mut, Ref},
-    world::World,
+    loan::{Loan, LoanMut},
+    prelude::{Archetype, SystemAccess, SystemParam},
+    storage::Components,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum QueryFetchAccess {
-    ReadOnly,
-    ReadWrite,
+use super::world::World;
+
+pub type ReadLockedColumns = Option<(Loan<AnyVec<dyn Send + Sync>>, Vec<Entity>)>;
+pub type WriteLockedColumns = Option<(LoanMut<AnyVec<dyn Send + Sync>>, Vec<Entity>)>;
+
+pub trait Queryable: Send + Sync {
+    type LockedColumns: Send + Sync;
+    type Item<'a>: Send + Sync;
+
+    fn reads() -> Vec<TypeId>;
+
+    fn writes() -> Vec<TypeId>;
+
+    fn lock_columns(archetype: &Archetype) -> Self::LockedColumns;
+
+    fn iter_mut<'a, 'b: 'a>(
+        lock: &'b mut Self::LockedColumns,
+    ) -> impl Iterator<Item = Self::Item<'a>>;
+
+    fn get<'a, 'b: 'a>(entity: Entity, lock: &'b mut Self::LockedColumns)
+        -> Option<Self::Item<'a>>;
 }
 
-pub trait QueryFetch: Send + Sync {
-    type Item<'w>;
+pub type QueryableItem<'a, T> = <T as Queryable>::Item<'a>;
 
-    fn access() -> &'static [(TypeId, QueryFetchAccess)];
+impl Queryable for Entity {
+    type LockedColumns = Vec<Entity>;
+    type Item<'a> = Entity;
 
-    fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Self::Item<'_>>;
-
-    fn entity_iter<F: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_;
-
-    fn iter<F: QueryFilter>(
-        world: &World,
-        last_run: Tick,
-        this_run: Tick,
-    ) -> impl Iterator<Item = (Entity, Self::Item<'_>)> + '_;
-
-    fn test_archetype(archetype: &Archetype) -> bool;
-}
-
-impl<T: Component> QueryFetch for &T {
-    type Item<'w> = Ref<'w, T>;
-
-    fn access() -> &'static [(TypeId, QueryFetchAccess)] {
-        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFetchAccess)>> =
-            std::sync::OnceLock::new();
-        ACCESS.get_or_init(|| vec![(TypeId::of::<T>(), QueryFetchAccess::ReadOnly)])
+    fn reads() -> Vec<TypeId> {
+        vec![]
     }
 
-    fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Ref<'_, T>> {
-        let storage = world.storage();
-        let archetype = storage.get_archetype(entity)?;
-        if !Self::test_archetype(archetype) {
-            return None;
-        }
-        if !F::test_archetype(archetype) {
-            return None;
-        }
-
-        let column = archetype.get_column::<T>()?.into_inner();
-        let index = column.dense_index_of(entity.id())?;
-        let ticks = Ticks {
-            added: column.dense_added_ticks[index].read(),
-            changed: column.dense_changed_ticks[index].read(),
-            last_run: world.last_change_tick(),
-            this_run: world.read_change_tick(),
-        };
-        let data = column.dense[index].try_downcast_ref().unwrap();
-        let item = Ref::new(data, ticks);
-
-        Some(item)
+    fn writes() -> Vec<TypeId> {
+        vec![]
     }
 
-    fn entity_iter<F: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_ {
-        let storage = world.storage();
-        storage
-            .archetype_iter()
-            .filter(move |archetype| {
-                Self::test_archetype(archetype) && F::test_archetype(archetype)
-            })
-            .flat_map(move |archetype| {
-                archetype.get_column::<T>().map(move |column| {
-                    column
-                        .into_inner()
-                        .sparse_iter()
-                        .map(|entity| world.find_entity_by_id(entity).unwrap())
-                })
-            })
-            .flatten()
+    fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
+        archetype.entity_iter().collect()
     }
 
-    fn iter<F: QueryFilter>(
-        world: &World,
-        last_run: Tick,
-        this_run: Tick,
-    ) -> impl Iterator<Item = (Entity, Ref<'_, T>)> + '_ {
-        let storage = world.storage();
-        storage
-            .archetype_iter()
-            .filter(move |archetype| {
-                Self::test_archetype(archetype) && F::test_archetype(archetype)
-            })
-            .flat_map(move |archetype| {
-                archetype.get_column::<T>().map(move |column| {
-                    let column = column.into_inner();
-                    column
-                        .sparse_iter_with_ticks()
-                        .map(move |(entity, added, changed)| {
-                            let ticks = Ticks {
-                                added,
-                                changed,
-                                last_run,
-                                this_run,
-                            };
-                            let data = column.get(entity).unwrap().try_downcast_ref().unwrap();
-                            let item = Ref::new(data, ticks);
-                            let entity = world.find_entity_by_id(entity).unwrap();
-                            (entity, item)
-                        })
-                })
-            })
-            .flatten()
+    fn iter_mut<'a, 'b: 'a>(
+        lock: &'b mut Self::LockedColumns,
+    ) -> impl Iterator<Item = Self::Item<'a>> {
+        lock.iter().copied()
     }
 
-    fn test_archetype(archetype: &Archetype) -> bool {
-        archetype.contains_component_by_type_id(TypeId::of::<T>())
+    fn get<'a, 'b: 'a>(
+        entity: Entity,
+        lock: &'b mut Self::LockedColumns,
+    ) -> Option<Self::Item<'a>> {
+        lock.contains(&entity).then_some(entity)
     }
 }
 
-impl<T: Component> QueryFetch for &mut T {
-    type Item<'w> = Mut<'w, T>;
+impl<'s, T: Any + Send + Sync> Queryable for &'s T {
+    type LockedColumns = ReadLockedColumns;
+    type Item<'a> = &'a T;
 
-    fn access() -> &'static [(TypeId, QueryFetchAccess)] {
-        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFetchAccess)>> =
-            std::sync::OnceLock::new();
-        ACCESS.get_or_init(|| vec![(TypeId::of::<T>(), QueryFetchAccess::ReadWrite)])
+    fn reads() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
     }
 
-    fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Mut<'_, T>> {
-        let storage = world.storage();
-        let archetype = storage.get_archetype(entity)?;
-        if !Self::test_archetype(archetype) {
-            return None;
-        }
-        if !F::test_archetype(archetype) {
-            return None;
-        }
-
-        let column = archetype.get_column::<T>()?.into_inner();
-        let index = column.dense_index_of(entity.id())?;
-        let ticks = TicksMut {
-            added: column.dense_added_ticks[index].write(),
-            changed: column.dense_changed_ticks[index].write(),
-            last_run: world.last_change_tick(),
-            this_run: world.read_change_tick(),
-        };
-        let data = column.dense[index].try_downcast_mut().unwrap();
-        let item = Mut::new(data, ticks);
-
-        Some(item)
+    fn writes() -> Vec<TypeId> {
+        vec![]
     }
 
-    fn iter<F: QueryFilter>(
-        world: &World,
-        last_run: Tick,
-        this_run: Tick,
-    ) -> impl Iterator<Item = (Entity, Mut<'_, T>)> + '_ {
-        let storage = world.storage();
-        storage
-            .archetype_iter()
-            .filter(move |archetype| {
-                Self::test_archetype(archetype) && F::test_archetype(archetype)
-            })
-            .flat_map(move |archetype| {
-                archetype.get_column::<T>().map(move |column| {
-                    let column = column.into_inner();
-                    column
-                        .sparse_iter_with_ticks_mut()
-                        .map(move |(entity, added, changed)| {
-                            let ticks = TicksMut {
-                                added,
-                                changed,
-                                last_run,
-                                this_run,
-                            };
-                            let data = column.get(entity).unwrap().try_downcast_mut().unwrap();
-                            let item = Mut::new(data, ticks);
-                            let entity = world.find_entity_by_id(entity).unwrap();
-                            (entity, item)
-                        })
-                })
-            })
-            .flatten()
+    fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
+        let col_index = archetype.index_of(TypeId::of::<T>())?;
+        Some((
+            archetype.columns()[col_index]
+                .write()
+                .loan()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Failed to lock column of type {}",
+                        std::any::type_name::<T>()
+                    )
+                }),
+            archetype.entity_iter().collect(),
+        ))
     }
 
-    fn entity_iter<F: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_ {
-        let storage = world.storage();
-        storage
-            .archetype_iter()
-            .filter(move |archetype| {
-                Self::test_archetype(archetype) && F::test_archetype(archetype)
-            })
-            .flat_map(move |archetype| {
-                archetype.get_column::<T>().map(move |column| {
-                    column
-                        .into_inner()
-                        .sparse_iter()
-                        .map(|entity| world.find_entity_by_id(entity).unwrap())
-                })
-            })
-            .flatten()
+    fn iter_mut<'a, 'b: 'a>(
+        lock: &'b mut Self::LockedColumns,
+    ) -> impl Iterator<Item = Self::Item<'a>> {
+        lock.as_ref().map_or_else(
+            || [].iter(),
+            |(lock, _)| lock.downcast_ref::<T>().unwrap().into_iter(),
+        )
     }
 
-    fn test_archetype(archetype: &Archetype) -> bool {
-        archetype.contains_component_by_type_id(TypeId::of::<T>())
+    fn get<'a, 'b: 'a>(
+        entity: Entity,
+        lock: &'b mut Self::LockedColumns,
+    ) -> Option<Self::Item<'a>> {
+        lock.as_mut().and_then(|(lock, ents)| {
+            ents.iter()
+                .position(|&e| e == entity)
+                .map(move |index| lock.downcast_ref::<T>().unwrap().get(index).unwrap())
+        })
     }
 }
 
-pub type QueryFetchItem<'w, T> = <T as QueryFetch>::Item<'w>;
+impl<'s, T: Any + Send + Sync> Queryable for &'s mut T {
+    type LockedColumns = WriteLockedColumns;
+    type Item<'a> = &'a mut T;
 
-impl QueryFetch for () {
-    type Item<'w> = ();
-    fn access() -> &'static [(TypeId, QueryFetchAccess)] {
-        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFetchAccess)>> =
-            std::sync::OnceLock::new();
-        ACCESS.get_or_init(Vec::new)
+    fn reads() -> Vec<TypeId> {
+        vec![]
     }
 
-    fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Self::Item<'_>> {
-        let storage = world.storage();
-        let archetype = storage.get_archetype(entity)?;
-        if !F::test_archetype(archetype) {
-            return None;
-        }
-        Some(())
+    fn writes() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
     }
 
-    fn iter<F: QueryFilter>(
-        world: &World,
-        _: Tick,
-        _: Tick,
-    ) -> impl Iterator<Item = (Entity, Self::Item<'_>)> + '_ {
-        world
-            .storage()
-            .archetype_iter()
-            .filter(move |archetype| F::test_archetype(archetype))
-            .flat_map(|archetype| archetype.entity_iter().map(|entity| (entity, ())))
+    fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
+        let col_index = archetype.index_of(TypeId::of::<T>())?;
+        Some((
+            archetype.columns()[col_index]
+                .write()
+                .loan_mut()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Failed to mutably lock column of type {}",
+                        std::any::type_name::<T>()
+                    )
+                }),
+            archetype.entity_iter().collect(),
+        ))
     }
 
-    fn entity_iter<F: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_ {
-        world
-            .storage()
-            .archetype_iter()
-            .filter(move |archetype| F::test_archetype(archetype))
-            .flat_map(|archetype| archetype.entity_iter())
+    fn iter_mut<'a, 'b: 'a>(
+        lock: &'b mut Self::LockedColumns,
+    ) -> impl Iterator<Item = Self::Item<'a>> {
+        lock.as_mut().map_or_else(
+            || [].iter_mut(),
+            |(lock, _)| lock.downcast_mut::<T>().unwrap().into_iter(),
+        )
     }
 
-    fn test_archetype(_archetype: &Archetype) -> bool {
-        true
-    }
-}
-
-impl<T: QueryFetch> QueryFetch for Option<T> {
-    type Item<'w> = Option<T::Item<'w>>;
-    fn access() -> &'static [(TypeId, QueryFetchAccess)] {
-        T::access()
-    }
-
-    fn fetch<F: QueryFilter>(world: &World, entity: Entity) -> Option<Self::Item<'_>> {
-        if let Some(item) = T::fetch::<F>(world, entity) {
-            Some(Some(item))
-        } else {
-            Some(None)
-        }
-    }
-
-    fn iter<F: QueryFilter>(
-        world: &World,
-        last_run: Tick,
-        this_run: Tick,
-    ) -> impl Iterator<Item = (Entity, Option<T::Item<'_>>)> + '_ {
-        T::iter::<F>(world, last_run, this_run).map(|(entity, item)| (entity, Some(item)))
-    }
-
-    fn entity_iter<F: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_ {
-        T::entity_iter::<F>(world)
-    }
-
-    fn test_archetype(_archetype: &Archetype) -> bool {
-        true
+    fn get<'a, 'b: 'a>(
+        entity: Entity,
+        lock: &'b mut Self::LockedColumns,
+    ) -> Option<Self::Item<'a>> {
+        lock.as_mut().and_then(|(lock, ents)| {
+            ents.iter()
+                .position(|&e| e == entity)
+                .map(move |index| lock.downcast_mut::<T>().unwrap().get_mut(index).unwrap())
+        })
     }
 }
 
-macro_rules! impl_query_fetch {
-    ($($param:ident),*) => {
-        impl<$($param: QueryFetch),*> QueryFetch for ($($param,)*) {
-            type Item<'w> = ($(
-                <$param as QueryFetch>::Item<'w>,
-                )*);
+impl<'s, T: Any + Send + Sync> Queryable for Option<&'s T> {
+    type LockedColumns = ReadLockedColumns;
+    type Item<'a> = Option<&'a T>;
 
-            fn access() -> &'static [(TypeId, QueryFetchAccess)] {
-                static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFetchAccess)>> = std::sync::OnceLock::new();
-                ACCESS.get_or_init(|| vec![$($param::access(),)*].concat())
+    fn reads() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
+
+    fn writes() -> Vec<TypeId> {
+        vec![]
+    }
+
+    fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
+        <&T as Queryable>::lock_columns(archetype)
+    }
+
+    fn iter_mut<'a, 'b: 'a>(
+        lock: &'b mut Self::LockedColumns,
+    ) -> impl Iterator<Item = Self::Item<'a>> {
+        lock.as_ref().map_or_else(
+            || itertools::Either::Left(std::iter::repeat_with(|| None)),
+            |(lock, _)| {
+                itertools::Either::Right(lock.downcast_ref::<T>().unwrap().into_iter().map(Some))
+            },
+        )
+    }
+
+    fn get<'a, 'b: 'a>(
+        entity: Entity,
+        lock: &'b mut Self::LockedColumns,
+    ) -> Option<Self::Item<'a>> {
+        lock.as_ref().and_then(|(lock, ents)| {
+            ents.iter().position(|&e| e == entity).map(move |index| {
+                lock.downcast_ref::<T>()
+                    .unwrap()
+                    .get(index)
+                    .map(Some)
+                    .unwrap_or(None)
+            })
+        })
+    }
+}
+
+impl<'s, T: Any + Send + Sync> Queryable for Option<&'s mut T> {
+    type LockedColumns = WriteLockedColumns;
+    type Item<'a> = Option<&'a mut T>;
+
+    fn reads() -> Vec<TypeId> {
+        vec![]
+    }
+
+    fn writes() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
+
+    fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
+        <&mut T as Queryable>::lock_columns(archetype)
+    }
+
+    fn iter_mut<'a, 'b: 'a>(
+        lock: &'b mut Self::LockedColumns,
+    ) -> impl Iterator<Item = Self::Item<'a>> {
+        lock.as_mut().map_or_else(
+            || itertools::Either::Left(std::iter::repeat_with(|| None)),
+            |(lock, _)| {
+                itertools::Either::Right(lock.downcast_mut::<T>().unwrap().into_iter().map(Some))
+            },
+        )
+    }
+
+    fn get<'a, 'b: 'a>(
+        entity: Entity,
+        lock: &'b mut Self::LockedColumns,
+    ) -> Option<Self::Item<'a>> {
+        lock.as_mut().and_then(|(lock, ents)| {
+            ents.iter().position(|&e| e == entity).map(move |index| {
+                lock.downcast_mut::<T>()
+                    .unwrap()
+                    .get_mut(index)
+                    .map(Some)
+                    .unwrap_or(None)
+            })
+        })
+    }
+}
+
+pub struct With<T: Any + Send + Sync>(std::marker::PhantomData<T>);
+
+impl<T: Any + Send + Sync> Queryable for With<T> {
+    type LockedColumns = Option<Vec<Entity>>;
+    type Item<'a> = &'a ();
+
+    fn reads() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
+
+    fn writes() -> Vec<TypeId> {
+        vec![]
+    }
+
+    fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
+        archetype.index_of(TypeId::of::<T>())?; // check if the component is in the archetype
+        Some(archetype.entity_iter().collect())
+    }
+
+    fn get<'a, 'b: 'a>(
+        entity: Entity,
+        lock: &'b mut Self::LockedColumns,
+    ) -> Option<Self::Item<'a>> {
+        lock.as_ref()
+            .and_then(|ents| ents.contains(&entity).then_some(&()))
+    }
+
+    fn iter_mut<'a, 'b: 'a>(
+        lock: &'b mut Self::LockedColumns,
+    ) -> impl Iterator<Item = Self::Item<'a>> {
+        lock.as_ref().map_or_else(
+            || itertools::Either::Left([].iter()),
+            |lock| itertools::Either::Right(lock.iter().map(|_| &())),
+        )
+    }
+}
+
+macro_rules! impl_queryable_tuple {
+    ($( $name:ident ),*) => {
+        impl<$($name: Queryable),*> Queryable for ($($name,)*) {
+            type LockedColumns = ($($name::LockedColumns,)*);
+            type Item<'a> = ($($name::Item<'a>,)*);
+
+            fn reads() -> Vec<TypeId> {
+                let mut reads = Vec::new();
+                $(reads.extend($name::reads());)*
+                reads
             }
 
-            fn fetch<Filter: QueryFilter>(world: &World, entity: Entity) -> Option<Self::Item<'_>> {
-                Some((
-                    $(
-                        <$param as QueryFetch>::fetch::<Filter>(world, entity)?,
-                    )*
-                ))
+            fn writes() -> Vec<TypeId> {
+                let mut writes = Vec::new();
+                $(writes.extend($name::writes());)*
+                writes
             }
 
-            #[allow(non_snake_case, unused)]
-            fn iter<'w, Filter: QueryFilter>(world: &'w World, last_run: Tick, this_run: Tick) -> impl Iterator<Item = (Entity, Self::Item<'w>)> + '_ {
-                let storage = world.storage();
-                storage
-                    .archetype_iter()
-                    .filter(move |archetype| Self::test_archetype(archetype) && Filter::test_archetype(archetype))
-                    .flat_map(move |archetype| {
-                        archetype.entity_iter().filter_map(move |entity| {
-                            Self::fetch::<Filter>(world, entity).map(|item| (entity, item))
-                        })
-                    })
+            fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
+                ($($name::lock_columns(archetype),)*)
             }
 
-            #[allow(non_snake_case, unused)]
-            fn entity_iter<Filter: QueryFilter>(world: &World) -> impl Iterator<Item = Entity> + '_ {
-                let storage = world.storage();
-                storage
-                    .archetype_iter()
-                    .filter(move |archetype| Self::test_archetype(archetype) && Filter::test_archetype(archetype))
-                    .flat_map(move |archetype| archetype.entity_iter())
+            fn iter_mut<'a, 'b: 'a>(lock: &'b mut Self::LockedColumns) -> impl Iterator<Item = Self::Item<'a>> {
+                let ($(ref mut $name,)*) = lock;
+                itertools::izip!($( $name::iter_mut($name), )*)
             }
 
-            fn test_archetype(archetype: &Archetype) -> bool {
-                $(
-                    $param::test_archetype(archetype) &&
-                )*
-                true
+            fn get<'a, 'b: 'a>(entity: Entity, lock: &'b mut Self::LockedColumns) -> Option<Self::Item<'a>> {
+                let ($(ref mut $name,)*) = lock;
+                Some(($( $name::get(entity, $name)?, )*))
             }
         }
     };
 }
 
-impl_query_fetch!(A);
-impl_query_fetch!(A, B);
-impl_query_fetch!(A, B, C);
-impl_query_fetch!(A, B, C, D);
-impl_query_fetch!(A, B, C, D, E);
-impl_query_fetch!(A, B, C, D, E, F);
-impl_query_fetch!(A, B, C, D, E, F, G);
-impl_query_fetch!(A, B, C, D, E, F, G, H);
+impl<A: Queryable> Queryable for (A,) {
+    type LockedColumns = (A::LockedColumns,);
+    type Item<'a> = (A::Item<'a>,);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum QueryFilterAccess {
-    With,
-    Without,
-}
-
-pub trait QueryFilter: Send + Sync {
-    fn access() -> &'static [(TypeId, QueryFilterAccess)];
-    fn test_archetype(archetype: &Archetype) -> bool;
-}
-
-impl QueryFilter for () {
-    fn access() -> &'static [(TypeId, QueryFilterAccess)] {
-        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFilterAccess)>> =
-            std::sync::OnceLock::new();
-        ACCESS.get_or_init(Vec::new)
+    fn reads() -> Vec<TypeId> {
+        A::reads()
     }
 
-    fn test_archetype(_: &Archetype) -> bool {
-        true
-    }
-}
-
-macro_rules! impl_query_filter {
-    ($($param:ident),*) => {
-        impl<$($param: QueryFilter),*> QueryFilter for ($($param,)*) {
-            fn access() -> &'static [(TypeId, QueryFilterAccess)] {
-                static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFilterAccess)>> = std::sync::OnceLock::new();
-                ACCESS.get_or_init(|| vec![$($param::access(),)*].concat())
-            }
-
-            fn test_archetype(archetype: &Archetype) -> bool {
-                $(
-                    $param::test_archetype(archetype) &&
-                )*
-                true
-            }
-        }
-    };
-}
-
-impl_query_filter!(A);
-impl_query_filter!(A, B);
-impl_query_filter!(A, B, C);
-impl_query_filter!(A, B, C, D);
-impl_query_filter!(A, B, C, D, E);
-impl_query_filter!(A, B, C, D, E, F);
-impl_query_filter!(A, B, C, D, E, F, G);
-impl_query_filter!(A, B, C, D, E, F, G, H);
-
-pub struct With<T: Component>(PhantomData<T>);
-
-impl<T: Component> QueryFilter for With<T> {
-    fn access() -> &'static [(TypeId, QueryFilterAccess)] {
-        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFilterAccess)>> =
-            std::sync::OnceLock::new();
-        ACCESS.get_or_init(|| vec![(TypeId::of::<T>(), QueryFilterAccess::With)])
+    fn writes() -> Vec<TypeId> {
+        A::writes()
     }
 
-    fn test_archetype(archetype: &Archetype) -> bool {
-        archetype.contains_component_by_type_id(TypeId::of::<T>())
+    fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
+        (A::lock_columns(archetype),)
+    }
+
+    fn iter_mut<'a, 'b: 'a>(
+        lock: &'b mut Self::LockedColumns,
+    ) -> impl Iterator<Item = Self::Item<'a>> {
+        let (ref mut a,) = lock;
+        A::iter_mut(a).map(|a| (a,))
+    }
+
+    fn get<'a, 'b: 'a>(
+        entity: Entity,
+        lock: &'b mut Self::LockedColumns,
+    ) -> Option<Self::Item<'a>> {
+        let (ref mut a,) = lock;
+        A::get(entity, a).map(|a| (a,))
     }
 }
 
-pub struct Without<T: Component>(PhantomData<T>);
+impl_queryable_tuple!(A, B);
+impl_queryable_tuple!(A, B, C);
+impl_queryable_tuple!(A, B, C, D);
+impl_queryable_tuple!(A, B, C, D, E);
+impl_queryable_tuple!(A, B, C, D, E, F);
+impl_queryable_tuple!(A, B, C, D, E, F, G);
+impl_queryable_tuple!(A, B, C, D, E, F, G, H);
 
-impl<T: Component> QueryFilter for Without<T> {
-    fn access() -> &'static [(TypeId, QueryFilterAccess)] {
-        static ACCESS: std::sync::OnceLock<Vec<(TypeId, QueryFilterAccess)>> =
-            std::sync::OnceLock::new();
-        ACCESS.get_or_init(|| vec![(TypeId::of::<T>(), QueryFilterAccess::Without)])
-    }
-
-    fn test_archetype(archetype: &Archetype) -> bool {
-        !archetype.contains_component_by_type_id(TypeId::of::<T>())
-    }
+pub struct Query<Q: Queryable> {
+    locked_columns: Vec<Q::LockedColumns>,
 }
 
-pub struct QueryState<Q, F = ()>
-where
-    Q: QueryFetch,
-    F: QueryFilter,
-{
-    last_run: Tick,
-    this_run: Tick,
-    _fetch: PhantomData<Q>,
-    _filter: PhantomData<F>,
-}
-
-impl<Q, F> QueryState<Q, F>
-where
-    Q: QueryFetch,
-    F: QueryFilter,
-{
+impl<Q: Queryable> Query<Q> {
     pub fn new(world: &World) -> Self {
-        Self {
-            last_run: world.last_change_tick(),
-            this_run: world.read_change_tick(),
-            _fetch: PhantomData,
-            _filter: PhantomData,
-        }
+        let locked_columns: Vec<Q::LockedColumns> = world
+            .components()
+            .archetype_iter()
+            .map(Q::lock_columns)
+            .collect();
+        Self { locked_columns }
     }
 
-    pub fn get<'w>(&self, world: &'w World, entity: Entity) -> Option<Q::Item<'w>> {
-        Q::fetch::<F>(world, entity)
+    pub fn iter(&mut self) -> impl Iterator<Item = Q::Item<'_>> + '_ {
+        self.locked_columns.iter_mut().flat_map(Q::iter_mut)
     }
 
-    pub fn entity_iter<'w>(&'w self, world: &'w World) -> impl Iterator<Item = Entity> + '_ {
-        Q::entity_iter::<F>(world)
-    }
-
-    pub fn iter<'w>(
-        &'w self,
-        world: &'w World,
-    ) -> impl Iterator<Item = (Entity, Q::Item<'w>)> + '_ {
-        Q::iter::<F>(world, self.last_run, self.this_run)
+    pub fn get(&mut self, entity: Entity) -> Option<Q::Item<'_>> {
+        self.locked_columns
+            .iter_mut()
+            .find_map(|lock| Q::get(entity, lock))
     }
 }
 
-pub struct Query<'w, 's, Q, F = ()>
-where
-    Q: QueryFetch + 'w,
-    F: QueryFilter + 'w,
-{
-    pub(crate) state: &'s QueryState<Q, F>,
-    pub(crate) world: &'w World,
-}
-
-unsafe impl<Q: QueryFetch, F: QueryFilter> Send for Query<'_, '_, Q, F> {}
-unsafe impl<Q: QueryFetch, F: QueryFilter> Sync for Query<'_, '_, Q, F> {}
-
-impl<'w, 's: 'w, Q, F> Query<'w, 's, Q, F>
-where
-    Q: QueryFetch,
-    F: QueryFilter,
-{
-    pub fn get(&self, entity: Entity) -> Option<Q::Item<'w>> {
-        self.state.get(self.world, entity)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (Entity, Q::Item<'w>)> + '_ {
-        self.state.iter(self.world)
-    }
-
-    pub fn entity_iter(&self) -> impl Iterator<Item = Entity> + '_ {
-        Q::entity_iter::<F>(self.world)
-    }
-}
-
-unsafe impl<Q, F> SystemParam for Query<'_, '_, Q, F>
-where
-    Q: QueryFetch + 'static,
-    F: QueryFilter + 'static,
-{
-    type State = QueryState<Q, F>;
-    type Item<'w, 's> = Query<'w, 's, Q, F>;
-
-    fn validate_access(access: &SystemAccess) -> bool {
-        let my_access = Self::access();
-        if access
-            .components_read
-            .iter()
-            .any(|ty| my_access.components_written.contains(ty))
-            || access
-                .components_written
-                .iter()
-                .any(|ty| my_access.components_read.contains(ty))
-        {
-            return false;
-        }
-        true
-    }
-
-    fn init_state(world: &mut World) -> Self::State {
-        QueryState::new(world)
-    }
+impl<Q: Queryable> SystemParam for Query<Q> {
+    type Item = Query<Q>;
 
     fn access() -> SystemAccess {
+        let reads = Q::reads();
+        let writes = Q::writes();
         SystemAccess {
-            exclusive: false,
-            resources_read: FxHashSet::default(),
-            resources_written: FxHashSet::default(),
-            components_read: Q::access()
-                .iter()
-                .filter_map(|(ty, access)| {
-                    if let QueryFetchAccess::ReadOnly = access {
-                        Some(*ty)
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
-            components_written: Q::access()
-                .iter()
-                .filter_map(|(ty, access)| {
-                    if let QueryFetchAccess::ReadWrite = access {
-                        Some(*ty)
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
+            resources_read: FxHashSet::from_iter([TypeId::of::<Components>()]),
+            components_read: FxHashSet::from_iter(reads),
+            components_written: FxHashSet::from_iter(writes),
+            ..SystemAccess::default()
         }
     }
 
-    unsafe fn fetch<'w, 's>(
-        state: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        Query {
-            state,
-            world: unsafe { world.world() },
-        }
-    }
-
-    fn can_run(_world: &World) -> bool {
-        true
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{self as weaver_ecs, prelude::Entity};
-    use weaver_ecs_macros::Component;
-    use weaver_reflect_macros::Reflect;
-
-    use crate::prelude::World;
-
-    #[derive(Debug, Clone, Copy, PartialEq, Reflect, Component)]
-    struct Position {
-        x: f32,
-        y: f32,
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq, Reflect, Component)]
-    struct Velocity {
-        x: f32,
-        y: f32,
-    }
-
-    #[test]
-    fn query_one_component() {
-        let mut world = World::new();
-        let entity1 = world.spawn((Position { x: 1.0, y: 2.0 }, Velocity { x: 3.0, y: 4.0 }));
-        let entity2 = world.spawn((Position { x: 5.0, y: 6.0 }, Velocity { x: 7.0, y: 8.0 }));
-        let entity3 = world.spawn(Position { x: 9.0, y: 10.0 });
-
-        let query = world.query::<&Position>();
-        let mut iter = query.iter(&world);
-
-        let test_entity = |entity: Entity, position: Position| match entity {
-            e if e == entity1 => {
-                assert_eq!(position.x, 1.0);
-                assert_eq!(position.y, 2.0);
-            }
-            e if e == entity2 => {
-                assert_eq!(position.x, 5.0);
-                assert_eq!(position.y, 6.0);
-            }
-            e if e == entity3 => {
-                assert_eq!(position.x, 9.0);
-                assert_eq!(position.y, 10.0);
-            }
-            _ => panic!("unexpected entity"),
-        };
-
-        let (entity, position) = iter.next().unwrap();
-        test_entity(entity, *position);
-
-        let (entity, position) = iter.next().unwrap();
-        test_entity(entity, *position);
-
-        let (entity, position) = iter.next().unwrap();
-        test_entity(entity, *position);
-
-        assert!(iter.next().is_none());
-    }
-
-    #[test]
-    fn query_two_components() {
-        let mut world = World::new();
-        let entity1 = world.spawn((Position { x: 1.0, y: 2.0 }, Velocity { x: 3.0, y: 4.0 }));
-        let entity2 = world.spawn((Position { x: 5.0, y: 6.0 }, Velocity { x: 7.0, y: 8.0 }));
-        let _entity3 = world.spawn(Position { x: 9.0, y: 10.0 });
-
-        let query = world.query::<(&Position, &Velocity)>();
-        let mut iter = query.iter(&world);
-
-        let test_entity = |entity: Entity, position: Position, velocity: Velocity| match entity {
-            e if e == entity1 => {
-                assert_eq!(position.x, 1.0);
-                assert_eq!(position.y, 2.0);
-                assert_eq!(velocity.x, 3.0);
-                assert_eq!(velocity.y, 4.0);
-            }
-            e if e == entity2 => {
-                assert_eq!(position.x, 5.0);
-                assert_eq!(position.y, 6.0);
-                assert_eq!(velocity.x, 7.0);
-                assert_eq!(velocity.y, 8.0);
-            }
-            _ => panic!("unexpected entity"),
-        };
-
-        let (entity, (position, velocity)) = iter.next().unwrap();
-        test_entity(entity, *position, *velocity);
-
-        let (entity, (position, velocity)) = iter.next().unwrap();
-        test_entity(entity, *position, *velocity);
-
-        assert!(iter.next().is_none());
+    fn fetch(world: &World) -> Self::Item {
+        Query::new(world)
     }
 }

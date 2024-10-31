@@ -3,7 +3,9 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
+};
 
 #[derive(Debug, Default)]
 pub struct Lock<T>(RwLock<T>);
@@ -62,6 +64,10 @@ impl<'a, T> Read<'a, T> {
     pub fn into_inner(self) -> RwLockReadGuard<'a, T> {
         self.0
     }
+
+    pub fn map<U>(this: Self, f: impl FnOnce(&T) -> &U) -> MapRead<'a, U> {
+        MapRead(RwLockReadGuard::map(this.0, f))
+    }
 }
 
 impl<'a, T> Write<'a, T> {
@@ -80,6 +86,10 @@ impl<'a, T> Write<'a, T> {
 
     pub fn into_inner(self) -> RwLockWriteGuard<'a, T> {
         self.0
+    }
+
+    pub fn map<U>(this: Self, f: impl FnOnce(&mut T) -> &mut U) -> MapWrite<'a, U> {
+        MapWrite(RwLockWriteGuard::map(this.0, f))
     }
 }
 
@@ -102,6 +112,52 @@ impl<'a, T> Deref for Write<'a, T> {
 impl<'a, T> DerefMut for Write<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+pub struct MapRead<'a, T: ?Sized>(MappedRwLockReadGuard<'a, T>);
+
+impl<'a, T: ?Sized> Deref for MapRead<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a, T: ?Sized> MapRead<'a, T> {
+    pub fn into_inner(self) -> MappedRwLockReadGuard<'a, T> {
+        self.0
+    }
+
+    pub fn map<U>(this: Self, f: impl FnOnce(&T) -> &U) -> MapRead<'a, U> {
+        MapRead(MappedRwLockReadGuard::map(this.0, f))
+    }
+}
+
+pub struct MapWrite<'a, T: ?Sized>(MappedRwLockWriteGuard<'a, T>);
+
+impl<'a, T: ?Sized> Deref for MapWrite<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a, T: ?Sized> DerefMut for MapWrite<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<'a, T: ?Sized> MapWrite<'a, T> {
+    pub fn into_inner(self) -> MappedRwLockWriteGuard<'a, T> {
+        self.0
+    }
+
+    pub fn map<U>(this: Self, f: impl FnOnce(&mut T) -> &mut U) -> MapWrite<'a, U> {
+        MapWrite(MappedRwLockWriteGuard::map(this.0, f))
     }
 }
 

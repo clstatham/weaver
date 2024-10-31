@@ -91,7 +91,7 @@ impl Systems {
     where
         T: SystemStage,
         S: IntoSystem<M>,
-        S::System: System<Output = ()>,
+        S::System: System,
         M: 'static,
     {
         self.systems
@@ -105,8 +105,8 @@ impl Systems {
         T: SystemStage,
         S: IntoSystem<M1>,
         BEFORE: IntoSystem<M2>,
-        S::System: System<Output = ()>,
-        BEFORE::System: System<Output = ()>,
+        S::System: System,
+        BEFORE::System: System,
         M1: 'static,
         M2: 'static,
     {
@@ -121,8 +121,8 @@ impl Systems {
         T: SystemStage,
         S: IntoSystem<M1>,
         AFTER: IntoSystem<M2>,
-        S::System: System<Output = ()>,
-        AFTER::System: System<Output = ()>,
+        S::System: System,
+        AFTER::System: System,
         M1: 'static,
         M2: 'static,
     {
@@ -143,39 +143,43 @@ impl Systems {
             .has_system(system)
     }
 
-    pub fn run_stage<S: SystemStage>(&mut self, world: &mut World) -> Result<()> {
+    pub async fn run_stage<S: SystemStage>(&mut self, world: &mut World) -> Result<()> {
         self.systems
             .get_mut(&TypeId::of::<S>())
             .expect("System stage not found")
-            .run_single_threaded(world)
+            .run(world)
+            .await
     }
 
-    pub fn run_init(&mut self, world: &mut World) -> Result<()> {
+    pub async fn run_init(&mut self, world: &mut World) -> Result<()> {
         for stage in &self.init_stages {
             self.systems
                 .get_mut(stage)
                 .expect("System stage not found")
-                .run_single_threaded(world)?;
+                .run(world)
+                .await?;
         }
         Ok(())
     }
 
-    pub fn run_shutdown(&mut self, world: &mut World) -> Result<()> {
+    pub async fn run_shutdown(&mut self, world: &mut World) -> Result<()> {
         for stage in &self.shutdown_stages {
             self.systems
                 .get_mut(stage)
                 .expect("System stage not found")
-                .run_single_threaded(world)?;
+                .run(world)
+                .await?;
         }
         Ok(())
     }
 
-    pub fn run_update(&mut self, world: &mut World) -> Result<()> {
+    pub async fn run_update(&mut self, world: &mut World) -> Result<()> {
         for stage in &self.update_stages {
             self.systems
                 .get_mut(stage)
                 .expect("System stage not found")
-                .run_single_threaded(world)?;
+                .run(world)
+                .await?;
         }
         Ok(())
     }

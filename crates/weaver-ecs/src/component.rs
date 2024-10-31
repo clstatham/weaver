@@ -1,288 +1,241 @@
+//! Much of the inspiration and implementation of this module is based on the `broomdog` crate, particularly the `Loan`, `LoanMut`, `LoanStorage`, and `ComponentMap` types.
+//! <https://github.com/schell/broomdog/>
+
 use std::{
-    any::TypeId,
-    cell::UnsafeCell,
+    any::{Any, TypeId},
     ops::{Deref, DerefMut},
-    sync::Arc,
 };
 
-use weaver_reflect_macros::reflect_trait;
-use weaver_util::{
-    lock::SharedLock,
-    TypeIdMap, {impl_downcast, DowncastSync},
-};
+use weaver_util::{bail, Result, TypeIdMap};
 
-use crate::{
-    self as weaver_ecs,
-    prelude::{ChangeDetection, ChangeDetectionMut, ComponentTicks, Tick, Ticks, TicksMut, World},
-};
+use crate::loan::{Loan, LoanMut, LoanStorage};
 
-#[reflect_trait]
-pub trait Component: DowncastSync {}
-impl_downcast!(Component);
-
-#[reflect_trait]
-pub trait Resource: DowncastSync {}
-impl_downcast!(Resource);
-
-impl<T: Resource> Resource for SharedLock<T> {}
-impl<T: Resource> Resource for Arc<T> {}
-
-pub struct Res<'r, T: Resource> {
-    pub(crate) value: &'r T,
-    pub(crate) ticks: Ticks<'r>,
-}
-
-impl<'r, T: Resource> Res<'r, T> {
-    #[inline]
-    pub fn into_inner(self) -> &'r T {
-        self.value
-    }
-}
-
-impl<'r, T> Deref for Res<'r, T>
-where
-    T: Resource,
-{
-    type Target = T;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.value
-    }
-}
-
-impl<'r, T: Resource> ChangeDetection for Res<'r, T> {
-    fn is_added(&self) -> bool {
-        self.ticks
-            .added
-            .is_newer_than(self.ticks.last_run, self.ticks.this_run)
-    }
-
-    fn is_changed(&self) -> bool {
-        self.ticks
-            .changed
-            .is_newer_than(self.ticks.last_run, self.ticks.this_run)
-    }
-
-    fn last_changed(&self) -> Tick {
-        *self.ticks.changed
-    }
-}
-
-pub struct ResMut<'r, T: Resource> {
-    pub(crate) value: &'r mut T,
-    pub(crate) ticks: TicksMut<'r>,
-}
-
-impl<'r, T: Resource> ResMut<'r, T> {
-    #[inline]
-    pub fn into_inner(self) -> &'r mut T {
-        self.value
-    }
-}
-
-impl<'r, T> Deref for ResMut<'r, T>
-where
-    T: Resource,
-{
-    type Target = T;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.value
-    }
-}
-
-impl<'r, T> DerefMut for ResMut<'r, T>
-where
-    T: Resource,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.set_changed();
-        self.value
-    }
-}
-
-impl<'r, T> ChangeDetection for ResMut<'r, T>
-where
-    T: Resource,
-{
-    fn is_added(&self) -> bool {
-        self.ticks
-            .added
-            .is_newer_than(self.ticks.last_run, self.ticks.this_run)
-    }
-
-    fn is_changed(&self) -> bool {
-        self.ticks
-            .changed
-            .is_newer_than(self.ticks.last_run, self.ticks.this_run)
-    }
-
-    fn last_changed(&self) -> Tick {
-        *self.ticks.changed
-    }
-}
-
-impl<'r, T> ChangeDetectionMut for ResMut<'r, T>
-where
-    T: Resource,
-{
-    type Inner = T;
-
-    fn bypass_change_detection(&mut self) -> &mut Self::Inner {
-        self.value
-    }
-
-    fn set_changed(&mut self) {
-        *self.ticks.changed = self.ticks.this_run;
-    }
-}
-
-pub trait MultiResource<'w> {
-    type Output;
-    fn is_unique() -> bool;
-    fn fetch(world: &'w mut World) -> Self::Output
-    where
-        Self: Sized;
-}
-
-impl<'w, T> MultiResource<'w> for T
-where
-    T: Resource,
-{
-    type Output = ResMut<'w, T>;
-
-    fn is_unique() -> bool {
-        true
-    }
-
-    fn fetch(world: &'w mut World) -> ResMut<'w, T> {
-        let cell = world.as_unsafe_world_cell();
-        unsafe { cell.get_resource_mut::<T>().unwrap() }
-    }
-}
-
-macro_rules! impl_multi_resource_tuple {
-    ($($name:ident),*) => {
-        #[allow(unused_parens)]
-        impl<'w, $($name: Resource),*> MultiResource<'w> for ($($name,)*) {
-            type Output = ($(ResMut<'w, $name>),*);
-
-            fn is_unique() -> bool {
-                let mut set = std::collections::HashSet::new();
-                $((set.insert(std::any::TypeId::of::<$name>())) &&)* true
-            }
-
-            fn fetch(world: &'w mut World) -> ($(ResMut<'w, $name>),*) {
-                if !Self::is_unique() {
-                    panic!("duplicate resource types");
-                }
-
-                let cell = world.as_unsafe_world_cell();
-
-                unsafe {
-                    ($(
-                        cell.get_resource_mut::<$name>().unwrap()
-                    ),*)
-                }
-            }
-        }
-    };
-}
-
-impl_multi_resource_tuple!(A);
-impl_multi_resource_tuple!(A, B);
-impl_multi_resource_tuple!(A, B, C);
-impl_multi_resource_tuple!(A, B, C, D);
-impl_multi_resource_tuple!(A, B, C, D, E);
-impl_multi_resource_tuple!(A, B, C, D, E, F);
-impl_multi_resource_tuple!(A, B, C, D, E, F, G);
-impl_multi_resource_tuple!(A, B, C, D, E, F, G, H);
-
-pub struct ResourceData {
-    data: UnsafeCell<Box<dyn Resource>>,
-    added_tick: SharedLock<Tick>,
-    changed_tick: SharedLock<Tick>,
-}
+pub type BoxedComponent = Box<dyn Any + Send + Sync>;
 
 #[derive(Default)]
-pub struct Resources {
-    resources: TypeIdMap<ResourceData>,
+pub struct ComponentMap {
+    map: TypeIdMap<LoanStorage<BoxedComponent>>,
 }
 
-impl Resources {
-    pub fn insert<T: Resource>(&mut self, resource: T, change_tick: Tick) {
-        let type_id = TypeId::of::<T>();
-        if let Some(data) = self.resources.get_mut(&type_id) {
-            let _ = std::mem::replace(&mut data.data, UnsafeCell::new(Box::new(resource)));
+impl Deref for ComponentMap {
+    type Target = TypeIdMap<LoanStorage<BoxedComponent>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.map
+    }
+}
+
+impl DerefMut for ComponentMap {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.map
+    }
+}
+
+impl ComponentMap {
+    #[must_use = "This method returns the old component if it exists"]
+    pub fn insert_component<T: Any + Send + Sync>(&mut self, value: T) -> Result<Option<T>> {
+        if let Some(old) = self
+            .map
+            .insert(TypeId::of::<T>(), LoanStorage::new(Box::new(value)))
+        {
+            match old.into_owned() {
+                Ok(old) => Ok(Some(*old.downcast().unwrap())),
+                Err(old) => {
+                    self.map.insert(TypeId::of::<T>(), old);
+                    bail!("Failed to downcast old component")
+                }
+            }
         } else {
-            self.resources.insert(
-                type_id,
-                ResourceData {
-                    data: UnsafeCell::new(Box::new(resource)),
-                    added_tick: SharedLock::new(change_tick),
-                    changed_tick: SharedLock::new(change_tick),
-                },
-            );
+            Ok(None)
         }
-        *self.resources.get(&type_id).unwrap().changed_tick.write() = change_tick;
     }
 
-    pub fn get<T: Resource>(&self, last_run: Tick, this_run: Tick) -> Option<Res<'_, T>> {
-        self.resources.get(&TypeId::of::<T>()).map(|resource| {
-            let ticks = Ticks {
-                added: resource.added_tick.read(),
-                changed: resource.changed_tick.read(),
-                last_run,
-                this_run,
-            };
-            Res {
-                value: unsafe { &*resource.data.get() }.downcast_ref().unwrap(),
-                ticks,
-            }
-        })
+    fn loan_component(&mut self, type_id: TypeId) -> Result<Loan<BoxedComponent>> {
+        // self.map.get_mut(&type_id)?.loan()
+        let storage = self.map.get_mut(&type_id);
+        let Some(storage) = storage else {
+            bail!("Resource does not exist");
+        };
+        let loan = storage.loan();
+        let Some(loan) = loan else {
+            bail!("Resource is already mutably borrowed");
+        };
+        Ok(loan)
     }
 
-    pub fn get_mut<T: Resource>(
+    fn loan_component_mut(&mut self, type_id: TypeId) -> Result<LoanMut<BoxedComponent>> {
+        let storage = self.map.get_mut(&type_id);
+        let Some(storage) = storage else {
+            bail!("Resource does not exist");
+        };
+        let loan = storage.loan_mut();
+        let Some(loan) = loan else {
+            bail!("Resource is already borrowed");
+        };
+        Ok(loan)
+    }
+
+    async fn loan_component_patient(&mut self, type_id: TypeId) -> Result<Loan<BoxedComponent>> {
+        let storage = self.map.get_mut(&type_id);
+        let Some(storage) = storage else {
+            bail!("Resource does not exist");
+        };
+        let loan = storage.wait_for_loan().await;
+        Ok(loan)
+    }
+
+    async fn loan_component_mut_patient(
         &mut self,
-        last_run: Tick,
-        this_run: Tick,
-    ) -> Option<ResMut<'_, T>> {
-        self.resources.get_mut(&TypeId::of::<T>()).map(|resource| {
-            let ticks = TicksMut {
-                added: resource.added_tick.write(),
-                changed: resource.changed_tick.write(),
-                last_run,
-                this_run,
-            };
-            ResMut {
-                value: unsafe { &mut *resource.data.get() }.downcast_mut().unwrap(),
-                ticks,
+        type_id: TypeId,
+    ) -> Result<LoanMut<BoxedComponent>> {
+        let storage = self.map.get_mut(&type_id);
+        let Some(storage) = storage else {
+            bail!("Resource does not exist");
+        };
+        let loan = storage.wait_for_loan_mut().await;
+        Ok(loan)
+    }
+
+    pub fn get_component<T: Any + Send + Sync>(&mut self) -> Option<Ref<T>> {
+        match self.loan_component(TypeId::of::<T>()) {
+            Ok(loan) => Some(Ref {
+                loan,
+                marker: std::marker::PhantomData,
+            }),
+            Err(e) => {
+                log::debug!(
+                    "Failed to get resource {:?}: {}",
+                    std::any::type_name::<T>(),
+                    e
+                );
+                None
             }
+        }
+    }
+
+    pub fn get_component_mut<T: Any + Send + Sync>(&mut self) -> Option<Mut<T>> {
+        match self.loan_component_mut(TypeId::of::<T>()) {
+            Ok(loan) => Some(Mut {
+                loan,
+                marker: std::marker::PhantomData,
+            }),
+            Err(e) => {
+                log::debug!(
+                    "Failed to get mutable resource {:?}: {}",
+                    std::any::type_name::<T>(),
+                    e
+                );
+                None
+            }
+        }
+    }
+
+    pub async fn wait_for_component<T: Any + Send + Sync>(&mut self) -> Option<Ref<T>> {
+        let loan = self
+            .loan_component_patient(TypeId::of::<T>())
+            .await
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Failed to get resource {:?}: {}",
+                    std::any::type_name::<T>(),
+                    e
+                );
+            });
+        Some(Ref {
+            loan,
+            marker: std::marker::PhantomData,
         })
     }
 
-    pub fn remove<T: Resource>(&mut self) -> Option<(T, ComponentTicks)> {
-        self.resources.remove(&TypeId::of::<T>()).map(|resource| {
-            let added_tick = *resource.added_tick.read();
-            let changed_tick = *resource.changed_tick.read();
-            (
-                *resource.data.into_inner().downcast().unwrap_or_else(|_| {
-                    panic!(
-                        "Failed to downcast resource: {}",
-                        std::any::type_name::<T>()
-                    )
-                }),
-                ComponentTicks {
-                    added: added_tick,
-                    changed: changed_tick,
-                },
-            )
+    pub async fn wait_for_component_mut<T: Any + Send + Sync>(&mut self) -> Option<Mut<T>> {
+        let loan = self
+            .loan_component_mut_patient(TypeId::of::<T>())
+            .await
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Failed to get mutable resource {:?}: {}",
+                    std::any::type_name::<T>(),
+                    e
+                );
+            });
+        Some(Mut {
+            loan,
+            marker: std::marker::PhantomData,
         })
     }
 
-    pub fn contains<T: Resource>(&self) -> bool {
-        self.resources.contains_key(&TypeId::of::<T>())
+    pub fn contains_component<T: Any + Send + Sync>(&self) -> bool {
+        self.map.contains_key(&TypeId::of::<T>())
+    }
+
+    pub fn remove_component<T: Any + Send + Sync>(&mut self) -> Result<Option<T>> {
+        if let Some(value) = self.map.remove(&TypeId::of::<T>()) {
+            match value.into_owned() {
+                Ok(value) => Ok(Some(*value.downcast().unwrap())),
+                Err(value) => {
+                    self.map.insert(TypeId::of::<T>(), value);
+                    bail!("Failed to downcast old component")
+                }
+            }
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+pub struct Ref<T: Any + Send + Sync> {
+    loan: Loan<BoxedComponent>,
+    marker: std::marker::PhantomData<T>,
+}
+
+impl<T: Any + Send + Sync> Deref for Ref<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.loan.downcast_ref().unwrap()
+    }
+}
+
+pub struct Mut<T: Any + Send + Sync> {
+    loan: LoanMut<BoxedComponent>,
+    marker: std::marker::PhantomData<T>,
+}
+
+impl<T: Any + Send + Sync> Deref for Mut<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.loan.downcast_ref().unwrap()
+    }
+}
+
+impl<T: Any + Send + Sync> DerefMut for Mut<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.loan.downcast_mut().unwrap()
+    }
+}
+
+pub struct Res<T: Any + Send + Sync>(pub(crate) Ref<T>);
+pub struct ResMut<T: Any + Send + Sync>(pub(crate) Mut<T>);
+
+impl<T: Any + Send + Sync> Deref for Res<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: Any + Send + Sync> Deref for ResMut<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: Any + Send + Sync> DerefMut for ResMut<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }

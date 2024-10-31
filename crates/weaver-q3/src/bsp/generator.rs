@@ -3,7 +3,6 @@ use std::ops::{Add, Mul};
 
 use weaver_core::mesh::{Mesh, Vertex};
 use weaver_core::prelude::*;
-use weaver_ecs::prelude::Component;
 
 use crate::bsp::parser::{Brush, BspFile, Face, Node, Vert};
 
@@ -109,7 +108,7 @@ impl Mul<f32> for GenBspVertex {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Component)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BspFaceType {
     Polygon,
     Patch,

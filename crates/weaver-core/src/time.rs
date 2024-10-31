@@ -1,11 +1,7 @@
 use weaver_app::{plugin::Plugin, App, PreUpdate};
-use weaver_ecs::{
-    component::{Res, ResMut},
-    prelude::Resource,
-};
+use weaver_ecs::component::{Res, ResMut};
 use weaver_util::Result;
 
-#[derive(Resource)]
 pub struct Time {
     pub delta_time: f32,
     pub total_time: f32,
@@ -33,7 +29,6 @@ impl Time {
     }
 }
 
-#[derive(Resource)]
 pub struct FixedTimestep<Label: Send + Sync + 'static> {
     pub timestep: f32,
     pub total_time: f32,
@@ -96,7 +91,7 @@ impl Plugin for TimePlugin {
     }
 }
 
-fn update_time(mut time: ResMut<Time>) {
+async fn update_time(mut time: ResMut<Time>) {
     time.update();
 }
 
@@ -127,7 +122,7 @@ impl<Label: Send + Sync + 'static> Plugin for FixedUpdatePlugin<Label> {
     }
 }
 
-fn update_fixed_timestep<Label: Send + Sync + 'static>(
+async fn update_fixed_timestep<Label: Send + Sync + 'static>(
     time: Res<Time>,
     mut fixed_timestep: ResMut<FixedTimestep<Label>>,
 ) {

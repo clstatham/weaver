@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 winit = "0.30"
+pollster = "0.3.0"
 
 weaver-app = { path = "../weaver-app" }
 weaver-ecs = { path = "../weaver-ecs" }

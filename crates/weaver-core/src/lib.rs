@@ -1,9 +1,7 @@
 use std::path::PathBuf;
 
-use color::Color;
 use mesh::Mesh;
 use texture::{Texture, TextureLoader};
-use transform::Transform;
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::AssetApp;
 use weaver_util::Result;
@@ -32,13 +30,6 @@ pub struct CoreTypesPlugin;
 
 impl Plugin for CoreTypesPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.register_type::<Transform>();
-        app.register_type::<Color>();
-        app.register_type::<Mesh>();
-        app.register_type::<geometry::Plane>();
-        app.register_type::<geometry::Ray>();
-        app.register_type::<geometry::Aabb>();
-
         app.add_asset::<Texture>();
         app.add_asset::<Mesh>();
 

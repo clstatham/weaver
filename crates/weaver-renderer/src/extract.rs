@@ -1,12 +1,15 @@
-use std::ops::Deref;
+use std::{
+    any::Any,
+    ops::{Deref, DerefMut},
+};
 
 use weaver_app::{plugin::Plugin, prelude::App};
 use weaver_ecs::{
     commands::Commands,
-    component::{Component, Res, ResMut, Resource},
-    prelude::UnsafeWorldCell,
-    query::{Query, QueryFetch, QueryFetchItem, QueryFilter},
-    system::{SystemAccess, SystemParam, SystemParamItem, SystemState},
+    component::{Res, ResMut},
+    entity::Entity,
+    query::{Query, Queryable, QueryableItem},
+    system::{IntoSystem, SystemAccess, SystemParam, SystemParamItem},
     world::World,
 };
 use weaver_util::Result;
@@ -15,29 +18,26 @@ use crate::{
     ExtractBindGroupStage, ExtractPipelineStage, ExtractStage, MainWorld, ScratchMainWorld,
 };
 
-pub struct Extract<'w, 's, T: SystemParam> {
-    item: SystemParamItem<'w, 's, T>,
+pub struct Extract<T: SystemParam> {
+    item: SystemParamItem<T>,
 }
 
-impl<'w, 's, T: SystemParam> Deref for Extract<'w, 's, T> {
-    type Target = SystemParamItem<'w, 's, T>;
+impl<T: SystemParam> Deref for Extract<T> {
+    type Target = SystemParamItem<T>;
 
     fn deref(&self) -> &Self::Target {
         &self.item
     }
 }
 
-pub struct ExtractState<T: SystemParam + 'static> {
-    state: SystemState<T>,
-    main_world_state: <Res<'static, MainWorld> as SystemParam>::State,
+impl<T: SystemParam> DerefMut for Extract<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.item
+    }
 }
 
-unsafe impl<T> SystemParam for Extract<'_, '_, T>
-where
-    T: SystemParam + 'static,
-{
-    type State = ExtractState<T>;
-    type Item<'w, 's> = Extract<'w, 's, T>;
+impl<T: SystemParam> SystemParam for Extract<T> {
+    type Item = Extract<T>;
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -50,37 +50,21 @@ where
         true
     }
 
-    fn init_state(world: &mut World) -> Self::State {
-        let main_world = world.get_resource_mut::<MainWorld>().unwrap().into_inner();
-        ExtractState {
-            state: SystemState::new(main_world),
-            main_world_state: <Res<'_, MainWorld> as SystemParam>::init_state(world),
-        }
-    }
-
-    unsafe fn fetch<'w, 's>(
-        state: &'s mut Self::State,
-        world: UnsafeWorldCell<'w>,
-    ) -> Self::Item<'w, 's> {
-        let main_world = unsafe { Res::<MainWorld>::fetch(&mut state.main_world_state, world) };
-        let item = state
-            .state
-            .get(main_world.into_inner().as_unsafe_world_cell_readonly());
+    fn fetch(world: &World) -> Self::Item {
+        let main_world = world.get_resource::<MainWorld>().unwrap();
+        let item = T::fetch(&main_world);
         Extract { item }
     }
 
     fn can_run(world: &World) -> bool {
-        if !<Res<'_, MainWorld> as SystemParam>::can_run(world) {
+        if !<Res<MainWorld> as SystemParam>::can_run(world) {
             log::debug!("Extract: Res<MainWorld> is not available");
             return false;
         }
 
         let main_world = world.get_resource::<MainWorld>().unwrap();
         if !<T as SystemParam>::can_run(&main_world) {
-            log::debug!(
-                "Extract: {} is not available in main world",
-                std::any::type_name::<T>()
-            );
+            log::debug!("Extract: {} is not available", std::any::type_name::<T>());
             return false;
         }
 
@@ -88,12 +72,11 @@ where
     }
 }
 
-pub trait ExtractComponent: Component {
-    type ExtractQueryFetch: QueryFetch;
-    type ExtractQueryFilter: QueryFilter;
-    type Out: Component;
+pub trait ExtractComponent: Any + Send + Sync {
+    type ExtractQueryFetch: Queryable + 'static;
+    type Out: Any + Send + Sync + 'static;
     fn extract_render_component(
-        item: QueryFetchItem<'_, Self::ExtractQueryFetch>,
+        item: QueryableItem<'_, Self::ExtractQueryFetch>,
     ) -> Option<Self::Out>;
 }
 
@@ -112,16 +95,18 @@ impl<T: ExtractComponent> Plugin for ExtractComponentPlugin<T> {
     }
 }
 
-pub fn extract_render_component<T: ExtractComponent>(
-    render_world: &mut World,
-    query: Extract<Query<T::ExtractQueryFetch, T::ExtractQueryFilter>>,
+pub async fn extract_render_component<T: ExtractComponent>(
+    mut commands: Commands,
+    mut query: Extract<Query<(Entity, T::ExtractQueryFetch)>>,
+    mut out_query: Query<&mut T::Out>,
 ) {
+    let mut components = Vec::new();
     for (entity, item) in query.iter() {
         if let Some(component) = T::extract_render_component(item) {
             {
-                if let Some(mut render_component) = render_world.get_component_mut::<T::Out>(entity)
-                {
+                if let Some(render_component) = out_query.get(entity) {
                     *render_component = component;
+                    log::trace!("Updated render component: {:?}", std::any::type_name::<T>());
                     continue;
                 }
             }
@@ -131,14 +116,17 @@ pub fn extract_render_component<T: ExtractComponent>(
                 std::any::type_name::<T>()
             );
 
-            render_world.insert_entity(entity);
-            render_world.insert_component(entity, component);
+            components.push((entity, component));
         }
+    }
+
+    for (entity, component) in components {
+        commands.insert_component(entity, component).await;
     }
 }
 
-pub trait ExtractResource: Resource {
-    type Source: Resource;
+pub trait ExtractResource: Any + Send + Sync {
+    type Source: Any + Send + Sync;
     fn extract_render_resource(source: &Self::Source) -> Self;
 }
 
@@ -178,7 +166,7 @@ impl<T: ExtractResource, Dep: ExtractResource> Plugin for RenderResourceDependen
     }
 }
 
-pub fn extract_render_resource<T: ExtractResource>(
+pub async fn extract_render_resource<T: ExtractResource>(
     mut commands: Commands,
     main_resource: Extract<Option<Res<T::Source>>>,
     target_resource: Option<ResMut<T>>,
@@ -187,8 +175,11 @@ pub fn extract_render_resource<T: ExtractResource>(
         if let Some(mut target_resource) = target_resource {
             // update resource
             *target_resource = T::extract_render_resource(source);
+            log::trace!("Updated render resource: {:?}", std::any::type_name::<T>());
         } else {
-            commands.insert_resource(T::extract_render_resource(source));
+            commands
+                .insert_resource(T::extract_render_resource(source))
+                .await;
             log::trace!(
                 "Extracted render resource: {:?}",
                 std::any::type_name::<T>()
@@ -202,9 +193,12 @@ pub fn render_extract(main_world: &mut World, render_world: &mut World) -> Resul
     let inserted_world = std::mem::replace(main_world, scratch_world.0);
     render_world.insert_resource(MainWorld(inserted_world));
 
-    render_world.run_stage::<ExtractStage>()?;
-    render_world.run_stage::<ExtractBindGroupStage>()?;
-    render_world.run_stage::<ExtractPipelineStage>()?;
+    pollster::block_on(async {
+        render_world.run_stage::<ExtractStage>().await?;
+        render_world.run_stage::<ExtractBindGroupStage>().await?;
+        render_world.run_stage::<ExtractPipelineStage>().await?;
+        Ok::<_, weaver_util::Error>(())
+    })?;
 
     let inserted_world = render_world.remove_resource::<MainWorld>().unwrap();
     let scratch_world = std::mem::replace(main_world, inserted_world.0);

@@ -2,7 +2,6 @@ use std::{ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, prelude::App, Runner};
 use weaver_core::input::Input;
-use weaver_ecs::prelude::Resource;
 use weaver_util::{lock::Lock, Result};
 use winit::{
     dpi::LogicalSize,
@@ -16,12 +15,12 @@ pub mod prelude {
     pub use winit;
 }
 
-#[derive(Clone, Resource)]
+#[derive(Clone)]
 pub struct Window {
     window: Arc<winit::window::Window>,
 }
 
-#[derive(Debug, Clone, Copy, Resource)]
+#[derive(Debug, Clone, Copy)]
 pub struct WindowSize {
     pub width: u32,
     pub height: u32,
@@ -70,7 +69,7 @@ impl Plugin for WinitPlugin {
             window_title: self.window_title,
             initial_size: self.initial_size,
         });
-        app.main_app_mut().insert_resource(WindowSize {
+        app.main_app().world().insert_resource(WindowSize {
             width: self.initial_size.0,
             height: self.initial_size.1,
         });
@@ -88,7 +87,7 @@ struct WinitRunner {
 
 impl Runner for WinitRunner {
     fn run(&self, app: &mut App) -> Result<()> {
-        app.init();
+        pollster::block_on(app.init());
 
         let event_loop = self.event_loop.write().take().unwrap();
 
@@ -123,12 +122,9 @@ impl<'app> winit::application::ApplicationHandler for WinitRunnerApp<'app> {
             window: Arc::new(window),
         };
         if self.app.main_app().world().has_resource::<Window>() {
-            self.app
-                .main_app_mut()
-                .world_mut()
-                .remove_resource::<Window>();
+            self.app.main_app().world().remove_resource::<Window>();
         }
-        self.app.main_app_mut().world_mut().insert_resource(window);
+        self.app.main_app().world().insert_resource(window);
 
         self.app.finish_plugins();
     }
@@ -148,7 +144,7 @@ impl<'app> winit::application::ApplicationHandler for WinitRunnerApp<'app> {
             },
         });
 
-        if let Some(mut input) = self.app.main_app_mut().get_resource_mut::<Input>() {
+        if let Some(mut input) = self.app.main_app().world().get_resource_mut::<Input>() {
             input.update_device(&event);
         }
     }
@@ -176,7 +172,7 @@ impl<'app> winit::application::ApplicationHandler for WinitRunnerApp<'app> {
             window.request_redraw();
         }
 
-        if let Some(mut input) = self.app.main_app_mut().get_resource_mut::<Input>() {
+        if let Some(mut input) = self.app.main_app().world().get_resource_mut::<Input>() {
             input.update_window(&event);
         }
 
@@ -188,18 +184,18 @@ impl<'app> winit::application::ApplicationHandler for WinitRunnerApp<'app> {
                 });
 
                 if let Some(mut window_size) =
-                    self.app.main_app_mut().get_resource_mut::<WindowSize>()
+                    self.app.main_app().world().get_resource_mut::<WindowSize>()
                 {
                     window_size.width = size.width;
                     window_size.height = size.height;
                 }
             }
             WindowEvent::CloseRequested => {
-                self.app.shutdown();
+                pollster::block_on(self.app.shutdown());
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                self.app.update();
+                pollster::block_on(self.app.update());
             }
             _ => {}
         }

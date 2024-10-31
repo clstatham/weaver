@@ -1,9 +1,6 @@
 use std::num::NonZeroU32;
 
-use weaver_ecs::{
-    prelude::Resource,
-    world::{FromWorld, World},
-};
+use weaver_ecs::world::{ConstructFromWorld, World};
 use weaver_pbr::render::PbrLightingInformation;
 use weaver_renderer::{
     bind_group::BindGroupLayoutCache,
@@ -82,13 +79,12 @@ impl Into<wgpu::BlendComponent> for BlendFunc {
     }
 }
 
-#[derive(Resource)]
 pub struct ShaderBindGroupLayout {
     pub layout: wgpu::BindGroupLayout,
 }
 
-impl FromWorld for ShaderBindGroupLayout {
-    fn from_world(world: &mut World) -> Self {
+impl ConstructFromWorld for ShaderBindGroupLayout {
+    fn from_world(world: &World) -> Self {
         let device = world.get_resource::<WgpuDevice>().unwrap();
 
         let texture_binding = wgpu::BindGroupLayoutEntry {
@@ -128,7 +124,7 @@ pub struct ShaderPipelineKey {
     pub cull: Cull,
 }
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct ShaderPipelineCache {
     pub cache: FxHashMap<ShaderPipelineKey, ShaderPipeline>,
 }

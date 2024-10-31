@@ -1,9 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use weaver_ecs::{
-    prelude::{Resource, World},
-    world::FromWorld,
-};
+use weaver_ecs::{prelude::World, world::ConstructFromWorld};
 use weaver_renderer::{prelude::wgpu, WgpuDevice, WgpuQueue};
 use weaver_util::Result;
 use wgpu::util::DeviceExt;
@@ -91,7 +88,7 @@ fn load_png(
     Ok(Arc::new(texture))
 }
 
-#[derive(Clone, Resource)]
+#[derive(Clone)]
 pub struct GpuSkyboxIrradiance {
     #[allow(unused)]
     pub diffuse_texture: Arc<wgpu::Texture>,
@@ -106,15 +103,15 @@ pub struct GpuSkyboxIrradiance {
     pub sampler: Arc<wgpu::Sampler>,
 }
 
-impl FromWorld for GpuSkyboxIrradiance {
-    fn from_world(world: &mut World) -> Self {
+impl ConstructFromWorld for GpuSkyboxIrradiance {
+    fn from_world(world: &World) -> Self {
         let skybox = world.get_resource::<Skybox>().unwrap();
-        let device = world.get_resource::<WgpuDevice>().unwrap().into_inner();
-        let queue = world.get_resource::<WgpuQueue>().unwrap().into_inner();
+        let device = world.get_resource::<WgpuDevice>().unwrap();
+        let queue = world.get_resource::<WgpuQueue>().unwrap();
 
-        let diffuse = load_ktx(&skybox.diffuse_path, device, queue).unwrap();
-        let specular = load_ktx(&skybox.specular_path, device, queue).unwrap();
-        let brdf_lut_texture = load_png(&skybox.brdf_lut_path, device, queue).unwrap();
+        let diffuse = load_ktx(&skybox.diffuse_path, &device, &queue).unwrap();
+        let specular = load_ktx(&skybox.specular_path, &device, &queue).unwrap();
+        let brdf_lut_texture = load_png(&skybox.brdf_lut_path, &device, &queue).unwrap();
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("skybox_sampler"),

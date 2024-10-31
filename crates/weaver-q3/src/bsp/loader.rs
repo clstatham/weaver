@@ -1,9 +1,9 @@
 use std::{path::PathBuf, sync::Arc};
 
 use nom::Finish;
-use weaver_asset::prelude::*;
+use weaver_asset::{prelude::*, AssetCommands};
 use weaver_core::{mesh::Mesh, prelude::Vec3};
-use weaver_ecs::prelude::Resource;
+use weaver_ecs::prelude::Commands;
 use weaver_pbr::prelude::WHITE_TEXTURE;
 use weaver_util::{anyhow, FxHashMap, Lock, Result};
 
@@ -47,7 +47,7 @@ pub enum BspNode {
     },
 }
 
-#[derive(Resource, Asset)]
+#[derive(Asset)]
 pub struct Bsp {
     pub shaders: FxHashMap<PathBuf, String>,
     pub nodes: Vec<Option<BspNode>>,
@@ -104,7 +104,7 @@ impl Bsp {
     }
 }
 
-#[derive(Default, Resource)]
+#[derive(Default)]
 pub struct BspLoader {
     lexed_shader_cache: Lock<LexedShaderCache>,
     loaded_shader_cache: Lock<LoadedShaderCache>,
@@ -112,11 +112,11 @@ pub struct BspLoader {
 }
 
 impl BspLoader {
-    fn load_shader_from_lexed(
+    async fn load_shader_from_lexed(
         &self,
         shader: LexedShader,
         fs: Arc<Filesystem>,
-        load_queues: &AssetLoadQueues<'_>,
+        commands: &mut Commands,
     ) -> LoadedShader {
         let mut textures = FxHashMap::default();
 
@@ -133,9 +133,9 @@ impl BspLoader {
                     textures.insert(map, handle);
                     continue;
                 }
-                let handle = load_queues
-                    .enqueue::<_, TryEverythingTextureLoader, _>((path.into(), fs.clone()))
-                    .unwrap();
+                let handle = commands
+                    .load_asset::<_, TryEverythingTextureLoader, _>((path.into(), fs.clone()))
+                    .await;
                 texture_cache.insert(stripped.to_string(), handle);
                 textures.insert(map, handle);
             }
@@ -155,12 +155,12 @@ impl BspLoader {
                                 textures.insert(map, handle);
                                 continue;
                             }
-                            let handle = load_queues
-                                .enqueue::<_, TryEverythingTextureLoader, _>((
+                            let handle = commands
+                                .load_asset::<_, TryEverythingTextureLoader, _>((
                                     path.into(),
                                     fs.clone(),
                                 ))
-                                .unwrap();
+                                .await;
                             texture_cache.insert(stripped.to_string(), handle);
                             textures.insert(map, handle);
                         }
@@ -181,7 +181,7 @@ impl BspLoader {
 
 impl Loader<Bsp, PathAndFilesystem> for BspLoader {
     // TODO: clean this up
-    fn load(&self, source: PathAndFilesystem, load_queues: &AssetLoadQueues<'_>) -> Result<Bsp> {
+    async fn load(&self, source: PathAndFilesystem, commands: &mut Commands) -> Result<Bsp> {
         let bytes = source.read()?;
         let (_, bsp_file) = bsp_file(bytes.as_slice())
             .finish()
@@ -212,7 +212,7 @@ impl Loader<Bsp, PathAndFilesystem> for BspLoader {
                 } => {
                     let mut shader_meshes = Vec::with_capacity(meshes_and_textures.len());
                     for (mesh, texture, typ) in meshes_and_textures {
-                        let mesh = load_queues.enqueue_direct(mesh).unwrap();
+                        let mesh = commands.load_asset_direct(mesh).await;
                         let texture_name = texture.to_str().unwrap();
                         let texture_name = strip_extension(texture_name);
 
@@ -222,13 +222,11 @@ impl Loader<Bsp, PathAndFilesystem> for BspLoader {
                         if let Some(shader) = loaded_shader_cache.get(texture_name) {
                             shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
                         } else if let Some(shader) = lexed_shader_cache.get(texture_name) {
-                            let shader = self.load_shader_from_lexed(
-                                shader.clone(),
-                                source.fs.clone(),
-                                load_queues,
-                            );
+                            let shader = self
+                                .load_shader_from_lexed(shader.clone(), source.fs.clone(), commands)
+                                .await;
 
-                            let shader = load_queues.enqueue_direct(shader).unwrap();
+                            let shader = commands.load_asset_direct(shader).await;
 
                             loaded_shader_cache.insert(texture_name.to_string(), shader);
                             shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
@@ -237,18 +235,18 @@ impl Loader<Bsp, PathAndFilesystem> for BspLoader {
                             if let Some(texture) = texture_cache.get(texture_name) {
                                 let shader =
                                     LoadedShader::make_simple_textured(texture, texture_name);
-                                let shader = load_queues.enqueue_direct(shader).unwrap();
+                                let shader = commands.load_asset_direct(shader).await;
                                 shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
                             } else {
-                                let texture = load_queues
-                                    .enqueue::<_, TryEverythingTextureLoader, _>((
+                                let texture = commands
+                                    .load_asset::<_, TryEverythingTextureLoader, _>((
                                         texture.to_str().unwrap().into(),
                                         source.fs.clone(),
                                     ))
-                                    .unwrap();
+                                    .await;
                                 let shader =
                                     LoadedShader::make_simple_textured(texture, texture_name);
-                                let shader = load_queues.enqueue_direct(shader).unwrap();
+                                let shader = commands.load_asset_direct(shader).await;
                                 shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
                             }
                         }

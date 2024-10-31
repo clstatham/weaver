@@ -4,24 +4,24 @@ use weaver_app::{plugin::Plugin, App, PrepareFrame};
 use weaver_core::{color::Color, prelude::Mat4, transform::Transform};
 use weaver_ecs::{
     component::Res,
-    prelude::Resource,
-    query::QueryFetchItem,
-    system::SystemParamItem,
-    world::{FromWorld, World},
+    prelude::ResMut,
+    query::Query,
+    system::IntoSystem,
+    world::{ConstructFromWorld, World},
 };
-use weaver_pbr::render::PbrNodeLabel;
+// use weaver_pbr::render::PbrRenderable;
 use weaver_renderer::{
     bind_group::{BindGroup, CreateBindGroup},
     buffer::{GpuBuffer, GpuBufferVec},
     camera::{CameraBindGroup, ViewTarget},
-    graph::{RenderGraphApp, ViewNode, ViewNodeRunner},
-    hdr::{HdrNodeLabel, HdrRenderTarget},
+    hdr::{render_hdr, HdrRenderTarget, HdrRenderable},
     mesh::primitive::{CubePrimitive, Primitive},
     pipeline::{RenderPipeline, RenderPipelineLayout},
     prelude::*,
+    resources::ActiveCommandEncoder,
     shader::Shader,
     texture::{texture_format, GpuTexture},
-    RenderApp, RenderLabel, WgpuDevice, WgpuQueue,
+    PreRender, Render, RenderApp, RenderLabel, WgpuDevice, WgpuQueue,
 };
 use weaver_util::{
     lock::SharedLock,
@@ -39,17 +39,15 @@ pub enum Gizmo {
     Cube,
 }
 
-#[derive(Resource)]
 pub struct SolidCubeGizmo {
     pub vertex_buffer: GpuBuffer,
     pub index_buffer: GpuBuffer,
     pub num_indices: usize,
 }
 
-impl FromWorld for SolidCubeGizmo {
-    fn from_world(world: &mut World) -> Self {
+impl ConstructFromWorld for SolidCubeGizmo {
+    fn from_world(world: &World) -> Self {
         let device = world.get_resource::<WgpuDevice>().unwrap();
-        let device = device.into_inner();
 
         let cube = CubePrimitive::new(1.0, false);
         let mesh = cube.generate_mesh();
@@ -74,17 +72,15 @@ impl FromWorld for SolidCubeGizmo {
     }
 }
 
-#[derive(Resource)]
 pub struct WireCubeGizmo {
     pub vertex_buffer: GpuBuffer,
     pub index_buffer: GpuBuffer,
     pub num_indices: usize,
 }
 
-impl FromWorld for WireCubeGizmo {
-    fn from_world(world: &mut World) -> Self {
+impl ConstructFromWorld for WireCubeGizmo {
+    fn from_world(world: &World) -> Self {
         let device = world.get_resource::<WgpuDevice>().unwrap();
-        let device = device.into_inner();
 
         let cube = CubePrimitive::new(1.0, true);
         let mesh = cube.generate_mesh();
@@ -137,7 +133,7 @@ impl GizmoInstance {
     }
 }
 
-#[derive(Resource, Clone)]
+#[derive(Clone)]
 pub struct Gizmos {
     pub(crate) gizmos: SharedLock<FxHashMap<GizmoKey, Vec<GizmoInstance>>>,
 }
@@ -209,7 +205,7 @@ pub struct GizmoNodeLabel;
 impl RenderLabel for GizmoNodeLabel {}
 
 #[derive(Default)]
-pub struct GizmoRenderNode {
+pub struct GizmoRenderable {
     transform_buffer: FxHashMap<GizmoKey, GpuBufferVec<Mat4>>,
     color_buffer: FxHashMap<GizmoKey, GpuBufferVec<Color>>,
     bind_group: FxHashMap<GizmoKey, Arc<wgpu::BindGroup>>,
@@ -217,7 +213,7 @@ pub struct GizmoRenderNode {
     gizmo_depth_texture: Option<GpuTexture>,
 }
 
-impl GizmoRenderNode {
+impl GizmoRenderable {
     pub fn get_or_create_buffers(
         &mut self,
         key: GizmoKey,
@@ -403,114 +399,83 @@ impl GizmoRenderNode {
     }
 }
 
-impl ViewNode for GizmoRenderNode {
-    type Param = (
-        Res<'static, Gizmos>,
-        Res<'static, SolidCubeGizmo>,
-        Res<'static, WireCubeGizmo>,
-        Res<'static, HdrRenderTarget>,
-    );
-    type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<CameraBindGroup>);
-    type ViewQueryFilter = ();
+pub async fn prepare_gizmos(
+    gizmos: Res<Gizmos>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
+    hdr_target: Res<HdrRenderTarget>,
+    mut gizmo_renderable: ResMut<GizmoRenderable>,
+) {
+    if gizmo_renderable.gizmo_depth_texture.is_none() {
+        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("GizmoDepthTexture"),
+            size: hdr_target.texture.texture.size(),
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
 
-    fn prepare(&mut self, render_world: &mut World) -> Result<()> {
-        let Some(gizmos) = render_world.get_resource::<Gizmos>() else {
-            return Ok(());
-        };
-        let gizmos = gizmos.into_inner();
+        let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        if self.gizmo_depth_texture.is_none() {
-            let device = render_world
-                .get_resource::<WgpuDevice>()
-                .unwrap()
-                .into_inner();
-            let hdr_target = render_world
-                .get_resource::<HdrRenderTarget>()
-                .unwrap()
-                .into_inner();
-
-            let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("GizmoDepthTexture"),
-                size: hdr_target.texture.texture.size(),
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Depth32Float,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            });
-
-            let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-            self.gizmo_depth_texture = Some(GpuTexture {
-                texture: Arc::new(depth_texture),
-                view: Arc::new(depth_view),
-            });
-        }
-
-        for (key, instances) in gizmos.gizmos.read().iter() {
-            let (transform_buffer, color_buffer) = self.get_or_create_buffers(*key);
-
-            transform_buffer.clear();
-            color_buffer.clear();
-
-            for gizmo in instances.iter() {
-                transform_buffer.push(gizmo.transform.matrix());
-                color_buffer.push(gizmo.color);
-            }
-
-            let device = render_world
-                .get_resource::<WgpuDevice>()
-                .unwrap()
-                .into_inner();
-            let queue = render_world
-                .get_resource::<WgpuQueue>()
-                .unwrap()
-                .into_inner();
-
-            transform_buffer.enqueue_update(device, queue);
-            color_buffer.enqueue_update(device, queue);
-
-            self.get_or_create_bind_group(device, *key);
-            self.get_or_create_pipeline(device, *key);
-        }
-
-        Ok(())
+        gizmo_renderable.gizmo_depth_texture = Some(GpuTexture {
+            texture: Arc::new(depth_texture),
+            view: Arc::new(depth_view),
+        });
     }
 
-    fn run(
-        &self,
-        _render_world: &World,
-        _graph_ctx: &mut weaver_renderer::graph::RenderGraphCtx,
-        render_ctx: &mut weaver_renderer::graph::RenderCtx,
-        (gizmos, solid_cube, wire_cube, hdr_target): &SystemParamItem<Self::Param>,
-        (view_target, camera_bind_group): &QueryFetchItem<Self::ViewQueryFetch>,
-    ) -> Result<()> {
-        let depth_texture = self.gizmo_depth_texture.as_ref().unwrap();
-        {
-            let _clear_pass =
-                render_ctx
-                    .command_encoder()
-                    .begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("GizmoDepthClearPass"),
-                        color_attachments: &[],
-                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: &depth_texture.view,
-                            depth_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(1.0),
-                                store: wgpu::StoreOp::Store,
-                            }),
-                            stencil_ops: None,
-                        }),
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
+    for (key, instances) in gizmos.gizmos.read().iter() {
+        let (transform_buffer, color_buffer) = gizmo_renderable.get_or_create_buffers(*key);
+
+        transform_buffer.clear();
+        color_buffer.clear();
+
+        for gizmo in instances.iter() {
+            transform_buffer.push(gizmo.transform.matrix());
+            color_buffer.push(gizmo.color);
         }
 
+        transform_buffer.enqueue_update(&device, &queue);
+        color_buffer.enqueue_update(&device, &queue);
+
+        gizmo_renderable.get_or_create_bind_group(&device, *key);
+        gizmo_renderable.get_or_create_pipeline(&device, *key);
+    }
+}
+
+pub async fn render_gizmos(
+    gizmos: Res<Gizmos>,
+    solid_cube: Res<SolidCubeGizmo>,
+    wire_cube: Res<WireCubeGizmo>,
+    hdr_target: Res<HdrRenderTarget>,
+    mut view_query: Query<(&ViewTarget, &BindGroup<CameraBindGroup>)>,
+    mut command_encoder: ResMut<ActiveCommandEncoder>,
+    gizmo_renderable: Res<GizmoRenderable>,
+) {
+    let depth_texture = gizmo_renderable.gizmo_depth_texture.as_ref().unwrap();
+    {
+        let _clear_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("GizmoDepthClearPass"),
+            color_attachments: &[],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &depth_texture.view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+    }
+
+    for (view_target, camera_bind_group) in view_query.iter() {
         for key in gizmos.gizmos.read().keys() {
-            let gizmo_bind_group = self.bind_group.get(key).unwrap();
-            let pipeline = self.pipelines.get(key).unwrap();
+            let gizmo_bind_group = gizmo_renderable.bind_group.get(key).unwrap();
+            let pipeline = gizmo_renderable.pipelines.get(key).unwrap();
 
             let depth_stencil_attachment = if key.depth_test {
                 Some(wgpu::RenderPassDepthStencilAttachment {
@@ -533,23 +498,20 @@ impl ViewNode for GizmoRenderNode {
                 })
             };
 
-            let mut render_pass =
-                render_ctx
-                    .command_encoder()
-                    .begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("GizmoRenderPass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: hdr_target.color_target(),
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
+            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("GizmoRenderPass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: hdr_target.color_target(),
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
 
             render_pass.set_pipeline(pipeline);
             render_pass.set_bind_group(0, gizmo_bind_group, &[]);
@@ -591,8 +553,6 @@ impl ViewNode for GizmoRenderNode {
                 }
             }
         }
-
-        Ok(())
     }
 }
 
@@ -621,9 +581,25 @@ impl Plugin for GizmoRenderAppPlugin {
     fn build(&self, render_app: &mut App) -> Result<()> {
         render_app.insert_resource(self.gizmos.clone());
 
-        render_app.add_render_main_graph_node::<ViewNodeRunner<GizmoRenderNode>>(GizmoNodeLabel);
-        render_app.add_render_main_graph_edge(PbrNodeLabel, GizmoNodeLabel);
-        render_app.add_render_main_graph_edge(GizmoNodeLabel, HdrNodeLabel);
+        // render_app.add_render_main_graph_node::<ViewNodeRunner<GizmoRenderable>>(GizmoNodeLabel);
+        // render_app.add_render_main_graph_edge(PbrNodeLabel, GizmoNodeLabel);
+        // render_app.add_render_main_graph_edge(GizmoNodeLabel, HdrNodeLabel);
+
+        render_app
+            .main_app_mut()
+            .world_mut()
+            .add_system(prepare_gizmos, PreRender);
+
+        render_app
+            .main_app_mut()
+            .world_mut()
+            .add_system(render_gizmos, Render);
+
+        render_app.main_app_mut().world_mut().add_system_dependency(
+            render_hdr,
+            render_gizmos,
+            Render,
+        );
         Ok(())
     }
 
@@ -639,6 +615,6 @@ impl Plugin for GizmoRenderAppPlugin {
     }
 }
 
-fn clear_gizmos(gizmos: Res<Gizmos>) {
+async fn clear_gizmos(gizmos: Res<Gizmos>) {
     gizmos.clear();
 }

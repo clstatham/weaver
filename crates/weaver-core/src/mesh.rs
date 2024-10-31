@@ -3,14 +3,14 @@ use std::path::PathBuf;
 use glam::{Vec2, Vec3, Vec4};
 use weaver_asset::{
     prelude::{Asset, Loader},
-    AssetLoadQueues, LoadSource, PathAndFilesystem, ReflectAsset,
+    LoadSource, PathAndFilesystem,
 };
-use weaver_ecs::prelude::{Reflect, Resource};
+use weaver_ecs::prelude::Commands;
 use weaver_util::{anyhow, bail, Result};
 
 use crate::prelude::{Aabb, Transform};
 
-#[derive(Debug, Clone, Copy, PartialEq, Reflect, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Vertex {
     pub position: Vec3,
@@ -19,8 +19,7 @@ pub struct Vertex {
     pub tex_coords: Vec2,
 }
 
-#[derive(Clone, Reflect, Asset, Default)]
-#[reflect(ReflectAsset)]
+#[derive(Clone, Asset, Default)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
@@ -83,11 +82,11 @@ impl Mesh {
     }
 }
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct ObjMeshLoader<S: LoadSource>(std::marker::PhantomData<S>);
 
 impl Loader<Mesh, PathAndFilesystem> for ObjMeshLoader<PathBuf> {
-    fn load(&self, source: PathAndFilesystem, _load_queues: &AssetLoadQueues<'_>) -> Result<Mesh> {
+    async fn load(&self, source: PathAndFilesystem, _commands: &mut Commands) -> Result<Mesh> {
         let bytes = source.read()?;
         let meshes = load_obj(&bytes)?;
         if meshes.len() != 1 {
@@ -98,7 +97,7 @@ impl Loader<Mesh, PathAndFilesystem> for ObjMeshLoader<PathBuf> {
 }
 
 impl Loader<Mesh, Vec<u8>> for ObjMeshLoader<Vec<u8>> {
-    fn load(&self, source: Vec<u8>, _load_queues: &AssetLoadQueues<'_>) -> Result<Mesh> {
+    async fn load(&self, source: Vec<u8>, _commands: &mut Commands) -> Result<Mesh> {
         load_obj(&source)?
             .into_iter()
             .next()
@@ -107,18 +106,14 @@ impl Loader<Mesh, Vec<u8>> for ObjMeshLoader<Vec<u8>> {
 }
 
 impl Loader<Vec<Mesh>, PathAndFilesystem> for ObjMeshLoader<PathBuf> {
-    fn load(
-        &self,
-        source: PathAndFilesystem,
-        _load_queues: &AssetLoadQueues<'_>,
-    ) -> Result<Vec<Mesh>> {
+    async fn load(&self, source: PathAndFilesystem, _commands: &mut Commands) -> Result<Vec<Mesh>> {
         let bytes = source.read()?;
         load_obj(&bytes)
     }
 }
 
 impl Loader<Vec<Mesh>, Vec<u8>> for ObjMeshLoader<Vec<u8>> {
-    fn load(&self, source: Vec<u8>, _load_queues: &AssetLoadQueues<'_>) -> Result<Vec<Mesh>> {
+    async fn load(&self, source: Vec<u8>, _commands: &mut Commands) -> Result<Vec<Mesh>> {
         load_obj(&source)
     }
 }
@@ -189,11 +184,11 @@ pub fn load_obj(bytes: &[u8]) -> Result<Vec<Mesh>> {
     Ok(meshes)
 }
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct GltfMeshLoader<S: LoadSource>(std::marker::PhantomData<S>);
 
 impl Loader<Mesh, PathAndFilesystem> for GltfMeshLoader<PathBuf> {
-    fn load(&self, source: PathAndFilesystem, _load_queues: &AssetLoadQueues<'_>) -> Result<Mesh> {
+    async fn load(&self, source: PathAndFilesystem, _commands: &mut Commands) -> Result<Mesh> {
         let bytes = source.read()?;
         let meshes = load_gltf(&bytes)?;
         if meshes.len() != 1 {
@@ -204,7 +199,7 @@ impl Loader<Mesh, PathAndFilesystem> for GltfMeshLoader<PathBuf> {
 }
 
 impl Loader<Mesh, Vec<u8>> for GltfMeshLoader<Vec<u8>> {
-    fn load(&self, source: Vec<u8>, _load_queues: &AssetLoadQueues<'_>) -> Result<Mesh> {
+    async fn load(&self, source: Vec<u8>, _commands: &mut Commands) -> Result<Mesh> {
         load_gltf(&source)?
             .into_iter()
             .next()
@@ -213,18 +208,14 @@ impl Loader<Mesh, Vec<u8>> for GltfMeshLoader<Vec<u8>> {
 }
 
 impl Loader<Vec<Mesh>, PathAndFilesystem> for GltfMeshLoader<PathBuf> {
-    fn load(
-        &self,
-        source: PathAndFilesystem,
-        _load_queues: &AssetLoadQueues<'_>,
-    ) -> Result<Vec<Mesh>> {
+    async fn load(&self, source: PathAndFilesystem, _commands: &mut Commands) -> Result<Vec<Mesh>> {
         let bytes = source.read()?;
         load_gltf(&bytes)
     }
 }
 
 impl Loader<Vec<Mesh>, Vec<u8>> for GltfMeshLoader<Vec<u8>> {
-    fn load(&self, source: Vec<u8>, _load_queues: &AssetLoadQueues<'_>) -> Result<Vec<Mesh>> {
+    async fn load(&self, source: Vec<u8>, _commands: &mut Commands) -> Result<Vec<Mesh>> {
         load_gltf(&source)
     }
 }

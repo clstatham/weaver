@@ -9,8 +9,10 @@ use image::codecs::hdr::HdrDecoder;
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
     component::Res,
-    prelude::{QueryFetchItem, Resource, SystemParamItem, World},
-    world::FromWorld,
+    prelude::{Commands, ResMut, System, World},
+    query::Query,
+    system::IntoSystem,
+    world::ConstructFromWorld,
 };
 use weaver_renderer::{
     bind_group::{
@@ -18,16 +20,16 @@ use weaver_renderer::{
     },
     camera::{CameraBindGroup, ViewTarget},
     extract::{ExtractResource, ExtractResourcePlugin},
-    graph::{RenderCtx, RenderGraphApp, RenderGraphCtx, ViewNode, ViewNodeRunner},
     hdr::HdrRenderTarget,
     pipeline::{
         ComputePipelineCache, ComputePipelinePlugin, CreateComputePipeline, CreateRenderPipeline,
         RenderPipeline, RenderPipelineCache, RenderPipelineLayout, RenderPipelinePlugin,
     },
     prelude::{wgpu, ComputePipeline, ComputePipelineLayout},
+    resources::ActiveCommandEncoder,
     shader::Shader,
     texture::{texture_format, GpuTexture},
-    InitRenderResources, RenderLabel, WgpuDevice, WgpuQueue,
+    InitRenderResources, Render, RenderLabel, WgpuDevice, WgpuQueue,
 };
 use weaver_util::Result;
 
@@ -35,7 +37,7 @@ pub mod irradiance;
 
 pub const SKYBOX_CUBEMAP_SIZE: u32 = 1024;
 
-#[derive(Resource, Clone)]
+#[derive(Clone)]
 pub struct Skybox {
     pub path: PathBuf,
     pub diffuse_path: PathBuf,
@@ -117,24 +119,22 @@ pub(crate) struct GpuSkyboxDst {
     dst_texture: GpuTexture,
 }
 
-#[derive(Clone, Resource)]
-pub(crate) struct GpuSkybox {
+#[derive(Clone)]
+pub struct GpuSkybox {
     #[allow(unused)]
     pub(crate) texture: GpuTexture,
     pub(crate) cube_view: Arc<wgpu::TextureView>,
     pub(crate) sampler: Arc<wgpu::Sampler>,
 }
 
-impl FromWorld for GpuSkybox {
-    fn from_world(world: &mut World) -> Self {
-        let (device, queue, skybox, mut pipeline_cache, mut bind_group_layout_cache) = world
-            .get_many_resources_mut::<(
-                WgpuDevice,
-                WgpuQueue,
-                Skybox,
-                ComputePipelineCache,
-                BindGroupLayoutCache,
-            )>();
+impl ConstructFromWorld for GpuSkybox {
+    fn from_world(world: &World) -> Self {
+        let device = world.get_resource::<WgpuDevice>().unwrap();
+        let queue = world.get_resource::<WgpuQueue>().unwrap();
+        let skybox = world.get_resource::<Skybox>().unwrap();
+        let mut pipeline_cache = world.get_resource_mut::<ComputePipelineCache>().unwrap();
+        let mut bind_group_layout_cache = world.get_resource_mut::<BindGroupLayoutCache>().unwrap();
+
         Self::new(
             &skybox,
             &device,
@@ -436,9 +436,9 @@ pub struct SkyboxNodeLabel;
 impl RenderLabel for SkyboxNodeLabel {}
 
 #[derive(Default)]
-pub(crate) struct SkyboxNode;
+pub struct SkyboxRenderable;
 
-impl CreateRenderPipeline for SkyboxNode {
+impl CreateRenderPipeline for SkyboxRenderable {
     fn create_render_pipeline_layout(
         device: &wgpu::Device,
         bind_group_layout_cache: &mut BindGroupLayoutCache,
@@ -506,62 +506,44 @@ impl CreateRenderPipeline for SkyboxNode {
     }
 }
 
-impl ViewNode for SkyboxNode {
-    type Param = (
-        Res<'static, RenderPipelineCache>,
-        Res<'static, HdrRenderTarget>,
-        Res<'static, BindGroup<GpuSkybox>>,
-    );
+pub async fn render_skybox(
+    render_pipeline_cache: Res<RenderPipelineCache>,
+    hdr_target: Res<HdrRenderTarget>,
+    skybox_bind_group: Res<BindGroup<GpuSkybox>>,
+    mut view_target: Query<(&ViewTarget, &BindGroup<CameraBindGroup>)>,
+    mut command_encoder: ResMut<ActiveCommandEncoder>,
+) {
+    let skybox_pipeline = render_pipeline_cache
+        .get_pipeline_for::<SkyboxRenderable>()
+        .unwrap();
 
-    type ViewQueryFetch = (&'static ViewTarget, &'static BindGroup<CameraBindGroup>);
+    for (view_target, camera_bind_group) in view_target.iter() {
+        let mut rpass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Skybox Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: hdr_target.color_target(),
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &view_target.depth_target,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
 
-    type ViewQueryFilter = ();
-
-    fn run(
-        &self,
-        _render_world: &World,
-        _graph_ctx: &mut RenderGraphCtx,
-        render_ctx: &mut RenderCtx,
-        (render_pipeline_cache, hdr_target, skybox_bind_group): &SystemParamItem<Self::Param>,
-        (view_target, camera_bind_group): &QueryFetchItem<Self::ViewQueryFetch>,
-    ) -> Result<()> {
-        let skybox_pipeline = render_pipeline_cache
-            .get_pipeline_for::<SkyboxNode>()
-            .unwrap();
-
-        {
-            let mut rpass =
-                render_ctx
-                    .command_encoder()
-                    .begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Skybox Render Pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: hdr_target.color_target(),
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: &view_target.depth_target,
-                            depth_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            }),
-                            stencil_ops: None,
-                        }),
-                        occlusion_query_set: None,
-                        timestamp_writes: None,
-                    });
-
-            rpass.set_pipeline(skybox_pipeline);
-            rpass.set_bind_group(0, skybox_bind_group, &[]);
-            rpass.set_bind_group(1, camera_bind_group, &[]);
-            rpass.draw(0..3, 0..1);
-        }
-
-        Ok(())
+        rpass.set_pipeline(skybox_pipeline);
+        rpass.set_bind_group(0, &skybox_bind_group, &[]);
+        rpass.set_bind_group(1, camera_bind_group, &[]);
+        rpass.draw(0..3, 0..1);
     }
 }
 
@@ -579,18 +561,19 @@ impl Plugin for SkyboxPlugin {
     }
 }
 
-pub fn init_gpu_skybox(world: &mut World) {
-    if !world.has_resource::<GpuSkybox>() && world.has_resource::<Skybox>() {
-        world.init_resource::<GpuSkybox>();
+async fn init_gpu_skybox(mut commands: Commands) {
+    if commands.has_resource::<Skybox>().await && !commands.has_resource::<GpuSkybox>().await {
+        commands.init_resource::<GpuSkybox>().await;
     }
 }
 
-pub struct SkyboxNodePlugin;
+pub struct SkyboxRenderablePlugin;
 
-impl Plugin for SkyboxNodePlugin {
+impl Plugin for SkyboxRenderablePlugin {
     fn build(&self, render_app: &mut weaver_app::App) -> Result<()> {
-        render_app.add_plugin(RenderPipelinePlugin::<SkyboxNode>::default())?;
-        render_app.add_render_main_graph_node::<ViewNodeRunner<SkyboxNode>>(SkyboxNodeLabel);
+        render_app.add_plugin(RenderPipelinePlugin::<SkyboxRenderable>::default())?;
+
+        render_app.add_system(render_skybox, Render);
 
         Ok(())
     }

@@ -1,14 +1,12 @@
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 
 use plugin::Plugin;
 
 use weaver_ecs::{
-    change::WorldTicks,
-    component::{Res, ResMut, Resource},
-    reflect::registry::{TypeRegistry, Typed},
+    component::Res,
     system::{IntoSystem, System},
     system_schedule::SystemStage,
-    world::{FromWorld, World},
+    world::{ConstructFromWorld, World, WorldTicks},
 };
 use weaver_event::{Event, Events, ManuallyUpdatedEvents};
 use weaver_util::{maps::TypeIdSet, FxHashMap, Result};
@@ -117,28 +115,6 @@ impl SubApp {
         self.plugins = plugins;
     }
 
-    pub fn init_resource<T: Resource + FromWorld>(&mut self) -> &mut Self {
-        self.world.init_resource::<T>();
-        self
-    }
-
-    pub fn insert_resource<T: Resource>(&mut self, resource: T) -> &Self {
-        self.world.insert_resource(resource);
-        self
-    }
-
-    pub fn get_resource<T: Resource>(&self) -> Option<Res<'_, T>> {
-        self.world.get_resource::<T>()
-    }
-
-    pub fn get_resource_mut<T: Resource>(&mut self) -> Option<ResMut<'_, T>> {
-        self.world.get_resource_mut::<T>()
-    }
-
-    pub fn has_resource<T: Resource>(&self) -> bool {
-        self.world.has_resource::<T>()
-    }
-
     pub fn add_plugin<T: Plugin>(&mut self, plugin: T) -> Result<&mut Self> {
         if self
             .plugins
@@ -156,108 +132,6 @@ impl SubApp {
         self.unready_plugins.insert(TypeId::of::<T>());
 
         Ok(self)
-    }
-
-    pub fn has_system_stage<T: SystemStage>(&self) -> bool {
-        self.world.has_system_stage::<T>()
-    }
-
-    pub fn push_init_stage<T: SystemStage>(&mut self) -> &mut Self {
-        self.world.push_init_stage::<T>();
-        self
-    }
-
-    pub fn push_update_stage<T: SystemStage>(&mut self) -> &mut Self {
-        self.world.push_update_stage::<T>();
-        self
-    }
-
-    pub fn push_shutdown_stage<T: SystemStage>(&mut self) -> &mut Self {
-        self.world.push_shutdown_stage::<T>();
-        self
-    }
-
-    pub fn push_manual_stage<T: SystemStage>(&mut self) -> &mut Self {
-        self.world.push_manual_stage::<T>();
-        self
-    }
-
-    pub fn add_update_stage_before<T: SystemStage, U: SystemStage>(&mut self) -> &mut Self {
-        self.world.add_update_stage_before::<T, U>();
-        self
-    }
-
-    pub fn add_update_stage_after<T: SystemStage, U: SystemStage>(&mut self) -> &mut Self {
-        self.world.add_update_stage_after::<T, U>();
-        self
-    }
-
-    pub fn add_system<T, M, S>(&mut self, system: S, stage: T) -> &mut Self
-    where
-        T: SystemStage,
-        M: 'static,
-        S: IntoSystem<M>,
-        S::System: System<Output = ()>,
-    {
-        self.world.add_system(system, stage);
-        self
-    }
-
-    pub fn add_system_dependency<T, M1, M2, S, DEPENDENCY>(
-        &mut self,
-        system: S,
-        dependency: DEPENDENCY,
-        stage: T,
-    ) -> &mut Self
-    where
-        T: SystemStage,
-        M1: 'static,
-        M2: 'static,
-        S: IntoSystem<M1>,
-        DEPENDENCY: IntoSystem<M2>,
-        S::System: System<Output = ()>,
-        DEPENDENCY::System: System<Output = ()>,
-    {
-        self.world.add_system_dependency(system, dependency, stage);
-        self
-    }
-
-    pub fn add_system_before<T, M1, M2, S, BEFORE>(
-        &mut self,
-        system: S,
-        before: BEFORE,
-        stage: T,
-    ) -> &mut Self
-    where
-        T: SystemStage,
-        M1: 'static,
-        M2: 'static,
-        S: IntoSystem<M1>,
-        BEFORE: IntoSystem<M2>,
-        S::System: System<Output = ()>,
-        BEFORE::System: System<Output = ()>,
-    {
-        self.world.add_system_before(system, before, stage);
-        self
-    }
-
-    pub fn add_system_after<T, M1, M2, S, AFTER>(
-        &mut self,
-        system: S,
-        after: AFTER,
-        stage: T,
-    ) -> &mut Self
-    where
-        T: SystemStage,
-        M1: 'static,
-        M2: 'static,
-        S: IntoSystem<M1>,
-        AFTER: IntoSystem<M2>,
-        S::System: System<Output = ()>,
-        AFTER::System: System<Output = ()>,
-    {
-        self.world.add_system_after(system, after, stage);
-        self
     }
 
     pub fn set_extract(&mut self, extract: ExtractFn) -> &mut Self {
@@ -284,18 +158,6 @@ impl SubApp {
             Ok(())
         }
     }
-
-    pub fn init(&mut self) {
-        self.world.init().unwrap();
-    }
-
-    pub fn update(&mut self) {
-        self.world.update().unwrap();
-    }
-
-    pub fn shutdown(&mut self) {
-        self.world.shutdown().unwrap();
-    }
 }
 
 pub struct SubApps {
@@ -311,27 +173,27 @@ impl SubApps {
         }
     }
 
-    pub fn init(&mut self) {
-        self.main.init();
+    pub async fn init(&mut self) {
+        self.main.world_mut().init().await.unwrap();
         for (_, sub_app) in self.sub_apps.iter_mut() {
-            sub_app.init();
+            sub_app.world_mut().init().await.unwrap();
         }
     }
 
-    pub fn update(&mut self) {
-        self.main.update();
+    pub async fn update(&mut self) {
+        self.main.world_mut().update().await.unwrap();
         for (_, sub_app) in self.sub_apps.iter_mut() {
             sub_app.extract_from(&mut self.main.world).unwrap();
-            sub_app.update();
+            sub_app.world_mut().update().await.unwrap();
             sub_app.world_mut().increment_change_tick();
         }
         self.main.world_mut().increment_change_tick();
     }
 
-    pub fn shutdown(&mut self) {
-        self.main.shutdown();
+    pub async fn shutdown(&mut self) {
+        self.main.world_mut().shutdown().await.unwrap();
         for (_, sub_app) in self.sub_apps.iter_mut() {
-            sub_app.shutdown();
+            sub_app.world_mut().shutdown().await.unwrap();
         }
     }
 }
@@ -359,14 +221,25 @@ impl App {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let mut this = Self::empty();
-        this.insert_resource(TypeRegistry::new());
-        this.main_app_mut().push_init_stage::<Init>();
-        this.main_app_mut().push_update_stage::<PrepareFrame>();
-        this.main_app_mut().push_update_stage::<PreUpdate>();
-        this.main_app_mut().push_update_stage::<Update>();
-        this.main_app_mut().push_update_stage::<PostUpdate>();
-        this.main_app_mut().push_update_stage::<FinishFrame>();
-        this.main_app_mut().push_shutdown_stage::<Shutdown>();
+        this.main_app_mut().world_mut().push_init_stage::<Init>();
+        this.main_app_mut()
+            .world_mut()
+            .push_update_stage::<PrepareFrame>();
+        this.main_app_mut()
+            .world_mut()
+            .push_update_stage::<PreUpdate>();
+        this.main_app_mut()
+            .world_mut()
+            .push_update_stage::<Update>();
+        this.main_app_mut()
+            .world_mut()
+            .push_update_stage::<PostUpdate>();
+        this.main_app_mut()
+            .world_mut()
+            .push_update_stage::<FinishFrame>();
+        this.main_app_mut()
+            .world_mut()
+            .push_shutdown_stage::<Shutdown>();
 
         this
     }
@@ -424,34 +297,28 @@ impl App {
         self.sub_apps.sub_apps.remove(&TypeId::of::<T>())
     }
 
-    pub fn has_resource<T: Resource>(&self) -> bool {
-        self.main_app().has_resource::<T>()
+    pub fn has_resource<T: Any + Send + Sync>(&self) -> bool {
+        self.main_app().world().has_resource::<T>()
     }
 
-    pub fn init_resource<T: Resource + FromWorld>(&mut self) -> &mut Self {
+    pub fn init_resource<T: Any + Send + Sync + ConstructFromWorld>(&mut self) -> &mut Self {
         self.main_app_mut().world_mut().init_resource::<T>();
         self
     }
 
-    pub fn insert_resource<T: Resource>(&mut self, resource: T) -> &mut Self {
-        self.main_app_mut().insert_resource(resource);
-        self
-    }
-
-    pub fn register_type<T: Typed>(&mut self) -> &mut Self {
-        self.main_app_mut()
-            .get_resource_mut::<TypeRegistry>()
-            .unwrap()
-            .register::<T>();
+    pub fn insert_resource<T: Any + Send + Sync>(&mut self, resource: T) -> &mut Self {
+        self.main_app().world().insert_resource(resource);
         self
     }
 
     pub fn add_event<T: Event>(&mut self) -> &mut Self {
-        fn clear_events<T: Event>(events: Res<Events<T>>, world_ticks: WorldTicks) {
+        async fn clear_events<T: Event>(events: Res<Events<T>>, world_ticks: WorldTicks) {
             events.update(world_ticks.change_tick);
         }
         self.insert_resource(Events::<T>::new());
-        self.add_system(clear_events::<T>, FinishFrame);
+        self.main_app_mut()
+            .world_mut()
+            .add_system(clear_events::<T>, FinishFrame);
         self
     }
 
@@ -460,8 +327,9 @@ impl App {
         self
     }
 
-    pub fn send_event<T: Event>(&mut self, event: T) {
-        self.main_app_mut()
+    pub fn send_event<T: Event>(&self, event: T) {
+        self.main_app()
+            .world()
             .get_resource::<Events<T>>()
             .unwrap()
             .send(event);
@@ -472,9 +340,9 @@ impl App {
         T: SystemStage,
         M: 'static,
         S: IntoSystem<M>,
-        S::System: System<Output = ()>,
+        S::System: System,
     {
-        self.main_app_mut().add_system(system, stage);
+        self.main_app_mut().world_mut().add_system(system, stage);
         self
     }
 
@@ -490,10 +358,12 @@ impl App {
         M2: 'static,
         S: IntoSystem<M1>,
         BEFORE: IntoSystem<M2>,
-        S::System: System<Output = ()>,
-        BEFORE::System: System<Output = ()>,
+        S::System: System,
+        BEFORE::System: System,
     {
-        self.main_app_mut().add_system_before(system, before, stage);
+        self.main_app_mut()
+            .world_mut()
+            .add_system_before(system, before, stage);
         self
     }
 
@@ -509,28 +379,30 @@ impl App {
         M2: 'static,
         S: IntoSystem<M1>,
         AFTER: IntoSystem<M2>,
-        S::System: System<Output = ()>,
-        AFTER::System: System<Output = ()>,
+        S::System: System,
+        AFTER::System: System,
     {
-        self.main_app_mut().add_system_after(system, after, stage);
+        self.main_app_mut()
+            .world_mut()
+            .add_system_after(system, after, stage);
         self
     }
 
-    pub fn init(&mut self) {
+    pub async fn init(&mut self) {
         self.finish_plugins();
-        self.sub_apps.init();
+        self.sub_apps.init().await;
     }
 
-    pub fn update(&mut self) {
+    pub async fn update(&mut self) {
         while !self.unready_plugins.is_empty() {
             self.finish_plugins();
         }
 
-        self.sub_apps.update();
+        self.sub_apps.update().await;
     }
 
-    pub fn shutdown(&mut self) {
-        self.sub_apps.shutdown();
+    pub async fn shutdown(&mut self) {
+        self.sub_apps.shutdown().await;
     }
 
     pub fn finish_plugins(&mut self) {

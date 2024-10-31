@@ -3,7 +3,7 @@ use weaver_asset::{Asset, AssetApp, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
     commands::Commands,
     component::{Res, ResMut},
-    prelude::Resource,
+    entity::Entity,
     query::Query,
     system::{SystemParam, SystemParamItem, SystemParamWrapper},
 };
@@ -38,7 +38,7 @@ pub trait RenderAsset: Asset {
         Self: Sized;
 }
 
-#[derive(Default, Resource)]
+#[derive(Default)]
 pub struct ExtractedRenderAssets {
     assets: Lock<FxHashMap<UntypedHandle, UntypedHandle>>,
 }
@@ -81,17 +81,18 @@ impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn extract_render_asset<T: RenderAsset>(
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+async fn extract_render_asset<T: RenderAsset>(
     mut commands: Commands,
-    main_world_assets: Extract<Res<'static, Assets<T::Source>>>,
+    main_world_assets: Extract<Res<Assets<T::Source>>>,
     mut param: SystemParamWrapper<T::Param>,
-    query: Extract<Query<&'static Handle<T::Source>>>,
+    mut query: Extract<Query<(Entity, &Handle<T::Source>)>>,
     extracted_assets: Res<ExtractedRenderAssets>,
     mut render_assets: ResMut<Assets<T>>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
 ) {
+    // let mut query = query.query();
     // query for handles to the base asset
     for (entity, handle) in query.iter() {
         if !extracted_assets.contains(&handle.into_untyped()) {
@@ -108,7 +109,7 @@ fn extract_render_asset<T: RenderAsset>(
                 let untyped_handle = handle.into_untyped();
 
                 // insert the render asset handle into the entity
-                commands.insert_component(entity, render_handle);
+                commands.insert_component(entity, render_handle).await;
 
                 // mark the original asset as extracted
                 extracted_assets.insert(untyped_handle, render_handle.into_untyped());
@@ -131,7 +132,7 @@ fn extract_render_asset<T: RenderAsset>(
                 .update_render_asset(&base_asset, param.item_mut(), &device, &queue)
                 .unwrap();
 
-            commands.insert_component(entity, render_handle);
+            commands.insert_component(entity, render_handle).await;
         }
     }
 }

@@ -1,7 +1,6 @@
 use weaver::prelude::*;
 
-#[derive(Debug, Clone, Copy, Component, Reflect)]
-#[reflect(ReflectComponent)]
+#[derive(Debug, Clone, Copy)]
 pub struct FlyCameraController {
     pub speed: f32,
     pub sensitivity: f32,
@@ -105,22 +104,25 @@ impl FlyCameraController {
 
 pub struct CameraUpdate;
 
-pub fn update_camera(
+pub async fn update_camera(
     time: Res<Time>,
     input: Res<Input>,
-    query: Query<(&mut Camera, &mut FlyCameraController)>,
+    mut query: Query<(&mut Camera, &mut FlyCameraController)>,
 ) {
-    for (_entity, (mut camera, mut controller)) in query.iter() {
-        controller.update(&input, time.delta_time, &mut camera);
+    for (camera, controller) in query.iter() {
+        controller.update(&input, time.delta_time, camera);
     }
 }
 
-pub fn update_aspect_ratio(camera: Query<&mut FlyCameraController>, rx: EventRx<WindowResized>) {
+pub async fn update_aspect_ratio(
+    mut camera: Query<&mut FlyCameraController>,
+    rx: EventRx<WindowResized>,
+) {
     let events: Vec<_> = rx.iter().collect();
     if let Some(event) = events.last() {
         let WindowResized { width, height } = **event;
         let aspect = width as f32 / height as f32;
-        for (_entity, mut camera) in camera.iter() {
+        for camera in camera.iter() {
             camera.aspect = aspect;
         }
     }

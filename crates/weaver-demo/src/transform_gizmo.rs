@@ -1,6 +1,6 @@
 use weaver::prelude::*;
 
-#[derive(Debug, Clone, Copy, Resource)]
+#[derive(Debug, Clone, Copy)]
 pub struct TransformGizmo {
     pub focus: Option<Entity>,
     pub size: f32,
@@ -113,13 +113,13 @@ impl TransformGizmo {
 pub fn draw_transform_gizmo(
     gizmos: ResMut<Gizmos>,
     transform_gizmo: Res<TransformGizmo>,
-    transforms: Query<&Transform>,
+    mut transforms: Query<&Transform>,
 ) -> Result<()> {
     if let Some(focus_transform) = transform_gizmo
         .focus
         .and_then(|entity| transforms.get(entity))
     {
-        transform_gizmo.draw(&gizmos, &focus_transform);
+        transform_gizmo.draw(&gizmos, focus_transform);
     }
 
     Ok(())

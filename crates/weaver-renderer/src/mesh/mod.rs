@@ -67,7 +67,6 @@ pub struct MeshPlugin;
 impl Plugin for MeshPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_plugin(ExtractRenderAssetPlugin::<GpuMesh>::default())?;
-        app.register_type::<Mesh>();
         Ok(())
     }
 }

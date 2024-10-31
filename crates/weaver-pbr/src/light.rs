@@ -3,9 +3,8 @@ use weaver_app::{plugin::Plugin, App};
 
 use weaver_core::{color::Color, prelude::Vec3, transform::Transform};
 use weaver_ecs::{
-    prelude::{Component, Reflect, Resource, World},
-    query::QueryFetchItem,
-    world::FromWorld,
+    query::QueryableItem,
+    world::{ConstructFromWorld, World},
 };
 use weaver_renderer::{
     bind_group::{BindGroupLayout, CreateBindGroup},
@@ -16,7 +15,7 @@ use weaver_renderer::{
 };
 use weaver_util::Result;
 
-#[derive(Copy, Clone, Debug, Component, Reflect)]
+#[derive(Copy, Clone, Debug)]
 pub struct PointLight {
     pub color: Color,
     pub intensity: f32,
@@ -26,12 +25,9 @@ pub struct PointLight {
 
 impl ExtractComponent for PointLight {
     type ExtractQueryFetch = &'static Self;
-    type ExtractQueryFilter = ();
     type Out = Self;
 
-    fn extract_render_component(
-        item: QueryFetchItem<Self::ExtractQueryFetch>,
-    ) -> Option<Self::Out> {
+    fn extract_render_component(item: QueryableItem<Self::ExtractQueryFetch>) -> Option<Self::Out> {
         Some(*item)
     }
 }
@@ -70,13 +66,12 @@ impl From<(PointLight, Transform)> for PointLightUniform {
     }
 }
 
-#[derive(Resource)]
 pub struct GpuPointLightArray {
     pub buffer: GpuBufferVec<PointLightUniform>,
 }
 
-impl FromWorld for GpuPointLightArray {
-    fn from_world(world: &mut World) -> Self {
+impl ConstructFromWorld for GpuPointLightArray {
+    fn from_world(world: &World) -> Self {
         let device = world.get_resource::<WgpuDevice>().unwrap();
         let mut buffer =
             GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);

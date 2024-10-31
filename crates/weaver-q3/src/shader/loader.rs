@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use weaver_asset::{prelude::*, PathAndFilesystem};
 use weaver_core::texture::{Texture, TextureLoader};
-use weaver_ecs::prelude::Resource;
+use weaver_ecs::prelude::Commands;
 use weaver_pbr::material::ERROR_TEXTURE;
 use weaver_util::{anyhow, FxHashMap, Result};
 
@@ -16,12 +16,10 @@ pub fn make_error_shader(name: &str) -> LoadedShader {
             name: name.to_string(),
             global_params: vec![],
             stages: vec![LexedShaderStage {
-                params: vec![ShaderStageParam::Map(Map::Path(
-                    "textures/error".to_string(),
-                ))],
+                params: vec![ShaderStageParam::Map(Map::Path(name.to_string()))],
             }],
         },
-        textures: FxHashMap::from_iter([(Map::Path("textures/error".to_string()), ERROR_TEXTURE)]),
+        textures: FxHashMap::from_iter([(Map::Path(name.to_string()), ERROR_TEXTURE)]),
     }
 }
 
@@ -37,7 +35,7 @@ pub fn strip_extension(path: &str) -> &str {
     path
 }
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct TextureCache(pub FxHashMap<String, Handle<Texture>>);
 
 impl TextureCache {
@@ -50,7 +48,7 @@ impl TextureCache {
     }
 }
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct LexedShaderCache(pub FxHashMap<String, LexedShader>);
 
 impl LexedShaderCache {
@@ -90,7 +88,7 @@ impl LexedShaderCache {
     }
 }
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct LoadedShaderCache(pub FxHashMap<String, Handle<LoadedShader>>);
 
 impl LoadedShaderCache {
@@ -130,15 +128,11 @@ impl LoadedShader {
     }
 }
 
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct TryEverythingTextureLoader;
 
 impl Loader<Texture, PathAndFilesystem> for TryEverythingTextureLoader {
-    fn load(
-        &self,
-        source: PathAndFilesystem,
-        load_queues: &AssetLoadQueues<'_>,
-    ) -> Result<Texture> {
+    async fn load(&self, source: PathAndFilesystem, commands: &mut Commands) -> Result<Texture> {
         let extensions = ["png", "tga", "jpg", "jpeg", "pcx", "bmp"];
         for ext in &extensions {
             let path = source.path.with_extension(ext);
@@ -146,7 +140,10 @@ impl Loader<Texture, PathAndFilesystem> for TryEverythingTextureLoader {
                 path,
                 fs: source.fs.clone(),
             };
-            if let Ok(texture) = TextureLoader::<PathBuf>::default().load(path, load_queues) {
+            if let Ok(texture) = TextureLoader::<PathBuf>::default()
+                .load(path, commands)
+                .await
+            {
                 return Ok(texture);
             }
         }

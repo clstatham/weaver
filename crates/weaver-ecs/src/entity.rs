@@ -4,12 +4,6 @@ use std::{
     sync::atomic::{AtomicI64, Ordering},
 };
 
-use crate::{
-    prelude::Component,
-    storage::{Mut, Ref},
-    world::World,
-};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub struct Entity {
@@ -85,33 +79,6 @@ pub type EntityMap<V> =
     std::collections::hash_map::HashMap<Entity, V, BuildHasherDefault<EntityHasher>>;
 
 pub type EntitySet = std::collections::hash_set::HashSet<Entity, BuildHasherDefault<EntityHasher>>;
-
-pub struct EntityRef<'w> {
-    entity: Entity,
-    world: &'w World,
-}
-
-impl<'w> EntityRef<'w> {
-    pub fn new(entity: Entity, world: &'w World) -> Self {
-        Self { entity, world }
-    }
-
-    pub fn entity(&self) -> Entity {
-        self.entity
-    }
-
-    pub fn world(&self) -> &'w World {
-        self.world
-    }
-
-    pub fn get<T: Component>(&self) -> Option<Ref<'w, T>> {
-        self.world.get_component::<T>(self.entity)
-    }
-
-    pub fn get_mut<T: Component>(&self) -> Option<Mut<'w, T>> {
-        self.world.get_component_mut::<T>(self.entity)
-    }
-}
 
 #[derive(Debug, Default)]
 pub struct Entities {

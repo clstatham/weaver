@@ -1,5 +1,4 @@
 use glam::*;
-use weaver_ecs::prelude::Reflect;
 
 use crate::{mesh::Mesh, prelude::Transform};
 
@@ -17,7 +16,7 @@ pub enum Intersection {
 }
 
 /// 3D plane with infinite extent
-#[derive(Default, Clone, Copy, Debug, PartialEq, Reflect)]
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
 pub struct Plane {
     /// Normal vector of the plane
@@ -98,7 +97,7 @@ pub enum HalfSpace {
     On,
 }
 
-#[derive(Default, Clone, Copy, Debug, PartialEq, Reflect)]
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
 pub struct Sphere {
     pub center: Vec3,
     pub radius: f32,
@@ -140,7 +139,7 @@ impl Intersect<Sphere> for Sphere {
 }
 
 /// 3D ray with origin and direction, and infinite extent
-#[derive(Clone, Copy, Debug, PartialEq, Reflect)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
 pub struct Ray {
     pub origin: Vec3,
@@ -165,7 +164,7 @@ impl Ray {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Reflect)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
 pub struct Triangle {
     pub a: Vec3,
@@ -192,7 +191,7 @@ impl Triangle {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Reflect)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RayTriangleIntersection {
     pub t: f32,
     pub uv: Vec2,
@@ -245,7 +244,7 @@ impl Intersect<Triangle> for Ray {
     }
 }
 
-#[derive(Default, Clone, Copy, Debug, PartialEq, Reflect)]
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
 pub struct Frustum {
     pub left: Plane,
@@ -306,7 +305,7 @@ impl Frustum {
 }
 
 /// Axis-aligned bounding box
-#[derive(Clone, Copy, Debug, PartialEq, Reflect, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 #[repr(C)]
 pub struct Aabb {
     pub min: Vec3,
@@ -443,7 +442,7 @@ impl Intersect<Sphere> for Aabb {
 }
 
 /// Oriented bounding box
-#[derive(Clone, Copy, Debug, PartialEq, Reflect)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Obb {
     pub aabb: Aabb,
     pub transform: Transform,
@@ -543,7 +542,7 @@ impl Intersect<Ray> for Obb {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Reflect)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RayMeshIntersection {
     pub ray_triangle_intersection: RayTriangleIntersection,
     pub triangle: Triangle,
