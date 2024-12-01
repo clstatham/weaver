@@ -86,9 +86,9 @@ pub trait System: Send + Sync {
 
     /// Returns the system access descriptor, describing what resources and components the system requires access to.
     fn access(&self) -> SystemAccess;
-    #[allow(unused)]
 
     /// Initializes the system state.
+    #[allow(unused)]
     fn initialize(&mut self, world: &mut World) {}
 
     /// Runs the system on the world.
@@ -699,7 +699,6 @@ impl SystemGraph {
                 tokio::task::yield_now().await;
             }
         }
-        // world.await_all_tasks().await;
 
         Ok(())
     }
