@@ -1,8 +1,4 @@
-use std::{
-    any::{Any, TypeId},
-    ops::Deref,
-    sync::Arc,
-};
+use std::{any::TypeId, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{prelude::Asset, AssetApp, AssetId, Assets, Handle, UntypedHandle};
@@ -10,6 +6,7 @@ use weaver_ecs::{
     commands::Commands,
     component::{Res, ResMut},
     entity::{Entity, EntityMap},
+    prelude::Component,
     query::Query,
 };
 use weaver_util::{
@@ -99,11 +96,11 @@ impl ComponentBindGroupStaleness {
 pub struct ResourceBindGroupStaleness(pub TypeIdMap<bool>);
 
 impl ResourceBindGroupStaleness {
-    pub fn set_stale<T: Any + Send + Sync>(&mut self, stale: bool) {
+    pub fn set_stale<T: Component>(&mut self, stale: bool) {
         self.0.insert(TypeId::of::<T>(), stale);
     }
 
-    pub fn is_stale<T: Any + Send + Sync>(&self) -> bool {
+    pub fn is_stale<T: Component>(&self) -> bool {
         *self.0.get(&TypeId::of::<T>()).unwrap_or(&false)
     }
 }
@@ -164,17 +161,15 @@ where
     }
 }
 
-pub struct ComponentBindGroupPlugin<T: Any + Send + Sync + CreateBindGroup>(
-    std::marker::PhantomData<T>,
-);
+pub struct ComponentBindGroupPlugin<T: Component + CreateBindGroup>(std::marker::PhantomData<T>);
 
-impl<T: Any + Send + Sync + CreateBindGroup> Default for ComponentBindGroupPlugin<T> {
+impl<T: Component + CreateBindGroup> Default for ComponentBindGroupPlugin<T> {
     fn default() -> Self {
         Self(std::marker::PhantomData)
     }
 }
 
-impl<T: Any + Send + Sync + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
+impl<T: Component + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
         app.init_resource::<ComponentBindGroupsToAdd<T>>();
         app.init_resource::<ComponentBindGroupsToRemove<T>>();
@@ -189,12 +184,12 @@ impl<T: Any + Send + Sync + CreateBindGroup> Plugin for ComponentBindGroupPlugin
     }
 }
 
-struct ComponentBindGroupsToRemove<T: Any + Send + Sync> {
+struct ComponentBindGroupsToRemove<T: Component> {
     entities: Vec<Entity>,
     _marker: std::marker::PhantomData<T>,
 }
 
-impl<T: Any + Send + Sync> Default for ComponentBindGroupsToRemove<T> {
+impl<T: Component> Default for ComponentBindGroupsToRemove<T> {
     fn default() -> Self {
         Self {
             entities: Vec::new(),
@@ -203,12 +198,12 @@ impl<T: Any + Send + Sync> Default for ComponentBindGroupsToRemove<T> {
     }
 }
 
-struct ComponentBindGroupsToAdd<T: Any + Send + Sync + CreateBindGroup> {
+struct ComponentBindGroupsToAdd<T: Component + CreateBindGroup> {
     items: Vec<(Entity, BindGroup<T>)>,
     _marker: std::marker::PhantomData<T>,
 }
 
-impl<T: Any + Send + Sync + CreateBindGroup> Default for ComponentBindGroupsToAdd<T> {
+impl<T: Component + CreateBindGroup> Default for ComponentBindGroupsToAdd<T> {
     fn default() -> Self {
         Self {
             items: Vec::new(),
@@ -217,7 +212,7 @@ impl<T: Any + Send + Sync + CreateBindGroup> Default for ComponentBindGroupsToAd
     }
 }
 
-async fn create_component_bind_group<T: Any + Send + Sync + CreateBindGroup>(
+async fn create_component_bind_group<T: Component + CreateBindGroup>(
     device: Res<WgpuDevice>,
     mut layout_cache: ResMut<BindGroupLayoutCache>,
     mut item_query: Query<(Entity, &T)>,
@@ -242,7 +237,7 @@ async fn create_component_bind_group<T: Any + Send + Sync + CreateBindGroup>(
     }
 }
 
-async fn add_and_remove_component_bind_groups<T: Any + Send + Sync + CreateBindGroup>(
+async fn add_and_remove_component_bind_groups<T: Component + CreateBindGroup>(
     mut commands: Commands,
     mut to_remove: ResMut<ComponentBindGroupsToRemove<T>>,
     mut to_add: ResMut<ComponentBindGroupsToAdd<T>>,
@@ -256,24 +251,22 @@ async fn add_and_remove_component_bind_groups<T: Any + Send + Sync + CreateBindG
     }
 }
 
-pub struct ResourceBindGroupPlugin<T: Any + Send + Sync + CreateBindGroup>(
-    std::marker::PhantomData<T>,
-);
+pub struct ResourceBindGroupPlugin<T: Component + CreateBindGroup>(std::marker::PhantomData<T>);
 
-impl<T: Any + Send + Sync + CreateBindGroup> Default for ResourceBindGroupPlugin<T> {
+impl<T: Component + CreateBindGroup> Default for ResourceBindGroupPlugin<T> {
     fn default() -> Self {
         Self(std::marker::PhantomData)
     }
 }
 
-impl<T: Any + Send + Sync + CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
+impl<T: Component + CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_system(create_resource_bind_group::<T>, ExtractBindGroupStage);
         Ok(())
     }
 }
 
-async fn create_resource_bind_group<T: Any + Send + Sync + CreateBindGroup>(
+async fn create_resource_bind_group<T: Component + CreateBindGroup>(
     mut commands: Commands,
     data: Res<T>,
     bind_group: Option<Res<BindGroup<T>>>,

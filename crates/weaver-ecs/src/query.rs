@@ -1,19 +1,18 @@
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 
-use any_vec::AnyVec;
 use weaver_util::FxHashSet;
 
 use crate::{
     entity::Entity,
     loan::{Loan, LoanMut},
-    prelude::{Archetype, SystemAccess, SystemParam},
+    prelude::{Archetype, Component, ComponentVec, SystemAccess, SystemParam},
     storage::Components,
 };
 
 use super::world::World;
 
-pub type ReadLockedColumns = Option<(Loan<AnyVec<dyn Send + Sync>>, Vec<Entity>)>;
-pub type WriteLockedColumns = Option<(LoanMut<AnyVec<dyn Send + Sync>>, Vec<Entity>)>;
+pub type ReadLockedColumns = Option<(Loan<ComponentVec>, Vec<Entity>)>;
+pub type WriteLockedColumns = Option<(LoanMut<ComponentVec>, Vec<Entity>)>;
 
 pub trait Queryable: Send + Sync {
     type LockedColumns: Send + Sync;
@@ -65,7 +64,7 @@ impl Queryable for Entity {
     }
 }
 
-impl<'s, T: Any + Send + Sync> Queryable for &'s T {
+impl<'s, T: Component> Queryable for &'s T {
     type LockedColumns = ReadLockedColumns;
     type Item<'a> = &'a T;
 
@@ -114,7 +113,7 @@ impl<'s, T: Any + Send + Sync> Queryable for &'s T {
     }
 }
 
-impl<'s, T: Any + Send + Sync> Queryable for &'s mut T {
+impl<'s, T: Component> Queryable for &'s mut T {
     type LockedColumns = WriteLockedColumns;
     type Item<'a> = &'a mut T;
 
@@ -163,7 +162,7 @@ impl<'s, T: Any + Send + Sync> Queryable for &'s mut T {
     }
 }
 
-impl<'s, T: Any + Send + Sync> Queryable for Option<&'s T> {
+impl<'s, T: Component> Queryable for Option<&'s T> {
     type LockedColumns = ReadLockedColumns;
     type Item<'a> = Option<&'a T>;
 
@@ -206,7 +205,7 @@ impl<'s, T: Any + Send + Sync> Queryable for Option<&'s T> {
     }
 }
 
-impl<'s, T: Any + Send + Sync> Queryable for Option<&'s mut T> {
+impl<'s, T: Component> Queryable for Option<&'s mut T> {
     type LockedColumns = WriteLockedColumns;
     type Item<'a> = Option<&'a mut T>;
 
@@ -249,9 +248,9 @@ impl<'s, T: Any + Send + Sync> Queryable for Option<&'s mut T> {
     }
 }
 
-pub struct With<T: Any + Send + Sync>(std::marker::PhantomData<T>);
+pub struct With<T: Component>(std::marker::PhantomData<T>);
 
-impl<T: Any + Send + Sync> Queryable for With<T> {
+impl<T: Component> Queryable for With<T> {
     type LockedColumns = Option<Vec<Entity>>;
     type Item<'a> = &'a ();
 

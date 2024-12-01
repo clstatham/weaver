@@ -1,40 +1,39 @@
 use std::any::{Any, TypeId};
 
-use any_vec::{
-    any_value::{AnyValue, AnyValueWrapper},
-    AnyVec,
-};
+use any_vec::any_value::{AnyValue, AnyValueWrapper};
 use weaver_util::{bail, Result};
+
+use crate::component::{Component, ComponentVec};
 
 pub trait Bundle: Send + Sync + 'static {
     fn component_type_ids() -> Vec<TypeId>;
-    fn empty_vecs() -> Vec<AnyVec<dyn Send + Sync>>;
-    fn into_components(self) -> Vec<AnyVec<dyn Send + Sync>>;
-    fn from_components(components: Vec<AnyVec<dyn Send + Sync>>) -> Result<Box<Self>>;
+    fn empty_vecs() -> Vec<ComponentVec>;
+    fn into_components(self) -> Vec<ComponentVec>;
+    fn from_components(components: Vec<ComponentVec>) -> Result<Box<Self>>;
 }
 
 macro_rules! impl_bundle_tuple {
     ($($name:ident),*) => {
         #[allow(non_snake_case)]
-        impl<$($name: Any + Send + Sync),*> Bundle for ($($name,)*) {
+        impl<$($name: Component),*> Bundle for ($($name,)*) {
             fn component_type_ids() -> Vec<TypeId> {
                 vec![$(TypeId::of::<$name>(),)*]
             }
 
-            fn empty_vecs() -> Vec<AnyVec<dyn Send + Sync>> {
-                vec![$(AnyVec::new::<$name>(),)*]
+            fn empty_vecs() -> Vec<ComponentVec> {
+                vec![$(ComponentVec::new::<$name>(),)*]
             }
 
-            fn into_components(self) -> Vec<AnyVec<dyn Send + Sync>> {
+            fn into_components(self) -> Vec<ComponentVec> {
                 let ($($name,)*) = self;
                 vec![$({
-                    let mut vec = AnyVec::new::<$name>();
+                    let mut vec = ComponentVec::new::<$name>();
                     vec.push(AnyValueWrapper::new($name));
                     vec
                 }),*]
             }
 
-            fn from_components(mut components: Vec<AnyVec<dyn Send + Sync>>) -> Result<Box<Self>> {
+            fn from_components(mut components: Vec<ComponentVec>) -> Result<Box<Self>> {
                 let result = ($(
                     match components.pop() {
                         Some(mut component) => {
@@ -65,7 +64,7 @@ impl_bundle_tuple!(A, B, C, D, E, F, G, H);
 
 pub struct ComponentBundle {
     pub(crate) types: Vec<TypeId>,
-    pub(crate) components: Vec<AnyVec<dyn Send + Sync>>,
+    pub(crate) components: Vec<ComponentVec>,
 }
 
 impl ComponentBundle {
@@ -87,18 +86,18 @@ impl ComponentBundle {
         &self.types
     }
 
-    pub fn components(&self) -> &[AnyVec<dyn Send + Sync>] {
+    pub fn components(&self) -> &[ComponentVec] {
         &self.components
     }
 
-    pub fn empty_vecs(&self) -> Vec<AnyVec<dyn Send + Sync>> {
+    pub fn empty_vecs(&self) -> Vec<ComponentVec> {
         self.components
             .iter()
             .map(|component| component.clone_empty())
             .collect()
     }
 
-    pub fn insert(&mut self, mut comp: AnyVec<dyn Send + Sync>) -> Option<AnyVec<dyn Send + Sync>> {
+    pub fn insert(&mut self, mut comp: ComponentVec) -> Option<ComponentVec> {
         for (i, t) in self.types.iter().copied().enumerate() {
             #[allow(clippy::comparison_chain)]
             if t == comp.element_typeid() {
@@ -116,7 +115,7 @@ impl ComponentBundle {
         None
     }
 
-    pub fn remove<T: Any + Send + Sync>(&mut self) -> Option<T> {
+    pub fn remove<T: Component>(&mut self) -> Option<T> {
         let ty = TypeId::of::<T>();
         let index = self.types.iter().position(|t| *t == ty)?;
         self.types.remove(index);

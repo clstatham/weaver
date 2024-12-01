@@ -1,13 +1,11 @@
-use std::{
-    any::Any,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
 use weaver_app::{plugin::Plugin, prelude::App};
 use weaver_ecs::{
     commands::Commands,
     component::{Res, ResMut},
     entity::Entity,
+    prelude::Component,
     query::{Query, Queryable, QueryableItem},
     system::{SystemAccess, SystemParam, SystemParamItem},
     world::World,
@@ -72,9 +70,9 @@ impl<T: SystemParam> SystemParam for Extract<T> {
     }
 }
 
-pub trait ExtractComponent: Any + Send + Sync {
+pub trait ExtractComponent: Component {
     type ExtractQueryFetch: Queryable + 'static;
-    type Out: Any + Send + Sync + 'static;
+    type Out: Component + 'static;
     fn extract_render_component(
         item: QueryableItem<'_, Self::ExtractQueryFetch>,
     ) -> Option<Self::Out>;
@@ -125,8 +123,8 @@ pub async fn extract_render_component<T: ExtractComponent>(
     }
 }
 
-pub trait ExtractResource: Any + Send + Sync {
-    type Source: Any + Send + Sync;
+pub trait ExtractResource: Component {
+    type Source: Component;
     fn extract_render_resource(source: &Self::Source) -> Self;
 }
 

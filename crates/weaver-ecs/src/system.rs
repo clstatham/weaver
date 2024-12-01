@@ -1,11 +1,7 @@
-use std::{
-    any::{Any, TypeId},
-    future::Future,
-    sync::Arc,
-};
+use std::{any::TypeId, future::Future, sync::Arc};
 
 use crate::{
-    component::{Res, ResMut},
+    component::{Component, Res, ResMut},
     prelude::World,
 };
 use futures::{future::BoxFuture, FutureExt};
@@ -175,7 +171,7 @@ impl SystemParam for () {
     }
 }
 
-impl<T: Any + Send + Sync> SystemParam for Res<T> {
+impl<T: Component> SystemParam for Res<T> {
     type Item = Res<T>;
 
     fn access() -> SystemAccess {
@@ -206,7 +202,7 @@ impl<T: Any + Send + Sync> SystemParam for Res<T> {
     }
 }
 
-impl<T: Any + Send + Sync> SystemParam for Option<Res<T>> {
+impl<T: Component> SystemParam for Option<Res<T>> {
     type Item = Option<Res<T>>;
 
     fn access() -> SystemAccess {
@@ -230,7 +226,7 @@ impl<T: Any + Send + Sync> SystemParam for Option<Res<T>> {
     }
 }
 
-impl<T: Any + Send + Sync> SystemParam for ResMut<T> {
+impl<T: Component> SystemParam for ResMut<T> {
     type Item = ResMut<T>;
 
     fn access() -> SystemAccess {
@@ -262,7 +258,7 @@ impl<T: Any + Send + Sync> SystemParam for ResMut<T> {
     }
 }
 
-impl<T: Any + Send + Sync> SystemParam for Option<ResMut<T>> {
+impl<T: Component> SystemParam for Option<ResMut<T>> {
     type Item = Option<ResMut<T>>;
 
     fn access() -> SystemAccess {

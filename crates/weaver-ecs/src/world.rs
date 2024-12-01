@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     ops::{Deref, DerefMut},
     sync::atomic::AtomicU64,
 };
@@ -7,6 +6,7 @@ use std::{
 use weaver_util::{warn_once, Lock, Result};
 
 use crate::{
+    component::Component,
     prelude::{
         Bundle, Command, Commands, ComponentMap, Entities, IntoSystem, Res, ResMut, System,
         SystemAccess, SystemStage, Systems,
@@ -133,7 +133,7 @@ impl World {
         self.entities.write().free(entity);
     }
 
-    pub fn insert_component<T: Any + Send + Sync>(&self, entity: Entity, component: T) {
+    pub fn insert_component<T: Component>(&self, entity: Entity, component: T) {
         self.components_mut().insert_bundle(entity, (component,));
     }
 
@@ -143,12 +143,12 @@ impl World {
     }
 
     /// Removes a component from the entity in the world.
-    pub fn remove_component<T: Any + Send + Sync>(&self, entity: Entity) -> Option<T> {
+    pub fn remove_component<T: Component>(&self, entity: Entity) -> Option<T> {
         self.components_mut().remove_component::<T>(entity)
     }
 
     /// Checks if the entity in the world has a certain type of component.
-    pub fn has_component<T: Any + Send + Sync>(&self, entity: Entity) -> bool {
+    pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
         self.components().has_component::<T>(entity)
     }
 
@@ -158,16 +158,16 @@ impl World {
     }
 
     /// Gets a shared reference to a resource from the world.
-    pub fn get_resource<T: Any + Send + Sync>(&self) -> Option<Res<T>> {
+    pub fn get_resource<T: Component>(&self) -> Option<Res<T>> {
         self.resources.write().get_component::<T>().map(Res)
     }
 
     /// Gets a mutable reference to a resource from the world.
-    pub fn get_resource_mut<T: Any + Send + Sync>(&self) -> Option<ResMut<T>> {
+    pub fn get_resource_mut<T: Component>(&self) -> Option<ResMut<T>> {
         self.resources.write().get_component_mut::<T>().map(ResMut)
     }
 
-    pub async fn wait_for_resource<T: Any + Send + Sync>(&self) -> Res<T> {
+    pub async fn wait_for_resource<T: Component>(&self) -> Res<T> {
         Res(self
             .resources
             .write()
@@ -176,7 +176,7 @@ impl World {
             .unwrap())
     }
 
-    pub async fn wait_for_resource_mut<T: Any + Send + Sync>(&self) -> ResMut<T> {
+    pub async fn wait_for_resource_mut<T: Component>(&self) -> ResMut<T> {
         ResMut(
             self.resources
                 .write()
@@ -195,13 +195,13 @@ impl World {
     }
 
     /// Checks if the world has a certain type of resource.
-    pub fn has_resource<T: Any + Send + Sync>(&self) -> bool {
+    pub fn has_resource<T: Component>(&self) -> bool {
         self.resources.read().contains_component::<T>()
     }
 
     /// Initializes a resource in the world. The resource is initialized using its implementation of `FromWorld`.
     /// If the resource has already been initialized, a warning is logged and the resource is not initialized again.
-    pub fn init_resource<T: Any + Send + Sync + ConstructFromWorld>(&self) {
+    pub fn init_resource<T: Component + ConstructFromWorld>(&self) {
         if self.has_resource::<T>() {
             warn_once!(
                 "Resource {} already initialized; not initializing it again",
@@ -215,7 +215,7 @@ impl World {
 
     /// Inserts a resource into the world.
     /// If the resource has already been inserted, a warning is logged and the resource is not inserted again.
-    pub fn insert_resource<T: Any + Send + Sync>(&self, component: T) {
+    pub fn insert_resource<T: Component>(&self, component: T) {
         if self.has_resource::<T>() {
             warn_once!(
                 "Resource {} already inserted; not inserting it again",
@@ -231,7 +231,7 @@ impl World {
     }
 
     /// Removes a resource from the world.
-    pub fn remove_resource<T: Any + Send + Sync>(&self) -> Option<T> {
+    pub fn remove_resource<T: Component>(&self) -> Option<T> {
         self.resources.write().remove_component::<T>().unwrap()
     }
 

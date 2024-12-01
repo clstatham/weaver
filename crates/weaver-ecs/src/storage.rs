@@ -1,19 +1,19 @@
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 
-use any_vec::AnyVec;
 use weaver_util::SharedLock;
 
 use crate::{
+    bundle::Bundle,
     bundle::ComponentBundle,
+    component::{Component, ComponentVec},
     entity::{Entity, EntityMap},
     loan::LoanStorage,
-    prelude::Bundle,
 };
 
 #[derive(Default)]
 pub struct Archetype {
     data_types: Vec<TypeId>,
-    columns: Vec<SharedLock<LoanStorage<AnyVec<dyn Send + Sync>>>>,
+    columns: Vec<SharedLock<LoanStorage<ComponentVec>>>,
     entity_id_lookup: Vec<Entity>,
 }
 
@@ -36,7 +36,7 @@ impl Archetype {
         }
     }
 
-    pub fn columns(&self) -> &[SharedLock<LoanStorage<AnyVec<dyn Send + Sync>>>] {
+    pub fn columns(&self) -> &[SharedLock<LoanStorage<ComponentVec>>] {
         &self.columns
     }
 
@@ -60,7 +60,7 @@ impl Archetype {
         self.entity_id_lookup.iter().position(|&id| id == entity)
     }
 
-    pub fn has<T: Any + Send + Sync>(&self) -> bool {
+    pub fn has<T: Component>(&self) -> bool {
         self.index_of(TypeId::of::<T>()).is_some()
     }
 
@@ -210,14 +210,14 @@ impl Components {
         self.insert_entity(entity, components);
     }
 
-    pub fn remove_component<T: Any + Send + Sync>(&mut self, entity: Entity) -> Option<T> {
+    pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {
         let mut components = self.remove_entity(entity);
         let removed = components.remove::<T>();
         self.insert_entity(entity, components);
         removed
     }
 
-    pub fn has_component<T: Any + Send + Sync>(&self, entity: Entity) -> bool {
+    pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
         let archetype_id = self.entity_archetype.get(&entity).unwrap();
         let archetype = &self.archetypes[archetype_id.as_usize()];
         archetype.entity_index(entity).is_some() && archetype.has::<T>()

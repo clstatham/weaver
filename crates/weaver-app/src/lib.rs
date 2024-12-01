@@ -1,9 +1,10 @@
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 
 use plugin::Plugin;
 
 use weaver_ecs::{
     component::Res,
+    prelude::Component,
     system::{IntoSystem, System},
     system_schedule::SystemStage,
     world::{ConstructFromWorld, World, WorldTicks},
@@ -297,16 +298,16 @@ impl App {
         self.sub_apps.sub_apps.remove(&TypeId::of::<T>())
     }
 
-    pub fn has_resource<T: Any + Send + Sync>(&self) -> bool {
+    pub fn has_resource<T: Component>(&self) -> bool {
         self.main_app().world().has_resource::<T>()
     }
 
-    pub fn init_resource<T: Any + Send + Sync + ConstructFromWorld>(&mut self) -> &mut Self {
+    pub fn init_resource<T: Component + ConstructFromWorld>(&mut self) -> &mut Self {
         self.main_app_mut().world_mut().init_resource::<T>();
         self
     }
 
-    pub fn insert_resource<T: Any + Send + Sync>(&mut self, resource: T) -> &mut Self {
+    pub fn insert_resource<T: Component>(&mut self, resource: T) -> &mut Self {
         self.main_app().world().insert_resource(resource);
         self
     }

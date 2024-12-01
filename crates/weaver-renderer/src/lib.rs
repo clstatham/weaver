@@ -1,5 +1,5 @@
 use std::{
-    any::{Any, TypeId},
+    any::TypeId,
     fmt::Debug,
     hash::Hash,
     ops::{Deref, DerefMut},
@@ -97,7 +97,7 @@ impl Hash for RenderId {
     }
 }
 
-pub trait RenderLabel: Any + Clone + Copy {
+pub trait RenderLabel: Clone + Copy + 'static {
     fn name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }

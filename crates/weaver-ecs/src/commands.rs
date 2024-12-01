@@ -1,17 +1,19 @@
-use std::any::Any;
 use std::sync::Arc;
 
-use crate::bundle::Bundle;
-use crate::entity::Entity;
-use crate::prelude::World;
-use crate::system::{SystemAccess, SystemParam};
-use crate::world::ConstructFromWorld;
+use crate::{
+    bundle::Bundle,
+    component::Component,
+    entity::Entity,
+    prelude::World,
+    system::{SystemAccess, SystemParam},
+    world::ConstructFromWorld,
+};
 
-pub type CommandOp = dyn FnOnce(&mut World) -> Arc<dyn Any + Send + Sync> + Send + Sync;
+pub type CommandOp = dyn FnOnce(&mut World) -> Arc<dyn Component> + Send + Sync;
 
 pub struct Command {
     pub(crate) op: Box<CommandOp>,
-    pub(crate) tx: async_channel::Sender<Arc<dyn Any + Send + Sync>>,
+    pub(crate) tx: async_channel::Sender<Arc<dyn Component>>,
 }
 
 impl Command {
@@ -26,7 +28,7 @@ pub struct Commands {
 }
 
 impl Commands {
-    pub async fn run<R: Any + Send + Sync>(
+    pub async fn run<R: Component>(
         &mut self,
         op: impl FnOnce(&mut World) -> R + Send + Sync + 'static,
     ) -> R {
@@ -43,40 +45,40 @@ impl Commands {
             .unwrap();
 
         let any: Arc<_> = rx.recv().await.unwrap();
-        let arc: Arc<R> = any.downcast().unwrap();
+        let arc: Arc<R> = any.downcast_arc().unwrap();
         Arc::try_unwrap(arc).unwrap_or_else(|_| unreachable!())
     }
 
-    pub async fn has_resource<T: Any + Send + Sync>(&mut self) -> bool {
+    pub async fn has_resource<T: Component>(&mut self) -> bool {
         self.run(move |world| world.has_resource::<T>()).await
     }
 
-    pub async fn insert_resource<T: Any + Send + Sync>(&mut self, resource: T) {
+    pub async fn insert_resource<T: Component>(&mut self, resource: T) {
         self.run(move |world| {
             world.insert_resource(resource);
         })
         .await
     }
 
-    pub async fn init_resource<T: Any + Send + Sync + ConstructFromWorld>(&mut self) {
+    pub async fn init_resource<T: Component + ConstructFromWorld>(&mut self) {
         self.run(move |world| {
             world.init_resource::<T>();
         })
         .await
     }
 
-    pub async fn remove_resource<T: Any + Send + Sync>(&mut self) -> Option<T> {
+    pub async fn remove_resource<T: Component>(&mut self) -> Option<T> {
         self.run(move |world| world.remove_resource::<T>()).await
     }
 
-    pub async fn insert_component<T: Any + Send + Sync>(&mut self, entity: Entity, component: T) {
+    pub async fn insert_component<T: Component>(&mut self, entity: Entity, component: T) {
         self.run(move |world| {
             world.insert_component(entity, component);
         })
         .await
     }
 
-    pub async fn remove_component<T: Any + Send + Sync>(&mut self, entity: Entity) -> Option<T> {
+    pub async fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {
         self.run(move |world| world.remove_component::<T>(entity))
             .await
     }

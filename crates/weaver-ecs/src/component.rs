@@ -4,13 +4,62 @@
 use std::{
     any::{Any, TypeId},
     ops::{Deref, DerefMut},
+    sync::Arc,
 };
 
+use any_vec::AnyVec;
 use weaver_util::{bail, Result, TypeIdMap};
 
 use crate::loan::{Loan, LoanMut, LoanStorage};
 
-pub type BoxedComponent = Box<dyn Any + Send + Sync>;
+pub trait Component: Any + Send + Sync {
+    fn as_any(&self) -> &(dyn Any + Send + Sync);
+    fn as_any_mut(&mut self) -> &mut (dyn Any + Send + Sync);
+    fn as_any_box(self: Box<Self>) -> Box<dyn Any + Send + Sync>;
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
+}
+impl<T: Any + Send + Sync> Component for T {
+    fn as_any(&self) -> &(dyn Any + Send + Sync) {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut (dyn Any + Send + Sync) {
+        self
+    }
+    fn as_any_box(self: Box<Self>) -> Box<dyn Any + Send + Sync> {
+        self
+    }
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
+}
+
+impl dyn Component {
+    pub fn downcast_ref<T: Component>(&self) -> Option<&T> {
+        self.as_any().downcast_ref()
+    }
+
+    pub fn downcast_mut<T: Component>(&mut self) -> Option<&mut T> {
+        self.as_any_mut().downcast_mut()
+    }
+
+    pub fn downcast<T: Component>(self: Box<Self>) -> Result<Box<T>> {
+        match self.as_any_box().downcast() {
+            Ok(t) => Ok(t),
+            Err(_) => bail!("Failed to downcast component"),
+        }
+    }
+
+    pub fn downcast_arc<T: Component>(self: Arc<Self>) -> Result<Arc<T>> {
+        match self.as_any_arc().downcast() {
+            Ok(t) => Ok(t),
+            Err(_) => bail!("Failed to downcast component"),
+        }
+    }
+}
+
+pub type BoxedComponent = Box<dyn Component>;
+
+pub type ComponentVec = AnyVec<dyn Send + Sync>;
 
 #[derive(Default)]
 pub struct ComponentMap {
@@ -33,7 +82,7 @@ impl DerefMut for ComponentMap {
 
 impl ComponentMap {
     #[must_use = "This method returns the old component if it exists"]
-    pub fn insert_component<T: Any + Send + Sync>(&mut self, value: T) -> Result<Option<T>> {
+    pub fn insert_component<T: Component>(&mut self, value: T) -> Result<Option<T>> {
         if let Some(old) = self
             .map
             .insert(TypeId::of::<T>(), LoanStorage::new(Box::new(value)))
@@ -96,7 +145,7 @@ impl ComponentMap {
         Ok(loan)
     }
 
-    pub fn get_component<T: Any + Send + Sync>(&mut self) -> Option<Ref<T>> {
+    pub fn get_component<T: Component>(&mut self) -> Option<Ref<T>> {
         match self.loan_component(TypeId::of::<T>()) {
             Ok(loan) => Some(Ref {
                 loan,
@@ -113,7 +162,7 @@ impl ComponentMap {
         }
     }
 
-    pub fn get_component_mut<T: Any + Send + Sync>(&mut self) -> Option<Mut<T>> {
+    pub fn get_component_mut<T: Component>(&mut self) -> Option<Mut<T>> {
         match self.loan_component_mut(TypeId::of::<T>()) {
             Ok(loan) => Some(Mut {
                 loan,
@@ -130,7 +179,7 @@ impl ComponentMap {
         }
     }
 
-    pub async fn wait_for_component<T: Any + Send + Sync>(&mut self) -> Option<Ref<T>> {
+    pub async fn wait_for_component<T: Component>(&mut self) -> Option<Ref<T>> {
         let loan = self
             .loan_component_patient(TypeId::of::<T>())
             .await
@@ -147,7 +196,7 @@ impl ComponentMap {
         })
     }
 
-    pub async fn wait_for_component_mut<T: Any + Send + Sync>(&mut self) -> Option<Mut<T>> {
+    pub async fn wait_for_component_mut<T: Component>(&mut self) -> Option<Mut<T>> {
         let loan = self
             .loan_component_mut_patient(TypeId::of::<T>())
             .await
@@ -164,11 +213,11 @@ impl ComponentMap {
         })
     }
 
-    pub fn contains_component<T: Any + Send + Sync>(&self) -> bool {
+    pub fn contains_component<T: Component>(&self) -> bool {
         self.map.contains_key(&TypeId::of::<T>())
     }
 
-    pub fn remove_component<T: Any + Send + Sync>(&mut self) -> Result<Option<T>> {
+    pub fn remove_component<T: Component>(&mut self) -> Result<Option<T>> {
         if let Some(value) = self.map.remove(&TypeId::of::<T>()) {
             match value.into_owned() {
                 Ok(value) => Ok(Some(*value.downcast().unwrap())),
@@ -183,12 +232,12 @@ impl ComponentMap {
     }
 }
 
-pub struct Ref<T: Any + Send + Sync> {
+pub struct Ref<T: Component> {
     loan: Loan<BoxedComponent>,
     marker: std::marker::PhantomData<T>,
 }
 
-impl<T: Any + Send + Sync> Deref for Ref<T> {
+impl<T: Component> Deref for Ref<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -196,12 +245,12 @@ impl<T: Any + Send + Sync> Deref for Ref<T> {
     }
 }
 
-pub struct Mut<T: Any + Send + Sync> {
+pub struct Mut<T: Component> {
     loan: LoanMut<BoxedComponent>,
     marker: std::marker::PhantomData<T>,
 }
 
-impl<T: Any + Send + Sync> Deref for Mut<T> {
+impl<T: Component> Deref for Mut<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -209,16 +258,16 @@ impl<T: Any + Send + Sync> Deref for Mut<T> {
     }
 }
 
-impl<T: Any + Send + Sync> DerefMut for Mut<T> {
+impl<T: Component> DerefMut for Mut<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.loan.downcast_mut().unwrap()
     }
 }
 
-pub struct Res<T: Any + Send + Sync>(pub(crate) Ref<T>);
-pub struct ResMut<T: Any + Send + Sync>(pub(crate) Mut<T>);
+pub struct Res<T: Component>(pub(crate) Ref<T>);
+pub struct ResMut<T: Component>(pub(crate) Mut<T>);
 
-impl<T: Any + Send + Sync> Deref for Res<T> {
+impl<T: Component> Deref for Res<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -226,7 +275,7 @@ impl<T: Any + Send + Sync> Deref for Res<T> {
     }
 }
 
-impl<T: Any + Send + Sync> Deref for ResMut<T> {
+impl<T: Component> Deref for ResMut<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -234,7 +283,7 @@ impl<T: Any + Send + Sync> Deref for ResMut<T> {
     }
 }
 
-impl<T: Any + Send + Sync> DerefMut for ResMut<T> {
+impl<T: Component> DerefMut for ResMut<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
