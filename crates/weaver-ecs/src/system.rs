@@ -192,10 +192,7 @@ impl<T: Component> SystemParam for Res<T> {
 
     fn can_run(world: &World) -> bool {
         if !world.has_resource::<T>() {
-            log::debug!(
-                "Res: Resource {:?} is not available",
-                std::any::type_name::<T>()
-            );
+            log::debug!("Res: Resource {:?} is not available", T::type_name());
             return false;
         }
         true
@@ -248,10 +245,7 @@ impl<T: Component> SystemParam for ResMut<T> {
 
     fn can_run(world: &World) -> bool {
         if !world.has_resource::<T>() {
-            log::debug!(
-                "ResMut: Resource {:?} is not available",
-                std::any::type_name::<T>()
-            );
+            log::debug!("ResMut: Resource {:?} is not available", T::type_name());
             return false;
         }
         true
@@ -402,10 +396,6 @@ where
     M: 'static,
     F: SystemParamFunction<M>,
 {
-    fn name(&self) -> &str {
-        std::any::type_name::<F>()
-    }
-
     fn initialize(&mut self, _world: &mut World) {}
 
     fn access(&self) -> SystemAccess {

@@ -17,6 +17,12 @@ pub trait Component: Any + Send + Sync {
     fn as_any_mut(&mut self) -> &mut (dyn Any + Send + Sync);
     fn as_any_box(self: Box<Self>) -> Box<dyn Any + Send + Sync>;
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        std::any::type_name::<Self>()
+    }
 }
 impl<T: Any + Send + Sync> Component for T {
     fn as_any(&self) -> &(dyn Any + Send + Sync) {
@@ -152,11 +158,7 @@ impl ComponentMap {
                 marker: std::marker::PhantomData,
             }),
             Err(e) => {
-                log::debug!(
-                    "Failed to get resource {:?}: {}",
-                    std::any::type_name::<T>(),
-                    e
-                );
+                log::debug!("Failed to get resource {:?}: {}", T::type_name(), e);
                 None
             }
         }
@@ -169,11 +171,7 @@ impl ComponentMap {
                 marker: std::marker::PhantomData,
             }),
             Err(e) => {
-                log::debug!(
-                    "Failed to get mutable resource {:?}: {}",
-                    std::any::type_name::<T>(),
-                    e
-                );
+                log::debug!("Failed to get mutable resource {:?}: {}", T::type_name(), e);
                 None
             }
         }
@@ -184,11 +182,7 @@ impl ComponentMap {
             .loan_component_patient(TypeId::of::<T>())
             .await
             .unwrap_or_else(|e| {
-                panic!(
-                    "Failed to get resource {:?}: {}",
-                    std::any::type_name::<T>(),
-                    e
-                );
+                panic!("Failed to get resource {:?}: {}", T::type_name(), e);
             });
         Some(Ref {
             loan,
@@ -201,11 +195,7 @@ impl ComponentMap {
             .loan_component_mut_patient(TypeId::of::<T>())
             .await
             .unwrap_or_else(|e| {
-                panic!(
-                    "Failed to get mutable resource {:?}: {}",
-                    std::any::type_name::<T>(),
-                    e
-                );
+                panic!("Failed to get mutable resource {:?}: {}", T::type_name(), e);
             });
         Some(Mut {
             loan,

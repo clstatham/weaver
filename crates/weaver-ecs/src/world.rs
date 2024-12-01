@@ -204,8 +204,8 @@ impl World {
     pub fn init_resource<T: Component + ConstructFromWorld>(&self) {
         if self.has_resource::<T>() {
             warn_once!(
-                "Resource {} already initialized; not initializing it again",
-                std::any::type_name::<T>(),
+                "Resource {} already present in world; not initializing it again",
+                T::type_name(),
             );
             return;
         }
@@ -218,8 +218,8 @@ impl World {
     pub fn insert_resource<T: Component>(&self, component: T) {
         if self.has_resource::<T>() {
             warn_once!(
-                "Resource {} already inserted; not inserting it again",
-                std::any::type_name::<T>(),
+                "Resource {} already present in world; not inserting it again",
+                T::type_name(),
             );
             return;
         }
@@ -296,10 +296,6 @@ impl World {
         M: 'static,
     {
         if self.has_system(&system, &stage) {
-            warn_once!(
-                "System {} already added to schedule; not adding it again",
-                std::any::type_name::<S::System>(),
-            );
             return;
         }
         self.systems.add_system(system, stage);
@@ -317,10 +313,6 @@ impl World {
         BEFORE::System: System,
     {
         if self.has_system(&system, &stage) {
-            warn_once!(
-                "System {} already added to schedule; not adding it again",
-                std::any::type_name::<S::System>(),
-            );
             return;
         }
         self.systems.add_system_before(system, before, stage);
@@ -338,10 +330,6 @@ impl World {
         AFTER::System: System,
     {
         if self.has_system(&system, &stage) {
-            warn_once!(
-                "System {} already added to schedule; not adding it again",
-                std::any::type_name::<S::System>(),
-            );
             return;
         }
         self.systems.add_system_after(system, after, stage);

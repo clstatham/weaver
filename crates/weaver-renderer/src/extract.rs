@@ -34,7 +34,7 @@ impl<T: SystemParam> DerefMut for Extract<T> {
     }
 }
 
-impl<T: SystemParam> SystemParam for Extract<T> {
+impl<T: SystemParam + 'static> SystemParam for Extract<T> {
     type Item = Extract<T>;
 
     fn access() -> SystemAccess {
@@ -62,7 +62,7 @@ impl<T: SystemParam> SystemParam for Extract<T> {
 
         let main_world = world.get_resource::<MainWorld>().unwrap();
         if !<T as SystemParam>::can_run(&main_world) {
-            log::debug!("Extract: {} is not available", std::any::type_name::<T>());
+            log::debug!("Extract: {} is not available", T::type_name());
             return false;
         }
 
@@ -104,15 +104,12 @@ pub async fn extract_render_component<T: ExtractComponent>(
             {
                 if let Some(render_component) = out_query.get(entity) {
                     *render_component = component;
-                    log::trace!("Updated render component: {:?}", std::any::type_name::<T>());
+                    log::trace!("Updated render component: {:?}", T::type_name());
                     continue;
                 }
             }
 
-            log::trace!(
-                "Extracted render component: {:?}",
-                std::any::type_name::<T>()
-            );
+            log::trace!("Extracted render component: {:?}", T::type_name());
 
             components.push((entity, component));
         }
@@ -173,15 +170,12 @@ pub async fn extract_render_resource<T: ExtractResource>(
         if let Some(mut target_resource) = target_resource {
             // update resource
             *target_resource = T::extract_render_resource(source);
-            log::trace!("Updated render resource: {:?}", std::any::type_name::<T>());
+            log::trace!("Updated render resource: {:?}", T::type_name());
         } else {
             commands
                 .insert_resource(T::extract_render_resource(source))
                 .await;
-            log::trace!(
-                "Extracted render resource: {:?}",
-                std::any::type_name::<T>()
-            );
+            log::trace!("Extracted render resource: {:?}", T::type_name());
         }
     }
 }

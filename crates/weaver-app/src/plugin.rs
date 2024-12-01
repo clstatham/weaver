@@ -4,7 +4,7 @@ use crate::App;
 
 #[allow(unused_variables)]
 pub trait Plugin: DowncastSync {
-    fn name(&self) -> &str {
+    fn type_name(&self) -> &str {
         std::any::type_name::<Self>()
     }
 

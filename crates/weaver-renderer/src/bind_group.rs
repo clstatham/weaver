@@ -370,10 +370,7 @@ async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
             let asset = assets.get(*handle).unwrap();
             staleness.set_stale(handle.id(), false);
             let bind_group = BindGroup::new(&device, &*asset, &mut layout_cache);
-            log::trace!(
-                "Created bind group for asset: {:?}",
-                std::any::type_name::<T>()
-            );
+            log::trace!("Created bind group for asset: {:?}", T::type_name());
             let bind_group_handle = bind_group_assets.insert(bind_group);
             asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
             commands.insert_component(entity, bind_group_handle).await;

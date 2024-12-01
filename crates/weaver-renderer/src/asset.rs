@@ -101,7 +101,7 @@ async fn extract_render_asset<T: RenderAsset>(
             if let Some(render_asset) =
                 T::extract_render_asset(&base_asset, param.item_mut(), &device, &queue)
             {
-                log::trace!("Extracted render asset: {:?}", std::any::type_name::<T>());
+                log::trace!("Extracted render asset: {:?}", T::type_name());
 
                 // insert the render asset into the asset storage
                 let render_handle = render_assets.insert(render_asset);
@@ -114,10 +114,7 @@ async fn extract_render_asset<T: RenderAsset>(
                 // mark the original asset as extracted
                 extracted_assets.insert(untyped_handle, render_handle.into_untyped());
             } else {
-                log::error!(
-                    "Failed to extract render asset: {:?}",
-                    std::any::type_name::<T>()
-                );
+                log::error!("Failed to extract render asset: {:?}", T::type_name());
             }
         } else {
             // if the asset has already been extracted, insert the render asset handle into the entity

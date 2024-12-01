@@ -101,10 +101,10 @@ impl SubApp {
             let ready = self
                 .as_app(|app| -> Result<bool> {
                     if !plugin.ready(app) {
-                        log::debug!("Plugin is not ready: {:?}", plugin.name());
+                        log::debug!("Plugin is not ready: {:?}", plugin.type_name());
                         return Ok(false);
                     }
-                    log::debug!("Finishing plugin: {:?}", plugin.name());
+                    log::debug!("Finishing plugin: {:?}", plugin.type_name());
                     plugin.finish(app)?;
                     Ok(true)
                 })
@@ -122,11 +122,11 @@ impl SubApp {
             .iter()
             .any(|(_, plugin)| (**plugin).type_id() == TypeId::of::<T>())
         {
-            log::warn!("Plugin already added: {:?}", plugin.name());
+            log::warn!("Plugin already added: {:?}", plugin.type_name());
             return Ok(self);
         }
 
-        log::debug!("Adding plugin: {:?}", plugin.name());
+        log::debug!("Adding plugin: {:?}", plugin.type_name());
         self.as_app(|app| plugin.build(app))?;
 
         self.plugins.push((TypeId::of::<T>(), Box::new(plugin)));
@@ -259,11 +259,11 @@ impl App {
             .iter()
             .any(|(_, plugin)| (**plugin).type_id() == TypeId::of::<T>())
         {
-            log::warn!("Plugin already added: {:?}", plugin.name());
+            log::warn!("Plugin already added: {:?}", plugin.type_name());
             return Ok(self);
         }
 
-        log::debug!("Adding plugin: {:?}", plugin.name());
+        log::debug!("Adding plugin: {:?}", plugin.type_name());
         plugin.build(self)?;
 
         self.plugins.push((TypeId::of::<T>(), Box::new(plugin)));
@@ -413,7 +413,7 @@ impl App {
             let (_, plugin) = plugins.iter().find(|(id, _)| *id == *type_id).unwrap();
             let ready = plugin.ready(self);
             if ready {
-                log::debug!("Finishing plugin: {:?}", plugin.name());
+                log::debug!("Finishing plugin: {:?}", plugin.type_name());
                 plugin.finish(self).unwrap();
                 self.unready_plugins.remove(type_id);
             }

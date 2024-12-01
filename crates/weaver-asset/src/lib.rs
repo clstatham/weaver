@@ -32,7 +32,14 @@ pub mod prelude {
 
 define_atomic_id!(AssetId);
 
-pub trait Asset: DowncastSync {}
+pub trait Asset: DowncastSync {
+    fn type_name() -> &'static str
+    where
+        Self: Sized,
+    {
+        std::any::type_name::<Self>()
+    }
+}
 impl_downcast!(Asset);
 
 impl Asset for () {}
@@ -74,7 +81,7 @@ impl<T: Asset> Handle<T> {
 
 impl<T: Asset> Debug for Handle<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple(&format!("Handle<{}>", std::any::type_name::<T>()))
+        f.debug_tuple(&format!("Handle<{}>", T::type_name()))
             .field(&self.id)
             .finish()
     }
@@ -470,7 +477,7 @@ impl<T: Asset, S: LoadSource> Debug for AssetLoadRequest<T, S> {
         let source = if let Some(s) = self.source.as_str() {
             s
         } else {
-            std::any::type_name::<S>()
+            T::type_name()
         };
         f.debug_struct("AssetLoadRequest")
             .field("handle", &self.handle)
@@ -718,7 +725,7 @@ async fn load_all_assets<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
     if load_queue.is_empty() {
         return;
     }
-    log::debug!("Loading all assets of type: {}", std::any::type_name::<T>());
+    log::debug!("Loading all assets of type: {}", T::type_name());
 
     let n = load_queue.len();
 

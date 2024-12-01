@@ -72,7 +72,7 @@ impl RenderId {
     pub fn of<T: RenderLabel>(label: T) -> Self {
         Self {
             id: TypeId::of::<T>(),
-            name: label.name(),
+            name: label.type_name(),
         }
     }
 }
@@ -98,7 +98,7 @@ impl Hash for RenderId {
 }
 
 pub trait RenderLabel: Clone + Copy + 'static {
-    fn name(&self) -> &'static str {
+    fn type_name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }
 }

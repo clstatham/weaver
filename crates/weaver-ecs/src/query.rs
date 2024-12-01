@@ -82,12 +82,7 @@ impl<'s, T: Component> Queryable for &'s T {
             archetype.columns()[col_index]
                 .write()
                 .loan()
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Failed to lock column of type {}",
-                        std::any::type_name::<T>()
-                    )
-                }),
+                .unwrap_or_else(|| panic!("Failed to lock column of type {}", T::type_name())),
             archetype.entity_iter().collect(),
         ))
     }
@@ -132,10 +127,7 @@ impl<'s, T: Component> Queryable for &'s mut T {
                 .write()
                 .loan_mut()
                 .unwrap_or_else(|| {
-                    panic!(
-                        "Failed to mutably lock column of type {}",
-                        std::any::type_name::<T>()
-                    )
+                    panic!("Failed to mutably lock column of type {}", T::type_name())
                 }),
             archetype.entity_iter().collect(),
         ))
