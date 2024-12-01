@@ -9,6 +9,8 @@ pub use weaver_renderer;
 pub use weaver_util;
 pub use weaver_winit;
 
+pub use weaver_ecs::main;
+
 pub mod prelude {
     pub use super::*;
     pub use weaver_app::prelude::*;

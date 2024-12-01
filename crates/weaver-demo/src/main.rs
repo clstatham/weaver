@@ -31,7 +31,7 @@ pub mod transform_gizmo;
 //     smoothing_buffer: Vec<f32>,
 // }
 
-#[main]
+#[weaver::main]
 async fn main() -> Result<()> {
     env_logger::init();
 

@@ -18,7 +18,6 @@ futures = "0.3.31"
 
 weaver-util = { path = "../weaver-util" }
 weaver-ecs-macros = { path = "../weaver-ecs-macros" }
-weaver-reflect-macros = { path = "../weaver-reflect-macros" }
 
 [dev-dependencies]
 env_logger = "*"

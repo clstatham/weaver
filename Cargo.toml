@@ -17,12 +17,12 @@ members = [
     "crates/weaver-core",
     "crates/weaver-asset",
     "crates/weaver-diagnostics",
-    "crates/weaver-reflect-macros",
     "crates/weaver-asset-macros",
     "crates/weaver-ecs-macros",
     "crates/weaver-event",
     "crates/weaver-gizmos",
-    "crates/weaver-q3", "crates/weaver-egui",
+    "crates/weaver-q3", 
+    "crates/weaver-egui",
 ]
 
 [features]

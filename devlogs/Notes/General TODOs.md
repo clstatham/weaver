@@ -4,3 +4,5 @@
 	- Refactor DrawFns, RenderCommands, batching
 	- Don't assume every camera wants to render the whole scene
 - weaver-task: Task pools and thread managers (a la Bevy)
+- Better error handling with `thiserror` and less reliance on `anyhow`
+	- Panic and unwrap less

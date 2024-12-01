@@ -26,5 +26,4 @@ pub mod prelude {
     pub use crate::system_schedule::*;
     pub use crate::world::*;
     pub use tokio;
-    pub use tokio::main;
 }
