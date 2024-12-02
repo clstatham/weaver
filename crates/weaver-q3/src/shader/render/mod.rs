@@ -11,7 +11,7 @@ use weaver_renderer::{
     texture::texture_format,
     WgpuDevice,
 };
-use weaver_util::FxHashMap;
+use weaver_util::prelude::*;
 
 use super::lexer::{BlendFunc, BlendFuncExplicitParam, Cull};
 

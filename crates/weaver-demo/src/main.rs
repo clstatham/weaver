@@ -16,7 +16,9 @@ use weaver_q3::{
     pk3::Pk3Filesystem,
     Q3Plugin,
 };
-use weaver_renderer::{camera::PrimaryCamera, clear_color::ClearColorPlugin, Render, RenderApp};
+use weaver_renderer::{
+    camera::PrimaryCamera, clear_color::ClearColorPlugin, RenderApp, RenderStage,
+};
 
 pub mod camera;
 pub mod transform_gizmo;
@@ -51,7 +53,7 @@ async fn main() -> Result<()> {
         })?
         .configure_sub_app::<RenderApp>(|app| {
             app.world_mut()
-                .order_systems(render_skybox, render_bsps, Render);
+                .order_systems(render_skybox, render_bsps, RenderStage::Render);
             // app.world_mut()
             //     .add_system_dependency(render_gizmos, render_bsps, Render);
         })

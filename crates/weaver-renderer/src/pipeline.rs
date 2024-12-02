@@ -2,11 +2,9 @@ use std::{any::TypeId, ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::component::{Res, ResMut};
-use weaver_util::{
-    define_atomic_id, TypeIdMap, {DowncastSync, FxHashMap, Result},
-};
+use weaver_util::prelude::*;
 
-use crate::{bind_group::BindGroupLayoutCache, ExtractPipelineStage, WgpuDevice};
+use crate::{bind_group::BindGroupLayoutCache, RenderStage, WgpuDevice};
 
 define_atomic_id!(PipelineId);
 
@@ -157,7 +155,7 @@ impl<T: CreateRenderPipeline> Default for RenderPipelinePlugin<T> {
 
 impl<T: CreateRenderPipeline> Plugin for RenderPipelinePlugin<T> {
     fn build(&self, render_app: &mut App) -> Result<()> {
-        render_app.add_system(extract_render_pipeline::<T>, ExtractPipelineStage);
+        render_app.add_system(extract_render_pipeline::<T>, RenderStage::ExtractPipeline);
         Ok(())
     }
 }
@@ -324,7 +322,7 @@ impl<T: CreateComputePipeline> Plugin for ComputePipelinePlugin<T> {
         if !render_app.has_resource::<ComputePipelineCache>() {
             render_app.insert_resource(ComputePipelineCache::new());
         }
-        render_app.add_system(extract_compute_pipeline::<T>, ExtractPipelineStage);
+        render_app.add_system(extract_compute_pipeline::<T>, RenderStage::ExtractPipeline);
         Ok(())
     }
 }

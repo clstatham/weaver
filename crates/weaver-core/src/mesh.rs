@@ -6,7 +6,7 @@ use weaver_asset::{
     LoadSource, PathAndFilesystem,
 };
 use weaver_ecs::prelude::Commands;
-use weaver_util::{anyhow, bail, Result};
+use weaver_util::prelude::*;
 
 use crate::prelude::{Aabb, Transform};
 

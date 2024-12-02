@@ -13,6 +13,7 @@ pub mod system_schedule;
 pub mod world;
 
 pub use tokio::main;
+pub use weaver_ecs_macros::*;
 
 pub mod prelude {
     pub use crate::bundle::*;
@@ -25,5 +26,6 @@ pub mod prelude {
     pub use crate::system::*;
     pub use crate::system_schedule::*;
     pub use crate::world::*;
+    pub use crate::SystemStage;
     pub use tokio;
 }

@@ -30,9 +30,10 @@ use weaver_ecs::{
     system::IntoSystemConfig,
     system_schedule::SystemStage,
     world::World,
+    SystemStage,
 };
 use weaver_event::{EventRx, Events};
-use weaver_util::Result;
+use weaver_util::prelude::*;
 use weaver_winit::{Window, WindowResized, WindowSize};
 
 pub mod asset;
@@ -107,26 +108,16 @@ pub trait RenderLabel: Clone + Copy + 'static {
 pub struct RenderApp;
 impl AppLabel for RenderApp {}
 
-pub struct ExtractStage;
-impl SystemStage for ExtractStage {}
-
-pub struct ExtractBindGroupStage;
-impl SystemStage for ExtractBindGroupStage {}
-
-pub struct ExtractPipelineStage;
-impl SystemStage for ExtractPipelineStage {}
-
-pub struct InitRenderResources;
-impl SystemStage for InitRenderResources {}
-
-pub struct PreRender;
-impl SystemStage for PreRender {}
-
-pub struct Render;
-impl SystemStage for Render {}
-
-pub struct PostRender;
-impl SystemStage for PostRender {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
+pub enum RenderStage {
+    Extract,
+    ExtractBindGroup,
+    ExtractPipeline,
+    InitRenderResources,
+    PreRender,
+    Render,
+    PostRender,
+}
 
 pub struct CurrentFrameInner {
     pub surface_texture: Arc<wgpu::SurfaceTexture>,
@@ -338,13 +329,15 @@ impl Plugin for RendererPlugin {
 
         render_app.world().init_resource::<CurrentFrame>();
 
-        render_app.world_mut().push_manual_stage::<ExtractStage>();
         render_app
             .world_mut()
-            .push_manual_stage::<ExtractBindGroupStage>();
+            .push_manual_stage(RenderStage::Extract);
         render_app
             .world_mut()
-            .push_manual_stage::<ExtractPipelineStage>();
+            .push_manual_stage(RenderStage::ExtractBindGroup);
+        render_app
+            .world_mut()
+            .push_manual_stage(RenderStage::ExtractPipeline);
 
         render_app
             .world_mut()
@@ -358,10 +351,16 @@ impl Plugin for RendererPlugin {
 
         render_app
             .world_mut()
-            .push_manual_stage::<InitRenderResources>();
-        render_app.world_mut().push_manual_stage::<PreRender>();
-        render_app.world_mut().push_manual_stage::<Render>();
-        render_app.world_mut().push_manual_stage::<PostRender>();
+            .push_manual_stage(RenderStage::InitRenderResources);
+        render_app
+            .world_mut()
+            .push_manual_stage(RenderStage::PreRender);
+        render_app
+            .world_mut()
+            .push_manual_stage(RenderStage::Render);
+        render_app
+            .world_mut()
+            .push_manual_stage(RenderStage::PostRender);
 
         render_app
             .world()
@@ -376,11 +375,15 @@ impl Plugin for RendererPlugin {
             .world()
             .insert_resource(ExtractedAssetBindGroups::new());
 
-        render_app.world_mut().add_system(resize_surface, PreRender);
         render_app
             .world_mut()
-            .add_system(begin_render.after(resize_surface), PreRender);
-        render_app.world_mut().add_system(end_render, PostRender);
+            .add_system(resize_surface, RenderStage::PreRender);
+        render_app
+            .world_mut()
+            .add_system(begin_render.after(resize_surface), RenderStage::PreRender);
+        render_app
+            .world_mut()
+            .add_system(end_render, RenderStage::PostRender);
 
         render_app.add_plugin(CameraPlugin)?;
         render_app.add_plugin(TransformPlugin)?;
@@ -443,45 +446,49 @@ impl Plugin for RendererPlugin {
         });
 
         tokio::spawn(async move {
-            log::trace!("Entering render thread main loop");
+            log::trace!("Entering render task main loop");
 
             loop {
                 let Ok(mut render_app) = main_to_render_rx.recv() else {
                     break;
                 };
-                log::trace!("Received render app on render thread");
+                log::trace!("Received render app on render task");
 
                 log::trace!("Running render app stage: InitRenderResources");
                 render_app
                     .world_mut()
-                    .run_stage::<InitRenderResources>()
+                    .run_stage(RenderStage::InitRenderResources)
                     .await
                     .unwrap();
                 log::trace!("Running render app stage: PreRender");
                 render_app
                     .world_mut()
-                    .run_stage::<PreRender>()
+                    .run_stage(RenderStage::PreRender)
                     .await
                     .unwrap();
                 log::trace!("Running render app stage: Render");
-                render_app.world_mut().run_stage::<Render>().await.unwrap();
+                render_app
+                    .world_mut()
+                    .run_stage(RenderStage::Render)
+                    .await
+                    .unwrap();
                 log::trace!("Running render app stage: PostRender");
                 render_app
                     .world_mut()
-                    .run_stage::<PostRender>()
+                    .run_stage(RenderStage::PostRender)
                     .await
                     .unwrap();
 
-                log::trace!("Sending render app back to main thread");
+                log::trace!("Sending render app back to main task");
 
                 if let Err(e) = render_to_main_tx.send(render_app) {
                     // we're probably shutting down
-                    log::debug!("Failed to send render app back to main thread: {}", e);
+                    log::debug!("Failed to send render app back to main task: {}", e);
                     break;
                 }
             }
 
-            log::trace!("Exiting render thread main loop");
+            log::trace!("Exiting render task main loop");
         });
 
         Ok(())

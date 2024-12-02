@@ -5,40 +5,30 @@ use plugin::Plugin;
 use weaver_ecs::{
     component::Res,
     prelude::Component,
-    system::{IntoSystem, IntoSystemConfig, System},
+    system::IntoSystemConfig,
     system_schedule::SystemStage,
     world::{ConstructFromWorld, World, WorldTicks},
+    SystemStage,
 };
 use weaver_event::{Event, Events, ManuallyUpdatedEvents};
-use weaver_util::{maps::TypeIdSet, FxHashMap, Result};
+use weaver_util::prelude::*;
 
 pub mod plugin;
 
 pub mod prelude {
-    pub use crate::{
-        plugin::Plugin, App, FinishFrame, Init, PostUpdate, PreUpdate, PrepareFrame, Shutdown,
-        SubApp, Update,
-    };
+    pub use crate::{plugin::Plugin, App, AppStage, AppStage::*, SubApp};
 }
 
-pub struct Init;
-impl SystemStage for Init {}
-
-pub struct PrepareFrame;
-impl SystemStage for PrepareFrame {}
-
-pub struct PreUpdate;
-impl SystemStage for PreUpdate {}
-pub struct Update;
-impl SystemStage for Update {}
-pub struct PostUpdate;
-impl SystemStage for PostUpdate {}
-
-pub struct FinishFrame;
-impl SystemStage for FinishFrame {}
-
-pub struct Shutdown;
-impl SystemStage for Shutdown {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
+pub enum AppStage {
+    Init,
+    PrepareFrame,
+    PreUpdate,
+    Update,
+    PostUpdate,
+    FinishFrame,
+    Shutdown,
+}
 
 pub trait Runner: 'static {
     fn run(&self, app: &mut App) -> Result<()>;
@@ -224,25 +214,27 @@ impl App {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let mut this = Self::empty();
-        this.main_app_mut().world_mut().push_init_stage::<Init>();
         this.main_app_mut()
             .world_mut()
-            .push_update_stage::<PrepareFrame>();
+            .push_init_stage(AppStage::Init);
         this.main_app_mut()
             .world_mut()
-            .push_update_stage::<PreUpdate>();
+            .push_update_stage(AppStage::PrepareFrame);
         this.main_app_mut()
             .world_mut()
-            .push_update_stage::<Update>();
+            .push_update_stage(AppStage::PreUpdate);
         this.main_app_mut()
             .world_mut()
-            .push_update_stage::<PostUpdate>();
+            .push_update_stage(AppStage::Update);
         this.main_app_mut()
             .world_mut()
-            .push_update_stage::<FinishFrame>();
+            .push_update_stage(AppStage::PostUpdate);
         this.main_app_mut()
             .world_mut()
-            .push_shutdown_stage::<Shutdown>();
+            .push_update_stage(AppStage::FinishFrame);
+        this.main_app_mut()
+            .world_mut()
+            .push_shutdown_stage(AppStage::Shutdown);
 
         this
     }
@@ -321,7 +313,7 @@ impl App {
         self.insert_resource(Events::<T>::new());
         self.main_app_mut()
             .world_mut()
-            .add_system(clear_events::<T>, FinishFrame);
+            .add_system(clear_events::<T>, AppStage::FinishFrame);
         self
     }
 

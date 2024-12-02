@@ -1,5 +1,5 @@
 use weaver_app::{plugin::Plugin, App};
-use weaver_util::Result;
+use weaver_util::prelude::*;
 
 pub mod bsp;
 pub mod pk3;

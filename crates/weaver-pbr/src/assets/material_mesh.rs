@@ -7,7 +7,7 @@ use weaver_core::{
     texture::{Texture, TextureLoader},
 };
 use weaver_ecs::prelude::Commands;
-use weaver_util::{anyhow, bail, Result};
+use weaver_util::prelude::*;
 
 use crate::prelude::{Material, BLACK_TEXTURE, WHITE_TEXTURE};
 

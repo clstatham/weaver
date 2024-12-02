@@ -1,9 +1,9 @@
-use weaver_app::{plugin::Plugin, App, PreUpdate};
+use weaver_app::{plugin::Plugin, App, AppStage};
 use weaver_ecs::{
     component::{Res, ResMut},
     system::IntoSystemConfig,
 };
-use weaver_util::Result;
+use weaver_util::prelude::*;
 
 pub struct FrameTime {
     pub frame_time: f32,
@@ -22,7 +22,7 @@ impl Plugin for FrameTimePlugin {
             last_update: std::time::Instant::now(),
             frame_count: 0,
         });
-        app.add_system(update_frame_time, PreUpdate);
+        app.add_system(update_frame_time, AppStage::PreUpdate);
 
         Ok(())
     }
@@ -44,7 +44,7 @@ impl Plugin for LogFrameTimePlugin {
             log_interval: self.log_interval,
             last_log: std::time::Instant::now(),
         });
-        app.add_system(log_frame_time.after(update_frame_time), PreUpdate);
+        app.add_system(log_frame_time.after(update_frame_time), AppStage::PreUpdate);
 
         Ok(())
     }

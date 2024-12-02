@@ -1,18 +1,19 @@
 use egui::{Context, FullOutput};
 use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::{winit, State};
-use weaver_app::{plugin::Plugin, App, PostUpdate, PreUpdate};
+use weaver_app::{plugin::Plugin, App, AppStage};
 use weaver_ecs::{
     component::{Res, ResMut},
     prelude::Commands,
     system_schedule::SystemStage,
+    SystemStage,
 };
 use weaver_event::EventRx;
 use weaver_renderer::{
-    prelude::wgpu, texture::texture_format, CurrentFrame, ExtractStage, MainWorld, Render,
-    RenderApp, WgpuDevice, WgpuQueue,
+    prelude::wgpu, texture::texture_format, CurrentFrame, MainWorld, RenderApp, RenderStage,
+    WgpuDevice, WgpuQueue,
 };
-use weaver_util::{lock::SharedLock, Result};
+use weaver_util::prelude::*;
 use weaver_winit::{Window, WinitEvent};
 
 pub use egui;
@@ -171,23 +172,23 @@ impl EguiContext {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
 pub struct RenderUi;
-impl SystemStage for RenderUi {}
 
 pub struct EguiPlugin;
 
 impl Plugin for EguiPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_system(begin_frame, PreUpdate);
-        app.add_system(end_frame, PostUpdate);
-        app.add_system(egui_events, PostUpdate);
+        app.add_system(begin_frame, AppStage::PreUpdate);
+        app.add_system(end_frame, AppStage::PostUpdate);
+        app.add_system(egui_events, AppStage::PostUpdate);
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app
             .world_mut()
-            .add_system(extract_egui_context, ExtractStage);
+            .add_system(extract_egui_context, RenderStage::Extract);
         render_app
             .world_mut()
-            .add_update_stage_after::<RenderUi, Render>();
+            .add_update_stage_after(RenderUi, RenderStage::Render);
         render_app.world_mut().add_system(render, RenderUi);
 
         Ok(())

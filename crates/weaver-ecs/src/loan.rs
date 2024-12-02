@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use weaver_util::SharedLock;
+use weaver_util::lock::SharedLock;
 
 pub struct Loan<T>(Arc<T>);
 

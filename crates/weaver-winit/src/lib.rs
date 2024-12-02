@@ -2,7 +2,7 @@ use std::{ops::Deref, sync::Arc};
 
 use weaver_app::{plugin::Plugin, prelude::App, Runner};
 use weaver_core::input::Input;
-use weaver_util::{lock::Lock, Result};
+use weaver_util::prelude::*;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},

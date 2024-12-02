@@ -11,7 +11,7 @@ use weaver_renderer::{
     prelude::*,
     texture::{texture_format, GpuTexture},
 };
-use weaver_util::Result;
+use weaver_util::prelude::*;
 
 pub const WHITE_TEXTURE: Handle<Texture> =
     Handle::from_u128(171952135557955961317447623731106286307);

@@ -3,7 +3,7 @@ use std::{
     sync::atomic::AtomicU64,
 };
 
-use weaver_util::{debug_once, Lock, Result};
+use weaver_util::prelude::*;
 
 use crate::{
     component::Component,
@@ -238,40 +238,47 @@ impl World {
         self.resources.write().remove_component::<T>().unwrap()
     }
 
-    pub fn has_system_stage<T: SystemStage>(&self) -> bool {
-        self.systems.has_stage::<T>()
+    pub fn has_system_stage(&self, stage: impl SystemStage) -> bool {
+        self.systems.has_stage(stage)
     }
 
-    /// Pushes a system stage to the end of the "init" system schedule.
-    pub fn push_init_stage<T: SystemStage>(&mut self) {
-        self.systems.push_init_stage::<T>();
+    pub fn push_init_stage(&mut self, stage: impl SystemStage) {
+        self.systems.push_init_stage(stage);
     }
 
-    /// Pushes a system stage to the end of the "update" system schedule.
-    pub fn push_update_stage<T: SystemStage>(&mut self) {
-        self.systems.push_update_stage::<T>();
+    pub fn push_update_stage(&mut self, stage: impl SystemStage) {
+        self.systems.push_update_stage(stage);
     }
 
-    /// Pushes a system stage to the end of the "shutdown" system schedule.
-    pub fn push_shutdown_stage<T: SystemStage>(&mut self) {
-        self.systems.push_shutdown_stage::<T>();
+    pub fn push_shutdown_stage(&mut self, stage: impl SystemStage) {
+        self.systems.push_shutdown_stage(stage);
     }
 
-    /// Pushes a system stage must be run manually using [`World::run_stage`].
-    pub fn push_manual_stage<T: SystemStage>(&mut self) {
-        self.systems.push_manual_stage::<T>();
+    pub fn push_manual_stage(&mut self, stage: impl SystemStage) {
+        self.systems.push_manual_stage(stage);
     }
 
-    /// Adds an "update" system stage before another "update" system stage.
-    pub fn add_update_stage_before<T: SystemStage, BEFORE: SystemStage>(&mut self) {
-        self.systems.add_update_stage_before::<T, BEFORE>();
+    pub fn add_update_stage_before(&mut self, stage: impl SystemStage, before: impl SystemStage) {
+        self.systems.add_update_stage_before(stage, before);
     }
 
-    /// Adds an "update" system stage after another "update" system stage.
-    pub fn add_update_stage_after<T: SystemStage, AFTER: SystemStage>(&mut self) {
-        self.systems.add_update_stage_after::<T, AFTER>();
+    pub fn add_update_stage_after(&mut self, stage: impl SystemStage, after: impl SystemStage) {
+        self.systems.add_update_stage_after(stage, after);
     }
 
+    /// Adds a system to the given system stage. If the system has already been added to the stage, a warning is logged and the system is not added again.
+    pub fn add_system<T, S, M>(&mut self, system: S, stage: T)
+    where
+        T: SystemStage,
+        S: IntoSystemConfig<M>,
+        M: 'static,
+    {
+        self.systems.add_system(system, stage);
+    }
+
+    /// Orders two systems to run in the specified order in the given system stage.
+    ///
+    /// Note that this doesn't necessarily mean the systems will run in this exact sequence; `run_first` is guaranteed to run *at some point* before `run_second`, but there might be other systems that run in between them.
     pub fn order_systems<Stage, M1, M2, S1, S2>(
         &mut self,
         run_first: S1,
@@ -289,21 +296,11 @@ impl World {
         self.systems.order_systems(run_first, run_second, stage);
     }
 
-    /// Adds a system to the given system stage. If the system has already been added to the stage, a warning is logged and the system is not added again.
-    pub fn add_system<T, S, M>(&mut self, system: S, stage: T)
-    where
-        T: SystemStage,
-        S: IntoSystemConfig<M>,
-        M: 'static,
-    {
-        self.systems.add_system(system, stage);
-    }
-
     /// Checks if the system has been added to the given system stage.
     pub fn has_system<M: 'static>(
         &self,
         system: &impl IntoSystem<M>,
-        stage: &impl SystemStage,
+        stage: impl SystemStage,
     ) -> bool {
         self.systems.has_system(system, stage)
     }
@@ -314,9 +311,9 @@ impl World {
         self.systems = systems;
     }
 
-    pub fn initialize_system_stage<S: SystemStage>(&mut self) {
+    pub fn initialize_system_stage(&mut self, stage: impl SystemStage) {
         let mut systems = std::mem::take(&mut self.systems);
-        systems.initialize_stage::<S>(self);
+        systems.initialize_stage(self, stage);
         self.systems = systems;
     }
 
@@ -345,9 +342,9 @@ impl World {
     }
 
     /// Runs the given system stage once.
-    pub async fn run_stage<S: SystemStage>(&mut self) -> Result<()> {
+    pub async fn run_stage(&mut self, stage: impl SystemStage) -> Result<()> {
         let mut systems = std::mem::take(&mut self.systems);
-        systems.run_stage::<S>(self).await?;
+        systems.run_stage(self, stage).await?;
         self.systems = systems;
         Ok(())
     }

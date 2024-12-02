@@ -10,12 +10,9 @@ use weaver_ecs::{
     query::Query,
     system::IntoSystemConfig,
 };
-use weaver_util::{
-    lock::{Lock, Read, Write},
-    TypeIdMap, {DowncastSync, FxHashMap, Result},
-};
+use weaver_util::prelude::*;
 
-use crate::{asset::RenderAsset, ExtractBindGroupStage, WgpuDevice};
+use crate::{asset::RenderAsset, RenderStage, WgpuDevice};
 
 #[derive(Default)]
 pub struct BindGroupLayoutCache {
@@ -175,10 +172,13 @@ impl<T: Component + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
         app.init_resource::<ComponentBindGroupsToAdd<T>>();
         app.init_resource::<ComponentBindGroupsToRemove<T>>();
 
-        app.add_system(create_component_bind_group::<T>, ExtractBindGroupStage);
+        app.add_system(
+            create_component_bind_group::<T>,
+            RenderStage::ExtractBindGroup,
+        );
         app.add_system(
             add_and_remove_component_bind_groups::<T>.after(create_component_bind_group::<T>),
-            ExtractBindGroupStage,
+            RenderStage::ExtractBindGroup,
         );
         Ok(())
     }
@@ -261,7 +261,10 @@ impl<T: Component + CreateBindGroup> Default for ResourceBindGroupPlugin<T> {
 
 impl<T: Component + CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_system(create_resource_bind_group::<T>, ExtractBindGroupStage);
+        app.add_system(
+            create_resource_bind_group::<T>,
+            RenderStage::ExtractBindGroup,
+        );
         Ok(())
     }
 }
@@ -324,7 +327,7 @@ impl<T: CreateBindGroup + RenderAsset> Default for AssetBindGroupPlugin<T> {
 impl<T: CreateBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_asset::<BindGroup<T>>();
-        app.add_system(create_asset_bind_group::<T>, ExtractBindGroupStage);
+        app.add_system(create_asset_bind_group::<T>, RenderStage::ExtractBindGroup);
         Ok(())
     }
 }

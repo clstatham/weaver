@@ -7,7 +7,7 @@ use std::{
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
 use weaver_asset::prelude::*;
 use weaver_ecs::prelude::Commands;
-use weaver_util::{bail, Result};
+use weaver_util::prelude::*;
 
 #[derive(Debug, Clone, Asset)]
 pub struct Shader {

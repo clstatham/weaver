@@ -7,7 +7,7 @@ use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{AssetApp, Assets};
 use weaver_core::texture::Texture;
 use weaver_renderer::{RenderApp, WgpuDevice};
-use weaver_util::Result;
+use weaver_util::prelude::*;
 
 pub mod lexer;
 pub mod loader;

@@ -6,7 +6,7 @@ use weaver_ecs::{
     prelude::{ResMut, World},
     world::ConstructFromWorld,
 };
-use weaver_util::Result;
+use weaver_util::prelude::*;
 use weaver_winit::WindowSize;
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
     resources::ActiveCommandEncoder,
     shader::Shader,
     texture::{texture_format, GpuTexture},
-    CurrentFrame, Render, WgpuDevice,
+    CurrentFrame, RenderStage, WgpuDevice,
 };
 
 pub struct HdrRenderTarget {
@@ -229,7 +229,7 @@ impl Plugin for HdrPlugin {
 
         app.main_app_mut()
             .world_mut()
-            .add_system(render_hdr, Render);
+            .add_system(render_hdr, RenderStage::Render);
 
         Ok(())
     }

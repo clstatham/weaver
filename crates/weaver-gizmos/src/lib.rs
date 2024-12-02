@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use weaver_app::{plugin::Plugin, App, PrepareFrame};
+use weaver_app::{plugin::Plugin, App, AppStage};
 use weaver_core::{color::Color, prelude::Mat4, transform::Transform};
 use weaver_ecs::{
     component::Res,
@@ -20,12 +20,9 @@ use weaver_renderer::{
     resources::ActiveCommandEncoder,
     shader::Shader,
     texture::{texture_format, GpuTexture},
-    PreRender, Render, RenderApp, RenderLabel, WgpuDevice, WgpuQueue,
+    RenderApp, RenderLabel, RenderStage, WgpuDevice, WgpuQueue,
 };
-use weaver_util::{
-    lock::SharedLock,
-    {FxHashMap, Result},
-};
+use weaver_util::prelude::*;
 
 use wgpu::util::DeviceExt;
 
@@ -561,7 +558,7 @@ impl Plugin for GizmoPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         let gizmos = Gizmos::default();
         app.insert_resource(gizmos.clone());
-        app.add_system(clear_gizmos, PrepareFrame);
+        app.add_system(clear_gizmos, AppStage::PrepareFrame);
 
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app
@@ -587,17 +584,18 @@ impl Plugin for GizmoRenderAppPlugin {
         render_app
             .main_app_mut()
             .world_mut()
-            .add_system(prepare_gizmos, PreRender);
+            .add_system(prepare_gizmos, RenderStage::PreRender);
 
         render_app
             .main_app_mut()
             .world_mut()
-            .add_system(render_gizmos, Render);
+            .add_system(render_gizmos, RenderStage::Render);
 
-        render_app
-            .main_app_mut()
-            .world_mut()
-            .order_systems(render_gizmos, render_hdr, Render);
+        render_app.main_app_mut().world_mut().order_systems(
+            render_gizmos,
+            render_hdr,
+            RenderStage::Render,
+        );
         Ok(())
     }
 

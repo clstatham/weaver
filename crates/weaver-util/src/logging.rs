@@ -3,7 +3,7 @@ macro_rules! log_once {
     ($log:ident; $($arg:tt)*) => {{
         use std::sync::RwLock;
         use std::collections::HashSet;
-        weaver_util::lazy_static! {
+        weaver_util::re_exports::lazy_static! {
             static ref LOGGED: RwLock<HashSet<String>> = RwLock::new(HashSet::new());
         }
         let msg = format!($($arg)*);

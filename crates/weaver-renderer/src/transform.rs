@@ -1,6 +1,6 @@
 use weaver_app::{plugin::Plugin, App};
 use weaver_ecs::query::QueryableItem;
-use weaver_util::Result;
+use weaver_util::prelude::*;
 
 use weaver_core::transform::Transform;
 

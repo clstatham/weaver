@@ -30,9 +30,9 @@ use weaver_renderer::{
     resources::ActiveCommandEncoder,
     shader::Shader,
     texture::{texture_format, GpuTexture},
-    InitRenderResources, Render, RenderLabel, WgpuDevice, WgpuQueue,
+    RenderLabel, RenderStage, WgpuDevice, WgpuQueue,
 };
-use weaver_util::Result;
+use weaver_util::prelude::*;
 
 pub mod irradiance;
 
@@ -556,7 +556,7 @@ impl Plugin for SkyboxPlugin {
         render_app.add_plugin(ComputePipelinePlugin::<GpuSkybox>::default())?;
         render_app.add_plugin(ResourceBindGroupPlugin::<GpuSkybox>::default())?;
 
-        render_app.add_system(init_gpu_skybox, InitRenderResources);
+        render_app.add_system(init_gpu_skybox, RenderStage::InitRenderResources);
 
         Ok(())
     }
@@ -574,7 +574,7 @@ impl Plugin for SkyboxRenderablePlugin {
     fn build(&self, render_app: &mut weaver_app::App) -> Result<()> {
         render_app.add_plugin(RenderPipelinePlugin::<SkyboxRenderable>::default())?;
 
-        render_app.add_system(render_skybox.after(render_clear_color), Render);
+        render_app.add_system(render_skybox.after(render_clear_color), RenderStage::Render);
 
         Ok(())
     }

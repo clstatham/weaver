@@ -1,6 +1,6 @@
 use std::any::TypeId;
 
-use weaver_util::SharedLock;
+use weaver_util::lock::SharedLock;
 
 use crate::{
     bundle::Bundle,

@@ -1,21 +1,20 @@
-use std::any::TypeId;
-
-use weaver_util::{FxHashMap, Result};
+use weaver_util::prelude::*;
 
 use crate::{
-    prelude::{IntoSystem, System, World},
+    prelude::{IntoSystem, World},
     system::{IntoSystemConfig, SystemGraph},
 };
 
-pub trait SystemStage: 'static {}
+define_label!(SystemStage, SYSTEM_STAGE_INTERNER);
+pub type InternedSystemStage = Interned<dyn SystemStage>;
 
 #[derive(Default)]
 pub struct Systems {
-    init_stages: Vec<TypeId>,
-    update_stages: Vec<TypeId>,
-    shutdown_stages: Vec<TypeId>,
-    manual_stages: Vec<TypeId>,
-    systems: FxHashMap<TypeId, SystemGraph>,
+    init_stages: Vec<InternedSystemStage>,
+    update_stages: Vec<InternedSystemStage>,
+    shutdown_stages: Vec<InternedSystemStage>,
+    manual_stages: Vec<InternedSystemStage>,
+    systems: FxHashMap<InternedSystemStage, SystemGraph>,
 }
 
 impl Systems {
@@ -26,110 +25,113 @@ impl Systems {
         self.initialize_manual_stages(world);
     }
 
-    pub fn has_stage<T: SystemStage>(&self) -> bool {
-        self.systems.contains_key(&TypeId::of::<T>())
+    pub fn has_stage(&self, stage: impl SystemStage) -> bool {
+        self.systems.contains_key(&stage.intern())
     }
 
-    pub fn push_update_stage<T: SystemStage>(&mut self) {
-        self.update_stages.push(TypeId::of::<T>());
+    pub fn get_stage(&self, stage: impl SystemStage) -> &SystemGraph {
         self.systems
-            .insert(TypeId::of::<T>(), SystemGraph::default());
+            .get(&stage.intern())
+            .expect("System stage not found")
     }
 
-    pub fn push_init_stage<T: SystemStage>(&mut self) {
-        self.init_stages.push(TypeId::of::<T>());
+    pub fn get_stage_mut(&mut self, stage: impl SystemStage) -> &mut SystemGraph {
         self.systems
-            .insert(TypeId::of::<T>(), SystemGraph::default());
+            .get_mut(&stage.intern())
+            .expect("System stage not found")
     }
 
-    pub fn push_shutdown_stage<T: SystemStage>(&mut self) {
-        self.shutdown_stages.push(TypeId::of::<T>());
-        self.systems
-            .insert(TypeId::of::<T>(), SystemGraph::default());
+    pub fn push_update_stage(&mut self, stage: impl SystemStage) {
+        let stage = stage.intern();
+        self.update_stages.push(stage);
+        self.systems.insert(stage, SystemGraph::default());
     }
 
-    pub fn push_manual_stage<T: SystemStage>(&mut self) {
-        self.manual_stages.push(TypeId::of::<T>());
-        self.systems
-            .insert(TypeId::of::<T>(), SystemGraph::default());
+    pub fn push_init_stage(&mut self, stage: impl SystemStage) {
+        let stage = stage.intern();
+        self.init_stages.push(stage);
+        self.systems.insert(stage, SystemGraph::default());
     }
 
-    pub fn add_update_stage_before<T: SystemStage, BEFORE: SystemStage>(&mut self) {
+    pub fn push_shutdown_stage(&mut self, stage: impl SystemStage) {
+        let stage = stage.intern();
+        self.shutdown_stages.push(stage);
+        self.systems.insert(stage, SystemGraph::default());
+    }
+
+    pub fn push_manual_stage(&mut self, stage: impl SystemStage) {
+        let stage = stage.intern();
+        self.manual_stages.push(stage);
+        self.systems.insert(stage, SystemGraph::default());
+    }
+
+    pub fn add_update_stage_before(&mut self, stage: impl SystemStage, before: impl SystemStage) {
+        let stage = stage.intern();
+        let before = before.intern();
+
         let index = self
             .update_stages
             .iter()
-            .position(|stage| *stage == TypeId::of::<BEFORE>())
-            .expect("System stage not found");
-        self.update_stages.insert(index, TypeId::of::<T>());
-        self.systems
-            .insert(TypeId::of::<T>(), SystemGraph::default());
+            .position(|s| s == &before)
+            .expect("Stage not found");
+
+        self.update_stages.insert(index, stage);
+
+        self.systems.insert(stage, SystemGraph::default());
     }
 
-    pub fn add_update_stage_after<T: SystemStage, AFTER: SystemStage>(&mut self) {
+    pub fn add_update_stage_after(&mut self, stage: impl SystemStage, after: impl SystemStage) {
+        let stage = stage.intern();
+        let after = after.intern();
+
         let index = self
             .update_stages
             .iter()
-            .position(|stage| *stage == TypeId::of::<AFTER>())
-            .expect("System stage not found");
-        self.update_stages.insert(index + 1, TypeId::of::<T>());
-        self.systems
-            .insert(TypeId::of::<T>(), SystemGraph::default());
+            .position(|s| s == &after)
+            .expect("Stage not found");
+
+        self.update_stages.insert(index + 1, stage);
+
+        self.systems.insert(stage, SystemGraph::default());
     }
 
-    pub fn order_systems<STAGE, BEFORE, AFTER, M1, M2>(
+    pub fn order_systems<BEFORE, AFTER, M1, M2>(
         &mut self,
         run_first: BEFORE,
         run_second: AFTER,
-        _stage: STAGE,
+        stage: impl SystemStage,
     ) where
-        STAGE: SystemStage,
         BEFORE: IntoSystem<M1>,
         AFTER: IntoSystem<M2>,
         M1: 'static,
         M2: 'static,
     {
-        self.systems
-            .get_mut(&TypeId::of::<STAGE>())
-            .expect("System stage not found")
+        self.get_stage_mut(stage)
             .add_edge::<M1, M2, BEFORE, AFTER>(run_first, run_second);
     }
 
-    pub fn add_system<T, S, M>(&mut self, system: S, _stage: T)
+    pub fn add_system<S, M>(&mut self, system: S, stage: impl SystemStage)
     where
-        T: SystemStage,
         S: IntoSystemConfig<M>,
         M: 'static,
     {
-        self.systems
-            .get_mut(&TypeId::of::<T>())
-            .expect("System stage not found")
-            .add_system(system);
+        self.get_stage_mut(stage).add_system(system);
     }
 
-    pub fn has_system<S: SystemStage, M: 'static>(
+    pub fn has_system<M: 'static>(
         &self,
         system: &impl IntoSystem<M>,
-        _stage: &S,
+        stage: impl SystemStage,
     ) -> bool {
-        self.systems
-            .get(&TypeId::of::<S>())
-            .expect("System stage not found")
-            .has_system(system)
+        self.get_stage(stage).has_system(system)
     }
 
-    pub fn initialize_stage<S: SystemStage>(&mut self, world: &mut World) {
-        self.systems
-            .get_mut(&TypeId::of::<S>())
-            .expect("System stage not found")
-            .initialize(world)
+    pub fn initialize_stage(&mut self, world: &mut World, stage: impl SystemStage) {
+        self.get_stage_mut(stage).initialize(world);
     }
 
-    pub async fn run_stage<S: SystemStage>(&mut self, world: &mut World) -> Result<()> {
-        self.systems
-            .get_mut(&TypeId::of::<S>())
-            .expect("System stage not found")
-            .run(world)
-            .await
+    pub async fn run_stage(&mut self, world: &mut World, stage: impl SystemStage) -> Result<()> {
+        self.get_stage_mut(stage).run(world).await
     }
 
     pub fn initialize_init_stages(&mut self, world: &mut World) {

@@ -9,9 +9,9 @@ use weaver_renderer::{
     hdr::render_hdr,
     prelude::wgpu,
     resources::ActiveCommandEncoder,
-    ExtractStage, Render,
+    RenderStage,
 };
-use weaver_util::Result;
+use weaver_util::prelude::*;
 
 use crate::shader::render::ShaderPipelineCache;
 
@@ -74,20 +74,21 @@ pub struct BspRenderPlugin;
 
 impl Plugin for BspRenderPlugin {
     fn build(&self, render_app: &mut App) -> Result<()> {
-        render_app.add_system(extract_bsps, ExtractStage);
+        render_app.add_system(extract_bsps, RenderStage::Extract);
 
-        render_app.add_system(render_bsps, Render);
+        render_app.add_system(render_bsps, RenderStage::Render);
 
         render_app.main_app_mut().world_mut().order_systems(
             render_clear_color,
             render_bsps,
-            Render,
+            RenderStage::Render,
         );
 
-        render_app
-            .main_app_mut()
-            .world_mut()
-            .order_systems(render_bsps, render_hdr, Render);
+        render_app.main_app_mut().world_mut().order_systems(
+            render_bsps,
+            render_hdr,
+            RenderStage::Render,
+        );
 
         Ok(())
     }

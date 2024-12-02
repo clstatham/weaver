@@ -2,7 +2,7 @@ use std::{fmt::Debug, sync::Arc};
 
 use encase::ShaderType;
 use weaver_core::geometry::{Aabb, Frustum, Intersection, Ray, Sphere};
-use weaver_util::Result;
+use weaver_util::prelude::*;
 
 use weaver_app::plugin::Plugin;
 use weaver_ecs::prelude::*;
@@ -16,7 +16,7 @@ use crate::{
     end_render,
     extract::{ExtractComponent, ExtractComponentPlugin},
     hdr::HdrRenderTarget,
-    CurrentFrame, ExtractBindGroupStage, PostRender, PreRender, WgpuDevice, WgpuQueue,
+    CurrentFrame, RenderStage, WgpuDevice, WgpuQueue,
 };
 
 #[derive(Clone, Copy)]
@@ -339,14 +339,20 @@ impl Plugin for CameraPlugin {
 
         app.add_system(
             extract_camera_bind_groups.after(create_component_bind_group::<CameraBindGroup>),
-            ExtractBindGroupStage,
+            RenderStage::ExtractBindGroup,
         );
         app.add_system(
             add_camera_bind_groups.after(extract_camera_bind_groups),
-            ExtractBindGroupStage,
+            RenderStage::ExtractBindGroup,
         );
-        app.add_system(insert_view_target.after(begin_render), PreRender);
-        app.add_system(remove_view_target.before(end_render), PostRender);
+        app.add_system(
+            insert_view_target.after(begin_render),
+            RenderStage::PreRender,
+        );
+        app.add_system(
+            remove_view_target.before(end_render),
+            RenderStage::PostRender,
+        );
 
         Ok(())
     }

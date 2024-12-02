@@ -5,7 +5,7 @@ use weaver_asset::{
     LoadSource, PathAndFilesystem,
 };
 use weaver_ecs::prelude::Commands;
-use weaver_util::Result;
+use weaver_util::prelude::*;
 
 #[derive(Debug, Clone, Asset)]
 pub struct Texture {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use weaver_app::{plugin::Plugin, prelude::App};
 use weaver_asset::AssetApp;
 use weaver_core::texture::Texture;
-use weaver_util::Result;
+use weaver_util::prelude::*;
 use wgpu::util::DeviceExt;
 
 pub mod texture_format {

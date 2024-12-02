@@ -18,7 +18,7 @@ use weaver_renderer::{
     texture::{texture_format, GpuTexture},
     WgpuDevice, WgpuQueue,
 };
-use weaver_util::FxHashMap;
+use weaver_util::prelude::*;
 use wgpu::util::DeviceExt;
 
 use crate::{

@@ -8,10 +8,7 @@ use weaver_ecs::{
     system::{SystemAccess, SystemParam},
     world::{Tick, World},
 };
-use weaver_util::{
-    lock::{Read, SharedLock},
-    FxHashSet,
-};
+use weaver_util::prelude::*;
 
 pub mod prelude {
     pub use super::{Event, EventRx, EventTx};

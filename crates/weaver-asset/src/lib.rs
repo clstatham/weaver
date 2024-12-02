@@ -17,9 +17,7 @@ use weaver_ecs::{
     world::{ConstructFromWorld, FromWorld},
 };
 use weaver_event::{Event, Events};
-use weaver_util::{
-    anyhow, define_atomic_id, impl_downcast, DowncastSync, Error, FxHashMap, Lock, Result,
-};
+use weaver_util::prelude::*;
 use zip::ZipArchive;
 
 pub mod prelude {
@@ -611,8 +609,8 @@ impl AssetLoadStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
 pub struct AssetLoad;
-impl SystemStage for AssetLoad {}
 
 pub trait AssetApp {
     fn add_asset<T: Asset>(&mut self) -> &mut Self;
@@ -658,8 +656,8 @@ impl AssetApp for SubApp {
 
             self.world_mut().init_resource::<Events<AssetLoaded<T>>>();
 
-            if !self.world().has_system_stage::<AssetLoad>() {
-                self.world_mut().push_update_stage::<AssetLoad>();
+            if !self.world().has_system_stage(AssetLoad) {
+                self.world_mut().push_update_stage(AssetLoad);
             }
 
             self.world_mut()

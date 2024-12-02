@@ -5,7 +5,7 @@ use weaver_asset::{prelude::*, AssetCommands};
 use weaver_core::{mesh::Mesh, prelude::Vec3};
 use weaver_ecs::prelude::Commands;
 use weaver_pbr::prelude::WHITE_TEXTURE;
-use weaver_util::{anyhow, FxHashMap, Lock, Result};
+use weaver_util::prelude::*;
 
 use crate::{
     bsp::{

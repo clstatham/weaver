@@ -10,11 +10,9 @@ use weaver_ecs::{
     system::{IntoSystemConfig, SystemAccess, SystemParam, SystemParamItem},
     world::World,
 };
-use weaver_util::Result;
+use weaver_util::prelude::*;
 
-use crate::{
-    ExtractBindGroupStage, ExtractPipelineStage, ExtractStage, MainWorld, ScratchMainWorld,
-};
+use crate::{MainWorld, RenderStage, ScratchMainWorld};
 
 pub struct Extract<T: SystemParam> {
     item: SystemParamItem<T>,
@@ -89,7 +87,7 @@ impl<T: ExtractComponent> Default for ExtractComponentPlugin<T> {
 
 impl<T: ExtractComponent> Plugin for ExtractComponentPlugin<T> {
     fn build(&self, render_app: &mut App) -> Result<()> {
-        render_app.add_system(extract_render_component::<T>, ExtractStage);
+        render_app.add_system(extract_render_component::<T>, RenderStage::Extract);
         Ok(())
     }
 }
@@ -136,7 +134,7 @@ impl<T: ExtractResource> Default for ExtractResourcePlugin<T> {
 
 impl<T: ExtractResource> Plugin for ExtractResourcePlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_system(extract_render_resource::<T>, ExtractStage);
+        app.add_system(extract_render_resource::<T>, RenderStage::Extract);
         Ok(())
     }
 }
@@ -155,7 +153,7 @@ impl<T: ExtractResource, Dep: ExtractResource> Plugin for RenderResourceDependen
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_system(
             extract_render_resource::<T>.after(extract_render_resource::<Dep>),
-            ExtractStage,
+            RenderStage::Extract,
         );
         Ok(())
     }
@@ -186,10 +184,12 @@ pub fn render_extract(main_world: &mut World, render_world: &mut World) -> Resul
     render_world.insert_resource(MainWorld(inserted_world));
 
     pollster::block_on(async {
-        render_world.run_stage::<ExtractStage>().await?;
-        render_world.run_stage::<ExtractBindGroupStage>().await?;
-        render_world.run_stage::<ExtractPipelineStage>().await?;
-        Ok::<_, weaver_util::Error>(())
+        render_world.run_stage(RenderStage::Extract).await?;
+        render_world
+            .run_stage(RenderStage::ExtractBindGroup)
+            .await?;
+        render_world.run_stage(RenderStage::ExtractPipeline).await?;
+        Ok::<_, weaver_util::re_exports::Error>(())
     })?;
 
     let inserted_world = render_world.remove_resource::<MainWorld>().unwrap();

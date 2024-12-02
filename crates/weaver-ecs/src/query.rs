@@ -1,6 +1,6 @@
 use std::any::TypeId;
 
-use weaver_util::FxHashSet;
+use weaver_util::prelude::*;
 
 use crate::{
     entity::Entity,

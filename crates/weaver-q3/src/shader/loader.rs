@@ -4,7 +4,7 @@ use weaver_asset::{prelude::*, PathAndFilesystem};
 use weaver_core::texture::{Texture, TextureLoader};
 use weaver_ecs::prelude::Commands;
 use weaver_pbr::material::ERROR_TEXTURE;
-use weaver_util::{anyhow, FxHashMap, Result};
+use weaver_util::prelude::*;
 
 use crate::shader::parser::parse_shaders_manual;
 

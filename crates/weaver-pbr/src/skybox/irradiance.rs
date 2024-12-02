@@ -2,7 +2,7 @@ use std::{path::Path, sync::Arc};
 
 use weaver_ecs::{prelude::World, world::ConstructFromWorld};
 use weaver_renderer::{prelude::wgpu, WgpuDevice, WgpuQueue};
-use weaver_util::Result;
+use weaver_util::prelude::*;
 use wgpu::util::DeviceExt;
 
 use super::Skybox;

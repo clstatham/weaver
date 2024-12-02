@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use weaver_app::{plugin::Plugin, App, PostUpdate};
+use weaver_app::{plugin::Plugin, App, AppStage};
 use weaver_ecs::component::ResMut;
-use weaver_util::Result;
+use weaver_util::prelude::*;
 use winit::{
     event::{DeviceEvent, ElementState, WindowEvent},
     platform::scancode::PhysicalKeyExtScancode,
@@ -148,7 +148,7 @@ pub struct InputPlugin;
 impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.insert_resource(Input::default());
-        app.add_system(update_input, PostUpdate);
+        app.add_system(update_input, AppStage::PostUpdate);
         Ok(())
     }
 }

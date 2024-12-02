@@ -3,7 +3,7 @@ use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{AssetApp, DirectLoader, PathAndFilesystem};
 use weaver_core::mesh::Mesh;
 use weaver_renderer::RenderApp;
-use weaver_util::Result;
+use weaver_util::prelude::*;
 
 use crate::shader::loader::LoadedShader;
 

@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 
 use any_vec::any_value::{AnyValue, AnyValueWrapper};
-use weaver_util::{bail, Result};
+use weaver_util::prelude::*;
 
 use crate::component::{Component, ComponentVec};
 

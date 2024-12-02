@@ -7,12 +7,9 @@ use weaver_ecs::{
     query::Query,
     system::{SystemParam, SystemParamItem, SystemParamWrapper},
 };
-use weaver_util::{
-    lock::{Lock, Read, Write},
-    {FxHashMap, Result},
-};
+use weaver_util::prelude::*;
 
-use crate::{extract::Extract, ExtractStage, WgpuDevice, WgpuQueue};
+use crate::{extract::Extract, RenderStage, WgpuDevice, WgpuQueue};
 
 pub trait RenderAsset: Asset {
     type Source: Asset;
@@ -76,7 +73,7 @@ impl<T: RenderAsset> Default for ExtractRenderAssetPlugin<T> {
 impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
     fn build(&self, render_app: &mut App) -> Result<()> {
         render_app.add_asset::<T>();
-        render_app.add_system(extract_render_asset::<T>, ExtractStage);
+        render_app.add_system(extract_render_asset::<T>, RenderStage::Extract);
         Ok(())
     }
 }

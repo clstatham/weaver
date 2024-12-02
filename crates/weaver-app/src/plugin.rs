@@ -1,4 +1,4 @@
-use weaver_util::{impl_downcast, DowncastSync, Result};
+use weaver_util::prelude::*;
 
 use crate::App;
 

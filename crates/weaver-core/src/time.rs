@@ -1,9 +1,9 @@
-use weaver_app::{plugin::Plugin, App, PreUpdate};
+use weaver_app::{plugin::Plugin, App, AppStage};
 use weaver_ecs::{
     component::{Res, ResMut},
     system::IntoSystemConfig,
 };
-use weaver_util::Result;
+use weaver_util::prelude::*;
 
 pub struct Time {
     pub delta_time: f32,
@@ -89,7 +89,7 @@ pub struct TimePlugin;
 impl Plugin for TimePlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.insert_resource(Time::new());
-        app.add_system(update_time, PreUpdate);
+        app.add_system(update_time, AppStage::PreUpdate);
         Ok(())
     }
 }
@@ -120,7 +120,10 @@ impl<Label: Send + Sync + 'static> Plugin for FixedUpdatePlugin<Label> {
             self.timestep,
             self.max_frame_time,
         ));
-        app.add_system(update_fixed_timestep::<Label>.after(update_time), PreUpdate);
+        app.add_system(
+            update_fixed_timestep::<Label>.after(update_time),
+            AppStage::PreUpdate,
+        );
         //app.add_system_after(update_fixed_timestep::<Label>, update_time, PreUpdate);
         Ok(())
     }
