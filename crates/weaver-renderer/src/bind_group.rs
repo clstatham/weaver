@@ -8,7 +8,6 @@ use weaver_ecs::{
     entity::{Entity, EntityMap},
     prelude::Component,
     query::Query,
-    system::IntoSystemConfig,
 };
 use weaver_util::prelude::*;
 
@@ -169,85 +168,48 @@ impl<T: Component + CreateBindGroup> Default for ComponentBindGroupPlugin<T> {
 
 impl<T: Component + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.init_resource::<ComponentBindGroupsToAdd<T>>();
-        app.init_resource::<ComponentBindGroupsToRemove<T>>();
-
         app.add_system(
             create_component_bind_group::<T>,
-            RenderStage::ExtractBindGroup,
-        );
-        app.add_system(
-            add_and_remove_component_bind_groups::<T>.after(create_component_bind_group::<T>),
             RenderStage::ExtractBindGroup,
         );
         Ok(())
     }
 }
 
-pub(crate) struct ComponentBindGroupsToRemove<T: Component> {
-    entities: Vec<Entity>,
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<T: Component> Default for ComponentBindGroupsToRemove<T> {
-    fn default() -> Self {
-        Self {
-            entities: Vec::new(),
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-pub(crate) struct ComponentBindGroupsToAdd<T: Component + CreateBindGroup> {
-    items: Vec<(Entity, BindGroup<T>)>,
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<T: Component + CreateBindGroup> Default for ComponentBindGroupsToAdd<T> {
-    fn default() -> Self {
-        Self {
-            items: Vec::new(),
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn create_component_bind_group<T: Component + CreateBindGroup>(
+    commands: Commands,
     device: Res<WgpuDevice>,
     mut layout_cache: ResMut<BindGroupLayoutCache>,
     mut item_query: Query<(Entity, &T)>,
     mut bind_group_query: Query<&BindGroup<T>>,
     mut staleness: ResMut<ComponentBindGroupStaleness>,
-    mut to_remove: ResMut<ComponentBindGroupsToRemove<T>>,
-    mut to_add: ResMut<ComponentBindGroupsToAdd<T>>,
 ) {
+    let mut to_add = Vec::new();
+    let mut to_remove = Vec::new();
     for (entity, item) in item_query.iter() {
         let mut stale = false;
         if staleness.is_stale(entity) {
             // commands.remove_component::<BindGroup<T>>(entity).await;
-            to_remove.entities.push(entity);
+            to_remove.push(entity);
             stale = true;
         }
         if stale || bind_group_query.get(entity).is_none() {
             let bind_group = BindGroup::new(&device, item, &mut layout_cache);
             staleness.set_stale(entity, false);
             // commands.insert_component(entity, bind_group).await;
-            to_add.items.push((entity, bind_group));
+            to_add.push((entity, bind_group));
         }
     }
-}
 
-async fn add_and_remove_component_bind_groups<T: Component + CreateBindGroup>(
-    mut commands: Commands,
-    mut to_remove: ResMut<ComponentBindGroupsToRemove<T>>,
-    mut to_add: ResMut<ComponentBindGroupsToAdd<T>>,
-) {
-    for entity in to_remove.entities.drain(..) {
-        commands.remove_component::<BindGroup<T>>(entity).await;
+    drop((item_query, bind_group_query));
+
+    for (entity, bind_group) in to_add {
+        commands.insert_component(entity, bind_group).await;
     }
 
-    for (entity, bind_group) in to_add.items.drain(..) {
-        commands.insert_component(entity, bind_group).await;
+    for entity in to_remove {
+        commands.remove_component::<BindGroup<T>>(entity).await;
     }
 }
 
@@ -270,19 +232,20 @@ impl<T: Component + CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
 }
 
 async fn create_resource_bind_group<T: Component + CreateBindGroup>(
-    mut commands: Commands,
+    commands: Commands,
     data: Res<T>,
     bind_group: Option<Res<BindGroup<T>>>,
     device: Res<WgpuDevice>,
     mut layout_cache: ResMut<BindGroupLayoutCache>,
     mut staleness: ResMut<ResourceBindGroupStaleness>,
 ) {
-    let mut stale = false;
+    let mut stale = bind_group.is_none();
     if staleness.is_stale::<T>() {
+        drop(bind_group);
         commands.remove_resource::<BindGroup<T>>().await;
         stale = true;
     }
-    if stale || bind_group.is_none() {
+    if stale {
         let bind_group = BindGroup::new(&device, &*data, &mut layout_cache);
         staleness.set_stale::<T>(false);
         commands.insert_resource(bind_group).await;
@@ -334,7 +297,7 @@ impl<T: CreateBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
 
 #[allow(clippy::too_many_arguments)]
 async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
-    mut commands: Commands,
+    commands: Commands,
     device: Res<WgpuDevice>,
     assets: Res<Assets<T>>,
     mut bind_group_assets: ResMut<Assets<BindGroup<T>>>,

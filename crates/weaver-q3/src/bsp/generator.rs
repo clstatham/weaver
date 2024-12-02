@@ -1,8 +1,8 @@
 use std::ffi::CString;
 use std::ops::{Add, Mul};
 
-use weaver_core::mesh::{Mesh, Vertex};
 use weaver_core::prelude::*;
+use weaver_util::prelude::*;
 
 use crate::bsp::parser::{Brush, BspFile, Face, Node, Vert};
 

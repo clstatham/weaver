@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-log = "0.4"
-
 weaver-app = { path = "../weaver-app" }
 weaver-core = { path = "../weaver-core" }
 weaver-ecs = { path = "../weaver-ecs" }

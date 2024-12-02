@@ -130,27 +130,6 @@ impl ComponentMap {
         Ok(loan)
     }
 
-    async fn loan_component_patient(&mut self, type_id: TypeId) -> Result<Loan<BoxedComponent>> {
-        let storage = self.map.get_mut(&type_id);
-        let Some(storage) = storage else {
-            bail!("Resource does not exist");
-        };
-        let loan = storage.wait_for_loan().await;
-        Ok(loan)
-    }
-
-    async fn loan_component_mut_patient(
-        &mut self,
-        type_id: TypeId,
-    ) -> Result<LoanMut<BoxedComponent>> {
-        let storage = self.map.get_mut(&type_id);
-        let Some(storage) = storage else {
-            bail!("Resource does not exist");
-        };
-        let loan = storage.wait_for_loan_mut().await;
-        Ok(loan)
-    }
-
     pub fn get_component<T: Component>(&mut self) -> Option<Ref<T>> {
         match self.loan_component(TypeId::of::<T>()) {
             Ok(loan) => Some(Ref {
@@ -175,32 +154,6 @@ impl ComponentMap {
                 None
             }
         }
-    }
-
-    pub async fn wait_for_component<T: Component>(&mut self) -> Option<Ref<T>> {
-        let loan = self
-            .loan_component_patient(TypeId::of::<T>())
-            .await
-            .unwrap_or_else(|e| {
-                panic!("Failed to get resource {:?}: {}", T::type_name(), e);
-            });
-        Some(Ref {
-            loan,
-            marker: std::marker::PhantomData,
-        })
-    }
-
-    pub async fn wait_for_component_mut<T: Component>(&mut self) -> Option<Mut<T>> {
-        let loan = self
-            .loan_component_mut_patient(TypeId::of::<T>())
-            .await
-            .unwrap_or_else(|e| {
-                panic!("Failed to get mutable resource {:?}: {}", T::type_name(), e);
-            });
-        Some(Mut {
-            loan,
-            marker: std::marker::PhantomData,
-        })
     }
 
     pub fn contains_component<T: Component>(&self) -> bool {

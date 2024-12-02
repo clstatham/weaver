@@ -47,7 +47,7 @@ impl Loader<LoadedModelWithMaterials, PathAndFilesystem> for ObjMaterialModelLoa
     async fn load(
         &self,
         source: PathAndFilesystem,
-        commands: &mut Commands,
+        commands: &Commands,
     ) -> Result<LoadedModelWithMaterials> {
         load_obj_material_mesh(&source, commands).await
     }
@@ -55,7 +55,7 @@ impl Loader<LoadedModelWithMaterials, PathAndFilesystem> for ObjMaterialModelLoa
 
 pub async fn load_obj_material_mesh(
     source: &PathAndFilesystem,
-    commands: &mut Commands,
+    commands: &Commands,
 ) -> Result<LoadedModelWithMaterials> {
     let bytes = source.read()?;
     let (models, materials) = tobj::load_obj_buf(
@@ -242,7 +242,7 @@ impl Loader<LoadedModelWithMaterials, PathAndFilesystem> for GltfMaterialModelLo
     async fn load(
         &self,
         source: PathAndFilesystem,
-        commands: &mut Commands,
+        commands: &Commands,
     ) -> Result<LoadedModelWithMaterials> {
         load_gltf_material_mesh(&source, commands).await
     }
@@ -250,7 +250,7 @@ impl Loader<LoadedModelWithMaterials, PathAndFilesystem> for GltfMaterialModelLo
 
 pub async fn load_gltf_material_mesh(
     source: &PathAndFilesystem,
-    commands: &mut Commands,
+    commands: &Commands,
 ) -> Result<LoadedModelWithMaterials> {
     let bytes = source.read()?;
     let (document, buffers, images) = gltf::import_slice(bytes)?;
@@ -313,7 +313,7 @@ pub async fn load_gltf_material_mesh(
 async fn load_material(
     material: gltf::Material<'_>,
     images: &[gltf::image::Data],
-    commands: &mut Commands,
+    commands: &Commands,
 ) -> Result<Material> {
     let metallic = material.pbr_metallic_roughness().metallic_factor();
     let roughness = material.pbr_metallic_roughness().roughness_factor();

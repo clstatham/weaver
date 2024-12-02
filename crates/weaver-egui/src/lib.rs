@@ -196,7 +196,7 @@ impl Plugin for EguiPlugin {
 }
 
 async fn extract_egui_context(
-    mut commands: Commands,
+    commands: Commands,
     main_world: Res<MainWorld>,
     window: Res<Window>,
     device: Res<WgpuDevice>,

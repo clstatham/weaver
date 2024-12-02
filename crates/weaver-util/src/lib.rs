@@ -3,6 +3,7 @@ pub mod intern;
 #[macro_use]
 pub mod label;
 pub mod lock;
+#[macro_use]
 pub mod logging;
 pub mod maps;
 pub mod sorted_vec;
@@ -13,9 +14,11 @@ pub mod re_exports {
     pub use hashbrown::{HashMap, HashSet};
     pub use indextree;
     pub use lazy_static::lazy_static;
+    pub use log;
     pub use rustc_hash::FxHasher;
     pub use scopeguard::{defer, guard, ScopeGuard};
     pub use thiserror::Error;
+    pub use tracing;
 }
 
 pub mod prelude {

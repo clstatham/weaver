@@ -1,6 +1,6 @@
 use std::any::TypeId;
 
-use weaver_util::lock::SharedLock;
+use weaver_util::{lock::SharedLock, prelude::log};
 
 use crate::{
     bundle::Bundle,
@@ -138,6 +138,9 @@ impl Components {
             })
     }
 
+    /// Removes an entity from the storage and returns the components that were removed.
+    ///
+    /// If the entity cannot be removed, returns `None`.
     pub(crate) fn remove_entity(&mut self, entity: Entity) -> ComponentBundle {
         assert!(
             self.entity_archetype.contains_key(&entity),
@@ -146,6 +149,16 @@ impl Components {
         let archetype_id = self.entity_archetype.remove(&entity).unwrap();
         let archetype = &mut self.archetypes[archetype_id.as_usize()];
         let entity_index = archetype.entity_index(entity).unwrap();
+
+        // make sure we can mutably loan all columns before making any changes
+        for column in archetype.columns() {
+            let mut column = column.write();
+            if column.loan_mut().is_none() {
+                log::error!("Cannot remove entity because a component is already borrowed");
+                panic!("Cannot remove entity because a component is already borrowed");
+            }
+        }
+
         let mut components = Vec::new();
         for column in archetype.columns() {
             let mut column = column.write();

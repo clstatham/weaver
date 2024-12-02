@@ -231,7 +231,7 @@ pub struct BatchedShaderStages {
 
 #[allow(clippy::too_many_arguments)]
 pub async fn extract_bsps(
-    mut commands: Commands,
+    commands: Commands,
     bsp: Extract<Res<Handle<Bsp>>>,
     bsp_assets: Extract<Res<Assets<Bsp>>>,
     source_meshes: Extract<Res<Assets<Mesh>>>,
@@ -318,10 +318,6 @@ pub async fn extract_bsps(
 
         for stage in shader.shader.stages.iter() {
             let (texture, is_dummy) = if let Some(ref texture) = stage.texture_map() {
-                // if *texture == Map::WhiteImage || *texture == Map::Lightmap {
-                //     continue;
-                // }
-
                 let texture = shader.textures.get(texture).unwrap();
                 let texture = source_textures.get(*texture).unwrap();
                 let texture =

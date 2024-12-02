@@ -562,7 +562,7 @@ impl Plugin for SkyboxPlugin {
     }
 }
 
-async fn init_gpu_skybox(mut commands: Commands) {
+async fn init_gpu_skybox(commands: Commands) {
     if commands.has_resource::<Skybox>().await && !commands.has_resource::<GpuSkybox>().await {
         commands.init_resource::<GpuSkybox>().await;
     }

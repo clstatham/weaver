@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-log = "0.4"
 atomic_refcell = "0.1.13"
 zip = "2.1"
 petgraph = "0.6.5"

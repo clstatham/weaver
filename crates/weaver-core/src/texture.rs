@@ -71,14 +71,14 @@ impl Texture {
 pub struct TextureLoader<S: LoadSource>(std::marker::PhantomData<S>);
 
 impl Loader<Texture, PathAndFilesystem> for TextureLoader<PathBuf> {
-    async fn load(&self, source: PathAndFilesystem, _commands: &mut Commands) -> Result<Texture> {
+    async fn load(&self, source: PathAndFilesystem, _commands: &Commands) -> Result<Texture> {
         let bytes = source.read()?;
         load_texture_common(&bytes)
     }
 }
 
 impl Loader<Texture, Vec<u8>> for TextureLoader<Vec<u8>> {
-    async fn load(&self, source: Vec<u8>, _commands: &mut Commands) -> Result<Texture> {
+    async fn load(&self, source: Vec<u8>, _commands: &Commands) -> Result<Texture> {
         load_texture_common(&source)
     }
 }

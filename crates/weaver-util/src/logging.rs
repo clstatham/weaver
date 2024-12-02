@@ -3,13 +3,13 @@ macro_rules! log_once {
     ($log:ident; $($arg:tt)*) => {{
         use std::sync::RwLock;
         use std::collections::HashSet;
-        weaver_util::re_exports::lazy_static! {
+        $crate::re_exports::lazy_static! {
             static ref LOGGED: RwLock<HashSet<String>> = RwLock::new(HashSet::new());
         }
         let msg = format!($($arg)*);
         if !LOGGED.read().unwrap().contains(&msg) {
             LOGGED.write().unwrap().insert(msg.clone());
-            log::$log!("{}", msg);
+            $crate::re_exports::log::$log!("{}", msg);
         }
     }};
 }
@@ -47,4 +47,18 @@ macro_rules! trace_once {
     ($($arg:tt)*) => {
         $crate::log_once!(trace; $($arg)*);
     };
+}
+
+#[macro_export]
+macro_rules! span {
+    ($level:ident, $($tail:tt)*) => {{
+        $crate::re_exports::tracing::span!($crate::re_exports::tracing::Level::$level, $($tail)*)
+    }};
+}
+
+#[macro_export]
+macro_rules! event {
+    ($level:ident, $name:expr) => {{
+        $crate::re_exports::tracing::event!($crate::re_exports::tracing::Level::$level, $name)
+    }};
 }

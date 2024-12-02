@@ -32,8 +32,6 @@ pub mod transform_gizmo;
 
 #[weaver::main]
 async fn main() -> Result<()> {
-    env_logger::init();
-
     App::new()
         .add_plugin(CoreTypesPlugin)?
         .add_plugin(WinitPlugin {
@@ -68,7 +66,7 @@ async fn main() -> Result<()> {
         // .add_system(fps_ui, Update)
         .run()
 }
-async fn setup(mut commands: Commands, fs: Res<Arc<Filesystem>>) {
+async fn setup(commands: Commands, fs: Res<Arc<Filesystem>>) {
     commands
         .spawn((
             Camera::default(),

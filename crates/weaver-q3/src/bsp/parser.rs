@@ -6,6 +6,7 @@ use nom::{
     IResult, Parser,
 };
 use weaver_asset::prelude::Asset;
+use weaver_util::prelude::*;
 
 pub fn ubyte(input: &[u8]) -> IResult<&[u8], u8> {
     nom::number::complete::le_u8(input)

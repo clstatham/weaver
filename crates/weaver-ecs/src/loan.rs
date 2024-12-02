@@ -125,7 +125,6 @@ impl<T> LoanStorage<T> {
                 Some(loan)
             }
             Err(this) => {
-                log::debug!("Failed to get loan on {}", std::any::type_name::<T>());
                 *self = this;
                 None
             }
@@ -153,10 +152,6 @@ impl<T> LoanStorage<T> {
                 })
             }
             Err(this) => {
-                log::debug!(
-                    "Failed to get mutable loan on {}",
-                    std::any::type_name::<T>()
-                );
                 *self = this;
                 None
             }

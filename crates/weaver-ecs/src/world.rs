@@ -3,7 +3,7 @@ use std::{
     sync::atomic::AtomicU64,
 };
 
-use weaver_util::prelude::*;
+use weaver_util::{prelude::*, span};
 
 use crate::{
     component::Component,
@@ -105,6 +105,8 @@ impl World {
     }
 
     pub fn apply_commands(&mut self) {
+        let span = span!(DEBUG, "apply_commands");
+        let _span = span.enter();
         while let Ok(command) = self.command_rx.try_recv() {
             command.run(self);
         }
@@ -168,25 +170,6 @@ impl World {
     /// Gets a mutable reference to a resource from the world.
     pub fn get_resource_mut<T: Component>(&self) -> Option<ResMut<T>> {
         self.resources.write().get_component_mut::<T>().map(ResMut)
-    }
-
-    pub async fn wait_for_resource<T: Component>(&self) -> Res<T> {
-        Res(self
-            .resources
-            .write()
-            .wait_for_component::<T>()
-            .await
-            .unwrap())
-    }
-
-    pub async fn wait_for_resource_mut<T: Component>(&self) -> ResMut<T> {
-        ResMut(
-            self.resources
-                .write()
-                .wait_for_component_mut::<T>()
-                .await
-                .unwrap(),
-        )
     }
 
     pub fn components(&self) -> Res<Components> {

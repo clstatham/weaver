@@ -7,7 +7,7 @@ use crate::{
 };
 use futures::{future::BoxFuture, FutureExt};
 use petgraph::prelude::*;
-use weaver_util::prelude::*;
+use weaver_util::{prelude::*, span};
 
 /// A system access descriptor, indicating what resources and components a system reads and writes. This is used to validate system access at runtime.
 #[derive(Default, Clone)]
@@ -69,7 +69,7 @@ pub trait System: Send + Sync {
 
     /// Returns the name of the system.
     fn name(&self) -> &str {
-        std::any::type_name::<Self>().rsplit(' ').next().unwrap()
+        std::any::type_name::<Self>()
     }
 
     /// Returns the system access descriptor, describing what resources and components the system requires access to.
@@ -427,6 +427,10 @@ where
     type Input = ();
     type Output = ();
 
+    fn name(&self) -> &str {
+        std::any::type_name::<F>()
+    }
+
     fn initialize(&mut self, world: &mut World) {
         self.state = Some(F::init_state(world));
     }
@@ -440,7 +444,12 @@ where
         F::update_state(state, world);
         let fetch = F::Param::fetch(world, state);
         let func = self.func.clone();
-        async move { func.run(fetch).await }.boxed()
+        let span = span!(DEBUG, "FunctionSystem", name = self.name());
+        async move {
+            let _span = span.enter();
+            func.run(fetch).await
+        }
+        .boxed()
     }
 
     fn can_run(&self, world: &World) -> bool {
@@ -782,7 +791,9 @@ impl SystemGraph {
                 let system = &self.systems[*node];
                 names.push(system.read().name().to_string());
             }
-            log::debug!("Running systems: {:?}", names);
+            let span = span!(DEBUG, "System Batch", names = format!("{:?}", names));
+            let _span = span.enter();
+            // log::debug!("Running systems: {:?}", names);
             let mut handles = Vec::new();
             for node in layer {
                 let system = &self.systems[node];

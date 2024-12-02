@@ -322,11 +322,6 @@ impl CreateBindGroup for CameraBindGroup {
     }
 }
 
-#[derive(Default)]
-struct CameraBindGroupsToAdd {
-    bind_groups: Vec<(Entity, CameraBindGroup)>,
-}
-
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
@@ -335,14 +330,8 @@ impl Plugin for CameraPlugin {
         app.add_plugin(ComponentBindGroupPlugin::<CameraBindGroup>::default())?;
         app.add_plugin(ExtractComponentPlugin::<PrimaryCamera>::default())?;
 
-        app.init_resource::<CameraBindGroupsToAdd>();
-
         app.add_system(
             extract_camera_bind_groups.after(create_component_bind_group::<CameraBindGroup>),
-            RenderStage::ExtractBindGroup,
-        );
-        app.add_system(
-            add_camera_bind_groups.after(extract_camera_bind_groups),
             RenderStage::ExtractBindGroup,
         );
         app.add_system(
@@ -359,13 +348,12 @@ impl Plugin for CameraPlugin {
 }
 
 async fn extract_camera_bind_groups(
-    // mut commands: Commands,
-    mut bind_groups_to_add: ResMut<CameraBindGroupsToAdd>,
+    commands: Commands,
     mut query: Query<(Entity, &GpuCamera, Option<&mut CameraBindGroup>)>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
 ) {
-    bind_groups_to_add.bind_groups.clear();
+    let mut to_insert = Vec::new();
     for (entity, gpu_camera, mut bind_group) in query.iter() {
         let camera_uniform = CameraUniform::from(&gpu_camera.camera);
         if let Some(bind_group) = bind_group.as_mut() {
@@ -379,22 +367,20 @@ async fn extract_camera_bind_groups(
             buffer.enqueue_update(&device, &queue);
             let bind_group = CameraBindGroup { buffer };
 
-            bind_groups_to_add.bind_groups.push((entity, bind_group));
+            // commands.insert_component(entity, bind_group).await;
+            to_insert.push((entity, bind_group));
         }
     }
-}
 
-async fn add_camera_bind_groups(
-    mut commands: Commands,
-    mut bind_groups_to_add: ResMut<CameraBindGroupsToAdd>,
-) {
-    for (entity, bind_group) in bind_groups_to_add.bind_groups.drain(..) {
+    drop(query);
+
+    for (entity, bind_group) in to_insert {
         commands.insert_component(entity, bind_group).await;
     }
 }
 
 async fn insert_view_target(
-    mut commands: Commands,
+    commands: Commands,
     current_frame: Res<CurrentFrame>,
     hdr_target: Res<HdrRenderTarget>,
     mut query: Query<(Entity, With<GpuCamera>)>,
@@ -405,7 +391,7 @@ async fn insert_view_target(
     }
 }
 
-async fn remove_view_target(mut commands: Commands, mut query: Query<(Entity, With<GpuCamera>)>) {
+async fn remove_view_target(commands: Commands, mut query: Query<(Entity, With<GpuCamera>)>) {
     for (gpu_camera, _) in query.iter() {
         commands.remove_component::<ViewTarget>(gpu_camera).await;
     }

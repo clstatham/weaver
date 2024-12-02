@@ -87,7 +87,7 @@ impl Plugin for PbrPlugin {
     }
 }
 
-pub(crate) async fn init_pbr_lighting_information(mut commands: Commands, _skybox: Res<Skybox>) {
+pub(crate) async fn init_pbr_lighting_information(commands: Commands, _skybox: Res<Skybox>) {
     if !commands.has_resource::<PbrLightingInformation>().await {
         commands.init_resource::<PbrLightingInformation>().await;
     }

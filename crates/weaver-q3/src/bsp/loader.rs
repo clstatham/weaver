@@ -116,7 +116,7 @@ impl BspLoader {
         &self,
         shader: LexedShader,
         fs: Arc<Filesystem>,
-        commands: &mut Commands,
+        commands: &Commands,
     ) -> LoadedShader {
         let mut textures = FxHashMap::default();
 
@@ -181,7 +181,7 @@ impl BspLoader {
 
 impl Loader<Bsp, PathAndFilesystem> for BspLoader {
     // TODO: clean this up
-    async fn load(&self, source: PathAndFilesystem, commands: &mut Commands) -> Result<Bsp> {
+    async fn load(&self, source: PathAndFilesystem, commands: &Commands) -> Result<Bsp> {
         let bytes = source.read()?;
         let (_, bsp_file) = bsp_file(bytes.as_slice())
             .finish()

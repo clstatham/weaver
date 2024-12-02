@@ -213,6 +213,11 @@ impl App {
 
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .try_init()
+            .ok();
+
         let mut this = Self::empty();
         this.main_app_mut()
             .world_mut()

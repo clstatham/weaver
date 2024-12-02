@@ -4,6 +4,8 @@ use std::{
     sync::atomic::{AtomicI64, Ordering},
 };
 
+use weaver_util::prelude::*;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub struct Entity {

@@ -508,7 +508,7 @@ fn renderer_extract(main_world: &mut World, _world: &mut World) -> Result<()> {
 }
 
 pub async fn begin_render(
-    mut commands: Commands,
+    commands: Commands,
     mut view_targets: Query<(Entity, &ViewTarget)>,
     device: Res<WgpuDevice>,
     mut renderer: ResMut<Renderer>,
@@ -595,7 +595,7 @@ pub async fn begin_render(
 }
 
 pub async fn end_render(
-    mut commands: Commands,
+    commands: Commands,
     mut current_frame: ResMut<CurrentFrame>,
     mut renderer: ResMut<Renderer>,
     queue: Res<WgpuQueue>,
@@ -630,7 +630,7 @@ pub async fn end_render(
 
 #[allow(clippy::too_many_arguments)]
 async fn resize_surface(
-    mut commands: Commands,
+    commands: Commands,
     events: EventRx<WindowResized>,
     mut window_size: ResMut<WindowSize>,
     mut view_targets: Query<(Entity, With<ViewTarget>)>,

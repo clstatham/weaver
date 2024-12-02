@@ -93,7 +93,7 @@ impl<T: ExtractComponent> Plugin for ExtractComponentPlugin<T> {
 }
 
 pub async fn extract_render_component<T: ExtractComponent>(
-    mut commands: Commands,
+    commands: Commands,
     mut query: Extract<Query<(Entity, T::ExtractQueryFetch)>>,
     mut out_query: Query<&mut T::Out>,
 ) {
@@ -160,7 +160,7 @@ impl<T: ExtractResource, Dep: ExtractResource> Plugin for RenderResourceDependen
 }
 
 pub async fn extract_render_resource<T: ExtractResource>(
-    mut commands: Commands,
+    commands: Commands,
     main_resource: Extract<Option<Res<T::Source>>>,
     target_resource: Option<ResMut<T>>,
 ) {

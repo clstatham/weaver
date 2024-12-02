@@ -23,13 +23,14 @@ impl Command {
     }
 }
 
+#[derive(Clone)]
 pub struct Commands {
     pub(crate) tx: async_channel::Sender<Command>,
 }
 
 impl Commands {
     pub async fn run<R: Component>(
-        &mut self,
+        &self,
         op: impl FnOnce(&mut World) -> R + Send + Sync + 'static,
     ) -> R {
         let (tx, rx) = async_channel::bounded(1);
@@ -49,41 +50,41 @@ impl Commands {
         Arc::try_unwrap(arc).unwrap_or_else(|_| unreachable!())
     }
 
-    pub async fn has_resource<T: Component>(&mut self) -> bool {
+    pub async fn has_resource<T: Component>(&self) -> bool {
         self.run(move |world| world.has_resource::<T>()).await
     }
 
-    pub async fn insert_resource<T: Component>(&mut self, resource: T) {
+    pub async fn insert_resource<T: Component>(&self, resource: T) {
         self.run(move |world| {
             world.insert_resource(resource);
         })
         .await
     }
 
-    pub async fn init_resource<T: Component + ConstructFromWorld>(&mut self) {
+    pub async fn init_resource<T: Component + ConstructFromWorld>(&self) {
         self.run(move |world| {
             world.init_resource::<T>();
         })
         .await
     }
 
-    pub async fn remove_resource<T: Component>(&mut self) -> Option<T> {
+    pub async fn remove_resource<T: Component>(&self) -> Option<T> {
         self.run(move |world| world.remove_resource::<T>()).await
     }
 
-    pub async fn insert_component<T: Component>(&mut self, entity: Entity, component: T) {
+    pub async fn insert_component<T: Component>(&self, entity: Entity, component: T) {
         self.run(move |world| {
             world.insert_component(entity, component);
         })
         .await
     }
 
-    pub async fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {
+    pub async fn remove_component<T: Component>(&self, entity: Entity) -> Option<T> {
         self.run(move |world| world.remove_component::<T>(entity))
             .await
     }
 
-    pub async fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
+    pub async fn spawn<T: Bundle>(&self, bundle: T) -> Entity {
         self.run(move |world| world.spawn(bundle)).await
     }
 }

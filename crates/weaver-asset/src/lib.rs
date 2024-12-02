@@ -13,7 +13,7 @@ use std::{
 
 use weaver_app::{App, SubApp};
 use weaver_ecs::{
-    prelude::{Commands, Res, ResMut, SystemStage},
+    prelude::{tokio, Commands, Res, ResMut, SystemStage},
     world::{ConstructFromWorld, FromWorld},
 };
 use weaver_event::{Event, Events};
@@ -420,11 +420,8 @@ impl LoadSource for BoxedAsset {}
 impl<T: Asset> LoadSource for T {}
 
 pub trait Loader<T: Asset, S: LoadSource>: ConstructFromWorld + Send + Sync + 'static {
-    fn load(
-        &self,
-        source: S,
-        commands: &mut Commands,
-    ) -> impl Future<Output = Result<T>> + Send + Sync;
+    fn load(&self, source: S, commands: &Commands)
+        -> impl Future<Output = Result<T>> + Send + Sync;
 }
 
 #[derive(Clone, Copy)]
@@ -437,7 +434,7 @@ impl<T: Asset> Default for DirectLoader<T> {
 }
 
 impl<T: Asset> Loader<T, BoxedAsset> for DirectLoader<T> {
-    async fn load(&self, source: BoxedAsset, _commands: &mut Commands) -> Result<T> {
+    async fn load(&self, source: BoxedAsset, _commands: &Commands) -> Result<T> {
         source
             .downcast()
             .map_err(|_| anyhow!("failed to downcast asset"))
@@ -446,7 +443,7 @@ impl<T: Asset> Loader<T, BoxedAsset> for DirectLoader<T> {
 }
 
 impl<T: Asset> Loader<T, T> for DirectLoader<T> {
-    async fn load(&self, source: T, _commands: &mut Commands) -> Result<T> {
+    async fn load(&self, source: T, _commands: &Commands) -> Result<T> {
         Ok(source)
     }
 }
@@ -535,18 +532,18 @@ impl<T: Asset, L: Loader<T, S>, S: LoadSource> AssetLoadQueue<T, L, S> {
 
 pub trait AssetCommands {
     fn load_asset<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
-        &mut self,
+        &self,
         source: impl Into<S> + Send + Sync + 'static,
     ) -> impl Future<Output = Handle<T>> + Send + Sync;
     fn load_asset_direct<T: Asset>(
-        &mut self,
+        &self,
         asset: T,
     ) -> impl Future<Output = Handle<T>> + Send + Sync;
 }
 
 impl AssetCommands for Commands {
     async fn load_asset<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
-        &mut self,
+        &self,
         source: impl Into<S> + Send + Sync + 'static,
     ) -> Handle<T> {
         self.run(|world| {
@@ -558,7 +555,7 @@ impl AssetCommands for Commands {
         .await
     }
 
-    async fn load_asset_direct<T: Asset>(&mut self, asset: T) -> Handle<T> {
+    async fn load_asset_direct<T: Asset>(&self, asset: T) -> Handle<T> {
         self.load_asset::<T, DirectLoader<T>, T>(asset).await
     }
 }
@@ -713,7 +710,7 @@ impl AssetApp for App {
 }
 
 async fn load_all_assets<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
-    mut commands: Commands,
+    commands: Commands,
     loader: FromWorld<L>,
     load_queue: Res<AssetLoadQueue<T, L, S>>,
     mut assets: ResMut<Assets<T>>,
@@ -729,27 +726,21 @@ async fn load_all_assets<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
 
     let mut handles = Vec::with_capacity(n);
 
+    let loader = Arc::new(loader);
+
     for request in load_queue.queue.write().drain(..) {
         if assets.get(request.handle).is_some() || load_status.is_loaded(request.handle) {
             continue;
         }
-        let request_str = format!("{:?}", request);
-        log::trace!("Loading asset: {request_str}");
-        let asset = match loader.load(request.source, &mut commands).await {
-            Ok(asset) => Some(asset),
-            Err(err) => {
-                log::error!("Failed to load asset: {request_str}: {err}");
-                None
-            }
-        };
+        let loader = loader.clone();
+        let commands = commands.clone();
+        let task = tokio::spawn(async move { loader.load(request.source, &commands).await });
 
-        // let asset = todo!();
-
-        handles.push((request.handle, asset));
+        handles.push((request.handle, task));
     }
 
     for (handle, asset) in handles {
-        if let Some(asset) = asset {
+        if let Ok(Ok(asset)) = asset.await {
             assets.insert_manual(asset, handle.id);
             load_status.manually_set_loaded(handle);
             load_events.send(AssetLoaded::new(handle.id));
