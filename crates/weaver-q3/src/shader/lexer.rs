@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use weaver_asset::prelude::Asset;
 use weaver_core::prelude::Vec3;
-use weaver_util::warn_once;
+use weaver_util::debug_once;
 
 use super::{loader::strip_extension, parser::*};
 
@@ -592,7 +592,7 @@ impl ParsedShader {
             if let Some(param) = global.as_global_param() {
                 global_params.push(param);
             } else {
-                warn_once!("Unknown global directive: `{}`", global.name);
+                debug_once!("Unknown global directive: `{}`", global.name);
             }
         }
 
@@ -602,7 +602,7 @@ impl ParsedShader {
                 if let Some(param) = param.as_stage_param() {
                     shader_stage.params.push(param);
                 } else {
-                    warn_once!("Unknown stage directive: `{}`", param.name);
+                    debug_once!("Unknown stage directive: `{}`", param.name);
                 }
             }
             stages.push(shader_stage);

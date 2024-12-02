@@ -871,7 +871,7 @@ pub fn bsp_file(input: &[u8]) -> IResult<&[u8], BspFile> {
         + vis_data.length as usize;
 
     if total_length != input.len() {
-        log::warn!(
+        log::debug!(
             "Total length of all data ({} bytes) does not match input length ({} bytes)",
             total_length,
             input.len()

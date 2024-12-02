@@ -3,7 +3,7 @@ use std::{
     sync::atomic::AtomicU64,
 };
 
-use weaver_util::{warn_once, Lock, Result};
+use weaver_util::{debug_once, Lock, Result};
 
 use crate::{
     component::Component,
@@ -206,7 +206,7 @@ impl World {
     /// If the resource has already been initialized, a warning is logged and the resource is not initialized again.
     pub fn init_resource<T: Component + ConstructFromWorld>(&self) {
         if self.has_resource::<T>() {
-            warn_once!(
+            debug_once!(
                 "Resource {} already present in world; not initializing it again",
                 T::type_name(),
             );
@@ -220,7 +220,7 @@ impl World {
     /// If the resource has already been inserted, a warning is logged and the resource is not inserted again.
     pub fn insert_resource<T: Component>(&self, component: T) {
         if self.has_resource::<T>() {
-            warn_once!(
+            debug_once!(
                 "Resource {} already present in world; not inserting it again",
                 T::type_name(),
             );

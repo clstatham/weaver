@@ -473,7 +473,11 @@ impl Plugin for RendererPlugin {
 
                 log::trace!("Sending render app back to main thread");
 
-                render_to_main_tx.send(render_app).unwrap();
+                if let Err(e) = render_to_main_tx.send(render_app) {
+                    // we're probably shutting down
+                    log::debug!("Failed to send render app back to main thread: {}", e);
+                    break;
+                }
             }
 
             log::trace!("Exiting render thread main loop");

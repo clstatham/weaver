@@ -264,7 +264,10 @@ pub async fn extract_bsps(
                 } => {
                     for loaded_mesh in leaf_shader_meshes {
                         let LoadedBspShaderMesh { mesh, shader, .. } = loaded_mesh;
-                        let source_mesh = source_meshes.get(*mesh).unwrap();
+                        let Some(source_mesh) = source_meshes.get(*mesh) else {
+                            // mesh isn't loaded yet, try again later
+                            return;
+                        };
                         shader_meshes
                             .entry(*shader)
                             .or_insert_with(Vec::new)
