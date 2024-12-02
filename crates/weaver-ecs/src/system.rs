@@ -1,4 +1,4 @@
-use std::{any::TypeId, future::Future, sync::Arc};
+use std::{any::TypeId, collections::VecDeque, future::Future, sync::Arc};
 
 use crate::{
     component::{Component, Res, ResMut},
@@ -6,8 +6,8 @@ use crate::{
     world::ConstructFromWorld,
 };
 use futures::{future::BoxFuture, FutureExt};
-use petgraph::{prelude::*, visit::Topo};
-use weaver_util::{anyhow, lock::SharedLock, FxHashMap, FxHashSet, Read, Result, Write};
+use petgraph::prelude::*;
+use weaver_util::{anyhow, lock::SharedLock, FxHashMap, FxHashSet, Read, Result, TypeIdMap, Write};
 
 /// A system access descriptor, indicating what resources and components a system reads and writes. This is used to validate system access at runtime.
 #[derive(Default, Clone)]
@@ -28,58 +28,52 @@ impl SystemAccess {
         self.exclusive |= other.exclusive;
     }
 
+    pub fn intersection(&self, other: &Self) -> Self {
+        Self {
+            resources_read: self
+                .resources_read
+                .intersection(&other.resources_read)
+                .copied()
+                .collect(),
+            resources_written: self
+                .resources_written
+                .intersection(&other.resources_written)
+                .copied()
+                .collect(),
+            components_read: self
+                .components_read
+                .intersection(&other.components_read)
+                .copied()
+                .collect(),
+            components_written: self
+                .components_written
+                .intersection(&other.components_written)
+                .copied()
+                .collect(),
+            exclusive: self.exclusive || other.exclusive,
+        }
+    }
+
     /// Returns true if the access is compatible with another access descriptor.
     /// Two accesses are compatible if they do not mutably access the same resource or component.
     pub fn is_compatible(&self, other: &Self) -> bool {
-        for resource in &other.resources_written {
-            if self.resources_read.contains(resource) {
-                return false;
-            }
-            if self.resources_written.contains(resource) {
-                return false;
-            }
-        }
-
-        for resource in &self.resources_written {
-            if other.resources_read.contains(resource) {
-                return false;
-            }
-            if other.resources_written.contains(resource) {
-                return false;
-            }
-        }
-
-        for component in &other.components_written {
-            if self.components_read.contains(component) {
-                return false;
-            }
-            if self.components_written.contains(component) {
-                return false;
-            }
-        }
-
-        for component in &self.components_written {
-            if other.components_read.contains(component) {
-                return false;
-            }
-            if other.components_written.contains(component) {
-                return false;
-            }
-        }
-
-        true
+        let inter = self.intersection(other);
+        inter.components_written.is_empty() && inter.resources_written.is_empty()
     }
 }
 
-/// A single unit of work that can be executed on a world.
+/// A unit of work that can be executed on a world's resources and components.
 pub trait System: Send + Sync {
+    type Input;
+    type Output;
+
     /// Returns the name of the system.
     fn name(&self) -> &str {
-        std::any::type_name::<Self>()
+        std::any::type_name::<Self>().rsplit(' ').next().unwrap()
     }
 
     /// Returns the system access descriptor, describing what resources and components the system requires access to.
-    fn access(&self) -> SystemAccess;
+    fn access(&self) -> &SystemAccess;
 
     /// Initializes the system state.
     #[allow(unused)]
@@ -97,22 +91,16 @@ pub trait System: Send + Sync {
 
 /// A type that can be converted into a system.
 pub trait IntoSystem<Marker>: 'static + Send + Sync {
-    type System: System;
+    type System: System<Input = (), Output = ()>;
 
     /// Converts the type into a boxed system.
     fn into_system(self) -> Box<Self::System>;
 }
 
-/// # Safety
-///
-/// Caller must ensure that all system params being used are valid for simultaneous access.
+/// A parameter that can be used by a system to access resources and components in a world.
 pub trait SystemParam: Send + Sync {
     type Item: SystemParam;
     type State: Send + Sync;
-
-    fn validate_access(access: &SystemAccess) -> bool {
-        Self::access().is_compatible(access)
-    }
 
     fn access() -> SystemAccess;
 
@@ -212,10 +200,6 @@ impl<T: Component> SystemParam for Res<T> {
         world.get_resource::<T>().unwrap()
     }
 
-    fn validate_access(access: &SystemAccess) -> bool {
-        !access.resources_written.contains(&TypeId::of::<T>())
-    }
-
     fn can_run(world: &World) -> bool {
         if !world.has_resource::<T>() {
             log::debug!("Res: Resource {:?} is not available", T::type_name());
@@ -243,10 +227,6 @@ impl<T: Component> SystemParam for Option<Res<T>> {
         world.get_resource::<T>()
     }
 
-    fn validate_access(access: &SystemAccess) -> bool {
-        !access.resources_written.contains(&TypeId::of::<T>())
-    }
-
     fn can_run(_world: &World) -> bool {
         true
     }
@@ -269,12 +249,6 @@ impl<T: Component> SystemParam for ResMut<T> {
     fn fetch(world: &World, _: &Self::State) -> Self::Item {
         world.get_resource_mut::<T>().unwrap()
     }
-
-    fn validate_access(access: &SystemAccess) -> bool {
-        !access.resources_read.contains(&TypeId::of::<T>())
-            && !access.resources_written.contains(&TypeId::of::<T>())
-    }
-
     fn can_run(world: &World) -> bool {
         if !world.has_resource::<T>() {
             log::debug!("ResMut: Resource {:?} is not available", T::type_name());
@@ -302,11 +276,6 @@ impl<T: Component> SystemParam for Option<ResMut<T>> {
         world.get_resource_mut::<T>()
     }
 
-    fn validate_access(access: &SystemAccess) -> bool {
-        !access.resources_read.contains(&TypeId::of::<T>())
-            && !access.resources_written.contains(&TypeId::of::<T>())
-    }
-
     fn can_run(_world: &World) -> bool {
         true
     }
@@ -322,7 +291,11 @@ macro_rules! impl_system_param_tuple {
             fn access() -> SystemAccess {
                 let mut access = SystemAccess::default();
                 $(
-                    access.extend($param::access());
+                    let param_access = $param::access();
+                    if !access.is_compatible(&param_access) {
+                        panic!("Incompatible access for system parameter {:?}", std::any::type_name::<$param>());
+                    }
+                    access.extend(param_access);
                 )*
                 access
             }
@@ -427,6 +400,7 @@ where
 {
     func: Arc<F>,
     state: Option<SystemParamState<F::Param>>,
+    access: SystemAccess,
     _marker: std::marker::PhantomData<fn() -> M>,
 }
 
@@ -439,6 +413,7 @@ where
         Self {
             func: Arc::new(func),
             state: None,
+            access: F::Param::access(),
             _marker: std::marker::PhantomData,
         }
     }
@@ -449,12 +424,15 @@ where
     M: 'static,
     F: SystemParamFunction<M>,
 {
+    type Input = ();
+    type Output = ();
+
     fn initialize(&mut self, world: &mut World) {
         self.state = Some(F::init_state(world));
     }
 
-    fn access(&self) -> SystemAccess {
-        F::Param::access()
+    fn access(&self) -> &SystemAccess {
+        &self.access
     }
 
     fn run(&mut self, world: &World) -> BoxFuture<'static, ()> {
@@ -483,6 +461,7 @@ where
         Box::new(FunctionSystem {
             func: Arc::new(self),
             state: None,
+            access: F::Param::access(),
             _marker: std::marker::PhantomData,
         })
     }
@@ -550,10 +529,91 @@ impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R);
 impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S);
 impl_function_system!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SystemAddOption {
+    After(TypeId),
+    Before(TypeId),
+}
+
+pub struct SystemConfig {
+    system_type_id: TypeId,
+    system: Box<dyn System<Input = (), Output = ()>>,
+    options: FxHashSet<SystemAddOption>,
+}
+
+impl SystemConfig {
+    pub fn new<M, S>(system: S) -> Self
+    where
+        M: 'static,
+        S: IntoSystem<M>,
+    {
+        Self {
+            system_type_id: TypeId::of::<S>(),
+            system: system.into_system(),
+            options: FxHashSet::default(),
+        }
+    }
+
+    pub fn after<M2: 'static, T: IntoSystem<M2>>(mut self, _system: T) -> Self {
+        if self
+            .options
+            .iter()
+            .any(|o| o == &SystemAddOption::Before(TypeId::of::<T>()))
+        {
+            panic!("Cannot add system both after and before another system");
+        }
+        self.options
+            .insert(SystemAddOption::After(TypeId::of::<T>()));
+        self
+    }
+
+    pub fn before<M2: 'static, T: IntoSystem<M2>>(mut self, _system: T) -> Self {
+        if self
+            .options
+            .iter()
+            .any(|o| o == &SystemAddOption::After(TypeId::of::<T>()))
+        {
+            panic!("Cannot add system both after and before another system");
+        }
+        self.options
+            .insert(SystemAddOption::Before(TypeId::of::<T>()));
+        self
+    }
+}
+
+pub trait IntoSystemConfig<M>: Sized + 'static {
+    fn finish(self) -> SystemConfig;
+
+    fn after<M2: 'static, T: IntoSystem<M2>>(self, system: T) -> SystemConfig {
+        self.finish().after(system)
+    }
+
+    fn before<M2: 'static, T: IntoSystem<M2>>(self, system: T) -> SystemConfig {
+        self.finish().before(system)
+    }
+}
+
+impl<M, I, S> IntoSystemConfig<M> for I
+where
+    M: 'static,
+    I: IntoSystem<M, System = S>,
+    S: System<Input = (), Output = ()>,
+{
+    fn finish(self) -> SystemConfig {
+        SystemConfig::new(self)
+    }
+}
+
+impl IntoSystemConfig<()> for SystemConfig {
+    fn finish(self) -> SystemConfig {
+        self
+    }
+}
+
 #[derive(Default)]
 pub struct SystemGraph {
-    systems: StableDiGraph<SharedLock<Box<dyn System>>, ()>,
-    index_cache: FxHashMap<TypeId, NodeIndex>,
+    systems: StableDiGraph<SharedLock<Box<dyn System<Input = (), Output = ()>>>, ()>,
+    index_cache: TypeIdMap<NodeIndex>,
 }
 
 impl SystemGraph {
@@ -561,55 +621,48 @@ impl SystemGraph {
     pub fn add_system<M, S>(&mut self, system: S) -> NodeIndex
     where
         M: 'static,
-        S: IntoSystem<M>,
-        S::System: System,
+        S: IntoSystemConfig<M>,
     {
-        let node = self.systems.add_node(SharedLock::new(system.into_system()));
-        self.index_cache.insert(TypeId::of::<S>(), node);
+        let config = system.finish();
+        let SystemConfig {
+            system_type_id,
+            system,
+            options,
+            ..
+        } = config;
+
+        let node = self.systems.add_node(SharedLock::new(system));
+        self.index_cache.insert(system_type_id, node);
+
+        for option in options {
+            let index = self.index_cache[&system_type_id];
+            match option {
+                SystemAddOption::After(id) => {
+                    let other = self.index_cache[&id];
+                    self.systems.add_edge(other, index, ());
+                }
+                SystemAddOption::Before(id) => {
+                    let other = self.index_cache[&id];
+                    self.systems.add_edge(index, other, ());
+                }
+            }
+        }
+
         node
     }
 
-    /// Adds a dependency between two systems in the graph.
-    pub fn add_edge<M1, M2, BEFORE, AFTER>(&mut self, _before: BEFORE, _after: AFTER)
+    pub fn add_edge<SM, TM, S, T>(&mut self, _from: S, _to: T)
     where
-        M1: 'static,
-        M2: 'static,
-        BEFORE: IntoSystem<M1>,
-        AFTER: IntoSystem<M2>,
-    {
-        let parent = self.index_cache[&TypeId::of::<BEFORE>()];
-        let child = self.index_cache[&TypeId::of::<AFTER>()];
-        self.systems.add_edge(parent, child, ());
-    }
-
-    /// Adds a system to the graph that will always run after another system.
-    pub fn add_system_after<M1, M2, S, AFTER>(&mut self, system: S, _after: AFTER)
-    where
-        M1: 'static,
-        M2: 'static,
-        S: IntoSystem<M1>,
-        AFTER: IntoSystem<M2>,
+        SM: 'static,
+        TM: 'static,
+        S: IntoSystem<SM>,
+        T: IntoSystem<TM>,
         S::System: System,
-        AFTER::System: System,
+        T::System: System,
     {
-        let node = self.add_system(system);
-        let parent = self.index_cache[&TypeId::of::<AFTER>()];
-        self.systems.add_edge(parent, node, ());
-    }
-
-    /// Adds a system to the graph that will always run before another system.
-    pub fn add_system_before<M1, M2, S, BEFORE>(&mut self, system: S, _before: BEFORE)
-    where
-        M1: 'static,
-        M2: 'static,
-        S: IntoSystem<M1>,
-        BEFORE: IntoSystem<M2>,
-        S::System: System,
-        BEFORE::System: System,
-    {
-        let node = self.add_system(system);
-        let child = self.index_cache[&TypeId::of::<BEFORE>()];
-        self.systems.add_edge(node, child, ());
+        let from = self.index_cache[&TypeId::of::<S>()];
+        let to = self.index_cache[&TypeId::of::<T>()];
+        self.systems.add_edge(from, to, ());
     }
 
     /// Returns true if the graph contains the system.
@@ -619,116 +672,101 @@ impl SystemGraph {
 
     /// Sorts the graph based on system dependencies, returning a list of layers where each layer contains systems that can be run in parallel.
     /// This will respect existing system dependencies, and will not add any new ones.
-    fn get_layers(&self) -> Vec<Vec<NodeIndex>> {
-        let mut schedule = Topo::new(&self.systems);
+    fn get_batches(&self) -> Vec<Vec<NodeIndex>> {
+        let mut batches = Vec::new();
+        let mut queue = VecDeque::new();
 
-        let mut seen = FxHashSet::default();
-        let mut layers = Vec::new();
-        let mut current_layer = Vec::new();
-        while let Some(node) = schedule.next(&self.systems) {
-            if seen.contains(&node) {
-                continue;
-            }
-            seen.insert(node);
-            current_layer.push(node);
+        // calculate the number of incoming edges (in-degrees) for each node
+        let mut in_degrees = FxHashMap::default();
+        for node in self.systems.node_indices() {
+            let in_degree = self.systems.neighbors_directed(node, Incoming).count();
+            in_degrees.insert(node, in_degree);
 
-            if self.systems[node].read().access().exclusive {
-                layers.push(current_layer);
-                current_layer = Vec::new();
-                continue;
-            }
-
-            if self
-                .systems
-                .neighbors_directed(node, Direction::Incoming)
-                .count()
-                == 0
-            {
-                layers.push(current_layer);
-                current_layer = Vec::new();
-                continue;
-            }
-
-            for child in self.systems.neighbors_directed(node, Direction::Outgoing) {
-                if self
-                    .systems
-                    .neighbors_directed(child, Direction::Incoming)
-                    .all(|parent| seen.contains(&parent))
-                {
-                    seen.insert(child);
-                    current_layer.push(child);
-                }
+            if in_degree == 0 {
+                queue.push_back(node);
             }
         }
 
-        layers
+        while !queue.is_empty() {
+            let mut batch = Vec::new();
+
+            for _ in 0..queue.len() {
+                let node = queue.pop_front().unwrap();
+                batch.push(node);
+
+                for child in self.systems.neighbors_directed(node, Outgoing) {
+                    let in_degree = in_degrees.get_mut(&child).unwrap();
+                    *in_degree -= 1;
+                    if *in_degree == 0 {
+                        queue.push_back(child);
+                    }
+                }
+            }
+
+            batches.push(batch);
+        }
+
+        batches
     }
 
     /// Resolves system dependencies, ensuring that no system mutably accesses the same resource or component at the same time as another system.
     pub fn resolve_dependencies(&mut self, depth: usize) -> Result<()> {
         if depth == 0 {
-            return Err(anyhow!("Cyclic system dependency detected"));
+            return Err(anyhow!(
+                "Cyclic system dependency detected (depth limit reached)"
+            ));
         }
-        let layers = self.get_layers();
+        if petgraph::algo::is_cyclic_directed(&self.systems) {
+            let sccs = petgraph::algo::kosaraju_scc(&self.systems);
+            for scc in sccs {
+                if scc.len() > 1 {
+                    let mut names = Vec::new();
+                    for node in scc {
+                        let system = &self.systems[node];
+                        names.push(system.read().name().to_string());
+                    }
+                    log::error!("Cyclic system dependency detected in: {:#?}", names);
+                }
+            }
+            return Err(anyhow!(
+                "Cyclic system dependency detected (depth = {})",
+                depth
+            ));
+        }
 
-        let mut try_again = false;
+        let layers = self.get_batches();
 
-        // only one system at a time can access a resource or component mutably
-        for layer in layers {
+        // detect systems that access the same resource or component mutably
+        // and add dependencies to ensure that they run in sequence
+        for layer in &layers {
             for i in 0..layer.len() {
-                for j in 0..i {
-                    let system_i = &self.systems[layer[i]];
-                    let system_j = &self.systems[layer[j]];
-                    let access_i = system_i.read().access();
-                    let access_j = system_j.read().access();
-
-                    for resource_i in &access_i.resources_written {
-                        if access_j.resources_read.contains(resource_i)
-                            || access_j.resources_written.contains(resource_i)
+                let node = layer[i];
+                let system = &self.systems[node];
+                let access = system.read().access().clone();
+                #[allow(clippy::needless_range_loop)]
+                for j in i + 1..layer.len() {
+                    let other = layer[j];
+                    let other_system = &self.systems[other];
+                    let other_access = other_system.read().access().clone();
+                    if !access.is_compatible(&other_access) {
+                        if self.systems.contains_edge(other, node)
+                            || self.systems.contains_edge(node, other)
                         {
-                            self.systems.add_edge(layer[i], layer[j], ());
-                            try_again = true;
+                            continue;
                         }
-                    }
-
-                    for resource_j in &access_j.resources_written {
-                        if access_i.resources_read.contains(resource_j)
-                            || access_i.resources_written.contains(resource_j)
-                        {
-                            self.systems.add_edge(layer[j], layer[i], ());
-                            try_again = true;
-                        }
-                    }
-
-                    for component_i in &access_i.components_written {
-                        if access_j.components_read.contains(component_i)
-                            || access_j.components_written.contains(component_i)
-                        {
-                            self.systems.add_edge(layer[i], layer[j], ());
-                            try_again = true;
-                        }
-                    }
-
-                    for component_j in &access_j.components_written {
-                        if access_i.components_read.contains(component_j)
-                            || access_i.components_written.contains(component_j)
-                        {
-                            self.systems.add_edge(layer[j], layer[i], ());
-                            try_again = true;
-                        }
+                        self.systems.add_edge(node, other, ());
+                        return self.resolve_dependencies(depth - 1);
                     }
                 }
             }
-        }
-
-        if try_again {
-            self.resolve_dependencies(depth - 1)?;
         }
 
         Ok(())
     }
 
     pub fn initialize(&mut self, world: &mut World) {
+        self.resolve_dependencies(100).unwrap();
+
         for node in self.systems.node_indices() {
             let system = &self.systems[node];
             system.write().initialize(world);
@@ -737,17 +775,30 @@ impl SystemGraph {
 
     /// Runs all systems in the graph.
     pub async fn run(&mut self, world: &mut World) -> Result<()> {
-        let mut schedule = Topo::new(&self.systems);
-        while let Some(node) = schedule.next(&self.systems) {
-            let system = &self.systems[node];
-            if !system.read().can_run(world) {
-                log::debug!("Skipping system: {}", system.read().name());
-                continue;
+        let schedule = self.get_batches();
+        for layer in schedule {
+            let mut names = Vec::new();
+            for node in &layer {
+                let system = &self.systems[*node];
+                names.push(system.read().name().to_string());
             }
-            log::trace!("Running system: {}", system.read().name());
+            log::debug!("Running systems: {:?}", names);
+            let mut handles = Vec::new();
+            for node in layer {
+                let system = &self.systems[node];
+                if !system.read().can_run(world) {
+                    log::debug!("Skipping system: {}", system.read().name());
+                    continue;
+                }
+                let handle = tokio::spawn(system.write().run(world));
+                handles.push(handle);
+            }
 
-            let handle = tokio::spawn(system.write().run(world));
-            while !handle.is_finished() {
+            loop {
+                if handles.iter().all(|handle| handle.is_finished()) {
+                    break;
+                }
+
                 world.apply_commands();
                 tokio::task::yield_now().await;
             }

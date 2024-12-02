@@ -27,6 +27,7 @@ use weaver_ecs::{
     component::{Res, ResMut},
     entity::Entity,
     query::{Query, With},
+    system::IntoSystemConfig,
     system_schedule::SystemStage,
     world::World,
 };
@@ -378,7 +379,7 @@ impl Plugin for RendererPlugin {
         render_app.world_mut().add_system(resize_surface, PreRender);
         render_app
             .world_mut()
-            .add_system_after(begin_render, resize_surface, PreRender);
+            .add_system(begin_render.after(resize_surface), PreRender);
         render_app.world_mut().add_system(end_render, PostRender);
 
         render_app.add_plugin(CameraPlugin)?;

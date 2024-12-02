@@ -5,7 +5,7 @@ use plugin::Plugin;
 use weaver_ecs::{
     component::Res,
     prelude::Component,
-    system::{IntoSystem, System},
+    system::{IntoSystem, IntoSystemConfig, System},
     system_schedule::SystemStage,
     world::{ConstructFromWorld, World, WorldTicks},
 };
@@ -342,52 +342,9 @@ impl App {
     where
         T: SystemStage,
         M: 'static,
-        S: IntoSystem<M>,
-        S::System: System,
+        S: IntoSystemConfig<M>,
     {
         self.main_app_mut().world_mut().add_system(system, stage);
-        self
-    }
-
-    pub fn add_system_before<T, M1, M2, S, BEFORE>(
-        &mut self,
-        system: S,
-        before: BEFORE,
-        stage: T,
-    ) -> &mut Self
-    where
-        T: SystemStage,
-        M1: 'static,
-        M2: 'static,
-        S: IntoSystem<M1>,
-        BEFORE: IntoSystem<M2>,
-        S::System: System,
-        BEFORE::System: System,
-    {
-        self.main_app_mut()
-            .world_mut()
-            .add_system_before(system, before, stage);
-        self
-    }
-
-    pub fn add_system_after<T, M1, M2, S, AFTER>(
-        &mut self,
-        system: S,
-        after: AFTER,
-        stage: T,
-    ) -> &mut Self
-    where
-        T: SystemStage,
-        M1: 'static,
-        M2: 'static,
-        S: IntoSystem<M1>,
-        AFTER: IntoSystem<M2>,
-        S::System: System,
-        AFTER::System: System,
-    {
-        self.main_app_mut()
-            .world_mut()
-            .add_system_after(system, after, stage);
         self
     }
 

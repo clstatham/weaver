@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
         })?
         .configure_sub_app::<RenderApp>(|app| {
             app.world_mut()
-                .add_system_dependency(render_bsps, render_skybox, Render);
+                .order_systems(render_skybox, render_bsps, Render);
             // app.world_mut()
             //     .add_system_dependency(render_gizmos, render_bsps, Render);
         })

@@ -11,6 +11,7 @@ use weaver_ecs::{
     component::Res,
     prelude::{Commands, ResMut, World},
     query::Query,
+    system::IntoSystemConfig,
     world::ConstructFromWorld,
 };
 use weaver_renderer::{
@@ -18,6 +19,7 @@ use weaver_renderer::{
         BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup, ResourceBindGroupPlugin,
     },
     camera::{CameraBindGroup, ViewTarget},
+    clear_color::render_clear_color,
     extract::{ExtractResource, ExtractResourcePlugin},
     hdr::HdrRenderTarget,
     pipeline::{
@@ -572,7 +574,7 @@ impl Plugin for SkyboxRenderablePlugin {
     fn build(&self, render_app: &mut weaver_app::App) -> Result<()> {
         render_app.add_plugin(RenderPipelinePlugin::<SkyboxRenderable>::default())?;
 
-        render_app.add_system(render_skybox, Render);
+        render_app.add_system(render_skybox.after(render_clear_color), Render);
 
         Ok(())
     }

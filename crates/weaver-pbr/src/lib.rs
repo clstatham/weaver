@@ -11,6 +11,7 @@ use weaver_ecs::{
     component::{Res, ResMut},
     prelude::Commands,
     query::Query,
+    system::IntoSystemConfig,
 };
 use weaver_renderer::{
     bind_group::ResourceBindGroupPlugin, clear_color::render_clear_color, hdr::render_hdr,
@@ -48,27 +49,18 @@ impl Plugin for PbrPlugin {
 
         render_app.add_plugin(ResourceBindGroupPlugin::<PbrLightingInformation>::default())?;
 
-        // render_app.add_plugin(RenderPipelinePlugin::<PbrRenderable>::default())?;
-
-        // render_app.add_render_command::<_, PbrRenderCommand>();
-
-        // render_app.add_renderable::<PbrRenderable>();
-        // render_app.add_renderable_dependency::<PbrRenderable, ClearColorRenderable>();
-        // render_app.add_renderable_dependency::<SkyboxRenderable, PbrRenderable>();
-
+        // render_app
+        //     .world_mut()
+        //     .order_systems(render_clear_color, render_skybox, Render);
         render_app
             .world_mut()
-            .add_system_dependency(render_skybox, render_clear_color, Render);
-        render_app
-            .world_mut()
-            .add_system_after(render_hdr, render_skybox, Render);
+            .add_system(render_hdr.after(render_skybox), Render);
 
         render_app
             .world_mut()
             .add_system(init_pbr_lighting_information, InitRenderResources);
-        render_app.world_mut().add_system_after(
-            update_pbr_lighting_information,
-            init_pbr_lighting_information,
+        render_app.world_mut().add_system(
+            update_pbr_lighting_information.after(init_pbr_lighting_information),
             InitRenderResources,
         );
 

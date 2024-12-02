@@ -78,17 +78,16 @@ impl Plugin for BspRenderPlugin {
 
         render_app.add_system(render_bsps, Render);
 
-        render_app.main_app_mut().world_mut().add_system_dependency(
-            render_bsps,
+        render_app.main_app_mut().world_mut().order_systems(
             render_clear_color,
+            render_bsps,
             Render,
         );
 
-        render_app.main_app_mut().world_mut().add_system_dependency(
-            render_hdr,
-            render_bsps,
-            Render,
-        );
+        render_app
+            .main_app_mut()
+            .world_mut()
+            .order_systems(render_bsps, render_hdr, Render);
 
         Ok(())
     }

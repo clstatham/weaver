@@ -594,11 +594,10 @@ impl Plugin for GizmoRenderAppPlugin {
             .world_mut()
             .add_system(render_gizmos, Render);
 
-        render_app.main_app_mut().world_mut().add_system_dependency(
-            render_hdr,
-            render_gizmos,
-            Render,
-        );
+        render_app
+            .main_app_mut()
+            .world_mut()
+            .order_systems(render_gizmos, render_hdr, Render);
         Ok(())
     }
 

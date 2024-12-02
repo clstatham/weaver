@@ -7,7 +7,7 @@ use weaver_ecs::{
     entity::Entity,
     prelude::Component,
     query::{Query, Queryable, QueryableItem},
-    system::{SystemAccess, SystemParam, SystemParamItem},
+    system::{IntoSystemConfig, SystemAccess, SystemParam, SystemParamItem},
     world::World,
 };
 use weaver_util::Result;
@@ -43,10 +43,6 @@ impl<T: SystemParam + 'static> SystemParam for Extract<T> {
             exclusive: true,
             ..Default::default()
         }
-    }
-
-    fn validate_access(_access: &SystemAccess) -> bool {
-        true
     }
 
     fn init_state(world: &World) -> Self::State {
@@ -157,9 +153,8 @@ impl<T: ExtractResource, Dep: ExtractResource> Default for RenderResourceDepende
 
 impl<T: ExtractResource, Dep: ExtractResource> Plugin for RenderResourceDependencyPlugin<T, Dep> {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_system_after(
-            extract_render_resource::<T>,
-            extract_render_resource::<Dep>,
+        app.add_system(
+            extract_render_resource::<T>.after(extract_render_resource::<Dep>),
             ExtractStage,
         );
         Ok(())

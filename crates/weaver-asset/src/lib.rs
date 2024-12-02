@@ -678,9 +678,9 @@ impl AssetApp for SubApp {
     >(
         &mut self,
     ) -> &mut Self {
-        self.world_mut().add_system_dependency(
-            load_all_assets::<T, L, S>,
+        self.world_mut().order_systems(
             load_all_assets::<D, DL, DS>,
+            load_all_assets::<T, L, S>,
             AssetLoad,
         );
         self

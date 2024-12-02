@@ -1,5 +1,8 @@
 use weaver_app::{plugin::Plugin, App, PreUpdate};
-use weaver_ecs::component::{Res, ResMut};
+use weaver_ecs::{
+    component::{Res, ResMut},
+    system::IntoSystemConfig,
+};
 use weaver_util::Result;
 
 pub struct FrameTime {
@@ -41,7 +44,7 @@ impl Plugin for LogFrameTimePlugin {
             log_interval: self.log_interval,
             last_log: std::time::Instant::now(),
         });
-        app.add_system_after(log_frame_time, update_frame_time, PreUpdate);
+        app.add_system(log_frame_time.after(update_frame_time), PreUpdate);
 
         Ok(())
     }

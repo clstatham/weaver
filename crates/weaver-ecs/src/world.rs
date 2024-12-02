@@ -12,7 +12,7 @@ use crate::{
         SystemAccess, SystemStage, Systems,
     },
     query::{Query, Queryable},
-    system::SystemParam,
+    system::{IntoSystemConfig, SystemParam},
 };
 
 use super::{entity::Entity, storage::Components};
@@ -272,10 +272,10 @@ impl World {
         self.systems.add_update_stage_after::<T, AFTER>();
     }
 
-    pub fn add_system_dependency<Stage, M1, M2, S1, S2>(
+    pub fn order_systems<Stage, M1, M2, S1, S2>(
         &mut self,
-        system: S1,
-        dependency: S2,
+        run_first: S1,
+        run_second: S2,
         stage: Stage,
     ) where
         Stage: SystemStage,
@@ -286,56 +286,17 @@ impl World {
         S1::System: System,
         S2::System: System,
     {
-        self.systems
-            .add_system_dependency(dependency, system, stage);
+        self.systems.order_systems(run_first, run_second, stage);
     }
 
     /// Adds a system to the given system stage. If the system has already been added to the stage, a warning is logged and the system is not added again.
     pub fn add_system<T, S, M>(&mut self, system: S, stage: T)
     where
         T: SystemStage,
-        S: IntoSystem<M>,
-        S::System: System,
+        S: IntoSystemConfig<M>,
         M: 'static,
     {
-        if self.has_system(&system, &stage) {
-            return;
-        }
         self.systems.add_system(system, stage);
-    }
-
-    /// Adds a system before another system in the given system stage. If the system has already been added to the stage, a warning is logged and the system is not added again.
-    pub fn add_system_before<T, M1, M2, S, BEFORE>(&mut self, system: S, before: BEFORE, stage: T)
-    where
-        T: SystemStage,
-        M1: 'static,
-        M2: 'static,
-        S: IntoSystem<M1>,
-        BEFORE: IntoSystem<M2>,
-        S::System: System,
-        BEFORE::System: System,
-    {
-        if self.has_system(&system, &stage) {
-            return;
-        }
-        self.systems.add_system_before(system, before, stage);
-    }
-
-    /// Adds a system after another system in the given system stage. If the system has already been added to the stage, a warning is logged and the system is not added again.
-    pub fn add_system_after<T, M1, M2, S, AFTER>(&mut self, system: S, after: AFTER, stage: T)
-    where
-        T: SystemStage,
-        M1: 'static,
-        M2: 'static,
-        S: IntoSystem<M1>,
-        AFTER: IntoSystem<M2>,
-        S::System: System,
-        AFTER::System: System,
-    {
-        if self.has_system(&system, &stage) {
-            return;
-        }
-        self.systems.add_system_after(system, after, stage);
     }
 
     /// Checks if the system has been added to the given system stage.

@@ -9,7 +9,9 @@ use weaver_ecs::prelude::*;
 
 use crate::{
     begin_render,
-    bind_group::{BindGroupLayout, ComponentBindGroupPlugin, CreateBindGroup},
+    bind_group::{
+        create_component_bind_group, BindGroupLayout, ComponentBindGroupPlugin, CreateBindGroup,
+    },
     buffer::GpuBufferVec,
     end_render,
     extract::{ExtractComponent, ExtractComponentPlugin},
@@ -335,14 +337,16 @@ impl Plugin for CameraPlugin {
 
         app.init_resource::<CameraBindGroupsToAdd>();
 
-        app.add_system(extract_camera_bind_groups, ExtractBindGroupStage);
-        app.add_system_after(
-            add_camera_bind_groups,
-            extract_camera_bind_groups,
+        app.add_system(
+            extract_camera_bind_groups.after(create_component_bind_group::<CameraBindGroup>),
             ExtractBindGroupStage,
         );
-        app.add_system_after(insert_view_target, begin_render, PreRender);
-        app.add_system_before(remove_view_target, end_render, PostRender);
+        app.add_system(
+            add_camera_bind_groups.after(extract_camera_bind_groups),
+            ExtractBindGroupStage,
+        );
+        app.add_system(insert_view_target.after(begin_render), PreRender);
+        app.add_system(remove_view_target.before(end_render), PostRender);
 
         Ok(())
     }

@@ -1,5 +1,8 @@
 use weaver_app::{plugin::Plugin, App, PreUpdate};
-use weaver_ecs::component::{Res, ResMut};
+use weaver_ecs::{
+    component::{Res, ResMut},
+    system::IntoSystemConfig,
+};
 use weaver_util::Result;
 
 pub struct Time {
@@ -117,7 +120,8 @@ impl<Label: Send + Sync + 'static> Plugin for FixedUpdatePlugin<Label> {
             self.timestep,
             self.max_frame_time,
         ));
-        app.add_system_after(update_fixed_timestep::<Label>, update_time, PreUpdate);
+        app.add_system(update_fixed_timestep::<Label>.after(update_time), PreUpdate);
+        //app.add_system_after(update_fixed_timestep::<Label>, update_time, PreUpdate);
         Ok(())
     }
 }

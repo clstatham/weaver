@@ -8,6 +8,7 @@ use weaver_ecs::{
     entity::{Entity, EntityMap},
     prelude::Component,
     query::Query,
+    system::IntoSystemConfig,
 };
 use weaver_util::{
     lock::{Lock, Read, Write},
@@ -175,16 +176,15 @@ impl<T: Component + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
         app.init_resource::<ComponentBindGroupsToRemove<T>>();
 
         app.add_system(create_component_bind_group::<T>, ExtractBindGroupStage);
-        app.add_system_after(
-            add_and_remove_component_bind_groups::<T>,
-            create_component_bind_group::<T>,
+        app.add_system(
+            add_and_remove_component_bind_groups::<T>.after(create_component_bind_group::<T>),
             ExtractBindGroupStage,
         );
         Ok(())
     }
 }
 
-struct ComponentBindGroupsToRemove<T: Component> {
+pub(crate) struct ComponentBindGroupsToRemove<T: Component> {
     entities: Vec<Entity>,
     _marker: std::marker::PhantomData<T>,
 }
@@ -198,7 +198,7 @@ impl<T: Component> Default for ComponentBindGroupsToRemove<T> {
     }
 }
 
-struct ComponentBindGroupsToAdd<T: Component + CreateBindGroup> {
+pub(crate) struct ComponentBindGroupsToAdd<T: Component + CreateBindGroup> {
     items: Vec<(Entity, BindGroup<T>)>,
     _marker: std::marker::PhantomData<T>,
 }
@@ -212,7 +212,7 @@ impl<T: Component + CreateBindGroup> Default for ComponentBindGroupsToAdd<T> {
     }
 }
 
-async fn create_component_bind_group<T: Component + CreateBindGroup>(
+pub(crate) async fn create_component_bind_group<T: Component + CreateBindGroup>(
     device: Res<WgpuDevice>,
     mut layout_cache: ResMut<BindGroupLayoutCache>,
     mut item_query: Query<(Entity, &T)>,
