@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::PathBuf, str::FromStr, sync::Arc};
 
 use weaver::{
     prelude::*,
@@ -8,14 +8,11 @@ use weaver::{
     weaver_renderer::{camera::Camera, RendererPlugin},
     weaver_winit::WinitPlugin,
 };
-use weaver_asset::Filesystem;
+use weaver_asset::{AssetCommands, Filesystem};
 use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_q3::{
-    bsp::{
-        loader::{Bsp, BspLoader},
-        render::render_bsps,
-    },
+    bsp::{loader::BspLoader, render::render_bsps},
     pk3::Pk3Filesystem,
     Q3Plugin,
 };
@@ -66,21 +63,10 @@ async fn main() -> Result<()> {
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)
         .add_system(camera::update_aspect_ratio, Update)
-        .add_system(test_local, Update)
         // .add_system(fps_ui, Update)
         .run()
 }
-
-async fn test_local(mut local: Local<usize>) {
-    *local.get_mut() += 1;
-    println!("Local: {}", *local.get());
-}
-
-async fn setup(
-    mut commands: Commands,
-    fs: Res<Arc<Filesystem>>,
-    bsp_loader: Res<AssetLoadQueue<Bsp, BspLoader, PathAndFilesystem>>,
-) {
+async fn setup(mut commands: Commands, fs: Res<Arc<Filesystem>>) {
     commands
         .spawn((
             Camera::default(),
@@ -97,7 +83,10 @@ async fn setup(
         ))
         .await;
 
-    let bsp = bsp_loader.enqueue(("maps/q3dm6.bsp".into(), fs.clone()));
+    let bsp = commands
+        .load_asset::<_, BspLoader, _>((PathBuf::from_str("maps/q3dm6.bsp").unwrap(), fs.clone()))
+        .await;
+
     commands.insert_resource(bsp).await;
 }
 

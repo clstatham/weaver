@@ -24,7 +24,7 @@ pub struct EventRef<'a, T: Event> {
     index: usize,
 }
 
-impl<'a, T: Event> Deref for EventRef<'a, T> {
+impl<T: Event> Deref for EventRef<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {

@@ -168,7 +168,7 @@ impl<'w, T: Asset> AssetRef<'w, T> {
     }
 }
 
-impl<'w, T: Asset> Deref for AssetRef<'w, T> {
+impl<T: Asset> Deref for AssetRef<'_, T> {
     type Target = T;
 
     #[inline]
@@ -188,7 +188,7 @@ impl<'w, T: Asset> AssetMut<'w, T> {
     }
 }
 
-impl<'w, T: Asset> Deref for AssetMut<'w, T> {
+impl<T: Asset> Deref for AssetMut<'_, T> {
     type Target = T;
 
     #[inline]
@@ -197,7 +197,7 @@ impl<'w, T: Asset> Deref for AssetMut<'w, T> {
     }
 }
 
-impl<'w, T: Asset> DerefMut for AssetMut<'w, T> {
+impl<T: Asset> DerefMut for AssetMut<'_, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.asset

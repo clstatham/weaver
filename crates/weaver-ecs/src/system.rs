@@ -460,7 +460,7 @@ where
     fn run(&mut self, world: &World) -> BoxFuture<'static, ()> {
         let state = self.state.as_mut().expect("State not initialized");
         F::update_state(state, world);
-        let fetch = F::Param::fetch(world, &state);
+        let fetch = F::Param::fetch(world, state);
         let func = self.func.clone();
         async move { func.run(fetch).await }.boxed()
     }

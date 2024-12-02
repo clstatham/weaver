@@ -93,7 +93,7 @@ impl<'a, T> Write<'a, T> {
     }
 }
 
-impl<'a, T> Deref for Read<'a, T> {
+impl<T> Deref for Read<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -101,7 +101,7 @@ impl<'a, T> Deref for Read<'a, T> {
     }
 }
 
-impl<'a, T> Deref for Write<'a, T> {
+impl<T> Deref for Write<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -109,7 +109,7 @@ impl<'a, T> Deref for Write<'a, T> {
     }
 }
 
-impl<'a, T> DerefMut for Write<'a, T> {
+impl<T> DerefMut for Write<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
@@ -117,7 +117,7 @@ impl<'a, T> DerefMut for Write<'a, T> {
 
 pub struct MapRead<'a, T: ?Sized>(MappedRwLockReadGuard<'a, T>);
 
-impl<'a, T: ?Sized> Deref for MapRead<'a, T> {
+impl<T: ?Sized> Deref for MapRead<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -137,7 +137,7 @@ impl<'a, T: ?Sized> MapRead<'a, T> {
 
 pub struct MapWrite<'a, T: ?Sized>(MappedRwLockWriteGuard<'a, T>);
 
-impl<'a, T: ?Sized> Deref for MapWrite<'a, T> {
+impl<T: ?Sized> Deref for MapWrite<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -145,7 +145,7 @@ impl<'a, T: ?Sized> Deref for MapWrite<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> DerefMut for MapWrite<'a, T> {
+impl<T: ?Sized> DerefMut for MapWrite<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }

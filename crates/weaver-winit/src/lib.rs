@@ -109,7 +109,7 @@ struct WinitRunnerApp<'app> {
     initial_size: (u32, u32),
 }
 
-impl<'app> winit::application::ApplicationHandler for WinitRunnerApp<'app> {
+impl winit::application::ApplicationHandler for WinitRunnerApp<'_> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window = event_loop
             .create_window(
