@@ -46,12 +46,15 @@ pub struct WorldTicks {
 
 impl SystemParam for WorldTicks {
     type Item = WorldTicks;
+    type State = ();
 
     fn access() -> SystemAccess {
         SystemAccess::default()
     }
 
-    fn fetch(world: &World) -> Self {
+    fn init_state(_world: &World) -> Self::State {}
+
+    fn fetch(world: &World, _state: &Self::State) -> Self {
         WorldTicks {
             last_change_tick: world.last_change_tick(),
             change_tick: world.read_change_tick(),
@@ -344,6 +347,18 @@ impl World {
         self.systems.has_system(system, stage)
     }
 
+    pub fn initialize_systems(&mut self) {
+        let mut systems = std::mem::take(&mut self.systems);
+        systems.initialize(self);
+        self.systems = systems;
+    }
+
+    pub fn initialize_system_stage<S: SystemStage>(&mut self) {
+        let mut systems = std::mem::take(&mut self.systems);
+        systems.initialize_stage::<S>(self);
+        self.systems = systems;
+    }
+
     /// Runs the "init" system schedule once.
     pub async fn init(&mut self) -> Result<()> {
         let mut systems = std::mem::take(&mut self.systems);
@@ -439,12 +454,15 @@ where
     T: ConstructFromWorld + Send + Sync + 'static,
 {
     type Item = FromWorld<T>;
+    type State = ();
 
     fn access() -> SystemAccess {
         SystemAccess::default()
     }
 
-    fn fetch(world: &World) -> Self::Item {
+    fn init_state(_world: &World) -> Self::State {}
+
+    fn fetch(world: &World, _state: &Self::State) -> Self::Item {
         Self::new(world)
     }
 }

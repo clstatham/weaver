@@ -66,8 +66,14 @@ async fn main() -> Result<()> {
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)
         .add_system(camera::update_aspect_ratio, Update)
+        .add_system(test_local, Update)
         // .add_system(fps_ui, Update)
         .run()
+}
+
+async fn test_local(mut local: Local<usize>) {
+    *local.get_mut() += 1;
+    println!("Local: {}", *local.get());
 }
 
 async fn setup(

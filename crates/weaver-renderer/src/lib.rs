@@ -432,6 +432,7 @@ impl Plugin for RendererPlugin {
         render_app.world().insert_resource(window);
 
         render_app.finish_plugins();
+        render_app.world_mut().initialize_systems();
 
         render_to_main_tx.send(render_app).unwrap();
 

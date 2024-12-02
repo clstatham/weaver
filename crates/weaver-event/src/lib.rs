@@ -188,6 +188,7 @@ impl<'a, T: Event> Iterator for EventIter<'a, T> {
 
 impl<T: Event> SystemParam for EventTx<T> {
     type Item = EventTx<T>;
+    type State = Events<T>;
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -197,17 +198,21 @@ impl<T: Event> SystemParam for EventTx<T> {
         }
     }
 
-    fn fetch(world: &World) -> Self::Item {
-        if let Some(events) = world.get_resource::<Events<T>>() {
-            EventTx::new(events.clone())
-        } else {
-            panic!("Events resource not found");
-        }
+    fn init_state(world: &World) -> Self::State {
+        world
+            .get_resource::<Events<T>>()
+            .expect("Events resource not found")
+            .clone()
+    }
+
+    fn fetch(_world: &World, state: &Events<T>) -> Self::Item {
+        EventTx::new(state.clone())
     }
 }
 
 impl<T: Event> SystemParam for EventRx<T> {
     type Item = EventRx<T>;
+    type State = ();
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -217,7 +222,9 @@ impl<T: Event> SystemParam for EventRx<T> {
         }
     }
 
-    fn fetch(world: &World) -> Self::Item {
+    fn init_state(_world: &World) -> Self::State {}
+
+    fn fetch(world: &World, _state: &Self::State) -> Self::Item {
         if let Some(events) = world.get_resource::<Events<T>>() {
             EventRx::new(
                 events.clone(),

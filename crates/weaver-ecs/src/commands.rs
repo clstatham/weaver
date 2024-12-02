@@ -90,12 +90,15 @@ impl Commands {
 
 impl SystemParam for Commands {
     type Item = Commands;
+    type State = ();
 
     fn access() -> SystemAccess {
         SystemAccess::default()
     }
 
-    fn fetch(world: &World) -> Self::Item {
+    fn init_state(_world: &World) -> Self::State {}
+
+    fn fetch(world: &World, _state: &Self::State) -> Self::Item {
         world.commands()
     }
 }

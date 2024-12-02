@@ -175,8 +175,10 @@ impl SubApps {
     }
 
     pub async fn init(&mut self) {
+        self.main.world_mut().initialize_systems();
         self.main.world_mut().init().await.unwrap();
         for (_, sub_app) in self.sub_apps.iter_mut() {
+            sub_app.world_mut().initialize_systems();
             sub_app.world_mut().init().await.unwrap();
         }
     }

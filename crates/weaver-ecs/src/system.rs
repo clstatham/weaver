@@ -3,13 +3,11 @@ use std::{any::TypeId, future::Future, sync::Arc};
 use crate::{
     component::{Component, Res, ResMut},
     prelude::World,
+    world::ConstructFromWorld,
 };
 use futures::{future::BoxFuture, FutureExt};
 use petgraph::{prelude::*, visit::Topo};
-use weaver_util::{
-    lock::SharedLock,
-    {anyhow, FxHashMap, FxHashSet, Result},
-};
+use weaver_util::{anyhow, lock::SharedLock, FxHashMap, FxHashSet, Read, Result, Write};
 
 /// A system access descriptor, indicating what resources and components a system reads and writes. This is used to validate system access at runtime.
 #[derive(Default, Clone)]
@@ -88,34 +86,12 @@ pub trait System: Send + Sync {
     fn initialize(&mut self, world: &mut World) {}
 
     /// Runs the system on the world.
-    fn run(&self, world: &World) -> BoxFuture<'static, ()>;
+    fn run(&mut self, world: &World) -> BoxFuture<'static, ()>;
 
     /// Returns true if the system can run on the world in its current state.
     #[allow(unused)]
     fn can_run(&self, world: &World) -> bool {
         true
-    }
-}
-
-impl System for Box<dyn System> {
-    fn name(&self) -> &str {
-        self.as_ref().name()
-    }
-
-    fn access(&self) -> SystemAccess {
-        self.as_ref().access()
-    }
-
-    fn initialize(&mut self, world: &mut World) {
-        self.as_mut().initialize(world)
-    }
-
-    fn run(&self, world: &World) -> BoxFuture<'static, ()> {
-        self.as_ref().run(world)
-    }
-
-    fn can_run(&self, world: &World) -> bool {
-        self.as_ref().can_run(world)
     }
 }
 
@@ -127,19 +103,12 @@ pub trait IntoSystem<Marker>: 'static + Send + Sync {
     fn into_system(self) -> Box<Self::System>;
 }
 
-impl IntoSystem<Box<dyn System>> for Box<dyn System> {
-    type System = Box<dyn System>;
-
-    fn into_system(self) -> Box<Self::System> {
-        Box::new(self)
-    }
-}
-
 /// # Safety
 ///
 /// Caller must ensure that all system params being used are valid for simultaneous access.
 pub trait SystemParam: Send + Sync {
     type Item: SystemParam;
+    type State: Send + Sync;
 
     fn validate_access(access: &SystemAccess) -> bool {
         Self::access().is_compatible(access)
@@ -147,7 +116,12 @@ pub trait SystemParam: Send + Sync {
 
     fn access() -> SystemAccess;
 
-    fn fetch(world: &World) -> Self::Item;
+    fn init_state(world: &World) -> Self::State;
+
+    #[allow(unused)]
+    fn update_state(state: &mut Self::State, world: &World) {}
+
+    fn fetch(world: &World, state: &Self::State) -> Self::Item;
 
     #[allow(unused)]
     fn can_run(world: &World) -> bool {
@@ -156,23 +130,73 @@ pub trait SystemParam: Send + Sync {
 }
 
 pub type SystemParamItem<P> = <P as SystemParam>::Item;
+pub type SystemParamState<P> = <P as SystemParam>::State;
 
 impl SystemParam for () {
     type Item = ();
+    type State = ();
 
     fn access() -> SystemAccess {
         SystemAccess::default()
     }
 
-    fn fetch(_: &World) -> Self::Item {}
+    fn init_state(_: &World) -> Self::State {}
+
+    fn fetch(_: &World, _: &Self::State) -> Self::Item {}
 
     fn can_run(_: &World) -> bool {
         true
     }
 }
 
+pub struct Local<T: Send + Sync + ConstructFromWorld> {
+    value: SharedLock<T>,
+}
+
+impl<T: Send + Sync + ConstructFromWorld> Clone for Local<T> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+        }
+    }
+}
+
+impl<T: Send + Sync + ConstructFromWorld> Local<T> {
+    pub fn new(value: T) -> Self {
+        Self {
+            value: SharedLock::new(value),
+        }
+    }
+
+    pub fn get(&self) -> Read<T> {
+        self.value.read()
+    }
+
+    pub fn get_mut(&mut self) -> Write<T> {
+        self.value.write()
+    }
+}
+
+impl<T: Send + Sync + ConstructFromWorld> SystemParam for Local<T> {
+    type Item = Local<T>;
+    type State = Local<T>;
+
+    fn access() -> SystemAccess {
+        SystemAccess::default()
+    }
+
+    fn init_state(world: &World) -> Self::State {
+        Local::new(T::from_world(world))
+    }
+
+    fn fetch(_world: &World, state: &Self::State) -> Self::Item {
+        state.clone()
+    }
+}
+
 impl<T: Component> SystemParam for Res<T> {
     type Item = Res<T>;
+    type State = ();
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -182,7 +206,9 @@ impl<T: Component> SystemParam for Res<T> {
         }
     }
 
-    fn fetch(world: &World) -> Self::Item {
+    fn init_state(_world: &World) -> Self::State {}
+
+    fn fetch(world: &World, _: &Self::State) -> Self::Item {
         world.get_resource::<T>().unwrap()
     }
 
@@ -201,6 +227,7 @@ impl<T: Component> SystemParam for Res<T> {
 
 impl<T: Component> SystemParam for Option<Res<T>> {
     type Item = Option<Res<T>>;
+    type State = ();
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -210,7 +237,9 @@ impl<T: Component> SystemParam for Option<Res<T>> {
         }
     }
 
-    fn fetch(world: &World) -> Self::Item {
+    fn init_state(_world: &World) -> Self::State {}
+
+    fn fetch(world: &World, _: &Self::State) -> Self::Item {
         world.get_resource::<T>()
     }
 
@@ -225,6 +254,7 @@ impl<T: Component> SystemParam for Option<Res<T>> {
 
 impl<T: Component> SystemParam for ResMut<T> {
     type Item = ResMut<T>;
+    type State = ();
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -234,7 +264,9 @@ impl<T: Component> SystemParam for ResMut<T> {
         }
     }
 
-    fn fetch(world: &World) -> Self::Item {
+    fn init_state(_world: &World) -> Self::State {}
+
+    fn fetch(world: &World, _: &Self::State) -> Self::Item {
         world.get_resource_mut::<T>().unwrap()
     }
 
@@ -254,6 +286,7 @@ impl<T: Component> SystemParam for ResMut<T> {
 
 impl<T: Component> SystemParam for Option<ResMut<T>> {
     type Item = Option<ResMut<T>>;
+    type State = ();
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -263,7 +296,9 @@ impl<T: Component> SystemParam for Option<ResMut<T>> {
         }
     }
 
-    fn fetch(world: &World) -> Self::Item {
+    fn init_state(_world: &World) -> Self::State {}
+
+    fn fetch(world: &World, _: &Self::State) -> Self::Item {
         world.get_resource_mut::<T>()
     }
 
@@ -282,6 +317,7 @@ macro_rules! impl_system_param_tuple {
         impl<$( $param: SystemParam ),*> SystemParam for ($( $param, )*)
         {
             type Item = ($( $param::Item, )*);
+            type State = ($( $param::State, )*);
 
             fn access() -> SystemAccess {
                 let mut access = SystemAccess::default();
@@ -291,8 +327,13 @@ macro_rules! impl_system_param_tuple {
                 access
             }
 
-            fn fetch(world: &World) -> Self::Item {
-                ($( $param::fetch(world), )*)
+            fn init_state(world: &World) -> Self::State {
+                ($( $param::init_state(world), )*)
+            }
+
+            fn fetch(world: &World, state: &Self::State) -> Self::Item {
+                let ($( $param, )*) = state;
+                ($( $param::fetch(world, $param), )*)
             }
 
             fn can_run(world: &World) -> bool {
@@ -307,6 +348,7 @@ macro_rules! impl_system_param_tuple {
     };
 }
 
+impl_system_param_tuple!(A);
 impl_system_param_tuple!(A, B);
 impl_system_param_tuple!(A, B, C);
 impl_system_param_tuple!(A, B, C, D);
@@ -347,14 +389,19 @@ impl<S: SystemParam> SystemParamWrapper<S> {
 
 impl<S: SystemParam> SystemParam for SystemParamWrapper<S> {
     type Item = SystemParamWrapper<S>;
+    type State = <S as SystemParam>::State;
 
     fn access() -> SystemAccess {
         S::access()
     }
 
-    fn fetch(world: &World) -> Self::Item {
+    fn init_state(world: &World) -> Self::State {
+        <S as SystemParam>::init_state(world)
+    }
+
+    fn fetch(world: &World, state: &Self::State) -> Self::Item {
         SystemParamWrapper {
-            param: S::fetch(world),
+            param: <S>::fetch(world, state),
         }
     }
 
@@ -366,6 +413,10 @@ impl<S: SystemParam> SystemParam for SystemParamWrapper<S> {
 pub trait SystemParamFunction<M>: 'static + Send + Sync {
     type Param: SystemParam + 'static;
 
+    fn init_state(world: &World) -> SystemParamState<Self::Param>;
+
+    fn update_state(state: &mut SystemParamState<Self::Param>, world: &World);
+
     fn run(&self, param: SystemParamItem<Self::Param>) -> impl Future<Output = ()> + Send + Sync;
 }
 
@@ -375,6 +426,7 @@ where
     F: SystemParamFunction<M>,
 {
     func: Arc<F>,
+    state: Option<SystemParamState<F::Param>>,
     _marker: std::marker::PhantomData<fn() -> M>,
 }
 
@@ -386,6 +438,7 @@ where
     pub fn new(func: F) -> Self {
         Self {
             func: Arc::new(func),
+            state: None,
             _marker: std::marker::PhantomData,
         }
     }
@@ -396,22 +449,20 @@ where
     M: 'static,
     F: SystemParamFunction<M>,
 {
-    fn initialize(&mut self, _world: &mut World) {}
+    fn initialize(&mut self, world: &mut World) {
+        self.state = Some(F::init_state(world));
+    }
 
     fn access(&self) -> SystemAccess {
         F::Param::access()
     }
 
-    fn run(&self, world: &World) -> BoxFuture<'static, ()> {
-        let fetch = F::Param::fetch(world);
+    fn run(&mut self, world: &World) -> BoxFuture<'static, ()> {
+        let state = self.state.as_mut().expect("State not initialized");
+        F::update_state(state, world);
+        let fetch = F::Param::fetch(world, &state);
         let func = self.func.clone();
         async move { func.run(fetch).await }.boxed()
-        // async move {
-        //     let mut f = func.write().take().unwrap();
-        //     f.run(fetch).await;
-        //     *func.write() = Some(f);
-        // }
-        // .boxed()
     }
 
     fn can_run(&self, world: &World) -> bool {
@@ -431,6 +482,7 @@ where
     fn into_system(self) -> Box<Self::System> {
         Box::new(FunctionSystem {
             func: Arc::new(self),
+            state: None,
             _marker: std::marker::PhantomData,
         })
     }
@@ -448,6 +500,15 @@ macro_rules! impl_function_system {
             Fut: Future<Output = ()> + Send + Sync,
         {
             type Param = ($($param),*);
+
+            fn init_state(world: &World) -> SystemParamState<Self::Param> {
+                ($($param::init_state(world)),*)
+            }
+
+            fn update_state(state: &mut SystemParamState<Self::Param>, world: &World) {
+                let ($($param),*) = state;
+                $($param::update_state($param, world);)*
+            }
 
             async fn run(&self, param: SystemParamItem<Self::Param>) {
                 async fn inner<Fut, $($param,)*>(
@@ -667,12 +728,18 @@ impl SystemGraph {
         Ok(())
     }
 
+    pub fn initialize(&mut self, world: &mut World) {
+        for node in self.systems.node_indices() {
+            let system = &self.systems[node];
+            system.write().initialize(world);
+        }
+    }
+
     /// Runs all systems in the graph.
     pub async fn run(&mut self, world: &mut World) -> Result<()> {
         let mut schedule = Topo::new(&self.systems);
         while let Some(node) = schedule.next(&self.systems) {
             let system = &self.systems[node];
-            system.write().initialize(world);
             if !system.read().can_run(world) {
                 log::debug!("Skipping system: {}", system.read().name());
                 continue;

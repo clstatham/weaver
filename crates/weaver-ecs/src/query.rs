@@ -379,6 +379,7 @@ impl<Q: Queryable> Query<Q> {
 
 impl<Q: Queryable> SystemParam for Query<Q> {
     type Item = Query<Q>;
+    type State = ();
 
     fn access() -> SystemAccess {
         let reads = Q::reads();
@@ -391,7 +392,9 @@ impl<Q: Queryable> SystemParam for Query<Q> {
         }
     }
 
-    fn fetch(world: &World) -> Self::Item {
+    fn init_state(_world: &World) -> Self::State {}
+
+    fn fetch(world: &World, _state: &Self::State) -> Self::Item {
         Query::new(world)
     }
 }

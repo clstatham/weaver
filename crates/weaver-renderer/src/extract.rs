@@ -36,6 +36,7 @@ impl<T: SystemParam> DerefMut for Extract<T> {
 
 impl<T: SystemParam + 'static> SystemParam for Extract<T> {
     type Item = Extract<T>;
+    type State = T::State;
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -48,9 +49,13 @@ impl<T: SystemParam + 'static> SystemParam for Extract<T> {
         true
     }
 
-    fn fetch(world: &World) -> Self::Item {
+    fn init_state(world: &World) -> Self::State {
+        T::init_state(world)
+    }
+
+    fn fetch(world: &World, state: &Self::State) -> Self::Item {
         let main_world = world.get_resource::<MainWorld>().unwrap();
-        let item = T::fetch(&main_world);
+        let item = T::fetch(&main_world, state);
         Extract { item }
     }
 

@@ -19,6 +19,13 @@ pub struct Systems {
 }
 
 impl Systems {
+    pub fn initialize(&mut self, world: &mut World) {
+        self.initialize_init_stages(world);
+        self.initialize_update_stages(world);
+        self.initialize_shutdown_stages(world);
+        self.initialize_manual_stages(world);
+    }
+
     pub fn has_stage<T: SystemStage>(&self) -> bool {
         self.systems.contains_key(&TypeId::of::<T>())
     }
@@ -143,12 +150,28 @@ impl Systems {
             .has_system(system)
     }
 
+    pub fn initialize_stage<S: SystemStage>(&mut self, world: &mut World) {
+        self.systems
+            .get_mut(&TypeId::of::<S>())
+            .expect("System stage not found")
+            .initialize(world)
+    }
+
     pub async fn run_stage<S: SystemStage>(&mut self, world: &mut World) -> Result<()> {
         self.systems
             .get_mut(&TypeId::of::<S>())
             .expect("System stage not found")
             .run(world)
             .await
+    }
+
+    pub fn initialize_init_stages(&mut self, world: &mut World) {
+        for stage in &self.init_stages {
+            self.systems
+                .get_mut(stage)
+                .expect("System stage not found")
+                .initialize(world);
+        }
     }
 
     pub async fn run_init(&mut self, world: &mut World) -> Result<()> {
@@ -162,6 +185,15 @@ impl Systems {
         Ok(())
     }
 
+    pub fn initialize_shutdown_stages(&mut self, world: &mut World) {
+        for stage in &self.shutdown_stages {
+            self.systems
+                .get_mut(stage)
+                .expect("System stage not found")
+                .initialize(world);
+        }
+    }
+
     pub async fn run_shutdown(&mut self, world: &mut World) -> Result<()> {
         for stage in &self.shutdown_stages {
             self.systems
@@ -173,6 +205,15 @@ impl Systems {
         Ok(())
     }
 
+    pub fn initialize_update_stages(&mut self, world: &mut World) {
+        for stage in &self.update_stages {
+            self.systems
+                .get_mut(stage)
+                .expect("System stage not found")
+                .initialize(world);
+        }
+    }
+
     pub async fn run_update(&mut self, world: &mut World) -> Result<()> {
         for stage in &self.update_stages {
             self.systems
@@ -182,5 +223,14 @@ impl Systems {
                 .await?;
         }
         Ok(())
+    }
+
+    pub fn initialize_manual_stages(&mut self, world: &mut World) {
+        for stage in &self.manual_stages {
+            self.systems
+                .get_mut(stage)
+                .expect("System stage not found")
+                .initialize(world);
+        }
     }
 }
