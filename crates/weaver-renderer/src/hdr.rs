@@ -7,7 +7,7 @@ use weaver_ecs::{
     world::ConstructFromWorld,
 };
 use weaver_util::prelude::*;
-use weaver_winit::WindowSize;
+use weaver_winit::WindowSettings;
 
 use crate::{
     bind_group::{BindGroup, BindGroupLayoutCache, CreateBindGroup, ResourceBindGroupPlugin},
@@ -45,7 +45,7 @@ impl HdrRenderTarget {
 
 impl ConstructFromWorld for HdrRenderTarget {
     fn from_world(world: &World) -> Self {
-        let window_size = world.get_resource::<WindowSize>().unwrap();
+        let window_size = world.get_resource::<WindowSettings>().unwrap();
         let device = world.get_resource::<WgpuDevice>().unwrap();
         let texture = GpuTexture::new(
             &device,

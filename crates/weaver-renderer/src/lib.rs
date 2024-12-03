@@ -34,7 +34,7 @@ use weaver_ecs::{
 };
 use weaver_event::{EventRx, Events};
 use weaver_util::prelude::*;
-use weaver_winit::{Window, WindowResized, WindowSize};
+use weaver_winit::{Window, WindowResized, WindowSettings};
 
 pub mod asset;
 pub mod bind_group;
@@ -426,7 +426,8 @@ impl Plugin for RendererPlugin {
 
         let mut render_app = main_app.remove_sub_app::<RenderApp>().unwrap();
 
-        render_app.world().insert_resource(WindowSize {
+        render_app.world().insert_resource(WindowSettings {
+            title: window.title(),
             width: window.inner_size().width,
             height: window.inner_size().height,
         });
@@ -632,7 +633,7 @@ pub async fn end_render(
 async fn resize_surface(
     commands: Commands,
     events: EventRx<WindowResized>,
-    mut window_size: ResMut<WindowSize>,
+    mut window_size: ResMut<WindowSettings>,
     mut view_targets: Query<(Entity, With<ViewTarget>)>,
     mut current_frame: ResMut<CurrentFrame>,
     mut renderer: ResMut<Renderer>,

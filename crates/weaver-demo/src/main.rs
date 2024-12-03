@@ -1,24 +1,15 @@
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 
-use weaver::{
-    prelude::*,
-    weaver_app::App,
-    weaver_core::{input::InputPlugin, time::TimePlugin},
-    weaver_pbr::PbrPlugin,
-    weaver_renderer::{camera::Camera, RendererPlugin},
-    weaver_winit::WinitPlugin,
-};
+use weaver::{prelude::*, weaver_app::App, weaver_renderer::camera::Camera};
 use weaver_asset::{AssetCommands, Filesystem};
-use weaver_core::CoreTypesPlugin;
 use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 use weaver_q3::{
     bsp::{loader::BspLoader, render::render_bsps},
     pk3::Pk3Filesystem,
     Q3Plugin,
 };
-use weaver_renderer::{
-    camera::PrimaryCamera, clear_color::ClearColorPlugin, RenderApp, RenderStage,
-};
+use weaver_renderer::{camera::PrimaryCamera, RenderApp, RenderStage};
+use weaver_winit::WindowPlugin;
 
 pub mod camera;
 pub mod transform_gizmo;
@@ -33,16 +24,10 @@ pub mod transform_gizmo;
 #[weaver::main]
 async fn main() -> Result<()> {
     App::new()
-        .add_plugin(CoreTypesPlugin)?
-        .add_plugin(WinitPlugin {
-            initial_size: (1920, 1080),
-            window_title: "Weaver",
-        })?
-        .add_plugin(TimePlugin)?
-        .add_plugin(InputPlugin)?
-        .add_plugin(RendererPlugin)?
-        .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
-        .add_plugin(PbrPlugin)?
+        .add_plugin(DefaultPlugins)?
+        .configure_plugin::<WindowPlugin>(|plugin| {
+            plugin.initial_size = (1920, 1080);
+        })
         // .add_plugin(GizmoPlugin)?
         // .add_plugin(EguiPlugin)?
         .add_plugin(Q3Plugin)?
@@ -52,8 +37,6 @@ async fn main() -> Result<()> {
         .configure_sub_app::<RenderApp>(|app| {
             app.world_mut()
                 .order_systems(render_skybox, render_bsps, RenderStage::Render);
-            // app.world_mut()
-            //     .add_system_dependency(render_gizmos, render_bsps, Render);
         })
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
         .insert_resource(Arc::new(

@@ -1,6 +1,6 @@
 use std::any::TypeId;
 
-use plugin::Plugin;
+use plugin::{DummyPlugin, Plugin};
 
 use weaver_ecs::{
     component::Res,
@@ -268,6 +268,24 @@ impl App {
         self.plugins.push((TypeId::of::<T>(), Box::new(plugin)));
         self.unready_plugins.insert(TypeId::of::<T>());
         Ok(self)
+    }
+
+    pub fn configure_plugin<T: Plugin>(&mut self, f: impl FnOnce(&mut T)) -> &mut Self {
+        if let Some(index) = self
+            .plugins
+            .iter()
+            .position(|(id, _)| *id == TypeId::of::<T>())
+        {
+            let (_, mut plugin) = std::mem::replace(
+                &mut self.plugins[index],
+                (TypeId::of::<DummyPlugin>(), Box::new(DummyPlugin)),
+            );
+            plugin.cleanup(self).unwrap();
+            f(plugin.downcast_mut().unwrap());
+            plugin.build(self).unwrap();
+            self.plugins[index] = (TypeId::of::<T>(), plugin);
+        }
+        self
     }
 
     pub fn set_runner<T: Runner>(&mut self, runner: T) {

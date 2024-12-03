@@ -723,10 +723,14 @@ impl SystemGraph {
     }
 
     /// Resolves system dependencies, ensuring that no system mutably accesses the same resource or component at the same time as another system.
-    pub fn resolve_dependencies(&mut self, depth: usize) -> Result<()> {
+    pub fn resolve_dependencies(&mut self) -> Result<()> {
+        self.resolve_dependencies_inner(100)
+    }
+
+    fn resolve_dependencies_inner(&mut self, depth: usize) -> Result<()> {
         if depth == 0 {
             return Err(anyhow!(
-                "Cyclic system dependency detected (depth limit reached)"
+                "Cyclic system dependency detected (attempt limit reached)"
             ));
         }
         if petgraph::algo::is_cyclic_directed(&self.systems) {
@@ -742,8 +746,8 @@ impl SystemGraph {
                 }
             }
             return Err(anyhow!(
-                "Cyclic system dependency detected (depth = {})",
-                depth
+                "Cyclic system dependency detected (attempt {})",
+                100 - depth
             ));
         }
 
@@ -768,7 +772,7 @@ impl SystemGraph {
                             continue;
                         }
                         self.systems.add_edge(node, other, ());
-                        return self.resolve_dependencies(depth - 1);
+                        return self.resolve_dependencies_inner(depth - 1);
                     }
                 }
             }
@@ -778,7 +782,7 @@ impl SystemGraph {
     }
 
     pub fn initialize(&mut self, world: &mut World) {
-        self.resolve_dependencies(100).unwrap();
+        self.resolve_dependencies().unwrap();
 
         for node in self.systems.node_indices() {
             let system = &self.systems[node];
@@ -795,7 +799,7 @@ impl SystemGraph {
                 let system = &self.systems[*node];
                 names.push(system.read().name().to_string());
             }
-            let span = span!(DEBUG, "System Batch", names = format!("{:?}", names));
+            let span = span!(TRACE, "System Batch", names = format!("{:?}", names));
             let _span = span.enter();
             // log::debug!("Running systems: {:?}", names);
             let mut handles = Vec::new();

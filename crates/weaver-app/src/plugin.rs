@@ -17,5 +17,17 @@ pub trait Plugin: DowncastSync {
     fn ready(&self, app: &App) -> bool {
         true
     }
+
+    fn cleanup(&self, app: &mut App) -> Result<()> {
+        Ok(())
+    }
 }
 impl_downcast!(Plugin);
+
+pub struct DummyPlugin;
+
+impl Plugin for DummyPlugin {
+    fn build(&self, _app: &mut App) -> Result<()> {
+        Ok(())
+    }
+}

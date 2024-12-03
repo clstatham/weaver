@@ -11,7 +11,7 @@ use winit::{
 };
 
 pub mod prelude {
-    pub use super::{WindowResized, WinitEvent, WinitPlugin};
+    pub use super::{Window, WindowPlugin, WindowResized, WindowSettings, WinitEvent, WinitPlugin};
     pub use winit;
 }
 
@@ -20,8 +20,9 @@ pub struct Window {
     window: Arc<winit::window::Window>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct WindowSize {
+#[derive(Debug, Clone)]
+pub struct WindowSettings {
+    pub title: String,
     pub width: u32,
     pub height: u32,
 }
@@ -47,12 +48,14 @@ pub struct WindowResized {
 }
 impl weaver_event::Event for WindowResized {}
 
-pub struct WinitPlugin {
+pub struct WindowPlugin {
     pub window_title: &'static str,
     pub initial_size: (u32, u32),
 }
 
-impl Default for WinitPlugin {
+pub struct WinitPlugin;
+
+impl Default for WindowPlugin {
     fn default() -> Self {
         Self {
             window_title: "Weaver",
@@ -61,17 +64,28 @@ impl Default for WinitPlugin {
     }
 }
 
+impl Plugin for WindowPlugin {
+    fn build(&self, app: &mut App) -> Result<()> {
+        app.main_app().world().insert_resource(WindowSettings {
+            title: self.window_title.to_string(),
+            width: self.initial_size.0,
+            height: self.initial_size.1,
+        });
+        app.add_event::<WindowResized>();
+        Ok(())
+    }
+
+    fn cleanup(&self, app: &mut App) -> Result<()> {
+        app.main_app().world().remove_resource::<WindowSettings>();
+        Ok(())
+    }
+}
+
 impl Plugin for WinitPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         let event_loop = winit::event_loop::EventLoop::new()?;
         app.set_runner(WinitRunner {
             event_loop: Lock::new(Some(event_loop)),
-            window_title: self.window_title,
-            initial_size: self.initial_size,
-        });
-        app.main_app().world().insert_resource(WindowSize {
-            width: self.initial_size.0,
-            height: self.initial_size.1,
         });
         app.add_event::<WinitEvent>();
         app.add_event::<WindowResized>();
@@ -81,8 +95,6 @@ impl Plugin for WinitPlugin {
 
 struct WinitRunner {
     event_loop: Lock<Option<winit::event_loop::EventLoop<()>>>,
-    window_title: &'static str,
-    initial_size: (u32, u32),
 }
 
 impl Runner for WinitRunner {
@@ -91,10 +103,16 @@ impl Runner for WinitRunner {
 
         let event_loop = self.event_loop.write().take().unwrap();
 
+        let window_settings = app
+            .main_app()
+            .world()
+            .get_resource::<WindowSettings>()
+            .unwrap();
+
         let mut winit_app = WinitRunnerApp {
             app,
-            window_title: self.window_title,
-            initial_size: self.initial_size,
+            window_title: window_settings.title.clone(),
+            initial_size: (window_settings.width, window_settings.height),
         };
 
         event_loop.run_app(&mut winit_app)?;
@@ -105,7 +123,7 @@ impl Runner for WinitRunner {
 
 struct WinitRunnerApp<'app> {
     app: &'app mut App,
-    window_title: &'static str,
+    window_title: String,
     initial_size: (u32, u32),
 }
 
@@ -114,7 +132,7 @@ impl winit::application::ApplicationHandler for WinitRunnerApp<'_> {
         let window = event_loop
             .create_window(
                 WindowAttributes::default()
-                    .with_title(self.window_title)
+                    .with_title(&self.window_title)
                     .with_inner_size(LogicalSize::new(self.initial_size.0, self.initial_size.1)),
             )
             .unwrap();
@@ -183,8 +201,11 @@ impl winit::application::ApplicationHandler for WinitRunnerApp<'_> {
                     height: size.height,
                 });
 
-                if let Some(mut window_size) =
-                    self.app.main_app().world().get_resource_mut::<WindowSize>()
+                if let Some(mut window_size) = self
+                    .app
+                    .main_app()
+                    .world()
+                    .get_resource_mut::<WindowSettings>()
                 {
                     window_size.width = size.width;
                     window_size.height = size.height;

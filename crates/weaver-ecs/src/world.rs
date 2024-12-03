@@ -186,34 +186,19 @@ impl World {
     }
 
     /// Initializes a resource in the world. The resource is initialized using its implementation of `FromWorld`.
-    /// If the resource has already been initialized, a warning is logged and the resource is not initialized again.
-    pub fn init_resource<T: Component + ConstructFromWorld>(&self) {
-        if self.has_resource::<T>() {
-            debug_once!(
-                "Resource {} already present in world; not initializing it again",
-                T::type_name(),
-            );
-            return;
-        }
+    /// If the resource has already been initialized, replaces the existing resource with a new one, and returns the old resource.
+    pub fn init_resource<T: Component + ConstructFromWorld>(&self) -> Option<T> {
         let resource = T::from_world(self);
-        self.insert_resource(resource);
+        self.insert_resource(resource)
     }
 
     /// Inserts a resource into the world.
-    /// If the resource has already been inserted, a warning is logged and the resource is not inserted again.
-    pub fn insert_resource<T: Component>(&self, component: T) {
-        if self.has_resource::<T>() {
-            debug_once!(
-                "Resource {} already present in world; not inserting it again",
-                T::type_name(),
-            );
-            return;
-        }
-        let _ = self
-            .resources
+    /// If the resource has already been inserted, replaces the existing resource with a new one, and returns the old resource.
+    pub fn insert_resource<T: Component>(&self, component: T) -> Option<T> {
+        self.resources
             .write()
             .insert_component::<T>(component)
-            .unwrap();
+            .unwrap()
     }
 
     /// Removes a resource from the world.
