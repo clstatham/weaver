@@ -1,5 +1,4 @@
 use std::{
-    cell::UnsafeCell,
     fmt::Debug,
     fs::File,
     future::Future,
@@ -13,6 +12,7 @@ use std::{
 
 use weaver_app::{App, SubApp};
 use weaver_ecs::{
+    loan::{Loan, LoanMut, LoanStorage},
     prelude::{tokio, Commands, Res, ResMut, SystemStage},
     world::{ConstructFromWorld, FromWorld},
 };
@@ -154,60 +154,43 @@ impl<T: Asset> TryFrom<UntypedHandle> for Handle<T> {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct AssetRef<'w, T: Asset> {
-    asset: &'w T,
+#[derive(Clone)]
+pub struct AssetRef<T: Asset> {
+    asset: Loan<T>,
 }
 
-impl<'w, T: Asset> AssetRef<'w, T> {
-    #[inline]
-    pub fn into_inner(self) -> &'w T {
-        self.asset
-    }
-}
-
-impl<T: Asset> Deref for AssetRef<'_, T> {
+impl<T: Asset> Deref for AssetRef<T> {
     type Target = T;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        self.asset
+        &self.asset
     }
 }
 
-pub struct AssetMut<'w, T: Asset> {
-    asset: &'w mut T,
+pub struct AssetMut<T: Asset> {
+    asset: LoanMut<T>,
 }
 
-impl<'w, T: Asset> AssetMut<'w, T> {
-    #[inline]
-    pub fn into_inner(self) -> &'w mut T {
-        self.asset
-    }
-}
-
-impl<T: Asset> Deref for AssetMut<'_, T> {
+impl<T: Asset> Deref for AssetMut<T> {
     type Target = T;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        self.asset
+        &self.asset
     }
 }
 
-impl<T: Asset> DerefMut for AssetMut<'_, T> {
+impl<T: Asset> DerefMut for AssetMut<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.asset
+        &mut self.asset
     }
 }
 
 pub struct Assets<T: Asset> {
-    storage: FxHashMap<AssetId, UnsafeCell<T>>,
+    storage: FxHashMap<AssetId, LoanStorage<T>>,
 }
-
-// SAFETY: `Asset` implementors are Sync and we validate access to them before using them.
-unsafe impl<T: Asset> Sync for Assets<T> {}
 
 impl<T: Asset> Default for Assets<T> {
     fn default() -> Self {
@@ -223,7 +206,7 @@ impl<T: Asset> Assets<T> {
     }
 
     pub fn insert_manual(&mut self, asset: T, id: AssetId) -> Handle<T> {
-        self.storage.insert(id, UnsafeCell::new(asset));
+        self.storage.insert(id, LoanStorage::new(asset));
 
         Handle {
             id,
@@ -234,7 +217,7 @@ impl<T: Asset> Assets<T> {
     pub fn insert(&mut self, asset: impl Into<T>) -> Handle<T> {
         let asset = asset.into();
         let id = AssetId::new();
-        self.storage.insert(id, UnsafeCell::new(asset));
+        self.storage.insert(id, LoanStorage::new(asset));
 
         Handle {
             id,
@@ -242,24 +225,26 @@ impl<T: Asset> Assets<T> {
         }
     }
 
-    pub fn get(&self, handle: Handle<T>) -> Option<AssetRef<T>> {
-        self.storage.get(&handle.id).map(|asset| {
-            let asset = unsafe { &*asset.get() };
+    pub fn get(&mut self, handle: Handle<T>) -> Option<AssetRef<T>> {
+        self.storage.get_mut(&handle.id).map(|asset| {
+            let asset = asset.loan().expect("asset is already borrowed");
             AssetRef { asset }
         })
     }
 
     pub fn get_mut(&mut self, handle: Handle<T>) -> Option<AssetMut<T>> {
-        self.storage.get(&handle.id).map(|asset| {
-            let asset = unsafe { &mut *asset.get() };
+        self.storage.get_mut(&handle.id).map(|asset| {
+            let asset = asset.loan_mut().expect("asset is already borrowed");
             AssetMut { asset }
         })
     }
 
     pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
-        self.storage
-            .remove(&handle.id)
-            .map(|asset| asset.into_inner())
+        self.storage.remove(&handle.id).map(|asset| {
+            asset
+                .into_owned()
+                .unwrap_or_else(|_| panic!("asset is borrowed"))
+        })
     }
 }
 

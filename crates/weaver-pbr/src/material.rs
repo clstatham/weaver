@@ -2,7 +2,7 @@ use encase::ShaderType;
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::{prelude::Asset, Assets, Handle};
 use weaver_core::{color::Color, texture::Texture};
-use weaver_ecs::component::Res;
+use weaver_ecs::prelude::ResMut;
 use weaver_renderer::{
     asset::{ExtractRenderAssetPlugin, RenderAsset},
     bind_group::{AssetBindGroupPlugin, BindGroupLayout, CreateBindGroup},
@@ -95,11 +95,11 @@ pub struct GpuMaterial {
 
 impl RenderAsset for GpuMaterial {
     type Source = Material;
-    type Param = Extract<Res<Assets<Texture>>>;
+    type Param = Extract<ResMut<Assets<Texture>>>;
 
     fn extract_render_asset(
         base_asset: &Material,
-        textures: &mut Extract<Res<Assets<Texture>>>,
+        textures: &mut Extract<ResMut<Assets<Texture>>>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Option<Self>
@@ -203,7 +203,7 @@ impl RenderAsset for GpuMaterial {
     fn update_render_asset(
         &mut self,
         base_asset: &Self::Source,
-        _textures: &mut Extract<Res<Assets<Texture>>>,
+        _textures: &mut Extract<ResMut<Assets<Texture>>>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<()>

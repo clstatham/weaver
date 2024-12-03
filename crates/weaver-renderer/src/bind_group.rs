@@ -299,7 +299,7 @@ impl<T: CreateBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
 async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
     commands: Commands,
     device: Res<WgpuDevice>,
-    assets: Res<Assets<T>>,
+    mut assets: ResMut<Assets<T>>,
     mut bind_group_assets: ResMut<Assets<BindGroup<T>>>,
     mut query: Query<(Entity, &Handle<T>)>,
     asset_bind_groups: Res<ExtractedAssetBindGroups>,

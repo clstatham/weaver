@@ -202,7 +202,11 @@ impl<T: Component> SystemParam for Res<T> {
 
     fn can_run(world: &World) -> bool {
         if !world.has_resource::<T>() {
-            log::debug!("Res: Resource {:?} is not available", T::type_name());
+            log::debug!("Res: Resource {:?} does not exist", T::type_name());
+            return false;
+        }
+        if world.get_resource::<T>().is_none() {
+            log::debug!("Res: Resource {:?} is already borrowed", T::type_name());
             return false;
         }
         true
@@ -251,7 +255,11 @@ impl<T: Component> SystemParam for ResMut<T> {
     }
     fn can_run(world: &World) -> bool {
         if !world.has_resource::<T>() {
-            log::debug!("ResMut: Resource {:?} is not available", T::type_name());
+            log::debug!("ResMut: Resource {:?} does not exist", T::type_name());
+            return false;
+        }
+        if world.get_resource_mut::<T>().is_none() {
+            log::debug!("ResMut: Resource {:?} is already borrowed", T::type_name());
             return false;
         }
         true
@@ -342,21 +350,19 @@ impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
 
-pub struct SystemParamWrapper<S: SystemParam> {
-    pub param: S::Item,
-}
+pub struct SystemParamWrapper<S: SystemParam>(S::Item);
 
 impl<S: SystemParam> SystemParamWrapper<S> {
-    pub fn new(param: S::Item) -> Self {
-        Self { param }
+    pub fn new(item: S::Item) -> Self {
+        Self(item)
     }
 
     pub fn item(&self) -> &S::Item {
-        &self.param
+        &self.0
     }
 
     pub fn item_mut(&mut self) -> &mut S::Item {
-        &mut self.param
+        &mut self.0
     }
 }
 
@@ -373,9 +379,7 @@ impl<S: SystemParam> SystemParam for SystemParamWrapper<S> {
     }
 
     fn fetch(world: &World, state: &Self::State) -> Self::Item {
-        SystemParamWrapper {
-            param: <S>::fetch(world, state),
-        }
+        Self(<S as SystemParam>::fetch(world, state))
     }
 
     fn can_run(world: &World) -> bool {
@@ -795,10 +799,11 @@ impl SystemGraph {
             let _span = span.enter();
             // log::debug!("Running systems: {:?}", names);
             let mut handles = Vec::new();
+            let mut skipped = Vec::new();
             for node in layer {
                 let system = &self.systems[node];
                 if !system.read().can_run(world) {
-                    log::debug!("Skipping system: {}", system.read().name());
+                    skipped.push(node);
                     continue;
                 }
                 let handle = tokio::spawn(system.write().run(world));
@@ -812,6 +817,24 @@ impl SystemGraph {
 
                 world.apply_commands();
                 tokio::task::yield_now().await;
+            }
+
+            // run skipped systems synchronously, in case there was a resource conflict
+            for node in skipped {
+                let system = &self.systems[node];
+                if !system.read().can_run(world) {
+                    log::debug!("Skipping system: {}", system.read().name());
+                    continue;
+                }
+                let handle = tokio::spawn(system.write().run(world));
+                loop {
+                    if handle.is_finished() {
+                        break;
+                    }
+
+                    world.apply_commands();
+                    tokio::task::yield_now().await;
+                }
             }
         }
 
