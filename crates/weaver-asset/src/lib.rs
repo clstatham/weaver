@@ -734,13 +734,21 @@ async fn load_all_assets<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
         }
         let loader = loader.clone();
         let commands = commands.clone();
-        let task = tokio::spawn(async move { loader.load(request.source, &commands).await });
+        let task = tokio::spawn(async move {
+            match loader.load(request.source, &commands).await {
+                Ok(asset) => Ok(asset),
+                Err(e) => {
+                    log::error!("Failed to load asset: {}", e);
+                    Err(e)
+                }
+            }
+        });
 
         handles.push((request.handle, task));
     }
 
-    for (handle, asset) in handles {
-        if let Ok(Ok(asset)) = asset.await {
+    for (handle, result) in handles {
+        if let Ok(Ok(asset)) = result.await {
             assets.insert_manual(asset, handle.id);
             load_status.manually_set_loaded(handle);
             load_events.send(AssetLoaded::new(handle.id));
