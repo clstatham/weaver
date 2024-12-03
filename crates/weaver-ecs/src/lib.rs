@@ -2,6 +2,7 @@
 #![allow(non_snake_case)]
 
 pub mod bundle;
+pub mod change_detection;
 pub mod commands;
 pub mod component;
 pub mod entity;

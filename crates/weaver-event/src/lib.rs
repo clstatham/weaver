@@ -1,12 +1,9 @@
-use std::{
-    any::TypeId,
-    collections::VecDeque,
-    ops::{Deref, DerefMut},
-};
+use std::{any::TypeId, collections::VecDeque, ops::Deref};
 
 use weaver_ecs::{
+    change_detection::Tick,
     system::{SystemAccess, SystemParam},
-    world::{Tick, World},
+    world::World,
 };
 use weaver_util::prelude::*;
 
@@ -185,7 +182,7 @@ impl<'a, T: Event> Iterator for EventIter<'a, T> {
 
 impl<T: Event> SystemParam for EventTx<T> {
     type Item = EventTx<T>;
-    type State = Events<T>;
+    type State = ();
 
     fn access() -> SystemAccess {
         SystemAccess {
@@ -195,15 +192,14 @@ impl<T: Event> SystemParam for EventTx<T> {
         }
     }
 
-    fn init_state(world: &World) -> Self::State {
-        world
-            .get_resource::<Events<T>>()
-            .expect("Events resource not found")
-            .clone()
-    }
+    fn init_state(_world: &World) -> Self::State {}
 
-    fn fetch(_world: &World, state: &Events<T>) -> Self::Item {
-        EventTx::new(state.clone())
+    fn fetch(world: &World, _state: &()) -> Self::Item {
+        if let Some(events) = world.get_resource::<Events<T>>() {
+            EventTx::new(events.clone())
+        } else {
+            panic!("Events resource not found");
+        }
     }
 }
 
@@ -231,29 +227,5 @@ impl<T: Event> SystemParam for EventRx<T> {
         } else {
             panic!("Events resource not found");
         }
-    }
-}
-
-pub struct ManuallyUpdatedEvents<T: Event> {
-    pub events: Events<T>,
-}
-
-impl<T: Event> ManuallyUpdatedEvents<T> {
-    pub fn new(events: Events<T>) -> Self {
-        Self { events }
-    }
-}
-
-impl<T: Event> Deref for ManuallyUpdatedEvents<T> {
-    type Target = Events<T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.events
-    }
-}
-
-impl<T: Event> DerefMut for ManuallyUpdatedEvents<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.events
     }
 }

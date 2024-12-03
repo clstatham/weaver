@@ -10,7 +10,10 @@ use std::{
 use any_vec::AnyVec;
 use weaver_util::prelude::*;
 
-use crate::loan::{Loan, LoanMut, LoanStorage};
+use crate::{
+    change_detection::{ChangeDetection, ChangeDetectionMut, ComponentTicks, Tick},
+    loan::{Loan, LoanMut, LoanStorage},
+};
 
 pub trait Component: Any + Send + Sync {
     fn as_any(&self) -> &(dyn Any + Send + Sync);
@@ -70,6 +73,7 @@ pub type ComponentVec = AnyVec<dyn Send + Sync>;
 #[derive(Default)]
 pub struct ComponentMap {
     map: TypeIdMap<LoanStorage<BoxedComponent>>,
+    ticks: TypeIdMap<LoanStorage<ComponentTicks>>,
 }
 
 impl Deref for ComponentMap {
@@ -88,7 +92,11 @@ impl DerefMut for ComponentMap {
 
 impl ComponentMap {
     #[must_use = "This method returns the old component if it exists"]
-    pub fn insert_component<T: Component>(&mut self, value: T) -> Result<Option<T>> {
+    pub fn insert_component<T: Component>(&mut self, value: T, tick: Tick) -> Result<Option<T>> {
+        self.ticks.insert(
+            TypeId::of::<T>(),
+            LoanStorage::new(ComponentTicks::new(tick)),
+        );
         if let Some(old) = self
             .map
             .insert(TypeId::of::<T>(), LoanStorage::new(Box::new(value)))
@@ -130,26 +138,78 @@ impl ComponentMap {
         Ok(loan)
     }
 
-    pub fn get_component<T: Component>(&mut self) -> Option<Ref<T>> {
-        match self.loan_component(TypeId::of::<T>()) {
-            Ok(loan) => Some(Ref {
+    fn get_ticks(&mut self, type_id: TypeId) -> Result<Loan<ComponentTicks>> {
+        let storage = self.ticks.get_mut(&type_id);
+        let Some(storage) = storage else {
+            bail!("Resource does not exist");
+        };
+        let loan = storage.loan();
+        let Some(loan) = loan else {
+            bail!("Resource is already mutably borrowed");
+        };
+        Ok(loan)
+    }
+
+    fn get_ticks_mut(&mut self, type_id: TypeId) -> Result<LoanMut<ComponentTicks>> {
+        let storage = self.ticks.get_mut(&type_id);
+        let Some(storage) = storage else {
+            bail!("Resource does not exist");
+        };
+        let loan = storage.loan_mut();
+        let Some(loan) = loan else {
+            bail!("Resource is already borrowed");
+        };
+        Ok(loan)
+    }
+
+    pub fn get_component<T: Component>(
+        &mut self,
+        last_run: Tick,
+        this_run: Tick,
+    ) -> Option<Res<T>> {
+        match (
+            self.loan_component(TypeId::of::<T>()),
+            self.get_ticks(TypeId::of::<T>()),
+        ) {
+            (Ok(loan), Ok(ticks)) => Some(Res {
                 loan,
+                last_run,
+                this_run,
+                ticks,
                 marker: std::marker::PhantomData,
             }),
-            Err(e) => {
+            (Err(e), _) => {
+                log::debug!("Failed to get resource {:?}: {}", T::type_name(), e);
+                None
+            }
+            (_, Err(e)) => {
                 log::debug!("Failed to get resource {:?}: {}", T::type_name(), e);
                 None
             }
         }
     }
 
-    pub fn get_component_mut<T: Component>(&mut self) -> Option<Mut<T>> {
-        match self.loan_component_mut(TypeId::of::<T>()) {
-            Ok(loan) => Some(Mut {
+    pub fn get_component_mut<T: Component>(
+        &mut self,
+        last_run: Tick,
+        this_run: Tick,
+    ) -> Option<ResMut<T>> {
+        match (
+            self.loan_component_mut(TypeId::of::<T>()),
+            self.get_ticks_mut(TypeId::of::<T>()),
+        ) {
+            (Ok(loan), Ok(ticks)) => Some(ResMut {
                 loan,
+                last_run,
+                this_run,
+                ticks,
                 marker: std::marker::PhantomData,
             }),
-            Err(e) => {
+            (Err(e), _) => {
+                log::debug!("Failed to get mutable resource {:?}: {}", T::type_name(), e);
+                None
+            }
+            (_, Err(e)) => {
                 log::debug!("Failed to get mutable resource {:?}: {}", T::type_name(), e);
                 None
             }
@@ -175,46 +235,71 @@ impl ComponentMap {
     }
 }
 
-pub struct Ref<T: Component> {
+pub struct Res<T: Component> {
     loan: Loan<BoxedComponent>,
+    last_run: Tick,
+    this_run: Tick,
+    ticks: Loan<ComponentTicks>,
     marker: std::marker::PhantomData<T>,
 }
 
-impl<T: Component> Deref for Ref<T> {
-    type Target = T;
+impl<T: Component> ChangeDetection for Res<T> {
+    fn is_added(&self) -> bool {
+        self.ticks.is_added(self.last_run, self.this_run)
+    }
 
-    fn deref(&self) -> &Self::Target {
-        self.loan.downcast_ref().unwrap()
+    fn is_changed(&self) -> bool {
+        self.ticks.is_changed(self.last_run, self.this_run)
+    }
+
+    fn last_changed(&self) -> Tick {
+        self.ticks.changed
     }
 }
-
-pub struct Mut<T: Component> {
-    loan: LoanMut<BoxedComponent>,
-    marker: std::marker::PhantomData<T>,
-}
-
-impl<T: Component> Deref for Mut<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.loan.downcast_ref().unwrap()
-    }
-}
-
-impl<T: Component> DerefMut for Mut<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.loan.downcast_mut().unwrap()
-    }
-}
-
-pub struct Res<T: Component>(pub(crate) Ref<T>);
-pub struct ResMut<T: Component>(pub(crate) Mut<T>);
 
 impl<T: Component> Deref for Res<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.loan.downcast_ref().unwrap()
+    }
+}
+
+pub struct ResMut<T: Component> {
+    loan: LoanMut<BoxedComponent>,
+    last_run: Tick,
+    this_run: Tick,
+    ticks: LoanMut<ComponentTicks>,
+    marker: std::marker::PhantomData<T>,
+}
+
+impl<T: Component> ChangeDetection for ResMut<T> {
+    fn is_added(&self) -> bool {
+        self.ticks.is_added(self.last_run, self.this_run)
+    }
+
+    fn is_changed(&self) -> bool {
+        self.ticks.is_changed(self.last_run, self.this_run)
+    }
+
+    fn last_changed(&self) -> Tick {
+        self.ticks.changed
+    }
+}
+
+impl<T: Component> ChangeDetectionMut for ResMut<T> {
+    type Inner = T;
+
+    fn set_changed(&mut self) {
+        self.ticks.set_changed(self.this_run);
+    }
+
+    fn set_last_changed(&mut self, tick: Tick) {
+        self.ticks.set_changed(tick);
+    }
+
+    fn bypass_change_detection(&mut self) -> &mut Self::Inner {
+        self.loan.downcast_mut().unwrap()
     }
 }
 
@@ -222,12 +307,13 @@ impl<T: Component> Deref for ResMut<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.loan.downcast_ref().unwrap()
     }
 }
 
 impl<T: Component> DerefMut for ResMut<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        self.set_changed();
+        self.loan.downcast_mut().unwrap()
     }
 }

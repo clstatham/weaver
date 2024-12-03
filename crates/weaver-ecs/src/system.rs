@@ -815,7 +815,16 @@ impl SystemGraph {
             }
 
             loop {
-                if handles.iter().all(|handle| handle.is_finished()) {
+                let mut all_finished = true;
+                for handle in &handles {
+                    if handle.is_finished() {
+                        world.increment_change_tick();
+                    } else {
+                        all_finished = false;
+                    }
+                }
+
+                if all_finished {
                     break;
                 }
 
@@ -833,6 +842,7 @@ impl SystemGraph {
                 let handle = tokio::spawn(system.write().run(world));
                 loop {
                     if handle.is_finished() {
+                        world.increment_change_tick();
                         break;
                     }
 

@@ -511,7 +511,7 @@ pub async fn render_gizmos(
 
             render_pass.set_pipeline(pipeline);
             render_pass.set_bind_group(0, gizmo_bind_group, &[]);
-            render_pass.set_bind_group(1, camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &camera_bind_group, &[]);
 
             let mut num_cubes = 0;
             for instance in gizmos.gizmos.read().get(key).unwrap().iter() {

@@ -109,8 +109,8 @@ pub async fn update_camera(
     input: Res<Input>,
     mut query: Query<(&mut Camera, &mut FlyCameraController)>,
 ) {
-    for (camera, controller) in query.iter() {
-        controller.update(&input, time.delta_time, camera);
+    for (mut camera, mut controller) in query.iter() {
+        controller.update(&input, time.delta_time, &mut camera);
     }
 }
 
@@ -122,7 +122,7 @@ pub async fn update_aspect_ratio(
     if let Some(event) = events.last() {
         let WindowResized { width, height } = **event;
         let aspect = width as f32 / height as f32;
-        for camera in camera.iter() {
+        for mut camera in camera.iter() {
             camera.aspect = aspect;
         }
     }

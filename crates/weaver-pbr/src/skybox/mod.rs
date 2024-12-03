@@ -543,7 +543,7 @@ pub async fn render_skybox(
 
         rpass.set_pipeline(skybox_pipeline);
         rpass.set_bind_group(0, &skybox_bind_group, &[]);
-        rpass.set_bind_group(1, camera_bind_group, &[]);
+        rpass.set_bind_group(1, &camera_bind_group, &[]);
         rpass.draw(0..3, 0..1);
     }
 }

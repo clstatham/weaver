@@ -3,14 +3,15 @@ use std::any::TypeId;
 use plugin::{DummyPlugin, Plugin};
 
 use weaver_ecs::{
+    change_detection::WorldTicks,
     component::Res,
     prelude::Component,
     system::IntoSystemConfig,
     system_schedule::SystemStage,
-    world::{ConstructFromWorld, World, WorldTicks},
+    world::{ConstructFromWorld, World},
     SystemStage,
 };
-use weaver_event::{Event, Events, ManuallyUpdatedEvents};
+use weaver_event::{Event, Events};
 use weaver_util::prelude::*;
 
 pub mod plugin;
@@ -178,9 +179,7 @@ impl SubApps {
         for (_, sub_app) in self.sub_apps.iter_mut() {
             sub_app.extract_from(&mut self.main.world).unwrap();
             sub_app.world_mut().update().await.unwrap();
-            sub_app.world_mut().increment_change_tick();
         }
-        self.main.world_mut().increment_change_tick();
     }
 
     pub async fn shutdown(&mut self) {
@@ -219,9 +218,11 @@ impl App {
             .ok();
 
         let mut this = Self::empty();
+
         this.main_app_mut()
             .world_mut()
             .push_init_stage(AppStage::Init);
+
         this.main_app_mut()
             .world_mut()
             .push_update_stage(AppStage::PrepareFrame);
@@ -237,6 +238,7 @@ impl App {
         this.main_app_mut()
             .world_mut()
             .push_update_stage(AppStage::FinishFrame);
+
         this.main_app_mut()
             .world_mut()
             .push_shutdown_stage(AppStage::Shutdown);
@@ -341,7 +343,7 @@ impl App {
     }
 
     pub fn add_manually_updated_event<T: Event>(&mut self) -> &mut Self {
-        self.insert_resource(ManuallyUpdatedEvents::<T>::new(Events::<T>::new()));
+        self.insert_resource(Events::<T>::new());
         self
     }
 

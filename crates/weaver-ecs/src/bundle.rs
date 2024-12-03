@@ -3,7 +3,10 @@ use std::any::{Any, TypeId};
 use any_vec::any_value::{AnyValue, AnyValueWrapper};
 use weaver_util::prelude::*;
 
-use crate::component::{Component, ComponentVec};
+use crate::{
+    change_detection::{ComponentTicks, Tick},
+    component::{Component, ComponentVec},
+};
 
 pub trait Bundle: Send + Sync + 'static {
     fn component_type_ids() -> Vec<TypeId>;
@@ -65,17 +68,27 @@ impl_bundle_tuple!(A, B, C, D, E, F, G, H);
 pub struct ComponentBundle {
     pub(crate) types: Vec<TypeId>,
     pub(crate) components: Vec<ComponentVec>,
+    pub(crate) ticks: Vec<ComponentTicks>,
 }
 
 impl ComponentBundle {
-    pub fn from_tuple<T: Bundle>(bundle: T) -> Self {
+    pub fn from_tuple<T: Bundle>(bundle: T, tick: Tick) -> Self {
         let mut types = T::component_type_ids();
         let mut components = T::into_components(bundle);
 
         types.sort_unstable();
         components.sort_unstable_by_key(|component| component.element_typeid());
 
-        Self { types, components }
+        let mut ticks = Vec::new();
+        for _ in &components {
+            ticks.push(ComponentTicks::new(tick));
+        }
+
+        Self {
+            types,
+            components,
+            ticks,
+        }
     }
 
     pub fn into_tuple<T: Bundle>(self) -> Result<T> {
@@ -97,21 +110,28 @@ impl ComponentBundle {
             .collect()
     }
 
-    pub fn insert(&mut self, mut comp: ComponentVec) -> Option<ComponentVec> {
+    pub fn insert(
+        &mut self,
+        mut comp: ComponentVec,
+        mut ticks: ComponentTicks,
+    ) -> Option<(ComponentVec, ComponentTicks)> {
         for (i, t) in self.types.iter().copied().enumerate() {
             #[allow(clippy::comparison_chain)]
             if t == comp.element_typeid() {
                 std::mem::swap(&mut self.components[i], &mut comp);
-                return Some(comp);
+                std::mem::swap(&mut self.ticks[i], &mut ticks);
+                return Some((comp, ticks));
             } else if t > comp.element_typeid() {
                 self.types.insert(i, comp.element_typeid());
                 self.components.insert(i, comp);
+                self.ticks.insert(i, ticks);
                 return None;
             }
         }
 
         self.types.push(comp.element_typeid());
         self.components.push(comp);
+        self.ticks.push(ticks);
         None
     }
 
@@ -128,10 +148,11 @@ impl ComponentBundle {
         let mut ret = Self {
             types: Vec::new(),
             components: Vec::new(),
+            ticks: Vec::new(),
         };
-        for v in other.components.into_iter() {
-            if let Some(comp) = self.insert(v) {
-                ret.insert(comp);
+        for (v, t) in other.components.into_iter().zip(other.ticks.into_iter()) {
+            if let Some((comp, ticks)) = self.insert(v, t) {
+                ret.insert(comp, ticks);
             }
         }
 

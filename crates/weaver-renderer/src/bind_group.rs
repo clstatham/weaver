@@ -195,7 +195,7 @@ pub(crate) async fn create_component_bind_group<T: Component + CreateBindGroup>(
             stale = true;
         }
         if stale || bind_group_query.get(entity).is_none() {
-            let bind_group = BindGroup::new(&device, item, &mut layout_cache);
+            let bind_group = BindGroup::new(&device, &*item, &mut layout_cache);
             staleness.set_stale(entity, false);
             // commands.insert_component(entity, bind_group).await;
             to_add.push((entity, bind_group));

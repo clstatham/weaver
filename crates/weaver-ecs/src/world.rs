@@ -6,6 +6,7 @@ use std::{
 use weaver_util::{prelude::*, span};
 
 use crate::{
+    change_detection::Tick,
     component::Component,
     prelude::{
         Bundle, Command, Commands, ComponentMap, Entities, IntoSystem, Res, ResMut, System,
@@ -16,51 +17,6 @@ use crate::{
 };
 
 use super::{entity::Entity, storage::Components};
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Tick(u64);
-
-impl Tick {
-    pub const MAX: Self = Self(u64::MAX);
-
-    pub fn as_u64(&self) -> u64 {
-        self.0
-    }
-
-    pub fn is_newer_than(&self, last_run: Tick, this_run: Tick) -> bool {
-        let last_diff = this_run.relative_to(last_run).as_u64();
-        let this_diff = this_run.relative_to(*self).as_u64();
-
-        this_diff < last_diff
-    }
-
-    pub fn relative_to(&self, other: Tick) -> Tick {
-        Tick(self.0.wrapping_sub(other.0))
-    }
-}
-
-pub struct WorldTicks {
-    pub last_change_tick: Tick,
-    pub change_tick: Tick,
-}
-
-impl SystemParam for WorldTicks {
-    type Item = WorldTicks;
-    type State = ();
-
-    fn access() -> SystemAccess {
-        SystemAccess::default()
-    }
-
-    fn init_state(_world: &World) -> Self::State {}
-
-    fn fetch(world: &World, _state: &Self::State) -> Self {
-        WorldTicks {
-            last_change_tick: world.last_change_tick(),
-            change_tick: world.read_change_tick(),
-        }
-    }
-}
 
 pub struct World {
     entities: Lock<Entities>,
@@ -76,7 +32,9 @@ impl Default for World {
     fn default() -> Self {
         let components = Components::default();
         let mut resources = ComponentMap::default();
-        resources.insert_component(components).unwrap();
+        resources
+            .insert_component(components, Tick::default())
+            .unwrap();
 
         let (command_tx, command_rx) = async_channel::unbounded();
 
@@ -128,7 +86,8 @@ impl World {
     /// Creates a new entity in the world and adds the bundle of components to it.
     pub fn spawn<T: Bundle>(&self, bundle: T) -> Entity {
         let entity = self.create_entity();
-        self.components_mut().insert_bundle(entity, bundle);
+        self.components_mut()
+            .insert_bundle(entity, bundle, self.read_change_tick());
         entity
     }
 
@@ -139,12 +98,14 @@ impl World {
     }
 
     pub fn insert_component<T: Component>(&self, entity: Entity, component: T) {
-        self.components_mut().insert_bundle(entity, (component,));
+        self.components_mut()
+            .insert_bundle(entity, (component,), self.read_change_tick());
     }
 
     /// Inserts a bundle of components into the entity in the world.
     pub fn insert_bundle<T: Bundle>(&self, entity: Entity, bundle: T) {
-        self.components_mut().insert_bundle(entity, bundle);
+        self.components_mut()
+            .insert_bundle(entity, bundle, self.read_change_tick());
     }
 
     /// Removes a component from the entity in the world.
@@ -164,12 +125,16 @@ impl World {
 
     /// Gets a shared reference to a resource from the world.
     pub fn get_resource<T: Component>(&self) -> Option<Res<T>> {
-        self.resources.write().get_component::<T>().map(Res)
+        self.resources
+            .write()
+            .get_component::<T>(self.last_change_tick(), self.read_change_tick())
     }
 
     /// Gets a mutable reference to a resource from the world.
     pub fn get_resource_mut<T: Component>(&self) -> Option<ResMut<T>> {
-        self.resources.write().get_component_mut::<T>().map(ResMut)
+        self.resources
+            .write()
+            .get_component_mut::<T>(self.last_change_tick(), self.read_change_tick())
     }
 
     pub fn components(&self) -> Res<Components> {
@@ -197,7 +162,7 @@ impl World {
     pub fn insert_resource<T: Component>(&self, component: T) -> Option<T> {
         self.resources
             .write()
-            .insert_component::<T>(component)
+            .insert_component::<T>(component, self.read_change_tick())
             .unwrap()
     }
 
@@ -298,6 +263,7 @@ impl World {
         let mut systems = std::mem::take(&mut self.systems);
         systems.run_update(self).await?;
         self.systems = systems;
+        self.increment_change_tick();
         Ok(())
     }
 

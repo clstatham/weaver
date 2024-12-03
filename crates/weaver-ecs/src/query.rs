@@ -3,16 +3,28 @@ use std::any::TypeId;
 use weaver_util::prelude::*;
 
 use crate::{
+    change_detection::{ComponentTicks, Tick},
     entity::Entity,
     loan::{Loan, LoanMut},
     prelude::{Archetype, Component, ComponentVec, SystemAccess, SystemParam},
-    storage::Components,
+    storage::{Components, Mut, Ref},
 };
 
 use super::world::World;
 
-pub type ReadLockedColumns = Option<(Loan<ComponentVec>, Vec<Entity>)>;
-pub type WriteLockedColumns = Option<(LoanMut<ComponentVec>, Vec<Entity>)>;
+pub struct ReadLockedColumns {
+    pub column: Loan<ComponentVec>,
+    pub ticks: Loan<Vec<ComponentTicks>>,
+    pub entities: Vec<Entity>,
+    pub entity_indices: Vec<usize>,
+}
+
+pub struct WriteLockedColumns {
+    pub column: LoanMut<ComponentVec>,
+    pub ticks: LoanMut<Vec<ComponentTicks>>,
+    pub entities: Vec<Entity>,
+    pub entity_indices: Vec<usize>,
+}
 
 pub trait Queryable: Send + Sync {
     type LockedColumns: Send + Sync;
@@ -26,10 +38,16 @@ pub trait Queryable: Send + Sync {
 
     fn iter_mut<'a, 'b: 'a>(
         lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
     ) -> impl Iterator<Item = Self::Item<'a>>;
 
-    fn get<'a, 'b: 'a>(entity: Entity, lock: &'b mut Self::LockedColumns)
-        -> Option<Self::Item<'a>>;
+    fn get<'a, 'b: 'a>(
+        entity: Entity,
+        lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
+    ) -> Option<Self::Item<'a>>;
 }
 
 pub type QueryableItem<'a, T> = <T as Queryable>::Item<'a>;
@@ -52,6 +70,8 @@ impl Queryable for Entity {
 
     fn iter_mut<'a, 'b: 'a>(
         lock: &'b mut Self::LockedColumns,
+        _last_run: Tick,
+        _this_run: Tick,
     ) -> impl Iterator<Item = Self::Item<'a>> {
         lock.iter().copied()
     }
@@ -59,14 +79,16 @@ impl Queryable for Entity {
     fn get<'a, 'b: 'a>(
         entity: Entity,
         lock: &'b mut Self::LockedColumns,
+        _last_run: Tick,
+        _this_run: Tick,
     ) -> Option<Self::Item<'a>> {
         lock.contains(&entity).then_some(entity)
     }
 }
 
 impl<'s, T: Component> Queryable for &'s T {
-    type LockedColumns = ReadLockedColumns;
-    type Item<'a> = &'a T;
+    type LockedColumns = Option<ReadLockedColumns>;
+    type Item<'a> = Ref<'a, T>;
 
     fn reads() -> Vec<TypeId> {
         vec![TypeId::of::<T>()]
@@ -78,39 +100,71 @@ impl<'s, T: Component> Queryable for &'s T {
 
     fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
         let col_index = archetype.index_of(TypeId::of::<T>())?;
-        Some((
-            archetype.columns()[col_index]
-                .write()
-                .loan()
-                .unwrap_or_else(|| panic!("Failed to lock column of type {}", T::type_name())),
-            archetype.entity_iter().collect(),
-        ))
+
+        let column = archetype.columns()[col_index]
+            .write()
+            .loan()
+            .unwrap_or_else(|| panic!("Failed to lock column of type {}", T::type_name()));
+        let ticks = archetype.ticks()[col_index].write().loan().unwrap();
+        let entities: Vec<Entity> = archetype.entity_iter().collect();
+        let entity_indices = entities
+            .iter()
+            .map(|entity| archetype.entity_index(*entity).unwrap())
+            .collect();
+
+        Some(ReadLockedColumns {
+            column,
+            ticks,
+            entities,
+            entity_indices,
+        })
     }
 
     fn iter_mut<'a, 'b: 'a>(
         lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
     ) -> impl Iterator<Item = Self::Item<'a>> {
         lock.as_ref().map_or_else(
-            || [].iter(),
-            |(lock, _)| lock.downcast_ref::<T>().unwrap().into_iter(),
+            || itertools::Either::Left(std::iter::empty()),
+            |cols| {
+                let ReadLockedColumns {
+                    column,
+                    ticks,
+                    entities: _,
+                    entity_indices,
+                } = cols;
+                itertools::Either::Right(entity_indices.iter().map(move |&index| {
+                    let item = column.downcast_ref().unwrap().get(index).unwrap();
+                    let ticks = ticks.get(index).unwrap();
+                    Ref::new(item, last_run, this_run, ticks)
+                }))
+            },
         )
     }
 
     fn get<'a, 'b: 'a>(
         entity: Entity,
         lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
     ) -> Option<Self::Item<'a>> {
-        lock.as_mut().and_then(|(lock, ents)| {
-            ents.iter()
-                .position(|&e| e == entity)
-                .map(move |index| lock.downcast_ref::<T>().unwrap().get(index).unwrap())
+        lock.as_mut().and_then(|cols| {
+            cols.entity_indices
+                .iter()
+                .position(|&index| cols.entities[index] == entity)
+                .map(|index| {
+                    let item = cols.column.downcast_ref().unwrap().get(index).unwrap();
+                    let ticks = cols.ticks.get(index).unwrap();
+                    Ref::new(item, last_run, this_run, ticks)
+                })
         })
     }
 }
 
 impl<'s, T: Component> Queryable for &'s mut T {
-    type LockedColumns = WriteLockedColumns;
-    type Item<'a> = &'a mut T;
+    type LockedColumns = Option<WriteLockedColumns>;
+    type Item<'a> = Mut<'a, T>;
 
     fn reads() -> Vec<TypeId> {
         vec![]
@@ -122,41 +176,113 @@ impl<'s, T: Component> Queryable for &'s mut T {
 
     fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
         let col_index = archetype.index_of(TypeId::of::<T>())?;
-        Some((
-            archetype.columns()[col_index]
-                .write()
-                .loan_mut()
-                .unwrap_or_else(|| {
-                    panic!("Failed to mutably lock column of type {}", T::type_name())
-                }),
-            archetype.entity_iter().collect(),
-        ))
+
+        let column = archetype.columns()[col_index]
+            .write()
+            .loan_mut()
+            .unwrap_or_else(|| panic!("Failed to lock column of type {}", T::type_name()));
+        let ticks = archetype.ticks()[col_index].write().loan_mut().unwrap();
+        let entities: Vec<Entity> = archetype.entity_iter().collect();
+        let entity_indices = entities
+            .iter()
+            .map(|entity| archetype.entity_index(*entity).unwrap())
+            .collect();
+
+        Some(WriteLockedColumns {
+            column,
+            ticks,
+            entities,
+            entity_indices,
+        })
     }
 
     fn iter_mut<'a, 'b: 'a>(
         lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
     ) -> impl Iterator<Item = Self::Item<'a>> {
-        lock.as_mut().map_or_else(
-            || [].iter_mut(),
-            |(lock, _)| lock.downcast_mut::<T>().unwrap().into_iter(),
-        )
+        if let Some(cols) = lock {
+            itertools::Either::Right(QueryableIterMut {
+                column: &mut cols.column,
+                ticks: &mut cols.ticks,
+                entities: &cols.entities,
+                entity_indices: &cols.entity_indices,
+                last_run,
+                this_run,
+                index: 0,
+                _marker: std::marker::PhantomData,
+            })
+        } else {
+            itertools::Either::Left(std::iter::empty())
+        }
     }
 
     fn get<'a, 'b: 'a>(
         entity: Entity,
         lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
     ) -> Option<Self::Item<'a>> {
-        lock.as_mut().and_then(|(lock, ents)| {
-            ents.iter()
-                .position(|&e| e == entity)
-                .map(move |index| lock.downcast_mut::<T>().unwrap().get_mut(index).unwrap())
-        })
+        // lock.as_mut().and_then(|(lock, ents)| {
+        //     ents.iter()
+        //         .position(|&e| e == entity)
+        //         .map(move |index| lock.downcast_mut::<T>().unwrap().get_mut(index).unwrap())
+        // })
+        if let Some(cols) = lock {
+            cols.entity_indices
+                .iter()
+                .position(|&index| cols.entities[index] == entity)
+                .map(|index| {
+                    let item = cols.column.downcast_mut().unwrap().get_mut(index).unwrap();
+                    let ticks = cols.ticks.get_mut(index).unwrap();
+                    Mut::new(item, last_run, this_run, ticks)
+                })
+        } else {
+            None
+        }
+    }
+}
+
+pub struct QueryableIterMut<'a, T: Component> {
+    column: &'a mut ComponentVec,
+    ticks: &'a mut Vec<ComponentTicks>,
+    entities: &'a [Entity],
+    entity_indices: &'a [usize],
+    last_run: Tick,
+    this_run: Tick,
+    index: usize,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<'a, T: Component> Iterator for QueryableIterMut<'a, T> {
+    type Item = Mut<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.entities.len() {
+            let index = self.entity_indices[self.index];
+            let item = self
+                .column
+                .downcast_mut::<T>()
+                .unwrap()
+                .get_mut(index)
+                .unwrap();
+            let ticks = self.ticks.get_mut(index).unwrap();
+            self.index += 1;
+
+            // SAFETY: Types and lifetimes should be valid
+            let item = unsafe { &mut *(item as *mut T) };
+            let ticks = unsafe { &mut *(ticks as *mut ComponentTicks) };
+
+            Some(Mut::new(item, self.last_run, self.this_run, ticks))
+        } else {
+            None
+        }
     }
 }
 
 impl<'s, T: Component> Queryable for Option<&'s T> {
-    type LockedColumns = ReadLockedColumns;
-    type Item<'a> = Option<&'a T>;
+    type LockedColumns = Option<ReadLockedColumns>;
+    type Item<'a> = Option<Ref<'a, T>>;
 
     fn reads() -> Vec<TypeId> {
         vec![TypeId::of::<T>()]
@@ -172,11 +298,23 @@ impl<'s, T: Component> Queryable for Option<&'s T> {
 
     fn iter_mut<'a, 'b: 'a>(
         lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
     ) -> impl Iterator<Item = Self::Item<'a>> {
         lock.as_ref().map_or_else(
             || itertools::Either::Left(std::iter::repeat_with(|| None)),
-            |(lock, _)| {
-                itertools::Either::Right(lock.downcast_ref::<T>().unwrap().into_iter().map(Some))
+            |cols| {
+                let ReadLockedColumns {
+                    column,
+                    ticks,
+                    entities: _,
+                    entity_indices,
+                } = cols;
+                itertools::Either::Right(entity_indices.iter().map(move |&index| {
+                    let item = column.downcast_ref().unwrap().get(index).unwrap();
+                    let ticks = ticks.get(index).unwrap();
+                    Some(Ref::new(item, last_run, this_run, ticks))
+                }))
             },
         )
     }
@@ -184,22 +322,25 @@ impl<'s, T: Component> Queryable for Option<&'s T> {
     fn get<'a, 'b: 'a>(
         entity: Entity,
         lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
     ) -> Option<Self::Item<'a>> {
-        lock.as_ref().and_then(|(lock, ents)| {
-            ents.iter().position(|&e| e == entity).map(move |index| {
-                lock.downcast_ref::<T>()
-                    .unwrap()
-                    .get(index)
-                    .map(Some)
-                    .unwrap_or(None)
-            })
+        lock.as_mut().and_then(|cols| {
+            cols.entity_indices
+                .iter()
+                .position(|&index| cols.entities[index] == entity)
+                .map(|index| {
+                    let item = cols.column.downcast_ref().unwrap().get(index).unwrap();
+                    let ticks = cols.ticks.get(index).unwrap();
+                    Some(Ref::new(item, last_run, this_run, ticks))
+                })
         })
     }
 }
 
 impl<'s, T: Component> Queryable for Option<&'s mut T> {
-    type LockedColumns = WriteLockedColumns;
-    type Item<'a> = Option<&'a mut T>;
+    type LockedColumns = Option<WriteLockedColumns>;
+    type Item<'a> = Option<Mut<'a, T>>;
 
     fn reads() -> Vec<TypeId> {
         vec![]
@@ -215,11 +356,25 @@ impl<'s, T: Component> Queryable for Option<&'s mut T> {
 
     fn iter_mut<'a, 'b: 'a>(
         lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
     ) -> impl Iterator<Item = Self::Item<'a>> {
         lock.as_mut().map_or_else(
             || itertools::Either::Left(std::iter::repeat_with(|| None)),
-            |(lock, _)| {
-                itertools::Either::Right(lock.downcast_mut::<T>().unwrap().into_iter().map(Some))
+            |cols| {
+                itertools::Either::Right(
+                    QueryableIterMut {
+                        column: &mut cols.column,
+                        ticks: &mut cols.ticks,
+                        entities: &cols.entities,
+                        entity_indices: &cols.entity_indices,
+                        last_run,
+                        this_run,
+                        index: 0,
+                        _marker: std::marker::PhantomData,
+                    }
+                    .map(Some),
+                )
             },
         )
     }
@@ -227,16 +382,21 @@ impl<'s, T: Component> Queryable for Option<&'s mut T> {
     fn get<'a, 'b: 'a>(
         entity: Entity,
         lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
     ) -> Option<Self::Item<'a>> {
-        lock.as_mut().and_then(|(lock, ents)| {
-            ents.iter().position(|&e| e == entity).map(move |index| {
-                lock.downcast_mut::<T>()
-                    .unwrap()
-                    .get_mut(index)
-                    .map(Some)
-                    .unwrap_or(None)
-            })
-        })
+        if let Some(cols) = lock {
+            cols.entity_indices
+                .iter()
+                .position(|&index| cols.entities[index] == entity)
+                .map(|index| {
+                    let item = cols.column.downcast_mut().unwrap().get_mut(index).unwrap();
+                    let ticks = cols.ticks.get_mut(index).unwrap();
+                    Some(Mut::new(item, last_run, this_run, ticks))
+                })
+        } else {
+            None
+        }
     }
 }
 
@@ -259,21 +419,202 @@ impl<T: Component> Queryable for With<T> {
         Some(archetype.entity_iter().collect())
     }
 
+    fn iter_mut<'a, 'b: 'a>(
+        lock: &'b mut Self::LockedColumns,
+        _last_run: Tick,
+        _this_run: Tick,
+    ) -> impl Iterator<Item = Self::Item<'a>> {
+        lock.as_ref().map_or_else(
+            || itertools::Either::Left(std::iter::empty()),
+            |entities| itertools::Either::Right(entities.iter().map(|_| &())),
+        )
+    }
+
     fn get<'a, 'b: 'a>(
         entity: Entity,
         lock: &'b mut Self::LockedColumns,
+        _last_run: Tick,
+        _this_run: Tick,
     ) -> Option<Self::Item<'a>> {
         lock.as_ref()
-            .and_then(|ents| ents.contains(&entity).then_some(&()))
+            .and_then(|entities| entities.iter().find(|&&e| e == entity).map(|_| &()))
+    }
+}
+
+pub struct Without<T: Component>(std::marker::PhantomData<T>);
+
+pub struct Changed<T>(std::marker::PhantomData<T>);
+
+impl<'s, T: Component> Queryable for Changed<&'s T> {
+    type LockedColumns = Option<ReadLockedColumns>;
+    type Item<'a> = Ref<'a, T>;
+
+    fn reads() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
+
+    fn writes() -> Vec<TypeId> {
+        vec![]
+    }
+
+    fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
+        let col_index = archetype.index_of(TypeId::of::<T>())?;
+
+        let column = archetype.columns()[col_index]
+            .write()
+            .loan()
+            .unwrap_or_else(|| panic!("Failed to lock column of type {}", T::type_name()));
+        let ticks = archetype.ticks()[col_index].write().loan().unwrap();
+        let entities: Vec<Entity> = archetype.entity_iter().collect();
+        let entity_indices = entities
+            .iter()
+            .map(|entity| archetype.entity_index(*entity).unwrap())
+            .collect();
+
+        Some(ReadLockedColumns {
+            column,
+            ticks,
+            entities,
+            entity_indices,
+        })
     }
 
     fn iter_mut<'a, 'b: 'a>(
         lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
     ) -> impl Iterator<Item = Self::Item<'a>> {
         lock.as_ref().map_or_else(
-            || itertools::Either::Left([].iter()),
-            |lock| itertools::Either::Right(lock.iter().map(|_| &())),
+            || itertools::Either::Left(std::iter::empty()),
+            |cols| {
+                let ReadLockedColumns {
+                    column,
+                    ticks,
+                    entities: _,
+                    entity_indices,
+                } = cols;
+                itertools::Either::Right(entity_indices.iter().filter_map(move |&index| {
+                    let item = column.downcast_ref().unwrap().get(index).unwrap();
+                    let ticks = ticks.get(index).unwrap();
+                    if ticks.is_changed(last_run, this_run) {
+                        Some(Ref::new(item, last_run, this_run, ticks))
+                    } else {
+                        None
+                    }
+                }))
+            },
         )
+    }
+
+    fn get<'a, 'b: 'a>(
+        entity: Entity,
+        lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
+    ) -> Option<Self::Item<'a>> {
+        lock.as_mut().and_then(|cols| {
+            cols.entity_indices
+                .iter()
+                .position(|&index| cols.entities[index] == entity)
+                .and_then(|index| {
+                    let item = cols.column.downcast_ref().unwrap().get(index).unwrap();
+                    let ticks = cols.ticks.get(index).unwrap();
+                    if ticks.is_changed(last_run, this_run) {
+                        Some(Ref::new(item, last_run, this_run, ticks))
+                    } else {
+                        None
+                    }
+                })
+        })
+    }
+}
+
+impl<'s, T: Component> Queryable for Changed<&'s mut T> {
+    type LockedColumns = Option<WriteLockedColumns>;
+    type Item<'a> = Mut<'a, T>;
+
+    fn reads() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
+
+    fn writes() -> Vec<TypeId> {
+        vec![]
+    }
+
+    fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
+        let col_index = archetype.index_of(TypeId::of::<T>())?;
+
+        let column = archetype.columns()[col_index]
+            .write()
+            .loan_mut()
+            .unwrap_or_else(|| panic!("Failed to lock column of type {}", T::type_name()));
+        let ticks = archetype.ticks()[col_index].write().loan_mut().unwrap();
+        let entities: Vec<Entity> = archetype.entity_iter().collect();
+        let entity_indices = entities
+            .iter()
+            .map(|entity| archetype.entity_index(*entity).unwrap())
+            .collect();
+
+        Some(WriteLockedColumns {
+            column,
+            ticks,
+            entities,
+            entity_indices,
+        })
+    }
+
+    fn iter_mut<'a, 'b: 'a>(
+        lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
+    ) -> impl Iterator<Item = Self::Item<'a>> {
+        if let Some(cols) = lock {
+            itertools::Either::Right(
+                QueryableIterMut {
+                    column: &mut cols.column,
+                    ticks: &mut cols.ticks,
+                    entities: &cols.entities,
+                    entity_indices: &cols.entity_indices,
+                    last_run,
+                    this_run,
+                    index: 0,
+                    _marker: std::marker::PhantomData,
+                }
+                .filter_map(move |item: Mut<'a, T>| {
+                    if item.get_ticks().is_changed(last_run, this_run) {
+                        Some(item)
+                    } else {
+                        None
+                    }
+                }),
+            )
+        } else {
+            itertools::Either::Left(std::iter::empty())
+        }
+    }
+
+    fn get<'a, 'b: 'a>(
+        entity: Entity,
+        lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
+    ) -> Option<Self::Item<'a>> {
+        if let Some(cols) = lock {
+            cols.entity_indices
+                .iter()
+                .position(|&index| cols.entities[index] == entity)
+                .and_then(|index| {
+                    let item = cols.column.downcast_mut().unwrap().get_mut(index).unwrap();
+                    let ticks = cols.ticks.get_mut(index).unwrap();
+                    if ticks.is_changed(last_run, this_run) {
+                        Some(Mut::new(item, last_run, this_run, ticks))
+                    } else {
+                        None
+                    }
+                })
+        } else {
+            None
+        }
     }
 }
 
@@ -299,14 +640,14 @@ macro_rules! impl_queryable_tuple {
                 ($($name::lock_columns(archetype),)*)
             }
 
-            fn iter_mut<'a, 'b: 'a>(lock: &'b mut Self::LockedColumns) -> impl Iterator<Item = Self::Item<'a>> {
+            fn iter_mut<'a, 'b: 'a>(lock: &'b mut Self::LockedColumns, last_run: Tick, this_run: Tick) -> impl Iterator<Item = Self::Item<'a>> {
                 let ($(ref mut $name,)*) = lock;
-                itertools::izip!($( $name::iter_mut($name), )*)
+                itertools::izip!($( $name::iter_mut($name, last_run, this_run), )*)
             }
 
-            fn get<'a, 'b: 'a>(entity: Entity, lock: &'b mut Self::LockedColumns) -> Option<Self::Item<'a>> {
+            fn get<'a, 'b: 'a>(entity: Entity, lock: &'b mut Self::LockedColumns, last_run: Tick, this_run: Tick) -> Option<Self::Item<'a>> {
                 let ($(ref mut $name,)*) = lock;
-                Some(($( $name::get(entity, $name)?, )*))
+                Some(($( $name::get(entity, $name, last_run, this_run)?, )*))
             }
         }
     };
@@ -330,17 +671,21 @@ impl<A: Queryable> Queryable for (A,) {
 
     fn iter_mut<'a, 'b: 'a>(
         lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
     ) -> impl Iterator<Item = Self::Item<'a>> {
         let (ref mut a,) = lock;
-        A::iter_mut(a).map(|a| (a,))
+        A::iter_mut(a, last_run, this_run).map(|a| (a,))
     }
 
     fn get<'a, 'b: 'a>(
         entity: Entity,
         lock: &'b mut Self::LockedColumns,
+        last_run: Tick,
+        this_run: Tick,
     ) -> Option<Self::Item<'a>> {
         let (ref mut a,) = lock;
-        A::get(entity, a).map(|a| (a,))
+        A::get(entity, a, last_run, this_run).map(|a| (a,))
     }
 }
 
@@ -354,6 +699,8 @@ impl_queryable_tuple!(A, B, C, D, E, F, G, H);
 
 pub struct Query<Q: Queryable> {
     locked_columns: Vec<Q::LockedColumns>,
+    last_run: Tick,
+    this_run: Tick,
 }
 
 impl<Q: Queryable> Query<Q> {
@@ -363,17 +710,25 @@ impl<Q: Queryable> Query<Q> {
             .archetype_iter()
             .map(Q::lock_columns)
             .collect();
-        Self { locked_columns }
+        let last_run = world.last_change_tick();
+        let this_run = world.read_change_tick();
+        Self {
+            locked_columns,
+            last_run,
+            this_run,
+        }
     }
 
     pub fn iter(&mut self) -> impl Iterator<Item = Q::Item<'_>> + '_ {
-        self.locked_columns.iter_mut().flat_map(Q::iter_mut)
+        self.locked_columns
+            .iter_mut()
+            .flat_map(|cols| Q::iter_mut(cols, self.last_run, self.this_run))
     }
 
     pub fn get(&mut self, entity: Entity) -> Option<Q::Item<'_>> {
         self.locked_columns
             .iter_mut()
-            .find_map(|lock| Q::get(entity, lock))
+            .find_map(|lock| Q::get(entity, lock, self.last_run, self.this_run))
     }
 }
 

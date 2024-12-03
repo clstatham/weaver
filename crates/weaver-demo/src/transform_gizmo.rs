@@ -119,7 +119,7 @@ pub fn draw_transform_gizmo(
         .focus
         .and_then(|entity| transforms.get(entity))
     {
-        transform_gizmo.draw(&gizmos, focus_transform);
+        transform_gizmo.draw(&gizmos, &focus_transform);
     }
 
     Ok(())

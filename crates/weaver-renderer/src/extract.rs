@@ -101,7 +101,7 @@ pub async fn extract_render_component<T: ExtractComponent>(
     for (entity, item) in query.iter() {
         if let Some(component) = T::extract_render_component(item) {
             {
-                if let Some(render_component) = out_query.get(entity) {
+                if let Some(mut render_component) = out_query.get(entity) {
                     *render_component = component;
                     log::trace!("Updated render component: {:?}", T::type_name());
                     continue;
