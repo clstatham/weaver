@@ -1,3 +1,4 @@
+use encase::ShaderType;
 use glam::*;
 
 use crate::{mesh::Mesh, prelude::Transform};
@@ -16,7 +17,7 @@ pub enum Intersection {
 }
 
 /// 3D plane with infinite extent
-#[derive(Default, Clone, Copy, Debug, PartialEq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, ShaderType)]
 #[repr(C)]
 pub struct Plane {
     /// Normal vector of the plane
@@ -97,7 +98,7 @@ pub enum HalfSpace {
     On,
 }
 
-#[derive(Default, Clone, Copy, Debug, PartialEq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, ShaderType)]
 pub struct Sphere {
     pub center: Vec3,
     pub radius: f32,
@@ -139,7 +140,7 @@ impl Intersect<Sphere> for Sphere {
 }
 
 /// 3D ray with origin and direction, and infinite extent
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, ShaderType)]
 #[repr(C)]
 pub struct Ray {
     pub origin: Vec3,
@@ -164,7 +165,7 @@ impl Ray {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, ShaderType)]
 #[repr(C)]
 pub struct Triangle {
     pub a: Vec3,
@@ -244,7 +245,7 @@ impl Intersect<Triangle> for Ray {
     }
 }
 
-#[derive(Default, Clone, Copy, Debug, PartialEq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, ShaderType)]
 #[repr(C)]
 pub struct Frustum {
     pub left: Plane,
@@ -305,7 +306,7 @@ impl Frustum {
 }
 
 /// Axis-aligned bounding box
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default, ShaderType)]
 #[repr(C)]
 pub struct Aabb {
     pub min: Vec3,

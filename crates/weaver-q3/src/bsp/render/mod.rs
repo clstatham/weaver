@@ -1,7 +1,7 @@
 use extract::{extract_bsps, ExtractedBsp};
 use weaver_app::{plugin::Plugin, App};
-use weaver_ecs::{component::Res, prelude::ResMut, query::Query};
-use weaver_pbr::render::PbrLightingInformation;
+use weaver_ecs::{component::Res, prelude::ResMut, query::Query, system::IntoSystemConfig};
+use weaver_pbr::{render::PbrLightingInformation, skybox::render_skybox};
 use weaver_renderer::{
     bind_group::BindGroup,
     camera::{CameraBindGroup, ViewTarget},
@@ -17,14 +17,11 @@ use crate::shader::render::ShaderPipelineCache;
 
 pub mod extract;
 
-#[derive(Default)]
-pub struct BspRenderable;
-
 pub async fn render_bsps(
     bsp: Res<ExtractedBsp>,
     lighting_bind_group: Res<BindGroup<PbrLightingInformation>>,
     shader_pipeline_cache: Res<ShaderPipelineCache>,
-    mut view_target: Query<(&'static ViewTarget, &'static BindGroup<CameraBindGroup>)>,
+    mut view_target: Query<(&ViewTarget, &BindGroup<CameraBindGroup>)>,
     mut encoder: ResMut<ActiveCommandEncoder>,
 ) {
     for (view_target, camera_bind_group) in view_target.iter() {
@@ -76,17 +73,11 @@ impl Plugin for BspRenderPlugin {
     fn build(&self, render_app: &mut App) -> Result<()> {
         render_app.add_system(extract_bsps, RenderStage::Extract);
 
-        render_app.add_system(render_bsps, RenderStage::Render);
-
-        render_app.main_app_mut().world_mut().order_systems(
-            render_clear_color,
-            render_bsps,
-            RenderStage::Render,
-        );
-
-        render_app.main_app_mut().world_mut().order_systems(
-            render_bsps,
-            render_hdr,
+        render_app.add_system(
+            render_bsps
+                .before(render_hdr)
+                .after(render_clear_color)
+                .after(render_skybox),
             RenderStage::Render,
         );
 

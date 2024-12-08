@@ -7,6 +7,7 @@ use crate::{
 };
 use futures::{future::BoxFuture, FutureExt};
 use petgraph::prelude::*;
+use tracing::Instrument;
 use weaver_util::{prelude::*, span};
 
 /// A system access descriptor, indicating what resources and components a system reads and writes. This is used to validate system access at runtime.
@@ -448,11 +449,10 @@ where
         F::update_state(state, world);
         let fetch = F::Param::fetch(world, state);
         let func = self.func.clone();
-        let span = span!(DEBUG, "FunctionSystem", name = self.name());
         async move {
-            let _span = span.enter();
-            func.run(fetch).await
+            func.run(fetch).await;
         }
+        .instrument(span!(DEBUG, "FunctionSystem", name = self.name()))
         .boxed()
     }
 
@@ -471,12 +471,7 @@ where
     type System = FunctionSystem<M, F>;
 
     fn into_system(self) -> Box<Self::System> {
-        Box::new(FunctionSystem {
-            func: Arc::new(self),
-            state: None,
-            access: F::Param::access(),
-            _marker: std::marker::PhantomData,
-        })
+        Box::new(FunctionSystem::new(self))
     }
 }
 
@@ -794,14 +789,6 @@ impl SystemGraph {
     pub async fn run(&mut self, world: &mut World) -> Result<()> {
         let schedule = self.get_batches();
         for layer in schedule {
-            let mut names = Vec::new();
-            for node in &layer {
-                let system = &self.systems[*node];
-                names.push(system.read().name().to_string());
-            }
-            let span = span!(TRACE, "System Batch", names = format!("{:?}", names));
-            let _span = span.enter();
-            // log::debug!("Running systems: {:?}", names);
             let mut handles = Vec::new();
             let mut skipped = Vec::new();
             for node in layer {

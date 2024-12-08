@@ -6,6 +6,7 @@ use weaver_ecs::{
     component::Res,
     prelude::ResMut,
     query::Query,
+    system::IntoSystemConfig,
     world::{ConstructFromWorld, World},
 };
 // use weaver_pbr::render::PbrRenderable;
@@ -577,25 +578,9 @@ impl Plugin for GizmoRenderAppPlugin {
     fn build(&self, render_app: &mut App) -> Result<()> {
         render_app.insert_resource(self.gizmos.clone());
 
-        // render_app.add_render_main_graph_node::<ViewNodeRunner<GizmoRenderable>>(GizmoNodeLabel);
-        // render_app.add_render_main_graph_edge(PbrNodeLabel, GizmoNodeLabel);
-        // render_app.add_render_main_graph_edge(GizmoNodeLabel, HdrNodeLabel);
+        render_app.add_system(prepare_gizmos, RenderStage::PreRender);
 
-        render_app
-            .main_app_mut()
-            .world_mut()
-            .add_system(prepare_gizmos, RenderStage::PreRender);
-
-        render_app
-            .main_app_mut()
-            .world_mut()
-            .add_system(render_gizmos, RenderStage::Render);
-
-        render_app.main_app_mut().world_mut().order_systems(
-            render_gizmos,
-            render_hdr,
-            RenderStage::Render,
-        );
+        render_app.add_system(render_gizmos.before(render_hdr), RenderStage::Render);
         Ok(())
     }
 

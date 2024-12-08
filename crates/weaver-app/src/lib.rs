@@ -6,7 +6,7 @@ use weaver_ecs::{
     change_detection::WorldTicks,
     component::Res,
     prelude::Component,
-    system::IntoSystemConfig,
+    system::{IntoSystem, IntoSystemConfig},
     system_schedule::SystemStage,
     world::{ConstructFromWorld, World},
     SystemStage,
@@ -365,6 +365,24 @@ impl App {
         self
     }
 
+    pub fn order_systems<M1, M2, S1, S2>(
+        &mut self,
+        run_first: S1,
+        run_second: S2,
+        stage: impl SystemStage,
+    ) -> &mut Self
+    where
+        M1: 'static,
+        M2: 'static,
+        S1: IntoSystem<M1>,
+        S2: IntoSystem<M2>,
+    {
+        self.main_app_mut()
+            .world_mut()
+            .order_systems(run_first, run_second, stage);
+        self
+    }
+
     pub async fn init(&mut self) {
         self.finish_plugins();
         self.sub_apps.init().await;
@@ -392,9 +410,13 @@ impl App {
                 log::debug!("Finishing plugin: {:?}", plugin.type_name());
                 plugin.finish(self).unwrap();
                 self.unready_plugins.remove(type_id);
+            } else {
+                log::debug!("Plugin is not ready: {:?}", plugin.type_name());
             }
         }
         self.plugins = plugins;
+
+        self.sub_apps.finish_plugins();
     }
 
     pub fn run(&mut self) -> Result<()> {

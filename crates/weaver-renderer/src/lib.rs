@@ -52,13 +52,15 @@ pub mod transform;
 
 pub mod prelude {
     pub use super::{
+        bind_group::*,
+        buffer::{GpuBuffer, GpuBufferVec},
         camera::{Camera, CameraPlugin},
         extract::ExtractComponent,
         pipeline::{
             ComputePipeline, ComputePipelineLayout, ComputePipelinePlugin, CreateComputePipeline,
             CreateRenderPipeline, RenderPipeline, RenderPipelineLayout, RenderPipelinePlugin,
         },
-        Renderer, RendererPlugin,
+        Renderer, RendererPlugin, WgpuDevice, WgpuQueue,
     };
     pub use encase;
     pub use wgpu;

@@ -4047,7 +4047,7 @@ dependencies = [
  "weaver",
  "weaver-diagnostics",
  "weaver-egui",
- "weaver-q3",
+ "weaver-raytracing",
 ]
 
 [[package]]
@@ -4108,6 +4108,7 @@ dependencies = [
 name = "weaver-event"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "weaver-ecs",
  "weaver-util",
 ]
@@ -4161,6 +4162,21 @@ dependencies = [
  "weaver-core",
  "weaver-ecs",
  "weaver-pbr",
+ "weaver-renderer",
+ "weaver-util",
+]
+
+[[package]]
+name = "weaver-raytracing"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "encase",
+ "rand",
+ "weaver-app",
+ "weaver-asset",
+ "weaver-core",
+ "weaver-ecs",
  "weaver-renderer",
  "weaver-util",
 ]

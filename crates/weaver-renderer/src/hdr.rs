@@ -21,6 +21,7 @@ use crate::{
     CurrentFrame, RenderStage, WgpuDevice,
 };
 
+#[derive(Clone)]
 pub struct HdrRenderTarget {
     pub texture: GpuTexture,
     pub sampler: Arc<wgpu::Sampler>,
@@ -38,7 +39,9 @@ impl HdrRenderTarget {
             width,
             height,
             texture_format::HDR_FORMAT,
-            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST,
         );
     }
 }
@@ -53,7 +56,9 @@ impl ConstructFromWorld for HdrRenderTarget {
             window_size.width,
             window_size.height,
             texture_format::HDR_FORMAT,
-            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST,
         );
 
         let sampler = Arc::new(device.create_sampler(&wgpu::SamplerDescriptor {
@@ -224,8 +229,6 @@ impl Plugin for HdrPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_plugin(RenderPipelinePlugin::<HdrRenderable>::default())?;
         app.add_plugin(ResourceBindGroupPlugin::<HdrRenderTarget>::default())?;
-
-        // app.main_app_mut().add_renderable::<HdrRenderable>();
 
         app.main_app_mut()
             .world_mut()

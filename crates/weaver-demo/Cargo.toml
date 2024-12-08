@@ -11,4 +11,4 @@ egui_plot = "0.29"
 weaver = { path = "../../" }
 weaver-diagnostics = { path = "../weaver-diagnostics" }
 weaver-egui = { path = "../weaver-egui" }
-weaver-q3 = { path = "../weaver-q3" }
+weaver-raytracing = { path = "../weaver-raytracing" }

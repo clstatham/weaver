@@ -28,5 +28,22 @@ pub mod prelude {
     pub use crate::system_schedule::*;
     pub use crate::world::*;
     pub use crate::SystemStage;
+    pub use futures::{self, StreamExt};
     pub use tokio;
+}
+
+pub fn spin_on<F, R>(f: F) -> R
+where
+    F: std::future::Future<Output = R>,
+{
+    use futures::future::FutureExt;
+    tokio::pin!(f);
+    let mut cx = futures::task::Context::from_waker(futures::task::noop_waker_ref());
+    loop {
+        if let futures::task::Poll::Ready(result) = f.poll_unpin(&mut cx) {
+            return result;
+        }
+
+        std::thread::yield_now();
+    }
 }
