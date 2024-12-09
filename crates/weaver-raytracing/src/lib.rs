@@ -1,17 +1,15 @@
-use render::RaytracingOutput;
 use weaver_app::{plugin::Plugin, App};
 use weaver_asset::AssetApp;
 use weaver_ecs::system::IntoSystemConfig;
 use weaver_renderer::{
     clear_color::render_clear_color,
-    hdr::render_hdr,
+    hdr::{render_hdr, HdrRenderTarget},
     prelude::{RenderPipelinePlugin, ResourceBindGroupPlugin},
-    RenderApp, RenderStage,
+    RenderApp, RenderStage, WgpuDevice,
 };
 use weaver_util::prelude::Result;
 
 pub mod geometry;
-pub mod light;
 pub mod material;
 pub mod render;
 
@@ -31,14 +29,11 @@ pub struct RaytracingRenderPlugin;
 
 impl Plugin for RaytracingRenderPlugin {
     fn build(&self, render_app: &mut App) -> Result<()> {
-        render_app.add_plugin(light::PointLightPlugin)?;
-
-        render_app.add_plugin(ResourceBindGroupPlugin::<
-            light::RaytracingLightingInformation,
-        >::default())?;
-
         render_app
             .add_plugin(ResourceBindGroupPlugin::<render::GpuObjectRaytracingBuffer>::default())?;
+
+        render_app
+            .add_plugin(ResourceBindGroupPlugin::<render::RaytracingRandomSeed>::default())?;
 
         render_app
             .add_plugin(RenderPipelinePlugin::<render::RaytracingRenderPipeline>::default())?;
@@ -47,22 +42,6 @@ impl Plugin for RaytracingRenderPlugin {
             render::extract_gpu_object_raytracing_buffer,
             RenderStage::Extract,
         );
-
-        render_app.add_system(
-            render::init_raytracing_output,
-            RenderStage::ExtractBindGroup,
-        );
-
-        render_app.add_system(
-            light::init_raytracing_lighting_information,
-            RenderStage::InitRenderResources,
-        );
-        render_app.add_system(
-            light::update_raytracing_lighting_information,
-            RenderStage::Extract,
-        );
-
-        render_app.add_plugin(ResourceBindGroupPlugin::<RaytracingOutput>::default())?;
 
         render_app.add_system(
             render::init_gpu_object_raytracing_buffer,
@@ -76,6 +55,15 @@ impl Plugin for RaytracingRenderPlugin {
             RenderStage::Render,
         );
 
+        Ok(())
+    }
+
+    fn ready(&self, render_app: &App) -> bool {
+        render_app.has_resource::<WgpuDevice>() && render_app.has_resource::<HdrRenderTarget>()
+    }
+
+    fn finish(&self, render_app: &mut App) -> Result<()> {
+        render_app.init_resource::<render::RaytracingRandomSeed>();
         Ok(())
     }
 }

@@ -50,36 +50,32 @@ async fn setup(commands: Commands) {
         ))
         .await;
 
+    let light_handle = commands
+        .load_asset_direct(weaver_raytracing::material::Material {
+            albedo: Color::WHITE,
+            emission: Color::WHITE * 10.0,
+        })
+        .await;
+
     commands
         .spawn((
             Transform::from_translation(Vec3::new(0.0, 100.0, 0.0)),
-            weaver_raytracing::light::PointLight {
-                color: Color::WHITE,
-                intensity: 100000.0,
-            },
-        ))
-        .await;
-
-    let handle = commands
-        .load_asset_direct(weaver_raytracing::material::Material::from(Color::RED))
-        .await;
-
-    commands
-        .spawn((
-            Transform::from_translation(Vec3::new(0.0, 20.0, 0.0)),
-            handle,
+            light_handle,
             weaver_raytracing::geometry::Sphere { radius: 20.0 },
         ))
         .await;
 
-    let handle = commands
-        .load_asset_direct(weaver_raytracing::material::Material::from(Color::GREEN))
+    let ground_handle = commands
+        .load_asset_direct(weaver_raytracing::material::Material {
+            albedo: Color::GREEN,
+            emission: Color::BLACK,
+        })
         .await;
 
     commands
         .spawn((
             Transform::from_translation(Vec3::new(0.0, -1000.0, 0.0)),
-            handle,
+            ground_handle,
             weaver_raytracing::geometry::Sphere { radius: 1000.0 },
         ))
         .await;

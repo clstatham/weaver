@@ -457,6 +457,8 @@ impl Plugin for RendererPlugin {
                 };
                 log::trace!("Received render app on render task");
 
+                render_app.finish_plugins();
+
                 log::trace!("Running render app stage: InitRenderResources");
                 render_app
                     .world_mut()

@@ -14,90 +14,17 @@ use weaver_renderer::{
         RenderPipelineLayout,
     },
     resources::ActiveCommandEncoder,
-    texture::{texture_format, GpuTexture},
+    texture::texture_format,
     WgpuDevice, WgpuQueue,
 };
 
 use crate::{
     geometry::Sphere,
-    light::RaytracingLightingInformation,
     material::{Material, MaterialUniform},
 };
 
-pub struct RaytracingOutput {
-    pub hdr_texture: GpuTexture,
-}
-
-impl CreateBindGroup for RaytracingOutput {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
-    where
-        Self: Sized,
-    {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::StorageTexture {
-                    access: wgpu::StorageTextureAccess::WriteOnly,
-                    format: texture_format::HDR_FORMAT,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                },
-                count: None,
-            }],
-            label: Some("Raytracing Output Bind Group Layout"),
-        })
-    }
-
-    fn create_bind_group(
-        &self,
-        device: &wgpu::Device,
-        cached_layout: &weaver_renderer::prelude::BindGroupLayout,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: cached_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&self.hdr_texture.view),
-            }],
-            label: Some("Raytracing Output Bind Group"),
-        })
-    }
-}
-
-pub async fn init_raytracing_output(
-    commands: Commands,
-    device: Res<WgpuDevice>,
-    hdr_target: Res<HdrRenderTarget>,
-    output: Option<ResMut<RaytracingOutput>>,
-    mut cache: ResMut<BindGroupLayoutCache>,
-) {
-    if output.is_none() {
-        drop(output);
-
-        let width = hdr_target.texture.texture.width();
-        let height = hdr_target.texture.texture.height();
-
-        let hdr_texture = GpuTexture::new(
-            &device,
-            Some("Raytracing Output Texture"),
-            width,
-            height,
-            texture_format::HDR_FORMAT,
-            wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
-        );
-
-        let output = RaytracingOutput { hdr_texture };
-
-        if !commands.has_resource::<BindGroup<RaytracingOutput>>().await {
-            let bind_group = BindGroup::new(&device, &output, &mut cache);
-            commands.insert_resource(bind_group).await;
-        }
-
-        commands.insert_resource(output).await;
-    }
-}
-
 #[derive(Debug, Clone, Copy, ShaderType)]
+#[repr(C)]
 pub struct GpuObjectRaytracingUniform {
     pub model_transform: Mat4,
     pub material: MaterialUniform,
@@ -175,9 +102,7 @@ pub async fn extract_gpu_object_raytracing_buffer(
         let material = material_assets.get(*mat_handle).unwrap();
         let uniform = GpuObjectRaytracingUniform {
             model_transform: transform.matrix(),
-            material: MaterialUniform {
-                diffuse: material.diffuse,
-            },
+            material: (*material).into(),
             radius: sphere.radius,
         };
 
@@ -187,6 +112,66 @@ pub async fn extract_gpu_object_raytracing_buffer(
     buffer.buffer.enqueue_update(&device, &queue);
     queue.submit(None);
     device.poll(wgpu::Maintain::Wait);
+}
+
+pub struct RaytracingRandomSeed {
+    pub buffer: GpuBufferVec<f32>,
+}
+
+impl CreateBindGroup for RaytracingRandomSeed {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
+    where
+        Self: Sized,
+    {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    min_binding_size: None,
+                    has_dynamic_offset: false,
+                },
+                count: None,
+            }],
+            label: Some("Raytracing Random Seed Bind Group Layout"),
+        })
+    }
+
+    fn create_bind_group(
+        &self,
+        device: &wgpu::Device,
+        cached_layout: &weaver_renderer::prelude::BindGroupLayout,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: cached_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buffer.binding().unwrap(),
+            }],
+            label: Some("Raytracing Random Seed Bind Group"),
+        })
+    }
+}
+
+impl ConstructFromWorld for RaytracingRandomSeed {
+    fn from_world(world: &World) -> Self {
+        let device = world.get_resource::<WgpuDevice>().unwrap();
+        let queue = world.get_resource::<WgpuQueue>().unwrap();
+        let hdr_target = world.get_resource::<HdrRenderTarget>().unwrap();
+        let width = hdr_target.texture.texture.width();
+        let height = hdr_target.texture.texture.height();
+        let mut buffer =
+            GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
+        buffer.reserve((width * height) as usize, &device);
+
+        for i in 0..(width * height) {
+            buffer.push(i as f32);
+        }
+
+        buffer.enqueue_update(&device, &queue);
+        Self { buffer }
+    }
 }
 
 pub struct RaytracingRenderPipeline;
@@ -203,12 +188,12 @@ impl CreateRenderPipeline for RaytracingRenderPipeline {
             label: Some("Raytracing Fragment Pipeline Layout"),
             bind_group_layouts: &[
                 &bind_group_layout_cache.get_or_create::<CameraBindGroup>(device),
-                &bind_group_layout_cache.get_or_create::<RaytracingLightingInformation>(device),
                 &bind_group_layout_cache.get_or_create::<GpuObjectRaytracingBuffer>(device),
+                &bind_group_layout_cache.get_or_create::<RaytracingRandomSeed>(device),
             ],
             push_constant_ranges: &[wgpu::PushConstantRange {
-                stages: wgpu::ShaderStages::FRAGMENT,
-                range: 0..(std::mem::size_of::<[f32; 3]>() as u32),
+                stages: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX,
+                range: 0..(std::mem::size_of::<f32>() as u32 * 2),
             }],
         });
 
@@ -265,8 +250,8 @@ impl CreateRenderPipeline for RaytracingRenderPipeline {
 pub async fn render_raytracing(
     pipeline_cache: Res<RenderPipelineCache>,
     object_bind_group: Res<BindGroup<GpuObjectRaytracingBuffer>>,
-    lighting_bind_group: Res<BindGroup<RaytracingLightingInformation>>,
     mut camera_bind_group: Query<&BindGroup<CameraBindGroup>>,
+    seed_bind_group: Res<BindGroup<RaytracingRandomSeed>>,
     hdr_target: Res<HdrRenderTarget>,
     mut encoder: ResMut<ActiveCommandEncoder>,
 ) {
@@ -275,6 +260,9 @@ pub async fn render_raytracing(
         .unwrap();
 
     let camera_bind_group = camera_bind_group.iter().next().unwrap();
+
+    let width = hdr_target.texture.texture.width();
+    let height = hdr_target.texture.texture.height();
 
     let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Raytracing Render Pass"),
@@ -293,18 +281,14 @@ pub async fn render_raytracing(
 
     rpass.set_pipeline(pipeline);
     rpass.set_bind_group(0, &camera_bind_group, &[]);
-    rpass.set_bind_group(1, &lighting_bind_group, &[]);
-    rpass.set_bind_group(2, &object_bind_group, &[]);
+    rpass.set_bind_group(1, &object_bind_group, &[]);
+    rpass.set_bind_group(2, &seed_bind_group, &[]);
 
     rpass.set_push_constants(
-        ShaderStages::FRAGMENT,
+        ShaderStages::VERTEX | ShaderStages::FRAGMENT,
         0,
-        bytemuck::cast_slice(&[
-            rand::random::<f32>(),
-            rand::random::<f32>(),
-            rand::random::<f32>(),
-        ]),
+        bytemuck::cast_slice(&[width, height]),
     );
 
-    rpass.draw(0..3, 0..1);
+    rpass.draw(0..6, 0..1);
 }

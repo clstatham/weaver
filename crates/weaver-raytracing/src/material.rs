@@ -8,19 +8,15 @@ pub const ERROR_TEXTURE: Handle<Texture> = Handle::from_u128(0x0c813992128b48c6b
 
 #[derive(Debug, Clone, Copy, PartialEq, Asset)]
 pub struct Material {
-    pub diffuse: Color,
-}
-
-impl From<Color> for Material {
-    fn from(diffuse: Color) -> Self {
-        Self { diffuse }
-    }
+    pub albedo: Color,
+    pub emission: Color,
 }
 
 impl Default for Material {
     fn default() -> Self {
         Self {
-            diffuse: Color::WHITE,
+            albedo: Color::WHITE,
+            emission: Color::BLACK,
         }
     }
 }
@@ -28,5 +24,15 @@ impl Default for Material {
 #[derive(Debug, Clone, Copy, PartialEq, ShaderType)]
 #[repr(C)]
 pub struct MaterialUniform {
-    pub diffuse: Color,
+    pub albedo: Color,
+    pub emission: Color,
+}
+
+impl From<Material> for MaterialUniform {
+    fn from(material: Material) -> Self {
+        Self {
+            albedo: material.albedo,
+            emission: material.emission,
+        }
+    }
 }
