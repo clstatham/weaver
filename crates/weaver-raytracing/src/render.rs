@@ -166,12 +166,25 @@ impl ConstructFromWorld for RaytracingRandomSeed {
         buffer.reserve((width * height) as usize, &device);
 
         for i in 0..(width * height) {
-            buffer.push(i as f32);
+            buffer.push(rand::random::<f32>());
         }
 
         buffer.enqueue_update(&device, &queue);
         Self { buffer }
     }
+}
+
+pub async fn update_raytracing_random_seed(
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
+    mut seed: ResMut<RaytracingRandomSeed>,
+) {
+    for i in 0..seed.buffer.len() {
+        seed.buffer.replace(i, rand::random::<f32>());
+    }
+
+    seed.buffer.enqueue_update(&device, &queue);
+    // device.poll(wgpu::Maintain::Wait);
 }
 
 pub struct RaytracingRenderPipeline;

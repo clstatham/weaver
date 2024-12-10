@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
         })
         .add_plugin(RaytracingPlugin)?
         .add_plugin(LogFrameTimePlugin {
-            log_interval: std::time::Duration::from_secs(5),
+            log_interval: std::time::Duration::from_secs(1),
         })?
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)
@@ -59,13 +59,13 @@ async fn setup(commands: Commands) {
 
     commands
         .spawn((
-            Transform::from_translation(Vec3::new(0.0, 100.0, 0.0)),
+            Transform::from_translation(Vec3::new(0.0, 200.0, 0.0)),
             light_handle,
             weaver_raytracing::geometry::Sphere { radius: 20.0 },
         ))
         .await;
 
-    let ground_handle = commands
+    let green_handle = commands
         .load_asset_direct(weaver_raytracing::material::Material {
             albedo: Color::GREEN,
             emission: Color::BLACK,
@@ -75,8 +75,23 @@ async fn setup(commands: Commands) {
     commands
         .spawn((
             Transform::from_translation(Vec3::new(0.0, -1000.0, 0.0)),
-            ground_handle,
+            green_handle,
             weaver_raytracing::geometry::Sphere { radius: 1000.0 },
+        ))
+        .await;
+
+    let red_handle = commands
+        .load_asset_direct(weaver_raytracing::material::Material {
+            albedo: Color::RED,
+            emission: Color::BLACK,
+        })
+        .await;
+
+    commands
+        .spawn((
+            Transform::from_translation(Vec3::new(50.0, 20.0, 0.0)),
+            red_handle,
+            weaver_raytracing::geometry::Sphere { radius: 20.0 },
         ))
         .await;
 }

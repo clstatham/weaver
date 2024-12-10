@@ -1,7 +1,7 @@
 const PI: f32 = 3.14159265359;
 const BIAS: f32 = 0.0001;
-const RAYS_PER_PIXEL: u32 = 500;
-const BOUNCES: u32 = 100;
+const RAYS_PER_PIXEL: u32 = 10000;
+const BOUNCES: u32 = 10;
 
 struct Camera {
     view: mat4x4<f32>,
@@ -39,15 +39,6 @@ fn pcg(n: u32) -> u32 {
     var h = n * 747796405u + 2891336453u;
     h = ((h >> ((h >> 28u) + 4u)) ^ h) * 277803737u;
     return (h >> 22u) ^ h;
-}
-
-// http://www.jcgt.org/published/0009/03/02/
-fn pcg3d(p: vec3<u32>) -> vec3<u32> {
-    var v = p * 1664525u + 1013904223u;
-    v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
-    v ^= v >> vec3<u32>(16u);
-    v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
-    return v;
 }
 
 fn rand(f: ptr<function, f32>) -> f32 {
@@ -139,15 +130,12 @@ fn random_direction(seed: ptr<function, f32>) -> vec3<f32> {
 }
 
 fn sample_hemisphere(normal: vec3<f32>, seed: ptr<function, f32>) -> vec3<f32> {
-    let u = rand(seed);
-    let v = rand(seed);
-    let theta = 2.0 * PI * u;
-    let phi = acos(2.0 * v - 1.0);
-    let x = sin(phi) * cos(theta);
-    let y = sin(phi) * sin(theta);
-    let z = cos(phi);
-    let sample = vec3(x, y, z);
-    return normalize(sample);
+    let dir = random_direction(seed);
+    if (dot(dir, normal) < 0.0) {
+        return -dir;
+    } else {
+        return dir;
+    }
 }
 
 fn integrate(ray: Ray, seed: ptr<function, f32>) -> vec3<f32> {
@@ -156,7 +144,7 @@ fn integrate(ray: Ray, seed: ptr<function, f32>) -> vec3<f32> {
 
     let intersection = intersect_scene(ray);
     if !intersection.hit {
-        return vec3<f32>(0.0, 0.0, 0.0);
+        return incoming_light;
     }
 
     var hit_position = intersection.position;
@@ -164,10 +152,10 @@ fn integrate(ray: Ray, seed: ptr<function, f32>) -> vec3<f32> {
     var material = intersection.material;
 
     for (var i = 0u; i < BOUNCES; i = i + 1u) {
-        let new_ray = Ray(hit_position + normal * BIAS, sample_hemisphere(normal, seed));
+        let new_direction = normalize(normal + random_direction(seed));
+        let new_ray = Ray(hit_position + new_direction * BIAS, new_direction);
         let new_intersection = intersect_scene(new_ray);
-        if (!new_intersection.hit) {
-            incoming_light += material.emission.xyz;
+        if !new_intersection.hit {
             break;
         }
 
@@ -175,19 +163,18 @@ fn integrate(ray: Ray, seed: ptr<function, f32>) -> vec3<f32> {
         let new_normal = new_intersection.normal;
         let new_material = new_intersection.material;
 
-        let cos_theta = dot(normal, new_ray.direction);
-        let brdf = material.albedo.xyz / PI;
+        let attenuation = material.albedo.xyz;
+        let emission = material.emission.xyz;
 
-        incoming_light += ray_color * material.emission.xyz;
-        incoming_light += ray_color * brdf * max(0.0, cos_theta);
+        incoming_light += ray_color * emission;
+        ray_color *= attenuation;
 
-        ray_color *= new_material.albedo.xyz;
         hit_position = new_hit_position;
         normal = new_normal;
         material = new_material;
     }
 
-    return incoming_light * ray_color;
+    return incoming_light;
 }
 
 struct VertexOutput {
@@ -231,9 +218,11 @@ fn raytracing_fs_main(
     for (var i = 0u; i < RAYS_PER_PIXEL; i = i + 1u) {
         var ray = ray(vertex_output.uv, &seed);
         ray.direction = normalize(ray.direction + random_direction(&seed) * 0.001);
-        out_color += integrate(ray, &seed);
+        let color = integrate(ray, &seed);
+        out_color += color;
     }
     out_color /= f32(RAYS_PER_PIXEL);
+    out_color = min(out_color, vec3<f32>(1.0, 1.0, 1.0));
 
     return vec4<f32>(out_color, 1.0);
 }

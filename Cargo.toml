@@ -21,8 +21,9 @@ members = [
     "crates/weaver-ecs-macros",
     "crates/weaver-event",
     "crates/weaver-gizmos",
-    "crates/weaver-q3", 
-    "crates/weaver-egui", "crates/weaver-raytracing",
+    "crates/weaver-q3",
+    "crates/weaver-egui",
+    "crates/weaver-raytracing",
 ]
 
 [features]
@@ -46,7 +47,12 @@ weaver-event = { path = "crates/weaver-event" }
 weaver-gizmos = { path = "crates/weaver-gizmos" }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = { version = "0.5", features = ["async_tokio"] }
+pollster = "0.4"
+
+# [[bench]]
+# name = "weaver"
+# harness = false
 
 [profile.release]
 debug = true

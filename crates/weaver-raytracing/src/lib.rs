@@ -43,6 +43,8 @@ impl Plugin for RaytracingRenderPlugin {
             RenderStage::Extract,
         );
 
+        render_app.add_system(render::update_raytracing_random_seed, RenderStage::Extract);
+
         render_app.add_system(
             render::init_gpu_object_raytracing_buffer,
             RenderStage::InitRenderResources,
