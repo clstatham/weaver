@@ -1068,17 +1068,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "egui_plot"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8dca4871c15d51aadb79534dcf51a8189e5de3426ee7b465eb7db9a0a81ea67"
-dependencies = [
- "ahash",
- "egui",
- "emath",
-]
-
-[[package]]
 name = "either"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3978,7 +3967,9 @@ dependencies = [
  "weaver-app",
  "weaver-asset",
  "weaver-core",
+ "weaver-diagnostics",
  "weaver-ecs",
+ "weaver-egui",
  "weaver-event",
  "weaver-gizmos",
  "weaver-pbr",
@@ -4040,17 +4031,6 @@ dependencies = [
  "weaver-ecs",
  "weaver-util",
  "winit 0.30.5",
-]
-
-[[package]]
-name = "weaver-demo"
-version = "0.1.0"
-dependencies = [
- "egui_plot",
- "weaver",
- "weaver-diagnostics",
- "weaver-egui",
- "weaver-raytracing",
 ]
 
 [[package]]
@@ -4165,21 +4145,6 @@ dependencies = [
  "weaver-core",
  "weaver-ecs",
  "weaver-pbr",
- "weaver-renderer",
- "weaver-util",
-]
-
-[[package]]
-name = "weaver-raytracing"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "encase",
- "rand",
- "weaver-app",
- "weaver-asset",
- "weaver-core",
- "weaver-ecs",
  "weaver-renderer",
  "weaver-util",
 ]

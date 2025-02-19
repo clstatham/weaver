@@ -22,6 +22,7 @@ pub mod prelude {
     pub use crate::texture::*;
     pub use crate::time::*;
     pub use crate::transform::*;
+    pub use crate::CoreTypesPlugin;
 
     pub use glam::*;
 }

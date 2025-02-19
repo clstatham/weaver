@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 egui_plot = "0.29"
 
-weaver = { path = "../../" }
-weaver-diagnostics = { path = "../weaver-diagnostics" }
-weaver-egui = { path = "../weaver-egui" }
-weaver-raytracing = { path = "../weaver-raytracing" }
+[profile.release]
+debug = true
+opt-level = 3

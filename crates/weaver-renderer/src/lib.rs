@@ -54,7 +54,8 @@ pub mod prelude {
     pub use super::{
         bind_group::*,
         buffer::{GpuBuffer, GpuBufferVec},
-        camera::{Camera, CameraPlugin},
+        camera::{Camera, CameraPlugin, PrimaryCamera},
+        clear_color::ClearColorPlugin,
         extract::ExtractComponent,
         pipeline::{
             ComputePipeline, ComputePipelineLayout, ComputePipelinePlugin, CreateComputePipeline,
