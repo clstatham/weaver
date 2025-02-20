@@ -21,6 +21,7 @@ async fn main() -> Result<()> {
         .add_plugin(LogFrameTimePlugin {
             log_interval: std::time::Duration::from_secs(1),
         })?
+        .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)
         .add_system(camera::update_aspect_ratio, Update)
