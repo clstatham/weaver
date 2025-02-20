@@ -538,7 +538,6 @@ impl AssetCommands for Commands {
                 .map(|load_queue| load_queue.enqueue(source.into()))
                 .unwrap()
         })
-        .await
     }
 
     async fn load_asset_direct<T: Asset>(&self, asset: T) -> Handle<T> {

@@ -526,7 +526,7 @@ pub async fn begin_render(
         .map(|(entity, _)| entity)
         .collect::<Vec<_>>();
     for entity in view_targets {
-        commands.remove_component::<ViewTarget>(entity).await;
+        commands.remove_component::<ViewTarget>(entity);
     }
 
     let frame = match surface.get_current_texture() {
@@ -591,9 +591,7 @@ pub async fn begin_render(
         label: Some("Render Encoder"),
     });
 
-    commands
-        .insert_resource(ActiveCommandEncoder::new(encoder))
-        .await;
+    commands.insert_resource(ActiveCommandEncoder::new(encoder));
 }
 
 pub async fn end_render(
@@ -613,7 +611,7 @@ pub async fn end_render(
         surface_texture, ..
     } = current_frame;
 
-    if let Some(encoder) = commands.remove_resource::<ActiveCommandEncoder>().await {
+    if let Some(encoder) = commands.remove_resource::<ActiveCommandEncoder>() {
         renderer.enqueue_command_buffer(encoder.finish());
     } else {
         log::warn!("No active command encoder to end render");
@@ -654,7 +652,7 @@ async fn resize_surface(
             has_current_frame = true;
 
             for entity in view_targets {
-                commands.remove_component::<ViewTarget>(entity).await;
+                commands.remove_component::<ViewTarget>(entity);
                 view_target_entities.push(entity);
             }
         }
@@ -724,9 +722,7 @@ async fn resize_surface(
             current_frame.inner.replace(current_frame_inner);
             let view_target = ViewTarget::from((&*current_frame, &*hdr_target));
             for view_target_entity in view_target_entities {
-                commands
-                    .insert_component(view_target_entity, view_target.clone())
-                    .await;
+                commands.insert_component(view_target_entity, view_target.clone());
             }
         }
 

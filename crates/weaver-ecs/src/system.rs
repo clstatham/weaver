@@ -292,6 +292,7 @@ impl<T: Component> SystemParam for Option<ResMut<T>> {
 
 macro_rules! impl_system_param_tuple {
     ($( $param:ident ),*) => {
+        #[allow(non_snake_case)]
         impl<$( $param: SystemParam ),*> SystemParam for ($( $param, )*)
         {
             type Item = ($( $param::Item, )*);

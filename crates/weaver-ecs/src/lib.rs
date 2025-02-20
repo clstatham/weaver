@@ -1,5 +1,5 @@
-#![forbid(unsafe_op_in_unsafe_fn)]
-#![allow(non_snake_case)]
+#![deny(unsafe_op_in_unsafe_fn)]
+#![warn(clippy::unused_async)]
 
 pub mod bundle;
 pub mod change_detection;

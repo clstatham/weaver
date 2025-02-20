@@ -1,7 +1,7 @@
 use std::{any::TypeId, ops::Deref, sync::Arc};
 
-use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{prelude::Asset, AssetApp, AssetId, Assets, Handle, UntypedHandle};
+use weaver_app::{App, plugin::Plugin};
+use weaver_asset::{AssetApp, AssetId, Assets, Handle, UntypedHandle, prelude::Asset};
 use weaver_ecs::{
     commands::Commands,
     component::{Res, ResMut},
@@ -11,7 +11,7 @@ use weaver_ecs::{
 };
 use weaver_util::prelude::*;
 
-use crate::{asset::RenderAsset, RenderStage, WgpuDevice};
+use crate::{RenderStage, WgpuDevice, asset::RenderAsset};
 
 #[derive(Default)]
 pub struct BindGroupLayoutCache {
@@ -205,11 +205,11 @@ pub(crate) async fn create_component_bind_group<T: Component + CreateBindGroup>(
     drop((item_query, bind_group_query));
 
     for (entity, bind_group) in to_add {
-        commands.insert_component(entity, bind_group).await;
+        commands.insert_component(entity, bind_group);
     }
 
     for entity in to_remove {
-        commands.remove_component::<BindGroup<T>>(entity).await;
+        commands.remove_component::<BindGroup<T>>(entity);
     }
 }
 
@@ -242,13 +242,13 @@ async fn create_resource_bind_group<T: Component + CreateBindGroup>(
     let mut stale = bind_group.is_none();
     if staleness.is_stale::<T>() {
         drop(bind_group);
-        commands.remove_resource::<BindGroup<T>>().await;
+        commands.remove_resource::<BindGroup<T>>();
         stale = true;
     }
     if stale {
         let bind_group = BindGroup::new(&device, &*data, &mut layout_cache);
         staleness.set_stale::<T>(false);
-        commands.insert_resource(bind_group).await;
+        commands.insert_resource(bind_group);
     }
 }
 
@@ -311,9 +311,7 @@ async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
         // check for bind group staleness
         let mut stale = false;
         if staleness.is_stale(handle.id()) {
-            commands
-                .remove_component::<Handle<BindGroup<T>>>(entity)
-                .await;
+            commands.remove_component::<Handle<BindGroup<T>>>(entity);
             asset_bind_groups
                 .bind_groups
                 .write()
@@ -331,7 +329,7 @@ async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
             .get(&handle.into_untyped())
         {
             let bind_group_handle = Handle::<BindGroup<T>>::try_from(*bind_group_handle).unwrap();
-            commands.insert_component(entity, bind_group_handle).await;
+            commands.insert_component(entity, bind_group_handle);
         } else {
             let asset = assets.get(*handle).unwrap();
             staleness.set_stale(handle.id(), false);
@@ -339,7 +337,7 @@ async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
             log::trace!("Created bind group for asset: {:?}", T::type_name());
             let bind_group_handle = bind_group_assets.insert(bind_group);
             asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
-            commands.insert_component(entity, bind_group_handle).await;
+            commands.insert_component(entity, bind_group_handle);
         }
     }
 }

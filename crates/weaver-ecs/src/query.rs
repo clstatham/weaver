@@ -620,6 +620,7 @@ impl<T: Component> Queryable for Changed<&mut T> {
 
 macro_rules! impl_queryable_tuple {
     ($( $name:ident ),*) => {
+        #[allow(non_snake_case)]
         impl<$($name: Queryable),*> Queryable for ($($name,)*) {
             type LockedColumns = ($($name::LockedColumns,)*);
             type Item<'a> = ($($name::Item<'a>,)*);

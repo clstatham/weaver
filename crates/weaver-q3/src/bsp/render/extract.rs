@@ -12,11 +12,11 @@ use weaver_ecs::{
     prelude::Commands,
 };
 use weaver_renderer::{
+    WgpuDevice, WgpuQueue,
     bind_group::BindGroupLayoutCache,
     extract::Extract,
     prelude::wgpu,
-    texture::{texture_format, GpuTexture},
-    WgpuDevice, WgpuQueue,
+    texture::{GpuTexture, texture_format},
 };
 use weaver_util::prelude::*;
 use wgpu::util::DeviceExt;
@@ -30,8 +30,8 @@ use crate::{
     shader::{
         loader::LoadedShader,
         render::{
-            ShaderBindGroupLayout, ShaderPipeline, ShaderPipelineCache, ShaderPipelineKey,
-            SHADER_TEXTURE_ARRAY_SIZE,
+            SHADER_TEXTURE_ARRAY_SIZE, ShaderBindGroupLayout, ShaderPipeline, ShaderPipelineCache,
+            ShaderPipelineKey,
         },
     },
 };
@@ -243,7 +243,7 @@ pub async fn extract_bsps(
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
 ) {
-    if commands.has_resource::<ExtractedBsp>().await {
+    if commands.has_resource::<ExtractedBsp>() {
         return;
     }
 
@@ -438,7 +438,7 @@ pub async fn extract_bsps(
         key_paths,
     };
 
-    commands.insert_resource(extracted_bsp).await;
+    commands.insert_resource(extracted_bsp);
 }
 
 fn recursively_generate_batch_data(

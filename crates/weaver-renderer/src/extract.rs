@@ -115,7 +115,7 @@ pub async fn extract_render_component<T: ExtractComponent>(
     }
 
     for (entity, component) in components {
-        commands.insert_component(entity, component).await;
+        commands.insert_component(entity, component);
     }
 }
 
@@ -170,9 +170,7 @@ pub async fn extract_render_resource<T: ExtractResource>(
             *target_resource = T::extract_render_resource(source);
             log::trace!("Updated render resource: {:?}", T::type_name());
         } else {
-            commands
-                .insert_resource(T::extract_render_resource(source))
-                .await;
+            commands.insert_resource(T::extract_render_resource(source));
             log::trace!("Extracted render resource: {:?}", T::type_name());
         }
     }

@@ -22,8 +22,8 @@ pub struct World {
     entities: Lock<Entities>,
     resources: Lock<ComponentMap>,
     systems: Systems,
-    command_tx: async_channel::Sender<Command>,
-    command_rx: async_channel::Receiver<Command>,
+    command_tx: crossbeam_channel::Sender<Command>,
+    command_rx: crossbeam_channel::Receiver<Command>,
     change_tick: AtomicU64,
     last_change_tick: AtomicU64,
 }
@@ -36,7 +36,7 @@ impl Default for World {
             .insert_component(components, Tick::default())
             .unwrap();
 
-        let (command_tx, command_rx) = async_channel::unbounded();
+        let (command_tx, command_rx) = crossbeam_channel::unbounded();
 
         Self {
             entities: Lock::new(Entities::default()),

@@ -8,15 +8,14 @@ use weaver_app::plugin::Plugin;
 use weaver_ecs::prelude::*;
 
 use crate::{
-    begin_render,
+    CurrentFrame, RenderStage, WgpuDevice, WgpuQueue, begin_render,
     bind_group::{
-        create_component_bind_group, BindGroupLayout, ComponentBindGroupPlugin, CreateBindGroup,
+        BindGroupLayout, ComponentBindGroupPlugin, CreateBindGroup, create_component_bind_group,
     },
     buffer::GpuBufferVec,
     end_render,
     extract::{ExtractComponent, ExtractComponentPlugin},
     hdr::HdrRenderTarget,
-    CurrentFrame, RenderStage, WgpuDevice, WgpuQueue,
 };
 
 #[derive(Clone, Copy)]
@@ -377,7 +376,7 @@ async fn extract_camera_bind_groups(
     drop(query);
 
     for (entity, bind_group) in to_insert {
-        commands.insert_component(entity, bind_group).await;
+        commands.insert_component(entity, bind_group);
     }
 }
 
@@ -389,12 +388,12 @@ async fn insert_view_target(
 ) {
     for (gpu_camera, _) in query.iter() {
         let view_target = ViewTarget::from((&*current_frame, &*hdr_target));
-        commands.insert_component(gpu_camera, view_target).await;
+        commands.insert_component(gpu_camera, view_target);
     }
 }
 
 async fn remove_view_target(commands: Commands, mut query: Query<(Entity, With<GpuCamera>)>) {
     for (gpu_camera, _) in query.iter() {
-        commands.remove_component::<ViewTarget>(gpu_camera).await;
+        commands.remove_component::<ViewTarget>(gpu_camera);
     }
 }

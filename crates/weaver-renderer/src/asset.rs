@@ -1,4 +1,4 @@
-use weaver_app::{plugin::Plugin, App};
+use weaver_app::{App, plugin::Plugin};
 use weaver_asset::{Asset, AssetApp, Assets, Handle, UntypedHandle};
 use weaver_ecs::{
     commands::Commands,
@@ -9,7 +9,7 @@ use weaver_ecs::{
 };
 use weaver_util::prelude::*;
 
-use crate::{extract::Extract, RenderStage, WgpuDevice, WgpuQueue};
+use crate::{RenderStage, WgpuDevice, WgpuQueue, extract::Extract};
 
 pub trait RenderAsset: Asset {
     type Source: Asset;
@@ -106,7 +106,7 @@ async fn extract_render_asset<T: RenderAsset>(
                 let untyped_handle = handle.into_untyped();
 
                 // insert the render asset handle into the entity
-                commands.insert_component(entity, render_handle).await;
+                commands.insert_component(entity, render_handle);
 
                 // mark the original asset as extracted
                 extracted_assets.insert(untyped_handle, render_handle.into_untyped());
@@ -126,7 +126,7 @@ async fn extract_render_asset<T: RenderAsset>(
                 .update_render_asset(&base_asset, param.item_mut(), &device, &queue)
                 .unwrap();
 
-            commands.insert_component(entity, render_handle).await;
+            commands.insert_component(entity, render_handle);
         }
     }
 }

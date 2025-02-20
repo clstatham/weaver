@@ -1,17 +1,17 @@
 use egui::{Context, FullOutput};
 use egui_wgpu::{Renderer, ScreenDescriptor};
-use egui_winit::{winit, State};
-use weaver_app::{plugin::Plugin, App, AppStage};
+use egui_winit::{State, winit};
+use weaver_app::{App, AppStage, plugin::Plugin};
 use weaver_ecs::{
+    SystemStage,
     component::{Res, ResMut},
     prelude::Commands,
     system_schedule::SystemStage,
-    SystemStage,
 };
 use weaver_event::EventRx;
 use weaver_renderer::{
-    prelude::wgpu, texture::texture_format, CurrentFrame, MainWorld, RenderApp, RenderStage,
-    WgpuDevice, WgpuQueue,
+    CurrentFrame, MainWorld, RenderApp, RenderStage, WgpuDevice, WgpuQueue, prelude::wgpu,
+    texture::texture_format,
 };
 use weaver_util::prelude::*;
 use weaver_winit::{Window, WinitEvent};
@@ -201,11 +201,11 @@ async fn extract_egui_context(
     window: Res<Window>,
     device: Res<WgpuDevice>,
 ) {
-    if commands.has_resource::<EguiContext>().await {
+    if commands.has_resource::<EguiContext>() {
         return;
     }
     let egui_context = EguiContext::new(&device, &window);
-    commands.insert_resource(egui_context.clone()).await;
+    commands.insert_resource(egui_context.clone());
     main_world.insert_resource(egui_context);
 }
 

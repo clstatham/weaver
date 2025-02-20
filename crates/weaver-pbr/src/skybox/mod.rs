@@ -15,6 +15,7 @@ use weaver_ecs::{
     world::ConstructFromWorld,
 };
 use weaver_renderer::{
+    RenderLabel, RenderStage, WgpuDevice, WgpuQueue,
     bind_group::{
         BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup, ResourceBindGroupPlugin,
     },
@@ -26,11 +27,10 @@ use weaver_renderer::{
         ComputePipelineCache, ComputePipelinePlugin, CreateComputePipeline, CreateRenderPipeline,
         RenderPipeline, RenderPipelineCache, RenderPipelineLayout, RenderPipelinePlugin,
     },
-    prelude::{wgpu, ComputePipeline, ComputePipelineLayout},
+    prelude::{ComputePipeline, ComputePipelineLayout, wgpu},
     resources::ActiveCommandEncoder,
     shader::Shader,
-    texture::{texture_format, GpuTexture},
-    RenderLabel, RenderStage, WgpuDevice, WgpuQueue,
+    texture::{GpuTexture, texture_format},
 };
 use weaver_util::prelude::*;
 
@@ -563,8 +563,8 @@ impl Plugin for SkyboxPlugin {
 }
 
 async fn init_gpu_skybox(commands: Commands) {
-    if commands.has_resource::<Skybox>().await && !commands.has_resource::<GpuSkybox>().await {
-        commands.init_resource::<GpuSkybox>().await;
+    if commands.has_resource::<Skybox>() && !commands.has_resource::<GpuSkybox>() {
+        commands.init_resource::<GpuSkybox>();
     }
 }
 

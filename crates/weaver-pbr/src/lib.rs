@@ -1,9 +1,9 @@
 use assets::material_mesh::{LoadedModelWithMaterials, ObjMaterialModelLoader};
 use light::{PointLight, PointLightPlugin};
-use material::{MaterialPlugin, BLACK_TEXTURE, ERROR_TEXTURE, WHITE_TEXTURE};
+use material::{BLACK_TEXTURE, ERROR_TEXTURE, MaterialPlugin, WHITE_TEXTURE};
 use prelude::Material;
 use render::PbrLightingInformation;
-use skybox::{render_skybox, Skybox, SkyboxPlugin, SkyboxRenderablePlugin};
+use skybox::{Skybox, SkyboxPlugin, SkyboxRenderablePlugin, render_skybox};
 use weaver_app::prelude::*;
 use weaver_asset::{AssetApp, Assets};
 use weaver_core::{texture::Texture, transform::Transform};
@@ -14,8 +14,8 @@ use weaver_ecs::{
     system::IntoSystemConfig,
 };
 use weaver_renderer::{
-    bind_group::ResourceBindGroupPlugin, hdr::render_hdr, RenderApp, RenderStage, WgpuDevice,
-    WgpuQueue,
+    RenderApp, RenderStage, WgpuDevice, WgpuQueue, bind_group::ResourceBindGroupPlugin,
+    hdr::render_hdr,
 };
 use weaver_util::prelude::*;
 
@@ -26,11 +26,11 @@ pub mod render;
 pub mod skybox;
 
 pub mod prelude {
+    pub use crate::PbrPlugin;
     pub use crate::assets::material_mesh::*;
     pub use crate::light::*;
     pub use crate::material::*;
     pub use crate::skybox::*;
-    pub use crate::PbrPlugin;
 }
 
 pub struct PbrPlugin;
@@ -88,8 +88,8 @@ impl Plugin for PbrPlugin {
 }
 
 pub(crate) async fn init_pbr_lighting_information(commands: Commands, _skybox: Res<Skybox>) {
-    if !commands.has_resource::<PbrLightingInformation>().await {
-        commands.init_resource::<PbrLightingInformation>().await;
+    if !commands.has_resource::<PbrLightingInformation>() {
+        commands.init_resource::<PbrLightingInformation>();
     }
 }
 

@@ -1,4 +1,5 @@
 use weaver::prelude::*;
+use weaver_asset::AssetCommands;
 use weaver_diagnostics::prelude::*;
 
 pub mod camera;
@@ -28,20 +29,28 @@ fn main() -> Result<()> {
 }
 
 async fn setup(commands: Commands) {
-    commands
-        .spawn((
-            Camera::default(),
-            camera::FlyCameraController {
-                aspect: 16.0 / 9.0,
-                speed: 320.0,
-                fov: 70.0f32.to_radians(),
-                near: 0.1,
-                far: 100000.0,
-                sensitivity: 40.0,
-                ..Default::default()
-            }
-            .looking_at(Vec3::new(100.0, 100.0, 100.0), Vec3::ZERO, Vec3::Y),
-            PrimaryCamera,
-        ))
-        .await;
+    commands.spawn((
+        Camera::default(),
+        camera::FlyCameraController {
+            aspect: 16.0 / 9.0,
+            speed: 320.0,
+            fov: 70.0f32.to_radians(),
+            near: 0.1,
+            far: 100000.0,
+            sensitivity: 40.0,
+            ..Default::default()
+        }
+        .looking_at(Vec3::new(100.0, 100.0, 100.0), Vec3::ZERO, Vec3::Y),
+        PrimaryCamera,
+    ));
+
+    commands.spawn((
+        Transform::from_translation(Vec3::new(100.0, 100.0, 100.0)),
+        PointLight {
+            color: Color::WHITE,
+            intensity: 1000.0,
+            radius: 1000.0,
+            enabled: true,
+        },
+    ));
 }
