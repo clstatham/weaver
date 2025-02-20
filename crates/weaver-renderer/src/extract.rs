@@ -183,14 +183,9 @@ pub fn render_extract(main_world: &mut World, render_world: &mut World) -> Resul
     let inserted_world = std::mem::replace(main_world, scratch_world.0);
     render_world.insert_resource(MainWorld(inserted_world));
 
-    pollster::block_on(async {
-        render_world.run_stage(RenderStage::Extract).await?;
-        render_world
-            .run_stage(RenderStage::ExtractBindGroup)
-            .await?;
-        render_world.run_stage(RenderStage::ExtractPipeline).await?;
-        Ok::<_, weaver_util::re_exports::Error>(())
-    })?;
+    render_world.run_stage(RenderStage::Extract)?;
+    render_world.run_stage(RenderStage::ExtractBindGroup)?;
+    render_world.run_stage(RenderStage::ExtractPipeline)?;
 
     let inserted_world = render_world.remove_resource::<MainWorld>().unwrap();
     let scratch_world = std::mem::replace(main_world, inserted_world.0);

@@ -450,53 +450,47 @@ impl Plugin for RendererPlugin {
         });
 
         std::thread::spawn(move || {
-            pollster::block_on(async move {
-                log::trace!("Entering render task main loop");
+            log::trace!("Entering render task main loop");
 
-                loop {
-                    let Ok(mut render_app) = main_to_render_rx.recv() else {
-                        break;
-                    };
-                    log::trace!("Received render app on render task");
+            loop {
+                let Ok(mut render_app) = main_to_render_rx.recv() else {
+                    break;
+                };
+                log::trace!("Received render app on render task");
 
-                    render_app.finish_plugins();
+                render_app.finish_plugins();
 
-                    log::trace!("Running render app stage: InitRenderResources");
-                    render_app
-                        .world_mut()
-                        .run_stage(RenderStage::InitRenderResources)
-                        .await
-                        .unwrap();
-                    log::trace!("Running render app stage: PreRender");
-                    render_app
-                        .world_mut()
-                        .run_stage(RenderStage::PreRender)
-                        .await
-                        .unwrap();
-                    log::trace!("Running render app stage: Render");
-                    render_app
-                        .world_mut()
-                        .run_stage(RenderStage::Render)
-                        .await
-                        .unwrap();
-                    log::trace!("Running render app stage: PostRender");
-                    render_app
-                        .world_mut()
-                        .run_stage(RenderStage::PostRender)
-                        .await
-                        .unwrap();
+                log::trace!("Running render app stage: InitRenderResources");
+                render_app
+                    .world_mut()
+                    .run_stage(RenderStage::InitRenderResources)
+                    .unwrap();
+                log::trace!("Running render app stage: PreRender");
+                render_app
+                    .world_mut()
+                    .run_stage(RenderStage::PreRender)
+                    .unwrap();
+                log::trace!("Running render app stage: Render");
+                render_app
+                    .world_mut()
+                    .run_stage(RenderStage::Render)
+                    .unwrap();
+                log::trace!("Running render app stage: PostRender");
+                render_app
+                    .world_mut()
+                    .run_stage(RenderStage::PostRender)
+                    .unwrap();
 
-                    log::trace!("Sending render app back to main task");
+                log::trace!("Sending render app back to main task");
 
-                    if let Err(e) = render_to_main_tx.send(render_app) {
-                        // we're probably shutting down
-                        log::debug!("Failed to send render app back to main task: {}", e);
-                        break;
-                    }
+                if let Err(e) = render_to_main_tx.send(render_app) {
+                    // we're probably shutting down
+                    log::debug!("Failed to send render app back to main task: {}", e);
+                    break;
                 }
+            }
 
-                log::trace!("Exiting render task main loop");
-            })
+            log::trace!("Exiting render task main loop");
         });
 
         Ok(())

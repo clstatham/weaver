@@ -169,27 +169,27 @@ impl SubApps {
         }
     }
 
-    pub async fn init(&mut self) {
+    pub fn init(&mut self) {
         self.main.world_mut().initialize_systems();
-        self.main.world_mut().init().await.unwrap();
+        self.main.world_mut().init().unwrap();
         for (_, sub_app) in self.sub_apps.iter_mut() {
             sub_app.world_mut().initialize_systems();
-            sub_app.world_mut().init().await.unwrap();
+            sub_app.world_mut().init().unwrap();
         }
     }
 
-    pub async fn update(&mut self) {
-        self.main.world_mut().update().await.unwrap();
+    pub fn update(&mut self) {
+        self.main.world_mut().update().unwrap();
         for (_, sub_app) in self.sub_apps.iter_mut() {
             sub_app.extract_from(&mut self.main.world).unwrap();
-            sub_app.world_mut().update().await.unwrap();
+            sub_app.world_mut().update().unwrap();
         }
     }
 
-    pub async fn shutdown(&mut self) {
-        self.main.world_mut().shutdown().await.unwrap();
+    pub fn shutdown(&mut self) {
+        self.main.world_mut().shutdown().unwrap();
         for (_, sub_app) in self.sub_apps.iter_mut() {
-            sub_app.world_mut().shutdown().await.unwrap();
+            sub_app.world_mut().shutdown().unwrap();
         }
     }
 }
@@ -387,22 +387,22 @@ impl App {
         self
     }
 
-    pub async fn init(&mut self) {
+    pub fn init(&mut self) {
         self.finish_plugins();
-        self.sub_apps.init().await;
+        self.sub_apps.init();
     }
 
-    pub async fn update(&mut self) {
+    pub fn update(&mut self) {
         while !self.unready_plugins.is_empty() {
             self.finish_plugins();
         }
 
-        self.sub_apps.update().await;
+        self.sub_apps.update();
         tick_task_pools();
     }
 
-    pub async fn shutdown(&mut self) {
-        self.sub_apps.shutdown().await;
+    pub fn shutdown(&mut self) {
+        self.sub_apps.shutdown();
     }
 
     pub fn finish_plugins(&mut self) {

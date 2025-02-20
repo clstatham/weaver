@@ -1,6 +1,6 @@
 use std::{ops::Deref, sync::Arc};
 
-use weaver_app::{plugin::Plugin, prelude::App, Runner};
+use weaver_app::{Runner, plugin::Plugin, prelude::App};
 use weaver_core::input::Input;
 use weaver_util::prelude::*;
 use winit::{
@@ -99,7 +99,7 @@ struct WinitRunner {
 
 impl Runner for WinitRunner {
     fn run(&self, app: &mut App) -> Result<()> {
-        pollster::block_on(app.init());
+        app.init();
 
         let event_loop = self.event_loop.write().take().unwrap();
 
@@ -212,11 +212,11 @@ impl winit::application::ApplicationHandler for WinitRunnerApp<'_> {
                 }
             }
             WindowEvent::CloseRequested => {
-                pollster::block_on(self.app.shutdown());
+                self.app.shutdown();
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                pollster::block_on(self.app.update());
+                self.app.update();
             }
             _ => {}
         }

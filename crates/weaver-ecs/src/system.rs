@@ -787,7 +787,7 @@ impl SystemGraph {
     }
 
     /// Runs all systems in the graph.
-    pub async fn run(&mut self, world: &mut World) -> Result<()> {
+    pub fn run(&mut self, world: &mut World) -> Result<()> {
         let schedule = self.get_batches();
         let task_pool = GlobalTaskPool::get();
         for layer in schedule {

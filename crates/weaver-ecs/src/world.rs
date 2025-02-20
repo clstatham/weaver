@@ -251,34 +251,34 @@ impl World {
     }
 
     /// Runs the "init" system schedule once.
-    pub async fn init(&mut self) -> Result<()> {
+    pub fn init(&mut self) -> Result<()> {
         let mut systems = std::mem::take(&mut self.systems);
-        systems.run_init(self).await?;
+        systems.run_init(self)?;
         self.systems = systems;
         Ok(())
     }
 
     /// Runs the "update" system schedule once.
-    pub async fn update(&mut self) -> Result<()> {
+    pub fn update(&mut self) -> Result<()> {
         let mut systems = std::mem::take(&mut self.systems);
-        systems.run_update(self).await?;
+        systems.run_update(self)?;
         self.systems = systems;
         self.increment_change_tick();
         Ok(())
     }
 
     /// Runs the "shutdown" system schedule once.
-    pub async fn shutdown(&mut self) -> Result<()> {
+    pub fn shutdown(&mut self) -> Result<()> {
         let mut systems = std::mem::take(&mut self.systems);
-        systems.run_shutdown(self).await?;
+        systems.run_shutdown(self)?;
         self.systems = systems;
         Ok(())
     }
 
     /// Runs the given system stage once.
-    pub async fn run_stage(&mut self, stage: impl SystemStage) -> Result<()> {
+    pub fn run_stage(&mut self, stage: impl SystemStage) -> Result<()> {
         let mut systems = std::mem::take(&mut self.systems);
-        systems.run_stage(self, stage).await?;
+        systems.run_stage(self, stage)?;
         self.systems = systems;
         Ok(())
     }
