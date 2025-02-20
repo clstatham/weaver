@@ -4,14 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-atomic_refcell = "0.1.13"
 zip = "2.1"
 petgraph = "0.6.5"
-pollster = "0.3.0"
-futures = "0.3"
 
 weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }
 weaver-app = { path = "../weaver-app" }
 weaver-asset-macros = { path = "../weaver-asset-macros" }
 weaver-event = { path = "../weaver-event" }
+weaver-task = { path = "../weaver-task" }

@@ -131,15 +131,6 @@ impl<T> LoanStorage<T> {
         }
     }
 
-    pub async fn wait_for_loan(&mut self) -> Loan<T> {
-        loop {
-            if let Some(loan) = self.loan() {
-                return loan;
-            }
-            tokio::task::yield_now().await;
-        }
-    }
-
     pub fn loan_mut(&mut self) -> Option<LoanMut<T>> {
         let this = std::mem::replace(self, Self::Vacant);
         match this.into_owned() {
@@ -157,15 +148,6 @@ impl<T> LoanStorage<T> {
             }
         }
     }
-
-    pub async fn wait_for_loan_mut(&mut self) -> LoanMut<T> {
-        loop {
-            if let Some(loan) = self.loan_mut() {
-                return loan;
-            }
-            tokio::task::yield_now().await;
-        }
-    }
 }
 
 impl<T> From<T> for LoanStorage<T> {
@@ -177,35 +159,5 @@ impl<T> From<T> for LoanStorage<T> {
 impl<T> From<Loan<T>> for LoanStorage<T> {
     fn from(value: Loan<T>) -> Self {
         Self::Loan(value.0)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_loan() {
-        let mut storage = LoanStorage::new(42);
-        let loan = storage.loan().unwrap();
-        assert_eq!(*loan, 42);
-        drop(loan);
-        let loan = storage.wait_for_loan().await;
-        assert_eq!(*loan, 42);
-    }
-
-    #[tokio::test]
-    async fn test_loan_mut() {
-        let mut storage = LoanStorage::new(42);
-        let mut loan = storage.loan_mut().unwrap();
-        assert_eq!(*loan, 42);
-        *loan = 43;
-        drop(loan);
-        let mut loan = storage.wait_for_loan_mut().await;
-        assert_eq!(*loan, 43);
-        *loan = 44;
-        drop(loan);
-        let loan = storage.loan().unwrap();
-        assert_eq!(*loan, 44);
     }
 }

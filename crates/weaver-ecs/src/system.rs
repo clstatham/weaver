@@ -5,9 +5,9 @@ use crate::{
     prelude::World,
     world::ConstructFromWorld,
 };
-use futures::{future::BoxFuture, FutureExt};
 use petgraph::prelude::*;
 use tracing::Instrument;
+use weaver_task::{BoxFuture, usages::GlobalTaskPool};
 use weaver_util::{prelude::*, span};
 
 /// A system access descriptor, indicating what resources and components a system reads and writes. This is used to validate system access at runtime.
@@ -449,11 +449,12 @@ where
         F::update_state(state, world);
         let fetch = F::Param::fetch(world, state);
         let func = self.func.clone();
-        async move {
-            func.run(fetch).await;
-        }
-        .instrument(span!(DEBUG, "FunctionSystem", name = self.name()))
-        .boxed()
+        Box::pin(
+            async move {
+                func.run(fetch).await;
+            }
+            .instrument(span!(DEBUG, "FunctionSystem", name = self.name())),
+        )
     }
 
     fn can_run(&self, world: &World) -> bool {
@@ -788,6 +789,7 @@ impl SystemGraph {
     /// Runs all systems in the graph.
     pub async fn run(&mut self, world: &mut World) -> Result<()> {
         let schedule = self.get_batches();
+        let task_pool = GlobalTaskPool::get();
         for layer in schedule {
             let mut handles = Vec::new();
             let mut skipped = Vec::new();
@@ -797,7 +799,7 @@ impl SystemGraph {
                     skipped.push(node);
                     continue;
                 }
-                let handle = tokio::spawn(system.write().run(world));
+                let handle = task_pool.spawn(system.write().run(world));
                 handles.push(handle);
             }
 
@@ -816,7 +818,6 @@ impl SystemGraph {
                 }
 
                 world.apply_commands();
-                tokio::task::yield_now().await;
             }
 
             // run skipped systems synchronously, in case there was a resource conflict
@@ -826,7 +827,7 @@ impl SystemGraph {
                     log::debug!("Skipping system: {}", system.read().name());
                     continue;
                 }
-                let handle = tokio::spawn(system.write().run(world));
+                let handle = task_pool.spawn(system.write().run(world));
                 loop {
                     if handle.is_finished() {
                         world.increment_change_tick();
@@ -834,7 +835,6 @@ impl SystemGraph {
                     }
 
                     world.apply_commands();
-                    tokio::task::yield_now().await;
                 }
             }
         }

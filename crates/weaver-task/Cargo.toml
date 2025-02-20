@@ -1,0 +1,12 @@
+[package]
+name = "weaver-task"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+futures-lite = "2.0"
+async-task = "4.4"
+async-executor = "1.11"
+async-channel = "2.3"
+async-io = "2.0"
+concurrent-queue = "2.0"

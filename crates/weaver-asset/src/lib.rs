@@ -13,10 +13,11 @@ use std::{
 use weaver_app::{App, SubApp};
 use weaver_ecs::{
     loan::{Loan, LoanMut, LoanStorage},
-    prelude::{tokio, Commands, Res, ResMut, SystemStage},
+    prelude::{Commands, Res, ResMut, SystemStage},
     world::{ConstructFromWorld, FromWorld},
 };
 use weaver_event::{Event, Events};
+use weaver_task::usages::GlobalTaskPool;
 use weaver_util::prelude::*;
 use zip::ZipArchive;
 
@@ -406,7 +407,7 @@ impl<T: Asset> LoadSource for T {}
 
 pub trait Loader<T: Asset, S: LoadSource>: ConstructFromWorld + Send + Sync + 'static {
     fn load(&self, source: S, commands: &Commands)
-        -> impl Future<Output = Result<T>> + Send + Sync;
+    -> impl Future<Output = Result<T>> + Send + Sync;
 }
 
 #[derive(Clone, Copy)]
@@ -719,7 +720,7 @@ async fn load_all_assets<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
         }
         let loader = loader.clone();
         let commands = commands.clone();
-        let task = tokio::spawn(async move {
+        let task = GlobalTaskPool::get().spawn(async move {
             match loader.load(request.source, &commands).await {
                 Ok(asset) => Ok(asset),
                 Err(e) => {
@@ -733,7 +734,7 @@ async fn load_all_assets<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
     }
 
     for (handle, result) in handles {
-        if let Ok(Ok(asset)) = result.await {
+        if let Ok(asset) = result.await {
             assets.insert_manual(asset, handle.id);
             load_status.manually_set_loaded(handle);
             load_events.send(AssetLoaded::new(handle.id));

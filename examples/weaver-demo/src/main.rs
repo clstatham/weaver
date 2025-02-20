@@ -4,8 +4,7 @@ use weaver_diagnostics::prelude::*;
 pub mod camera;
 pub mod transform_gizmo;
 
-#[weaver::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     App::new()
         .add_plugin(CoreTypesPlugin)?
         .add_plugin(WindowPlugin::default())?

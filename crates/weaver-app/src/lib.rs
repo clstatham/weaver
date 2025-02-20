@@ -3,21 +3,25 @@ use std::any::TypeId;
 use plugin::{DummyPlugin, Plugin};
 
 use weaver_ecs::{
+    SystemStage,
     change_detection::WorldTicks,
     component::Res,
     prelude::Component,
     system::{IntoSystem, IntoSystemConfig},
     system_schedule::SystemStage,
     world::{ConstructFromWorld, World},
-    SystemStage,
 };
 use weaver_event::{Event, Events};
+use weaver_task::{
+    task_pool::TaskPool,
+    usages::{GlobalTaskPool, tick_task_pools},
+};
 use weaver_util::prelude::*;
 
 pub mod plugin;
 
 pub mod prelude {
-    pub use crate::{plugin::Plugin, App, AppStage, AppStage::*, SubApp};
+    pub use crate::{App, AppStage, AppStage::*, SubApp, plugin::Plugin};
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
@@ -394,6 +398,7 @@ impl App {
         }
 
         self.sub_apps.update().await;
+        tick_task_pools();
     }
 
     pub async fn shutdown(&mut self) {
@@ -420,6 +425,8 @@ impl App {
     }
 
     pub fn run(&mut self) -> Result<()> {
+        GlobalTaskPool::get_or_init(TaskPool::new);
+
         if let Some(runner) = self.runner.take() {
             self.finish_plugins();
 
