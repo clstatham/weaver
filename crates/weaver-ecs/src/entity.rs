@@ -27,7 +27,7 @@ impl Entity {
     }
 
     pub const fn as_u64(&self) -> u64 {
-        (self.generation() as u64) << 32 | self.id as u64
+        ((self.generation() as u64) << 32) | self.id as u64
     }
 
     pub fn from_u64(value: u64) -> Self {

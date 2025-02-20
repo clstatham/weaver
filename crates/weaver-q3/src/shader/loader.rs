@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use weaver_asset::{prelude::*, PathAndFilesystem};
+use weaver_asset::{PathAndFilesystem, prelude::*};
 use weaver_core::texture::{Texture, TextureLoader};
 use weaver_ecs::prelude::Commands;
 use weaver_pbr::material::ERROR_TEXTURE;
@@ -69,7 +69,7 @@ impl LexedShaderCache {
             if path.is_dir() {
                 continue;
             }
-            if path.extension().map_or(true, |ext| ext != "shader") {
+            if path.extension().is_none_or(|ext| ext != "shader") {
                 continue;
             }
 

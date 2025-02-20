@@ -87,9 +87,9 @@ impl Color {
     }
 
     pub fn to_hex(&self) -> u32 {
-        ((self.r * 255.0) as u32) << 24
-            | ((self.g * 255.0) as u32) << 16
-            | ((self.b * 255.0) as u32) << 8
+        (((self.r * 255.0) as u32) << 24)
+            | (((self.g * 255.0) as u32) << 16)
+            | (((self.b * 255.0) as u32) << 8)
             | (self.a * 255.0) as u32
     }
 

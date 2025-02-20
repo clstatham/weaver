@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use nom::Finish;
-use weaver_asset::{prelude::*, AssetCommands};
+use weaver_asset::{AssetCommands, prelude::*};
 use weaver_core::{mesh::Mesh, prelude::Vec3};
 use weaver_ecs::prelude::Commands;
 use weaver_pbr::prelude::WHITE_TEXTURE;
@@ -10,13 +10,13 @@ use weaver_util::prelude::*;
 use crate::{
     bsp::{
         generator::{BspFaceType, BspPlane, GenBsp, GenBspMeshNode},
-        parser::{bsp_file, VisData},
+        parser::{VisData, bsp_file},
     },
     shader::{
         lexer::{LexedShader, LexedShaderGlobalParam, Map, ShaderStageParam},
         loader::{
-            strip_extension, LexedShaderCache, LoadedShader, LoadedShaderCache, TextureCache,
-            TryEverythingTextureLoader,
+            LexedShaderCache, LoadedShader, LoadedShaderCache, TextureCache,
+            TryEverythingTextureLoader, strip_extension,
         },
     },
 };
@@ -187,10 +187,10 @@ impl Loader<Bsp, PathAndFilesystem> for BspLoader {
             .finish()
             .map_err(|e| anyhow!("Failed to parse bsp file: {:?}", e.code))?;
 
-        let gen = GenBsp::build(bsp_file);
-        let meshes_and_textures = gen.generate_meshes();
+        let gen_bsp = GenBsp::build(bsp_file);
+        let meshes_and_textures = gen_bsp.generate_meshes();
 
-        let mut bsp = Bsp::with_capacity(meshes_and_textures.nodes.len(), gen.file.vis_data);
+        let mut bsp = Bsp::with_capacity(meshes_and_textures.nodes.len(), gen_bsp.file.vis_data);
 
         self.lexed_shader_cache
             .write()

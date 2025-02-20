@@ -86,7 +86,7 @@ impl Queryable for Entity {
     }
 }
 
-impl<'s, T: Component> Queryable for &'s T {
+impl<T: Component> Queryable for &T {
     type LockedColumns = Option<ReadLockedColumns>;
     type Item<'a> = Ref<'a, T>;
 
@@ -162,7 +162,7 @@ impl<'s, T: Component> Queryable for &'s T {
     }
 }
 
-impl<'s, T: Component> Queryable for &'s mut T {
+impl<T: Component> Queryable for &mut T {
     type LockedColumns = Option<WriteLockedColumns>;
     type Item<'a> = Mut<'a, T>;
 
@@ -280,7 +280,7 @@ impl<'a, T: Component> Iterator for QueryableIterMut<'a, T> {
     }
 }
 
-impl<'s, T: Component> Queryable for Option<&'s T> {
+impl<T: Component> Queryable for Option<&T> {
     type LockedColumns = Option<ReadLockedColumns>;
     type Item<'a> = Option<Ref<'a, T>>;
 
@@ -338,7 +338,7 @@ impl<'s, T: Component> Queryable for Option<&'s T> {
     }
 }
 
-impl<'s, T: Component> Queryable for Option<&'s mut T> {
+impl<T: Component> Queryable for Option<&mut T> {
     type LockedColumns = Option<WriteLockedColumns>;
     type Item<'a> = Option<Mut<'a, T>>;
 
@@ -445,7 +445,7 @@ pub struct Without<T: Component>(std::marker::PhantomData<T>);
 
 pub struct Changed<T>(std::marker::PhantomData<T>);
 
-impl<'s, T: Component> Queryable for Changed<&'s T> {
+impl<T: Component> Queryable for Changed<&T> {
     type LockedColumns = Option<ReadLockedColumns>;
     type Item<'a> = Ref<'a, T>;
 
@@ -529,7 +529,7 @@ impl<'s, T: Component> Queryable for Changed<&'s T> {
     }
 }
 
-impl<'s, T: Component> Queryable for Changed<&'s mut T> {
+impl<T: Component> Queryable for Changed<&mut T> {
     type LockedColumns = Option<WriteLockedColumns>;
     type Item<'a> = Mut<'a, T>;
 
@@ -641,12 +641,12 @@ macro_rules! impl_queryable_tuple {
             }
 
             fn iter_mut<'a, 'b: 'a>(lock: &'b mut Self::LockedColumns, last_run: Tick, this_run: Tick) -> impl Iterator<Item = Self::Item<'a>> {
-                let ($(ref mut $name,)*) = lock;
+                let ($($name,)*) = lock;
                 itertools::izip!($( $name::iter_mut($name, last_run, this_run), )*)
             }
 
             fn get<'a, 'b: 'a>(entity: Entity, lock: &'b mut Self::LockedColumns, last_run: Tick, this_run: Tick) -> Option<Self::Item<'a>> {
-                let ($(ref mut $name,)*) = lock;
+                let ($($name,)*) = lock;
                 Some(($( $name::get(entity, $name, last_run, this_run)?, )*))
             }
         }
@@ -674,7 +674,7 @@ impl<A: Queryable> Queryable for (A,) {
         last_run: Tick,
         this_run: Tick,
     ) -> impl Iterator<Item = Self::Item<'a>> {
-        let (ref mut a,) = lock;
+        let (a,) = lock;
         A::iter_mut(a, last_run, this_run).map(|a| (a,))
     }
 
@@ -684,7 +684,7 @@ impl<A: Queryable> Queryable for (A,) {
         last_run: Tick,
         this_run: Tick,
     ) -> Option<Self::Item<'a>> {
-        let (ref mut a,) = lock;
+        let (a,) = lock;
         A::get(entity, a, last_run, this_run).map(|a| (a,))
     }
 }
