@@ -1,15 +1,15 @@
 use std::path::PathBuf;
 
-use weaver_asset::{prelude::*, AssetCommands};
+use weaver_asset::{AssetCommands, prelude::*};
 use weaver_core::{
-    mesh::{calculate_normals, calculate_tangents, Mesh, Vertex},
+    mesh::{Mesh, Vertex, calculate_normals, calculate_tangents},
     prelude::{Vec2, Vec3, Vec4},
     texture::{Texture, TextureLoader},
 };
 use weaver_ecs::prelude::Commands;
 use weaver_util::prelude::*;
 
-use crate::prelude::{Material, BLACK_TEXTURE, WHITE_TEXTURE};
+use crate::prelude::{BLACK_TEXTURE, Material, WHITE_TEXTURE};
 
 #[derive(Asset)]
 pub struct LoadedModelWithMaterials {
@@ -28,7 +28,7 @@ impl IntoIterator for LoadedModelWithMaterials {
     }
 }
 
-#[derive(Asset)]
+#[derive(Asset, Clone)]
 pub struct LoadedMaterialMeshPrimitive {
     pub material: Material,
     pub mesh: Mesh,
@@ -43,7 +43,9 @@ impl LoadedMaterialMeshPrimitive {
 #[derive(Default)]
 pub struct ObjMaterialModelLoader;
 
-impl Loader<LoadedModelWithMaterials, PathAndFilesystem> for ObjMaterialModelLoader {
+impl LoadFrom<PathAndFilesystem> for ObjMaterialModelLoader {
+    type Asset = LoadedModelWithMaterials;
+
     async fn load(
         &self,
         source: PathAndFilesystem,
@@ -129,14 +131,10 @@ pub async fn load_obj_material_mesh(
             Some(material) => {
                 let diffuse = material.diffuse.unwrap_or([1.0, 1.0, 1.0]);
                 let diffuse_texture = match &material.diffuse_texture {
-                    Some(texture) => {
-                        commands
-                            .load_asset::<_, TextureLoader<PathBuf>, _>((
-                                texture.into(),
-                                source.fs.clone(),
-                            ))
-                            .await
-                    }
+                    Some(texture) => commands.lazy_load_asset::<TextureLoader<PathBuf>, _>((
+                        texture.into(),
+                        source.fs.clone(),
+                    )),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have a diffuse texture");
@@ -144,14 +142,10 @@ pub async fn load_obj_material_mesh(
                     }
                 };
                 let normal_texture = match &material.normal_texture {
-                    Some(texture) => {
-                        commands
-                            .load_asset::<_, TextureLoader<PathBuf>, _>((
-                                texture.into(),
-                                source.fs.clone(),
-                            ))
-                            .await
-                    }
+                    Some(texture) => commands.lazy_load_asset::<TextureLoader<PathBuf>, _>((
+                        texture.into(),
+                        source.fs.clone(),
+                    )),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have a normal texture");
@@ -160,14 +154,10 @@ pub async fn load_obj_material_mesh(
                 };
                 let ao = material.ambient.unwrap_or([1.0, 1.0, 1.0]);
                 let ao_texture = match &material.ambient_texture {
-                    Some(texture) => {
-                        commands
-                            .load_asset::<_, TextureLoader<PathBuf>, _>((
-                                texture.into(),
-                                source.fs.clone(),
-                            ))
-                            .await
-                    }
+                    Some(texture) => commands.lazy_load_asset::<TextureLoader<PathBuf>, _>((
+                        texture.into(),
+                        source.fs.clone(),
+                    )),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have an AO texture");
@@ -177,14 +167,10 @@ pub async fn load_obj_material_mesh(
 
                 let metallic = material.shininess.unwrap_or(0.0);
                 let metallic_roughness_texture = match &material.shininess_texture {
-                    Some(texture) => {
-                        commands
-                            .load_asset::<_, TextureLoader<PathBuf>, _>((
-                                texture.into(),
-                                source.fs.clone(),
-                            ))
-                            .await
-                    }
+                    Some(texture) => commands.lazy_load_asset::<TextureLoader<PathBuf>, _>((
+                        texture.into(),
+                        source.fs.clone(),
+                    )),
                     None => {
                         #[cfg(debug_assertions)]
                         log::warn!("Material does not have a metallic roughness texture");
@@ -238,28 +224,26 @@ pub async fn load_obj_material_mesh(
 #[derive(Default)]
 pub struct GltfMaterialModelLoader;
 
-impl Loader<LoadedModelWithMaterials, PathAndFilesystem> for GltfMaterialModelLoader {
-    async fn load(
-        &self,
-        source: PathAndFilesystem,
-        commands: &Commands,
-    ) -> Result<LoadedModelWithMaterials> {
-        load_gltf_material_mesh(&source, commands).await
+impl LoadFrom<PathBuf> for GltfMaterialModelLoader {
+    type Asset = LoadedModelWithMaterials;
+
+    async fn load(&self, source: PathBuf, commands: &Commands) -> Result<LoadedModelWithMaterials> {
+        load_gltf_material_mesh(&source, commands)
     }
 }
 
-pub async fn load_gltf_material_mesh(
-    source: &PathAndFilesystem,
+pub fn load_gltf_material_mesh(
+    source: &PathBuf,
     commands: &Commands,
 ) -> Result<LoadedModelWithMaterials> {
-    let bytes = source.read()?;
+    let bytes = std::fs::read(source)?;
     let (document, buffers, images) = gltf::import_slice(bytes)?;
 
     let mut primitives = Vec::new();
 
     for mesh in document.meshes() {
         for primitive in mesh.primitives() {
-            let material = load_material(primitive.material(), &images, commands).await?;
+            let material = load_material(primitive.material(), &images, commands)?;
 
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
@@ -310,7 +294,7 @@ pub async fn load_gltf_material_mesh(
     Ok(LoadedModelWithMaterials { primitives })
 }
 
-async fn load_material(
+fn load_material(
     material: gltf::Material<'_>,
     images: &[gltf::image::Data],
     commands: &Commands,
@@ -407,13 +391,13 @@ async fn load_material(
 
     let material = Material {
         diffuse: diffuse.into(),
-        diffuse_texture: commands.load_asset_direct(diffuse_texture).await,
-        normal_texture: commands.load_asset_direct(normal_texture).await,
+        diffuse_texture: commands.lazy_load_asset_direct(diffuse_texture),
+        normal_texture: commands.lazy_load_asset_direct(normal_texture),
         metallic,
         roughness,
-        metallic_roughness_texture: commands.load_asset_direct(metallic_roughness_texture).await,
+        metallic_roughness_texture: commands.lazy_load_asset_direct(metallic_roughness_texture),
         ao,
-        ao_texture: commands.load_asset_direct(ao_texture).await,
+        ao_texture: commands.lazy_load_asset_direct(ao_texture),
         texture_scale: 1.0,
     };
 

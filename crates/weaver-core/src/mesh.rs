@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use glam::{Vec2, Vec3, Vec4};
 use weaver_asset::{
-    prelude::{Asset, Loader},
     LoadSource, PathAndFilesystem,
+    prelude::{Asset, LoadFrom},
 };
 use weaver_ecs::prelude::Commands;
 use weaver_util::prelude::*;
@@ -82,10 +82,17 @@ impl Mesh {
     }
 }
 
-#[derive(Default)]
 pub struct ObjMeshLoader<S: LoadSource>(std::marker::PhantomData<S>);
 
-impl Loader<Mesh, PathAndFilesystem> for ObjMeshLoader<PathBuf> {
+impl<S: LoadSource> Default for ObjMeshLoader<S> {
+    fn default() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl LoadFrom<PathAndFilesystem> for ObjMeshLoader<PathAndFilesystem> {
+    type Asset = Mesh;
+
     async fn load(&self, source: PathAndFilesystem, _commands: &Commands) -> Result<Mesh> {
         let bytes = source.read()?;
         let meshes = load_obj(&bytes)?;
@@ -96,25 +103,14 @@ impl Loader<Mesh, PathAndFilesystem> for ObjMeshLoader<PathBuf> {
     }
 }
 
-impl Loader<Mesh, Vec<u8>> for ObjMeshLoader<Vec<u8>> {
+impl LoadFrom<Vec<u8>> for ObjMeshLoader<Vec<u8>> {
+    type Asset = Mesh;
+
     async fn load(&self, source: Vec<u8>, _commands: &Commands) -> Result<Mesh> {
         load_obj(&source)?
             .into_iter()
             .next()
             .ok_or_else(|| anyhow!("expected exactly one mesh in OBJ file"))
-    }
-}
-
-impl Loader<Vec<Mesh>, PathAndFilesystem> for ObjMeshLoader<PathBuf> {
-    async fn load(&self, source: PathAndFilesystem, _commands: &Commands) -> Result<Vec<Mesh>> {
-        let bytes = source.read()?;
-        load_obj(&bytes)
-    }
-}
-
-impl Loader<Vec<Mesh>, Vec<u8>> for ObjMeshLoader<Vec<u8>> {
-    async fn load(&self, source: Vec<u8>, _commands: &Commands) -> Result<Vec<Mesh>> {
-        load_obj(&source)
     }
 }
 
@@ -187,7 +183,9 @@ pub fn load_obj(bytes: &[u8]) -> Result<Vec<Mesh>> {
 #[derive(Default)]
 pub struct GltfMeshLoader<S: LoadSource>(std::marker::PhantomData<S>);
 
-impl Loader<Mesh, PathAndFilesystem> for GltfMeshLoader<PathBuf> {
+impl LoadFrom<PathAndFilesystem> for GltfMeshLoader<PathBuf> {
+    type Asset = Mesh;
+
     async fn load(&self, source: PathAndFilesystem, _commands: &Commands) -> Result<Mesh> {
         let bytes = source.read()?;
         let meshes = load_gltf(&bytes)?;
@@ -198,25 +196,14 @@ impl Loader<Mesh, PathAndFilesystem> for GltfMeshLoader<PathBuf> {
     }
 }
 
-impl Loader<Mesh, Vec<u8>> for GltfMeshLoader<Vec<u8>> {
+impl LoadFrom<Vec<u8>> for GltfMeshLoader<Vec<u8>> {
+    type Asset = Mesh;
+
     async fn load(&self, source: Vec<u8>, _commands: &Commands) -> Result<Mesh> {
         load_gltf(&source)?
             .into_iter()
             .next()
             .ok_or_else(|| anyhow!("expected exactly one mesh in GLTF file"))
-    }
-}
-
-impl Loader<Vec<Mesh>, PathAndFilesystem> for GltfMeshLoader<PathBuf> {
-    async fn load(&self, source: PathAndFilesystem, _commands: &Commands) -> Result<Vec<Mesh>> {
-        let bytes = source.read()?;
-        load_gltf(&bytes)
-    }
-}
-
-impl Loader<Vec<Mesh>, Vec<u8>> for GltfMeshLoader<Vec<u8>> {
-    async fn load(&self, source: Vec<u8>, _commands: &Commands) -> Result<Vec<Mesh>> {
-        load_gltf(&source)
     }
 }
 

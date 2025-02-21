@@ -3,21 +3,20 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use weaver_util::{lock::SharedLock, prelude::log};
+use weaver_util::lock::SharedLock;
 
 use crate::{
     bundle::{Bundle, ComponentBundle},
     change_detection::{ChangeDetection, ChangeDetectionMut, ComponentTicks, Tick},
     component::{Component, ComponentVec},
     entity::{Entity, EntityMap},
-    loan::LoanStorage,
 };
 
 #[derive(Default)]
 pub struct Archetype {
     data_types: Vec<TypeId>,
-    columns: Vec<SharedLock<LoanStorage<ComponentVec>>>,
-    ticks: Vec<SharedLock<LoanStorage<Vec<ComponentTicks>>>>,
+    columns: Vec<SharedLock<ComponentVec>>,
+    ticks: Vec<SharedLock<Vec<ComponentTicks>>>,
     entity_id_lookup: Vec<Entity>,
 }
 
@@ -27,15 +26,11 @@ impl Archetype {
         vecs.sort_unstable_by_key(|vec| vec.element_typeid());
         let mut data_types = T::component_type_ids();
         data_types.sort_unstable();
-        let columns = vecs
-            .into_iter()
-            .map(LoanStorage::new)
-            .map(SharedLock::new)
-            .collect::<Vec<_>>();
+        let columns = vecs.into_iter().map(SharedLock::new).collect::<Vec<_>>();
 
         let mut ticks = Vec::new();
         for _ in &columns {
-            ticks.push(SharedLock::new(LoanStorage::new(vec![])));
+            ticks.push(SharedLock::new(vec![]));
         }
 
         Self {
@@ -46,11 +41,11 @@ impl Archetype {
         }
     }
 
-    pub fn columns(&self) -> &[SharedLock<LoanStorage<ComponentVec>>] {
+    pub fn columns(&self) -> &[SharedLock<ComponentVec>] {
         &self.columns
     }
 
-    pub fn ticks(&self) -> &[SharedLock<LoanStorage<Vec<ComponentTicks>>>] {
+    pub fn ticks(&self) -> &[SharedLock<Vec<ComponentTicks>>] {
         &self.ticks
     }
 
@@ -164,21 +159,11 @@ impl Components {
         let archetype = &mut self.archetypes[archetype_id.as_usize()];
         let entity_index = archetype.entity_index(entity).unwrap();
 
-        // make sure we can mutably loan all columns before making any changes
-        for column in archetype.columns() {
-            let mut column = column.write();
-            if column.loan_mut().is_none() {
-                log::error!("Cannot remove entity because a component is already borrowed");
-                panic!("Cannot remove entity because a component is already borrowed");
-            }
-        }
-
         let mut components = Vec::new();
 
         for column in archetype.columns() {
             let mut column = column.write();
-            let mut tmp = column.loan().unwrap().clone_empty();
-            let mut column = column.loan_mut().unwrap();
+            let mut tmp = column.clone_empty();
             let component = column.swap_remove(entity_index);
             tmp.push(component);
             components.push(tmp);
@@ -187,7 +172,6 @@ impl Components {
         let mut ticks = Vec::new();
         for tick_column in archetype.ticks.iter() {
             let mut tick_column = tick_column.write();
-            let mut tick_column = tick_column.loan_mut().unwrap();
             let tick = tick_column.swap_remove(entity_index);
             ticks.push(tick);
         }
@@ -217,13 +201,12 @@ impl Components {
                     columns: components
                         .empty_vecs()
                         .into_iter()
-                        .map(LoanStorage::new)
                         .map(SharedLock::new)
                         .collect(),
                     ticks: components
                         .ticks
                         .iter()
-                        .map(|_| SharedLock::new(LoanStorage::new(vec![])))
+                        .map(|_| SharedLock::new(vec![]))
                         .collect(),
                     entity_id_lookup: Vec::new(),
                 };
@@ -238,12 +221,12 @@ impl Components {
 
         for (column, mut component) in archetype.columns.iter_mut().zip(components.components) {
             let mut column = column.write();
-            column.loan_mut().unwrap().push(component.pop().unwrap());
+            column.push(component.pop().unwrap());
         }
 
         for (tick_column, tick) in archetype.ticks.iter_mut().zip(components.ticks) {
             let mut tick_column = tick_column.write();
-            tick_column.loan_mut().unwrap().push(tick);
+            tick_column.push(tick);
         }
 
         self.entity_archetype.insert(entity, archetype_id);
@@ -281,9 +264,8 @@ impl Components {
         let archetype = &self.archetypes[archetype_id.as_usize()];
         let entity_index = archetype.entity_index(entity).unwrap();
         let column_index = archetype.index_of(TypeId::of::<T>()).unwrap();
-        let mut tick_column = archetype.ticks[column_index].write();
-        let mut tick_column = tick_column.loan_mut().unwrap();
-        let ticks = tick_column.get_mut(entity_index).unwrap();
+        let tick_column = archetype.ticks[column_index].read();
+        let ticks = tick_column.get(entity_index).unwrap();
         ticks.is_added(last_run, this_run)
     }
 
@@ -297,9 +279,8 @@ impl Components {
         let archetype = &self.archetypes[archetype_id.as_usize()];
         let entity_index = archetype.entity_index(entity).unwrap();
         let column_index = archetype.index_of(TypeId::of::<T>()).unwrap();
-        let mut tick_column = archetype.ticks[column_index].write();
-        let mut tick_column = tick_column.loan_mut().unwrap();
-        let ticks = tick_column.get_mut(entity_index).unwrap();
+        let tick_column = archetype.ticks[column_index].read();
+        let ticks = tick_column.get(entity_index).unwrap();
         ticks.is_changed(last_run, this_run)
     }
 

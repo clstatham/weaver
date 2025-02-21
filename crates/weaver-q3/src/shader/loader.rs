@@ -131,7 +131,9 @@ impl LoadedShader {
 #[derive(Default)]
 pub struct TryEverythingTextureLoader;
 
-impl Loader<Texture, PathAndFilesystem> for TryEverythingTextureLoader {
+impl LoadFrom<PathAndFilesystem> for TryEverythingTextureLoader {
+    type Asset = Texture;
+
     async fn load(&self, source: PathAndFilesystem, commands: &Commands) -> Result<Texture> {
         let extensions = ["png", "tga", "jpg", "jpeg", "pcx", "bmp"];
         for ext in &extensions {

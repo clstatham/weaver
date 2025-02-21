@@ -134,8 +134,7 @@ impl BspLoader {
                     continue;
                 }
                 let handle = commands
-                    .load_asset::<_, TryEverythingTextureLoader, _>((path.into(), fs.clone()))
-                    .await;
+                    .lazy_load_asset::<TryEverythingTextureLoader, _>((path.into(), fs.clone()));
                 texture_cache.insert(stripped.to_string(), handle);
                 textures.insert(map, handle);
             }
@@ -155,12 +154,9 @@ impl BspLoader {
                                 textures.insert(map, handle);
                                 continue;
                             }
-                            let handle = commands
-                                .load_asset::<_, TryEverythingTextureLoader, _>((
-                                    path.into(),
-                                    fs.clone(),
-                                ))
-                                .await;
+                            let handle = commands.lazy_load_asset::<TryEverythingTextureLoader, _>(
+                                (path.into(), fs.clone()),
+                            );
                             texture_cache.insert(stripped.to_string(), handle);
                             textures.insert(map, handle);
                         }
@@ -179,7 +175,9 @@ impl BspLoader {
     }
 }
 
-impl Loader<Bsp, PathAndFilesystem> for BspLoader {
+impl LoadFrom<PathAndFilesystem> for BspLoader {
+    type Asset = Bsp;
+
     // TODO: clean this up
     async fn load(&self, source: PathAndFilesystem, commands: &Commands) -> Result<Bsp> {
         let bytes = source.read()?;
@@ -212,7 +210,7 @@ impl Loader<Bsp, PathAndFilesystem> for BspLoader {
                 } => {
                     let mut shader_meshes = Vec::with_capacity(meshes_and_textures.len());
                     for (mesh, texture, typ) in meshes_and_textures {
-                        let mesh = commands.load_asset_direct(mesh).await;
+                        let mesh = commands.lazy_load_asset_direct(mesh);
                         let texture_name = texture.to_str().unwrap();
                         let texture_name = strip_extension(texture_name);
 
@@ -226,7 +224,7 @@ impl Loader<Bsp, PathAndFilesystem> for BspLoader {
                                 .load_shader_from_lexed(shader.clone(), source.fs.clone(), commands)
                                 .await;
 
-                            let shader = commands.load_asset_direct(shader).await;
+                            let shader = commands.lazy_load_asset_direct(shader);
 
                             loaded_shader_cache.insert(texture_name.to_string(), shader);
                             shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
@@ -235,18 +233,17 @@ impl Loader<Bsp, PathAndFilesystem> for BspLoader {
                             if let Some(texture) = texture_cache.get(texture_name) {
                                 let shader =
                                     LoadedShader::make_simple_textured(texture, texture_name);
-                                let shader = commands.load_asset_direct(shader).await;
+                                let shader = commands.lazy_load_asset_direct(shader);
                                 shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
                             } else {
                                 let texture = commands
-                                    .load_asset::<_, TryEverythingTextureLoader, _>((
+                                    .lazy_load_asset::<TryEverythingTextureLoader, _>((
                                         texture.to_str().unwrap().into(),
                                         source.fs.clone(),
-                                    ))
-                                    .await;
+                                    ));
                                 let shader =
                                     LoadedShader::make_simple_textured(texture, texture_name);
-                                let shader = commands.load_asset_direct(shader).await;
+                                let shader = commands.lazy_load_asset_direct(shader);
                                 shader_meshes.push(LoadedBspShaderMesh { mesh, shader, typ });
                             }
                         }

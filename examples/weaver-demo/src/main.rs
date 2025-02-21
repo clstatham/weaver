@@ -1,5 +1,6 @@
+use std::path::PathBuf;
+
 use weaver::prelude::*;
-use weaver_asset::AssetCommands;
 use weaver_diagnostics::prelude::*;
 
 pub mod camera;
@@ -28,7 +29,11 @@ fn main() -> Result<()> {
         .run()
 }
 
-async fn setup(commands: Commands) {
+async fn setup(
+    commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<Material>>,
+) {
     commands.spawn((
         Camera::default(),
         camera::FlyCameraController {
@@ -53,4 +58,19 @@ async fn setup(commands: Commands) {
             enabled: true,
         },
     ));
+
+    let mut material_mesh = GltfMaterialModelLoader
+        .load(
+            PathBuf::from("assets/meshes/stanford_dragon_pbr.glb"),
+            &commands,
+        )
+        .await
+        .unwrap();
+
+    let LoadedMaterialMeshPrimitive { material, mesh, .. } = material_mesh.primitives.remove(0);
+
+    let mesh = meshes.insert(mesh);
+    let material = materials.insert(material);
+
+    commands.spawn((mesh, material, Transform::default()));
 }

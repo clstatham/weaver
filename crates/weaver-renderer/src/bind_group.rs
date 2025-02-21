@@ -7,7 +7,7 @@ use weaver_ecs::{
     component::{Res, ResMut},
     entity::{Entity, EntityMap},
     prelude::Component,
-    query::Query,
+    query::{Query, With},
 };
 use weaver_util::prelude::*;
 
@@ -304,14 +304,17 @@ async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
     mut query: Query<(Entity, &Handle<T>)>,
     asset_bind_groups: Res<ExtractedAssetBindGroups>,
     mut layout_cache: ResMut<BindGroupLayoutCache>,
-    mut bind_group_handle_query: Query<&Handle<BindGroup<T>>>,
+    mut bind_group_handle_query: Query<(Entity, With<Handle<BindGroup<T>>>)>,
     mut staleness: ResMut<AssetBindGroupStaleness>,
 ) {
+    let mut to_add = Vec::new();
+    let mut to_remove = Vec::new();
     for (entity, handle) in query.iter() {
         // check for bind group staleness
         let mut stale = false;
         if staleness.is_stale(handle.id()) {
-            commands.remove_component::<Handle<BindGroup<T>>>(entity);
+            to_remove.push(entity);
+            // commands.remove_component::<Handle<BindGroup<T>>>(entity);
             asset_bind_groups
                 .bind_groups
                 .write()
@@ -329,7 +332,8 @@ async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
             .get(&handle.into_untyped())
         {
             let bind_group_handle = Handle::<BindGroup<T>>::try_from(*bind_group_handle).unwrap();
-            commands.insert_component(entity, bind_group_handle);
+            to_add.push((entity, bind_group_handle));
+            // commands.insert_component(entity, bind_group_handle);
         } else {
             let asset = assets.get(*handle).unwrap();
             staleness.set_stale(handle.id(), false);
@@ -337,7 +341,18 @@ async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
             log::trace!("Created bind group for asset: {:?}", T::type_name());
             let bind_group_handle = bind_group_assets.insert(bind_group);
             asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
-            commands.insert_component(entity, bind_group_handle);
+            // commands.insert_component(entity, bind_group_handle);
+            to_add.push((entity, bind_group_handle));
         }
+    }
+
+    drop((query, bind_group_handle_query));
+
+    for entity in to_remove {
+        commands.remove_component::<Handle<BindGroup<T>>>(entity);
+    }
+
+    for (entity, bind_group_handle) in to_add {
+        commands.insert_component(entity, bind_group_handle);
     }
 }

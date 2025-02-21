@@ -157,11 +157,11 @@ impl<T: Send + Sync + ConstructFromWorld> Local<T> {
         }
     }
 
-    pub fn get(&self) -> Read<T> {
+    pub fn get(&self) -> OwnedRead<T> {
         self.value.read()
     }
 
-    pub fn get_mut(&mut self) -> Write<T> {
+    pub fn get_mut(&mut self) -> OwnedWrite<T> {
         self.value.write()
     }
 }

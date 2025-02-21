@@ -23,8 +23,8 @@ use zip::ZipArchive;
 
 pub mod prelude {
     pub use crate::{
-        Asset, AssetLoadQueue, Assets, DirectLoader, Filesystem, Handle, Loader, PathAndFilesystem,
-        UntypedHandle,
+        Asset, AssetLoadQueue, Assets, DirectLoader, Filesystem, Handle, LoadFrom,
+        PathAndFilesystem, UntypedHandle,
     };
     pub use weaver_asset_macros::Asset;
 }
@@ -405,9 +405,14 @@ impl LoadSource for Vec<u8> {}
 impl LoadSource for BoxedAsset {}
 impl<T: Asset> LoadSource for T {}
 
-pub trait Loader<T: Asset, S: LoadSource>: ConstructFromWorld + Send + Sync + 'static {
-    fn load(&self, source: S, commands: &Commands)
-    -> impl Future<Output = Result<T>> + Send + Sync;
+pub trait LoadFrom<S: LoadSource>: ConstructFromWorld + Send + Sync + 'static {
+    type Asset: Asset;
+
+    fn load(
+        &self,
+        source: S,
+        commands: &Commands,
+    ) -> impl Future<Output = Result<Self::Asset>> + Send + Sync;
 }
 
 #[derive(Clone, Copy)]
@@ -419,7 +424,9 @@ impl<T: Asset> Default for DirectLoader<T> {
     }
 }
 
-impl<T: Asset> Loader<T, BoxedAsset> for DirectLoader<T> {
+impl<T: Asset> LoadFrom<BoxedAsset> for DirectLoader<T> {
+    type Asset = T;
+
     async fn load(&self, source: BoxedAsset, _commands: &Commands) -> Result<T> {
         source
             .downcast()
@@ -428,7 +435,8 @@ impl<T: Asset> Loader<T, BoxedAsset> for DirectLoader<T> {
     }
 }
 
-impl<T: Asset> Loader<T, T> for DirectLoader<T> {
+impl<T: Asset> LoadFrom<T> for DirectLoader<T> {
+    type Asset = T;
     async fn load(&self, source: T, _commands: &Commands) -> Result<T> {
         Ok(source)
     }
@@ -467,12 +475,12 @@ impl<T: Asset, S: LoadSource> Debug for AssetLoadRequest<T, S> {
     }
 }
 
-pub struct AssetLoadQueue<T: Asset, L: Loader<T, S>, S: LoadSource> {
-    queue: Lock<Vec<AssetLoadRequest<T, S>>>,
+pub struct AssetLoadQueue<L: LoadFrom<S>, S: LoadSource> {
+    queue: Lock<Vec<AssetLoadRequest<L::Asset, S>>>,
     _marker: PhantomData<L>,
 }
 
-impl<T: Asset, L: Loader<T, S>, S: LoadSource> Default for AssetLoadQueue<T, L, S> {
+impl<L: LoadFrom<S>, S: LoadSource> Default for AssetLoadQueue<L, S> {
     fn default() -> Self {
         Self {
             queue: Lock::new(Vec::new()),
@@ -481,12 +489,12 @@ impl<T: Asset, L: Loader<T, S>, S: LoadSource> Default for AssetLoadQueue<T, L, 
     }
 }
 
-impl<T: Asset, L: Loader<T, S>, S: LoadSource> AssetLoadQueue<T, L, S> {
+impl<L: LoadFrom<S>, S: LoadSource> AssetLoadQueue<L, S> {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn enqueue(&self, source: impl Into<S>) -> Handle<T> {
+    pub fn enqueue(&self, source: impl Into<S>) -> Handle<L::Asset> {
         let handle = Handle::from_raw(AssetId::new());
         self.queue.write().push(AssetLoadRequest {
             handle,
@@ -495,11 +503,11 @@ impl<T: Asset, L: Loader<T, S>, S: LoadSource> AssetLoadQueue<T, L, S> {
         handle
     }
 
-    pub fn push(&self, request: AssetLoadRequest<T, S>) {
+    pub fn push(&self, request: AssetLoadRequest<L::Asset, S>) {
         self.queue.write().push(request);
     }
 
-    pub fn pop(&self) -> Option<AssetLoadRequest<T, S>> {
+    pub fn pop(&self) -> Option<AssetLoadRequest<L::Asset, S>> {
         self.queue.write().pop()
     }
 
@@ -517,31 +525,28 @@ impl<T: Asset, L: Loader<T, S>, S: LoadSource> AssetLoadQueue<T, L, S> {
 }
 
 pub trait AssetCommands {
-    fn load_asset<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
+    fn lazy_load_asset<L: LoadFrom<S> + 'static, S: LoadSource>(
         &self,
         source: impl Into<S> + Send + Sync + 'static,
-    ) -> impl Future<Output = Handle<T>> + Send + Sync;
-    fn load_asset_direct<T: Asset>(
-        &self,
-        asset: T,
-    ) -> impl Future<Output = Handle<T>> + Send + Sync;
+    ) -> Handle<L::Asset>;
+    fn lazy_load_asset_direct<T: Asset>(&self, asset: T) -> Handle<T>;
 }
 
 impl AssetCommands for Commands {
-    async fn load_asset<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
+    fn lazy_load_asset<L: LoadFrom<S> + 'static, S: LoadSource>(
         &self,
         source: impl Into<S> + Send + Sync + 'static,
-    ) -> Handle<T> {
+    ) -> Handle<L::Asset> {
         self.run(|world| {
             world
-                .get_resource::<AssetLoadQueue<T, L, S>>()
+                .get_resource::<AssetLoadQueue<L, S>>()
                 .map(|load_queue| load_queue.enqueue(source.into()))
                 .unwrap()
         })
     }
 
-    async fn load_asset_direct<T: Asset>(&self, asset: T) -> Handle<T> {
-        self.load_asset::<T, DirectLoader<T>, T>(asset).await
+    fn lazy_load_asset_direct<T: Asset>(&self, asset: T) -> Handle<T> {
+        self.lazy_load_asset::<DirectLoader<T>, T>(asset)
     }
 }
 
@@ -596,15 +601,8 @@ pub struct AssetLoad;
 
 pub trait AssetApp {
     fn add_asset<T: Asset>(&mut self) -> &mut Self;
-    fn add_asset_loader<T: Asset, L: Loader<T, S>, S: LoadSource>(&mut self) -> &mut Self;
-    fn add_asset_load_dependency<
-        T: Asset,
-        L: Loader<T, S>,
-        S: LoadSource,
-        D: Asset,
-        DL: Loader<D, DS>,
-        DS: LoadSource,
-    >(
+    fn add_asset_loader<L: LoadFrom<S>, S: LoadSource>(&mut self) -> &mut Self;
+    fn add_asset_load_dependency<L: LoadFrom<S>, S: LoadSource, DL: LoadFrom<DS>, DS: LoadSource>(
         &mut self,
     ) -> &mut Self;
 }
@@ -619,48 +617,47 @@ impl AssetApp for SubApp {
         }
         if !self
             .world()
-            .has_resource::<AssetLoadQueue<T, DirectLoader<T>, BoxedAsset>>()
+            .has_resource::<AssetLoadQueue<DirectLoader<T>, BoxedAsset>>()
         {
-            self.add_asset_loader::<T, DirectLoader<T>, BoxedAsset>();
+            self.add_asset_loader::<DirectLoader<T>, BoxedAsset>();
         }
         if !self
             .world()
-            .has_resource::<AssetLoadQueue<T, DirectLoader<T>, T>>()
+            .has_resource::<AssetLoadQueue<DirectLoader<T>, T>>()
         {
-            self.add_asset_loader::<T, DirectLoader<T>, T>();
+            self.add_asset_loader::<DirectLoader<T>, T>();
         }
         self
     }
 
-    fn add_asset_loader<T: Asset, L: Loader<T, S>, S: LoadSource>(&mut self) -> &mut Self {
-        if !self.world().has_resource::<AssetLoadQueue<T, L, S>>() {
-            self.world_mut().init_resource::<AssetLoadQueue<T, L, S>>();
+    fn add_asset_loader<L: LoadFrom<S>, S: LoadSource>(&mut self) -> &mut Self {
+        if !self.world().has_resource::<AssetLoadQueue<L, S>>() {
+            self.world_mut().init_resource::<AssetLoadQueue<L, S>>();
 
-            self.world_mut().init_resource::<Events<AssetLoaded<T>>>();
+            self.world_mut()
+                .init_resource::<Events<AssetLoaded<L::Asset>>>();
 
             if !self.world().has_system_stage(AssetLoad) {
                 self.world_mut().push_update_stage(AssetLoad);
             }
 
             self.world_mut()
-                .add_system(load_all_assets::<T, L, S>, AssetLoad);
+                .add_system(load_all_assets::<L, S>, AssetLoad);
         }
         self
     }
 
     fn add_asset_load_dependency<
-        T: Asset,
-        L: Loader<T, S>,
+        L: LoadFrom<S>,
         S: LoadSource,
-        D: Asset,
-        DL: Loader<D, DS>,
+        DL: LoadFrom<DS>,
         DS: LoadSource,
     >(
         &mut self,
     ) -> &mut Self {
         self.world_mut().order_systems(
-            load_all_assets::<D, DL, DS>,
-            load_all_assets::<T, L, S>,
+            load_all_assets::<DL, DS>,
+            load_all_assets::<L, S>,
             AssetLoad,
         );
         self
@@ -673,39 +670,37 @@ impl AssetApp for App {
         self
     }
 
-    fn add_asset_loader<T: Asset, L: Loader<T, S>, S: LoadSource>(&mut self) -> &mut Self {
-        self.main_app_mut().add_asset_loader::<T, L, S>();
+    fn add_asset_loader<L: LoadFrom<S>, S: LoadSource>(&mut self) -> &mut Self {
+        self.main_app_mut().add_asset_loader::<L, S>();
         self
     }
 
     fn add_asset_load_dependency<
-        T: Asset,
-        L: Loader<T, S>,
+        L: LoadFrom<S>,
         S: LoadSource,
-        D: Asset,
-        DL: Loader<D, DS>,
+        DL: LoadFrom<DS>,
         DS: LoadSource,
     >(
         &mut self,
     ) -> &mut Self {
         self.main_app_mut()
-            .add_asset_load_dependency::<T, L, S, D, DL, DS>();
+            .add_asset_load_dependency::<L, S, DL, DS>();
         self
     }
 }
 
-async fn load_all_assets<T: Asset, L: Loader<T, S> + 'static, S: LoadSource>(
+async fn load_all_assets<L: LoadFrom<S> + 'static, S: LoadSource>(
     commands: Commands,
     loader: FromWorld<L>,
-    load_queue: Res<AssetLoadQueue<T, L, S>>,
-    mut assets: ResMut<Assets<T>>,
-    load_events: Res<Events<AssetLoaded<T>>>,
+    load_queue: Res<AssetLoadQueue<L, S>>,
+    mut assets: ResMut<Assets<L::Asset>>,
+    load_events: Res<Events<AssetLoaded<L::Asset>>>,
     load_status: Res<AssetLoadStatus>,
 ) {
     if load_queue.is_empty() {
         return;
     }
-    log::debug!("Loading all assets of type: {}", T::type_name());
+    log::debug!("Loading all assets of type: {}", L::Asset::type_name());
 
     let n = load_queue.len();
 

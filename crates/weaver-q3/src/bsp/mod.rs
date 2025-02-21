@@ -1,5 +1,5 @@
 use loader::{Bsp, BspLoader};
-use weaver_app::{plugin::Plugin, App};
+use weaver_app::{App, plugin::Plugin};
 use weaver_asset::{AssetApp, DirectLoader, PathAndFilesystem};
 use weaver_core::mesh::Mesh;
 use weaver_renderer::RenderApp;
@@ -19,10 +19,10 @@ impl Plugin for BspPlugin {
         app.add_asset::<Bsp>();
         app.add_asset::<LoadedShader>();
 
-        app.add_asset_loader::<Bsp, BspLoader, PathAndFilesystem>();
+        app.add_asset_loader::<BspLoader, PathAndFilesystem>();
 
-        app.add_asset_load_dependency::<Bsp, BspLoader, PathAndFilesystem, Mesh, DirectLoader<Mesh>, Mesh>();
-        app.add_asset_load_dependency::<Bsp, BspLoader, PathAndFilesystem, LoadedShader, DirectLoader<LoadedShader>, LoadedShader>();
+        app.add_asset_load_dependency::<BspLoader, PathAndFilesystem, DirectLoader<Mesh>, Mesh>();
+        app.add_asset_load_dependency::<BspLoader, PathAndFilesystem, DirectLoader<LoadedShader>, LoadedShader>();
 
         let render_app = app.get_sub_app_mut::<RenderApp>().unwrap();
         render_app.add_plugin(render::BspRenderPlugin)?;

@@ -3,9 +3,8 @@ use loader::{
     LexedShaderCache, LoadedShader, LoadedShaderCache, TextureCache, TryEverythingTextureLoader,
 };
 use render::{ShaderBindGroupLayout, ShaderPipelineCache};
-use weaver_app::{plugin::Plugin, App};
+use weaver_app::{App, plugin::Plugin};
 use weaver_asset::{AssetApp, Assets};
-use weaver_core::texture::Texture;
 use weaver_renderer::{RenderApp, WgpuDevice};
 use weaver_util::prelude::*;
 
@@ -21,7 +20,7 @@ impl Plugin for ShaderPlugin {
         app.init_resource::<TextureCache>();
         app.init_resource::<LexedShaderCache>();
         app.init_resource::<LoadedShaderCache>();
-        app.add_asset_loader::<Texture, TryEverythingTextureLoader, _>();
+        app.add_asset_loader::<TryEverythingTextureLoader, _>();
         app.add_asset::<LexedShader>();
         let mut shaders = Assets::<LoadedShader>::new();
         shaders.insert_manual(

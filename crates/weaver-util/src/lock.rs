@@ -4,7 +4,8 @@ use std::{
 };
 
 use parking_lot::{
-    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
+    ArcRwLockReadGuard, ArcRwLockWriteGuard, MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock,
+    RwLockReadGuard, RwLockWriteGuard,
 };
 
 #[derive(Debug, Default)]
@@ -174,22 +175,22 @@ impl<T> SharedLock<T> {
         Arc::downgrade(&self.0)
     }
 
-    pub fn read(&self) -> Read<'_, T> {
+    pub fn read(&self) -> OwnedRead<T> {
         if cfg!(debug_assertions) && self.0.try_read().is_none() {
             log::warn!("Read lock contention detected");
             let bt = std::backtrace::Backtrace::force_capture();
             log::warn!("{}", bt);
         }
-        Read(self.0.read())
+        OwnedRead(self.0.clone().read_arc())
     }
 
-    pub fn write(&self) -> Write<'_, T> {
+    pub fn write(&self) -> OwnedWrite<T> {
         if cfg!(debug_assertions) && self.0.try_write().is_none() {
             log::warn!("Write lock contention detected");
             let bt = std::backtrace::Backtrace::force_capture();
             log::warn!("{}", bt);
         }
-        Write(self.0.write())
+        OwnedWrite(self.0.clone().write_arc())
     }
 
     pub fn strong_count(&self) -> usize {
@@ -218,6 +219,36 @@ impl<T: ?Sized> Deref for SharedLock<T> {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct OwnedRead<T: ?Sized>(ArcRwLockReadGuard<parking_lot::RawRwLock, T>);
+
+impl<T: ?Sized> Deref for OwnedRead<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct OwnedWrite<T: ?Sized>(ArcRwLockWriteGuard<parking_lot::RawRwLock, T>);
+
+impl<T: ?Sized> Deref for OwnedWrite<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: ?Sized> DerefMut for OwnedWrite<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

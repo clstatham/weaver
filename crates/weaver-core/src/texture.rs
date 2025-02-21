@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use weaver_asset::{
-    prelude::{Asset, Loader},
     LoadSource, PathAndFilesystem,
+    prelude::{Asset, LoadFrom},
 };
 use weaver_ecs::prelude::Commands;
 use weaver_util::prelude::*;
@@ -70,14 +70,18 @@ impl Texture {
 #[derive(Default)]
 pub struct TextureLoader<S: LoadSource>(std::marker::PhantomData<S>);
 
-impl Loader<Texture, PathAndFilesystem> for TextureLoader<PathBuf> {
+impl LoadFrom<PathAndFilesystem> for TextureLoader<PathBuf> {
+    type Asset = Texture;
+
     async fn load(&self, source: PathAndFilesystem, _commands: &Commands) -> Result<Texture> {
         let bytes = source.read()?;
         load_texture_common(&bytes)
     }
 }
 
-impl Loader<Texture, Vec<u8>> for TextureLoader<Vec<u8>> {
+impl LoadFrom<Vec<u8>> for TextureLoader<Vec<u8>> {
+    type Asset = Texture;
+
     async fn load(&self, source: Vec<u8>, _commands: &Commands) -> Result<Texture> {
         load_texture_common(&source)
     }

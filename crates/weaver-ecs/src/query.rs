@@ -5,7 +5,6 @@ use weaver_util::prelude::*;
 use crate::{
     change_detection::{ComponentTicks, Tick},
     entity::Entity,
-    loan::{Loan, LoanMut},
     prelude::{Archetype, Component, ComponentVec, SystemAccess, SystemParam},
     storage::{Components, Mut, Ref},
 };
@@ -13,15 +12,15 @@ use crate::{
 use super::world::World;
 
 pub struct ReadLockedColumns {
-    pub column: Loan<ComponentVec>,
-    pub ticks: Loan<Vec<ComponentTicks>>,
+    pub column: OwnedRead<ComponentVec>,
+    pub ticks: OwnedRead<Vec<ComponentTicks>>,
     pub entities: Vec<Entity>,
     pub entity_indices: Vec<usize>,
 }
 
 pub struct WriteLockedColumns {
-    pub column: LoanMut<ComponentVec>,
-    pub ticks: LoanMut<Vec<ComponentTicks>>,
+    pub column: OwnedWrite<ComponentVec>,
+    pub ticks: OwnedWrite<Vec<ComponentTicks>>,
     pub entities: Vec<Entity>,
     pub entity_indices: Vec<usize>,
 }
@@ -101,11 +100,8 @@ impl<T: Component> Queryable for &T {
     fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
         let col_index = archetype.index_of(TypeId::of::<T>())?;
 
-        let column = archetype.columns()[col_index]
-            .write()
-            .loan()
-            .unwrap_or_else(|| panic!("Failed to lock column of type {}", T::type_name()));
-        let ticks = archetype.ticks()[col_index].write().loan().unwrap();
+        let column = archetype.columns()[col_index].read();
+        let ticks = archetype.ticks()[col_index].read();
         let entities: Vec<Entity> = archetype.entity_iter().collect();
         let entity_indices = entities
             .iter()
@@ -177,11 +173,8 @@ impl<T: Component> Queryable for &mut T {
     fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
         let col_index = archetype.index_of(TypeId::of::<T>())?;
 
-        let column = archetype.columns()[col_index]
-            .write()
-            .loan_mut()
-            .unwrap_or_else(|| panic!("Failed to lock column of type {}", T::type_name()));
-        let ticks = archetype.ticks()[col_index].write().loan_mut().unwrap();
+        let column = archetype.columns()[col_index].write();
+        let ticks = archetype.ticks()[col_index].write();
         let entities: Vec<Entity> = archetype.entity_iter().collect();
         let entity_indices = entities
             .iter()
@@ -460,11 +453,8 @@ impl<T: Component> Queryable for Changed<&T> {
     fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
         let col_index = archetype.index_of(TypeId::of::<T>())?;
 
-        let column = archetype.columns()[col_index]
-            .write()
-            .loan()
-            .unwrap_or_else(|| panic!("Failed to lock column of type {}", T::type_name()));
-        let ticks = archetype.ticks()[col_index].write().loan().unwrap();
+        let column = archetype.columns()[col_index].read();
+        let ticks = archetype.ticks()[col_index].read();
         let entities: Vec<Entity> = archetype.entity_iter().collect();
         let entity_indices = entities
             .iter()
@@ -544,11 +534,8 @@ impl<T: Component> Queryable for Changed<&mut T> {
     fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {
         let col_index = archetype.index_of(TypeId::of::<T>())?;
 
-        let column = archetype.columns()[col_index]
-            .write()
-            .loan_mut()
-            .unwrap_or_else(|| panic!("Failed to lock column of type {}", T::type_name()));
-        let ticks = archetype.ticks()[col_index].write().loan_mut().unwrap();
+        let column = archetype.columns()[col_index].write();
+        let ticks = archetype.ticks()[col_index].write();
         let entities: Vec<Entity> = archetype.entity_iter().collect();
         let entity_indices = entities
             .iter()

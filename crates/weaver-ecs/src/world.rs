@@ -19,7 +19,7 @@ use crate::{
 use super::{entity::Entity, storage::Components};
 
 pub struct World {
-    entities: Lock<Entities>,
+    entities: Entities,
     resources: Lock<ComponentMap>,
     systems: Systems,
     command_tx: crossbeam_channel::Sender<Command>,
@@ -39,7 +39,7 @@ impl Default for World {
         let (command_tx, command_rx) = crossbeam_channel::unbounded();
 
         Self {
-            entities: Lock::new(Entities::default()),
+            entities: Entities::default(),
             resources: Lock::new(resources),
             systems: Systems::default(),
             command_tx,
@@ -71,20 +71,20 @@ impl World {
     }
 
     /// Creates a new entity in the world.
-    pub fn create_entity(&self) -> Entity {
-        self.entities.write().alloc()
+    pub fn create_entity(&mut self) -> Entity {
+        self.entities.alloc()
     }
 
-    pub fn insert_entity(&self, entity: Entity) {
-        self.entities.write().alloc_at(entity);
+    pub fn insert_entity(&mut self, entity: Entity) {
+        self.entities.alloc_at(entity);
     }
 
     pub fn find_entity_by_id(&self, id: u32) -> Option<Entity> {
-        self.entities.read().find_by_id(id)
+        self.entities.find_by_id(id)
     }
 
     /// Creates a new entity in the world and adds the bundle of components to it.
-    pub fn spawn<T: Bundle>(&self, bundle: T) -> Entity {
+    pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
         let entity = self.create_entity();
         self.components_mut()
             .insert_bundle(entity, bundle, self.read_change_tick());
@@ -92,9 +92,9 @@ impl World {
     }
 
     /// Destroys the entity and all its components in the world.
-    pub fn destroy_entity(&self, entity: Entity) {
+    pub fn destroy_entity(&mut self, entity: Entity) {
         self.components_mut().remove_entity(entity);
-        self.entities.write().free(entity);
+        self.entities.free(entity);
     }
 
     pub fn insert_component<T: Component>(&self, entity: Entity, component: T) {

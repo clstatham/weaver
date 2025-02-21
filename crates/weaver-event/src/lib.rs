@@ -13,12 +13,12 @@ pub mod prelude {
 
 pub trait Event: 'static + Send + Sync {}
 
-pub struct EventRef<'a, T: Event> {
-    events: Read<'a, VecDeque<T>>,
+pub struct EventRef<T: Event> {
+    events: OwnedRead<VecDeque<T>>,
     index: usize,
 }
 
-impl<T: Event> Deref for EventRef<'_, T> {
+impl<T: Event> Deref for EventRef<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -146,8 +146,8 @@ pub struct EventIter<'a, T: Event> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a, T: Event> Iterator for EventIter<'a, T> {
-    type Item = EventRef<'a, T>;
+impl<T: Event> Iterator for EventIter<'_, T> {
+    type Item = EventRef<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.unread == 0 {

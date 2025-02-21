@@ -12,6 +12,7 @@ glam = { version = "0.28", features = ["bytemuck"] }
 ktx2 = "0.3.0"
 tobj = "4.0.2"
 uuid = "1.9.1"
+async-fs = "2.1"
 
 weaver-util = { path = "../weaver-util" }
 weaver-renderer = { path = "../weaver-renderer" }

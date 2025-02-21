@@ -5,6 +5,7 @@ use crate::{
     component::Component,
     entity::Entity,
     prelude::World,
+    query::{Query, Queryable},
     system::{SystemAccess, SystemParam},
     world::ConstructFromWorld,
 };
@@ -79,6 +80,10 @@ impl Commands {
 
     pub fn spawn<T: Bundle>(&self, bundle: T) -> Entity {
         self.run(move |world| world.spawn(bundle))
+    }
+
+    pub fn query<Q: Queryable + 'static>(&self) -> Query<Q> {
+        self.run(move |world| world.query::<Q>())
     }
 }
 

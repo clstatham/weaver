@@ -19,13 +19,13 @@
                 },
                 "args": [
                     "build",
-                    "--bin=weaver-demo",
-                    "--package=weaver-demo",
+                    "--example",
+                    "weaver-demo",
                 ],
-                "filter": {
-                    "name": "weaver-demo",
-                    "kind": "bin",
-                }
+                // "filter": {
+                //     "name": "weaver-demo",
+                //     "kind": "bin",
+                // }
             },
             "args": [],
             "cwd": "${workspaceFolder}"

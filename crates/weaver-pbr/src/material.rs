@@ -1,6 +1,6 @@
 use encase::ShaderType;
-use weaver_app::{plugin::Plugin, App};
-use weaver_asset::{prelude::Asset, Assets, Handle};
+use weaver_app::{App, plugin::Plugin};
+use weaver_asset::{Assets, Handle, prelude::Asset};
 use weaver_core::{color::Color, texture::Texture};
 use weaver_ecs::prelude::ResMut;
 use weaver_renderer::{
@@ -9,7 +9,7 @@ use weaver_renderer::{
     buffer::GpuBufferVec,
     extract::Extract,
     prelude::*,
-    texture::{texture_format, GpuTexture},
+    texture::{GpuTexture, texture_format},
 };
 use weaver_util::prelude::*;
 
@@ -20,7 +20,7 @@ pub const BLACK_TEXTURE: Handle<Texture> =
 pub const ERROR_TEXTURE: Handle<Texture> =
     Handle::from_u128(288942464416563327199333453807837020723);
 
-#[derive(Asset)]
+#[derive(Asset, Clone)]
 pub struct Material {
     pub diffuse: Color,
     pub diffuse_texture: Handle<Texture>,
