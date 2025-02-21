@@ -49,10 +49,6 @@ impl Plugin for PbrPlugin {
 
         render_app.add_plugin(ResourceBindGroupPlugin::<PbrLightingInformation>::default())?;
 
-        render_app
-            .world_mut()
-            .add_system(render_hdr.after(render_skybox), RenderStage::Render);
-
         render_app.world_mut().add_system(
             init_pbr_lighting_information,
             RenderStage::InitRenderResources,

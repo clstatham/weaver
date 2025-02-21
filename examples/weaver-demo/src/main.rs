@@ -16,7 +16,7 @@ fn main() -> Result<()> {
         .add_plugin(RendererPlugin)?
         .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
         .configure_plugin::<WindowPlugin>(|plugin| {
-            plugin.initial_size = (800, 600);
+            plugin.initial_size = (1600, 900);
         })
         .add_plugin(PbrPlugin)?
         .add_plugin(LogFrameTimePlugin {
