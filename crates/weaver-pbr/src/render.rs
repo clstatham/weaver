@@ -1,9 +1,8 @@
 use std::path::Path;
 
 use weaver_asset::{Assets, Handle};
-use weaver_core::prelude::Transform;
 use weaver_ecs::{
-    prelude::{Commands, Res, ResMut, World},
+    prelude::{Res, ResMut, World},
     query::Query,
     world::ConstructFromWorld,
 };
@@ -16,7 +15,7 @@ use weaver_renderer::{
     resources::ActiveCommandEncoder,
     shader::Shader,
     texture::texture_format,
-    transform::{GpuTransform, TransformBindGroup},
+    transform::TransformBindGroup,
 };
 
 use crate::{

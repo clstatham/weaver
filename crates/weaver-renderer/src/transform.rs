@@ -12,7 +12,7 @@ use weaver_core::transform::Transform;
 
 use crate::{
     RenderStage, WgpuDevice, WgpuQueue,
-    buffer::{GpuBuffer, GpuBufferVec},
+    buffer::GpuBufferVec,
     extract::{ExtractComponent, ExtractComponentPlugin},
     prelude::{
         BindGroupLayout, ComponentBindGroupPlugin, CreateBindGroup, create_component_bind_group,
