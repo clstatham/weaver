@@ -1,10 +1,28 @@
-use weaver_ecs::{prelude::World, world::ConstructFromWorld};
+use std::path::Path;
+
+use weaver_asset::{Assets, Handle};
+use weaver_core::prelude::Transform;
+use weaver_ecs::{
+    prelude::{Commands, Res, ResMut, World},
+    query::Query,
+    world::ConstructFromWorld,
+};
 use weaver_renderer::{
     bind_group::{BindGroupLayout, CreateBindGroup},
+    camera::{CameraBindGroup, ViewTarget},
+    mesh::GpuMesh,
+    pipeline::RenderPipelineCache,
     prelude::*,
+    resources::ActiveCommandEncoder,
+    shader::Shader,
+    texture::texture_format,
+    transform::{GpuTransform, TransformBindGroup},
 };
 
-use crate::{light::GpuPointLightArray, prelude::irradiance::GpuSkyboxIrradiance};
+use crate::{
+    light::GpuPointLightArray,
+    prelude::{GpuMaterial, irradiance::GpuSkyboxIrradiance},
+};
 
 /// Combined bind group for PBR light arrays and environment maps.
 pub struct PbrLightingInformation {
@@ -120,117 +138,161 @@ impl CreateBindGroup for PbrLightingInformation {
     }
 }
 
-// #[derive(Default)]
-// pub struct PbrRenderable;
+#[derive(Default)]
+pub struct PbrRenderable;
 
-// impl CreateRenderPipeline for PbrRenderable {
-//     fn create_render_pipeline_layout(
-//         device: &wgpu::Device,
-//         bind_group_layout_cache: &mut BindGroupLayoutCache,
-//     ) -> RenderPipelineLayout
-//     where
-//         Self: Sized,
-//     {
-//         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-//             label: Some("PBR Pipeline Layout"),
-//             bind_group_layouts: &[
-//                 &bind_group_layout_cache.get_or_create::<GpuMaterial>(device),
-//                 &bind_group_layout_cache.get_or_create::<CameraBindGroup>(device),
-//                 // &bind_group_layout_cache
-//                 //     .get_or_create::<BatchedInstanceBuffer<PbrDrawItem, PbrRenderCommand>>(device),
-//                 &bind_group_layout_cache.get_or_create::<PbrLightingInformation>(device),
-//             ],
-//             push_constant_ranges: &[],
-//         });
+impl CreateRenderPipeline for PbrRenderable {
+    fn create_render_pipeline_layout(
+        device: &wgpu::Device,
+        bind_group_layout_cache: &mut BindGroupLayoutCache,
+    ) -> RenderPipelineLayout
+    where
+        Self: Sized,
+    {
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("PBR Pipeline Layout"),
+            bind_group_layouts: &[
+                &bind_group_layout_cache.get_or_create::<GpuMaterial>(device),
+                &bind_group_layout_cache.get_or_create::<CameraBindGroup>(device),
+                &bind_group_layout_cache.get_or_create::<TransformBindGroup>(device),
+                &bind_group_layout_cache.get_or_create::<PbrLightingInformation>(device),
+            ],
+            push_constant_ranges: &[],
+        });
 
-//         RenderPipelineLayout::new(layout)
-//     }
+        RenderPipelineLayout::new(layout)
+    }
 
-//     fn create_render_pipeline(
-//         device: &wgpu::Device,
-//         cached_layout: &wgpu::PipelineLayout,
-//     ) -> RenderPipeline
-//     where
-//         Self: Sized,
-//     {
-//         let shader = Shader::new(Path::new("assets/shaders/pbr.wgsl")).create_shader_module(device);
+    fn create_render_pipeline(
+        device: &wgpu::Device,
+        cached_layout: &wgpu::PipelineLayout,
+    ) -> RenderPipeline
+    where
+        Self: Sized,
+    {
+        let shader = Shader::new(Path::new("assets/shaders/pbr.wgsl")).create_shader_module(device);
 
-//         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-//             label: Some("PBR Pipeline"),
-//             layout: Some(cached_layout),
-//             cache: None,
-//             vertex: wgpu::VertexState {
-//                 module: &shader,
-//                 entry_point: "vs_main",
-//                 buffers: &[wgpu::VertexBufferLayout {
-//                     array_stride: 4 * (3 + 3 + 3 + 2) as u64,
-//                     step_mode: wgpu::VertexStepMode::Vertex,
-//                     attributes: &[
-//                         wgpu::VertexAttribute {
-//                             format: wgpu::VertexFormat::Float32x3,
-//                             offset: 0,
-//                             shader_location: 0,
-//                         },
-//                         wgpu::VertexAttribute {
-//                             format: wgpu::VertexFormat::Float32x3,
-//                             offset: 4 * 3,
-//                             shader_location: 1,
-//                         },
-//                         wgpu::VertexAttribute {
-//                             format: wgpu::VertexFormat::Float32x3,
-//                             offset: 4 * 6,
-//                             shader_location: 2,
-//                         },
-//                         wgpu::VertexAttribute {
-//                             format: wgpu::VertexFormat::Float32x2,
-//                             offset: 4 * 9,
-//                             shader_location: 3,
-//                         },
-//                     ],
-//                 }],
-//                 compilation_options: wgpu::PipelineCompilationOptions::default(),
-//             },
-//             fragment: Some(wgpu::FragmentState {
-//                 module: &shader,
-//                 entry_point: "fs_main",
-//                 targets: &[Some(wgpu::ColorTargetState {
-//                     format: texture_format::HDR_FORMAT,
-//                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-//                     write_mask: wgpu::ColorWrites::ALL,
-//                 })],
-//                 compilation_options: wgpu::PipelineCompilationOptions::default(),
-//             }),
-//             primitive: wgpu::PrimitiveState {
-//                 cull_mode: Some(wgpu::Face::Back),
-//                 // cull_mode: None,
-//                 ..Default::default()
-//             },
-//             depth_stencil: Some(wgpu::DepthStencilState {
-//                 format: texture_format::DEPTH_FORMAT,
-//                 depth_write_enabled: true,
-//                 depth_compare: wgpu::CompareFunction::LessEqual,
-//                 stencil: wgpu::StencilState::default(),
-//                 bias: wgpu::DepthBiasState::default(),
-//             }),
-//             multisample: Default::default(),
-//             multiview: None,
-//         });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("PBR Pipeline"),
+            layout: Some(cached_layout),
+            cache: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: 4 * (3 + 3 + 3 + 2) as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x3,
+                            offset: 0,
+                            shader_location: 0,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x3,
+                            offset: 4 * 3,
+                            shader_location: 1,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x3,
+                            offset: 4 * 6,
+                            shader_location: 2,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 4 * 9,
+                            shader_location: 3,
+                        },
+                    ],
+                }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: texture_format::HDR_FORMAT,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Back),
+                // cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: texture_format::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: Default::default(),
+            multiview: None,
+        });
 
-//         RenderPipeline::new(pipeline)
-//     }
-// }
+        RenderPipeline::new(pipeline)
+    }
+}
 
-// pub(crate) async fn render_pbr(
-//     commands: Commands,
-//     // mesh_assets: Res<Assets<GpuMesh>>,
-//     // material_assets: Res<Assets<BindGroup<GpuMaterial>>>,
-//     // pipeline_cache: Res<RenderPipelineCache>,
-//     // // mesh_transforms_bind_group: Res<BindGroup<Transform>>,
-//     // lights_bind_group: Res<BindGroup<PbrLightingInformation>>,
-//     // mut encoder: ResMut<ActiveCommandEncoder>,
-// ) {
-//     // let pipeline = pipeline_cache.get_pipeline_for::<PbrRenderable>().unwrap();
-// }
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub(crate) async fn render_pbr(
+    mut mesh_assets: ResMut<Assets<GpuMesh>>,
+    mut material_assets: ResMut<Assets<BindGroup<GpuMaterial>>>,
+    pipeline_cache: Res<RenderPipelineCache>,
+    mut item_query: Query<(
+        &Handle<GpuMesh>,
+        &Handle<BindGroup<GpuMaterial>>,
+        &BindGroup<TransformBindGroup>,
+    )>,
+    lights_bind_group: Res<BindGroup<PbrLightingInformation>>,
+    mut encoder: ResMut<ActiveCommandEncoder>,
+    mut view_target: Query<(&ViewTarget, &BindGroup<CameraBindGroup>)>,
+) {
+    let pipeline = pipeline_cache.get_pipeline_for::<PbrRenderable>().unwrap();
+    let (view_target, camera_bind_group) = view_target.iter().next().unwrap();
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("PBR Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view_target.color_target,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &view_target.depth_target,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            ..Default::default()
+        });
+
+        pass.set_pipeline(pipeline);
+
+        for (mesh_handle, material_handle, transform_bind_group) in item_query.iter() {
+            let mesh = mesh_assets.get(*mesh_handle).unwrap();
+
+            let material = material_assets.get(*material_handle).unwrap();
+
+            pass.set_bind_group(0, material.bind_group(), &[]);
+            pass.set_bind_group(1, camera_bind_group.bind_group(), &[]);
+            pass.set_bind_group(2, transform_bind_group.bind_group(), &[]);
+            pass.set_bind_group(3, lights_bind_group.bind_group(), &[]);
+
+            pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+            pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+        }
+    }
+}
 
 // impl Renderable for PbrRenderable {
 //     fn render_system() -> Box<dyn System> {

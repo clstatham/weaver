@@ -2,7 +2,7 @@ use assets::material_mesh::{LoadedModelWithMaterials, ObjMaterialModelLoader};
 use light::{PointLight, PointLightPlugin};
 use material::{BLACK_TEXTURE, ERROR_TEXTURE, MaterialPlugin, WHITE_TEXTURE};
 use prelude::Material;
-use render::PbrLightingInformation;
+use render::{PbrLightingInformation, PbrRenderable, render_pbr};
 use skybox::{Skybox, SkyboxPlugin, SkyboxRenderablePlugin, render_skybox};
 use weaver_app::prelude::*;
 use weaver_asset::{AssetApp, Assets};
@@ -15,7 +15,7 @@ use weaver_ecs::{
 };
 use weaver_renderer::{
     RenderApp, RenderStage, WgpuDevice, WgpuQueue, bind_group::ResourceBindGroupPlugin,
-    hdr::render_hdr,
+    hdr::render_hdr, prelude::RenderPipelinePlugin,
 };
 use weaver_util::prelude::*;
 
@@ -60,6 +60,13 @@ impl Plugin for PbrPlugin {
         render_app.world_mut().add_system(
             update_pbr_lighting_information.after(init_pbr_lighting_information),
             RenderStage::InitRenderResources,
+        );
+
+        render_app.add_plugin(RenderPipelinePlugin::<PbrRenderable>::default())?;
+
+        render_app.world_mut().add_system(
+            render_pbr.after(render_skybox).before(render_hdr),
+            RenderStage::Render,
         );
 
         Ok(())
