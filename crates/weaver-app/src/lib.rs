@@ -5,8 +5,7 @@ use plugin::{DummyPlugin, Plugin};
 use weaver_ecs::{
     SystemStage,
     change_detection::WorldTicks,
-    component::Res,
-    prelude::Component,
+    prelude::{Component, ResMut},
     system::{IntoSystem, IntoSystemConfig},
     system_schedule::SystemStage,
     world::{ConstructFromWorld, World},
@@ -153,6 +152,16 @@ impl SubApp {
         } else {
             Ok(())
         }
+    }
+
+    pub fn add_event<T: Event>(&mut self, clear_events_stage: impl SystemStage) -> &mut Self {
+        async fn clear_events<T: Event>(mut events: ResMut<Events<T>>, world_ticks: WorldTicks) {
+            events.update(world_ticks.change_tick).await;
+        }
+        self.world_mut().insert_resource(Events::<T>::new());
+        self.world_mut()
+            .add_system(clear_events::<T>, clear_events_stage);
+        self
     }
 }
 
@@ -336,8 +345,8 @@ impl App {
     }
 
     pub fn add_event<T: Event>(&mut self) -> &mut Self {
-        async fn clear_events<T: Event>(events: Res<Events<T>>, world_ticks: WorldTicks) {
-            events.update(world_ticks.change_tick);
+        async fn clear_events<T: Event>(mut events: ResMut<Events<T>>, world_ticks: WorldTicks) {
+            events.update(world_ticks.change_tick).await;
         }
         self.insert_resource(Events::<T>::new());
         self.main_app_mut()
@@ -351,12 +360,13 @@ impl App {
         self
     }
 
-    pub fn send_event<T: Event>(&self, event: T) {
+    pub async fn send_event<T: Event>(&self, event: T) {
         self.main_app()
             .world()
             .get_resource::<Events<T>>()
             .unwrap()
-            .send(event);
+            .send(event)
+            .await;
     }
 
     pub fn add_system<T, M, S>(&mut self, system: S, stage: T) -> &mut Self

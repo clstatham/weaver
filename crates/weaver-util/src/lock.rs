@@ -176,21 +176,11 @@ impl<T> SharedLock<T> {
     }
 
     pub fn read(&self) -> OwnedRead<T> {
-        if cfg!(debug_assertions) && self.0.try_read().is_none() {
-            log::warn!("Read lock contention detected");
-            let bt = std::backtrace::Backtrace::force_capture();
-            log::warn!("{}", bt);
-        }
-        OwnedRead(self.0.clone().read_arc())
+        OwnedRead::new(self)
     }
 
     pub fn write(&self) -> OwnedWrite<T> {
-        if cfg!(debug_assertions) && self.0.try_write().is_none() {
-            log::warn!("Write lock contention detected");
-            let bt = std::backtrace::Backtrace::force_capture();
-            log::warn!("{}", bt);
-        }
-        OwnedWrite(self.0.clone().write_arc())
+        OwnedWrite::new(self)
     }
 
     pub fn strong_count(&self) -> usize {
@@ -226,6 +216,17 @@ impl<T: ?Sized> Deref for SharedLock<T> {
 #[repr(transparent)]
 pub struct OwnedRead<T: ?Sized>(ArcRwLockReadGuard<parking_lot::RawRwLock, T>);
 
+impl<T: ?Sized> OwnedRead<T> {
+    pub fn new(lock: &SharedLock<T>) -> Self {
+        if cfg!(debug_assertions) && lock.0.try_read().is_none() {
+            log::warn!("Read lock contention detected");
+            let bt = std::backtrace::Backtrace::force_capture();
+            log::warn!("{}", bt);
+        }
+        Self(lock.0.clone().read_arc())
+    }
+}
+
 impl<T: ?Sized> Deref for OwnedRead<T> {
     type Target = T;
 
@@ -237,6 +238,17 @@ impl<T: ?Sized> Deref for OwnedRead<T> {
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct OwnedWrite<T: ?Sized>(ArcRwLockWriteGuard<parking_lot::RawRwLock, T>);
+
+impl<T: ?Sized> OwnedWrite<T> {
+    pub fn new(lock: &SharedLock<T>) -> Self {
+        if cfg!(debug_assertions) && lock.0.try_write().is_none() {
+            log::warn!("Write lock contention detected");
+            let bt = std::backtrace::Backtrace::force_capture();
+            log::warn!("{}", bt);
+        }
+        Self(lock.0.clone().write_arc())
+    }
+}
 
 impl<T: ?Sized> Deref for OwnedWrite<T> {
     type Target = T;

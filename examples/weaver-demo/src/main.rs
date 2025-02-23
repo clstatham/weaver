@@ -10,14 +10,14 @@ fn main() -> Result<()> {
     App::new()
         .add_plugin(CoreTypesPlugin)?
         .add_plugin(WindowPlugin::default())?
+        .configure_plugin::<WindowPlugin>(|plugin| {
+            plugin.initial_size = (1600, 900);
+        })
         .add_plugin(WinitPlugin)?
         .add_plugin(TimePlugin)?
         .add_plugin(InputPlugin)?
         .add_plugin(RendererPlugin)?
         .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
-        .configure_plugin::<WindowPlugin>(|plugin| {
-            plugin.initial_size = (1600, 900);
-        })
         .add_plugin(PbrPlugin)?
         .add_plugin(LogFrameTimePlugin {
             log_interval: std::time::Duration::from_secs(1),

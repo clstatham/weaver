@@ -1,4 +1,5 @@
 use weaver::prelude::*;
+use weaver_event::prelude::StreamExt;
 
 #[derive(Debug, Clone, Copy)]
 pub struct FlyCameraController {
@@ -116,11 +117,10 @@ pub async fn update_camera(
 
 pub async fn update_aspect_ratio(
     mut camera: Query<&mut FlyCameraController>,
-    rx: EventRx<WindowResized>,
+    mut rx: EventRx<WindowResized>,
 ) {
-    let events: Vec<_> = rx.iter().collect();
-    if let Some(event) = events.last() {
-        let WindowResized { width, height } = **event;
+    if let Some(event) = rx.next().await {
+        let WindowResized { width, height } = event;
         let aspect = width as f32 / height as f32;
         for mut camera in camera.iter() {
             camera.aspect = aspect;

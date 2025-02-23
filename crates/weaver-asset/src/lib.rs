@@ -16,7 +16,7 @@ use weaver_ecs::{
     prelude::{Commands, Res, ResMut, SystemStage},
     world::{ConstructFromWorld, FromWorld},
 };
-use weaver_event::{Event, Events};
+use weaver_event::Events;
 use weaver_task::usages::GlobalTaskPool;
 use weaver_util::prelude::*;
 use zip::ZipArchive;
@@ -550,12 +550,21 @@ impl AssetCommands for Commands {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, PartialEq, Eq, Hash)]
 pub struct AssetLoaded<T: Asset> {
     id: AssetId,
     _marker: PhantomData<T>,
 }
-impl<T: Asset> Event for AssetLoaded<T> {}
+
+impl<T: Asset> Clone for AssetLoaded<T> {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<T: Asset> AssetLoaded<T> {
     pub fn new(id: AssetId) -> Self {
         Self {
@@ -731,7 +740,7 @@ async fn load_all_assets<L: LoadFrom<S> + 'static, S: LoadSource>(
         if let Ok(asset) = result.await {
             assets.insert_manual(asset, handle.id);
             load_status.manually_set_loaded(handle);
-            load_events.send(AssetLoaded::new(handle.id));
+            load_events.send(AssetLoaded::new(handle.id)).await;
         }
     }
 }

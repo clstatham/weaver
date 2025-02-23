@@ -12,6 +12,7 @@ use bind_group::{
     ExtractedAssetBindGroups, ResourceBindGroupStaleness,
 };
 use camera::{CameraPlugin, ViewTarget};
+use extract::Extract;
 use hdr::{HdrPlugin, HdrRenderTarget};
 use mesh::MeshPlugin;
 use pipeline::RenderPipelineCache;
@@ -32,7 +33,7 @@ use weaver_ecs::{
     system_schedule::SystemStage,
     world::World,
 };
-use weaver_event::{EventRx, Events};
+use weaver_event::{EventRx, EventTx, Events, prelude::StreamExt};
 use weaver_util::prelude::*;
 use weaver_winit::{Window, WindowResized, WindowSettings};
 
@@ -394,6 +395,11 @@ impl Plugin for RendererPlugin {
         render_app.add_plugin(TexturePlugin)?;
         render_app.add_plugin(HdrPlugin)?;
 
+        render_app.add_event::<WindowResized>(RenderStage::PostRender);
+        render_app
+            .world_mut()
+            .add_system(forward_resized_events, RenderStage::Extract);
+
         render_app.set_extract(Box::new(extract::render_extract));
 
         main_app.add_sub_app::<RenderApp>(render_app);
@@ -407,6 +413,10 @@ impl Plugin for RendererPlugin {
 
     fn ready(&self, main_app: &App) -> bool {
         main_app.main_app().world().has_resource::<Window>()
+            && main_app
+                .main_app()
+                .world()
+                .has_resource::<Events<WindowResized>>()
     }
 
     fn finish(&self, main_app: &mut App) -> Result<()> {
@@ -419,22 +429,24 @@ impl Plugin for RendererPlugin {
             .get_resource::<Window>()
             .unwrap()
             .clone();
-        let resized_events = main_app
-            .main_app_mut()
-            .world_mut()
-            .get_resource_mut::<Events<WindowResized>>()
-            .unwrap();
+        // let resized_events = main_app
+        //     .main_app()
+        //     .world()
+        //     .get_resource::<Events<WindowResized>>()
+        //     .unwrap();
 
-        let resized_events = resized_events.clone();
+        // let resized_events = resized_events.clone();
 
         let mut render_app = main_app.remove_sub_app::<RenderApp>().unwrap();
+
+        // render_app.world().insert_resource(resized_events);
 
         render_app.world().insert_resource(WindowSettings {
             title: window.title(),
             width: window.inner_size().width,
             height: window.inner_size().height,
         });
-        render_app.world().insert_resource(resized_events);
+
         create_surface(render_app.world_mut(), &window).unwrap();
 
         render_app.world().insert_resource(window);
@@ -507,6 +519,17 @@ fn renderer_extract(main_world: &mut World, _world: &mut World) -> Result<()> {
     main_world.insert_resource(channels);
 
     Ok(())
+}
+
+async fn forward_resized_events(
+    mut events: Extract<EventRx<WindowResized>>,
+    mut render_events: EventTx<WindowResized>,
+) {
+    use weaver_event::prelude::StreamExt;
+    while let Some(event) = events.next().await {
+        dbg!(&event);
+        render_events.send(event).await;
+    }
 }
 
 pub async fn begin_render(
@@ -631,7 +654,7 @@ pub async fn end_render(
 #[allow(clippy::too_many_arguments)]
 async fn resize_surface(
     commands: Commands,
-    events: EventRx<WindowResized>,
+    mut events: EventRx<WindowResized>,
     mut window_size: ResMut<WindowSettings>,
     mut view_targets: Query<(Entity, With<ViewTarget>)>,
     mut current_frame: ResMut<CurrentFrame>,
@@ -640,8 +663,7 @@ async fn resize_surface(
     surface: Res<WindowSurface>,
     mut hdr_target: ResMut<HdrRenderTarget>,
 ) {
-    let mut events_vec = events.iter().collect::<Vec<_>>();
-    if let Some(event) = events_vec.pop() {
+    if let Some(event) = events.next().await {
         let mut has_current_frame = false;
         let mut view_target_entities = Vec::new();
         let view_targets = view_targets
@@ -657,7 +679,7 @@ async fn resize_surface(
             }
         }
 
-        let WindowResized { width, height } = *event;
+        let WindowResized { width, height } = event;
 
         log::trace!("Resizing surface to {}x{}", width, height);
 

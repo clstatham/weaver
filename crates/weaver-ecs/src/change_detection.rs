@@ -9,6 +9,10 @@ pub struct Tick(pub(crate) u64);
 impl Tick {
     pub const MAX: Self = Self(u64::MAX);
 
+    pub const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+
     pub fn as_u64(&self) -> u64 {
         self.0
     }

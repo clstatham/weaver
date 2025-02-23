@@ -8,7 +8,7 @@ use weaver_ecs::{
     prelude::Commands,
     system_schedule::SystemStage,
 };
-use weaver_event::EventRx;
+use weaver_event::{EventRx, prelude::StreamExt};
 use weaver_renderer::{
     CurrentFrame, MainWorld, RenderApp, RenderStage, WgpuDevice, WgpuQueue, prelude::wgpu,
     texture::texture_format,
@@ -249,8 +249,12 @@ async fn render(
     renderer.enqueue_command_buffer(encoder.finish());
 }
 
-async fn egui_events(egui_context: Res<EguiContext>, window: Res<Window>, rx: EventRx<WinitEvent>) {
-    for event in rx.iter() {
+async fn egui_events(
+    egui_context: Res<EguiContext>,
+    window: Res<Window>,
+    mut rx: EventRx<WinitEvent>,
+) {
+    while let Some(event) = rx.next().await {
         if let winit::event::Event::WindowEvent { window_id, event } = &event.event {
             if window.id() == *window_id {
                 egui_context.handle_input(&window, event);

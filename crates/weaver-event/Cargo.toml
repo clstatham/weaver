@@ -5,6 +5,10 @@ edition = "2024"
 
 [dependencies]
 futures-util = "0.3"
+async-broadcast = "0.7"
 
 weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
