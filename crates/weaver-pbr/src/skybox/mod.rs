@@ -193,7 +193,7 @@ impl GpuSkybox {
         queue.write_texture(
             src.as_image_copy(),
             bytemuck::cast_slice(&pixels),
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(meta.width * std::mem::size_of::<[f32; 4]>() as u32),
                 rows_per_image: Some(meta.height),
@@ -335,7 +335,7 @@ impl CreateComputePipeline for GpuSkybox {
             label: Some("Skybox Compute Pipeline"),
             layout: Some(cached_layout),
             module: &module,
-            entry_point: "load",
+            entry_point: Some("load"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
@@ -474,13 +474,13 @@ impl CreateRenderPipeline for SkyboxRenderable {
             cache: None,
             vertex: wgpu::VertexState {
                 module: &module,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &module,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: texture_format::HDR_FORMAT,
                     blend: None,
@@ -542,8 +542,8 @@ pub async fn render_skybox(
         });
 
         rpass.set_pipeline(skybox_pipeline);
-        rpass.set_bind_group(0, &skybox_bind_group, &[]);
-        rpass.set_bind_group(1, &camera_bind_group, &[]);
+        rpass.set_bind_group(0, &**skybox_bind_group, &[]);
+        rpass.set_bind_group(1, &**camera_bind_group, &[]);
         rpass.draw(0..3, 0..1);
     }
 }

@@ -50,11 +50,6 @@ pub struct Write<'a, T>(RwLockWriteGuard<'a, T>);
 
 impl<'a, T> Read<'a, T> {
     pub fn new(lock: &'a Lock<T>) -> Self {
-        if cfg!(debug_assertions) && lock.0.try_read().is_none() {
-            log::warn!("Read lock contention detected");
-            let bt = std::backtrace::Backtrace::force_capture();
-            log::warn!("{}", bt);
-        }
         Self(lock.0.read())
     }
 
@@ -73,11 +68,6 @@ impl<'a, T> Read<'a, T> {
 
 impl<'a, T> Write<'a, T> {
     pub fn new(lock: &'a Lock<T>) -> Self {
-        if cfg!(debug_assertions) && lock.0.try_write().is_none() {
-            log::warn!("Write lock contention detected");
-            let bt = std::backtrace::Backtrace::force_capture();
-            log::warn!("{}", bt);
-        }
         Self(lock.0.write())
     }
 
@@ -218,11 +208,6 @@ pub struct OwnedRead<T: ?Sized>(ArcRwLockReadGuard<parking_lot::RawRwLock, T>);
 
 impl<T: ?Sized> OwnedRead<T> {
     pub fn new(lock: &SharedLock<T>) -> Self {
-        if cfg!(debug_assertions) && lock.0.try_read().is_none() {
-            log::warn!("Read lock contention detected");
-            let bt = std::backtrace::Backtrace::force_capture();
-            log::warn!("{}", bt);
-        }
         Self(lock.0.clone().read_arc())
     }
 }
@@ -241,11 +226,6 @@ pub struct OwnedWrite<T: ?Sized>(ArcRwLockWriteGuard<parking_lot::RawRwLock, T>)
 
 impl<T: ?Sized> OwnedWrite<T> {
     pub fn new(lock: &SharedLock<T>) -> Self {
-        if cfg!(debug_assertions) && lock.0.try_write().is_none() {
-            log::warn!("Write lock contention detected");
-            let bt = std::backtrace::Backtrace::force_capture();
-            log::warn!("{}", bt);
-        }
         Self(lock.0.clone().write_arc())
     }
 }

@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use weaver_app::{plugin::Plugin, App, AppStage};
+use weaver_app::{App, AppStage, plugin::Plugin};
 use weaver_core::{color::Color, prelude::Mat4, transform::Transform};
 use weaver_ecs::{
     component::Res,
@@ -11,17 +11,17 @@ use weaver_ecs::{
 };
 // use weaver_pbr::render::PbrRenderable;
 use weaver_renderer::{
+    RenderApp, RenderLabel, RenderStage, WgpuDevice, WgpuQueue,
     bind_group::{BindGroup, CreateBindGroup},
     buffer::{GpuBuffer, GpuBufferVec},
     camera::{CameraBindGroup, ViewTarget},
-    hdr::{render_hdr, HdrRenderTarget},
+    hdr::{HdrRenderTarget, render_hdr},
     mesh::primitive::{CubePrimitive, Primitive},
     pipeline::{RenderPipeline, RenderPipelineLayout},
     prelude::*,
     resources::ActiveCommandEncoder,
     shader::Shader,
-    texture::{texture_format, GpuTexture},
-    RenderApp, RenderLabel, RenderStage, WgpuDevice, WgpuQueue,
+    texture::{GpuTexture, texture_format},
 };
 use weaver_util::prelude::*;
 
@@ -358,13 +358,13 @@ impl GizmoRenderable {
                 cache: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "vs_main",
+                    entry_point: Some("vs_main"),
                     buffers: &[VERTEX_BUFFER_LAYOUT],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "fs_main",
+                    entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: texture_format::HDR_FORMAT,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -511,8 +511,8 @@ pub async fn render_gizmos(
             });
 
             render_pass.set_pipeline(pipeline);
-            render_pass.set_bind_group(0, gizmo_bind_group, &[]);
-            render_pass.set_bind_group(1, &camera_bind_group, &[]);
+            render_pass.set_bind_group(0, &**gizmo_bind_group, &[]);
+            render_pass.set_bind_group(1, &**camera_bind_group, &[]);
 
             let mut num_cubes = 0;
             for instance in gizmos.gizmos.read().get(key).unwrap().iter() {

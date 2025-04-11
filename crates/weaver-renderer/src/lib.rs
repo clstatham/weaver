@@ -205,7 +205,7 @@ fn create_surface(render_world: &mut World, window: &Window) -> Result<()> {
         return Ok(());
     }
 
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
         ..Default::default()
     });

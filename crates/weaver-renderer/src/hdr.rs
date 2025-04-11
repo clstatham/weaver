@@ -1,6 +1,6 @@
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
-use weaver_app::{plugin::Plugin, App};
+use weaver_app::{App, plugin::Plugin};
 use weaver_ecs::{
     component::Res,
     prelude::{ResMut, World},
@@ -10,6 +10,7 @@ use weaver_util::prelude::*;
 use weaver_winit::WindowSettings;
 
 use crate::{
+    CurrentFrame, RenderStage, WgpuDevice,
     bind_group::{BindGroup, BindGroupLayoutCache, CreateBindGroup, ResourceBindGroupPlugin},
     pipeline::{
         CreateRenderPipeline, RenderPipeline, RenderPipelineCache, RenderPipelineLayout,
@@ -17,8 +18,7 @@ use crate::{
     },
     resources::ActiveCommandEncoder,
     shader::Shader,
-    texture::{texture_format, GpuTexture},
-    CurrentFrame, RenderStage, WgpuDevice,
+    texture::{GpuTexture, texture_format},
 };
 
 #[derive(Clone)]
@@ -155,7 +155,7 @@ impl CreateRenderPipeline for HdrRenderable {
     where
         Self: Sized,
     {
-        let shader = Shader::new(Path::new("assets/shaders/hdr.wgsl"));
+        let shader = Shader::new("assets/shaders/hdr.wgsl");
         let shader_module = shader.create_shader_module(device);
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -164,13 +164,13 @@ impl CreateRenderPipeline for HdrRenderable {
             cache: None,
             vertex: wgpu::VertexState {
                 module: &shader_module,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader_module,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: texture_format::VIEW_FORMAT,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -218,7 +218,7 @@ pub async fn render_hdr(
         });
 
         render_pass.set_pipeline(pipeline);
-        render_pass.set_bind_group(0, &bind_group, &[]);
+        render_pass.set_bind_group(0, &**bind_group, &[]);
         render_pass.draw(0..3, 0..1);
     }
 }

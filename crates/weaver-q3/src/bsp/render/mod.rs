@@ -1,15 +1,15 @@
-use extract::{extract_bsps, ExtractedBsp};
-use weaver_app::{plugin::Plugin, App};
+use extract::{ExtractedBsp, extract_bsps};
+use weaver_app::{App, plugin::Plugin};
 use weaver_ecs::{component::Res, prelude::ResMut, query::Query, system::IntoSystemConfig};
 use weaver_pbr::{render::PbrLightingInformation, skybox::render_skybox};
 use weaver_renderer::{
+    RenderStage,
     bind_group::BindGroup,
     camera::{CameraBindGroup, ViewTarget},
     clear_color::render_clear_color,
     hdr::render_hdr,
     prelude::wgpu,
     resources::ActiveCommandEncoder,
-    RenderStage,
 };
 use weaver_util::prelude::*;
 
@@ -47,8 +47,8 @@ pub async fn render_bsps(
             timestamp_writes: None,
         });
 
-        render_pass.set_bind_group(1, camera_bind_group.bind_group(), &[]);
-        render_pass.set_bind_group(2, lighting_bind_group.bind_group(), &[]);
+        render_pass.set_bind_group(1, &**camera_bind_group.bind_group(), &[]);
+        render_pass.set_bind_group(2, &**lighting_bind_group.bind_group(), &[]);
 
         render_pass.set_vertex_buffer(0, bsp.vbo.slice(..));
 

@@ -177,7 +177,7 @@ impl CreateRenderPipeline for PbrRenderable {
             cache: None,
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: 4 * (3 + 3 + 3 + 2) as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
@@ -208,7 +208,7 @@ impl CreateRenderPipeline for PbrRenderable {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: texture_format::HDR_FORMAT,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -281,10 +281,10 @@ pub(crate) async fn render_pbr(
 
             let material = material_assets.get(*material_handle).unwrap();
 
-            pass.set_bind_group(0, material.bind_group(), &[]);
-            pass.set_bind_group(1, camera_bind_group.bind_group(), &[]);
-            pass.set_bind_group(2, transform_bind_group.bind_group(), &[]);
-            pass.set_bind_group(3, lights_bind_group.bind_group(), &[]);
+            pass.set_bind_group(0, &**material.bind_group(), &[]);
+            pass.set_bind_group(1, &**camera_bind_group.bind_group(), &[]);
+            pass.set_bind_group(2, &**transform_bind_group.bind_group(), &[]);
+            pass.set_bind_group(3, &**lights_bind_group.bind_group(), &[]);
 
             pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
             pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);

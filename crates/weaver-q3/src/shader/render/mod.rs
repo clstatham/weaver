@@ -3,13 +3,13 @@ use std::num::NonZeroU32;
 use weaver_ecs::world::{ConstructFromWorld, World};
 use weaver_pbr::render::PbrLightingInformation;
 use weaver_renderer::{
+    WgpuDevice,
     bind_group::BindGroupLayoutCache,
     camera::CameraBindGroup,
     pipeline::RenderPipeline,
-    prelude::{wgpu, RenderPipelineLayout},
+    prelude::{RenderPipelineLayout, wgpu},
     shader::Shader as RenderShader,
     texture::texture_format,
-    WgpuDevice,
 };
 use weaver_util::prelude::*;
 
@@ -162,7 +162,7 @@ impl ShaderPipeline {
                 cache: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "vs_main",
+                    entry_point: Some("vs_main"),
                     buffers: &[wgpu::VertexBufferLayout {
                         array_stride: 4 * (3 + 3 + 3 + 2 + 1) as u64,
                         step_mode: wgpu::VertexStepMode::Vertex,
@@ -178,7 +178,7 @@ impl ShaderPipeline {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "fs_main",
+                    entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: texture_format::HDR_FORMAT,
                         blend: key.blend_func.map(|func| wgpu::BlendState {
