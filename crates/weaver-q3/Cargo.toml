@@ -5,11 +5,8 @@ edition = "2024"
 
 [dependencies]
 nom = "7.1"
-bitflags = "2.6"
-image = "0.25.1"
-encase = { version = "0.8", features = ["glam"] }
+encase = { version = "0.12.0", features = [] }
 bytemuck = "1.16"
-rayon = "1.10"
 
 weaver-app = { path = "../weaver-app" }
 weaver-pbr = { path = "../weaver-pbr" }

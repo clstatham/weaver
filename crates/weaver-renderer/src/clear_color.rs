@@ -1,14 +1,14 @@
-use weaver_app::{plugin::Plugin, App};
+use weaver_app::{App, plugin::Plugin};
 use weaver_core::color::Color;
 use weaver_ecs::{component::Res, prelude::ResMut, query::Query};
 use weaver_util::prelude::*;
 
 use crate::{
+    RenderApp, RenderStage,
     camera::ViewTarget,
     extract::{ExtractResource, ExtractResourcePlugin},
     hdr::HdrRenderTarget,
     resources::ActiveCommandEncoder,
-    RenderApp, RenderStage,
 };
 
 #[derive(Clone, Copy)]
@@ -88,6 +88,7 @@ pub async fn render_clear_color(
                     load: wgpu::LoadOp::Clear(color),
                     store: wgpu::StoreOp::Store,
                 },
+                depth_slice: None,
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &view_query.depth_target,

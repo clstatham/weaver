@@ -38,9 +38,7 @@ impl EguiContext {
         let renderer = SharedLock::new(Renderer::new(
             device,
             texture_format::VIEW_FORMAT,
-            None,
-            1,
-            false,
+            egui_wgpu::RendererOptions::default(),
         ));
 
         Self {
@@ -156,6 +154,7 @@ impl EguiContext {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
@@ -255,10 +254,10 @@ async fn egui_events(
     mut rx: EventRx<WinitEvent>,
 ) {
     while let Some(event) = rx.next().await {
-        if let winit::event::Event::WindowEvent { window_id, event } = &event.event {
-            if window.id() == *window_id {
-                egui_context.handle_input(&window, event);
-            }
+        if let winit::event::Event::WindowEvent { window_id, event } = &event.event
+            && window.id() == *window_id
+        {
+            egui_context.handle_input(&window, event);
         }
     }
 }

@@ -6,7 +6,7 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = ["crates/*"]
+members = ["crates/*", "examples/*"]
 
 [features]
 default = []
@@ -27,7 +27,6 @@ weaver-asset = { path = "crates/weaver-asset" }
 weaver-event = { path = "crates/weaver-event" }
 weaver-gizmos = { path = "crates/weaver-gizmos" }
 weaver-diagnostics = { path = "crates/weaver-diagnostics" }
-weaver-egui = { path = "crates/weaver-egui" }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }

@@ -270,11 +270,11 @@ impl ExtractedAssetBindGroups {
         self.bind_groups.read().contains_key(handle)
     }
 
-    pub fn read(&self) -> Read<FxHashMap<UntypedHandle, UntypedHandle>> {
+    pub fn read(&'_ self) -> Read<'_, FxHashMap<UntypedHandle, UntypedHandle>> {
         self.bind_groups.read()
     }
 
-    pub fn write(&self) -> Write<FxHashMap<UntypedHandle, UntypedHandle>> {
+    pub fn write(&'_ self) -> Write<'_, FxHashMap<UntypedHandle, UntypedHandle>> {
         self.bind_groups.write()
     }
 }

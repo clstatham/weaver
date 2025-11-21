@@ -6,7 +6,8 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-egui_plot = "0.29"
+weaver = { path = "../../" }
+weaver-diagnostics = { path = "../../crates/weaver-diagnostics" }
 
 [profile.release]
 debug = true

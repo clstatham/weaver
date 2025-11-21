@@ -1,7 +1,7 @@
 use std::{path::Path, sync::Arc};
 
 use weaver_ecs::{prelude::World, world::ConstructFromWorld};
-use weaver_renderer::{prelude::wgpu, WgpuDevice, WgpuQueue};
+use weaver_renderer::{WgpuDevice, WgpuQueue, prelude::wgpu};
 use weaver_util::prelude::*;
 use wgpu::util::DeviceExt;
 
@@ -26,7 +26,7 @@ fn load_ktx(
     let header = reader.header();
     let data = reader
         .levels()
-        .flat_map(|data| data.to_vec())
+        .flat_map(|data| data.data.to_vec())
         .collect::<Vec<_>>();
 
     let texture = device.create_texture_with_data(

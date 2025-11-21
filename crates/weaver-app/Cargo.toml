@@ -10,9 +10,6 @@ tracing-subscriber = { version = "0.3", features = [
     "tracing-log",
     "env-filter",
 ] }
-rayon = "1.10.0"
-crossbeam-channel = "0.5.0"
-petgraph = "0.6.5"
 
 weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }

@@ -53,11 +53,11 @@ impl ExtractedRenderAssets {
         self.assets.read().contains_key(handle)
     }
 
-    pub fn read(&self) -> Read<FxHashMap<UntypedHandle, UntypedHandle>> {
+    pub fn read(&'_ self) -> Read<'_, FxHashMap<UntypedHandle, UntypedHandle>> {
         self.assets.read()
     }
 
-    pub fn write(&self) -> Write<FxHashMap<UntypedHandle, UntypedHandle>> {
+    pub fn write(&'_ self) -> Write<'_, FxHashMap<UntypedHandle, UntypedHandle>> {
         self.assets.write()
     }
 }

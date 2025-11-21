@@ -527,11 +527,7 @@ impl Intersect<Obb> for Ray {
             }
         }
 
-        if tmin < 0.0 {
-            Some(tmax)
-        } else {
-            Some(tmin)
-        }
+        if tmin < 0.0 { Some(tmax) } else { Some(tmin) }
     }
 }
 

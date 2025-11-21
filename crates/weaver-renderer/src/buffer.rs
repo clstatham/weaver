@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use encase::{
-    internal::{WriteInto, Writer},
     ShaderSize, ShaderType,
+    internal::{WriteInto, Writer},
 };
 
 pub enum BufferOffset {
@@ -85,7 +85,7 @@ impl<T: ShaderType + WriteInto> GpuBufferVec<T> {
         self.buffer.as_ref()
     }
 
-    pub fn binding(&self) -> Option<wgpu::BindingResource> {
+    pub fn binding(&'_ self) -> Option<wgpu::BindingResource<'_>> {
         let buffer = self.buffer()?;
         Some(wgpu::BindingResource::Buffer(
             buffer.as_entire_buffer_binding(),
@@ -221,7 +221,7 @@ impl<T: GpuArrayBufferable> GpuArrayBuffer<T> {
         self.storage_buffer.clear();
     }
 
-    pub fn binding(&self) -> Option<wgpu::BindingResource> {
+    pub fn binding(&'_ self) -> Option<wgpu::BindingResource<'_>> {
         self.storage_buffer.binding()
     }
 

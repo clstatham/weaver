@@ -264,7 +264,7 @@ impl GpuSkybox {
                 label: Some("Skybox Load Pass"),
                 timestamp_writes: None,
             });
-            let num_workgroups = (SKYBOX_CUBEMAP_SIZE + 15) / 16;
+            let num_workgroups = SKYBOX_CUBEMAP_SIZE.div_ceil(16);
             cpass.set_pipeline(&pipeline);
             cpass.set_bind_group(0, &src_bind_group, &[]);
             cpass.set_bind_group(1, &dst_bind_group, &[]);
@@ -528,6 +528,7 @@ pub async fn render_skybox(
                     load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
                 },
+                depth_slice: None,
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &view_target.depth_target,

@@ -8,7 +8,5 @@ winit = "0.30"
 pollster = "0.3.0"
 
 weaver-app = { path = "../weaver-app" }
-weaver-ecs = { path = "../weaver-ecs" }
 weaver-core = { path = "../weaver-core" }
 weaver-util = { path = "../weaver-util" }
-weaver-event = { path = "../weaver-event" }

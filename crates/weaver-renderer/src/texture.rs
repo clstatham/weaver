@@ -182,7 +182,7 @@ impl GpuTextureArray {
         &self.backing_view
     }
 
-    pub fn as_binding_resource(&self) -> wgpu::BindingResource {
+    pub fn as_binding_resource(&'_ self) -> wgpu::BindingResource<'_> {
         wgpu::BindingResource::TextureView(&self.backing_view)
     }
 }

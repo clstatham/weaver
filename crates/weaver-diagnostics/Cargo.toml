@@ -5,6 +5,5 @@ edition = "2024"
 
 [dependencies]
 weaver-app = { path = "../weaver-app" }
-weaver-core = { path = "../weaver-core" }
 weaver-ecs = { path = "../weaver-ecs" }
 weaver-util = { path = "../weaver-util" }

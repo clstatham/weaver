@@ -225,18 +225,17 @@ fn create_surface(render_world: &mut World, window: &Window) -> Result<()> {
     let mut required_limits = wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits());
     required_limits.max_push_constant_size = 256;
 
-    let (device, queue) = pollster::block_on(adapter.request_device(
-        &wgpu::DeviceDescriptor {
-            required_features: wgpu::Features::MULTIVIEW
-                | wgpu::Features::PUSH_CONSTANTS
-                | wgpu::Features::TEXTURE_BINDING_ARRAY
-                | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
-            required_limits,
-            label: None,
-            memory_hints: wgpu::MemoryHints::Performance,
-        },
-        None,
-    ))
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        required_features: wgpu::Features::MULTIVIEW
+            | wgpu::Features::PUSH_CONSTANTS
+            | wgpu::Features::TEXTURE_BINDING_ARRAY
+            | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+        required_limits,
+        label: None,
+        memory_hints: wgpu::MemoryHints::Performance,
+        experimental_features: wgpu::ExperimentalFeatures::default(),
+        trace: wgpu::Trace::default(),
+    }))
     .unwrap();
 
     let caps = surface.get_capabilities(&adapter);
@@ -590,6 +589,7 @@ pub async fn begin_render(
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                     store: wgpu::StoreOp::Store,
                 },
+                depth_slice: None,
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &depth_view,

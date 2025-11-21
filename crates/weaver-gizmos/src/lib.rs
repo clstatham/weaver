@@ -504,6 +504,7 @@ pub async fn render_gizmos(
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment,
                 timestamp_writes: None,
