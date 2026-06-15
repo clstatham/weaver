@@ -4,12 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-egui = "0.33.2"
-egui-wgpu = { version = "0.33.2", features = ["winit"] }
-egui-winit = { version = "0.33.2", default-features = false, features = [
-    "wayland",
-    "x11",
-] }
+egui = "0.34.3"
+egui-wgpu = { version = "0.34.3", features = ["winit"] }
+egui-winit = { version = "0.34.3", default-features = false, features = ["wayland", "x11"] }
 
 weaver-util = { path = "../weaver-util" }
 weaver-renderer = { path = "../weaver-renderer" }

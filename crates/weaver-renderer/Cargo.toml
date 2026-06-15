@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-naga_oil = "0.20.0"
-wgpu = { version = "27.0.1", features = ["naga-ir"] }
+naga_oil = "0.22.0"
+wgpu = { version = "29.0.3", features = ["naga-ir"] }
 bytemuck = { version = "1.7.0", features = ["derive"] }
-glam = { version = "0.30.9", features = ["bytemuck", "encase"] }
+glam = { version = "0.33.1", features = ["bytemuck", "encase"] }
 encase = { version = "0.12.0", features = [] }
 pollster = "0.4.0"
 crossbeam-channel = "0.5"

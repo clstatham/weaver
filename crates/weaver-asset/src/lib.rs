@@ -89,10 +89,7 @@ impl<T: Asset> Debug for Handle<T> {
 impl<T: Asset> Clone for Handle<T> {
     #[allow(clippy::non_canonical_clone_impl)]
     fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            _marker: PhantomData,
-        }
+        *self
     }
 }
 

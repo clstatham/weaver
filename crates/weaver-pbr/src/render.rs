@@ -151,12 +151,12 @@ impl CreateRenderPipeline for PbrRenderable {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("PBR Pipeline Layout"),
             bind_group_layouts: &[
-                &bind_group_layout_cache.get_or_create::<GpuMaterial>(device),
-                &bind_group_layout_cache.get_or_create::<CameraBindGroup>(device),
-                &bind_group_layout_cache.get_or_create::<TransformBindGroup>(device),
-                &bind_group_layout_cache.get_or_create::<PbrLightingInformation>(device),
+                Some(&bind_group_layout_cache.get_or_create::<GpuMaterial>(device)),
+                Some(&bind_group_layout_cache.get_or_create::<CameraBindGroup>(device)),
+                Some(&bind_group_layout_cache.get_or_create::<TransformBindGroup>(device)),
+                Some(&bind_group_layout_cache.get_or_create::<PbrLightingInformation>(device)),
             ],
-            push_constant_ranges: &[],
+            ..Default::default()
         });
 
         RenderPipelineLayout::new(layout)
@@ -223,13 +223,13 @@ impl CreateRenderPipeline for PbrRenderable {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: texture_format::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
         });
 
         RenderPipeline::new(pipeline)

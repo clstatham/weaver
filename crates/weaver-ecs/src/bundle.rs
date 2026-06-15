@@ -150,7 +150,7 @@ impl ComponentBundle {
             components: Vec::new(),
             ticks: Vec::new(),
         };
-        for (v, t) in other.components.into_iter().zip(other.ticks.into_iter()) {
+        for (v, t) in other.components.into_iter().zip(other.ticks) {
             if let Some((comp, ticks)) = self.insert(v, t) {
                 ret.insert(comp, ticks);
             }

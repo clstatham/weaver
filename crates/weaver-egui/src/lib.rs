@@ -49,7 +49,7 @@ impl EguiContext {
     }
 
     pub fn available_rect(&self) -> egui::Rect {
-        self.state.read().egui_ctx().available_rect()
+        self.state.read().egui_ctx().content_rect()
     }
 
     pub fn handle_input(&self, window: &winit::window::Window, event: &winit::event::WindowEvent) {
@@ -57,8 +57,8 @@ impl EguiContext {
     }
 
     pub fn wants_input(&self) -> bool {
-        self.state.read().egui_ctx().wants_keyboard_input()
-            || self.state.read().egui_ctx().wants_pointer_input()
+        self.state.read().egui_ctx().egui_wants_keyboard_input()
+            || self.state.read().egui_ctx().egui_wants_pointer_input()
     }
 
     pub fn begin_frame(&self, window: &winit::window::Window) {
@@ -159,6 +159,7 @@ impl EguiContext {
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             })
             .forget_lifetime();
 

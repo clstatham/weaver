@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use image::codecs::hdr::HdrDecoder;
+use image::{ImageDecoder, codecs::hdr::HdrDecoder};
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
     component::Res,
@@ -154,23 +154,18 @@ impl GpuSkybox {
         pipeline_cache: &mut ComputePipelineCache,
         bind_group_layout_cache: &mut BindGroupLayoutCache,
     ) -> Self {
-        let mut file = File::open(&skybox.path).unwrap();
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf).unwrap();
-        drop(file);
+        let file = File::open(&skybox.path).unwrap();
 
-        let hdr_decoder = HdrDecoder::new(buf.as_slice()).unwrap();
+        let hdr_decoder = HdrDecoder::new(file).unwrap();
         let meta = hdr_decoder.metadata();
+        // let mut pixels = vec![[0.0, 0.0, 0.0, 0.0]; (meta.width * meta.height) as usize];
+        let mut pixels_buf = vec![0; hdr_decoder.total_bytes() as usize];
+        hdr_decoder.read_image(&mut pixels_buf).unwrap();
         let mut pixels = vec![[0.0, 0.0, 0.0, 0.0]; (meta.width * meta.height) as usize];
-        hdr_decoder
-            .read_image_transform(
-                |p| {
-                    let rgb = p.to_hdr();
-                    [rgb[0], rgb[1], rgb[2], 1.0]
-                },
-                &mut pixels,
-            )
-            .unwrap();
+        for (i, chunk) in pixels_buf.chunks_exact(3 * size_of::<f32>()).enumerate() {
+            let rgb = bytemuck::cast_slice::<u8, f32>(chunk);
+            pixels[i] = [rgb[0], rgb[1], rgb[2], 1.0];
+        }
 
         let src = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Skybox Source Texture"),
@@ -281,7 +276,7 @@ impl GpuSkybox {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
 
@@ -312,10 +307,10 @@ impl CreateComputePipeline for GpuSkybox {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Skybox Pipeline Layout"),
             bind_group_layouts: &[
-                &bind_group_layout_cache.get_or_create::<GpuSkyboxSrc>(device),
-                &bind_group_layout_cache.get_or_create::<GpuSkyboxDst>(device),
+                Some(&bind_group_layout_cache.get_or_create::<GpuSkyboxSrc>(device)),
+                Some(&bind_group_layout_cache.get_or_create::<GpuSkyboxDst>(device)),
             ],
-            push_constant_ranges: &[],
+            ..Default::default()
         });
 
         ComputePipelineLayout::new(layout)
@@ -451,10 +446,10 @@ impl CreateRenderPipeline for SkyboxRenderable {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Skybox Pipeline Layout"),
                 bind_group_layouts: &[
-                    &bind_group_layout_cache.get_or_create::<GpuSkybox>(device),
-                    &bind_group_layout_cache.get_or_create::<CameraBindGroup>(device),
+                    Some(&bind_group_layout_cache.get_or_create::<GpuSkybox>(device)),
+                    Some(&bind_group_layout_cache.get_or_create::<CameraBindGroup>(device)),
                 ],
-                push_constant_ranges: &[],
+                ..Default::default()
             }),
         )
     }
@@ -494,13 +489,13 @@ impl CreateRenderPipeline for SkyboxRenderable {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: texture_format::DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
         });
 
         RenderPipeline::new(pipeline)
@@ -540,6 +535,7 @@ pub async fn render_skybox(
             }),
             occlusion_query_set: None,
             timestamp_writes: None,
+            ..Default::default()
         });
 
         rpass.set_pipeline(skybox_pipeline);

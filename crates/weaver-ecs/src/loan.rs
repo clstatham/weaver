@@ -52,17 +52,13 @@ impl<T> Drop for LoanMut<T> {
     }
 }
 
+#[derive(Default)]
 pub enum LoanStorage<T> {
+    #[default]
     Vacant,
     Owned(T),
     Loan(Arc<T>),
     LoanMut(SharedLock<Option<T>>),
-}
-
-impl<T> Default for LoanStorage<T> {
-    fn default() -> Self {
-        Self::Vacant
-    }
 }
 
 impl<T> LoanStorage<T> {

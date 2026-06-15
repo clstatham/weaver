@@ -9,9 +9,9 @@ serde = ["glam/serde"]
 
 [dependencies]
 bytemuck = { version = "1.7.0", features = ["derive"] }
-glam = { version = "0.30.9", features = ["bytemuck", "encase"] }
+glam = { version = "0.33.1", features = ["bytemuck", "encase"] }
 encase = { version = "0.12.0", features = [] }
-image = "0.25.1"
+image = "0.25.10"
 winit = "0.30"
 tobj = "4.0.2"
 gltf = "1.4.1"

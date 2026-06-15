@@ -297,10 +297,10 @@ impl GizmoRenderable {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("GizmoPipelineLayout"),
                 bind_group_layouts: &[
-                    &bind_group_layout,
-                    &CameraBindGroup::create_bind_group_layout(device),
+                    Some(&bind_group_layout),
+                    Some(&CameraBindGroup::create_bind_group_layout(device)),
                 ],
-                push_constant_ranges: &[],
+                ..Default::default()
             }),
         )
     }
@@ -381,13 +381,13 @@ impl GizmoRenderable {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
             },
         ));
 
@@ -466,6 +466,7 @@ pub async fn render_gizmos(
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            ..Default::default()
         });
     }
 
@@ -509,6 +510,7 @@ pub async fn render_gizmos(
                 depth_stencil_attachment,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                ..Default::default()
             });
 
             render_pass.set_pipeline(pipeline);

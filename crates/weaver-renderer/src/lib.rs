@@ -36,6 +36,7 @@ use weaver_ecs::{
 use weaver_event::{EventRx, EventTx, Events, prelude::StreamExt};
 use weaver_util::prelude::*;
 use weaver_winit::{Window, WindowResized, WindowSettings};
+use wgpu::rwh::HasDisplayHandle;
 
 pub mod asset;
 pub mod bind_group;
@@ -205,9 +206,12 @@ fn create_surface(render_world: &mut World, window: &Window) -> Result<()> {
         return Ok(());
     }
 
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
-        ..Default::default()
+        backend_options: Default::default(),
+        flags: Default::default(),
+        memory_budget_thresholds: Default::default(),
+        display: Some(Box::new(window.display_handle.clone())),
     });
 
     let surface = unsafe {
@@ -222,12 +226,11 @@ fn create_surface(render_world: &mut World, window: &Window) -> Result<()> {
     }))
     .unwrap();
 
-    let mut required_limits = wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits());
-    required_limits.max_push_constant_size = 256;
+    let required_limits = wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits());
+    // required_limits.max_push_constant_size = 256;
 
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         required_features: wgpu::Features::MULTIVIEW
-            | wgpu::Features::PUSH_CONSTANTS
             | wgpu::Features::TEXTURE_BINDING_ARRAY
             | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
         required_limits,
@@ -552,10 +555,10 @@ pub async fn begin_render(
     }
 
     let frame = match surface.get_current_texture() {
-        Ok(frame) => frame,
-        Err(e) => {
+        wgpu::CurrentSurfaceTexture::Success(frame) => frame,
+        e => {
             // TODO: FIXME: This could happen when the window is moved to a different monitor
-            panic!("Failed to acquire next surface texture: {}", e);
+            panic!("Failed to acquire next surface texture: {e:?}");
         }
     };
 
@@ -722,7 +725,12 @@ async fn resize_surface(
         renderer.depth_texture = Some(Arc::new(depth_texture));
 
         if has_current_frame {
-            let surface_texture = surface.get_current_texture().unwrap();
+            let surface_texture = match surface.get_current_texture() {
+                wgpu::CurrentSurfaceTexture::Success(frame) => frame,
+                e => {
+                    panic!("Failed to acquire next surface texture: {e:?}");
+                }
+            };
             let color_view = surface_texture
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());

@@ -7,7 +7,7 @@ use weaver_util::prelude::*;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
-    event_loop::ControlFlow,
+    event_loop::{ControlFlow, OwnedDisplayHandle},
     window::WindowAttributes,
 };
 
@@ -19,6 +19,7 @@ pub mod prelude {
 #[derive(Clone)]
 pub struct Window {
     window: Arc<winit::window::Window>,
+    pub display_handle: OwnedDisplayHandle,
 }
 
 #[derive(Debug, Clone)]
@@ -134,8 +135,10 @@ impl winit::application::ApplicationHandler for WinitRunnerApp<'_> {
                     .with_inner_size(LogicalSize::new(self.initial_size.0, self.initial_size.1)),
             )
             .unwrap();
+        let display_handle = event_loop.owned_display_handle();
         let window = Window {
             window: Arc::new(window),
+            display_handle,
         };
         if self.app.main_app().world().has_resource::<Window>() {
             self.app.main_app().world().remove_resource::<Window>();

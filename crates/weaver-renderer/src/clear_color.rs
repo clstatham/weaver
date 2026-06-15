@@ -100,6 +100,7 @@ pub async fn render_clear_color(
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            ..Default::default()
         });
     }
 }

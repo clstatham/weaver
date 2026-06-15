@@ -67,7 +67,7 @@ impl ConstructFromWorld for HdrRenderTarget {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         }));
 
@@ -136,14 +136,13 @@ impl CreateRenderPipeline for HdrRenderable {
     where
         Self: Sized,
     {
-        let layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("HDR Pipeline Layout"),
-                bind_group_layouts: &[
-                    &bind_group_layout_cache.get_or_create::<HdrRenderTarget>(device)
-                ],
-                push_constant_ranges: &[],
-            });
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("HDR Pipeline Layout"),
+            bind_group_layouts: &[Some(
+                &bind_group_layout_cache.get_or_create::<HdrRenderTarget>(device),
+            )],
+            ..Default::default()
+        });
 
         RenderPipelineLayout::new(layout)
     }
@@ -184,7 +183,7 @@ impl CreateRenderPipeline for HdrRenderable {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
         });
 
         RenderPipeline::new(pipeline)
@@ -216,6 +215,7 @@ pub async fn render_hdr(
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         render_pass.set_pipeline(pipeline);
