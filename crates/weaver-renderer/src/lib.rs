@@ -36,7 +36,6 @@ use weaver_ecs::{
 use weaver_event::{EventRx, EventTx, Events, prelude::StreamExt};
 use weaver_util::prelude::*;
 use weaver_winit::{Window, WindowResized, WindowSettings};
-use wgpu::rwh::HasDisplayHandle;
 
 pub mod asset;
 pub mod bind_group;

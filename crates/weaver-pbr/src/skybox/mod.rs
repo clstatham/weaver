@@ -1,6 +1,5 @@
 use std::{
     fs::File,
-    io::Read,
     path::{Path, PathBuf},
     sync::Arc,
 };
