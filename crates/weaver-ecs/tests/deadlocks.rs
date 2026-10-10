@@ -26,18 +26,23 @@ async fn mutate_then_spawn(mut query: Query<&mut A>, commands: Commands) {
 
 /// Issuing a command must not require the issuing system to release its own queries first.
 #[test]
-#[ignore = "known issue: Commands block until applied, and applying needs the column lock the system holds"]
 fn command_while_holding_own_query_does_not_deadlock() {
     init_task_pool();
-    let finished = with_timeout(5, || {
+    let values = with_timeout(5, || {
         let mut world = World::new();
         world.spawn((A(0),));
         world.push_update_stage(Stage);
         world.add_system(mutate_then_spawn, Stage);
         world.initialize_systems();
         world.update().unwrap();
+        let mut query = world.query::<&A>();
+        let mut values = query.iter().map(|a| a.0).collect::<Vec<_>>();
+        values.sort();
+        values
     });
-    assert!(finished.is_some(), "World::update deadlocked");
+    let values = values.expect("World::update deadlocked");
+    // a dropped command can't deadlock either, so check that it was applied
+    assert_eq!(values, vec![1, 100]);
 }
 
 async fn write_then_command(mut query: Query<&mut A>, commands: Commands) {
@@ -51,7 +56,8 @@ async fn read_only(mut query: Query<&A>) {
     for _ in query.iter() {}
 }
 
-fn run_writer_and_reader(writer_first: bool) -> Option<()> {
+/// Returns whether the writer's command was applied, or `None` if the update deadlocked.
+fn run_writer_and_reader(writer_first: bool) -> Option<bool> {
     with_timeout(5, move || {
         let mut world = World::new();
         world.spawn((A(0),));
@@ -65,21 +71,23 @@ fn run_writer_and_reader(writer_first: bool) -> Option<()> {
         }
         world.initialize_systems();
         world.update().unwrap();
+        world.has_resource::<Marker>()
     })
 }
 
 /// A writer that issues any command and a reader of the same component, in one stage, must not
 /// deadlock, regardless of the order they were registered in.
 #[test]
-#[ignore = "known issue: the main thread blocks fetching the reader's params while the writer waits on its command"]
 fn writer_with_command_and_reader_do_not_deadlock() {
     init_task_pool();
-    assert!(
-        run_writer_and_reader(false).is_some(),
-        "deadlocked with the reader registered first"
+    assert_eq!(
+        run_writer_and_reader(false),
+        Some(true),
+        "deadlocked (None) or dropped the command (false) with the reader registered first"
     );
-    assert!(
-        run_writer_and_reader(true).is_some(),
-        "deadlocked with the writer registered first"
+    assert_eq!(
+        run_writer_and_reader(true),
+        Some(true),
+        "deadlocked (None) or dropped the command (false) with the writer registered first"
     );
 }

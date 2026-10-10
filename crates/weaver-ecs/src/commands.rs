@@ -1,103 +1,105 @@
-use std::sync::Arc;
+use weaver_util::lock::SharedLock;
 
 use crate::{
     bundle::Bundle,
     component::Component,
-    entity::Entity,
+    entity::{Entities, Entity},
     prelude::World,
-    query::{Query, Queryable},
     system::{SystemAccess, SystemParam},
     world::ConstructFromWorld,
 };
 
-pub type CommandOp = dyn FnOnce(&mut World) -> Arc<dyn Component> + Send + Sync;
+pub type Command = dyn FnOnce(&mut World) + Send + 'static;
+pub type BoxedCommand = Box<Command>;
 
-pub struct Command {
-    pub(crate) op: Box<CommandOp>,
-    pub(crate) tx: crossbeam_channel::Sender<Arc<dyn Component>>,
+pub struct CommandQueue {
+    tx: crossbeam_channel::Sender<BoxedCommand>,
+    rx: crossbeam_channel::Receiver<BoxedCommand>,
+    entities: SharedLock<Entities>,
 }
 
-impl Command {
-    pub fn run(self, world: &mut World) {
-        let result = (self.op)(world);
-        self.tx.try_send(result).unwrap();
+impl CommandQueue {
+    pub fn new(world: &World) -> Self {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        Self {
+            tx,
+            rx,
+            entities: world.entities_handle(),
+        }
     }
 }
 
 #[derive(Clone)]
 pub struct Commands {
-    pub(crate) tx: crossbeam_channel::Sender<Command>,
+    pub(crate) tx: crossbeam_channel::Sender<BoxedCommand>,
+    entities: SharedLock<Entities>,
 }
 
 impl Commands {
-    pub fn run<R: Component>(&self, op: impl FnOnce(&mut World) -> R + Send + Sync + 'static) -> R {
-        let (tx, rx) = crossbeam_channel::bounded(1);
-
-        self.tx
-            .try_send(Command {
-                op: Box::new(|world| {
-                    let result = op(world);
-                    Arc::new(result)
-                }),
-                tx,
-            })
-            .unwrap();
-
-        let any: Arc<_> = rx.recv().unwrap();
-        let arc: Arc<R> = any.downcast_arc().unwrap();
-        Arc::try_unwrap(arc).unwrap_or_else(|_| unreachable!())
-    }
-
-    pub fn has_resource<T: Component>(&self) -> bool {
-        self.run(move |world| world.has_resource::<T>())
+    pub fn add(&self, op: impl FnOnce(&mut World) + Send + 'static) {
+        self.tx.send(Box::new(op)).unwrap();
     }
 
     pub fn insert_resource<T: Component>(&self, resource: T) {
-        self.run(move |world| {
+        self.add(move |world| {
             world.insert_resource(resource);
         })
     }
 
+    pub fn remove_resource<T: Component>(&self) {
+        self.add(move |world| {
+            world.remove_resource::<T>();
+        });
+    }
+
     pub fn init_resource<T: Component + ConstructFromWorld>(&self) {
-        self.run(move |world| {
+        self.add(move |world| {
             world.init_resource::<T>();
         })
     }
 
-    pub fn remove_resource<T: Component>(&self) -> Option<T> {
-        self.run(move |world| world.remove_resource::<T>())
-    }
-
     pub fn insert_component<T: Component>(&self, entity: Entity, component: T) {
-        self.run(move |world| {
+        self.add(move |world| {
             world.insert_component(entity, component);
         })
     }
 
-    pub fn remove_component<T: Component>(&self, entity: Entity) -> Option<T> {
-        self.run(move |world| world.remove_component::<T>(entity))
+    pub fn remove_component<T: Component>(&self, entity: Entity) {
+        self.add(move |world| {
+            world.remove_component::<T>(entity);
+        });
     }
 
     pub fn spawn<T: Bundle>(&self, bundle: T) -> Entity {
-        self.run(move |world| world.spawn(bundle))
-    }
-
-    pub fn query<Q: Queryable + 'static>(&self) -> Query<Q> {
-        self.run(move |world| world.query::<Q>())
+        let entity = self.entities.read().reserve();
+        self.add(move |world| world.insert_bundle(entity, bundle));
+        entity
     }
 }
 
 impl SystemParam for Commands {
     type Item = Commands;
-    type State = ();
+    type State = CommandQueue;
 
     fn access() -> SystemAccess {
         SystemAccess::default()
     }
 
-    fn init_state(_world: &World) -> Self::State {}
+    fn init_state(world: &World) -> Self::State {
+        CommandQueue::new(world)
+    }
 
-    fn fetch(world: &World, _state: &Self::State) -> Self::Item {
-        world.commands()
+    fn fetch(_world: &World, state: &Self::State) -> Self::Item {
+        Commands {
+            tx: state.tx.clone(),
+            entities: state.entities.clone(),
+        }
+    }
+
+    fn apply(state: &mut Self::State, world: &mut World) {
+        world.flush_entities();
+        for command in state.rx.try_iter() {
+            command(world);
+        }
     }
 }

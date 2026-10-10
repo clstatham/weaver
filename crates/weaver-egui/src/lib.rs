@@ -200,8 +200,9 @@ async fn extract_egui_context(
     main_world: Res<MainWorld>,
     window: Res<Window>,
     device: Res<WgpuDevice>,
+    egui_context: Option<Res<EguiContext>>,
 ) {
-    if commands.has_resource::<EguiContext>() {
+    if egui_context.is_some() {
         return;
     }
     let egui_context = EguiContext::new(&device, &window);

@@ -563,9 +563,11 @@ impl Plugin for SkyboxPlugin {
 }
 
 async fn init_gpu_skybox(commands: Commands) {
-    if commands.has_resource::<Skybox>() && !commands.has_resource::<GpuSkybox>() {
-        commands.init_resource::<GpuSkybox>();
-    }
+    commands.add(move |world| {
+        if world.has_resource::<Skybox>() && !world.has_resource::<GpuSkybox>() {
+            world.init_resource::<GpuSkybox>();
+        }
+    })
 }
 
 pub struct SkyboxRenderablePlugin;

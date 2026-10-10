@@ -17,7 +17,7 @@ struct C;
 #[test]
 #[ignore = "known issue: tuple queries zip per-column iterators, so filtered rows misalign"]
 fn changed_filter_in_tuple_keeps_rows_aligned() {
-    let mut world = World::new();
+    let world = World::new();
     let entities: Vec<Entity> = (0..5).map(|i| world.spawn((A(i),))).collect();
     world.increment_change_tick();
     {
@@ -36,19 +36,23 @@ fn changed_filter_in_tuple_keeps_rows_aligned() {
 #[test]
 #[ignore = "known issue: Option<&T> over an archetype without T is an endless repeat_with"]
 fn optional_only_query_yields_one_item_per_entity() {
-    let mut world = World::new();
+    let world = World::new();
     world.spawn((A(0),));
     world.spawn((C,));
 
     let single = world.query::<Option<&B>>().iter().take(1000).count();
     assert_eq!(single, 2);
 
-    let pair = world.query::<(Option<&A>, Option<&B>)>().iter().take(1000).count();
+    let pair = world
+        .query::<(Option<&A>, Option<&B>)>()
+        .iter()
+        .take(1000)
+        .count();
     assert_eq!(pair, 2);
 }
 
 fn min_query_build_time(entities: u32) -> Duration {
-    let mut world = World::new();
+    let world = World::new();
     for i in 0..entities {
         world.spawn((A(i),));
     }

@@ -95,16 +95,19 @@ impl Entities {
         *self.free_cursor.get_mut() != self.pending.len() as i64
     }
 
-    pub fn verify_flushed(&mut self) {
-        assert!(
-            !self.needs_flush(),
-            "Entities::flush() must be called before this operation"
-        );
-    }
+    // pub fn verify_flushed(&mut self) {
+    //     assert!(
+    //         !self.needs_flush(),
+    //         "Entities::flush() must be called before this operation"
+    //     );
+    // }
 
     pub fn flush(&mut self) {
         let free_cursor = self.free_cursor.get_mut();
         let current_free_cursor = *free_cursor;
+        if *free_cursor == self.pending.len() as i64 {
+            return; // flush not needed
+        }
 
         let new_free_cursor = if current_free_cursor < 0 {
             let old_len = self.generations.len();
@@ -131,7 +134,7 @@ impl Entities {
     }
 
     pub fn alloc(&mut self) -> Entity {
-        self.verify_flushed();
+        self.flush();
 
         if let Some(index) = self.pending.pop() {
             let new_free_cursor = self.pending.len() as i64;
@@ -145,7 +148,7 @@ impl Entities {
     }
 
     pub fn alloc_at(&mut self, entity: Entity) {
-        self.verify_flushed();
+        self.flush();
 
         let id = entity.id as usize;
         if id >= self.generations.len() {
@@ -160,7 +163,7 @@ impl Entities {
     }
 
     pub fn free(&mut self, entity: Entity) {
-        self.verify_flushed();
+        self.flush();
 
         let generation = &mut self.generations[entity.id as usize];
         if generation.get() != entity.generation() {
@@ -187,7 +190,8 @@ impl Entities {
         } else {
             let free_cursor = self.free_cursor.load(Ordering::Relaxed);
             let num_pending = usize::try_from(-free_cursor).ok()?;
-            (id < self.generations.len() - num_pending)
+            // reserved but unflushed ids sit just past the end of `generations`
+            (id < self.generations.len() + num_pending)
                 .then_some(Entity::new(id as u32, NonZeroU32::MIN))
         }
     }

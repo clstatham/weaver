@@ -15,10 +15,10 @@ struct B;
 #[test]
 #[ignore = "known issue: insert_component on an unallocated entity doesn't reserve it, so spawn reuses the id"]
 fn spawn_does_not_reuse_an_entity_inserted_from_another_world() {
-    let mut main_world = World::new();
+    let main_world = World::new();
     let mirrored = main_world.spawn((A,));
 
-    let mut render_world = World::new();
+    let render_world = World::new();
     render_world.insert_component(mirrored, A);
     let local = render_world.spawn((B,));
 

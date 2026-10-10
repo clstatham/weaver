@@ -3,14 +3,14 @@ use std::{
     sync::atomic::AtomicU64,
 };
 
-use weaver_util::{prelude::*, span};
+use weaver_util::prelude::*;
 
 use crate::{
     change_detection::Tick,
     component::Component,
     prelude::{
-        Bundle, Command, Commands, ComponentMap, Entities, IntoSystem, Res, ResMut, System,
-        SystemAccess, SystemStage, Systems,
+        Bundle, ComponentMap, Entities, IntoSystem, Res, ResMut, System, SystemAccess,
+        SystemStage, Systems,
     },
     query::{Query, Queryable},
     system::{IntoSystemConfig, SystemParam},
@@ -19,11 +19,9 @@ use crate::{
 use super::{entity::Entity, storage::Components};
 
 pub struct World {
-    entities: Entities,
+    entities: SharedLock<Entities>,
     resources: Lock<ComponentMap>,
     systems: Systems,
-    command_tx: crossbeam_channel::Sender<Command>,
-    command_rx: crossbeam_channel::Receiver<Command>,
     change_tick: AtomicU64,
     last_change_tick: AtomicU64,
 }
@@ -36,14 +34,10 @@ impl Default for World {
             .insert_component(components, Tick::default())
             .unwrap();
 
-        let (command_tx, command_rx) = crossbeam_channel::unbounded();
-
         Self {
-            entities: Entities::default(),
+            entities: SharedLock::new(Entities::default()),
             resources: Lock::new(resources),
             systems: Systems::default(),
-            command_tx,
-            command_rx,
             change_tick: AtomicU64::new(0),
             last_change_tick: AtomicU64::new(0),
         }
@@ -56,35 +50,29 @@ impl World {
         Self::default()
     }
 
-    pub fn commands(&self) -> Commands {
-        Commands {
-            tx: self.command_tx.clone(),
-        }
+    pub fn entities_handle(&self) -> SharedLock<Entities> {
+        self.entities.clone()
     }
 
-    pub fn apply_commands(&mut self) {
-        let span = span!(DEBUG, "apply_commands");
-        let _span = span.enter();
-        while let Ok(command) = self.command_rx.try_recv() {
-            command.run(self);
-        }
+    pub fn flush_entities(&self) {
+        self.entities.write().flush();
     }
 
     /// Creates a new entity in the world.
-    pub fn create_entity(&mut self) -> Entity {
-        self.entities.alloc()
+    pub fn create_entity(&self) -> Entity {
+        self.entities.write().alloc()
     }
 
-    pub fn insert_entity(&mut self, entity: Entity) {
-        self.entities.alloc_at(entity);
+    pub fn insert_entity(&self, entity: Entity) {
+        self.entities.write().alloc_at(entity);
     }
 
     pub fn find_entity_by_id(&self, id: u32) -> Option<Entity> {
-        self.entities.find_by_id(id)
+        self.entities.read().find_by_id(id)
     }
 
     /// Creates a new entity in the world and adds the bundle of components to it.
-    pub fn spawn<T: Bundle>(&mut self, bundle: T) -> Entity {
+    pub fn spawn<T: Bundle>(&self, bundle: T) -> Entity {
         let entity = self.create_entity();
         self.components_mut()
             .insert_bundle(entity, bundle, self.read_change_tick());
@@ -92,9 +80,9 @@ impl World {
     }
 
     /// Destroys the entity and all its components in the world.
-    pub fn destroy_entity(&mut self, entity: Entity) {
+    pub fn destroy_entity(&self, entity: Entity) {
         self.components_mut().remove_entity(entity);
-        self.entities.free(entity);
+        self.entities.write().free(entity);
     }
 
     pub fn insert_component<T: Component>(&self, entity: Entity, component: T) {
@@ -151,8 +139,11 @@ impl World {
     }
 
     /// Initializes a resource in the world. The resource is initialized using its implementation of `FromWorld`.
-    /// If the resource has already been initialized, replaces the existing resource with a new one, and returns the old resource.
+    /// If the resource has already been initialized, does nothing, and returns None.
     pub fn init_resource<T: Component + ConstructFromWorld>(&self) -> Option<T> {
+        if self.has_resource::<T>() {
+            return None;
+        }
         let resource = T::from_world(self);
         self.insert_resource(resource)
     }

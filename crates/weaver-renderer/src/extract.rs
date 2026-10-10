@@ -53,6 +53,11 @@ impl<T: SystemParam + 'static> SystemParam for Extract<T> {
         Extract { item }
     }
 
+    // `state` was created against the render world in `init_state`, so deferred work applies there too
+    fn apply(state: &mut Self::State, world: &mut World) {
+        T::apply(state, world);
+    }
+
     fn can_run(world: &World) -> bool {
         if !<Res<MainWorld> as SystemParam>::can_run(world) {
             log::debug!("Extract: Res<MainWorld> is not available");

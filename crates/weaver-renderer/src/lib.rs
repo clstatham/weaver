@@ -624,6 +624,7 @@ pub async fn end_render(
     mut current_frame: ResMut<CurrentFrame>,
     mut renderer: ResMut<Renderer>,
     queue: Res<WgpuQueue>,
+    active_encoder: Option<ResMut<ActiveCommandEncoder>>,
 ) {
     let Some(current_frame) = current_frame.inner.take() else {
         log::warn!("No current frame to end");
@@ -636,7 +637,8 @@ pub async fn end_render(
         surface_texture, ..
     } = current_frame;
 
-    if let Some(encoder) = commands.remove_resource::<ActiveCommandEncoder>() {
+    if let Some(mut encoder) = active_encoder {
+        commands.remove_resource::<ActiveCommandEncoder>();
         renderer.enqueue_command_buffer(encoder.finish());
     } else {
         log::warn!("No active command encoder to end render");

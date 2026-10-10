@@ -12,8 +12,9 @@ use std::{
 
 use weaver_app::{App, SubApp};
 use weaver_ecs::{
+    commands::Commands,
     loan::{Loan, LoanMut, LoanStorage},
-    prelude::{Commands, Res, ResMut, SystemStage},
+    prelude::{Res, ResMut, SystemStage},
     world::{ConstructFromWorld, FromWorld},
 };
 use weaver_event::Events;
@@ -534,12 +535,14 @@ impl AssetCommands for Commands {
         &self,
         source: impl Into<S> + Send + Sync + 'static,
     ) -> Handle<L::Asset> {
-        self.run(|world| {
+        let handle = Handle::from_raw(AssetId::new());
+        self.add(move |world| {
             world
                 .get_resource::<AssetLoadQueue<L, S>>()
-                .map(|load_queue| load_queue.enqueue(source.into()))
-                .unwrap()
-        })
+                .unwrap_or_else(|| panic!("No loader registered: {}", std::any::type_name::<L>()))
+                .push(AssetLoadRequest::new(handle, source.into()));
+        });
+        handle
     }
 
     fn lazy_load_asset_direct<T: Asset>(&self, asset: T) -> Handle<T> {
@@ -696,12 +699,12 @@ impl AssetApp for App {
 }
 
 async fn load_all_assets<L: LoadFrom<S> + 'static, S: LoadSource>(
-    commands: Commands,
     loader: FromWorld<L>,
     load_queue: Res<AssetLoadQueue<L, S>>,
     mut assets: ResMut<Assets<L::Asset>>,
     load_events: Res<Events<AssetLoaded<L::Asset>>>,
     load_status: Res<AssetLoadStatus>,
+    commands: Commands,
 ) {
     if load_queue.is_empty() {
         return;

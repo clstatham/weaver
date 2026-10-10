@@ -82,6 +82,9 @@ pub trait System: Send + Sync {
     /// Runs the system on the world.
     fn run(&mut self, world: &World) -> BoxFuture<'static, ()>;
 
+    #[allow(unused)]
+    fn apply_deferred(&mut self, world: &mut World) {}
+
     /// Returns true if the system can run on the world in its current state.
     #[allow(unused)]
     fn can_run(&self, world: &World) -> bool {
@@ -110,6 +113,9 @@ pub trait SystemParam: Send + Sync {
     fn update_state(state: &mut Self::State, world: &World) {}
 
     fn fetch(world: &World, state: &Self::State) -> Self::Item;
+
+    #[allow(unused)]
+    fn apply(state: &mut Self::State, world: &mut World) {}
 
     #[allow(unused)]
     fn can_run(world: &World) -> bool {
@@ -318,6 +324,13 @@ macro_rules! impl_system_param_tuple {
                 ($( $param::fetch(world, $param), )*)
             }
 
+            fn apply(state: &mut Self::State, world: &mut World) {
+                let ($( $param, )*) = state;
+                $(
+                    $param::apply($param, world);
+                )*
+            }
+
             fn can_run(world: &World) -> bool {
                 $(
                     if !$param::can_run(world) {
@@ -365,6 +378,10 @@ impl<S: SystemParam> SystemParamWrapper<S> {
     pub fn item_mut(&mut self) -> &mut S::Item {
         &mut self.0
     }
+
+    pub fn into_item(self) -> S::Item {
+        self.0
+    }
 }
 
 impl<S: SystemParam> SystemParam for SystemParamWrapper<S> {
@@ -381,6 +398,10 @@ impl<S: SystemParam> SystemParam for SystemParamWrapper<S> {
 
     fn fetch(world: &World, state: &Self::State) -> Self::Item {
         Self(<S as SystemParam>::fetch(world, state))
+    }
+
+    fn apply(state: &mut Self::State, world: &mut World) {
+        <S as SystemParam>::apply(state, world);
     }
 
     fn can_run(world: &World) -> bool {
@@ -452,6 +473,11 @@ where
         Box::pin(async move {
             func.run(fetch).await;
         })
+    }
+
+    fn apply_deferred(&mut self, world: &mut World) {
+        let state = self.state.as_mut().expect("State not initialized");
+        F::Param::apply(state, world);
     }
 
     fn can_run(&self, world: &World) -> bool {
@@ -790,6 +816,7 @@ impl SystemGraph {
         for layer in schedule {
             let mut handles = Vec::new();
             let mut skipped = Vec::new();
+            let mut ran = Vec::new();
             for node in layer {
                 let system = &self.systems[node];
                 if !system.read().can_run(world) {
@@ -798,6 +825,8 @@ impl SystemGraph {
                 }
                 let handle = task_pool.spawn(system.write().run(world));
                 handles.push(handle);
+
+                ran.push(node);
             }
 
             loop {
@@ -813,11 +842,16 @@ impl SystemGraph {
                 if all_finished {
                     break;
                 }
+            }
 
-                world.apply_commands();
+            // every system in the layer has finished (and dropped its params), so nothing holds a loan into the world
+            for node in ran {
+                let system = &self.systems[node];
+                system.write().apply_deferred(world);
             }
 
             // run skipped systems synchronously, in case there was a resource conflict
+            // this has to come after the apply above, so a system skipped for a missing resource can see one inserted by this layer's commands
             for node in skipped {
                 let system = &self.systems[node];
                 if !system.read().can_run(world) {
@@ -830,9 +864,10 @@ impl SystemGraph {
                         world.increment_change_tick();
                         break;
                     }
-
-                    world.apply_commands();
                 }
+
+                // apply right away, so the remaining skipped systems see this one's commands too
+                system.write().apply_deferred(world);
             }
         }
 

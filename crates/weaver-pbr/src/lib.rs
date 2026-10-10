@@ -91,9 +91,9 @@ impl Plugin for PbrPlugin {
 }
 
 pub(crate) async fn init_pbr_lighting_information(commands: Commands, _skybox: Res<Skybox>) {
-    if !commands.has_resource::<PbrLightingInformation>() {
-        commands.init_resource::<PbrLightingInformation>();
-    }
+    commands.add(move |world| {
+        world.init_resource::<PbrLightingInformation>();
+    })
 }
 
 pub(crate) async fn update_pbr_lighting_information(
