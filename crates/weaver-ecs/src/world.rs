@@ -130,7 +130,9 @@ impl World {
     }
 
     pub fn components_mut(&self) -> ResMut<Components> {
-        self.get_resource_mut::<Components>().unwrap()
+        self.get_resource_mut::<Components>().expect(
+            "Components is borrowed: entities can't be spawned, destroyed or have components inserted/removed while a Query is alive",
+        )
     }
 
     /// Checks if the world has a certain type of resource.

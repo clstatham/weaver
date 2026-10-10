@@ -1,6 +1,5 @@
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 
-use any_vec::any_value::{AnyValue, AnyValueWrapper};
 use weaver_util::prelude::*;
 
 use crate::{
@@ -31,22 +30,20 @@ macro_rules! impl_bundle_tuple {
                 let ($($name,)*) = self;
                 vec![$({
                     let mut vec = ComponentVec::new::<$name>();
-                    vec.push(AnyValueWrapper::new($name));
+                    vec.push($name);
                     vec
                 }),*]
             }
 
             fn from_components(mut components: Vec<ComponentVec>) -> Result<Box<Self>> {
+                // look each component up by type, since bundles store them sorted by TypeId
                 let result = ($(
-                    match components.pop() {
-                        Some(mut component) => {
-                            if component.element_typeid() == TypeId::of::<$name>() {
-                                component.pop().unwrap().downcast::<$name>().unwrap()
-                            } else {
-                                bail!("Expected component of type {:?}, found {:?}", TypeId::of::<$name>(), component.type_id())
-                            }
-                        }
-                        None => bail!("Expected component of type {:?}, found none", TypeId::of::<$name>())
+                    match components.iter().position(|c| c.element_typeid() == TypeId::of::<$name>()) {
+                        Some(index) => match components.swap_remove(index).pop::<$name>() {
+                            Some(component) => component,
+                            None => bail!("Component vec for {} is empty", std::any::type_name::<$name>()),
+                        },
+                        None => bail!("Expected component of type {}, found none", std::any::type_name::<$name>()),
                     },
                 )*);
 
@@ -139,9 +136,8 @@ impl ComponentBundle {
         let ty = TypeId::of::<T>();
         let index = self.types.iter().position(|t| *t == ty)?;
         self.types.remove(index);
-        let mut comp = self.components.remove(index);
-        let comp = comp.pop().unwrap();
-        Some(comp.downcast().unwrap())
+        self.ticks.remove(index);
+        self.components.remove(index).pop::<T>()
     }
 
     pub fn union(&mut self, other: Self) -> Option<Self> {

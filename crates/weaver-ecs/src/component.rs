@@ -1,13 +1,9 @@
-//! Much of the inspiration and implementation of this module is based on the `broomdog` crate, particularly the `Loan`, `LoanMut`, `LoanStorage`, and `ComponentMap` types.
-//! <https://github.com/schell/broomdog/>
-
 use std::{
     any::{Any, TypeId},
     ops::{Deref, DerefMut},
     sync::Arc,
 };
 
-use any_vec::AnyVec;
 use weaver_util::prelude::*;
 
 use crate::{
@@ -68,7 +64,7 @@ impl dyn Component {
 
 pub type BoxedComponent = Box<dyn Component>;
 
-pub type ComponentVec = AnyVec<dyn Send + Sync>;
+pub use crate::component_vec::ComponentVec;
 
 #[derive(Default)]
 pub struct ComponentMap {
@@ -114,7 +110,6 @@ impl ComponentMap {
     }
 
     fn loan_component(&mut self, type_id: TypeId) -> Result<Loan<BoxedComponent>> {
-        // self.map.get_mut(&type_id)?.loan()
         let storage = self.map.get_mut(&type_id);
         let Some(storage) = storage else {
             bail!("Resource does not exist");

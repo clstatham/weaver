@@ -1,9 +1,11 @@
 use std::{
     any::TypeId,
+    cell::UnsafeCell,
     ops::{Deref, DerefMut},
+    sync::atomic::{AtomicIsize, Ordering},
 };
 
-use weaver_util::lock::SharedLock;
+use weaver_util::prelude::*;
 
 use crate::{
     bundle::{Bundle, ComponentBundle},
@@ -12,12 +14,69 @@ use crate::{
     entity::{Entity, EntityMap},
 };
 
+/// One component type's data and change ticks within an archetype, indexed by row.
+///
+/// The cells let a [`Query`](crate::query::Query) read or write rows through a shared
+/// `&Components`. That is only sound while the query holds the matching borrow flag
+/// (see [`Components::try_borrow`]); structural changes go through `&mut Components` instead.
+pub(crate) struct Column {
+    data: UnsafeCell<ComponentVec>,
+    ticks: UnsafeCell<Vec<ComponentTicks>>,
+}
+
+// SAFETY: shared access to the cells is gated by the per-type borrow flags in `Components`:
+// any number of readers, or a single writer, never both.
+unsafe impl Sync for Column {}
+
+impl Column {
+    fn new(data: ComponentVec) -> Self {
+        Self {
+            data: UnsafeCell::new(data),
+            ticks: UnsafeCell::new(Vec::new()),
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must hold a read borrow of this column's component type, and `T` must be that type.
+    pub(crate) unsafe fn data_slice<T: Component>(&self) -> &[T] {
+        // SAFETY: no writer exists while a read borrow is held, and the caller vouches for `T`
+        unsafe { (*self.data.get()).as_slice_unchecked::<T>() }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must hold a read borrow of this column's component type.
+    pub(crate) unsafe fn ticks_slice(&self) -> &[ComponentTicks] {
+        // SAFETY: no writer exists while a read borrow is held
+        unsafe { &*self.ticks.get() }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must hold the write borrow of this column's component type, `T` must be that
+    /// type, and no other reference into this column may be alive.
+    pub(crate) unsafe fn data_ptr<T: Component>(&self) -> *mut T {
+        // SAFETY: structural changes need `&mut Components`, so nothing mutates the vec itself
+        // while we read its buffer pointer; the write borrow covers the elements
+        unsafe { (*self.data.get()).as_ptr().cast::<T>() }
+    }
+
+    /// # Safety
+    ///
+    /// Same as [`Column::data_ptr`].
+    pub(crate) unsafe fn ticks_ptr(&self) -> *mut ComponentTicks {
+        // SAFETY: the write borrow makes this the only access to the column
+        unsafe { (*self.ticks.get()).as_mut_ptr() }
+    }
+}
+
 #[derive(Default)]
 pub struct Archetype {
+    /// Sorted, so lookups can binary search.
     data_types: Vec<TypeId>,
-    columns: Vec<SharedLock<ComponentVec>>,
-    ticks: Vec<SharedLock<Vec<ComponentTicks>>>,
-    entity_id_lookup: Vec<Entity>,
+    columns: Vec<Column>,
+    entities: Vec<Entity>,
 }
 
 impl Archetype {
@@ -26,59 +85,56 @@ impl Archetype {
         vecs.sort_unstable_by_key(|vec| vec.element_typeid());
         let mut data_types = T::component_type_ids();
         data_types.sort_unstable();
-        let columns = vecs.into_iter().map(SharedLock::new).collect::<Vec<_>>();
-
-        let mut ticks = Vec::new();
-        for _ in &columns {
-            ticks.push(SharedLock::new(vec![]));
-        }
 
         Self {
             data_types,
-            columns,
-            ticks,
-            entity_id_lookup: Vec::new(),
+            columns: vecs.into_iter().map(Column::new).collect(),
+            entities: Vec::new(),
         }
     }
 
-    pub fn columns(&self) -> &[SharedLock<ComponentVec>] {
-        &self.columns
+    pub fn data_types(&self) -> &[TypeId] {
+        &self.data_types
     }
 
-    pub fn ticks(&self) -> &[SharedLock<Vec<ComponentTicks>>] {
-        &self.ticks
+    pub fn entities(&self) -> &[Entity] {
+        &self.entities
     }
 
     pub fn entity_iter(&self) -> impl Iterator<Item = Entity> + '_ {
-        self.entity_id_lookup.iter().copied()
+        self.entities.iter().copied()
     }
 
     pub fn len(&self) -> usize {
-        self.entity_id_lookup.len()
+        self.entities.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entity_id_lookup.is_empty()
+        self.entities.is_empty()
     }
 
     pub fn index_of(&self, ty: TypeId) -> Option<usize> {
-        self.data_types.iter().position(|&id| id == ty)
+        self.data_types.binary_search(&ty).ok()
     }
 
+    /// Finds an entity's row with a linear scan. Prefer [`Components::location`], which is O(1).
     pub fn entity_index(&self, entity: Entity) -> Option<usize> {
-        self.entity_id_lookup.iter().position(|&id| id == entity)
+        self.entities.iter().position(|&id| id == entity)
     }
 
     pub fn has<T: Component>(&self) -> bool {
         self.index_of(TypeId::of::<T>()).is_some()
     }
 
+    pub(crate) fn column_of<T: Component>(&self) -> Option<&Column> {
+        self.index_of(TypeId::of::<T>())
+            .map(|index| &self.columns[index])
+    }
+
     pub fn exactly_matches_bundle<T: Bundle>(&self) -> bool {
-        let mut sorted = self.data_types.clone();
-        sorted.sort_unstable();
         let mut bundle = T::component_type_ids();
         bundle.sort_unstable();
-        sorted == bundle
+        self.data_types == bundle
     }
 
     pub fn partially_matches_bundle<T: Bundle>(&self) -> bool {
@@ -87,17 +143,13 @@ impl Archetype {
     }
 
     pub fn exactly_matches_type_ids(&self, data_types: impl IntoIterator<Item = TypeId>) -> bool {
-        let mut sorted = self.data_types.clone();
-        sorted.sort_unstable();
         let mut data_types = data_types.into_iter().collect::<Vec<_>>();
         data_types.sort_unstable();
-        sorted == data_types
+        self.data_types == data_types
     }
 
     pub fn partially_matches_type_ids(&self, data_types: impl IntoIterator<Item = TypeId>) -> bool {
-        data_types
-            .into_iter()
-            .all(|id| self.data_types.contains(&id))
+        data_types.into_iter().all(|id| self.index_of(id).is_some())
     }
 }
 
@@ -118,11 +170,30 @@ impl ArchetypeId {
     }
 }
 
+/// Where an entity's components live: its archetype and its row within that archetype.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntityLocation {
+    pub archetype: ArchetypeId,
+    pub row: usize,
+}
+
+/// The kind of access a [`Query`](crate::query::Query) term needs to a component type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Access {
+    Read,
+    Write,
+}
+
 #[derive(Default)]
 pub struct Components {
     // Note: This Vec never shrinks. This is intentional to avoid changing the ArchetypeId of existing archetypes. Empty archetypes are kept initialized in memory for potential reuse later.
     archetypes: Vec<Archetype>,
-    entity_archetype: EntityMap<ArchetypeId>,
+    /// Sorted component types -> archetype, mirroring each archetype's `data_types`.
+    archetype_by_types: FxHashMap<Box<[TypeId]>, ArchetypeId>,
+    entity_location: EntityMap<EntityLocation>,
+    /// One borrow flag per stored component type: `n > 0` is `n` readers, `-1` is one writer.
+    /// Entries are only added through `&mut self`, so the map itself is never mutated while a query holds borrows.
+    borrows: TypeIdMap<AtomicIsize>,
 }
 
 impl Components {
@@ -130,53 +201,33 @@ impl Components {
         Self::default()
     }
 
-    pub(crate) fn get_archetype_id_for_type_ids(
-        &self,
-        data_types: impl IntoIterator<Item = TypeId>,
-    ) -> Option<ArchetypeId> {
-        let data_types = data_types.into_iter().collect::<Vec<_>>();
-        self.archetypes
-            .iter()
-            .enumerate()
-            .find_map(|(i, archetype)| {
-                if archetype.exactly_matches_type_ids(data_types.iter().copied()) {
-                    Some(ArchetypeId::from_u64(i as u64))
-                } else {
-                    None
-                }
-            })
-    }
-
     /// Removes an entity from the storage and returns the components that were removed.
     ///
-    /// If the entity cannot be removed, returns `None`.
+    /// Panics if the entity does not exist.
     pub(crate) fn remove_entity(&mut self, entity: Entity) -> ComponentBundle {
-        assert!(
-            self.entity_archetype.contains_key(&entity),
-            "Entity does not exist"
-        );
-        let archetype_id = self.entity_archetype.remove(&entity).unwrap();
-        let archetype = &mut self.archetypes[archetype_id.as_usize()];
-        let entity_index = archetype.entity_index(entity).unwrap();
+        let location = self
+            .entity_location
+            .remove(&entity)
+            .expect("Entity does not exist");
+        let archetype = &mut self.archetypes[location.archetype.as_usize()];
+        let row = location.row;
 
-        let mut components = Vec::new();
-
-        for column in archetype.columns() {
-            let mut column = column.write();
-            let mut tmp = column.clone_empty();
-            let component = column.swap_remove(entity_index);
-            tmp.push(component);
+        let mut components = Vec::with_capacity(archetype.columns.len());
+        let mut ticks = Vec::with_capacity(archetype.columns.len());
+        for column in archetype.columns.iter_mut() {
+            let data = column.data.get_mut();
+            let mut tmp = data.clone_empty();
+            data.swap_remove_into(row, &mut tmp);
             components.push(tmp);
+            ticks.push(column.ticks.get_mut().swap_remove(row));
         }
 
-        let mut ticks = Vec::new();
-        for tick_column in archetype.ticks.iter() {
-            let mut tick_column = tick_column.write();
-            let tick = tick_column.swap_remove(entity_index);
-            ticks.push(tick);
+        archetype.entities.swap_remove(row);
+        // the last entity was moved into the hole, so its row changed
+        if let Some(&moved) = archetype.entities.get(row) {
+            self.entity_location.get_mut(&moved).unwrap().row = row;
         }
 
-        archetype.entity_id_lookup.swap_remove(entity_index);
         ComponentBundle {
             types: archetype.data_types.clone(),
             components,
@@ -186,14 +237,13 @@ impl Components {
 
     pub(crate) fn insert_entity(&mut self, entity: Entity, components: ComponentBundle) {
         assert!(
-            !self.entity_archetype.contains_key(&entity),
+            !self.entity_location.contains_key(&entity),
             "Entity already exists"
         );
+        debug_assert!(components.types.is_sorted());
 
-        let maybe_archetype_id =
-            self.get_archetype_id_for_type_ids(components.types.iter().copied());
-        let archetype_id = match maybe_archetype_id {
-            Some(id) => id, // archetype already exists
+        let archetype_id = match self.archetype_by_types.get(components.types.as_slice()) {
+            Some(&id) => id, // archetype already exists
             None => {
                 // create a new archetype for this bundle
                 let archetype = Archetype {
@@ -201,40 +251,49 @@ impl Components {
                     columns: components
                         .empty_vecs()
                         .into_iter()
-                        .map(SharedLock::new)
+                        .map(Column::new)
                         .collect(),
-                    ticks: components
-                        .ticks
-                        .iter()
-                        .map(|_| SharedLock::new(vec![]))
-                        .collect(),
-                    entity_id_lookup: Vec::new(),
+                    entities: Vec::new(),
                 };
+                for &ty in &components.types {
+                    self.borrows
+                        .entry(ty)
+                        .or_insert_with(|| AtomicIsize::new(0));
+                }
                 let id = ArchetypeId::from_u64(self.archetypes.len() as u64);
                 self.archetypes.push(archetype);
+                self.archetype_by_types
+                    .insert(components.types.clone().into_boxed_slice(), id);
                 id
             }
         };
 
         let archetype = &mut self.archetypes[archetype_id.as_usize()];
-        archetype.entity_id_lookup.push(entity);
+        let row = archetype.entities.len();
+        archetype.entities.push(entity);
 
-        for (column, mut component) in archetype.columns.iter_mut().zip(components.components) {
-            let mut column = column.write();
-            column.push(component.pop().unwrap());
+        for ((column, mut component), tick) in archetype
+            .columns
+            .iter_mut()
+            .zip(components.components)
+            .zip(components.ticks)
+        {
+            assert!(component.pop_into(column.data.get_mut()));
+            column.ticks.get_mut().push(tick);
         }
 
-        for (tick_column, tick) in archetype.ticks.iter_mut().zip(components.ticks) {
-            let mut tick_column = tick_column.write();
-            tick_column.push(tick);
-        }
-
-        self.entity_archetype.insert(entity, archetype_id);
+        self.entity_location.insert(
+            entity,
+            EntityLocation {
+                archetype: archetype_id,
+                row,
+            },
+        );
     }
 
     pub fn insert_bundle<T: Bundle>(&mut self, entity: Entity, bundle: T, tick: Tick) {
         let mut components = ComponentBundle::from_tuple(bundle, tick);
-        if self.entity_archetype.contains_key(&entity) {
+        if self.entity_location.contains_key(&entity) {
             let old_comps = self.remove_entity(entity);
             components.union(old_comps);
         }
@@ -248,10 +307,30 @@ impl Components {
         removed
     }
 
+    pub fn location(&self, entity: Entity) -> Option<EntityLocation> {
+        self.entity_location.get(&entity).copied()
+    }
+
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
-        let archetype_id = self.entity_archetype.get(&entity).unwrap();
-        let archetype = &self.archetypes[archetype_id.as_usize()];
-        archetype.entity_index(entity).is_some() && archetype.has::<T>()
+        let location = self.location(entity).expect("Entity does not exist");
+        self.archetypes[location.archetype.as_usize()].has::<T>()
+    }
+
+    fn component_ticks<T: Component>(&self, entity: Entity) -> ComponentTicks {
+        let location = self.location(entity).expect("Entity does not exist");
+        let column = self.archetypes[location.archetype.as_usize()]
+            .column_of::<T>()
+            .expect("Entity does not have the component");
+        let ty = TypeId::of::<T>();
+        assert!(
+            self.try_borrow(ty, Access::Read),
+            "{} is mutably borrowed by a live Query",
+            std::any::type_name::<T>()
+        );
+        // SAFETY: we hold a read borrow of T
+        let ticks = unsafe { column.ticks_slice()[location.row] };
+        self.release(ty, Access::Read);
+        ticks
     }
 
     pub fn component_added<T: Component>(
@@ -260,13 +339,8 @@ impl Components {
         last_run: Tick,
         this_run: Tick,
     ) -> bool {
-        let archetype_id = self.entity_archetype.get(&entity).unwrap();
-        let archetype = &self.archetypes[archetype_id.as_usize()];
-        let entity_index = archetype.entity_index(entity).unwrap();
-        let column_index = archetype.index_of(TypeId::of::<T>()).unwrap();
-        let tick_column = archetype.ticks[column_index].read();
-        let ticks = tick_column.get(entity_index).unwrap();
-        ticks.is_added(last_run, this_run)
+        self.component_ticks::<T>(entity)
+            .is_added(last_run, this_run)
     }
 
     pub fn component_changed<T: Component>(
@@ -275,17 +349,47 @@ impl Components {
         last_run: Tick,
         this_run: Tick,
     ) -> bool {
-        let archetype_id = self.entity_archetype.get(&entity).unwrap();
-        let archetype = &self.archetypes[archetype_id.as_usize()];
-        let entity_index = archetype.entity_index(entity).unwrap();
-        let column_index = archetype.index_of(TypeId::of::<T>()).unwrap();
-        let tick_column = archetype.ticks[column_index].read();
-        let ticks = tick_column.get(entity_index).unwrap();
-        ticks.is_changed(last_run, this_run)
+        self.component_ticks::<T>(entity)
+            .is_changed(last_run, this_run)
     }
 
     pub fn archetype_iter(&self) -> impl Iterator<Item = &Archetype> {
         self.archetypes.iter()
+    }
+
+    pub fn archetypes(&self) -> &[Archetype] {
+        &self.archetypes
+    }
+
+    /// Tries to take a read or write borrow of every column of component type `ty`.
+    /// A type that was never stored has no columns, so borrowing it always succeeds.
+    pub(crate) fn try_borrow(&self, ty: TypeId, access: Access) -> bool {
+        let Some(flag) = self.borrows.get(&ty) else {
+            return true;
+        };
+        match access {
+            Access::Read => flag
+                .fetch_update(Ordering::Acquire, Ordering::Relaxed, |n| {
+                    (n >= 0).then_some(n + 1)
+                })
+                .is_ok(),
+            Access::Write => flag
+                .compare_exchange(0, -1, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok(),
+        }
+    }
+
+    /// Releases a borrow taken with [`Components::try_borrow`].
+    pub(crate) fn release(&self, ty: TypeId, access: Access) {
+        let Some(flag) = self.borrows.get(&ty) else {
+            return;
+        };
+        match access {
+            Access::Read => {
+                flag.fetch_sub(1, Ordering::Release);
+            }
+            Access::Write => flag.store(0, Ordering::Release),
+        }
     }
 }
 

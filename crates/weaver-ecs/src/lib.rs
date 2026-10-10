@@ -5,6 +5,7 @@ pub mod bundle;
 pub mod change_detection;
 pub mod commands;
 pub mod component;
+mod component_vec;
 pub mod entity;
 pub mod loan;
 pub mod query;

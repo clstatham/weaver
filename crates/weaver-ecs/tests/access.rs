@@ -42,9 +42,8 @@ fn overlapping_params_in_one_system_are_rejected() {
     assert!(resources.is_err(), "(Res<R>, ResMut<R>) was accepted");
 }
 
-/// `Changed<&mut T>` takes a write lock on T's columns, so it must declare a write.
+/// `Changed<&mut T>` hands out `Mut<T>`, so it must declare a write.
 #[test]
-#[ignore = "known issue: Changed<&mut T> declares a read but locks the column for writing"]
 fn changed_mut_declares_write_access() {
     let access = <Query<Changed<&mut A>> as SystemParam>::access();
     assert!(access.components_written.contains(&TypeId::of::<A>()));

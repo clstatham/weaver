@@ -1,3 +1,6 @@
+//! Much of the inspiration and implementation of this module is based on the `broomdog` crate, particularly the `Loan`, `LoanMut`, and `LoanStorage` types.
+//! <https://github.com/schell/broomdog/>
+
 use std::{
     ops::{Deref, DerefMut},
     sync::Arc,

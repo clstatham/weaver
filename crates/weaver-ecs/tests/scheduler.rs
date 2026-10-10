@@ -28,7 +28,6 @@ fn slow(_commands: Commands) {
 /// The change tick should advance by a small, deterministic amount per update. It currently
 /// increments on every pass of the scheduler's busy-wait loop, so it depends on system duration.
 #[test]
-#[ignore = "known issue: the scheduler bumps the change tick on every busy-wait pass"]
 fn change_tick_advance_per_update_is_bounded() {
     init_task_pool();
     let mut world = World::new();
@@ -61,7 +60,6 @@ fn runs_after_panic(_commands: Commands) {
 /// A panicking system must be reported, either by propagating the panic or by
 /// `World::update` returning an error.
 #[test]
-#[ignore = "known issue: system panics are caught by the task pool and never reach World::update"]
 fn system_panic_is_reported() {
     init_task_pool();
     let mut world = World::new();
