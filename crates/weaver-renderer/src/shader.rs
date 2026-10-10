@@ -39,7 +39,7 @@ pub struct ShaderLoader;
 impl LoadFrom<PathBuf> for ShaderLoader {
     type Asset = Shader;
 
-    async fn load(&self, source: PathBuf, _commands: &Commands) -> Result<Shader> {
+    fn load(&self, source: PathBuf, _commands: &Commands) -> Result<Shader> {
         Ok(Shader::new(source))
     }
 }

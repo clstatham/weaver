@@ -29,7 +29,7 @@ fn main() -> Result<()> {
         .run()
 }
 
-async fn setup(
+fn setup(
     commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<Material>>,
@@ -64,7 +64,6 @@ async fn setup(
             PathBuf::from("assets/meshes/stanford_dragon_pbr.glb"),
             &commands,
         )
-        .await
         .unwrap();
 
     let LoadedMaterialMeshPrimitive { material, mesh, .. } = material_mesh.primitives.remove(0);

@@ -46,16 +46,16 @@ pub struct ObjMaterialModelLoader;
 impl LoadFrom<PathAndFilesystem> for ObjMaterialModelLoader {
     type Asset = LoadedModelWithMaterials;
 
-    async fn load(
+    fn load(
         &self,
         source: PathAndFilesystem,
         commands: &Commands,
     ) -> Result<LoadedModelWithMaterials> {
-        load_obj_material_mesh(&source, commands).await
+        load_obj_material_mesh(&source, commands)
     }
 }
 
-pub async fn load_obj_material_mesh(
+pub fn load_obj_material_mesh(
     source: &PathAndFilesystem,
     commands: &Commands,
 ) -> Result<LoadedModelWithMaterials> {
@@ -227,7 +227,7 @@ pub struct GltfMaterialModelLoader;
 impl LoadFrom<PathBuf> for GltfMaterialModelLoader {
     type Asset = LoadedModelWithMaterials;
 
-    async fn load(&self, source: PathBuf, commands: &Commands) -> Result<LoadedModelWithMaterials> {
+    fn load(&self, source: PathBuf, commands: &Commands) -> Result<LoadedModelWithMaterials> {
         load_gltf_material_mesh(&source, commands)
     }
 }

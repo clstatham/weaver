@@ -1,7 +1,6 @@
 use std::{
     fmt::Debug,
     fs::File,
-    future::Future,
     hash::{Hash, Hasher},
     io::{BufReader, Read},
     marker::PhantomData,
@@ -17,8 +16,7 @@ use weaver_ecs::{
     prelude::{Res, ResMut, SystemStage},
     world::{ConstructFromWorld, FromWorld},
 };
-use weaver_event::Events;
-use weaver_task::usages::GlobalTaskPool;
+use weaver_event::EventQueue;
 use weaver_util::prelude::*;
 use zip::ZipArchive;
 
@@ -406,11 +404,7 @@ impl<T: Asset> LoadSource for T {}
 pub trait LoadFrom<S: LoadSource>: ConstructFromWorld + Send + Sync + 'static {
     type Asset: Asset;
 
-    fn load(
-        &self,
-        source: S,
-        commands: &Commands,
-    ) -> impl Future<Output = Result<Self::Asset>> + Send + Sync;
+    fn load(&self, source: S, commands: &Commands) -> Result<Self::Asset>;
 }
 
 #[derive(Clone, Copy)]
@@ -425,7 +419,7 @@ impl<T: Asset> Default for DirectLoader<T> {
 impl<T: Asset> LoadFrom<BoxedAsset> for DirectLoader<T> {
     type Asset = T;
 
-    async fn load(&self, source: BoxedAsset, _commands: &Commands) -> Result<T> {
+    fn load(&self, source: BoxedAsset, _commands: &Commands) -> Result<T> {
         source
             .downcast()
             .map_err(|_| anyhow!("failed to downcast asset"))
@@ -435,7 +429,7 @@ impl<T: Asset> LoadFrom<BoxedAsset> for DirectLoader<T> {
 
 impl<T: Asset> LoadFrom<T> for DirectLoader<T> {
     type Asset = T;
-    async fn load(&self, source: T, _commands: &Commands) -> Result<T> {
+    fn load(&self, source: T, _commands: &Commands) -> Result<T> {
         Ok(source)
     }
 }
@@ -644,7 +638,7 @@ impl AssetApp for SubApp {
             self.world_mut().init_resource::<AssetLoadQueue<L, S>>();
 
             self.world_mut()
-                .init_resource::<Events<AssetLoaded<L::Asset>>>();
+                .init_resource::<EventQueue<AssetLoaded<L::Asset>>>();
 
             if !self.world().has_system_stage(AssetLoad) {
                 self.world_mut().push_update_stage(AssetLoad);
@@ -698,11 +692,11 @@ impl AssetApp for App {
     }
 }
 
-async fn load_all_assets<L: LoadFrom<S> + 'static, S: LoadSource>(
+fn load_all_assets<L: LoadFrom<S> + 'static, S: LoadSource>(
     loader: FromWorld<L>,
     load_queue: Res<AssetLoadQueue<L, S>>,
     mut assets: ResMut<Assets<L::Asset>>,
-    load_events: Res<Events<AssetLoaded<L::Asset>>>,
+    mut load_events: ResMut<EventQueue<AssetLoaded<L::Asset>>>,
     load_status: Res<AssetLoadStatus>,
     commands: Commands,
 ) {
@@ -721,26 +715,22 @@ async fn load_all_assets<L: LoadFrom<S> + 'static, S: LoadSource>(
         if assets.get(request.handle).is_some() || load_status.is_loaded(request.handle) {
             continue;
         }
-        let loader = loader.clone();
-        let commands = commands.clone();
-        let task = GlobalTaskPool::get().spawn(async move {
-            match loader.load(request.source, &commands).await {
-                Ok(asset) => Ok(asset),
-                Err(e) => {
-                    log::error!("Failed to load asset: {}", e);
-                    Err(e)
-                }
+        let result = match loader.load(request.source, &commands) {
+            Ok(asset) => Ok(asset),
+            Err(e) => {
+                log::error!("Failed to load asset: {}", e);
+                Err(e)
             }
-        });
+        };
 
-        handles.push((request.handle, task));
+        handles.push((request.handle, result));
     }
 
     for (handle, result) in handles {
-        if let Ok(asset) = result.await {
+        if let Ok(asset) = result {
             assets.insert_manual(asset, handle.id);
             load_status.manually_set_loaded(handle);
-            load_events.send(AssetLoaded::new(handle.id)).await;
+            load_events.send(AssetLoaded::new(handle.id));
         }
     }
 }

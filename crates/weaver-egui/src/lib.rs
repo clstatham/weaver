@@ -8,7 +8,7 @@ use weaver_ecs::{
     prelude::Commands,
     system_schedule::SystemStage,
 };
-use weaver_event::{EventRx, prelude::StreamExt};
+use weaver_event::EventRx;
 use weaver_renderer::{
     CurrentFrame, MainWorld, RenderApp, RenderStage, WgpuDevice, WgpuQueue, prelude::wgpu,
     texture::texture_format,
@@ -195,7 +195,7 @@ impl Plugin for EguiPlugin {
     }
 }
 
-async fn extract_egui_context(
+fn extract_egui_context(
     commands: Commands,
     main_world: Res<MainWorld>,
     window: Res<Window>,
@@ -210,17 +210,17 @@ async fn extract_egui_context(
     main_world.insert_resource(egui_context);
 }
 
-pub async fn begin_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
+pub fn begin_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
     egui_context.begin_frame(&window);
 }
 
-pub async fn end_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
+pub fn end_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
     egui_context.end_frame();
 
     egui_context.pre_render_on_main_thread(&window);
 }
 
-async fn render(
+fn render(
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
     current_frame: Res<CurrentFrame>,
@@ -250,12 +250,8 @@ async fn render(
     renderer.enqueue_command_buffer(encoder.finish());
 }
 
-async fn egui_events(
-    egui_context: Res<EguiContext>,
-    window: Res<Window>,
-    mut rx: EventRx<WinitEvent>,
-) {
-    while let Some(event) = rx.next().await {
+fn egui_events(egui_context: Res<EguiContext>, window: Res<Window>, rx: EventRx<WinitEvent>) {
+    for event in rx {
         if let winit::event::Event::WindowEvent { window_id, event } = &event.event
             && window.id() == *window_id
         {

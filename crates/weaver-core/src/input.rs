@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use weaver_app::{plugin::Plugin, App, AppStage};
+use weaver_app::{App, AppStage, plugin::Plugin};
 use weaver_ecs::component::ResMut;
 use weaver_util::prelude::*;
 use winit::{
@@ -153,6 +153,6 @@ impl Plugin for InputPlugin {
     }
 }
 
-async fn update_input(mut input: ResMut<Input>) {
+fn update_input(mut input: ResMut<Input>) {
     input.prepare();
 }

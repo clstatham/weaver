@@ -79,7 +79,7 @@ impl<T: RenderAsset> Plugin for ExtractRenderAssetPlugin<T> {
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-async fn extract_render_asset<T: RenderAsset>(
+fn extract_render_asset<T: RenderAsset>(
     commands: Commands,
     mut main_world_assets: Extract<ResMut<Assets<T::Source>>>,
     mut param: SystemParamWrapper<T::Param>,

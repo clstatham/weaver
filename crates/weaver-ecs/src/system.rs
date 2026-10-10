@@ -1,4 +1,4 @@
-use std::{any::TypeId, collections::VecDeque, future::Future, sync::Arc};
+use std::{any::TypeId, collections::VecDeque, sync::Arc};
 
 use crate::{
     component::{Component, Res, ResMut},
@@ -6,7 +6,6 @@ use crate::{
     world::ConstructFromWorld,
 };
 use petgraph::prelude::*;
-use weaver_task::{BoxFuture, usages::GlobalTaskPool};
 use weaver_util::prelude::*;
 
 /// A system access descriptor, indicating what resources and components a system reads and writes. This is used to validate system access at runtime.
@@ -80,7 +79,7 @@ pub trait System: Send + Sync {
     fn initialize(&mut self, world: &mut World) {}
 
     /// Runs the system on the world.
-    fn run(&mut self, world: &World) -> BoxFuture<'static, ()>;
+    fn run(&mut self, world: &World);
 
     #[allow(unused)]
     fn apply_deferred(&mut self, world: &mut World) {}
@@ -416,7 +415,7 @@ pub trait SystemParamFunction<M>: 'static + Send + Sync {
 
     fn update_state(state: &mut SystemParamState<Self::Param>, world: &World);
 
-    fn run(&self, param: SystemParamItem<Self::Param>) -> impl Future<Output = ()> + Send + Sync;
+    fn run(&self, param: SystemParamItem<Self::Param>);
 }
 
 pub struct FunctionSystem<M, F>
@@ -465,14 +464,12 @@ where
         &self.access
     }
 
-    fn run(&mut self, world: &World) -> BoxFuture<'static, ()> {
+    fn run(&mut self, world: &World) {
         let state = self.state.as_mut().expect("State not initialized");
         F::update_state(state, world);
         let fetch = F::Param::fetch(world, state);
         let func = self.func.clone();
-        Box::pin(async move {
-            func.run(fetch).await;
-        })
+        func.run(fetch);
     }
 
     fn apply_deferred(&mut self, world: &mut World) {
@@ -502,13 +499,12 @@ where
 macro_rules! impl_function_system {
     ($($param:ident),*) => {
         #[allow(unused, non_snake_case)]
-        impl<Func, Fut, $($param,)*> SystemParamFunction<fn($($param,)*)> for Func
+        impl<Func, $($param,)*> SystemParamFunction<fn($($param,)*)> for Func
         where for<'a> &'a Func:
-            Fn($($param),*) -> Fut
-            + Fn($(SystemParamItem<$param>),*) -> Fut,
+            Fn($($param),*)
+            + Fn($(SystemParamItem<$param>),*) ,
             $($param: SystemParam + 'static),*,
             Func: 'static + Send + Sync,
-            Fut: Future<Output = ()> + Send + Sync,
         {
             type Param = ($($param),*);
 
@@ -521,20 +517,18 @@ macro_rules! impl_function_system {
                 $($param::update_state($param, world);)*
             }
 
-            async fn run(&self, param: SystemParamItem<Self::Param>) {
-                async fn inner<Fut, $($param,)*>(
-                    mut func: impl Fn($($param),*) -> Fut,
+            fn run(&self, param: SystemParamItem<Self::Param>) {
+                fn inner<$($param,)*>(
+                    mut func: impl Fn($($param),*),
                     param: ($($param),*),
                 )
-                where
-                    Fut: Future<Output = ()> + Send + Sync,
                 {
                     let ($($param),*) = param;
-                    func($($param),*).await;
+                    func($($param),*);
                 }
 
                 let ($($param),*) = param;
-                inner(self, ($($param),*)).await;
+                inner(self, ($($param),*));
             }
         }
     };
@@ -812,9 +806,7 @@ impl SystemGraph {
     /// Runs all systems in the graph.
     pub fn run(&mut self, world: &mut World) -> Result<()> {
         let schedule = self.get_batches();
-        let task_pool = GlobalTaskPool::get();
         for layer in schedule {
-            let mut handles = Vec::new();
             let mut skipped = Vec::new();
             let mut ran = Vec::new();
             for node in layer {
@@ -823,25 +815,9 @@ impl SystemGraph {
                     skipped.push(node);
                     continue;
                 }
-                let handle = task_pool.spawn(system.write().run(world));
-                handles.push(handle);
+                system.write().run(world);
 
                 ran.push(node);
-            }
-
-            loop {
-                let mut all_finished = true;
-                for handle in &handles {
-                    if handle.is_finished() {
-                        world.increment_change_tick();
-                    } else {
-                        all_finished = false;
-                    }
-                }
-
-                if all_finished {
-                    break;
-                }
             }
 
             // every system in the layer has finished (and dropped its params), so nothing holds a loan into the world
@@ -858,13 +834,8 @@ impl SystemGraph {
                     log::debug!("Skipping system: {}", system.read().name());
                     continue;
                 }
-                let handle = task_pool.spawn(system.write().run(world));
-                loop {
-                    if handle.is_finished() {
-                        world.increment_change_tick();
-                        break;
-                    }
-                }
+
+                system.write().run(world);
 
                 // apply right away, so the remaining skipped systems see this one's commands too
                 system.write().apply_deferred(world);

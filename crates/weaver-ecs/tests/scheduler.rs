@@ -19,9 +19,9 @@ struct Stage1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
 struct Stage2;
 
-async fn quick(_commands: Commands) {}
+fn quick(_commands: Commands) {}
 
-async fn slow(_commands: Commands) {
+fn slow(_commands: Commands) {
     std::thread::sleep(Duration::from_millis(30));
 }
 
@@ -41,17 +41,20 @@ fn change_tick_advance_per_update_is_bounded() {
         let before = world.read_change_tick().as_u64();
         world.update().unwrap();
         let advance = world.read_change_tick().as_u64() - before;
-        assert!(advance <= 16, "one update advanced the change tick by {advance}");
+        assert!(
+            advance <= 16,
+            "one update advanced the change tick by {advance}"
+        );
     }
 }
 
 static AFTER_PANIC_RAN: AtomicBool = AtomicBool::new(false);
 
-async fn panics(_commands: Commands) {
+fn panics(_commands: Commands) {
     panic!("system panicked on purpose");
 }
 
-async fn runs_after_panic(_commands: Commands) {
+fn runs_after_panic(_commands: Commands) {
     AFTER_PANIC_RAN.store(true, Ordering::SeqCst);
 }
 
@@ -80,11 +83,11 @@ fn system_panic_is_reported() {
 static FIRST_RAN: AtomicBool = AtomicBool::new(false);
 static SECOND_SAW_FIRST: AtomicBool = AtomicBool::new(false);
 
-async fn first(_commands: Commands) {
+fn first(_commands: Commands) {
     FIRST_RAN.store(true, Ordering::SeqCst);
 }
 
-async fn second(_commands: Commands) {
+fn second(_commands: Commands) {
     SECOND_SAW_FIRST.store(FIRST_RAN.load(Ordering::SeqCst), Ordering::SeqCst);
 }
 
@@ -106,7 +109,7 @@ fn after_does_not_depend_on_registration_order() {
 struct Shared;
 static SHARED_WRITES: AtomicUsize = AtomicUsize::new(0);
 
-async fn write_shared<const N: usize>(_shared: ResMut<Shared>) {
+fn write_shared<const N: usize>(_shared: ResMut<Shared>) {
     SHARED_WRITES.fetch_add(1, Ordering::SeqCst);
 }
 
@@ -134,7 +137,7 @@ fn many_systems_writing_one_resource_can_be_scheduled() {
 
 static DUPLICATE_RUNS: AtomicUsize = AtomicUsize::new(0);
 
-async fn counted(_commands: Commands) {
+fn counted(_commands: Commands) {
     DUPLICATE_RUNS.fetch_add(1, Ordering::SeqCst);
 }
 

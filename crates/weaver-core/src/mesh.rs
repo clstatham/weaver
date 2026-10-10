@@ -93,7 +93,7 @@ impl<S: LoadSource> Default for ObjMeshLoader<S> {
 impl LoadFrom<PathAndFilesystem> for ObjMeshLoader<PathAndFilesystem> {
     type Asset = Mesh;
 
-    async fn load(&self, source: PathAndFilesystem, _commands: &Commands) -> Result<Mesh> {
+    fn load(&self, source: PathAndFilesystem, _commands: &Commands) -> Result<Mesh> {
         let bytes = source.read()?;
         let meshes = load_obj(&bytes)?;
         if meshes.len() != 1 {
@@ -106,7 +106,7 @@ impl LoadFrom<PathAndFilesystem> for ObjMeshLoader<PathAndFilesystem> {
 impl LoadFrom<Vec<u8>> for ObjMeshLoader<Vec<u8>> {
     type Asset = Mesh;
 
-    async fn load(&self, source: Vec<u8>, _commands: &Commands) -> Result<Mesh> {
+    fn load(&self, source: Vec<u8>, _commands: &Commands) -> Result<Mesh> {
         load_obj(&source)?
             .into_iter()
             .next()
@@ -186,7 +186,7 @@ pub struct GltfMeshLoader<S: LoadSource>(std::marker::PhantomData<S>);
 impl LoadFrom<PathAndFilesystem> for GltfMeshLoader<PathBuf> {
     type Asset = Mesh;
 
-    async fn load(&self, source: PathAndFilesystem, _commands: &Commands) -> Result<Mesh> {
+    fn load(&self, source: PathAndFilesystem, _commands: &Commands) -> Result<Mesh> {
         let bytes = source.read()?;
         let meshes = load_gltf(&bytes)?;
         if meshes.len() != 1 {
@@ -199,7 +199,7 @@ impl LoadFrom<PathAndFilesystem> for GltfMeshLoader<PathBuf> {
 impl LoadFrom<Vec<u8>> for GltfMeshLoader<Vec<u8>> {
     type Asset = Mesh;
 
-    async fn load(&self, source: Vec<u8>, _commands: &Commands) -> Result<Mesh> {
+    fn load(&self, source: Vec<u8>, _commands: &Commands) -> Result<Mesh> {
         load_gltf(&source)?
             .into_iter()
             .next()

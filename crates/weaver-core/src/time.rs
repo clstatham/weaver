@@ -1,4 +1,4 @@
-use weaver_app::{plugin::Plugin, App, AppStage};
+use weaver_app::{App, AppStage, plugin::Plugin};
 use weaver_ecs::{
     component::{Res, ResMut},
     system::IntoSystemConfig,
@@ -94,7 +94,7 @@ impl Plugin for TimePlugin {
     }
 }
 
-async fn update_time(mut time: ResMut<Time>) {
+fn update_time(mut time: ResMut<Time>) {
     time.update();
 }
 
@@ -129,7 +129,7 @@ impl<Label: Send + Sync + 'static> Plugin for FixedUpdatePlugin<Label> {
     }
 }
 
-async fn update_fixed_timestep<Label: Send + Sync + 'static>(
+fn update_fixed_timestep<Label: Send + Sync + 'static>(
     time: Res<Time>,
     mut fixed_timestep: ResMut<FixedTimestep<Label>>,
 ) {

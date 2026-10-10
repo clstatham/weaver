@@ -23,26 +23,30 @@ struct Spawned(Mutex<Vec<Entity>>);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
 struct Stage;
 
-async fn insert_marker(commands: Commands) {
+fn insert_marker(commands: Commands) {
     commands.insert_resource(Marker);
 }
 
-async fn record_marker(marker: Option<Res<Marker>>, seen: Res<Seen>) {
+fn record_marker(marker: Option<Res<Marker>>, seen: Res<Seen>) {
     seen.0.store(marker.is_some(), Ordering::SeqCst);
 }
 
-async fn needs_marker(_marker: Res<Marker>, seen: Res<Seen>) {
+fn needs_marker(_marker: Res<Marker>, seen: Res<Seen>) {
     seen.0.store(true, Ordering::SeqCst);
 }
 
-async fn spawn_two(commands: Commands, spawned: Res<Spawned>) {
+fn spawn_two(commands: Commands, spawned: Res<Spawned>) {
     let first = commands.spawn((A(1),));
     let second = commands.spawn((A(2),));
     spawned.0.lock().unwrap().extend([first, second]);
 }
 
 fn seen(world: &World) -> bool {
-    world.get_resource::<Seen>().unwrap().0.load(Ordering::SeqCst)
+    world
+        .get_resource::<Seen>()
+        .unwrap()
+        .0
+        .load(Ordering::SeqCst)
 }
 
 /// Commands are applied when their layer finishes, so a system ordered after the issuer sees them
@@ -90,7 +94,13 @@ fn spawned_entities_get_their_components_and_are_not_reused() {
     world.initialize_systems();
     world.update().unwrap();
 
-    let spawned = world.get_resource::<Spawned>().unwrap().0.lock().unwrap().clone();
+    let spawned = world
+        .get_resource::<Spawned>()
+        .unwrap()
+        .0
+        .lock()
+        .unwrap()
+        .clone();
     assert_eq!(spawned.len(), 2);
     assert_ne!(spawned[0], spawned[1]);
 

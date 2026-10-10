@@ -17,7 +17,7 @@ struct Marker;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
 struct Stage;
 
-async fn mutate_then_spawn(mut query: Query<&mut A>, commands: Commands) {
+fn mutate_then_spawn(mut query: Query<&mut A>, commands: Commands) {
     for mut a in query.iter() {
         a.0 += 1;
     }
@@ -45,14 +45,14 @@ fn command_while_holding_own_query_does_not_deadlock() {
     assert_eq!(values, vec![1, 100]);
 }
 
-async fn write_then_command(mut query: Query<&mut A>, commands: Commands) {
+fn write_then_command(mut query: Query<&mut A>, commands: Commands) {
     for mut a in query.iter() {
         a.0 += 1;
     }
     commands.insert_resource(Marker);
 }
 
-async fn read_only(mut query: Query<&A>) {
+fn read_only(mut query: Query<&A>) {
     for _ in query.iter() {}
 }
 

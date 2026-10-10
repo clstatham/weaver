@@ -81,7 +81,7 @@ impl CreateBindGroup for TransformBindGroup {
     }
 }
 
-async fn extract_transform_bind_groups(
+fn extract_transform_bind_groups(
     commands: Commands,
     mut query: Query<(Entity, &GpuTransform, Option<&mut TransformBindGroup>)>,
     device: Res<WgpuDevice>,

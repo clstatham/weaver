@@ -505,7 +505,7 @@ impl CreateRenderPipeline for SkyboxRenderable {
     }
 }
 
-pub async fn render_skybox(
+pub fn render_skybox(
     render_pipeline_cache: Res<RenderPipelineCache>,
     hdr_target: Res<HdrRenderTarget>,
     skybox_bind_group: Res<BindGroup<GpuSkybox>>,
@@ -562,7 +562,7 @@ impl Plugin for SkyboxPlugin {
     }
 }
 
-async fn init_gpu_skybox(commands: Commands) {
+fn init_gpu_skybox(commands: Commands) {
     commands.add(move |world| {
         if world.has_resource::<Skybox>() && !world.has_resource::<GpuSkybox>() {
             world.init_resource::<GpuSkybox>();

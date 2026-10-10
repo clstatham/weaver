@@ -97,7 +97,7 @@ impl<T: ExtractComponent> Plugin for ExtractComponentPlugin<T> {
     }
 }
 
-pub async fn extract_render_component<T: ExtractComponent>(
+pub fn extract_render_component<T: ExtractComponent>(
     commands: Commands,
     mut query: Extract<Query<(Entity, T::ExtractQueryFetch)>>,
     mut out_query: Query<&mut T::Out>,
@@ -164,7 +164,7 @@ impl<T: ExtractResource, Dep: ExtractResource> Plugin for RenderResourceDependen
     }
 }
 
-pub async fn extract_render_resource<T: ExtractResource>(
+pub fn extract_render_resource<T: ExtractResource>(
     commands: Commands,
     main_resource: Extract<Option<Res<T::Source>>>,
     target_resource: Option<ResMut<T>>,
@@ -199,8 +199,7 @@ pub fn render_extract(main_world: &mut World, render_world: &mut World) -> Resul
 
 #[cfg(test)]
 mod tests {
-    use pollster::FutureExt;
-    use weaver_event::{EventRx, Events, prelude::StreamExt};
+    use weaver_event::{EventQueue, EventRx};
 
     use super::*;
 
@@ -208,24 +207,22 @@ mod tests {
     /// with the world the system runs in (the render world), so the receivers have to come from
     /// the main world some other way.
     #[test]
-    #[ignore = "known issue: Extract::init_state builds EventRx receivers from the render world"]
     fn extract_event_rx_reads_main_world_events() {
         let render_world = World::new();
-        render_world.insert_resource(Events::<u32>::new());
+        render_world.insert_resource(EventQueue::<u32>::new());
         let state = <Extract<EventRx<u32>> as SystemParam>::init_state(&render_world);
 
         let main_world = World::new();
-        main_world.insert_resource(Events::<u32>::new());
+        main_world.insert_resource(EventQueue::<u32>::new());
         main_world
-            .get_resource::<Events<u32>>()
+            .get_resource_mut::<EventQueue<u32>>()
             .unwrap()
-            .send(7)
-            .block_on();
+            .send(7);
         render_world.insert_resource(MainWorld(main_world));
 
         let mut rx = <Extract<EventRx<u32>> as SystemParam>::fetch(&render_world, &state);
         let mut received = Vec::new();
-        while let Some(event) = rx.next().block_on() {
+        for event in rx.by_ref() {
             received.push(event);
         }
 

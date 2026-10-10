@@ -104,7 +104,7 @@ impl FlyCameraController {
 
 pub struct CameraUpdate;
 
-pub async fn update_camera(
+pub fn update_camera(
     time: Res<Time>,
     input: Res<Input>,
     mut query: Query<(&mut Camera, &mut FlyCameraController)>,
@@ -114,11 +114,11 @@ pub async fn update_camera(
     }
 }
 
-pub async fn update_aspect_ratio(
+pub fn update_aspect_ratio(
     mut camera: Query<&mut FlyCameraController>,
-    mut rx: EventRx<WindowResized>,
+    rx: EventRx<WindowResized>,
 ) {
-    if let Some(event) = rx.next().await {
+    if let Some(event) = rx.last() {
         let WindowResized { width, height } = event;
         let aspect = width as f32 / height as f32;
         for mut camera in camera.iter() {

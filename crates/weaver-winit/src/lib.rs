@@ -1,6 +1,5 @@
 use std::{ops::Deref, sync::Arc};
 
-use pollster::FutureExt;
 use weaver_app::{Runner, plugin::Plugin, prelude::App};
 use weaver_core::input::Input;
 use weaver_util::prelude::*;
@@ -162,8 +161,7 @@ impl winit::application::ApplicationHandler for WinitRunnerApp<'_> {
                     device_id,
                     event: event.clone(),
                 },
-            })
-            .block_on();
+            });
 
         if let Some(mut input) = self.app.main_app().world().get_resource_mut::<Input>() {
             input.update_device(&event);
@@ -184,8 +182,7 @@ impl winit::application::ApplicationHandler for WinitRunnerApp<'_> {
                     window_id,
                     event: event.clone(),
                 },
-            })
-            .block_on();
+            });
 
         if let Some(window) = self.app.main_app().world().get_resource::<Window>() {
             if window.id() != window_id {
@@ -205,8 +202,7 @@ impl winit::application::ApplicationHandler for WinitRunnerApp<'_> {
                     .send_event(WindowResized {
                         width: size.width,
                         height: size.height,
-                    })
-                    .block_on();
+                    });
 
                 if let Some(mut window_size) = self
                     .app

@@ -18,7 +18,7 @@ use weaver_util::prelude::Result;
 
 static COUNTED_RUNS: AtomicUsize = AtomicUsize::new(0);
 
-async fn counted(_commands: Commands) {
+fn counted(_commands: Commands) {
     COUNTED_RUNS.fetch_add(1, Ordering::SeqCst);
 }
 

@@ -4,13 +4,12 @@ use plugin::{DummyPlugin, Plugin};
 
 use weaver_ecs::{
     SystemStage,
-    change_detection::WorldTicks,
     prelude::{Component, ResMut},
     system::{IntoSystem, IntoSystemConfig},
     system_schedule::SystemStage,
     world::{ConstructFromWorld, World},
 };
-use weaver_event::{Event, Events};
+use weaver_event::{Event, EventQueue};
 use weaver_task::{
     task_pool::TaskPool,
     usages::{GlobalTaskPool, tick_task_pools},
@@ -155,10 +154,10 @@ impl SubApp {
     }
 
     pub fn add_event<T: Event>(&mut self, clear_events_stage: impl SystemStage) -> &mut Self {
-        async fn clear_events<T: Event>(mut events: ResMut<Events<T>>, world_ticks: WorldTicks) {
-            events.update(world_ticks.change_tick).await;
+        fn clear_events<T: Event>(mut events: ResMut<EventQueue<T>>) {
+            events.update();
         }
-        self.world_mut().insert_resource(Events::<T>::new());
+        self.world_mut().insert_resource(EventQueue::<T>::new());
         self.world_mut()
             .add_system(clear_events::<T>, clear_events_stage);
         self
@@ -345,10 +344,10 @@ impl App {
     }
 
     pub fn add_event<T: Event>(&mut self) -> &mut Self {
-        async fn clear_events<T: Event>(mut events: ResMut<Events<T>>, world_ticks: WorldTicks) {
-            events.update(world_ticks.change_tick).await;
+        fn clear_events<T: Event>(mut events: ResMut<EventQueue<T>>) {
+            events.update();
         }
-        self.insert_resource(Events::<T>::new());
+        self.insert_resource(EventQueue::<T>::new());
         self.main_app_mut()
             .world_mut()
             .add_system(clear_events::<T>, AppStage::FinishFrame);
@@ -356,17 +355,16 @@ impl App {
     }
 
     pub fn add_manually_updated_event<T: Event>(&mut self) -> &mut Self {
-        self.insert_resource(Events::<T>::new());
+        self.insert_resource(EventQueue::<T>::new());
         self
     }
 
-    pub async fn send_event<T: Event>(&self, event: T) {
+    pub fn send_event<T: Event>(&self, event: T) {
         self.main_app()
             .world()
-            .get_resource::<Events<T>>()
+            .get_resource_mut::<EventQueue<T>>()
             .unwrap()
-            .send(event)
-            .await;
+            .send(event);
     }
 
     pub fn add_system<T, M, S>(&mut self, system: S, stage: T) -> &mut Self

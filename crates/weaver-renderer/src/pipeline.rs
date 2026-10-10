@@ -1,10 +1,10 @@
 use std::{any::TypeId, ops::Deref, sync::Arc};
 
-use weaver_app::{plugin::Plugin, App};
+use weaver_app::{App, plugin::Plugin};
 use weaver_ecs::component::{Res, ResMut};
 use weaver_util::prelude::*;
 
-use crate::{bind_group::BindGroupLayoutCache, RenderStage, WgpuDevice};
+use crate::{RenderStage, WgpuDevice, bind_group::BindGroupLayoutCache};
 
 define_atomic_id!(PipelineId);
 
@@ -160,7 +160,7 @@ impl<T: CreateRenderPipeline> Plugin for RenderPipelinePlugin<T> {
     }
 }
 
-async fn extract_render_pipeline<T: CreateRenderPipeline>(
+fn extract_render_pipeline<T: CreateRenderPipeline>(
     device: Res<WgpuDevice>,
     mut pipeline_cache: ResMut<RenderPipelineCache>,
     mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,
@@ -327,7 +327,7 @@ impl<T: CreateComputePipeline> Plugin for ComputePipelinePlugin<T> {
     }
 }
 
-async fn extract_compute_pipeline<T: CreateComputePipeline>(
+fn extract_compute_pipeline<T: CreateComputePipeline>(
     device: Res<WgpuDevice>,
     mut pipeline_cache: ResMut<ComputePipelineCache>,
     mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,

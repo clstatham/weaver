@@ -237,7 +237,7 @@ impl CreateRenderPipeline for PbrRenderable {
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-pub(crate) async fn render_pbr(
+pub(crate) fn render_pbr(
     mut mesh_assets: ResMut<Assets<GpuMesh>>,
     mut material_assets: ResMut<Assets<BindGroup<GpuMaterial>>>,
     pipeline_cache: Res<RenderPipelineCache>,

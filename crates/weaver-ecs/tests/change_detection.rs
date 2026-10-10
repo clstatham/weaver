@@ -21,13 +21,13 @@ const ENTITIES: usize = 10;
 
 static LATER_SAW_CHANGED: AtomicUsize = AtomicUsize::new(usize::MAX);
 
-async fn mutate_all(mut query: Query<&mut A>) {
+fn mutate_all(mut query: Query<&mut A>) {
     for mut a in query.iter() {
         a.0 += 1;
     }
 }
 
-async fn count_changed_later(mut query: Query<&A>) {
+fn count_changed_later(mut query: Query<&A>) {
     let changed = query.iter().filter(|a| a.is_changed()).count();
     LATER_SAW_CHANGED.store(changed, Ordering::SeqCst);
 }
@@ -59,7 +59,7 @@ fn later_system_sees_changes_from_earlier_stage() {
 
 static SELF_SAW_CHANGED: AtomicUsize = AtomicUsize::new(usize::MAX);
 
-async fn mutate_and_count(mut query: Query<&mut A>) {
+fn mutate_and_count(mut query: Query<&mut A>) {
     for mut a in query.iter() {
         a.0 += 1;
     }
@@ -87,7 +87,7 @@ fn system_sees_its_own_changes_on_first_update() {
 
 static SAW_ADDED: AtomicUsize = AtomicUsize::new(usize::MAX);
 
-async fn count_added(mut query: Query<&A>) {
+fn count_added(mut query: Query<&A>) {
     let added = query.iter().filter(|a| a.is_added()).count();
     SAW_ADDED.store(added, Ordering::SeqCst);
 }

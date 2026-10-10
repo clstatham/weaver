@@ -396,7 +396,7 @@ impl GizmoRenderable {
     }
 }
 
-pub async fn prepare_gizmos(
+pub fn prepare_gizmos(
     gizmos: Res<Gizmos>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
@@ -442,7 +442,7 @@ pub async fn prepare_gizmos(
     }
 }
 
-pub async fn render_gizmos(
+pub fn render_gizmos(
     gizmos: Res<Gizmos>,
     solid_cube: Res<SolidCubeGizmo>,
     wire_cube: Res<WireCubeGizmo>,
@@ -599,6 +599,6 @@ impl Plugin for GizmoRenderAppPlugin {
     }
 }
 
-async fn clear_gizmos(gizmos: Res<Gizmos>) {
+fn clear_gizmos(gizmos: Res<Gizmos>) {
     gizmos.clear();
 }

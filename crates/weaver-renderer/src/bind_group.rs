@@ -177,7 +177,7 @@ impl<T: Component + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn create_component_bind_group<T: Component + CreateBindGroup>(
+pub(crate) fn create_component_bind_group<T: Component + CreateBindGroup>(
     commands: Commands,
     device: Res<WgpuDevice>,
     mut layout_cache: ResMut<BindGroupLayoutCache>,
@@ -231,7 +231,7 @@ impl<T: Component + CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
     }
 }
 
-async fn create_resource_bind_group<T: Component + CreateBindGroup>(
+fn create_resource_bind_group<T: Component + CreateBindGroup>(
     commands: Commands,
     data: Res<T>,
     bind_group: Option<Res<BindGroup<T>>>,
@@ -296,7 +296,7 @@ impl<T: CreateBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
+fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
     commands: Commands,
     device: Res<WgpuDevice>,
     mut assets: ResMut<Assets<T>>,

@@ -33,7 +33,7 @@ use weaver_ecs::{
     system_schedule::SystemStage,
     world::World,
 };
-use weaver_event::{EventRx, EventTx, Events, prelude::StreamExt};
+use weaver_event::{EventQueue, EventRx, EventTx};
 use weaver_util::prelude::*;
 use weaver_winit::{Window, WindowResized, WindowSettings};
 
@@ -417,7 +417,7 @@ impl Plugin for RendererPlugin {
             && main_app
                 .main_app()
                 .world()
-                .has_resource::<Events<WindowResized>>()
+                .has_resource::<EventQueue<WindowResized>>()
     }
 
     fn finish(&self, main_app: &mut App) -> Result<()> {
@@ -433,7 +433,7 @@ impl Plugin for RendererPlugin {
         // let resized_events = main_app
         //     .main_app()
         //     .world()
-        //     .get_resource::<Events<WindowResized>>()
+        //     .get_resource::<EventQueue<WindowResized>>()
         //     .unwrap();
 
         // let resized_events = resized_events.clone();
@@ -522,18 +522,17 @@ fn renderer_extract(main_world: &mut World, _world: &mut World) -> Result<()> {
     Ok(())
 }
 
-async fn forward_resized_events(
+fn forward_resized_events(
     mut events: Extract<EventRx<WindowResized>>,
     mut render_events: EventTx<WindowResized>,
 ) {
-    use weaver_event::prelude::StreamExt;
-    while let Some(event) = events.next().await {
+    for event in events.by_ref() {
         dbg!(&event);
-        render_events.send(event).await;
+        render_events.send(event);
     }
 }
 
-pub async fn begin_render(
+pub fn begin_render(
     commands: Commands,
     mut view_targets: Query<(Entity, &ViewTarget)>,
     device: Res<WgpuDevice>,
@@ -619,7 +618,7 @@ pub async fn begin_render(
     commands.insert_resource(ActiveCommandEncoder::new(encoder));
 }
 
-pub async fn end_render(
+pub fn end_render(
     commands: Commands,
     mut current_frame: ResMut<CurrentFrame>,
     mut renderer: ResMut<Renderer>,
@@ -656,9 +655,9 @@ pub async fn end_render(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn resize_surface(
+fn resize_surface(
     commands: Commands,
-    mut events: EventRx<WindowResized>,
+    events: EventRx<WindowResized>,
     mut window_size: ResMut<WindowSettings>,
     mut view_targets: Query<(Entity, With<ViewTarget>)>,
     mut current_frame: ResMut<CurrentFrame>,
@@ -667,7 +666,7 @@ async fn resize_surface(
     surface: Res<WindowSurface>,
     mut hdr_target: ResMut<HdrRenderTarget>,
 ) {
-    if let Some(event) = events.next().await {
+    if let Some(event) = events.last() {
         let mut has_current_frame = false;
         let mut view_target_entities = Vec::new();
         let view_targets = view_targets

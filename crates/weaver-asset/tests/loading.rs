@@ -15,10 +15,9 @@ impl Asset for Blob {}
 const COUNT: usize = 1100;
 
 /// Every queued asset should load in one update, however many there are. `load_all_assets`
-/// sends one `AssetLoaded` event per asset into a channel that holds 1024 and is never cleared,
-/// so the 1025th send never completes and the update hangs.
+/// sends one `AssetLoaded` event per asset; these used to go into a bounded channel that nothing
+/// cleared, so the 1025th send never completed and the update hung.
 #[test]
-#[ignore = "known issue: AssetLoaded<T> events fill a bounded channel that nothing clears"]
 fn loading_more_than_1024_assets_completes() {
     GlobalTaskPool::get_or_init(TaskPool::new);
 

@@ -190,7 +190,7 @@ impl CreateRenderPipeline for HdrRenderable {
     }
 }
 
-pub async fn render_hdr(
+pub fn render_hdr(
     mut encoder: ResMut<ActiveCommandEncoder>,
     current_frame: Res<CurrentFrame>,
     pipeline_cache: Res<RenderPipelineCache>,

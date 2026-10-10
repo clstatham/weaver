@@ -1,4 +1,4 @@
-use weaver_app::{plugin::Plugin, App, AppStage};
+use weaver_app::{App, AppStage, plugin::Plugin};
 use weaver_ecs::{
     component::{Res, ResMut},
     system::IntoSystemConfig,
@@ -50,7 +50,7 @@ impl Plugin for LogFrameTimePlugin {
     }
 }
 
-async fn update_frame_time(mut frame_time: ResMut<FrameTime>) {
+fn update_frame_time(mut frame_time: ResMut<FrameTime>) {
     let now = std::time::Instant::now();
     frame_time.frame_time = now.duration_since(frame_time.last_update).as_secs_f32();
     frame_time.fps = 1.0 / frame_time.frame_time;
@@ -58,7 +58,7 @@ async fn update_frame_time(mut frame_time: ResMut<FrameTime>) {
     frame_time.frame_count += 1;
 }
 
-async fn log_frame_time(frame_time: Res<FrameTime>, mut logger: ResMut<FrameTimeLogger>) {
+fn log_frame_time(frame_time: Res<FrameTime>, mut logger: ResMut<FrameTimeLogger>) {
     let now = std::time::Instant::now();
     if now.duration_since(logger.last_log) >= logger.log_interval {
         log::info!(

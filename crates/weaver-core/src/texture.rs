@@ -73,7 +73,7 @@ pub struct TextureLoader<S: LoadSource>(std::marker::PhantomData<S>);
 impl LoadFrom<PathAndFilesystem> for TextureLoader<PathBuf> {
     type Asset = Texture;
 
-    async fn load(&self, source: PathAndFilesystem, _commands: &Commands) -> Result<Texture> {
+    fn load(&self, source: PathAndFilesystem, _commands: &Commands) -> Result<Texture> {
         let bytes = source.read()?;
         load_texture_common(&bytes)
     }
@@ -82,7 +82,7 @@ impl LoadFrom<PathAndFilesystem> for TextureLoader<PathBuf> {
 impl LoadFrom<Vec<u8>> for TextureLoader<Vec<u8>> {
     type Asset = Texture;
 
-    async fn load(&self, source: Vec<u8>, _commands: &Commands) -> Result<Texture> {
+    fn load(&self, source: Vec<u8>, _commands: &Commands) -> Result<Texture> {
         load_texture_common(&source)
     }
 }

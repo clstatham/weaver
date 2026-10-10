@@ -1,175 +1,174 @@
 use std::{
-    any::TypeId,
-    pin::Pin,
+    marker::PhantomData,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
-    task::Poll,
 };
 
-use futures_util::{FutureExt, Stream, StreamExt, pin_mut};
 use weaver_ecs::{
-    change_detection::Tick,
+    component::{Res, ResMut},
     system::{SystemAccess, SystemParam},
     world::World,
 };
-use weaver_util::prelude::*;
 
 pub mod prelude {
-    pub use super::{Event, EventRx, EventTx};
-    pub use futures_util::{Stream, StreamExt};
+    pub use super::{Event, EventQueue, EventRx, EventTx};
 }
 
 pub trait Event: 'static + Send + Sync + Clone {}
 impl<T: 'static + Send + Sync + Clone> Event for T {}
 
-#[derive(Clone)]
-struct EventChannels<T: Event> {
-    tx: async_broadcast::Sender<T>,
-    rx: async_broadcast::Receiver<T>,
+/// Double-buffered storage for events of type `T`.
+///
+/// Events are sent into the front buffer. [`EventQueue::update`] (run once per frame by the system
+/// that `add_event` registers) moves them to the back buffer and drops the events that were there,
+/// so an event stays readable for two updates. A reader that runs before the sender in a frame
+/// therefore still sees the event on its next run.
+///
+/// Every event has a sequential id, its position in the stream of all events ever sent. Readers
+/// never remove events; each one keeps a cursor holding the id of the next event it hasn't read, so
+/// any number of readers can read the same events independently.
+pub struct EventQueue<T: Event> {
+    /// Events sent since the last update.
+    front_buffer: Vec<T>,
+    /// Events sent between the two most recent updates.
+    back_buffer: Vec<T>,
+    /// How many events have ever been sent, which is also the id of the next one.
+    event_count: usize,
 }
 
-impl<T: Event> EventChannels<T> {
-    pub fn new() -> Self {
-        let (tx, rx) = async_broadcast::broadcast(1024);
-        Self { tx, rx }
-    }
-
-    pub async fn send(&self, event: T) {
-        self.tx.broadcast_direct(event).await.unwrap();
-    }
-
-    pub fn clear(&mut self) {
-        while self.rx.recv().now_or_never().is_some() {}
-    }
-
-    pub async fn extend(&mut self, events: impl Stream<Item = T>) {
-        pin_mut!(events);
-        while let Some(Some(event)) = events.next().now_or_never() {
-            self.send(event).await;
-        }
-    }
-}
-
-impl<T: Event> Stream for EventChannels<T> {
-    type Item = T;
-
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        let poll = Pin::new(&mut self.rx).poll_recv(cx);
-        match poll {
-            Poll::Ready(Some(event)) => Poll::Ready(Some(event.unwrap())),
-            Poll::Ready(None) => Poll::Ready(None),
-            Poll::Pending => Poll::Ready(None),
-        }
-    }
-}
-
-pub struct Events<T: Event> {
-    front_buffer: EventChannels<T>,
-    back_buffer: EventChannels<T>,
-    updated_tick: Arc<AtomicU64>,
-}
-
-impl<T: Event> Default for Events<T> {
+impl<T: Event> Default for EventQueue<T> {
     fn default() -> Self {
         Self {
-            front_buffer: EventChannels::new(),
-            back_buffer: EventChannels::new(),
-            updated_tick: Arc::new(AtomicU64::new(0)),
+            front_buffer: Vec::new(),
+            back_buffer: Vec::new(),
+            event_count: 0,
         }
     }
 }
 
-impl<T: Event> Clone for Events<T> {
-    fn clone(&self) -> Self {
-        Self {
-            front_buffer: self.front_buffer.clone(),
-            back_buffer: self.back_buffer.clone(),
-            updated_tick: self.updated_tick.clone(),
-        }
-    }
-}
-
-impl<T: Event> Events<T> {
+impl<T: Event> EventQueue<T> {
     pub fn new() -> Self {
         Self::default()
     }
 
+    pub fn send(&mut self, event: T) {
+        self.front_buffer.push(event);
+        self.event_count += 1;
+    }
+
+    pub fn send_default(&mut self)
+    where
+        T: Default,
+    {
+        self.send(T::default());
+    }
+
+    /// Moves this frame's events to the back buffer, dropping the ones sent before the previous update.
+    pub fn update(&mut self) {
+        // reuse the old back buffer's allocation for the next frame's events
+        std::mem::swap(&mut self.front_buffer, &mut self.back_buffer);
+        self.front_buffer.clear();
+    }
+
+    /// Drops every buffered event. Ids keep counting up, so readers' cursors stay valid.
     pub fn clear(&mut self) {
         self.front_buffer.clear();
         self.back_buffer.clear();
     }
 
-    pub async fn update(&mut self, change_tick: Tick) {
-        self.updated_tick
-            .store(change_tick.as_u64(), Ordering::Relaxed);
-        self.back_buffer.clear();
-        self.back_buffer.extend(&mut self.front_buffer).await;
+    /// The number of buffered events, read or not.
+    pub fn len(&self) -> usize {
+        self.back_buffer.len() + self.front_buffer.len()
     }
 
-    pub async fn send(&self, event: T) {
-        self.front_buffer.send(event).await;
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
-    pub async fn send_default(&self)
-    where
-        T: Default,
-    {
-        self.send(T::default()).await;
+    /// The id of the oldest buffered event. Both buffers hold consecutive ids, the back buffer's first.
+    fn oldest_id(&self) -> usize {
+        self.event_count - self.len()
+    }
+
+    /// Returns the event with the given id, if it's still buffered.
+    fn get(&self, id: usize) -> Option<&T> {
+        let index = id.checked_sub(self.oldest_id())?;
+        match index.checked_sub(self.back_buffer.len()) {
+            None => self.back_buffer.get(index),
+            Some(index) => self.front_buffer.get(index),
+        }
     }
 }
 
+/// Sends events into an [`EventQueue`].
 pub struct EventTx<T: Event> {
-    events: Events<T>,
+    events: ResMut<EventQueue<T>>,
 }
 
 impl<T: Event> EventTx<T> {
-    pub fn new(events: Events<T>) -> Self {
+    pub fn new(events: ResMut<EventQueue<T>>) -> Self {
         Self { events }
     }
 
-    pub async fn send(&mut self, event: T) {
-        self.events.send(event).await;
+    pub fn send(&mut self, event: T) {
+        self.events.send(event);
     }
 }
 
-#[derive(Clone)]
+/// A reader's cursor into an [`EventQueue`]: the id of the next event it hasn't read.
+///
+/// Clones share the cursor, so reading through the `EventRx` a system gets each run advances the
+/// state the system keeps between runs.
 pub struct EventRxState<T: Event> {
-    front_buffer: async_broadcast::Receiver<T>,
-    back_buffer: async_broadcast::Receiver<T>,
+    next_id: Arc<AtomicUsize>,
+    _marker: PhantomData<fn() -> T>,
 }
 
+impl<T: Event> Default for EventRxState<T> {
+    fn default() -> Self {
+        Self {
+            next_id: Arc::new(AtomicUsize::new(0)),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T: Event> Clone for EventRxState<T> {
+    fn clone(&self) -> Self {
+        Self {
+            next_id: self.next_id.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+/// Iterates over the events in an [`EventQueue`] that this reader hasn't read yet, oldest first.
+///
+/// Events left unread are still there on the next run, unless the queue has dropped them by then:
+/// a reader that goes two updates without running misses the events that were sent in between.
 pub struct EventRx<T: Event> {
+    events: Res<EventQueue<T>>,
     state: EventRxState<T>,
-    include_back_buffer: bool,
 }
 
 impl<T: Event> EventRx<T> {
-    pub fn new(
-        events: EventRxState<T>,
-        last_run: Tick,
-        this_run: Tick,
-        event_updated_tick: u64,
-    ) -> Self {
-        // if the tick that the events were last updated on, older than the tick that the system is running on, then include the back buffer
-        let tick = Tick::from_raw(event_updated_tick);
-        let include_back_buffer = !tick.is_newer_than(last_run, this_run);
-        Self {
-            state: events,
-            include_back_buffer,
-        }
+    pub fn new(events: Res<EventQueue<T>>, state: EventRxState<T>) -> Self {
+        Self { events, state }
     }
 
+    /// The id of the next event to read, skipping any the queue has already dropped.
+    fn next_id(&self) -> usize {
+        self.state
+            .next_id
+            .load(Ordering::Relaxed)
+            .max(self.events.oldest_id())
+    }
+
+    /// The number of events this reader hasn't read yet.
     pub fn len(&self) -> usize {
-        if self.include_back_buffer {
-            self.state.front_buffer.len() + self.state.back_buffer.len()
-        } else {
-            self.state.front_buffer.len()
-        }
+        self.events.event_count.saturating_sub(self.next_id())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -177,29 +176,19 @@ impl<T: Event> EventRx<T> {
     }
 }
 
-impl<T: Event> Stream for EventRx<T> {
+impl<T: Event> Iterator for EventRx<T> {
     type Item = T;
 
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        let front_buffer = Pin::new(&mut self.state.front_buffer).poll_next(cx);
-        match front_buffer {
-            Poll::Ready(Some(event)) => Poll::Ready(Some(event)),
-            Poll::Ready(None) => {
-                if self.include_back_buffer {
-                    let back_buffer = Pin::new(&mut self.state.back_buffer).poll_next(cx);
-                    match back_buffer {
-                        Poll::Ready(Some(event)) => Poll::Ready(Some(event)),
-                        _ => Poll::Ready(None),
-                    }
-                } else {
-                    Poll::Ready(None)
-                }
-            }
-            Poll::Pending => Poll::Ready(None),
-        }
+    fn next(&mut self) -> Option<T> {
+        let id = self.next_id();
+        let event = self.events.get(id)?.clone();
+        self.state.next_id.store(id + 1, Ordering::Relaxed);
+        Some(event)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
     }
 }
 
@@ -208,21 +197,17 @@ impl<T: Event> SystemParam for EventTx<T> {
     type State = ();
 
     fn access() -> SystemAccess {
-        SystemAccess {
-            exclusive: true,
-            resources_written: FxHashSet::from_iter([TypeId::of::<Events<T>>()]),
-            ..Default::default()
-        }
+        <ResMut<EventQueue<T>> as SystemParam>::access()
     }
 
     fn init_state(_world: &World) -> Self::State {}
 
     fn fetch(world: &World, _state: &()) -> Self::Item {
-        if let Some(events) = world.get_resource::<Events<T>>() {
-            EventTx::new(events.clone())
-        } else {
-            panic!("Events resource not found");
-        }
+        EventTx::new(<ResMut<EventQueue<T>> as SystemParam>::fetch(world, &()))
+    }
+
+    fn can_run(world: &World) -> bool {
+        <ResMut<EventQueue<T>> as SystemParam>::can_run(world)
     }
 }
 
@@ -231,75 +216,24 @@ impl<T: Event> SystemParam for EventRx<T> {
     type State = EventRxState<T>;
 
     fn access() -> SystemAccess {
-        SystemAccess {
-            exclusive: false,
-            resources_read: FxHashSet::from_iter([TypeId::of::<Events<T>>()]),
-            ..Default::default()
-        }
+        <Res<EventQueue<T>> as SystemParam>::access()
     }
 
-    fn init_state(world: &World) -> Self::State {
-        let events = world.get_resource::<Events<T>>().unwrap();
-        let front_buffer = events.front_buffer.rx.clone();
-        let back_buffer = events.back_buffer.rx.clone();
-        EventRxState {
-            front_buffer,
-            back_buffer,
-        }
+    // The cursor starts at 0 rather than at the queue's current count, so a new reader sees whatever
+    // is still buffered, and the state doesn't depend on the world it was created in
+    // (`Extract<EventRx<T>>` creates it in the render world but reads the main world's queue).
+    fn init_state(_world: &World) -> Self::State {
+        EventRxState::default()
     }
 
     fn fetch(world: &World, state: &Self::State) -> Self::Item {
-        if let Some(events) = world.get_resource::<Events<T>>() {
-            EventRx::new(
-                state.clone(),
-                world.last_change_tick(),
-                world.read_change_tick(),
-                events.updated_tick.load(Ordering::Relaxed),
-            )
-        } else {
-            panic!("Events resource not found");
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use futures_util::stream::StreamExt;
-    use weaver_ecs::world::World;
-
-    #[derive(Clone, Debug, Default)]
-    struct TestEvent {
-        value: u32,
+        EventRx::new(
+            <Res<EventQueue<T>> as SystemParam>::fetch(world, &()),
+            state.clone(),
+        )
     }
 
-    #[tokio::test]
-    async fn test_event() {
-        let world = World::default();
-        world.insert_resource(Events::<TestEvent>::new());
-
-        let mut tx = EventTx::<TestEvent>::fetch(&world, &());
-
-        tx.send(TestEvent { value: 1 }).await;
-        tx.send(TestEvent { value: 2 }).await;
-        tx.send(TestEvent { value: 3 }).await;
-
-        let events = world.get_resource::<Events<TestEvent>>().unwrap();
-        assert_eq!(events.front_buffer.rx.len(), 3);
-
-        let rx_state = EventRx::<TestEvent>::init_state(&world);
-        let mut rx = EventRx::<TestEvent>::fetch(&world, &rx_state);
-        assert_eq!(rx.len(), 3);
-
-        let event = rx.next().await.unwrap();
-        assert_eq!(event.value, 1);
-
-        let event = rx.next().await.unwrap();
-        assert_eq!(event.value, 2);
-
-        let event = rx.next().await.unwrap();
-        assert_eq!(event.value, 3);
-
-        assert!(rx.next().await.is_none());
+    fn can_run(world: &World) -> bool {
+        <Res<EventQueue<T>> as SystemParam>::can_run(world)
     }
 }

@@ -65,7 +65,7 @@ impl Default for ClearColorRenderable {
     }
 }
 
-pub async fn render_clear_color(
+pub fn render_clear_color(
     hdr_target: Res<HdrRenderTarget>,
     mut view_query: Query<&ViewTarget>,
     mut command_encoder: ResMut<ActiveCommandEncoder>,
