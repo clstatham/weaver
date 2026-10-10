@@ -15,7 +15,6 @@ pub struct SystemAccess {
     pub resources_written: FxHashSet<TypeId>,
     pub components_read: FxHashSet<TypeId>,
     pub components_written: FxHashSet<TypeId>,
-    pub exclusive: bool,
 }
 
 impl SystemAccess {
@@ -24,40 +23,38 @@ impl SystemAccess {
         self.resources_written.extend(other.resources_written);
         self.components_read.extend(other.components_read);
         self.components_written.extend(other.components_written);
-        self.exclusive |= other.exclusive;
-    }
-
-    pub fn intersection(&self, other: &Self) -> Self {
-        Self {
-            resources_read: self
-                .resources_read
-                .intersection(&other.resources_read)
-                .copied()
-                .collect(),
-            resources_written: self
-                .resources_written
-                .intersection(&other.resources_written)
-                .copied()
-                .collect(),
-            components_read: self
-                .components_read
-                .intersection(&other.components_read)
-                .copied()
-                .collect(),
-            components_written: self
-                .components_written
-                .intersection(&other.components_written)
-                .copied()
-                .collect(),
-            exclusive: self.exclusive || other.exclusive,
-        }
     }
 
     /// Returns true if the access is compatible with another access descriptor.
-    /// Two accesses are compatible if they do not mutably access the same resource or component.
     pub fn is_compatible(&self, other: &Self) -> bool {
-        let inter = self.intersection(other);
-        inter.components_written.is_empty() && inter.resources_written.is_empty()
+        if !self.components_read.is_disjoint(&other.components_written) {
+            return false;
+        }
+
+        if !self.components_written.is_disjoint(&other.components_read) {
+            return false;
+        }
+
+        if !self
+            .components_written
+            .is_disjoint(&other.components_written)
+        {
+            return false;
+        }
+
+        if !self.resources_read.is_disjoint(&other.resources_written) {
+            return false;
+        }
+
+        if !self.resources_written.is_disjoint(&other.resources_read) {
+            return false;
+        }
+
+        if !self.resources_written.is_disjoint(&other.resources_written) {
+            return false;
+        }
+
+        true
     }
 }
 
@@ -193,7 +190,6 @@ impl<T: Component> SystemParam for Res<T> {
 
     fn access() -> SystemAccess {
         SystemAccess {
-            exclusive: false,
             resources_read: FxHashSet::from_iter([TypeId::of::<T>()]),
             ..Default::default()
         }
@@ -224,7 +220,6 @@ impl<T: Component> SystemParam for Option<Res<T>> {
 
     fn access() -> SystemAccess {
         SystemAccess {
-            exclusive: false,
             resources_read: FxHashSet::from_iter([TypeId::of::<T>()]),
             ..Default::default()
         }
@@ -247,7 +242,6 @@ impl<T: Component> SystemParam for ResMut<T> {
 
     fn access() -> SystemAccess {
         SystemAccess {
-            exclusive: false,
             resources_written: FxHashSet::from_iter([TypeId::of::<T>()]),
             ..Default::default()
         }
@@ -277,7 +271,6 @@ impl<T: Component> SystemParam for Option<ResMut<T>> {
 
     fn access() -> SystemAccess {
         SystemAccess {
-            exclusive: false,
             resources_written: FxHashSet::from_iter([TypeId::of::<T>()]),
             ..Default::default()
         }
@@ -766,7 +759,7 @@ impl SystemGraph {
 
         let layers = self.get_batches();
 
-        // detect systems that access the same resource or component mutably
+        // detect systems that have incompatible access to the world
         // and add dependencies to ensure that they run in sequence
         for layer in &layers {
             for i in 0..layer.len() {

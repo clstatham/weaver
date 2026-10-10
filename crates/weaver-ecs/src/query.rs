@@ -443,11 +443,11 @@ impl<T: Component> Queryable for Changed<&T> {
     type Item<'a> = Ref<'a, T>;
 
     fn reads() -> Vec<TypeId> {
-        vec![TypeId::of::<T>()]
+        vec![]
     }
 
     fn writes() -> Vec<TypeId> {
-        vec![]
+        vec![TypeId::of::<T>()]
     }
 
     fn lock_columns(archetype: &Archetype) -> Self::LockedColumns {

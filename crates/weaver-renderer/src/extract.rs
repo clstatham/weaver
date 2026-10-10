@@ -1,4 +1,7 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    any::TypeId,
+    ops::{Deref, DerefMut},
+};
 
 use weaver_app::{plugin::Plugin, prelude::App};
 use weaver_ecs::{
@@ -37,10 +40,9 @@ impl<T: SystemParam + 'static> SystemParam for Extract<T> {
     type State = T::State;
 
     fn access() -> SystemAccess {
-        SystemAccess {
-            exclusive: true,
-            ..Default::default()
-        }
+        let mut access = SystemAccess::default();
+        access.resources_read.insert(TypeId::of::<MainWorld>());
+        access
     }
 
     fn init_state(world: &World) -> Self::State {
