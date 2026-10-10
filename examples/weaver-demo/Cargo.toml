@@ -8,7 +8,3 @@ edition = "2024"
 [dependencies]
 weaver = { path = "../../" }
 weaver-diagnostics = { path = "../../crates/weaver-diagnostics" }
-
-[profile.release]
-debug = true
-opt-level = 3

@@ -6,9 +6,8 @@ use crate::{
     world::ConstructFromWorld,
 };
 use petgraph::prelude::*;
-use tracing::Instrument;
 use weaver_task::{BoxFuture, usages::GlobalTaskPool};
-use weaver_util::{prelude::*, span};
+use weaver_util::prelude::*;
 
 /// A system access descriptor, indicating what resources and components a system reads and writes. This is used to validate system access at runtime.
 #[derive(Default, Clone)]
@@ -450,12 +449,9 @@ where
         F::update_state(state, world);
         let fetch = F::Param::fetch(world, state);
         let func = self.func.clone();
-        Box::pin(
-            async move {
-                func.run(fetch).await;
-            }
-            .instrument(span!(DEBUG, "FunctionSystem", name = self.name())),
-        )
+        Box::pin(async move {
+            func.run(fetch).await;
+        })
     }
 
     fn can_run(&self, world: &World) -> bool {

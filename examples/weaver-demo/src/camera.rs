@@ -1,5 +1,4 @@
 use weaver::prelude::*;
-use weaver_event::prelude::StreamExt;
 
 #[derive(Debug, Clone, Copy)]
 pub struct FlyCameraController {

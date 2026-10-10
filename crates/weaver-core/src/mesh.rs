@@ -274,7 +274,7 @@ pub fn calculate_normals(vertices: &mut [Vertex], indices: &[u32]) {
         vertex.normal = Vec3::ZERO;
     }
 
-    for c in indices.chunks_exact(3) {
+    for c in indices.as_chunks::<3>().0 {
         let i0 = c[0] as usize;
         let i1 = c[1] as usize;
         let i2 = c[2] as usize;
@@ -301,7 +301,7 @@ pub fn calculate_tangents(vertices: &mut [Vertex], indices: &[u32]) {
     }
 
     let mut num_triangles = vec![0; vertices.len()];
-    for c in indices.chunks_exact(3) {
+    for c in indices.as_chunks::<3>().0 {
         let i0 = c[0] as usize;
         let i1 = c[1] as usize;
         let i2 = c[2] as usize;

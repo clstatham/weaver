@@ -157,11 +157,15 @@ impl GpuSkybox {
 
         let hdr_decoder = HdrDecoder::new(file).unwrap();
         let meta = hdr_decoder.metadata();
-        // let mut pixels = vec![[0.0, 0.0, 0.0, 0.0]; (meta.width * meta.height) as usize];
         let mut pixels_buf = vec![0; hdr_decoder.total_bytes() as usize];
         hdr_decoder.read_image(&mut pixels_buf).unwrap();
         let mut pixels = vec![[0.0, 0.0, 0.0, 0.0]; (meta.width * meta.height) as usize];
-        for (i, chunk) in pixels_buf.chunks_exact(3 * size_of::<f32>()).enumerate() {
+        for (i, chunk) in pixels_buf
+            .as_chunks::<{ 3 * size_of::<f32>() }>()
+            .0
+            .iter()
+            .enumerate()
+        {
             let rgb = bytemuck::cast_slice::<u8, f32>(chunk);
             pixels[i] = [rgb[0], rgb[1], rgb[2], 1.0];
         }

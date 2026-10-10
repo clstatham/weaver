@@ -191,3 +191,39 @@ pub fn render_extract(main_world: &mut World, render_world: &mut World) -> Resul
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use pollster::FutureExt;
+    use weaver_event::{EventRx, Events, prelude::StreamExt};
+
+    use super::*;
+
+    /// `Extract<EventRx<T>>` must read the main world's events. The scheduler calls `init_state`
+    /// with the world the system runs in (the render world), so the receivers have to come from
+    /// the main world some other way.
+    #[test]
+    #[ignore = "known issue: Extract::init_state builds EventRx receivers from the render world"]
+    fn extract_event_rx_reads_main_world_events() {
+        let render_world = World::new();
+        render_world.insert_resource(Events::<u32>::new());
+        let state = <Extract<EventRx<u32>> as SystemParam>::init_state(&render_world);
+
+        let main_world = World::new();
+        main_world.insert_resource(Events::<u32>::new());
+        main_world
+            .get_resource::<Events<u32>>()
+            .unwrap()
+            .send(7)
+            .block_on();
+        render_world.insert_resource(MainWorld(main_world));
+
+        let mut rx = <Extract<EventRx<u32>> as SystemParam>::fetch(&render_world, &state);
+        let mut received = Vec::new();
+        while let Some(event) = rx.next().block_on() {
+            received.push(event);
+        }
+
+        assert_eq!(received, vec![7]);
+    }
+}

@@ -1,7 +1,6 @@
 pub use weaver_app;
 pub use weaver_asset;
 pub use weaver_core;
-
 pub use weaver_ecs;
 pub use weaver_event;
 pub use weaver_gizmos;
@@ -11,7 +10,6 @@ pub use weaver_util;
 pub use weaver_winit;
 
 pub mod prelude {
-    pub use super::*;
     pub use weaver_app::prelude::*;
     pub use weaver_asset::prelude::*;
     pub use weaver_core::prelude::*;

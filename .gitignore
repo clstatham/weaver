@@ -12,3 +12,4 @@
 *.tmLanguage.json
 log.txt
 /pipeline.cache
+/code-reviews
