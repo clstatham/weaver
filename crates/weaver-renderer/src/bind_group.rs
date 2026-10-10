@@ -307,14 +307,11 @@ async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
     mut bind_group_handle_query: Query<(Entity, With<Handle<BindGroup<T>>>)>,
     mut staleness: ResMut<AssetBindGroupStaleness>,
 ) {
-    let mut to_add = Vec::new();
-    let mut to_remove = Vec::new();
     for (entity, handle) in query.iter() {
         // check for bind group staleness
         let mut stale = false;
         if staleness.is_stale(handle.id()) {
-            to_remove.push(entity);
-            // commands.remove_component::<Handle<BindGroup<T>>>(entity);
+            commands.remove_component::<Handle<BindGroup<T>>>(entity);
             asset_bind_groups
                 .bind_groups
                 .write()
@@ -332,8 +329,7 @@ async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
             .get(&handle.into_untyped())
         {
             let bind_group_handle = Handle::<BindGroup<T>>::try_from(*bind_group_handle).unwrap();
-            to_add.push((entity, bind_group_handle));
-            // commands.insert_component(entity, bind_group_handle);
+            commands.insert_component(entity, bind_group_handle);
         } else {
             let asset = assets.get(*handle).unwrap();
             staleness.set_stale(handle.id(), false);
@@ -341,18 +337,7 @@ async fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
             log::trace!("Created bind group for asset: {:?}", T::type_name());
             let bind_group_handle = bind_group_assets.insert(bind_group);
             asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
-            // commands.insert_component(entity, bind_group_handle);
-            to_add.push((entity, bind_group_handle));
+            commands.insert_component(entity, bind_group_handle);
         }
-    }
-
-    drop((query, bind_group_handle_query));
-
-    for entity in to_remove {
-        commands.remove_component::<Handle<BindGroup<T>>>(entity);
-    }
-
-    for (entity, bind_group_handle) in to_add {
-        commands.insert_component(entity, bind_group_handle);
     }
 }
