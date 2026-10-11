@@ -24,6 +24,7 @@ impl ExtractResource for ClearColor {
     }
 }
 
+#[derive(Clone)]
 pub struct ClearColorPlugin(pub Color);
 
 impl Default for ClearColorPlugin {

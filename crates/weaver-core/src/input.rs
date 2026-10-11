@@ -107,16 +107,11 @@ impl Input {
     }
 
     pub fn update_device(&mut self, event: &DeviceEvent) {
+        #[allow(clippy::single_match)]
         match event {
             DeviceEvent::MouseMotion { delta } => {
                 self.mouse_delta.0 += delta.0 as f32;
                 self.mouse_delta.1 += delta.1 as f32;
-            }
-            DeviceEvent::Key(key) => {
-                if let Some(scancode) = key.physical_key.to_scancode() {
-                    self.keys
-                        .insert(scancode, key.state == ElementState::Pressed);
-                }
             }
             _ => {}
         }
@@ -138,6 +133,12 @@ impl Input {
                 MouseButton::Other(4) => self.mouse[7] = *state == ElementState::Pressed,
                 _ => {}
             },
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let Some(scancode) = event.physical_key.to_scancode() {
+                    self.keys
+                        .insert(scancode, event.state == ElementState::Pressed);
+                }
+            }
             _ => {}
         }
     }

@@ -1,24 +1,12 @@
-use std::path::PathBuf;
-
-use weaver::prelude::*;
-use weaver_diagnostics::prelude::*;
+use weaver::{DefaultPlugins, prelude::*};
+use weaver_diagnostics::frame_time::LogFrameTimePlugin;
 
 pub mod camera;
-pub mod transform_gizmo;
 
 fn main() -> Result<()> {
     App::new()
-        .add_plugin(CoreTypesPlugin)?
-        .add_plugin(WindowPlugin::new((1600, 900), "Weaver Demo"))?
-        .add_plugin(WinitPlugin)?
-        .add_plugin(TimePlugin)?
-        .add_plugin(InputPlugin)?
-        .add_plugin(RendererPlugin)?
-        .add_plugin(ClearColorPlugin(Color::new(0.1, 0.1, 0.1, 1.0)))?
-        .add_plugin(PbrPlugin)?
-        .add_plugin(LogFrameTimePlugin {
-            log_interval: std::time::Duration::from_secs(1),
-        })?
+        .add_plugin(DefaultPlugins::new().with_window_size(1600, 900))?
+        .add_plugin(LogFrameTimePlugin::default())?
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)
@@ -39,7 +27,7 @@ fn setup(
             fov: 70.0f32.to_radians(),
             near: 0.1,
             far: 100000.0,
-            sensitivity: 40.0,
+            sensitivity: 0.1,
             ..Default::default()
         }
         .looking_at(Vec3::new(100.0, 100.0, 100.0), Vec3::ZERO, Vec3::Y),
@@ -68,5 +56,12 @@ fn setup(
     let mesh = meshes.insert(mesh);
     let material = materials.insert(material);
 
-    commands.spawn((mesh, material, Transform::default()));
+    let size = 100.0f32;
+    for x in 0..10 {
+        for y in 0..10 {
+            let transform =
+                Transform::from_translation(Vec3::new(x as f32 * size, 0.0, y as f32 * size));
+            commands.spawn((mesh, material, transform));
+        }
+    }
 }

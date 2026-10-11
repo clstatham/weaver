@@ -65,8 +65,9 @@ impl FlyCameraController {
             let (dx, dy) = input.mouse_delta();
             let (mut yaw, mut pitch, _roll) = self.rotation.to_euler(EulerRot::YXZ);
 
-            yaw += -(dx * self.sensitivity).to_radians() * delta_time;
-            pitch += -(dy * self.sensitivity).to_radians() * delta_time;
+            // mouse delta is already a per-frame displacement, so it must not be scaled by delta_time
+            yaw += -(dx * self.sensitivity).to_radians();
+            pitch += -(dy * self.sensitivity).to_radians();
 
             pitch = pitch.clamp(
                 -std::f32::consts::FRAC_PI_2 + 0.001,

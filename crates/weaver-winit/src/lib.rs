@@ -47,6 +47,7 @@ pub struct WindowResized {
     pub height: u32,
 }
 
+#[derive(Clone)]
 pub struct WindowPlugin {
     pub window_title: &'static str,
     pub initial_size: (u32, u32),

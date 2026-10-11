@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use weaver_app::{App, AppStage, plugin::Plugin};
 use weaver_ecs::{
     component::{Res, ResMut},
@@ -29,12 +31,26 @@ impl Plugin for FrameTimePlugin {
 }
 
 pub struct FrameTimeLogger {
-    pub log_interval: std::time::Duration,
+    pub log_interval: Duration,
     pub last_log: std::time::Instant,
 }
 
 pub struct LogFrameTimePlugin {
-    pub log_interval: std::time::Duration,
+    pub log_interval: Duration,
+}
+
+impl LogFrameTimePlugin {
+    pub fn new(log_interval: Duration) -> Self {
+        Self { log_interval }
+    }
+}
+
+impl Default for LogFrameTimePlugin {
+    fn default() -> Self {
+        Self {
+            log_interval: Duration::from_secs(1),
+        }
+    }
 }
 
 impl Plugin for LogFrameTimePlugin {
