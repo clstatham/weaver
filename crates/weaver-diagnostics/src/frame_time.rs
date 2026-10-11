@@ -77,9 +77,6 @@ fn update_frame_time(mut frame_time: ResMut<FrameTime>) {
     frame_time.frame_count += 1;
 }
 
-/// Logs statistics over every frame since the last log, rather than a single frame's time:
-/// individual frame times can swing by 10x from frame to frame (e.g. when the swapchain's
-/// blocking wait lands twice in one frame and not at all in the next).
 fn log_frame_time(frame_time: Res<FrameTime>, mut logger: ResMut<FrameTimeLogger>) {
     // the first frame's time spans app startup, so it isn't a real frame time
     if frame_time.frame_count > 1 {
@@ -94,9 +91,9 @@ fn log_frame_time(frame_time: Res<FrameTime>, mut logger: ResMut<FrameTimeLogger
     let samples = &mut logger.samples;
     let count = samples.len();
     let mean = samples.iter().sum::<f32>() / count as f32;
-    let (min, max) = samples
-        .iter()
-        .fold((f32::MAX, f32::MIN), |(min, max), &t| (min.min(t), max.max(t)));
+    let (min, max) = samples.iter().fold((f32::MAX, f32::MIN), |(min, max), &t| {
+        (min.min(t), max.max(t))
+    });
     let p99_index = ((count - 1) as f32 * 0.99).round() as usize;
     let (_, &mut p99, _) = samples.select_nth_unstable_by(p99_index, f32::total_cmp);
 
