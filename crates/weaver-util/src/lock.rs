@@ -173,6 +173,16 @@ impl<T> SharedLock<T> {
         OwnedWrite::new(self)
     }
 
+    /// Returns `None` instead of blocking if the lock is write-locked.
+    pub fn try_read(&self) -> Option<OwnedRead<T>> {
+        self.0.clone().try_read_arc().map(OwnedRead)
+    }
+
+    /// Returns `None` instead of blocking if the lock is locked.
+    pub fn try_write(&self) -> Option<OwnedWrite<T>> {
+        self.0.clone().try_write_arc().map(OwnedWrite)
+    }
+
     pub fn strong_count(&self) -> usize {
         Arc::strong_count(&self.0)
     }

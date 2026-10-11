@@ -1,9 +1,11 @@
-use std::sync::Arc;
+use std::{num::NonZeroU64, sync::Arc};
 
 use encase::{
     ShaderSize, ShaderType,
     internal::{WriteInto, Writer},
 };
+
+use crate::GpuResourceId;
 
 pub enum BufferOffset {
     Zero,
@@ -21,14 +23,20 @@ impl BufferOffset {
     }
 }
 
+/// A GPU buffer. Clones share the buffer and its [`GpuResourceId`].
 #[derive(Clone)]
 pub struct GpuBuffer {
     gpu_buffer: Arc<wgpu::Buffer>,
+    id: GpuResourceId,
 }
 
 impl GpuBuffer {
     pub fn clone_inner(&self) -> Arc<wgpu::Buffer> {
         self.gpu_buffer.clone()
+    }
+
+    pub fn id(&self) -> GpuResourceId {
+        self.id
     }
 
     pub fn enqueue_update<T: ShaderType + WriteInto>(
@@ -50,6 +58,7 @@ impl From<wgpu::Buffer> for GpuBuffer {
     fn from(buffer: wgpu::Buffer) -> Self {
         Self {
             gpu_buffer: Arc::new(buffer),
+            id: GpuResourceId::new(),
         }
     }
 }
@@ -62,9 +71,16 @@ impl std::ops::Deref for GpuBuffer {
     }
 }
 
+/// A growable array of `T` mirrored into a GPU buffer.
+///
+/// Values are written into a CPU-side staging vec, and [`GpuBufferVec::enqueue_update`] uploads
+/// them, reallocating the GPU buffer (with a new [`GpuResourceId`]) if it's too small. Bind
+/// groups built through [`crate::bind_group::BindingsBuilder::buffer_vec`] bind exactly the
+/// uploaded elements and notice reallocations and length changes on their own.
 pub struct GpuBufferVec<T: ShaderType + WriteInto> {
     buffer: Option<GpuBuffer>,
     data: Vec<u8>,
+    uploaded_len: usize,
     capacity: usize,
     usage: wgpu::BufferUsages,
     _phantom: std::marker::PhantomData<T>,
@@ -75,6 +91,7 @@ impl<T: ShaderType + WriteInto> GpuBufferVec<T> {
         Self {
             buffer: None,
             data: Vec::new(),
+            uploaded_len: 0,
             capacity: 0,
             usage,
             _phantom: std::marker::PhantomData,
@@ -85,11 +102,21 @@ impl<T: ShaderType + WriteInto> GpuBufferVec<T> {
         self.buffer.as_ref()
     }
 
+    /// Binds the uploaded elements (not the whole, possibly larger, buffer), so `arrayLength` in
+    /// a shader is the element count. `None` if nothing has been uploaded yet.
     pub fn binding(&'_ self) -> Option<wgpu::BindingResource<'_>> {
         let buffer = self.buffer()?;
-        Some(wgpu::BindingResource::Buffer(
-            buffer.as_entire_buffer_binding(),
-        ))
+        let size = NonZeroU64::new(self.uploaded_len as u64 * u64::from(T::min_size()))?;
+        Some(wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+            buffer,
+            offset: 0,
+            size: Some(size),
+        }))
+    }
+
+    /// The number of elements in the GPU buffer as of the last upload.
+    pub fn uploaded_len(&self) -> usize {
+        self.uploaded_len
     }
 
     pub fn capacity(&self) -> usize {
@@ -144,21 +171,19 @@ impl<T: ShaderType + WriteInto> GpuBufferVec<T> {
         true
     }
 
-    /// WARNING: This function may recreate the underlying GPU buffer.
-    /// Rebuild your bind groups if the buffer's capacity changes after calling this!
-    /// Returns true if the buffer was recreated.
-    pub fn enqueue_update(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) -> bool {
+    /// Uploads the staged elements, growing the GPU buffer if needed (which gives it a new
+    /// [`GpuResourceId`]). Uploading zero elements leaves the GPU buffer alone but sets
+    /// [`GpuBufferVec::uploaded_len`] to 0, so [`GpuBufferVec::binding`] returns `None`.
+    pub fn enqueue_update(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        self.uploaded_len = self.len();
         if self.data.is_empty() {
-            return false;
+            return;
         }
 
-        let capacity = self.data.len() / u64::from(T::min_size()) as usize;
-        let stale = self.reserve(capacity, device);
+        self.reserve(self.uploaded_len, device);
         if let Some(buffer) = self.buffer.as_ref() {
             queue.write_buffer(buffer, 0, &self.data);
         }
-
-        stale
     }
 
     pub fn clear(&mut self) {
@@ -210,11 +235,13 @@ impl<T: GpuArrayBufferable> GpuArrayBuffer<T> {
         }
     }
 
-    /// WARNING: This function may recreate the underlying GPU buffer.
-    /// Rebuild your bind groups if the buffer's capacity changes after calling this!
-    /// Returns true if the buffer was recreated.
-    pub fn enqueue_update(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) -> bool {
+    /// See [`GpuBufferVec::enqueue_update`].
+    pub fn enqueue_update(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         self.storage_buffer.enqueue_update(device, queue)
+    }
+
+    pub fn buffer_vec(&self) -> &GpuBufferVec<T> {
+        &self.storage_buffer
     }
 
     pub fn clear(&mut self) {

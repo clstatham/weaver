@@ -1,362 +1,187 @@
-use std::path::Path;
-
-use weaver_asset::{Assets, Handle};
+use weaver_asset::Handle;
+use weaver_core::mesh::Mesh;
 use weaver_ecs::{
+    entity::Entity,
     prelude::{Res, ResMut, World},
     query::Query,
+    system::SystemParamItem,
     world::ConstructFromWorld,
 };
 use weaver_renderer::{
-    bind_group::{BindGroupLayout, CreateBindGroup},
-    camera::{CameraBindGroup, ViewTarget},
-    mesh::GpuMesh,
-    pipeline::RenderPipelineCache,
+    asset::RenderAssets,
+    bind_group::{AsBindGroup, BindGroupLayoutBuilder, BindGroupLayouts, BindingsBuilder},
+    camera::CameraBindGroup,
+    mesh::{GpuMesh, instances::ViewMeshInstances, vertex_buffer_layout},
     prelude::*,
-    resources::ActiveCommandEncoder,
-    shader::Shader,
-    texture::texture_format,
-    transform::TransformBindGroup,
+    transform::GpuTransform,
 };
+
+use weaver_util::prelude::*;
 
 use crate::{
     light::GpuPointLightArray,
-    prelude::{GpuMaterial, irradiance::GpuSkyboxIrradiance},
+    prelude::{GpuMaterial, Material, MaterialBindings, Skybox, irradiance::GpuSkyboxIrradiance},
 };
 
-/// Combined bind group for PBR light arrays and environment maps.
+/// Point lights and the environment map, bound as group 3 of the PBR pipeline.
 pub struct PbrLightingInformation {
     pub point_lights: GpuPointLightArray,
     pub env_map: GpuSkyboxIrradiance,
 }
 
+/// Starts out with the black fallback environment map; [`update_environment_map`] swaps in the
+/// skybox's maps.
 impl ConstructFromWorld for PbrLightingInformation {
     fn from_world(world: &World) -> Self {
-        let point_lights = GpuPointLightArray::from_world(world);
-        let env_map = GpuSkyboxIrradiance::from_world(world);
+        let device = world.get_resource::<WgpuDevice>().unwrap();
+        let queue = world.get_resource::<WgpuQueue>().unwrap();
         Self {
-            point_lights,
-            env_map,
+            point_lights: GpuPointLightArray::from_world(world),
+            env_map: GpuSkyboxIrradiance::fallback(&device, &queue),
         }
     }
 }
 
-impl CreateBindGroup for PbrLightingInformation {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
-    where
-        Self: Sized,
-    {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("PBR Lighting Information Bind Group Layout"),
-            entries: &[
-                // Point lights
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // Environment map diffuse
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::Cube,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // Environment map specular
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::Cube,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // BRDF LUT
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // Environment map sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        })
-    }
-
-    fn create_bind_group(
-        &self,
-        device: &wgpu::Device,
-        cached_layout: &BindGroupLayout,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("PBR Lighting Information Bind Group"),
-            layout: cached_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.point_lights.buffer.binding().unwrap(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&self.env_map.diffuse_cube_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&self.env_map.specular_cube_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&self.env_map.brdf_lut_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::Sampler(&self.env_map.sampler),
-                },
-            ],
-        })
-    }
-}
-
-#[derive(Default)]
-pub struct PbrRenderable;
-
-impl CreateRenderPipeline for PbrRenderable {
-    fn create_render_pipeline_layout(
-        device: &wgpu::Device,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> RenderPipelineLayout
-    where
-        Self: Sized,
-    {
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("PBR Pipeline Layout"),
-            bind_group_layouts: &[
-                Some(&bind_group_layout_cache.get_or_create::<GpuMaterial>(device)),
-                Some(&bind_group_layout_cache.get_or_create::<CameraBindGroup>(device)),
-                Some(&bind_group_layout_cache.get_or_create::<TransformBindGroup>(device)),
-                Some(&bind_group_layout_cache.get_or_create::<PbrLightingInformation>(device)),
-            ],
-            ..Default::default()
-        });
-
-        RenderPipelineLayout::new(layout)
-    }
-
-    fn create_render_pipeline(
-        device: &wgpu::Device,
-        cached_layout: &wgpu::PipelineLayout,
-    ) -> RenderPipeline
-    where
-        Self: Sized,
-    {
-        let shader = Shader::new(Path::new("assets/shaders/pbr.wgsl")).create_shader_module(device);
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("PBR Pipeline"),
-            layout: Some(cached_layout),
-            cache: None,
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: 4 * (3 + 3 + 3 + 2) as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x3,
-                            offset: 0,
-                            shader_location: 0,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x3,
-                            offset: 4 * 3,
-                            shader_location: 1,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x3,
-                            offset: 4 * 6,
-                            shader_location: 2,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x2,
-                            offset: 4 * 9,
-                            shader_location: 3,
-                        },
-                    ],
-                }],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: texture_format::HDR_FORMAT,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                cull_mode: Some(wgpu::Face::Back),
-                // cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: texture_format::DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: Default::default(),
-            multiview_mask: None,
-        });
-
-        RenderPipeline::new(pipeline)
-    }
-}
-
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
-pub(crate) fn render_pbr(
-    mut mesh_assets: ResMut<Assets<GpuMesh>>,
-    mut material_assets: ResMut<Assets<BindGroup<GpuMaterial>>>,
-    pipeline_cache: Res<RenderPipelineCache>,
-    mut item_query: Query<(
-        &Handle<GpuMesh>,
-        &Handle<BindGroup<GpuMaterial>>,
-        &BindGroup<TransformBindGroup>,
-    )>,
-    lights_bind_group: Res<BindGroup<PbrLightingInformation>>,
-    mut encoder: ResMut<ActiveCommandEncoder>,
-    mut view_target: Query<(&ViewTarget, &BindGroup<CameraBindGroup>)>,
+/// Loads the skybox's image-based lighting maps whenever the skybox changes.
+pub(crate) fn update_environment_map(
+    skybox: Res<Skybox>,
+    mut lighting: ResMut<PbrLightingInformation>,
+    device: Res<WgpuDevice>,
+    queue: Res<WgpuQueue>,
 ) {
-    let pipeline = pipeline_cache.get_pipeline_for::<PbrRenderable>().unwrap();
-    let (view_target, camera_bind_group) = view_target.iter().next().unwrap();
-    {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("PBR Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view_target.color_target,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
+    match GpuSkyboxIrradiance::load(&skybox, &device, &queue) {
+        Ok(env_map) => lighting.env_map = env_map,
+        Err(e) => log::error!(
+            "Failed to load the environment maps for skybox {}: {e}",
+            skybox.path.display()
+        ),
+    }
+}
+
+impl AsBindGroup for PbrLightingInformation {
+    const LABEL: &'static str = "PBR Lighting Information";
+
+    fn layout(layout: &mut BindGroupLayoutBuilder) {
+        let fragment = wgpu::ShaderStages::FRAGMENT;
+        layout
+            .storage_buffer(fragment, true) // point lights
+            .texture_cube(fragment) // environment map diffuse
+            .texture_cube(fragment) // environment map specular
+            .texture_2d(fragment) // BRDF LUT
+            .filtering_sampler(fragment); // environment map sampler
+    }
+
+    fn bindings<'a>(&'a self, bindings: &mut BindingsBuilder<'a>) {
+        bindings
+            .buffer_vec(&self.point_lights.buffer)
+            .texture(&self.env_map.diffuse)
+            .texture(&self.env_map.specular)
+            .texture(&self.env_map.brdf_lut)
+            .sampler(&self.env_map.sampler);
+    }
+}
+
+pub struct PbrPipeline {
+    pub pipeline: RenderPipeline,
+}
+
+impl ConstructFromWorld for PbrPipeline {
+    fn from_world(world: &World) -> Self {
+        let device = world.get_resource::<WgpuDevice>().unwrap();
+        let layouts = world.get_resource::<BindGroupLayouts>().unwrap();
+        let shaders = world.get_resource::<ShaderLibrary>().unwrap();
+        let shader = shaders.load(&device, "pbr.wgsl");
+
+        let pipeline = RenderPipelineDescriptor::new("PBR Pipeline", &shader)
+            .bind_group_layouts([
+                layouts.get::<MaterialBindings>(&device),
+                layouts.get::<CameraBindGroup>(&device),
+                layouts.get::<ViewMeshInstances>(&device),
+                layouts.get::<PbrLightingInformation>(&device),
+            ])
+            .vertex_buffer(vertex_buffer_layout())
+            .cull_mode(Some(wgpu::Face::Back))
+            .depth(DepthTest::default())
+            .build(&device);
+
+        Self { pipeline }
+    }
+}
+
+/// Queues every mesh with a material that a view may see into that view's [`Opaque3d`] phase.
+#[allow(clippy::type_complexity)]
+pub(crate) fn queue_pbr_meshes(
+    meshes: Res<RenderAssets<GpuMesh>>,
+    materials: Res<RenderAssets<GpuMaterial>>,
+    draw_functions: Res<DrawFunctions<Opaque3d>>,
+    mut views: Query<(&ExtractedView, &mut RenderPhase<Opaque3d>)>,
+    mut items: Query<(Entity, &Handle<Mesh>, &Handle<Material>, &GpuTransform)>,
+) {
+    let draw_function = draw_functions.id::<DrawPbr>();
+    for (view, mut phase) in views.iter() {
+        for (entity, mesh_handle, material_handle, transform) in items.iter() {
+            // either may still be loading
+            let (Some(mesh), true) = (
+                meshes.get(*mesh_handle),
+                materials.get(*material_handle).is_some(),
+            ) else {
+                continue;
+            };
+            if !view.may_see(&mesh.aabb, transform.matrix) {
+                continue;
+            }
+            phase.add(Opaque3d::new(
+                entity,
+                Opaque3dKey {
+                    draw_function,
+                    material: material_handle.id(),
+                    mesh: mesh_handle.id(),
                 },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &view_target.depth_target,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            ..Default::default()
-        });
-
-        pass.set_pipeline(pipeline);
-
-        for (mesh_handle, material_handle, transform_bind_group) in item_query.iter() {
-            let mesh = mesh_assets.get(*mesh_handle).unwrap();
-
-            let material = material_assets.get(*material_handle).unwrap();
-
-            pass.set_bind_group(0, &**material.bind_group(), &[]);
-            pass.set_bind_group(1, &**camera_bind_group.bind_group(), &[]);
-            pass.set_bind_group(2, &**transform_bind_group.bind_group(), &[]);
-            pass.set_bind_group(3, &**lights_bind_group.bind_group(), &[]);
-
-            pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-            pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+            ));
         }
     }
 }
 
-// impl Renderable for PbrRenderable {
-//     fn render_system() -> Box<dyn System> {
-//         render_pbr.into_system()
-//     }
-// }
+/// Draws [`Opaque3d`] items with the PBR pipeline: one instanced draw per batch.
+pub(crate) struct DrawPbr;
 
-// impl RenderCommand<PbrDrawItem> for PbrRenderCommand {
-//     type Param = (
-//         Res<'static, Assets<GpuMesh>>,
-//         Res<'static, Assets<BindGroup<GpuMaterial>>>,
-//         Res<'static, RenderPipelineCache>,
-//         Res<'static, BindGroup<BatchedInstanceBuffer<PbrDrawItem, PbrRenderCommand>>>,
-//         Res<'static, BindGroup<PbrLightingInformation>>,
-//     );
+impl DrawFunction<Opaque3d> for DrawPbr {
+    type Param = (
+        Res<PbrPipeline>,
+        Res<RenderAssets<GpuMesh>>,
+        Res<RenderAssets<GpuMaterial>>,
+        Res<BindGroup<PbrLightingInformation>>,
+        Query<(
+            &'static BindGroup<CameraBindGroup>,
+            &'static BindGroup<ViewMeshInstances>,
+        )>,
+    );
 
-//     type ViewQueryFetch = &'static BindGroup<CameraBindGroup>;
+    fn draw(
+        (pipeline, meshes, materials, lights, views): &mut SystemParamItem<Self::Param>,
+        pass: &mut TrackedRenderPass,
+        view: Entity,
+        items: &[Opaque3d],
+    ) {
+        let Some((camera, instances)) = views.get(view) else {
+            return;
+        };
+        pass.set_pipeline(&pipeline.pipeline);
+        pass.set_bind_group(1, &camera);
+        pass.set_bind_group(2, &instances);
+        pass.set_bind_group(3, lights);
 
-//     type ViewQueryFilter = ();
-
-//     type ItemQueryFetch = ();
-
-//     type ItemQueryFilter = ();
-
-//     fn render<'w>(
-//         item: PbrDrawItem,
-//         view_query: <Self::ViewQueryFetch as QueryFetch>::Item<'w>,
-//         _item_query: Option<<Self::ItemQueryFetch as QueryFetch>::Item<'w>>,
-//         param: SystemParamItem<'w, '_, Self::Param>,
-//         pass: &mut wgpu::RenderPass<'w>,
-//     ) -> Result<()> {
-//         let (
-//             mesh_assets,
-//             material_assets,
-//             pipeline_cache,
-//             mesh_transforms_bind_group,
-//             lights_bind_group,
-//         ) = param;
-//         let mesh_assets = mesh_assets.into_inner();
-//         let material_assets = material_assets.into_inner();
-//         let pipeline_cache = pipeline_cache.into_inner();
-//         let mesh_transforms_bind_group = mesh_transforms_bind_group.into_inner();
-//         let lights_bind_group = lights_bind_group.into_inner();
-
-//         let camera_bind_group = view_query;
-
-//         let mesh = mesh_assets.get(item.key.mesh).unwrap();
-//         let mesh = mesh.into_inner();
-
-//         let material_bind_group = material_assets.get(item.key.material).unwrap();
-//         let material_bind_group = material_bind_group.into_inner();
-
-//         let pipeline = pipeline_cache.get_pipeline_for::<PbrRenderable>().unwrap();
-
-//         pass.set_pipeline(pipeline);
-//         pass.set_bind_group(0, material_bind_group.bind_group(), &[]);
-//         pass.set_bind_group(1, camera_bind_group.bind_group(), &[]);
-//         pass.set_bind_group(2, mesh_transforms_bind_group.bind_group(), &[]);
-//         pass.set_bind_group(3, lights_bind_group.bind_group(), &[]);
-
-//         pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-//         pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-//         pass.draw_indexed(0..mesh.num_indices, 0, item.batch_range.clone());
-
-//         Ok(())
-//     }
-// }
+        for item in items {
+            let (Some(mesh), Some(material)) = (
+                meshes.get_by_id(item.key.mesh),
+                materials.get_by_id(item.key.material),
+            ) else {
+                continue;
+            };
+            pass.set_bind_group(0, &material.bind_group);
+            pass.set_vertex_buffer(0, &mesh.vertex_buffer);
+            pass.set_index_buffer(&mesh.index_buffer, wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..mesh.num_indices, 0, item.batch_range.clone());
+        }
+    }
+}

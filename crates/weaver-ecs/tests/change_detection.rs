@@ -34,7 +34,6 @@ fn count_changed_later(mut query: Query<&A>) {
 
 /// A system must see changes made by a system that ran before it.
 #[test]
-#[ignore = "known issue: ticks are world-global, so only changes stamped with the reader's own tick count"]
 fn later_system_sees_changes_from_earlier_stage() {
     init_task_pool();
     let mut world = World::new();
@@ -69,7 +68,6 @@ fn mutate_and_count(mut query: Query<&mut A>) {
 
 /// A system that has just mutated a component must see it as changed, on the first frame too.
 #[test]
-#[ignore = "known issue: on the first update both ticks are 0, so nothing counts as changed"]
 fn system_sees_its_own_changes_on_first_update() {
     init_task_pool();
     let mut world = World::new();
@@ -94,7 +92,6 @@ fn count_added(mut query: Query<&A>) {
 
 /// Components that existed before a system's first run must be reported as added on that run.
 #[test]
-#[ignore = "known issue: on the first update both ticks are 0, so nothing counts as added"]
 fn components_spawned_before_first_run_are_added() {
     init_task_pool();
     let mut world = World::new();

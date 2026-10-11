@@ -3,14 +3,16 @@ use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::{State, winit};
 use weaver_app::{App, AppStage, plugin::Plugin};
 use weaver_ecs::{
-    SystemStage,
     component::{Res, ResMut},
     prelude::Commands,
-    system_schedule::SystemStage,
+    system::IntoSystemConfig,
 };
 use weaver_event::EventRx;
 use weaver_renderer::{
-    CurrentFrame, MainWorld, RenderApp, RenderStage, WgpuDevice, WgpuQueue, prelude::wgpu,
+    MainWorld, RenderApp, RenderStage, WgpuDevice, WgpuQueue,
+    driver::render_views,
+    prelude::wgpu,
+    surface::{CommandBuffers, SurfaceFrame, frame_in_flight},
     texture::texture_format,
 };
 use weaver_util::prelude::*;
@@ -172,9 +174,6 @@ impl EguiContext {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
-pub struct RenderUi;
-
 pub struct EguiPlugin;
 
 impl Plugin for EguiPlugin {
@@ -186,10 +185,11 @@ impl Plugin for EguiPlugin {
         render_app
             .world_mut()
             .add_system(extract_egui_context, RenderStage::Extract);
-        render_app
-            .world_mut()
-            .add_update_stage_after(RenderUi, RenderStage::Render);
-        render_app.world_mut().add_system(render, RenderUi);
+        // draws straight onto the swapchain texture, after the HDR target has been tonemapped onto it
+        render_app.world_mut().add_system(
+            render.after(render_views).run_if(frame_in_flight()),
+            RenderStage::Render,
+        );
 
         Ok(())
     }
@@ -223,14 +223,11 @@ pub fn end_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
 fn render(
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
-    current_frame: Res<CurrentFrame>,
+    frame: Res<SurfaceFrame>,
     mut egui_context: ResMut<EguiContext>,
-    mut renderer: ResMut<weaver_renderer::Renderer>,
+    mut command_buffers: ResMut<CommandBuffers>,
 ) {
-    let Some(current_frame) = current_frame.inner.as_ref() else {
-        return;
-    };
-    let surface_texture_size = current_frame.surface_texture.texture.size();
+    let surface_texture_size = frame.size();
 
     let screen_descriptor = ScreenDescriptor {
         pixels_per_point: 1.0,
@@ -243,11 +240,11 @@ fn render(
         &device,
         &queue,
         &mut encoder,
-        &current_frame.color_view,
+        &frame.view,
         &screen_descriptor,
     );
 
-    renderer.enqueue_command_buffer(encoder.finish());
+    command_buffers.push(encoder.finish());
 }
 
 fn egui_events(egui_context: Res<EguiContext>, window: Res<Window>, rx: EventRx<WinitEvent>) {

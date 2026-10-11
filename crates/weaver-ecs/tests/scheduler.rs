@@ -91,7 +91,6 @@ fn second(_commands: Commands) {
 
 /// `.after(x)` should work even if `x` is registered later in the same stage.
 #[test]
-#[ignore = "known issue: .after(x) looks x up immediately and panics if it isn't registered yet"]
 fn after_does_not_depend_on_registration_order() {
     init_task_pool();
     let mut world = World::new();
@@ -120,7 +119,6 @@ macro_rules! add_writers {
 /// Any number of systems writing the same resource should be serialized. The resolver gives up
 /// after 100 added edges and reports a cycle, which a stage reaches at about 15 such systems.
 #[test]
-#[ignore = "known issue: dependency resolution is capped at 100 edges and misreports the failure as a cycle"]
 fn many_systems_writing_one_resource_can_be_scheduled() {
     init_task_pool();
     let mut world = World::new();
@@ -141,7 +139,6 @@ fn counted(_commands: Commands) {
 
 /// `World::add_system` documents that adding the same system to a stage twice is ignored.
 #[test]
-#[ignore = "known issue: add_system doesn't check for duplicates despite its doc comment"]
 fn adding_a_system_twice_runs_it_once() {
     init_task_pool();
     let mut world = World::new();
@@ -152,4 +149,35 @@ fn adding_a_system_twice_runs_it_once() {
     world.update().unwrap();
 
     assert_eq!(DUPLICATE_RUNS.load(Ordering::SeqCst), 1);
+}
+
+struct Counter(u32);
+
+fn bump_counter(mut counter: ResMut<Counter>) {
+    counter.0 += 1;
+}
+
+static WORLD_SYSTEM_SAW: AtomicUsize = AtomicUsize::new(0);
+
+fn read_through_world(world: &World) {
+    // a `&World` system can fetch any parameter on demand
+    let mut state = SystemState::<Res<Counter>>::new(world);
+    let counter = state.get(world).unwrap();
+    WORLD_SYSTEM_SAW.store(counter.0 as usize, Ordering::SeqCst);
+    assert!(SystemState::<Res<Shared>>::new(world).get(world).is_none());
+}
+
+#[test]
+fn world_systems_run_in_order_and_can_fetch_params() {
+    init_task_pool();
+    let mut world = World::new();
+    world.insert_resource(Counter(0));
+    world.push_update_stage(Stage1);
+    world.add_system(read_through_world.after(bump_counter), Stage1);
+    world.add_system(bump_counter, Stage1);
+    world.initialize_systems();
+    world.update().unwrap();
+    world.update().unwrap();
+
+    assert_eq!(WORLD_SYSTEM_SAW.load(Ordering::SeqCst), 2);
 }

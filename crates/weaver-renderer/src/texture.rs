@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
 use weaver_app::{plugin::Plugin, prelude::App};
-use weaver_asset::AssetApp;
 use weaver_core::texture::Texture;
 use weaver_util::prelude::*;
 use wgpu::util::DeviceExt;
+
+use crate::{
+    GpuResourceId,
+    asset::{PrepareAssetError, RenderAsset, RenderAssetPlugin},
+};
 
 pub mod texture_format {
     pub use wgpu::TextureFormat;
@@ -13,16 +17,41 @@ pub mod texture_format {
     pub const HDR_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
     pub const HDR_CUBE_FORMAT: TextureFormat = TextureFormat::Rgba32Float;
     pub const NORMAL_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
+    /// RGBA8 data that isn't color (normals, masks).
+    pub const LINEAR_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
     pub const DEPTH_FORMAT: TextureFormat = TextureFormat::Depth32Float;
 }
 
+/// A texture and a view of it. Clones share both and the [`GpuResourceId`].
 #[derive(Clone)]
 pub struct GpuTexture {
     pub texture: Arc<wgpu::Texture>,
     pub view: Arc<wgpu::TextureView>,
+    id: GpuResourceId,
 }
 
 impl GpuTexture {
+    pub fn from_parts(texture: wgpu::Texture, view: wgpu::TextureView) -> Self {
+        Self {
+            texture: Arc::new(texture),
+            view: Arc::new(view),
+            id: GpuResourceId::new(),
+        }
+    }
+
+    pub fn id(&self) -> GpuResourceId {
+        self.id
+    }
+
+    /// The same texture (and id) seen through a different view.
+    pub fn with_view(&self, view: wgpu::TextureView) -> Self {
+        Self {
+            texture: self.texture.clone(),
+            view: Arc::new(view),
+            id: self.id,
+        }
+    }
+
     pub fn new(
         device: &wgpu::Device,
         label: Option<&str>,
@@ -48,10 +77,7 @@ impl GpuTexture {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        Self {
-            texture: Arc::new(texture),
-            view: Arc::new(view),
-        }
+        Self::from_parts(texture, view)
     }
 
     pub fn from_image(
@@ -82,10 +108,7 @@ impl GpuTexture {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        Some(Self {
-            texture: Arc::new(texture),
-            view: Arc::new(view),
-        })
+        Some(Self::from_parts(texture, view))
     }
 
     pub fn format(&self) -> wgpu::TextureFormat {
@@ -187,11 +210,60 @@ impl GpuTextureArray {
     }
 }
 
+/// The GPU version of a [`Texture`] asset: RGBA8, viewable as sRGB (for colors) or linear (for
+/// data such as normal maps). Uploaded once, however many materials use it.
+pub struct GpuImage {
+    pub srgb: GpuTexture,
+    pub linear: GpuTexture,
+}
+
+impl RenderAsset for GpuImage {
+    type Source = Texture;
+    type Param = ();
+
+    fn prepare(
+        image: Texture,
+        _: &mut (),
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<Self, PrepareAssetError<Texture>> {
+        let texture = device.create_texture_with_data(
+            queue,
+            &wgpu::TextureDescriptor {
+                label: Some("Image"),
+                size: wgpu::Extent3d {
+                    width: image.width(),
+                    height: image.height(),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: texture_format::LINEAR_FORMAT,
+                usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[texture_format::SDR_FORMAT],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &image.to_rgba8(),
+        );
+
+        let linear_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let srgb_view = texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(texture_format::SDR_FORMAT),
+            ..Default::default()
+        });
+        let linear = GpuTexture::from_parts(texture, linear_view);
+        let srgb = linear.with_view(srgb_view);
+
+        Ok(Self { srgb, linear })
+    }
+}
+
 pub struct TexturePlugin;
 
 impl Plugin for TexturePlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_asset::<Texture>();
+        app.add_plugin(RenderAssetPlugin::<GpuImage>::default())?;
         Ok(())
     }
 }

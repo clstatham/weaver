@@ -7,6 +7,7 @@ use std::{
 };
 
 use weaver_ecs::{
+    change_detection::TickRange,
     component::{Res, ResMut},
     system::{SystemAccess, SystemParam},
     world::World,
@@ -202,8 +203,12 @@ impl<T: Event> SystemParam for EventTx<T> {
 
     fn init_state(_world: &World) -> Self::State {}
 
-    fn fetch(world: &World, _state: &()) -> Self::Item {
-        EventTx::new(<ResMut<EventQueue<T>> as SystemParam>::fetch(world, &()))
+    fn fetch(world: &World, _state: &(), ticks: TickRange) -> Self::Item {
+        EventTx::new(<ResMut<EventQueue<T>> as SystemParam>::fetch(
+            world,
+            &(),
+            ticks,
+        ))
     }
 
     fn can_run(world: &World) -> bool {
@@ -226,9 +231,9 @@ impl<T: Event> SystemParam for EventRx<T> {
         EventRxState::default()
     }
 
-    fn fetch(world: &World, state: &Self::State) -> Self::Item {
+    fn fetch(world: &World, state: &Self::State, ticks: TickRange) -> Self::Item {
         EventRx::new(
-            <Res<EventQueue<T>> as SystemParam>::fetch(world, &()),
+            <Res<EventQueue<T>> as SystemParam>::fetch(world, &(), ticks),
             state.clone(),
         )
     }

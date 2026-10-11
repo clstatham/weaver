@@ -3,7 +3,7 @@ use std::{any::TypeId, marker::PhantomData};
 use weaver_util::prelude::*;
 
 use crate::{
-    change_detection::{ComponentTicks, Tick},
+    change_detection::ComponentTicks,
     entity::Entity,
     prelude::{Archetype, Component, Res, SystemAccess, SystemParam},
     storage::{Access, Components, Mut, Ref},
@@ -11,12 +11,7 @@ use crate::{
 
 use super::world::World;
 
-/// The change ticks a query compares component ticks against.
-#[derive(Debug, Clone, Copy)]
-pub struct TickRange {
-    pub last_run: Tick,
-    pub this_run: Tick,
-}
+pub use crate::change_detection::TickRange;
 
 /// One component type a query touches, and how.
 #[derive(Debug, Clone, Copy)]
@@ -308,6 +303,24 @@ unsafe impl<Q: Queryable> Queryable for Option<Q> {
     }
 }
 
+/// Matches everything and fetches nothing. Useful as a "no filter" type argument.
+unsafe impl Queryable for () {
+    type Item<'w> = ();
+    type Fetch<'w> = ();
+
+    fn access(_access: &mut QueryAccess) {}
+
+    fn matches(_archetype: &Archetype) -> bool {
+        true
+    }
+
+    unsafe fn fetch_archetype(_archetype: &Archetype, _ticks: TickRange) {}
+
+    unsafe fn fetch_row<'w>(_fetch: &mut (), _row: usize) -> Option<Self::Item<'w>> {
+        Some(())
+    }
+}
+
 /// Only matches archetypes that contain `T`. Doesn't access `T`'s data.
 pub struct With<T: Component>(PhantomData<T>);
 
@@ -475,7 +488,8 @@ impl<Q: Queryable> Query<Q> {
         )
     }
 
-    pub(crate) fn new_with_ticks(world: &World, ticks: TickRange) -> Self {
+    /// Creates a query that reports changes stamped after `ticks.last_run` (up to `ticks.this_run`).
+    pub fn new_with_ticks(world: &World, ticks: TickRange) -> Self {
         let access = QueryAccess::of::<Q>();
         let components = world.components();
 
@@ -646,7 +660,7 @@ impl<Q: Queryable> SystemParam for Query<Q> {
 
     fn init_state(_world: &World) -> Self::State {}
 
-    fn fetch(world: &World, _state: &Self::State) -> Self::Item {
-        Query::new(world)
+    fn fetch(world: &World, _state: &Self::State, ticks: TickRange) -> Self::Item {
+        Query::new_with_ticks(world, ticks)
     }
 }

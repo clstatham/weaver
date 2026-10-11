@@ -35,7 +35,7 @@ fn loading_more_than_1024_assets_completes() {
         app.world_mut().initialize_systems();
         app.world_mut().update().unwrap();
 
-        let mut assets = app.world().get_resource_mut::<Assets<Blob>>().unwrap();
+        let assets = app.world().get_resource::<Assets<Blob>>().unwrap();
         let loaded = handles
             .into_iter()
             .filter(|handle| assets.get(*handle).is_some())

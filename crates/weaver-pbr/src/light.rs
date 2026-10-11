@@ -1,5 +1,5 @@
 use encase::ShaderType;
-use weaver_app::{plugin::Plugin, App};
+use weaver_app::{App, plugin::Plugin};
 
 use weaver_core::{color::Color, prelude::Vec3, transform::Transform};
 use weaver_ecs::{
@@ -7,11 +7,7 @@ use weaver_ecs::{
     world::{ConstructFromWorld, World},
 };
 use weaver_renderer::{
-    bind_group::{BindGroupLayout, CreateBindGroup},
-    buffer::GpuBufferVec,
-    extract::ExtractComponentPlugin,
-    prelude::*,
-    WgpuDevice,
+    WgpuDevice, WgpuQueue, buffer::GpuBufferVec, extract::ExtractComponentPlugin, prelude::*,
 };
 use weaver_util::prelude::*;
 
@@ -23,12 +19,24 @@ pub struct PointLight {
     pub enabled: bool,
 }
 
-impl ExtractComponent for PointLight {
-    type ExtractQueryFetch = &'static Self;
-    type Out = Self;
+/// A point light in the render world, with its main-world position.
+#[derive(Copy, Clone, Debug)]
+pub struct ExtractedPointLight {
+    pub light: PointLight,
+    pub position: Vec3,
+}
 
-    fn extract_render_component(item: QueryableItem<Self::ExtractQueryFetch>) -> Option<Self::Out> {
-        Some(*item)
+impl ExtractComponent for PointLight {
+    type Data = (&'static Self, Option<&'static Transform>);
+    // the light's transform can change without the light changing
+    type Filter = ();
+    type Out = ExtractedPointLight;
+
+    fn extract((light, transform): QueryableItem<Self::Data>) -> Option<Self::Out> {
+        Some(ExtractedPointLight {
+            light: *light,
+            position: transform.map_or(Vec3::ZERO, |transform| transform.translation),
+        })
     }
 }
 
@@ -42,22 +50,22 @@ pub struct PointLightUniform {
     pub radius: f32,
 }
 
-impl From<PointLight> for PointLightUniform {
-    fn from(light: PointLight) -> Self {
-        Self {
-            position: Vec3::ZERO,
-            _padding: 0,
-            color: light.color,
-            intensity: if light.enabled { light.intensity } else { 0.0 },
-            radius: light.radius,
-        }
-    }
+impl PointLightUniform {
+    /// A light that contributes nothing, uploaded when there are no lights, since the light
+    /// buffer can't be bound empty.
+    pub const NONE: Self = Self {
+        position: Vec3::ZERO,
+        _padding: 0,
+        color: Color::BLACK,
+        intensity: 0.0,
+        radius: 0.0,
+    };
 }
 
-impl From<(PointLight, Transform)> for PointLightUniform {
-    fn from((light, transform): (PointLight, Transform)) -> Self {
+impl From<ExtractedPointLight> for PointLightUniform {
+    fn from(ExtractedPointLight { light, position }: ExtractedPointLight) -> Self {
         Self {
-            position: transform.translation,
+            position,
             _padding: 0,
             color: light.color,
             intensity: if light.enabled { light.intensity } else { 0.0 },
@@ -73,46 +81,12 @@ pub struct GpuPointLightArray {
 impl ConstructFromWorld for GpuPointLightArray {
     fn from_world(world: &World) -> Self {
         let device = world.get_resource::<WgpuDevice>().unwrap();
+        let queue = world.get_resource::<WgpuQueue>().unwrap();
         let mut buffer =
             GpuBufferVec::new(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
-        buffer.reserve(1, &device);
+        buffer.push(PointLightUniform::NONE);
+        buffer.enqueue_update(&device, &queue);
         Self { buffer }
-    }
-}
-
-impl CreateBindGroup for GpuPointLightArray {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
-    where
-        Self: Sized,
-    {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("Point Light Bind Group Layout"),
-        })
-    }
-
-    fn create_bind_group(
-        &self,
-        device: &wgpu::Device,
-        cached_layout: &BindGroupLayout,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: cached_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: self.buffer.binding().unwrap(),
-            }],
-            label: Some("Point Light Bind Group"),
-        })
     }
 }
 

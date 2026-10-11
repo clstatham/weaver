@@ -140,6 +140,27 @@ impl ComponentBundle {
         self.components.remove(index).pop::<T>()
     }
 
+    /// Merges an entity's existing components into this (newer) bundle. Where both have a
+    /// component of the same type, this bundle's value wins, but it keeps the existing `added`
+    /// tick so replacing a component reads as a change rather than an addition.
+    pub fn merge_existing(&mut self, existing: Self) {
+        for ((ty, component), ticks) in existing
+            .types
+            .into_iter()
+            .zip(existing.components)
+            .zip(existing.ticks)
+        {
+            match self.types.binary_search(&ty) {
+                Ok(index) => self.ticks[index].added = ticks.added,
+                Err(index) => {
+                    self.types.insert(index, ty);
+                    self.components.insert(index, component);
+                    self.ticks.insert(index, ticks);
+                }
+            }
+        }
+    }
+
     pub fn union(&mut self, other: Self) -> Option<Self> {
         let mut ret = Self {
             types: Vec::new(),

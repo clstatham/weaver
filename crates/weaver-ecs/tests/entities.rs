@@ -10,18 +10,21 @@ struct A;
 #[derive(Debug)]
 struct B;
 
-/// The render world receives components for main-world entities via `insert_component`
-/// without allocating them. A later `spawn` in that world must not hand out the same entity.
+/// Inserting into an entity that isn't alive in this world (despawned, or allocated by another
+/// world) is ignored, so it can't create a zombie entity or collide with a later spawn.
 #[test]
-#[ignore = "known issue: insert_component on an unallocated entity doesn't reserve it, so spawn reuses the id"]
-fn spawn_does_not_reuse_an_entity_inserted_from_another_world() {
+fn inserting_into_a_dead_or_foreign_entity_is_ignored() {
     let main_world = World::new();
-    let mirrored = main_world.spawn((A,));
+    let foreign = main_world.spawn((A,));
 
     let render_world = World::new();
-    render_world.insert_component(mirrored, A);
+    render_world.insert_component(foreign, A);
+    assert!(render_world.query::<&A>().iter().next().is_none());
     let local = render_world.spawn((B,));
+    assert!(render_world.has_component::<B>(local));
 
-    assert_ne!(local, mirrored);
-    assert!(!render_world.has_component::<B>(mirrored));
+    render_world.destroy_entity(local);
+    render_world.insert_component(local, A);
+    assert!(render_world.query::<&A>().iter().next().is_none());
+    assert!(!render_world.is_alive(local));
 }

@@ -291,20 +291,35 @@ impl Components {
         );
     }
 
+    /// Inserts the bundle's components into the entity. Components the entity already has are
+    /// replaced: the new value wins and is marked changed, but keeps its original `added` tick.
     pub fn insert_bundle<T: Bundle>(&mut self, entity: Entity, bundle: T, tick: Tick) {
         let mut components = ComponentBundle::from_tuple(bundle, tick);
         if self.entity_location.contains_key(&entity) {
             let old_comps = self.remove_entity(entity);
-            components.union(old_comps);
+            components.merge_existing(old_comps);
         }
         self.insert_entity(entity, components);
     }
 
+    /// Removes a component from the entity and returns it. Returns `None` if the entity doesn't
+    /// exist or doesn't have the component.
     pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {
+        let location = self.location(entity)?;
+        if !self.archetypes[location.archetype.as_usize()].has::<T>() {
+            return None;
+        }
         let mut components = self.remove_entity(entity);
         let removed = components.remove::<T>();
         self.insert_entity(entity, components);
         removed
+    }
+
+    /// Removes the entity and all of its components, returning the types it had.
+    /// Returns `None` if the entity has no components stored.
+    pub(crate) fn despawn(&mut self, entity: Entity) -> Option<Vec<TypeId>> {
+        self.location(entity)?;
+        Some(self.remove_entity(entity).types)
     }
 
     pub fn location(&self, entity: Entity) -> Option<EntityLocation> {

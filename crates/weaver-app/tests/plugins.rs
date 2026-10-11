@@ -34,7 +34,6 @@ impl Plugin for CountingPlugin {
 /// `configure_plugin` runs `cleanup` and then `build` again. Systems added by the first `build`
 /// must not stay registered alongside the second set.
 #[test]
-#[ignore = "known issue: configure_plugin rebuilds the plugin and its systems get registered twice"]
 fn configure_plugin_does_not_duplicate_systems() {
     GlobalTaskPool::get_or_init(TaskPool::new);
     let mut app = App::new();

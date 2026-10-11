@@ -1,18 +1,18 @@
 use std::ops::{Deref, DerefMut};
 
+/// The command encoder that draw systems record the current frame into. Only exists while a frame
+/// is in flight (see [`crate::surface`]); [`crate::surface::present_frame`] finishes and submits it.
 pub struct ActiveCommandEncoder {
-    encoder: Option<wgpu::CommandEncoder>,
+    encoder: wgpu::CommandEncoder,
 }
 
 impl ActiveCommandEncoder {
     pub fn new(encoder: wgpu::CommandEncoder) -> Self {
-        Self {
-            encoder: Some(encoder),
-        }
+        Self { encoder }
     }
 
-    pub fn finish(&mut self) -> wgpu::CommandBuffer {
-        self.encoder.take().unwrap().finish()
+    pub fn finish(self) -> wgpu::CommandBuffer {
+        self.encoder.finish()
     }
 }
 
@@ -20,16 +20,12 @@ impl Deref for ActiveCommandEncoder {
     type Target = wgpu::CommandEncoder;
 
     fn deref(&self) -> &Self::Target {
-        self.encoder
-            .as_ref()
-            .expect("ActiveCommandEncoder has been finished")
+        &self.encoder
     }
 }
 
 impl DerefMut for ActiveCommandEncoder {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.encoder
-            .as_mut()
-            .expect("ActiveCommandEncoder has been finished")
+        &mut self.encoder
     }
 }

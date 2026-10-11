@@ -2,6 +2,7 @@ use weaver_util::lock::SharedLock;
 
 use crate::{
     bundle::Bundle,
+    change_detection::TickRange,
     component::Component,
     entity::{Entities, Entity},
     prelude::World,
@@ -64,6 +65,20 @@ impl Commands {
         })
     }
 
+    /// Inserts a bundle of components into the entity, replacing any it already has.
+    pub fn insert_bundle<T: Bundle>(&self, entity: Entity, bundle: T) {
+        self.add(move |world| {
+            world.insert_bundle(entity, bundle);
+        })
+    }
+
+    /// Destroys the entity and all of its components. Does nothing if it's already dead.
+    pub fn despawn(&self, entity: Entity) {
+        self.add(move |world| {
+            world.destroy_entity(entity);
+        })
+    }
+
     pub fn remove_component<T: Component>(&self, entity: Entity) {
         self.add(move |world| {
             world.remove_component::<T>(entity);
@@ -89,7 +104,7 @@ impl SystemParam for Commands {
         CommandQueue::new(world)
     }
 
-    fn fetch(_world: &World, state: &Self::State) -> Self::Item {
+    fn fetch(_world: &World, state: &Self::State, _ticks: TickRange) -> Self::Item {
         Commands {
             tx: state.tx.clone(),
             entities: state.entities.clone(),

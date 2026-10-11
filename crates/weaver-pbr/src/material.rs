@@ -1,15 +1,19 @@
 use encase::ShaderType;
 use weaver_app::{App, plugin::Plugin};
-use weaver_asset::{Assets, Handle, prelude::Asset};
+use weaver_asset::{Handle, prelude::Asset};
 use weaver_core::{color::Color, texture::Texture};
-use weaver_ecs::prelude::ResMut;
+use weaver_ecs::{prelude::Res, system::SystemParamItem};
 use weaver_renderer::{
-    asset::{ExtractRenderAssetPlugin, RenderAsset},
-    bind_group::{AssetBindGroupPlugin, BindGroupLayout, CreateBindGroup},
+    asset::{
+        ExtractHandlePlugin, PrepareAssetError, RenderAsset, RenderAssetPlugin, RenderAssets,
+        prepare_after,
+    },
+    bind_group::{
+        AsBindGroup, BindGroup, BindGroupLayoutBuilder, BindGroupLayouts, BindingsBuilder,
+    },
     buffer::GpuBufferVec,
-    extract::Extract,
     prelude::*,
-    texture::{GpuTexture, texture_format},
+    texture::{GpuImage, GpuTexture},
 };
 use weaver_util::prelude::*;
 
@@ -79,308 +83,108 @@ pub struct MaterialMetaUniform {
     texture_scale: f32,
 }
 
-#[derive(Asset)]
-pub struct GpuMaterial {
+/// A material's GPU resources, bound as group 0 of the PBR pipeline.
+pub struct MaterialBindings {
     pub meta: GpuBufferVec<MaterialMetaUniform>,
-
     pub diffuse_texture: GpuTexture,
-    pub diffuse_texture_sampler: wgpu::Sampler,
     pub normal_texture: GpuTexture,
-    pub normal_texture_sampler: wgpu::Sampler,
     pub metallic_roughness_texture: GpuTexture,
-    pub metallic_roughness_texture_sampler: wgpu::Sampler,
     pub ao_texture: GpuTexture,
-    pub ao_texture_sampler: wgpu::Sampler,
+    /// Shared by all four textures.
+    pub sampler: wgpu::Sampler,
+}
+
+impl AsBindGroup for MaterialBindings {
+    const LABEL: &'static str = "Material";
+
+    fn layout(layout: &mut BindGroupLayoutBuilder) {
+        let fragment = wgpu::ShaderStages::FRAGMENT;
+        layout.uniform_buffer(fragment);
+        // diffuse, normal, metallic/roughness, AO: each a texture followed by its sampler
+        for _ in 0..4 {
+            layout.texture_2d(fragment).filtering_sampler(fragment);
+        }
+    }
+
+    fn bindings<'a>(&'a self, bindings: &mut BindingsBuilder<'a>) {
+        bindings.buffer_vec(&self.meta);
+        for texture in [
+            &self.diffuse_texture,
+            &self.normal_texture,
+            &self.metallic_roughness_texture,
+            &self.ao_texture,
+        ] {
+            bindings.texture(texture).sampler(&self.sampler);
+        }
+    }
+}
+
+pub struct GpuMaterial {
+    pub bindings: MaterialBindings,
+    pub bind_group: BindGroup<MaterialBindings>,
+}
+
+impl MaterialMetaUniform {
+    fn new(material: &Material) -> Self {
+        Self {
+            diffuse: material.diffuse,
+            metallic: material.metallic,
+            roughness: material.roughness,
+            ao: material.ao,
+            texture_scale: material.texture_scale,
+        }
+    }
 }
 
 impl RenderAsset for GpuMaterial {
     type Source = Material;
-    type Param = Extract<ResMut<Assets<Texture>>>;
+    type Param = (Res<RenderAssets<GpuImage>>, Res<BindGroupLayouts>);
 
-    fn extract_render_asset(
-        base_asset: &Material,
-        textures: &mut Extract<ResMut<Assets<Texture>>>,
+    fn prepare(
+        material: Material,
+        (images, layouts): &mut SystemParamItem<Self::Param>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        let diffuse_texture = textures.get(base_asset.diffuse_texture)?;
-        let diffuse_texture =
-            GpuTexture::from_image(device, queue, &diffuse_texture, texture_format::SDR_FORMAT)?;
+    ) -> Result<Self, PrepareAssetError<Material>> {
+        let (Some(diffuse), Some(normal), Some(metallic_roughness), Some(ao)) = (
+            images.get(material.diffuse_texture),
+            images.get(material.normal_texture),
+            images.get(material.metallic_roughness_texture),
+            images.get(material.ao_texture),
+        ) else {
+            return Err(PrepareAssetError::RetryNextFrame(material));
+        };
 
-        let normal_texture = textures.get(base_asset.normal_texture)?;
-        let normal_texture = GpuTexture::from_image(
-            device,
-            queue,
-            &normal_texture,
-            texture_format::NORMAL_FORMAT,
-        )?;
-
-        let metallic_roughness_texture = textures.get(base_asset.metallic_roughness_texture)?;
-        let metallic_roughness_texture = GpuTexture::from_image(
-            device,
-            queue,
-            &metallic_roughness_texture,
-            texture_format::SDR_FORMAT,
-        )?;
-
-        let ao_texture = textures.get(base_asset.ao_texture)?;
-        let ao_texture =
-            GpuTexture::from_image(device, queue, &ao_texture, texture_format::SDR_FORMAT)?;
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Material Sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
 
         let mut meta =
             GpuBufferVec::new(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
-
-        let diffuse_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Diffuse Texture Sampler"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            ..Default::default()
-        });
-
-        let normal_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Normal Texture Sampler"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            ..Default::default()
-        });
-
-        let metallic_roughness_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Metallic Roughness Texture Sampler"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            ..Default::default()
-        });
-
-        let ao_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("AO Texture Sampler"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            ..Default::default()
-        });
-
-        let meta_uniform = MaterialMetaUniform {
-            diffuse: base_asset.diffuse,
-            metallic: base_asset.metallic,
-            roughness: base_asset.roughness,
-            ao: base_asset.ao,
-            texture_scale: base_asset.texture_scale,
-        };
-        meta.push(meta_uniform);
+        meta.push(MaterialMetaUniform::new(&material));
         meta.enqueue_update(device, queue);
 
-        Some(Self {
+        let bindings = MaterialBindings {
             meta,
-            diffuse_texture,
-            diffuse_texture_sampler,
-            normal_texture,
-            normal_texture_sampler,
-            metallic_roughness_texture,
-            metallic_roughness_texture_sampler,
-            ao_texture,
-            ao_texture_sampler,
-        })
-    }
-
-    fn update_render_asset(
-        &mut self,
-        base_asset: &Self::Source,
-        _textures: &mut Extract<ResMut<Assets<Texture>>>,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    ) -> Result<()>
-    where
-        Self: Sized,
-    {
-        let meta = MaterialMetaUniform {
-            diffuse: base_asset.diffuse,
-            metallic: base_asset.metallic,
-            roughness: base_asset.roughness,
-            ao: base_asset.ao,
-            texture_scale: base_asset.texture_scale,
+            diffuse_texture: diffuse.srgb.clone(),
+            normal_texture: normal.linear.clone(),
+            metallic_roughness_texture: metallic_roughness.srgb.clone(),
+            ao_texture: ao.srgb.clone(),
+            sampler,
         };
+        let bind_group =
+            BindGroup::new(device, &layouts.get::<MaterialBindings>(device), &bindings);
 
-        self.meta.clear();
-        self.meta.push(meta);
-
-        self.meta.enqueue_update(device, queue);
-
-        Ok(())
-    }
-}
-
-impl CreateBindGroup for GpuMaterial {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
-    where
-        Self: Sized,
-    {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Material Bind Group Layout"),
-            entries: &[
-                // Material meta buffer
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // Diffuse texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // Diffuse texture sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                // Normal texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // Normal texture sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                // Metallic roughness texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // Metallic roughness texture sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                // AO texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 7,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // AO texture sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 8,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        })
-    }
-
-    fn create_bind_group(
-        &self,
-        device: &wgpu::Device,
-        cached_layout: &BindGroupLayout,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Material Bind Group"),
-            layout: cached_layout,
-            entries: &[
-                // Material meta buffer
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.meta.binding().unwrap(),
-                },
-                // Diffuse texture
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&self.diffuse_texture.view),
-                },
-                // Diffuse texture sampler
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.diffuse_texture_sampler),
-                },
-                // Normal texture
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&self.normal_texture.view),
-                },
-                // Normal texture sampler
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::Sampler(&self.normal_texture_sampler),
-                },
-                // Metallic roughness texture
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::TextureView(
-                        &self.metallic_roughness_texture.view,
-                    ),
-                },
-                // Metallic roughness texture sampler
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: wgpu::BindingResource::Sampler(
-                        &self.metallic_roughness_texture_sampler,
-                    ),
-                },
-                // AO texture
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: wgpu::BindingResource::TextureView(&self.ao_texture.view),
-                },
-                // AO texture sampler
-                wgpu::BindGroupEntry {
-                    binding: 8,
-                    resource: wgpu::BindingResource::Sampler(&self.ao_texture_sampler),
-                },
-            ],
+        Ok(Self {
+            bindings,
+            bind_group,
         })
     }
 }
@@ -389,8 +193,9 @@ pub struct MaterialPlugin;
 
 impl Plugin for MaterialPlugin {
     fn build(&self, render_app: &mut App) -> Result<()> {
-        render_app.add_plugin(ExtractRenderAssetPlugin::<GpuMaterial>::default())?;
-        render_app.add_plugin(AssetBindGroupPlugin::<GpuMaterial>::default())?;
+        render_app.add_plugin(RenderAssetPlugin::<GpuMaterial>::default())?;
+        render_app.add_plugin(ExtractHandlePlugin::<Material>::default())?;
+        prepare_after::<GpuMaterial, GpuImage>(render_app);
         Ok(())
     }
 }

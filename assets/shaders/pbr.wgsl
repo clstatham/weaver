@@ -22,8 +22,8 @@ struct PointLight {
 // camera information
 @group(1) @binding(0) var<uniform> camera: CameraUniform;
 
-// model information
-@group(2) @binding(0) var<uniform> model_transform: mat4x4<f32>;
+// mesh instances: model matrices in draw order, indexed by instance_index
+@group(2) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
 
 // lights information
 @group(3) @binding(0) var<storage> point_lights: array<PointLight>;
@@ -166,6 +166,7 @@ struct FragmentOutput {
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
+    let model_transform = model_transforms[input.instance_index];
 
     let world_position = (model_transform * vec4<f32>(input.position, 1.0));
 

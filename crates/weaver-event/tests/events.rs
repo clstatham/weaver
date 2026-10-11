@@ -12,7 +12,7 @@ fn world_with_events() -> World {
 }
 
 fn send(world: &World, event: u32) {
-    let mut tx = <EventTx<u32> as SystemParam>::fetch(world, &());
+    let mut tx = <EventTx<u32> as SystemParam>::fetch(world, &(), world.world_ticks());
     tx.send(event);
 }
 
@@ -21,7 +21,7 @@ fn reader(world: &World) -> EventRxState<u32> {
 }
 
 fn read(world: &World, state: &EventRxState<u32>) -> Vec<u32> {
-    <EventRx<u32> as SystemParam>::fetch(world, state).collect()
+    <EventRx<u32> as SystemParam>::fetch(world, state, world.world_ticks()).collect()
 }
 
 fn end_frame(world: &World) {
@@ -127,7 +127,7 @@ fn unread_events_carry_over_to_the_next_run() {
 
     send(&world, 1);
     send(&world, 2);
-    let mut rx = <EventRx<u32> as SystemParam>::fetch(&world, &state);
+    let mut rx = <EventRx<u32> as SystemParam>::fetch(&world, &state, world.world_ticks());
     assert_eq!(rx.next(), Some(1));
     drop(rx);
     end_frame(&world);

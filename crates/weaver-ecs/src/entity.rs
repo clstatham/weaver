@@ -183,6 +183,15 @@ impl Entities {
         *self.free_cursor.get_mut() = new_free_cursor;
     }
 
+    /// Returns true if the entity is allocated (or reserved) with this generation.
+    pub fn is_alive(&self, entity: Entity) -> bool {
+        // `free` bumps the generation right away, so a dead entity never matches
+        match self.generations.get(entity.id as usize) {
+            Some(generation) => *generation == entity.generation,
+            None => self.find_by_id(entity.id) == Some(entity),
+        }
+    }
+
     pub fn find_by_id(&self, id: u32) -> Option<Entity> {
         let id = id as usize;
         if let Some(generation) = self.generations.get(id) {

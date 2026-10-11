@@ -8,28 +8,30 @@ use image::{ImageDecoder, codecs::hdr::HdrDecoder};
 use weaver_app::plugin::Plugin;
 use weaver_ecs::{
     component::Res,
-    prelude::{Commands, ResMut, World},
+    condition::{not, resource_exists},
+    entity::Entity,
+    prelude::{Commands, World},
     query::Query,
-    system::IntoSystemConfig,
+    system::{IntoSystemConfig, SystemParamItem},
     world::ConstructFromWorld,
 };
 use weaver_renderer::{
-    RenderLabel, RenderStage, WgpuDevice, WgpuQueue,
+    RenderStage, WgpuDevice, WgpuQueue,
     bind_group::{
-        BindGroup, BindGroupLayout, BindGroupLayoutCache, CreateBindGroup, ResourceBindGroupPlugin,
+        AsBindGroup, BindGroup, BindGroupLayoutBuilder, BindGroupLayouts, BindingsBuilder,
+        ResourceBindGroupPlugin,
     },
-    camera::{CameraBindGroup, ViewTarget},
-    clear_color::render_clear_color,
+    camera::CameraBindGroup,
     extract::{ExtractResource, ExtractResourcePlugin},
-    hdr::HdrRenderTarget,
+    phase::{AddDrawFunction, Background3d, DrawFunction, DrawFunctions, RenderPhase},
     pipeline::{
-        ComputePipelineCache, ComputePipelinePlugin, CreateComputePipeline, CreateRenderPipeline,
-        RenderPipeline, RenderPipelineCache, RenderPipelineLayout, RenderPipelinePlugin,
+        DepthTest, InitRenderResourcePlugin, RenderPipeline, RenderPipelineDescriptor,
+        create_compute_pipeline,
     },
-    prelude::{ComputePipeline, ComputePipelineLayout, wgpu},
-    resources::ActiveCommandEncoder,
-    shader::Shader,
+    prelude::wgpu,
+    shader::ShaderLibrary,
     texture::{GpuTexture, texture_format},
+    tracked_pass::TrackedRenderPass,
 };
 use weaver_util::prelude::*;
 
@@ -80,38 +82,19 @@ pub(crate) struct GpuSkyboxSrc {
     src_texture: GpuTexture,
 }
 
-impl CreateBindGroup for GpuSkyboxSrc {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
-    where
-        Self: Sized,
-    {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Skybox Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    multisampled: false,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                },
-                count: None,
-            }],
-        })
+impl AsBindGroup for GpuSkyboxSrc {
+    const LABEL: &'static str = "Skybox Loader Source";
+
+    fn layout(layout: &mut BindGroupLayoutBuilder) {
+        layout.texture(
+            wgpu::ShaderStages::COMPUTE,
+            wgpu::TextureViewDimension::D2,
+            wgpu::TextureSampleType::Float { filterable: false },
+        );
     }
 
-    fn create_bind_group(&self, device: &wgpu::Device, layout: &BindGroupLayout) -> wgpu::BindGroup
-    where
-        Self: Sized,
-    {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Skybox Bind Group"),
-            layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&self.src_texture.view),
-            }],
-        })
+    fn bindings<'a>(&'a self, bindings: &mut BindingsBuilder<'a>) {
+        bindings.texture(&self.src_texture);
     }
 }
 
@@ -132,26 +115,21 @@ impl ConstructFromWorld for GpuSkybox {
         let device = world.get_resource::<WgpuDevice>().unwrap();
         let queue = world.get_resource::<WgpuQueue>().unwrap();
         let skybox = world.get_resource::<Skybox>().unwrap();
-        let mut pipeline_cache = world.get_resource_mut::<ComputePipelineCache>().unwrap();
-        let mut bind_group_layout_cache = world.get_resource_mut::<BindGroupLayoutCache>().unwrap();
+        let layouts = world.get_resource::<BindGroupLayouts>().unwrap();
+        let shaders = world.get_resource::<ShaderLibrary>().unwrap();
 
-        Self::new(
-            &skybox,
-            &device,
-            &queue,
-            &mut pipeline_cache,
-            &mut bind_group_layout_cache,
-        )
+        Self::new(&skybox, &device, &queue, &layouts, &shaders)
     }
 }
 
 impl GpuSkybox {
+    /// Loads the skybox's equirectangular HDR image and converts it to a cube map on the GPU.
     pub fn new(
         skybox: &Skybox,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        pipeline_cache: &mut ComputePipelineCache,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
+        layouts: &BindGroupLayouts,
+        shaders: &ShaderLibrary,
     ) -> Self {
         let file = File::open(&skybox.path).unwrap();
 
@@ -227,32 +205,27 @@ impl GpuSkybox {
             ..Default::default()
         });
 
-        let skybox_src = GpuSkyboxSrc {
-            src_texture: GpuTexture {
-                texture: Arc::new(src),
-                view: Arc::new(src_view),
-            },
+        let src = GpuSkyboxSrc {
+            src_texture: GpuTexture::from_parts(src, src_view),
         };
-
-        let src_bind_group = skybox_src.create_bind_group(
-            device,
-            &BindGroupLayout::get_or_create::<GpuSkyboxSrc>(device, bind_group_layout_cache),
-        );
-
         let dst = GpuSkyboxDst {
-            dst_texture: GpuTexture {
-                texture: Arc::new(dst),
-                view: Arc::new(dst_view),
-            },
+            dst_texture: GpuTexture::from_parts(dst, dst_view),
         };
 
-        let dst_bind_group = dst.create_bind_group(
-            device,
-            &BindGroupLayout::get_or_create::<GpuSkyboxDst>(device, bind_group_layout_cache),
-        );
+        let src_layout = layouts.get::<GpuSkyboxSrc>(device);
+        let dst_layout = layouts.get::<GpuSkyboxDst>(device);
+        let src_bind_group = BindGroup::new(device, &src_layout, &src);
+        let dst_bind_group = BindGroup::new(device, &dst_layout, &dst);
 
-        let pipeline =
-            pipeline_cache.get_or_create_pipeline::<GpuSkybox>(device, bind_group_layout_cache);
+        // only used once, so it isn't kept around
+        let shader = shaders.load(device, "skybox_loader.wgsl");
+        let pipeline = create_compute_pipeline(
+            device,
+            "Skybox Loader Pipeline",
+            &shader,
+            "load",
+            &[&src_layout, &dst_layout],
+        );
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Skybox Load Encoder"),
@@ -264,8 +237,8 @@ impl GpuSkybox {
             });
             let num_workgroups = SKYBOX_CUBEMAP_SIZE.div_ceil(16);
             cpass.set_pipeline(&pipeline);
-            cpass.set_bind_group(0, &src_bind_group, &[]);
-            cpass.set_bind_group(1, &dst_bind_group, &[]);
+            cpass.set_bind_group(0, &*src_bind_group, &[]);
+            cpass.set_bind_group(1, &*dst_bind_group, &[]);
             cpass.dispatch_workgroups(num_workgroups, num_workgroups, 6);
         }
         queue.submit(Some(encoder.finish()));
@@ -299,252 +272,99 @@ impl GpuSkybox {
     }
 }
 
-impl CreateComputePipeline for GpuSkybox {
-    fn create_compute_pipeline_layout(
-        device: &wgpu::Device,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> ComputePipelineLayout
-    where
-        Self: Sized,
-    {
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Skybox Pipeline Layout"),
-            bind_group_layouts: &[
-                Some(&bind_group_layout_cache.get_or_create::<GpuSkyboxSrc>(device)),
-                Some(&bind_group_layout_cache.get_or_create::<GpuSkyboxDst>(device)),
-            ],
-            ..Default::default()
-        });
+impl AsBindGroup for GpuSkyboxDst {
+    const LABEL: &'static str = "Skybox Loader Destination";
 
-        ComputePipelineLayout::new(layout)
+    fn layout(layout: &mut BindGroupLayoutBuilder) {
+        layout.storage_texture(
+            wgpu::ShaderStages::COMPUTE,
+            wgpu::StorageTextureAccess::WriteOnly,
+            texture_format::HDR_FORMAT,
+            wgpu::TextureViewDimension::D2Array,
+        );
     }
 
-    fn create_compute_pipeline(
-        device: &wgpu::Device,
-        cached_layout: &wgpu::PipelineLayout,
-    ) -> ComputePipeline
-    where
-        Self: Sized,
-    {
-        let module = Shader::new(Path::new("assets/shaders/skybox_loader.wgsl"))
-            .create_shader_module(device);
-
-        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Skybox Compute Pipeline"),
-            layout: Some(cached_layout),
-            module: &module,
-            entry_point: Some("load"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        });
-
-        ComputePipeline::new(pipeline)
+    fn bindings<'a>(&'a self, bindings: &mut BindingsBuilder<'a>) {
+        bindings.storage_texture(&self.dst_texture);
     }
 }
 
-impl CreateBindGroup for GpuSkyboxDst {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
-    where
-        Self: Sized,
-    {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Skybox Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::StorageTexture {
-                    access: wgpu::StorageTextureAccess::WriteOnly,
-                    format: texture_format::HDR_FORMAT,
-                    view_dimension: wgpu::TextureViewDimension::D2Array,
-                },
-                count: None,
-            }],
-        })
+impl AsBindGroup for GpuSkybox {
+    const LABEL: &'static str = "Skybox";
+
+    fn layout(layout: &mut BindGroupLayoutBuilder) {
+        let fragment = wgpu::ShaderStages::FRAGMENT;
+        layout.texture_cube(fragment).filtering_sampler(fragment);
     }
 
-    fn create_bind_group(&self, device: &wgpu::Device, layout: &BindGroupLayout) -> wgpu::BindGroup
-    where
-        Self: Sized,
-    {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Skybox Aux Bind Group"),
-            layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&self.dst_texture.view),
-            }],
-        })
+    fn bindings<'a>(&'a self, bindings: &mut BindingsBuilder<'a>) {
+        bindings
+            .texture_view(&self.cube_view)
+            .sampler(&self.sampler);
     }
 }
 
-impl CreateBindGroup for GpuSkybox {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
-    where
-        Self: Sized,
-    {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Skybox Bind Group Layout"),
-            entries: &[
-                // skybox texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::Cube,
-                    },
-                    count: None,
-                },
-                // skybox sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        })
-    }
+pub struct SkyboxPipeline {
+    pub pipeline: RenderPipeline,
+}
 
-    fn create_bind_group(&self, device: &wgpu::Device, layout: &BindGroupLayout) -> wgpu::BindGroup
-    where
-        Self: Sized,
-    {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Skybox Bind Group"),
-            layout,
-            entries: &[
-                // skybox texture
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&self.cube_view),
-                },
-                // skybox sampler
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        })
+impl ConstructFromWorld for SkyboxPipeline {
+    fn from_world(world: &World) -> Self {
+        let device = world.get_resource::<WgpuDevice>().unwrap();
+        let layouts = world.get_resource::<BindGroupLayouts>().unwrap();
+        let shaders = world.get_resource::<ShaderLibrary>().unwrap();
+        let shader = shaders.load(&device, "sky.wgsl");
+
+        let pipeline = RenderPipelineDescriptor::new("Skybox Pipeline", &shader)
+            .bind_group_layouts([
+                layouts.get::<GpuSkybox>(&device),
+                layouts.get::<CameraBindGroup>(&device),
+            ])
+            .blend(None)
+            .depth(DepthTest::default())
+            .build(&device);
+
+        Self { pipeline }
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct SkyboxNodeLabel;
-impl RenderLabel for SkyboxNodeLabel {}
-
-#[derive(Default)]
-pub struct SkyboxRenderable;
-
-impl CreateRenderPipeline for SkyboxRenderable {
-    fn create_render_pipeline_layout(
-        device: &wgpu::Device,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> RenderPipelineLayout
-    where
-        Self: Sized,
-    {
-        RenderPipelineLayout::new(
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Skybox Pipeline Layout"),
-                bind_group_layouts: &[
-                    Some(&bind_group_layout_cache.get_or_create::<GpuSkybox>(device)),
-                    Some(&bind_group_layout_cache.get_or_create::<CameraBindGroup>(device)),
-                ],
-                ..Default::default()
-            }),
-        )
-    }
-
-    fn create_render_pipeline(
-        device: &wgpu::Device,
-        cached_layout: &wgpu::PipelineLayout,
-    ) -> RenderPipeline
-    where
-        Self: Sized,
-    {
-        let module = Shader::new(Path::new("assets/shaders/sky.wgsl")).create_shader_module(device);
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Skybox Render Pipeline"),
-            layout: Some(cached_layout),
-            cache: None,
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: texture_format::HDR_FORMAT,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: texture_format::DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-        });
-
-        RenderPipeline::new(pipeline)
-    }
-}
-
-pub fn render_skybox(
-    render_pipeline_cache: Res<RenderPipelineCache>,
-    hdr_target: Res<HdrRenderTarget>,
-    skybox_bind_group: Res<BindGroup<GpuSkybox>>,
-    mut view_target: Query<(&ViewTarget, &BindGroup<CameraBindGroup>)>,
-    mut command_encoder: ResMut<ActiveCommandEncoder>,
+/// Puts the skybox in every view's background.
+fn queue_skybox(
+    draw_functions: Res<DrawFunctions<Background3d>>,
+    mut views: Query<(Entity, &mut RenderPhase<Background3d>)>,
 ) {
-    let skybox_pipeline = render_pipeline_cache
-        .get_pipeline_for::<SkyboxRenderable>()
-        .unwrap();
-
-    for (view_target, camera_bind_group) in view_target.iter() {
-        let mut rpass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Skybox Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: hdr_target.color_target(),
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &view_target.depth_target,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            occlusion_query_set: None,
-            timestamp_writes: None,
-            ..Default::default()
+    let draw_function = draw_functions.id::<DrawSkybox>();
+    for (view, mut phase) in views.iter() {
+        phase.add(Background3d {
+            view,
+            draw_function,
         });
+    }
+}
 
-        rpass.set_pipeline(skybox_pipeline);
-        rpass.set_bind_group(0, &**skybox_bind_group, &[]);
-        rpass.set_bind_group(1, &**camera_bind_group, &[]);
-        rpass.draw(0..3, 0..1);
+/// Draws the skybox behind everything with a fullscreen triangle.
+struct DrawSkybox;
+
+impl DrawFunction<Background3d> for DrawSkybox {
+    type Param = (
+        Res<SkyboxPipeline>,
+        Res<BindGroup<GpuSkybox>>,
+        Query<&'static BindGroup<CameraBindGroup>>,
+    );
+
+    fn draw(
+        (pipeline, skybox, cameras): &mut SystemParamItem<Self::Param>,
+        pass: &mut TrackedRenderPass,
+        view: Entity,
+        _items: &[Background3d],
+    ) {
+        let Some(camera) = cameras.get(view) else {
+            return;
+        };
+        pass.set_pipeline(&pipeline.pipeline);
+        pass.set_bind_group(0, skybox);
+        pass.set_bind_group(1, &camera);
+        pass.draw(0..3, 0..1);
     }
 }
 
@@ -553,30 +373,34 @@ pub struct SkyboxPlugin;
 impl Plugin for SkyboxPlugin {
     fn build(&self, render_app: &mut weaver_app::App) -> Result<()> {
         render_app.add_plugin(ExtractResourcePlugin::<Skybox>::default())?;
-        render_app.add_plugin(ComputePipelinePlugin::<GpuSkybox>::default())?;
         render_app.add_plugin(ResourceBindGroupPlugin::<GpuSkybox>::default())?;
 
-        render_app.add_system(init_gpu_skybox, RenderStage::InitRenderResources);
+        render_app.add_system(
+            init_gpu_skybox
+                .run_if(resource_exists::<Skybox>())
+                .run_if(not(resource_exists::<GpuSkybox>())),
+            RenderStage::Prepare,
+        );
 
         Ok(())
     }
 }
 
 fn init_gpu_skybox(commands: Commands) {
-    commands.add(move |world| {
-        if world.has_resource::<Skybox>() && !world.has_resource::<GpuSkybox>() {
-            world.init_resource::<GpuSkybox>();
-        }
-    })
+    commands.init_resource::<GpuSkybox>();
 }
 
 pub struct SkyboxRenderablePlugin;
 
 impl Plugin for SkyboxRenderablePlugin {
     fn build(&self, render_app: &mut weaver_app::App) -> Result<()> {
-        render_app.add_plugin(RenderPipelinePlugin::<SkyboxRenderable>::default())?;
+        render_app.add_plugin(InitRenderResourcePlugin::<SkyboxPipeline>::default())?;
 
-        render_app.add_system(render_skybox.after(render_clear_color), RenderStage::Render);
+        render_app.add_draw_function::<Background3d, DrawSkybox>();
+        render_app.add_system(
+            queue_skybox.run_if(resource_exists::<BindGroup<GpuSkybox>>()),
+            RenderStage::Queue,
+        );
 
         Ok(())
     }

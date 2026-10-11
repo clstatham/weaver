@@ -27,8 +27,40 @@ impl Tick {
     pub fn relative_to(&self, other: Tick) -> Tick {
         Tick(self.0.wrapping_sub(other.0))
     }
+
+    /// How far back a system that has never run looks for changes. Anything stamped within this
+    /// many ticks of its first run counts as added/changed on that run.
+    pub const MAX_AGE: u64 = 1 << 62;
+
+    /// The `last_run` tick for a system that has never run, relative to its first `this_run`.
+    pub fn never_run(this_run: Tick) -> Tick {
+        Tick(this_run.0.wrapping_sub(Self::MAX_AGE))
+    }
 }
 
+/// The change ticks a system (or query) compares component ticks against: changes stamped after
+/// `last_run` and up to `this_run` count as changed.
+#[derive(Debug, Clone, Copy)]
+pub struct TickRange {
+    pub last_run: Tick,
+    pub this_run: Tick,
+}
+
+impl TickRange {
+    pub fn new(last_run: Tick, this_run: Tick) -> Self {
+        Self { last_run, this_run }
+    }
+
+    /// Ticks for a first run: everything that exists counts as added and changed.
+    pub fn first_run(this_run: Tick) -> Self {
+        Self {
+            last_run: Tick::never_run(this_run),
+            this_run,
+        }
+    }
+}
+
+/// The change ticks of the system that takes this parameter.
 pub struct WorldTicks {
     pub last_change_tick: Tick,
     pub change_tick: Tick,
@@ -44,10 +76,10 @@ impl SystemParam for WorldTicks {
 
     fn init_state(_world: &World) -> Self::State {}
 
-    fn fetch(world: &World, _state: &Self::State) -> Self {
+    fn fetch(_world: &World, _state: &Self::State, ticks: TickRange) -> Self {
         WorldTicks {
-            last_change_tick: world.last_change_tick(),
-            change_tick: world.read_change_tick(),
+            last_change_tick: ticks.last_run,
+            change_tick: ticks.this_run,
         }
     }
 }

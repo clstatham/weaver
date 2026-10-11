@@ -1,70 +1,212 @@
-use std::{any::TypeId, ops::Deref, sync::Arc};
+//! Bind groups built from a single declarative description.
+//!
+//! A type implements [`AsBindGroup`] once, listing its bindings in order. The same description
+//! produces the [`BindGroupLayout`] (via [`BindGroupLayoutBuilder`]) and the bind group itself (via
+//! [`BindingsBuilder`]), and the two are checked against each other, so a layout and its bind
+//! groups can't silently drift apart.
+//!
+//! A [`BindGroup<T>`] remembers which GPU resources it was built from. When one of them is
+//! recreated (for example a [`GpuBufferVec`] that grew), [`BindGroup::is_outdated`] notices, and
+//! the bind group plugins rebuild it. Nobody has to remember to mark anything stale.
 
+use std::{any::TypeId, marker::PhantomData, ops::Deref, sync::Arc};
+
+use encase::{ShaderType, internal::WriteInto};
 use weaver_app::{App, plugin::Plugin};
-use weaver_asset::{AssetApp, AssetId, Assets, Handle, UntypedHandle, prelude::Asset};
 use weaver_ecs::{
+    change_detection::ChangeDetection,
     commands::Commands,
-    component::{Res, ResMut},
-    entity::{Entity, EntityMap},
+    component::Res,
+    condition::{not, resource_exists},
+    entity::Entity,
     prelude::Component,
-    query::{Query, With},
+    query::Query,
+    removal::RemovedComponents,
+    system::IntoSystemConfig,
 };
 use weaver_util::prelude::*;
 
-use crate::{RenderStage, WgpuDevice, asset::RenderAsset};
+use crate::{
+    GpuResourceId, RenderStage, WgpuDevice,
+    buffer::{GpuBuffer, GpuBufferVec},
+    texture::GpuTexture,
+};
 
-#[derive(Default)]
-pub struct BindGroupLayoutCache {
-    cache: TypeIdMap<BindGroupLayout>,
+/// The kind of resource a binding slot holds. Bindings are checked against their layout by kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BindingKind {
+    Buffer,
+    Texture,
+    StorageTexture,
+    Sampler,
+    Other,
 }
 
-impl BindGroupLayoutCache {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn insert<T: DowncastSync>(&mut self, layout: BindGroupLayout) {
-        self.cache.insert(TypeId::of::<T>(), layout);
-    }
-
-    pub fn get<T: DowncastSync>(&self) -> Option<&BindGroupLayout> {
-        self.cache.get(&TypeId::of::<T>())
-    }
-
-    pub fn get_or_create<T>(&mut self, device: &wgpu::Device) -> BindGroupLayout
-    where
-        T: CreateBindGroup,
-    {
-        if let Some(cached_layout) = self.cache.get(&TypeId::of::<T>()) {
-            cached_layout.clone()
-        } else {
-            let bind_group = T::create_bind_group_layout(device);
-            let cached_layout = BindGroupLayout {
-                bind_group: Arc::new(bind_group),
-            };
-            self.cache.insert(TypeId::of::<T>(), cached_layout.clone());
-            self.cache.get(&TypeId::of::<T>()).unwrap().clone()
+impl BindingKind {
+    fn of(ty: &wgpu::BindingType) -> Self {
+        match ty {
+            wgpu::BindingType::Buffer { .. } => Self::Buffer,
+            wgpu::BindingType::Texture { .. } => Self::Texture,
+            wgpu::BindingType::StorageTexture { .. } => Self::StorageTexture,
+            wgpu::BindingType::Sampler(_) => Self::Sampler,
+            _ => Self::Other,
         }
     }
 }
 
+/// Builds a bind group layout. Each call adds the next binding (0, 1, 2, ...).
+pub struct BindGroupLayoutBuilder {
+    entries: Vec<wgpu::BindGroupLayoutEntry>,
+}
+
+impl BindGroupLayoutBuilder {
+    fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    /// Adds a binding of any type.
+    pub fn entry(&mut self, visibility: wgpu::ShaderStages, ty: wgpu::BindingType) -> &mut Self {
+        self.entries.push(wgpu::BindGroupLayoutEntry {
+            binding: self.entries.len() as u32,
+            visibility,
+            ty,
+            count: None,
+        });
+        self
+    }
+
+    pub fn uniform_buffer(&mut self, visibility: wgpu::ShaderStages) -> &mut Self {
+        self.entry(
+            visibility,
+            wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+        )
+    }
+
+    pub fn storage_buffer(&mut self, visibility: wgpu::ShaderStages, read_only: bool) -> &mut Self {
+        self.entry(
+            visibility,
+            wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+        )
+    }
+
+    pub fn texture(
+        &mut self,
+        visibility: wgpu::ShaderStages,
+        view_dimension: wgpu::TextureViewDimension,
+        sample_type: wgpu::TextureSampleType,
+    ) -> &mut Self {
+        self.entry(
+            visibility,
+            wgpu::BindingType::Texture {
+                sample_type,
+                view_dimension,
+                multisampled: false,
+            },
+        )
+    }
+
+    /// A filterable float 2D texture.
+    pub fn texture_2d(&mut self, visibility: wgpu::ShaderStages) -> &mut Self {
+        self.texture(
+            visibility,
+            wgpu::TextureViewDimension::D2,
+            wgpu::TextureSampleType::Float { filterable: true },
+        )
+    }
+
+    /// A filterable float cube texture.
+    pub fn texture_cube(&mut self, visibility: wgpu::ShaderStages) -> &mut Self {
+        self.texture(
+            visibility,
+            wgpu::TextureViewDimension::Cube,
+            wgpu::TextureSampleType::Float { filterable: true },
+        )
+    }
+
+    pub fn storage_texture(
+        &mut self,
+        visibility: wgpu::ShaderStages,
+        access: wgpu::StorageTextureAccess,
+        format: wgpu::TextureFormat,
+        view_dimension: wgpu::TextureViewDimension,
+    ) -> &mut Self {
+        self.entry(
+            visibility,
+            wgpu::BindingType::StorageTexture {
+                access,
+                format,
+                view_dimension,
+            },
+        )
+    }
+
+    pub fn sampler(
+        &mut self,
+        visibility: wgpu::ShaderStages,
+        ty: wgpu::SamplerBindingType,
+    ) -> &mut Self {
+        self.entry(visibility, wgpu::BindingType::Sampler(ty))
+    }
+
+    /// A filtering sampler.
+    pub fn filtering_sampler(&mut self, visibility: wgpu::ShaderStages) -> &mut Self {
+        self.sampler(visibility, wgpu::SamplerBindingType::Filtering)
+    }
+
+    pub fn entries(&self) -> &[wgpu::BindGroupLayoutEntry] {
+        &self.entries
+    }
+}
+
+/// A bind group layout, plus the binding kinds it was built with.
 #[derive(Clone)]
 pub struct BindGroupLayout {
-    bind_group: Arc<wgpu::BindGroupLayout>,
+    layout: Arc<wgpu::BindGroupLayout>,
+    kinds: Arc<[BindingKind]>,
+    label: &'static str,
 }
 
 impl BindGroupLayout {
-    pub fn get_or_create<T>(device: &wgpu::Device, cache: &mut BindGroupLayoutCache) -> Self
-    where
-        T: CreateBindGroup,
-    {
-        cache.get_or_create::<T>(device)
+    pub fn new(
+        device: &wgpu::Device,
+        label: &'static str,
+        build: impl FnOnce(&mut BindGroupLayoutBuilder),
+    ) -> Self {
+        let mut builder = BindGroupLayoutBuilder::new();
+        build(&mut builder);
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some(label),
+            entries: &builder.entries,
+        });
+        Self {
+            layout: Arc::new(layout),
+            kinds: builder
+                .entries
+                .iter()
+                .map(|entry| BindingKind::of(&entry.ty))
+                .collect(),
+            label,
+        }
     }
 
-    pub fn from_raw(bind_group: wgpu::BindGroupLayout) -> Self {
-        Self {
-            bind_group: Arc::new(bind_group),
-        }
+    /// The layout described by `T`'s [`AsBindGroup`] impl. Prefer [`BindGroupLayouts::get`], which
+    /// caches it.
+    pub fn of<T: AsBindGroup>(device: &wgpu::Device) -> Self {
+        Self::new(device, T::LABEL, T::layout)
+    }
+
+    pub fn label(&self) -> &'static str {
+        self.label
     }
 }
 
@@ -72,74 +214,217 @@ impl Deref for BindGroupLayout {
     type Target = wgpu::BindGroupLayout;
 
     fn deref(&self) -> &Self::Target {
-        &self.bind_group
+        &self.layout
     }
 }
 
+/// One layout per [`AsBindGroup`] type, created on first use.
 #[derive(Default)]
-pub struct ComponentBindGroupStaleness(pub EntityMap<bool>);
+pub struct BindGroupLayouts {
+    cache: Lock<TypeIdMap<BindGroupLayout>>,
+}
 
-impl ComponentBindGroupStaleness {
-    pub fn set_stale(&mut self, entity: Entity, stale: bool) {
-        self.0.insert(entity, stale);
-    }
-
-    pub fn is_stale(&self, entity: Entity) -> bool {
-        *self.0.get(&entity).unwrap_or(&false)
+impl BindGroupLayouts {
+    pub fn get<T: AsBindGroup>(&self, device: &wgpu::Device) -> BindGroupLayout {
+        if let Some(layout) = self.cache.read().get(&TypeId::of::<T>()) {
+            return layout.clone();
+        }
+        self.cache
+            .write()
+            .entry(TypeId::of::<T>())
+            .or_insert_with(|| BindGroupLayout::of::<T>(device))
+            .clone()
     }
 }
 
-#[derive(Default)]
-pub struct ResourceBindGroupStaleness(pub TypeIdMap<bool>);
+/// Something that can be bound as a bind group.
+///
+/// `layout` and `bindings` must list the same bindings in the same order; [`BindGroup::new`]
+/// panics if their kinds don't line up.
+pub trait AsBindGroup: Send + Sync + 'static {
+    const LABEL: &'static str;
 
-impl ResourceBindGroupStaleness {
-    pub fn set_stale<T: Component>(&mut self, stale: bool) {
-        self.0.insert(TypeId::of::<T>(), stale);
+    fn layout(layout: &mut BindGroupLayoutBuilder);
+
+    fn bindings<'a>(&'a self, bindings: &mut BindingsBuilder<'a>);
+}
+
+/// What a binding was built from, for telling whether a bind group is out of date.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BindingSource {
+    /// A tracked GPU resource; `size` is the bound byte size for buffers.
+    Tracked { id: GpuResourceId, size: u64 },
+    /// A raw wgpu resource; changes to it can't be detected.
+    Untracked,
+}
+
+/// Collects a bind group's resources in binding order. See [`AsBindGroup`].
+pub struct BindingsBuilder<'a> {
+    resources: Vec<wgpu::BindingResource<'a>>,
+    kinds: Vec<BindingKind>,
+    sources: Vec<BindingSource>,
+}
+
+impl<'a> BindingsBuilder<'a> {
+    fn new() -> Self {
+        Self {
+            resources: Vec::new(),
+            kinds: Vec::new(),
+            sources: Vec::new(),
+        }
     }
 
-    pub fn is_stale<T: Component>(&self) -> bool {
-        *self.0.get(&TypeId::of::<T>()).unwrap_or(&false)
+    fn push(
+        &mut self,
+        resource: wgpu::BindingResource<'a>,
+        kind: BindingKind,
+        source: BindingSource,
+    ) -> &mut Self {
+        self.resources.push(resource);
+        self.kinds.push(kind);
+        self.sources.push(source);
+        self
+    }
+
+    /// Binds a whole buffer.
+    pub fn buffer(&mut self, buffer: &'a GpuBuffer) -> &mut Self {
+        let source = BindingSource::Tracked {
+            id: buffer.id(),
+            size: buffer.size(),
+        };
+        self.push(
+            wgpu::BindingResource::Buffer(buffer.as_entire_buffer_binding()),
+            BindingKind::Buffer,
+            source,
+        )
+    }
+
+    /// Binds the uploaded elements of a [`GpuBufferVec`].
+    ///
+    /// Panics if nothing has been uploaded yet, since an empty buffer binding isn't allowed.
+    pub fn buffer_vec<T: ShaderType + WriteInto>(
+        &mut self,
+        buffer: &'a GpuBufferVec<T>,
+    ) -> &mut Self {
+        let (Some(gpu_buffer), Some(binding)) = (buffer.buffer(), buffer.binding()) else {
+            panic!(
+                "binding {}: GpuBufferVec<{}> has no uploaded elements; upload at least one before binding it",
+                self.resources.len(),
+                std::any::type_name::<T>()
+            );
+        };
+        let source = BindingSource::Tracked {
+            id: gpu_buffer.id(),
+            size: (buffer.uploaded_len() as u64) * u64::from(T::min_size()),
+        };
+        self.push(binding, BindingKind::Buffer, source)
+    }
+
+    /// Binds a texture's default view.
+    pub fn texture(&mut self, texture: &'a GpuTexture) -> &mut Self {
+        let source = BindingSource::Tracked {
+            id: texture.id(),
+            size: 0,
+        };
+        self.push(
+            wgpu::BindingResource::TextureView(&texture.view),
+            BindingKind::Texture,
+            source,
+        )
+    }
+
+    /// Binds a texture's default view as a storage texture.
+    pub fn storage_texture(&mut self, texture: &'a GpuTexture) -> &mut Self {
+        let source = BindingSource::Tracked {
+            id: texture.id(),
+            size: 0,
+        };
+        self.push(
+            wgpu::BindingResource::TextureView(&texture.view),
+            BindingKind::StorageTexture,
+            source,
+        )
+    }
+
+    /// Binds a raw texture view. Prefer [`BindingsBuilder::texture`]: a raw view being replaced
+    /// can't be detected.
+    pub fn texture_view(&mut self, view: &'a wgpu::TextureView) -> &mut Self {
+        self.push(
+            wgpu::BindingResource::TextureView(view),
+            BindingKind::Texture,
+            BindingSource::Untracked,
+        )
+    }
+
+    pub fn sampler(&mut self, sampler: &'a wgpu::Sampler) -> &mut Self {
+        self.push(
+            wgpu::BindingResource::Sampler(sampler),
+            BindingKind::Sampler,
+            BindingSource::Untracked,
+        )
     }
 }
 
-#[derive(Default)]
-pub struct AssetBindGroupStaleness(pub FxHashMap<AssetId, bool>);
-
-impl AssetBindGroupStaleness {
-    pub fn set_stale(&mut self, asset_id: AssetId, stale: bool) {
-        self.0.insert(asset_id, stale);
-    }
-
-    pub fn is_stale(&self, asset_id: AssetId) -> bool {
-        *self.0.get(&asset_id).unwrap_or(&false)
-    }
-}
-
-pub trait CreateBindGroup: DowncastSync {
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
-    where
-        Self: Sized;
-    fn create_bind_group(
-        &self,
-        device: &wgpu::Device,
-        cached_layout: &BindGroupLayout,
-    ) -> wgpu::BindGroup;
-}
-
-#[derive(Asset)]
-pub struct BindGroup<T: CreateBindGroup> {
+/// A bind group for `T`, created from `T`'s [`AsBindGroup`] impl.
+pub struct BindGroup<T: AsBindGroup> {
     bind_group: Arc<wgpu::BindGroup>,
-    _marker: std::marker::PhantomData<T>,
+    sources: Vec<BindingSource>,
+    _marker: PhantomData<fn() -> T>,
 }
 
-impl<T: CreateBindGroup> BindGroup<T> {
-    pub fn new(device: &wgpu::Device, data: &T, cache: &mut BindGroupLayoutCache) -> Self {
-        let cached_layout = BindGroupLayout::get_or_create::<T>(device, cache);
-        let bind_group = data.create_bind_group(device, &cached_layout);
+impl<T: AsBindGroup> BindGroup<T> {
+    /// Panics if `data`'s bindings don't match the layout.
+    pub fn new(device: &wgpu::Device, layout: &BindGroupLayout, data: &T) -> Self {
+        let mut bindings = BindingsBuilder::new();
+        data.bindings(&mut bindings);
+
+        assert_eq!(
+            bindings.kinds.len(),
+            layout.kinds.len(),
+            "{}: AsBindGroup::bindings produced {} bindings, but layout `{}` has {}",
+            std::any::type_name::<T>(),
+            bindings.kinds.len(),
+            layout.label,
+            layout.kinds.len(),
+        );
+        for (index, (given, expected)) in bindings.kinds.iter().zip(layout.kinds.iter()).enumerate()
+        {
+            assert!(
+                given == expected || *expected == BindingKind::Other,
+                "{}: binding {index} is a {given:?}, but layout `{}` expects a {expected:?}",
+                std::any::type_name::<T>(),
+                layout.label,
+            );
+        }
+
+        let entries = bindings
+            .resources
+            .into_iter()
+            .enumerate()
+            .map(|(binding, resource)| wgpu::BindGroupEntry {
+                binding: binding as u32,
+                resource,
+            })
+            .collect::<Vec<_>>();
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(T::LABEL),
+            layout,
+            entries: &entries,
+        });
+
         Self {
             bind_group: Arc::new(bind_group),
-            _marker: std::marker::PhantomData,
+            sources: bindings.sources,
+            _marker: PhantomData,
         }
+    }
+
+    /// True if one of the tracked resources `data` binds was replaced or resized since this bind
+    /// group was created.
+    pub fn is_outdated(&self, data: &T) -> bool {
+        let mut bindings = BindingsBuilder::new();
+        data.bindings(&mut bindings);
+        bindings.sources != self.sources
     }
 
     pub fn bind_group(&self) -> &Arc<wgpu::BindGroup> {
@@ -147,10 +432,7 @@ impl<T: CreateBindGroup> BindGroup<T> {
     }
 }
 
-impl<T> Deref for BindGroup<T>
-where
-    T: CreateBindGroup,
-{
+impl<T: AsBindGroup> Deref for BindGroup<T> {
     type Target = wgpu::BindGroup;
 
     fn deref(&self) -> &Self::Target {
@@ -158,186 +440,102 @@ where
     }
 }
 
-pub struct ComponentBindGroupPlugin<T: Component + CreateBindGroup>(std::marker::PhantomData<T>);
+/// Keeps a `BindGroup<T>` component next to every `T` component: created when `T` appears,
+/// rebuilt when the resources `T` binds are replaced, removed when `T` is removed.
+pub struct ComponentBindGroupPlugin<T: Component + AsBindGroup>(PhantomData<T>);
 
-impl<T: Component + CreateBindGroup> Default for ComponentBindGroupPlugin<T> {
+impl<T: Component + AsBindGroup> Default for ComponentBindGroupPlugin<T> {
     fn default() -> Self {
-        Self(std::marker::PhantomData)
+        Self(PhantomData)
     }
 }
 
-impl<T: Component + CreateBindGroup> Plugin for ComponentBindGroupPlugin<T> {
+impl<T: Component + AsBindGroup> Plugin for ComponentBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_system(
-            create_component_bind_group::<T>,
-            RenderStage::ExtractBindGroup,
+            prepare_component_bind_groups::<T>,
+            RenderStage::PrepareBindGroups,
+        );
+        app.add_system(
+            remove_component_bind_groups::<T>,
+            RenderStage::PrepareBindGroups,
         );
         Ok(())
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn create_component_bind_group<T: Component + CreateBindGroup>(
+fn prepare_component_bind_groups<T: Component + AsBindGroup>(
     commands: Commands,
     device: Res<WgpuDevice>,
-    mut layout_cache: ResMut<BindGroupLayoutCache>,
-    mut item_query: Query<(Entity, &T)>,
-    mut bind_group_query: Query<&BindGroup<T>>,
-    mut staleness: ResMut<ComponentBindGroupStaleness>,
+    layouts: Res<BindGroupLayouts>,
+    mut query: Query<(Entity, &T, Option<&BindGroup<T>>)>,
 ) {
-    let mut to_add = Vec::new();
-    let mut to_remove = Vec::new();
-    for (entity, item) in item_query.iter() {
-        let mut stale = false;
-        if staleness.is_stale(entity) {
-            // commands.remove_component::<BindGroup<T>>(entity).await;
-            to_remove.push(entity);
-            stale = true;
-        }
-        if stale || bind_group_query.get(entity).is_none() {
-            let bind_group = BindGroup::new(&device, &*item, &mut layout_cache);
-            staleness.set_stale(entity, false);
-            // commands.insert_component(entity, bind_group).await;
-            to_add.push((entity, bind_group));
+    let mut layout = None;
+    for (entity, data, bind_group) in query.iter() {
+        // a bind group can only go out of date through `&mut T`, which marks `T` changed
+        let outdated = match bind_group {
+            None => true,
+            Some(bind_group) => data.is_changed() && bind_group.is_outdated(&data),
+        };
+        if outdated {
+            let layout = layout.get_or_insert_with(|| layouts.get::<T>(&device));
+            commands.insert_component(entity, BindGroup::new(&device, layout, &*data));
         }
     }
+}
 
-    drop((item_query, bind_group_query));
-
-    for (entity, bind_group) in to_add {
-        commands.insert_component(entity, bind_group);
-    }
-
-    for entity in to_remove {
+fn remove_component_bind_groups<T: Component + AsBindGroup>(
+    commands: Commands,
+    removed: RemovedComponents<T>,
+) {
+    for entity in removed {
         commands.remove_component::<BindGroup<T>>(entity);
     }
 }
 
-pub struct ResourceBindGroupPlugin<T: Component + CreateBindGroup>(std::marker::PhantomData<T>);
+/// Keeps a `BindGroup<T>` resource next to resource `T`: created when `T` appears, rebuilt when
+/// the resources `T` binds are replaced, removed when `T` is removed.
+pub struct ResourceBindGroupPlugin<T: Component + AsBindGroup>(PhantomData<T>);
 
-impl<T: Component + CreateBindGroup> Default for ResourceBindGroupPlugin<T> {
+impl<T: Component + AsBindGroup> Default for ResourceBindGroupPlugin<T> {
     fn default() -> Self {
-        Self(std::marker::PhantomData)
+        Self(PhantomData)
     }
 }
 
-impl<T: Component + CreateBindGroup> Plugin for ResourceBindGroupPlugin<T> {
+impl<T: Component + AsBindGroup> Plugin for ResourceBindGroupPlugin<T> {
     fn build(&self, app: &mut App) -> Result<()> {
         app.add_system(
-            create_resource_bind_group::<T>,
-            RenderStage::ExtractBindGroup,
+            prepare_resource_bind_group::<T>.run_if(resource_exists::<T>()),
+            RenderStage::PrepareBindGroups,
+        );
+        app.add_system(
+            remove_resource_bind_group::<T>
+                .run_if(not(resource_exists::<T>()))
+                .run_if(resource_exists::<BindGroup<T>>()),
+            RenderStage::PrepareBindGroups,
         );
         Ok(())
     }
 }
 
-fn create_resource_bind_group<T: Component + CreateBindGroup>(
+fn prepare_resource_bind_group<T: Component + AsBindGroup>(
     commands: Commands,
     data: Res<T>,
     bind_group: Option<Res<BindGroup<T>>>,
     device: Res<WgpuDevice>,
-    mut layout_cache: ResMut<BindGroupLayoutCache>,
-    mut staleness: ResMut<ResourceBindGroupStaleness>,
+    layouts: Res<BindGroupLayouts>,
 ) {
-    let mut stale = bind_group.is_none();
-    if staleness.is_stale::<T>() {
-        drop(bind_group);
-        commands.remove_resource::<BindGroup<T>>();
-        stale = true;
-    }
-    if stale {
-        let bind_group = BindGroup::new(&device, &*data, &mut layout_cache);
-        staleness.set_stale::<T>(false);
-        commands.insert_resource(bind_group);
+    let outdated = match bind_group {
+        None => true,
+        Some(bind_group) => data.is_changed() && bind_group.is_outdated(&data),
+    };
+    if outdated {
+        let layout = layouts.get::<T>(&device);
+        commands.insert_resource(BindGroup::new(&device, &layout, &*data));
     }
 }
 
-#[derive(Default)]
-pub struct ExtractedAssetBindGroups {
-    bind_groups: Lock<FxHashMap<UntypedHandle, UntypedHandle>>,
-}
-
-impl ExtractedAssetBindGroups {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn insert(&self, handle: UntypedHandle, bind_group: UntypedHandle) {
-        self.bind_groups.write().insert(handle, bind_group);
-    }
-
-    pub fn contains(&self, handle: &UntypedHandle) -> bool {
-        self.bind_groups.read().contains_key(handle)
-    }
-
-    pub fn read(&'_ self) -> Read<'_, FxHashMap<UntypedHandle, UntypedHandle>> {
-        self.bind_groups.read()
-    }
-
-    pub fn write(&'_ self) -> Write<'_, FxHashMap<UntypedHandle, UntypedHandle>> {
-        self.bind_groups.write()
-    }
-}
-
-pub struct AssetBindGroupPlugin<T: CreateBindGroup + RenderAsset>(std::marker::PhantomData<T>);
-
-impl<T: CreateBindGroup + RenderAsset> Default for AssetBindGroupPlugin<T> {
-    fn default() -> Self {
-        Self(std::marker::PhantomData)
-    }
-}
-
-impl<T: CreateBindGroup + RenderAsset> Plugin for AssetBindGroupPlugin<T> {
-    fn build(&self, app: &mut App) -> Result<()> {
-        app.add_asset::<BindGroup<T>>();
-        app.add_system(create_asset_bind_group::<T>, RenderStage::ExtractBindGroup);
-        Ok(())
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn create_asset_bind_group<T: CreateBindGroup + RenderAsset>(
-    commands: Commands,
-    device: Res<WgpuDevice>,
-    mut assets: ResMut<Assets<T>>,
-    mut bind_group_assets: ResMut<Assets<BindGroup<T>>>,
-    mut query: Query<(Entity, &Handle<T>)>,
-    asset_bind_groups: Res<ExtractedAssetBindGroups>,
-    mut layout_cache: ResMut<BindGroupLayoutCache>,
-    mut bind_group_handle_query: Query<(Entity, With<Handle<BindGroup<T>>>)>,
-    mut staleness: ResMut<AssetBindGroupStaleness>,
-) {
-    for (entity, handle) in query.iter() {
-        // check for bind group staleness
-        let mut stale = false;
-        if staleness.is_stale(handle.id()) {
-            commands.remove_component::<Handle<BindGroup<T>>>(entity);
-            asset_bind_groups
-                .bind_groups
-                .write()
-                .remove(&handle.into_untyped());
-            stale = true;
-        }
-
-        if bind_group_handle_query.get(entity).is_some() && !stale {
-            continue;
-        }
-
-        if let Some(bind_group_handle) = asset_bind_groups
-            .bind_groups
-            .read()
-            .get(&handle.into_untyped())
-        {
-            let bind_group_handle = Handle::<BindGroup<T>>::try_from(*bind_group_handle).unwrap();
-            commands.insert_component(entity, bind_group_handle);
-        } else {
-            let asset = assets.get(*handle).unwrap();
-            staleness.set_stale(handle.id(), false);
-            let bind_group = BindGroup::new(&device, &*asset, &mut layout_cache);
-            log::trace!("Created bind group for asset: {:?}", T::type_name());
-            let bind_group_handle = bind_group_assets.insert(bind_group);
-            asset_bind_groups.insert(handle.into_untyped(), bind_group_handle.into_untyped());
-            commands.insert_component(entity, bind_group_handle);
-        }
-    }
+fn remove_resource_bind_group<T: Component + AsBindGroup>(commands: Commands) {
+    commands.remove_resource::<BindGroup<T>>();
 }

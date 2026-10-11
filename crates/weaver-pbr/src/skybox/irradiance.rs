@@ -1,7 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use weaver_ecs::{prelude::World, world::ConstructFromWorld};
-use weaver_renderer::{WgpuDevice, WgpuQueue, prelude::wgpu};
+use weaver_renderer::{prelude::wgpu, texture::GpuTexture};
 use weaver_util::prelude::*;
 use wgpu::util::DeviceExt;
 
@@ -88,68 +87,118 @@ fn load_png(
     Ok(Arc::new(texture))
 }
 
+/// Image-based lighting maps: diffuse irradiance and prefiltered specular cube maps, plus the BRDF
+/// lookup table.
 #[derive(Clone)]
 pub struct GpuSkyboxIrradiance {
-    #[allow(unused)]
-    pub diffuse_texture: Arc<wgpu::Texture>,
-    pub diffuse_cube_view: Arc<wgpu::TextureView>,
-    #[allow(unused)]
-    pub specular_texture: Arc<wgpu::Texture>,
-    pub specular_cube_view: Arc<wgpu::TextureView>,
-    #[allow(unused)]
-    pub brdf_lut_texture: Arc<wgpu::Texture>,
-    pub brdf_lut_view: Arc<wgpu::TextureView>,
-
+    pub diffuse: GpuTexture,
+    pub specular: GpuTexture,
+    pub brdf_lut: GpuTexture,
     pub sampler: Arc<wgpu::Sampler>,
 }
 
-impl ConstructFromWorld for GpuSkyboxIrradiance {
-    fn from_world(world: &World) -> Self {
-        let skybox = world.get_resource::<Skybox>().unwrap();
-        let device = world.get_resource::<WgpuDevice>().unwrap();
-        let queue = world.get_resource::<WgpuQueue>().unwrap();
+impl GpuSkyboxIrradiance {
+    /// Loads the maps that belong to `skybox` (see [`Skybox::new`]).
+    pub fn load(skybox: &Skybox, device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self> {
+        let diffuse = load_ktx(&skybox.diffuse_path, device, queue)?;
+        let specular = load_ktx(&skybox.specular_path, device, queue)?;
+        let brdf_lut = load_png(&skybox.brdf_lut_path, device, queue)?;
 
-        let diffuse = load_ktx(&skybox.diffuse_path, &device, &queue).unwrap();
-        let specular = load_ktx(&skybox.specular_path, &device, &queue).unwrap();
-        let brdf_lut_texture = load_png(&skybox.brdf_lut_path, &device, &queue).unwrap();
-
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("skybox_sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            ..Default::default()
-        });
-
-        let diffuse_cube_view = diffuse.texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("diffuse_cube_view"),
-            dimension: Some(wgpu::TextureViewDimension::Cube),
-            ..Default::default()
-        });
-
-        let specular_cube_view = specular.texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("specular_cube_view"),
-            dimension: Some(wgpu::TextureViewDimension::Cube),
-            ..Default::default()
-        });
-
-        let brdf_lut_view = brdf_lut_texture.create_view(&wgpu::TextureViewDescriptor {
+        let cube_view = |texture: &wgpu::Texture, label| {
+            texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some(label),
+                dimension: Some(wgpu::TextureViewDimension::Cube),
+                ..Default::default()
+            })
+        };
+        let diffuse_view = cube_view(&diffuse.texture, "diffuse_cube_view");
+        let specular_view = cube_view(&specular.texture, "specular_cube_view");
+        let brdf_lut_view = brdf_lut.create_view(&wgpu::TextureViewDescriptor {
             label: Some("brdf_lut_view"),
             dimension: Some(wgpu::TextureViewDimension::D2),
             ..Default::default()
         });
 
+        Ok(Self {
+            diffuse: GpuTexture::from_parts(arc_into_inner(diffuse.texture), diffuse_view),
+            specular: GpuTexture::from_parts(arc_into_inner(specular.texture), specular_view),
+            brdf_lut: GpuTexture::from_parts(arc_into_inner(brdf_lut), brdf_lut_view),
+            sampler: Arc::new(create_sampler(device)),
+        })
+    }
+
+    /// Black maps, for scenes without a skybox: image-based lighting contributes nothing, and only
+    /// the scene's lights light it.
+    pub fn fallback(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        let black_cube = || {
+            let texture = device.create_texture_with_data(
+                queue,
+                &wgpu::TextureDescriptor {
+                    label: Some("Fallback Environment Cube"),
+                    size: wgpu::Extent3d {
+                        width: 1,
+                        height: 1,
+                        depth_or_array_layers: 6,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba16Float,
+                    usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                },
+                wgpu::util::TextureDataOrder::LayerMajor,
+                &[0; 8 * 6],
+            );
+            let view = texture.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::Cube),
+                ..Default::default()
+            });
+            GpuTexture::from_parts(texture, view)
+        };
+        let brdf_lut = device.create_texture_with_data(
+            queue,
+            &wgpu::TextureDescriptor {
+                label: Some("Fallback BRDF LUT"),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &[0; 4],
+        );
+        let brdf_lut_view = brdf_lut.create_view(&wgpu::TextureViewDescriptor::default());
+
         Self {
-            diffuse_texture: diffuse.texture,
-            diffuse_cube_view: Arc::new(diffuse_cube_view),
-            specular_texture: specular.texture,
-            specular_cube_view: Arc::new(specular_cube_view),
-            brdf_lut_texture,
-            brdf_lut_view: Arc::new(brdf_lut_view),
-            sampler: Arc::new(sampler),
+            diffuse: black_cube(),
+            specular: black_cube(),
+            brdf_lut: GpuTexture::from_parts(brdf_lut, brdf_lut_view),
+            sampler: Arc::new(create_sampler(device)),
         }
     }
+}
+
+fn create_sampler(device: &wgpu::Device) -> wgpu::Sampler {
+    device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("skybox_sampler"),
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::MipmapFilterMode::Linear,
+        ..Default::default()
+    })
+}
+
+fn arc_into_inner(texture: Arc<wgpu::Texture>) -> wgpu::Texture {
+    Arc::into_inner(texture).expect("freshly loaded texture is not shared")
 }

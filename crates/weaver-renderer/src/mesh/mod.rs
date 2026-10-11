@@ -1,13 +1,22 @@
-use crate::asset::{ExtractRenderAssetPlugin, RenderAsset};
 use weaver_app::{App, plugin::Plugin};
-use weaver_asset::prelude::Asset;
 use weaver_core::{geometry::Aabb, mesh::Mesh};
 use weaver_util::prelude::*;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
+use instances::{ViewMeshInstances, batch_opaque_meshes};
+use weaver_ecs::system::IntoSystemConfig;
+
+use crate::{
+    RenderStage,
+    asset::{ExtractHandlePlugin, PrepareAssetError, RenderAsset, RenderAssetPlugin},
+    bind_group::ComponentBindGroupPlugin,
+    phase::{Opaque3d, sort_phase},
+};
+
+pub mod instances;
 pub mod primitive;
 
-#[derive(Debug, Asset)]
+#[derive(Debug)]
 pub struct GpuMesh {
     pub aabb: Aabb,
     pub vertex_buffer: wgpu::Buffer,
@@ -19,46 +28,30 @@ impl RenderAsset for GpuMesh {
     type Source = Mesh;
     type Param = ();
 
-    fn extract_render_asset(
-        base_asset: &Mesh,
+    fn prepare(
+        mesh: Mesh,
         _: &mut (),
         device: &wgpu::Device,
         _queue: &wgpu::Queue,
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
+    ) -> Result<Self, PrepareAssetError<Mesh>> {
         let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&base_asset.vertices),
+            contents: bytemuck::cast_slice(&mesh.vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
         let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&base_asset.indices),
+            contents: bytemuck::cast_slice(&mesh.indices),
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        Some(Self {
-            aabb: base_asset.aabb,
+        Ok(Self {
+            aabb: mesh.aabb,
             vertex_buffer,
             index_buffer,
-            num_indices: base_asset.indices.len() as u32,
+            num_indices: mesh.indices.len() as u32,
         })
-    }
-
-    fn update_render_asset(
-        &mut self,
-        _base_asset: &Self::Source,
-        _: &mut (),
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> Result<()>
-    where
-        Self: Sized,
-    {
-        Ok(())
     }
 }
 
@@ -66,7 +59,29 @@ pub struct MeshPlugin;
 
 impl Plugin for MeshPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
-        app.add_plugin(ExtractRenderAssetPlugin::<GpuMesh>::default())?;
+        app.add_plugin(RenderAssetPlugin::<GpuMesh>::default())?;
+        app.add_plugin(ExtractHandlePlugin::<Mesh>::default())?;
+        app.add_plugin(ComponentBindGroupPlugin::<ViewMeshInstances>::default())?;
+        app.add_system(
+            batch_opaque_meshes.after(sort_phase::<Opaque3d>),
+            RenderStage::Sort,
+        );
         Ok(())
+    }
+}
+
+/// The vertex buffer layout of [`weaver_core::mesh::Vertex`]: position, normal and tangent
+/// (`vec3<f32>`, locations 0-2) and texture coordinates (`vec2<f32>`, location 3).
+pub fn vertex_buffer_layout() -> wgpu::VertexBufferLayout<'static> {
+    const ATTRIBUTES: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
+        0 => Float32x3,
+        1 => Float32x3,
+        2 => Float32x3,
+        3 => Float32x2,
+    ];
+    wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<weaver_core::mesh::Vertex>() as u64,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &ATTRIBUTES,
     }
 }

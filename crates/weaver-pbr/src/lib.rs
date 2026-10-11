@@ -1,21 +1,26 @@
 use assets::material_mesh::{LoadedModelWithMaterials, ObjMaterialModelLoader};
-use light::{PointLight, PointLightPlugin};
+use light::{ExtractedPointLight, PointLightPlugin, PointLightUniform};
 use material::{BLACK_TEXTURE, ERROR_TEXTURE, MaterialPlugin, WHITE_TEXTURE};
 use prelude::Material;
-use render::{PbrLightingInformation, PbrRenderable, render_pbr};
-use skybox::{Skybox, SkyboxPlugin, SkyboxRenderablePlugin, render_skybox};
+use render::{
+    DrawPbr, PbrLightingInformation, PbrPipeline, queue_pbr_meshes, update_environment_map,
+};
+use skybox::{Skybox, SkyboxPlugin, SkyboxRenderablePlugin};
 use weaver_app::prelude::*;
 use weaver_asset::{AssetApp, Assets};
-use weaver_core::{texture::Texture, transform::Transform};
+use weaver_core::texture::Texture;
 use weaver_ecs::{
     component::{Res, ResMut},
+    condition::{not, resource_changed, resource_exists},
     prelude::Commands,
     query::Query,
     system::IntoSystemConfig,
 };
 use weaver_renderer::{
-    RenderApp, RenderStage, WgpuDevice, WgpuQueue, bind_group::ResourceBindGroupPlugin,
-    hdr::render_hdr, prelude::RenderPipelinePlugin,
+    RenderApp, RenderStage, WgpuDevice, WgpuQueue,
+    bind_group::{BindGroup, ResourceBindGroupPlugin},
+    phase::{AddDrawFunction, Opaque3d},
+    prelude::InitRenderResourcePlugin,
 };
 use weaver_util::prelude::*;
 
@@ -50,19 +55,28 @@ impl Plugin for PbrPlugin {
         render_app.add_plugin(ResourceBindGroupPlugin::<PbrLightingInformation>::default())?;
 
         render_app.world_mut().add_system(
-            init_pbr_lighting_information,
-            RenderStage::InitRenderResources,
+            init_pbr_lighting_information.run_if(not(resource_exists::<PbrLightingInformation>())),
+            RenderStage::Prepare,
         );
         render_app.world_mut().add_system(
-            update_pbr_lighting_information.after(init_pbr_lighting_information),
-            RenderStage::InitRenderResources,
+            update_environment_map
+                .after(init_pbr_lighting_information)
+                .run_if(resource_changed::<Skybox>()),
+            RenderStage::Prepare,
+        );
+        render_app.world_mut().add_system(
+            update_pbr_lighting_information
+                .after(init_pbr_lighting_information)
+                .run_if(resource_exists::<PbrLightingInformation>()),
+            RenderStage::Prepare,
         );
 
-        render_app.add_plugin(RenderPipelinePlugin::<PbrRenderable>::default())?;
+        render_app.add_plugin(InitRenderResourcePlugin::<PbrPipeline>::default())?;
 
+        render_app.add_draw_function::<Opaque3d, DrawPbr>();
         render_app.world_mut().add_system(
-            render_pbr.after(render_skybox).before(render_hdr),
-            RenderStage::Render,
+            queue_pbr_meshes.run_if(resource_exists::<BindGroup<PbrLightingInformation>>()),
+            RenderStage::Queue,
         );
 
         Ok(())
@@ -90,27 +104,23 @@ impl Plugin for PbrPlugin {
     }
 }
 
-pub(crate) fn init_pbr_lighting_information(commands: Commands, _skybox: Res<Skybox>) {
-    commands.add(move |world| {
-        world.init_resource::<PbrLightingInformation>();
-    })
+pub(crate) fn init_pbr_lighting_information(commands: Commands) {
+    commands.init_resource::<PbrLightingInformation>();
 }
 
 pub(crate) fn update_pbr_lighting_information(
     mut lighting: ResMut<PbrLightingInformation>,
-    mut lights: Query<(&PointLight, Option<&Transform>)>,
+    mut lights: Query<&ExtractedPointLight>,
     device: Res<WgpuDevice>,
     queue: Res<WgpuQueue>,
 ) {
-    lighting.point_lights.buffer.clear();
-    for (light, transform) in lights.iter() {
-        if let Some(transform) = transform {
-            let uniform = (*light, *transform).into();
-            lighting.point_lights.buffer.push(uniform);
-        } else {
-            let uniform = (*light).into();
-            lighting.point_lights.buffer.push(uniform);
-        }
+    let buffer = &mut lighting.point_lights.buffer;
+    buffer.clear();
+    for light in lights.iter() {
+        buffer.push((*light).into());
     }
-    lighting.point_lights.buffer.enqueue_update(&device, &queue);
+    if buffer.is_empty() {
+        buffer.push(PointLightUniform::NONE);
+    }
+    buffer.enqueue_update(&device, &queue);
 }

@@ -1,109 +1,26 @@
-use std::{any::TypeId, ops::Deref, sync::Arc};
+//! Render and compute pipelines.
+//!
+//! Each pipeline lives in its own resource type (`PbrPipeline`, `SkyboxPipeline`, ...) that builds
+//! itself in [`ConstructFromWorld::from_world`], usually with a [`RenderPipelineDescriptor`].
+//! Register it with [`InitRenderResourcePlugin`], and draw systems take it as a plain `Res`.
+
+use std::{marker::PhantomData, ops::Deref, sync::Arc};
 
 use weaver_app::{App, plugin::Plugin};
-use weaver_ecs::component::{Res, ResMut};
+use weaver_ecs::{
+    commands::Commands,
+    condition::{not, resource_exists},
+    prelude::Component,
+    system::IntoSystemConfig,
+    world::ConstructFromWorld,
+};
 use weaver_util::prelude::*;
 
-use crate::{RenderStage, WgpuDevice, bind_group::BindGroupLayoutCache};
-
-define_atomic_id!(PipelineId);
-
-#[derive(Default)]
-pub struct RenderPipelineCache {
-    layout_cache: FxHashMap<PipelineId, RenderPipelineLayout>,
-    pipeline_cache: FxHashMap<PipelineId, RenderPipeline>,
-    ids: TypeIdMap<PipelineId>,
-}
-
-impl RenderPipelineCache {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn get_id_for<T>(&self) -> Option<PipelineId>
-    where
-        T: CreateRenderPipeline,
-    {
-        self.ids.get(&TypeId::of::<T>()).copied()
-    }
-
-    pub fn get_layout(&self, id: PipelineId) -> Option<&RenderPipelineLayout> {
-        self.layout_cache.get(&id)
-    }
-
-    pub fn get_pipeline(&self, id: PipelineId) -> Option<&RenderPipeline> {
-        self.pipeline_cache.get(&id)
-    }
-
-    pub fn get_layout_for<T>(&self) -> Option<&RenderPipelineLayout>
-    where
-        T: CreateRenderPipeline,
-    {
-        self.ids
-            .get(&TypeId::of::<T>())
-            .and_then(|id| self.layout_cache.get(id))
-    }
-
-    pub fn get_pipeline_for<T>(&self) -> Option<&RenderPipeline>
-    where
-        T: CreateRenderPipeline,
-    {
-        self.ids
-            .get(&TypeId::of::<T>())
-            .and_then(|id| self.pipeline_cache.get(id))
-    }
-
-    pub fn create_for<T>(
-        &mut self,
-        device: &wgpu::Device,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> Result<PipelineId>
-    where
-        T: CreateRenderPipeline,
-    {
-        if let Some(id) = self.ids.get(&TypeId::of::<T>()) {
-            return Ok(*id);
-        }
-
-        let id = PipelineId::new();
-
-        let layout = T::create_render_pipeline_layout(device, bind_group_layout_cache);
-        let pipeline = T::create_render_pipeline(device, &layout);
-        self.layout_cache.insert(id, layout);
-        self.pipeline_cache.insert(id, pipeline);
-        self.ids.insert(TypeId::of::<T>(), id);
-
-        Ok(id)
-    }
-
-    pub fn insert(&mut self, layout: RenderPipelineLayout, pipeline: RenderPipeline) -> PipelineId {
-        let id = PipelineId::new();
-        self.layout_cache.insert(id, layout);
-        self.pipeline_cache.insert(id, pipeline);
-        id
-    }
-}
-
-#[derive(Clone)]
-pub struct RenderPipelineLayout {
-    layout: Arc<wgpu::PipelineLayout>,
-}
-
-impl RenderPipelineLayout {
-    pub fn new(layout: wgpu::PipelineLayout) -> Self {
-        Self {
-            layout: Arc::new(layout),
-        }
-    }
-}
-
-impl Deref for RenderPipelineLayout {
-    type Target = wgpu::PipelineLayout;
-
-    fn deref(&self) -> &Self::Target {
-        &self.layout
-    }
-}
+use crate::{
+    RenderStage,
+    bind_group::BindGroupLayout,
+    texture::texture_format::{DEPTH_FORMAT, HDR_FORMAT},
+};
 
 #[derive(Clone)]
 pub struct RenderPipeline {
@@ -116,10 +33,6 @@ impl RenderPipeline {
             pipeline: Arc::new(pipeline),
         }
     }
-
-    pub fn get_mut(&mut self) -> &mut wgpu::RenderPipeline {
-        Arc::get_mut(&mut self.pipeline).unwrap()
-    }
 }
 
 impl Deref for RenderPipeline {
@@ -127,139 +40,6 @@ impl Deref for RenderPipeline {
 
     fn deref(&self) -> &Self::Target {
         &self.pipeline
-    }
-}
-
-pub trait CreateRenderPipeline: DowncastSync {
-    fn create_render_pipeline_layout(
-        device: &wgpu::Device,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> RenderPipelineLayout
-    where
-        Self: Sized;
-    fn create_render_pipeline(
-        device: &wgpu::Device,
-        cached_layout: &wgpu::PipelineLayout,
-    ) -> RenderPipeline
-    where
-        Self: Sized;
-}
-
-pub struct RenderPipelinePlugin<T: CreateRenderPipeline>(std::marker::PhantomData<T>);
-
-impl<T: CreateRenderPipeline> Default for RenderPipelinePlugin<T> {
-    fn default() -> Self {
-        Self(std::marker::PhantomData)
-    }
-}
-
-impl<T: CreateRenderPipeline> Plugin for RenderPipelinePlugin<T> {
-    fn build(&self, render_app: &mut App) -> Result<()> {
-        render_app.add_system(extract_render_pipeline::<T>, RenderStage::ExtractPipeline);
-        Ok(())
-    }
-}
-
-fn extract_render_pipeline<T: CreateRenderPipeline>(
-    device: Res<WgpuDevice>,
-    mut pipeline_cache: ResMut<RenderPipelineCache>,
-    mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,
-) {
-    pipeline_cache
-        .create_for::<T>(&device, &mut bind_group_layout_cache)
-        .unwrap();
-}
-
-#[derive(Default)]
-pub struct ComputePipelineCache {
-    layout_cache: TypeIdMap<ComputePipelineLayout>,
-    pipeline_cache: TypeIdMap<ComputePipeline>,
-}
-
-impl ComputePipelineCache {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn get_layout<T>(&self) -> Option<&ComputePipelineLayout>
-    where
-        T: CreateComputePipeline,
-    {
-        self.layout_cache.get(&TypeId::of::<T>())
-    }
-
-    pub fn get_pipeline<T>(&self) -> Option<&ComputePipeline>
-    where
-        T: CreateComputePipeline,
-    {
-        self.pipeline_cache.get(&TypeId::of::<T>())
-    }
-
-    pub fn get_or_create_layout<T>(
-        &mut self,
-        device: &wgpu::Device,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> ComputePipelineLayout
-    where
-        T: CreateComputePipeline,
-    {
-        if let Some(cached_layout) = self.layout_cache.get(&TypeId::of::<T>()) {
-            cached_layout.clone()
-        } else {
-            let layout = T::create_compute_pipeline_layout(device, bind_group_layout_cache);
-            self.layout_cache.insert(TypeId::of::<T>(), layout.clone());
-            self.layout_cache.get(&TypeId::of::<T>()).unwrap().clone()
-        }
-    }
-
-    pub fn get_or_create_pipeline<T>(
-        &mut self,
-        device: &wgpu::Device,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> ComputePipeline
-    where
-        T: CreateComputePipeline,
-    {
-        if let Some(cached_pipeline) = self.pipeline_cache.get(&TypeId::of::<T>()) {
-            cached_pipeline.clone()
-        } else {
-            let layout = self.get_or_create_layout::<T>(device, bind_group_layout_cache);
-            let pipeline = T::create_compute_pipeline(device, &layout);
-            self.pipeline_cache.insert(TypeId::of::<T>(), pipeline);
-            self.pipeline_cache.get(&TypeId::of::<T>()).unwrap().clone()
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct ComputePipelineLayout {
-    layout: Arc<wgpu::PipelineLayout>,
-}
-
-impl ComputePipelineLayout {
-    pub fn new(layout: wgpu::PipelineLayout) -> Self {
-        Self {
-            layout: Arc::new(layout),
-        }
-    }
-
-    pub fn get_or_create<T>(
-        device: &wgpu::Device,
-        pipeline_cache: &mut ComputePipelineCache,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> Self
-    where
-        T: CreateComputePipeline,
-    {
-        pipeline_cache.get_or_create_layout::<T>(device, bind_group_layout_cache)
-    }
-}
-
-impl Deref for ComputePipelineLayout {
-    type Target = wgpu::PipelineLayout;
-
-    fn deref(&self) -> &Self::Target {
-        &self.layout
     }
 }
 
@@ -274,17 +54,6 @@ impl ComputePipeline {
             pipeline: Arc::new(pipeline),
         }
     }
-
-    pub fn get_or_create<T>(
-        device: &wgpu::Device,
-        pipeline_cache: &mut ComputePipelineCache,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> Self
-    where
-        T: CreateComputePipeline,
-    {
-        pipeline_cache.get_or_create_pipeline::<T>(device, bind_group_layout_cache)
-    }
 }
 
 impl Deref for ComputePipeline {
@@ -295,42 +64,200 @@ impl Deref for ComputePipeline {
     }
 }
 
-pub trait CreateComputePipeline: DowncastSync {
-    fn create_compute_pipeline_layout(
-        device: &wgpu::Device,
-        bind_group_layout_cache: &mut BindGroupLayoutCache,
-    ) -> ComputePipelineLayout
-    where
-        Self: Sized;
-    fn create_compute_pipeline(
-        device: &wgpu::Device,
-        cached_layout: &wgpu::PipelineLayout,
-    ) -> ComputePipeline
-    where
-        Self: Sized;
+/// Depth testing for a [`RenderPipelineDescriptor`].
+#[derive(Debug, Clone, Copy)]
+pub struct DepthTest {
+    pub compare: wgpu::CompareFunction,
+    pub write: bool,
 }
 
-pub struct ComputePipelinePlugin<T: CreateComputePipeline>(std::marker::PhantomData<T>);
-impl<T: CreateComputePipeline> Default for ComputePipelinePlugin<T> {
+impl Default for DepthTest {
+    /// `LessEqual`, writing depth.
     fn default() -> Self {
-        Self(std::marker::PhantomData)
+        Self {
+            compare: wgpu::CompareFunction::LessEqual,
+            write: true,
+        }
     }
 }
 
-impl<T: CreateComputePipeline> Plugin for ComputePipelinePlugin<T> {
-    fn build(&self, render_app: &mut App) -> Result<()> {
-        if !render_app.has_resource::<ComputePipelineCache>() {
-            render_app.insert_resource(ComputePipelineCache::new());
+/// A render pipeline description with the engine's usual defaults: `vs_main`/`fs_main` entry
+/// points, one color target in the HDR format, alpha blending, no depth test, no culling, triangle
+/// lists. Override what differs with the builder methods.
+pub struct RenderPipelineDescriptor<'a> {
+    pub label: &'static str,
+    pub shader: &'a wgpu::ShaderModule,
+    pub bind_group_layouts: Vec<BindGroupLayout>,
+    pub vertex_entry: &'static str,
+    pub fragment_entry: &'static str,
+    pub vertex_buffers: Vec<wgpu::VertexBufferLayout<'static>>,
+    pub color_format: wgpu::TextureFormat,
+    pub blend: Option<wgpu::BlendState>,
+    pub depth: Option<DepthTest>,
+    pub cull_mode: Option<wgpu::Face>,
+    pub topology: wgpu::PrimitiveTopology,
+}
+
+impl<'a> RenderPipelineDescriptor<'a> {
+    pub fn new(label: &'static str, shader: &'a wgpu::ShaderModule) -> Self {
+        Self {
+            label,
+            shader,
+            bind_group_layouts: Vec::new(),
+            vertex_entry: "vs_main",
+            fragment_entry: "fs_main",
+            vertex_buffers: Vec::new(),
+            color_format: HDR_FORMAT,
+            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+            depth: None,
+            cull_mode: None,
+            topology: wgpu::PrimitiveTopology::TriangleList,
         }
-        render_app.add_system(extract_compute_pipeline::<T>, RenderStage::ExtractPipeline);
+    }
+
+    /// Bind group layouts, in group order.
+    pub fn bind_group_layouts(
+        mut self,
+        layouts: impl IntoIterator<Item = BindGroupLayout>,
+    ) -> Self {
+        self.bind_group_layouts = layouts.into_iter().collect();
+        self
+    }
+
+    pub fn vertex_buffer(mut self, layout: wgpu::VertexBufferLayout<'static>) -> Self {
+        self.vertex_buffers.push(layout);
+        self
+    }
+
+    pub fn color_format(mut self, format: wgpu::TextureFormat) -> Self {
+        self.color_format = format;
+        self
+    }
+
+    pub fn blend(mut self, blend: Option<wgpu::BlendState>) -> Self {
+        self.blend = blend;
+        self
+    }
+
+    /// Tests (and optionally writes) depth against a [`DEPTH_FORMAT`] attachment.
+    pub fn depth(mut self, depth: DepthTest) -> Self {
+        self.depth = Some(depth);
+        self
+    }
+
+    pub fn cull_mode(mut self, face: Option<wgpu::Face>) -> Self {
+        self.cull_mode = face;
+        self
+    }
+
+    pub fn topology(mut self, topology: wgpu::PrimitiveTopology) -> Self {
+        self.topology = topology;
+        self
+    }
+
+    pub fn build(&self, device: &wgpu::Device) -> RenderPipeline {
+        let bind_group_layouts = self
+            .bind_group_layouts
+            .iter()
+            .map(|layout| Some(&**layout))
+            .collect::<Vec<_>>();
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some(self.label),
+            bind_group_layouts: &bind_group_layouts,
+            ..Default::default()
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(self.label),
+            layout: Some(&layout),
+            cache: None,
+            vertex: wgpu::VertexState {
+                module: self.shader,
+                entry_point: Some(self.vertex_entry),
+                buffers: &self.vertex_buffers,
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: self.shader,
+                entry_point: Some(self.fragment_entry),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: self.color_format,
+                    blend: self.blend,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: self.topology,
+                cull_mode: self.cull_mode,
+                ..Default::default()
+            },
+            depth_stencil: self.depth.map(|depth| wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(depth.write),
+                depth_compare: Some(depth.compare),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+        });
+
+        RenderPipeline::new(pipeline)
+    }
+}
+
+/// Creates a compute pipeline with the given bind group layouts.
+pub fn create_compute_pipeline(
+    device: &wgpu::Device,
+    label: &'static str,
+    shader: &wgpu::ShaderModule,
+    entry_point: &'static str,
+    bind_group_layouts: &[&BindGroupLayout],
+) -> ComputePipeline {
+    let bind_group_layouts = bind_group_layouts
+        .iter()
+        .map(|layout| Some(&***layout))
+        .collect::<Vec<_>>();
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some(label),
+        bind_group_layouts: &bind_group_layouts,
+        ..Default::default()
+    });
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some(label),
+        layout: Some(&layout),
+        module: shader,
+        entry_point: Some(entry_point),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    });
+    ComputePipeline::new(pipeline)
+}
+
+/// Creates render-world resource `T` (typically a pipeline) with `T::from_world` the first time
+/// the render thread runs after it's missing.
+///
+/// This runs as a system gated on `T` not existing, rather than in `Plugin::finish`, so it works
+/// for plugins added from inside other plugins too.
+pub struct InitRenderResourcePlugin<T>(PhantomData<T>);
+
+impl<T> Default for InitRenderResourcePlugin<T> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<T: Component + ConstructFromWorld> Plugin for InitRenderResourcePlugin<T> {
+    fn build(&self, render_app: &mut App) -> Result<()> {
+        render_app.add_system(
+            init_render_resource::<T>.run_if(not(resource_exists::<T>())),
+            RenderStage::PrepareAssets,
+        );
         Ok(())
     }
 }
 
-fn extract_compute_pipeline<T: CreateComputePipeline>(
-    device: Res<WgpuDevice>,
-    mut pipeline_cache: ResMut<ComputePipelineCache>,
-    mut bind_group_layout_cache: ResMut<BindGroupLayoutCache>,
-) {
-    pipeline_cache.get_or_create_pipeline::<T>(&device, &mut bind_group_layout_cache);
+fn init_render_resource<T: Component + ConstructFromWorld>(commands: Commands) {
+    commands.init_resource::<T>();
 }

@@ -1,4 +1,5 @@
 use std::{
+    any::TypeId,
     ops::{Deref, DerefMut},
     sync::atomic::AtomicU64,
 };
@@ -6,13 +7,14 @@ use std::{
 use weaver_util::prelude::*;
 
 use crate::{
-    change_detection::Tick,
+    change_detection::{Tick, TickRange},
     component::Component,
     prelude::{
         Bundle, ComponentMap, Entities, IntoSystem, Res, ResMut, System, SystemAccess, SystemStage,
         Systems,
     },
     query::{Query, Queryable},
+    removal::RemovedComponentsLog,
     system::{IntoSystemConfig, SystemParam},
 };
 
@@ -22,6 +24,7 @@ pub struct World {
     entities: SharedLock<Entities>,
     resources: Lock<ComponentMap>,
     systems: Systems,
+    removed: Lock<RemovedComponentsLog>,
     change_tick: AtomicU64,
     last_change_tick: AtomicU64,
 }
@@ -38,6 +41,7 @@ impl Default for World {
             entities: SharedLock::new(Entities::default()),
             resources: Lock::new(resources),
             systems: Systems::default(),
+            removed: Lock::new(RemovedComponentsLog::default()),
             change_tick: AtomicU64::new(0),
             last_change_tick: AtomicU64::new(0),
         }
@@ -79,26 +83,70 @@ impl World {
         entity
     }
 
-    /// Destroys the entity and all its components in the world.
+    /// Destroys the entity and all its components in the world. Does nothing if the entity is
+    /// already dead.
     pub fn destroy_entity(&self, entity: Entity) {
-        self.components_mut().remove_entity(entity);
+        if !self.is_alive(entity) {
+            return;
+        }
+        if let Some(types) = self.components_mut().despawn(entity) {
+            let tick = self.read_change_tick();
+            let mut removed = self.removed.write();
+            for ty in types {
+                removed.record(ty, entity, tick);
+            }
+        }
         self.entities.write().free(entity);
     }
 
-    pub fn insert_component<T: Component>(&self, entity: Entity, component: T) {
-        self.components_mut()
-            .insert_bundle(entity, (component,), self.read_change_tick());
+    /// Returns true if the entity has been allocated (or reserved) and not destroyed since.
+    pub fn is_alive(&self, entity: Entity) -> bool {
+        self.entities.read().is_alive(entity)
     }
 
-    /// Inserts a bundle of components into the entity in the world.
+    /// Inserts a component into the entity, replacing any it already has. Ignored (with a
+    /// warning) if the entity isn't alive, so a late insert can't resurrect a despawned entity.
+    pub fn insert_component<T: Component>(&self, entity: Entity, component: T) {
+        self.insert_bundle(entity, (component,));
+    }
+
+    /// Inserts a bundle of components into the entity, replacing any it already has. Ignored
+    /// (with a warning) if the entity isn't alive, so a late insert can't resurrect a despawned
+    /// entity.
     pub fn insert_bundle<T: Bundle>(&self, entity: Entity, bundle: T) {
+        if !self.is_alive(entity) {
+            log::warn!(
+                "Ignoring insert of {} into {entity:?}, which isn't alive in this world",
+                std::any::type_name::<T>()
+            );
+            return;
+        }
         self.components_mut()
             .insert_bundle(entity, bundle, self.read_change_tick());
     }
 
-    /// Removes a component from the entity in the world.
+    /// Removes a component from the entity in the world. Returns `None` if the entity doesn't
+    /// exist or doesn't have the component.
     pub fn remove_component<T: Component>(&self, entity: Entity) -> Option<T> {
-        self.components_mut().remove_component::<T>(entity)
+        let removed = self.components_mut().remove_component::<T>(entity);
+        if removed.is_some() {
+            self.removed
+                .write()
+                .record(TypeId::of::<T>(), entity, self.read_change_tick());
+        }
+        removed
+    }
+
+    /// The entities that lost a `T` component (or were destroyed while they had one) within `ticks`.
+    /// Systems should use the [`RemovedComponents`](crate::removal::RemovedComponents) parameter.
+    pub fn removed_components<T: Component>(&self, ticks: TickRange) -> Vec<Entity> {
+        self.removed.read().removed(TypeId::of::<T>(), ticks)
+    }
+
+    /// Ages out per-frame change trackers (currently the removed-components log). `World::update`
+    /// calls this once per frame; worlds driven with `run_stage` should call it once per frame too.
+    pub fn clear_trackers(&self) {
+        self.removed.write().clear();
     }
 
     /// Checks if the entity in the world has a certain type of component.
@@ -113,16 +161,27 @@ impl World {
 
     /// Gets a shared reference to a resource from the world.
     pub fn get_resource<T: Component>(&self) -> Option<Res<T>> {
-        self.resources
-            .write()
-            .get_component::<T>(self.last_change_tick(), self.read_change_tick())
+        self.get_resource_with_ticks(self.world_ticks())
     }
 
     /// Gets a mutable reference to a resource from the world.
     pub fn get_resource_mut<T: Component>(&self) -> Option<ResMut<T>> {
+        self.get_resource_mut_with_ticks(self.world_ticks())
+    }
+
+    /// Gets a shared reference to a resource whose change detection compares against `ticks`.
+    pub fn get_resource_with_ticks<T: Component>(&self, ticks: TickRange) -> Option<Res<T>> {
         self.resources
             .write()
-            .get_component_mut::<T>(self.last_change_tick(), self.read_change_tick())
+            .get_component::<T>(ticks.last_run, ticks.this_run)
+    }
+
+    /// Gets a mutable reference to a resource whose change detection compares against (and
+    /// stamps writes with) `ticks`.
+    pub fn get_resource_mut_with_ticks<T: Component>(&self, ticks: TickRange) -> Option<ResMut<T>> {
+        self.resources
+            .write()
+            .get_component_mut::<T>(ticks.last_run, ticks.this_run)
     }
 
     pub fn components(&self) -> Res<Components> {
@@ -266,6 +325,7 @@ impl World {
         systems.run_update(self)?;
         self.systems = systems;
         self.increment_change_tick();
+        self.clear_trackers();
         Ok(())
     }
 
@@ -285,6 +345,27 @@ impl World {
         Ok(())
     }
 
+    /// The ticks that code running outside of a system (direct `World` access) compares against:
+    /// changes since the last [`World::increment_change_tick`].
+    pub fn world_ticks(&self) -> TickRange {
+        TickRange::new(self.last_change_tick(), self.read_change_tick())
+    }
+
+    /// Advances the change tick and returns the tick from before the advance, without touching
+    /// [`World::last_change_tick`]. The scheduler calls this before every system run and uses the
+    /// returned tick as the run's `this_run`: every run gets its own tick, and anything written
+    /// after the run (by later systems, commands, or direct world access) is stamped with a
+    /// strictly newer tick, so the system sees it next time.
+    pub fn bump_change_tick(&self) -> Tick {
+        Tick(
+            self.change_tick
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        )
+    }
+
+    /// Advances the change tick and sets [`World::last_change_tick`] to the previous one.
+    /// `World::update` calls this at the end of a frame; it only affects direct `World` access,
+    /// since systems track their own last-run tick.
     pub fn increment_change_tick(&self) -> Tick {
         let tick = self
             .change_tick
@@ -356,7 +437,7 @@ where
 
     fn init_state(_world: &World) -> Self::State {}
 
-    fn fetch(world: &World, _state: &Self::State) -> Self::Item {
+    fn fetch(world: &World, _state: &Self::State, _ticks: TickRange) -> Self::Item {
         Self::new(world)
     }
 }

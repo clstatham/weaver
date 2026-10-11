@@ -12,11 +12,10 @@ use std::{
 use weaver_app::{App, SubApp};
 use weaver_ecs::{
     commands::Commands,
-    loan::{Loan, LoanMut, LoanStorage},
-    prelude::{Res, ResMut, SystemStage},
+    prelude::{IntoSystemConfig, Res, ResMut, SystemStage},
     world::{ConstructFromWorld, FromWorld},
 };
-use weaver_event::EventQueue;
+use weaver_event::{EventQueue, EventTx};
 use weaver_util::prelude::*;
 use zip::ZipArchive;
 
@@ -151,9 +150,10 @@ impl<T: Asset> TryFrom<UntypedHandle> for Handle<T> {
     }
 }
 
-#[derive(Clone)]
+/// Shared access to an asset. While it's alive, `Assets::get_mut` and `Assets::remove` on the same
+/// asset panic.
 pub struct AssetRef<T: Asset> {
-    asset: Loan<T>,
+    asset: OwnedRead<T>,
 }
 
 impl<T: Asset> Deref for AssetRef<T> {
@@ -165,8 +165,9 @@ impl<T: Asset> Deref for AssetRef<T> {
     }
 }
 
+/// Exclusive access to an asset. Getting one marks the asset as modified.
 pub struct AssetMut<T: Asset> {
-    asset: LoanMut<T>,
+    asset: OwnedWrite<T>,
 }
 
 impl<T: Asset> Deref for AssetMut<T> {
@@ -185,14 +186,60 @@ impl<T: Asset> DerefMut for AssetMut<T> {
     }
 }
 
+/// What happened to an asset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AssetEventKind {
+    /// The asset was inserted (or loaded) under a new id.
+    Added,
+    /// The asset was replaced, or borrowed mutably with [`Assets::get_mut`].
+    Modified,
+    /// The asset was removed.
+    Removed,
+}
+
+/// Sent once per frame for every asset of type `T` that was added, modified or removed. Readers
+/// (for example render-world extraction) use these to only process assets that changed.
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct AssetEvent<T: Asset> {
+    pub id: AssetId,
+    pub kind: AssetEventKind,
+    _marker: PhantomData<fn() -> T>,
+}
+
+impl<T: Asset> Clone for AssetEvent<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: Asset> Copy for AssetEvent<T> {}
+
+impl<T: Asset> AssetEvent<T> {
+    pub fn new(id: AssetId, kind: AssetEventKind) -> Self {
+        Self {
+            id,
+            kind,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn handle(&self) -> Handle<T> {
+        Handle::from_raw(self.id)
+    }
+}
+
 pub struct Assets<T: Asset> {
-    storage: FxHashMap<AssetId, LoanStorage<T>>,
+    storage: FxHashMap<AssetId, SharedLock<T>>,
+    /// Events since the last [`Assets::drain_events`], sent out once per frame by the
+    /// `flush_asset_events` system.
+    queued_events: Vec<AssetEvent<T>>,
 }
 
 impl<T: Asset> Default for Assets<T> {
     fn default() -> Self {
         Self {
             storage: FxHashMap::default(),
+            queued_events: Vec::new(),
         }
     }
 }
@@ -202,8 +249,14 @@ impl<T: Asset> Assets<T> {
         Self::default()
     }
 
+    /// Inserts an asset under a specific id, replacing (and reporting as modified) any asset
+    /// already stored there.
     pub fn insert_manual(&mut self, asset: T, id: AssetId) -> Handle<T> {
-        self.storage.insert(id, LoanStorage::new(asset));
+        let kind = match self.storage.insert(id, SharedLock::new(asset)) {
+            Some(_) => AssetEventKind::Modified,
+            None => AssetEventKind::Added,
+        };
+        self.queued_events.push(AssetEvent::new(id, kind));
 
         Handle {
             id,
@@ -212,36 +265,67 @@ impl<T: Asset> Assets<T> {
     }
 
     pub fn insert(&mut self, asset: impl Into<T>) -> Handle<T> {
-        let asset = asset.into();
-        let id = AssetId::new();
-        self.storage.insert(id, LoanStorage::new(asset));
-
-        Handle {
-            id,
-            _marker: PhantomData,
-        }
+        self.insert_manual(asset.into(), AssetId::new())
     }
 
-    pub fn get(&mut self, handle: Handle<T>) -> Option<AssetRef<T>> {
-        self.storage.get_mut(&handle.id).map(|asset| {
-            let asset = asset.loan().expect("asset is already borrowed");
+    pub fn contains(&self, handle: Handle<T>) -> bool {
+        self.storage.contains_key(&handle.id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.storage.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.storage.is_empty()
+    }
+
+    pub fn ids(&self) -> impl Iterator<Item = AssetId> + '_ {
+        self.storage.keys().copied()
+    }
+
+    /// Panics if the asset is currently borrowed through [`Assets::get_mut`].
+    pub fn get(&self, handle: Handle<T>) -> Option<AssetRef<T>> {
+        self.storage.get(&handle.id).map(|asset| {
+            let asset = asset.try_read().unwrap_or_else(|| {
+                panic!(
+                    "{} {:?} is already mutably borrowed",
+                    T::type_name(),
+                    handle.id
+                )
+            });
             AssetRef { asset }
         })
     }
 
+    /// Borrows the asset mutably and reports it as modified.
+    ///
+    /// Panics if the asset is currently borrowed.
     pub fn get_mut(&mut self, handle: Handle<T>) -> Option<AssetMut<T>> {
-        self.storage.get_mut(&handle.id).map(|asset| {
-            let asset = asset.loan_mut().expect("asset is already borrowed");
-            AssetMut { asset }
-        })
+        let asset = self.storage.get(&handle.id)?;
+        let asset = asset
+            .try_write()
+            .unwrap_or_else(|| panic!("{} {:?} is already borrowed", T::type_name(), handle.id));
+        self.queued_events
+            .push(AssetEvent::new(handle.id, AssetEventKind::Modified));
+        Some(AssetMut { asset })
     }
 
+    /// Panics if the asset is currently borrowed.
     pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
-        self.storage.remove(&handle.id).map(|asset| {
+        let asset = self.storage.remove(&handle.id)?;
+        self.queued_events
+            .push(AssetEvent::new(handle.id, AssetEventKind::Removed));
+        Some(
             asset
-                .into_owned()
-                .unwrap_or_else(|_| panic!("asset is borrowed"))
-        })
+                .into_inner()
+                .unwrap_or_else(|| panic!("{} {:?} is borrowed", T::type_name(), handle.id)),
+        )
+    }
+
+    /// Takes the events queued since the last call.
+    pub fn drain_events(&mut self) -> std::vec::Drain<'_, AssetEvent<T>> {
+        self.queued_events.drain(..)
     }
 }
 
@@ -602,6 +686,28 @@ impl AssetLoadStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
 pub struct AssetLoad;
 
+/// Runs after [`AssetLoad`]: sends the frame's [`AssetEvent`]s and [`AssetLoaded`] events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
+pub struct AssetFlush;
+
+/// Registers a double-buffered event queue for `T`, cleared in [`AssetFlush`].
+fn add_asset_flush_event<E: weaver_event::Event>(app: &mut SubApp) {
+    if !app.world().has_resource::<EventQueue<E>>() {
+        app.add_event::<E>(AssetFlush);
+    }
+}
+
+/// Sends the asset changes queued in `Assets<T>` this frame as [`AssetEvent`]s.
+fn flush_asset_events<T: Asset>(mut assets: ResMut<Assets<T>>, mut events: EventTx<AssetEvent<T>>) {
+    for event in assets.drain_events() {
+        events.send(event);
+    }
+}
+
+fn clear_asset_events<T: Asset>(mut events: ResMut<EventQueue<AssetEvent<T>>>) {
+    events.update();
+}
+
 pub trait AssetApp {
     fn add_asset<T: Asset>(&mut self) -> &mut Self;
     fn add_asset_loader<L: LoadFrom<S>, S: LoadSource>(&mut self) -> &mut Self;
@@ -614,6 +720,21 @@ impl AssetApp for SubApp {
     fn add_asset<T: Asset>(&mut self) -> &mut Self {
         if !self.world().has_resource::<Assets<T>>() {
             self.world_mut().init_resource::<Assets<T>>();
+            self.world_mut()
+                .insert_resource(EventQueue::<AssetEvent<T>>::new());
+            if !self.world().has_system_stage(AssetLoad) {
+                self.world_mut().push_update_stage(AssetLoad);
+            }
+            if !self.world().has_system_stage(AssetFlush) {
+                self.world_mut().push_update_stage(AssetFlush);
+            }
+            // clear first, so the events sent this frame stay readable through the next one
+            self.world_mut()
+                .add_system(clear_asset_events::<T>, AssetFlush);
+            self.world_mut().add_system(
+                flush_asset_events::<T>.after(clear_asset_events::<T>),
+                AssetFlush,
+            );
         }
         if !self.world().has_resource::<AssetLoadStatus>() {
             self.world_mut().init_resource::<AssetLoadStatus>();
@@ -637,12 +758,13 @@ impl AssetApp for SubApp {
         if !self.world().has_resource::<AssetLoadQueue<L, S>>() {
             self.world_mut().init_resource::<AssetLoadQueue<L, S>>();
 
-            self.world_mut()
-                .init_resource::<EventQueue<AssetLoaded<L::Asset>>>();
-
             if !self.world().has_system_stage(AssetLoad) {
                 self.world_mut().push_update_stage(AssetLoad);
             }
+            if !self.world().has_system_stage(AssetFlush) {
+                self.world_mut().push_update_stage(AssetFlush);
+            }
+            add_asset_flush_event::<AssetLoaded<L::Asset>>(self);
 
             self.world_mut()
                 .add_system(load_all_assets::<L, S>, AssetLoad);
