@@ -31,6 +31,9 @@ weaver-diagnostics = { path = "crates/weaver-diagnostics" }
 [dev-dependencies]
 criterion = { version = "0.8", features = ["async_tokio"] }
 pollster = "0.4"
+# for the weaver-demo example
+weaver-diagnostics = { path = "crates/weaver-diagnostics", features = ["egui"] }
+weaver-egui = { path = "crates/weaver-egui" }
 
 # [[bench]]
 # name = "weaver"

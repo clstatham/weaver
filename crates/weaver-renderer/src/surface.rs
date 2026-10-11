@@ -55,7 +55,7 @@ impl WindowSurface {
             format: VIEW_FORMAT,
             width: width.max(1),
             height: height.max(1),
-            present_mode: wgpu::PresentMode::AutoNoVsync,
+            present_mode: wgpu::PresentMode::Immediate,
             desired_maximum_frame_latency: 1,
             alpha_mode,
             view_formats: vec![],

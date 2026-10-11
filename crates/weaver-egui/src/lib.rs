@@ -115,6 +115,21 @@ impl EguiContext {
             .handle_platform_output(window, full_output.platform_output.clone());
     }
 
+    /// Takes the output of the last egui pass, if it hasn't been taken yet, and tessellates it into
+    /// `extracted`. Texture updates accumulate until [`Self::render`] consumes them, so a frame that
+    /// doesn't render doesn't drop any (e.g. new font glyphs).
+    fn extract_output(&self, extracted: &mut ExtractedEguiOutput) {
+        let Some(full_output) = self.full_output.write().take() else {
+            return;
+        };
+        extracted.primitives = self
+            .state
+            .read()
+            .egui_ctx()
+            .tessellate(full_output.shapes, PIXELS_PER_POINT);
+        extracted.textures_delta.append(full_output.textures_delta);
+    }
+
     pub fn render(
         &mut self,
         device: &wgpu::Device,
@@ -122,28 +137,21 @@ impl EguiContext {
         encoder: &mut wgpu::CommandEncoder,
         window_surface_view: &wgpu::TextureView,
         screen_descriptor: &ScreenDescriptor,
+        output: &mut ExtractedEguiOutput,
     ) {
-        if self.full_output.read().is_none() {
-            return;
-        }
-        let pixels_per_point = screen_descriptor.pixels_per_point;
-
-        let full_output = self.full_output.read();
-        let full_output = full_output.as_ref().unwrap().clone();
-
-        let tris = self
-            .state
-            .read()
-            .egui_ctx()
-            .tessellate(full_output.shapes, pixels_per_point);
-        for (id, image_delta) in &full_output.textures_delta.set {
+        let textures_delta = std::mem::take(&mut output.textures_delta);
+        for (id, image_delta) in &textures_delta.set {
             self.renderer
                 .write()
                 .update_texture(device, queue, *id, image_delta);
         }
-        self.renderer
-            .write()
-            .update_buffers(device, queue, encoder, &tris, screen_descriptor);
+        self.renderer.write().update_buffers(
+            device,
+            queue,
+            encoder,
+            &output.primitives,
+            screen_descriptor,
+        );
 
         let renderer = self.renderer.read();
         let mut render_pass = encoder
@@ -165,13 +173,26 @@ impl EguiContext {
             })
             .forget_lifetime();
 
-        renderer.render(&mut render_pass, &tris, screen_descriptor);
+        renderer.render(&mut render_pass, &output.primitives, screen_descriptor);
         drop(render_pass);
         drop(renderer);
-        for x in &full_output.textures_delta.free {
+        for x in &textures_delta.free {
             self.renderer.write().free_texture(x);
         }
     }
+}
+
+/// The pixels per point egui output is tessellated and rendered at.
+const PIXELS_PER_POINT: f32 = 1.0;
+
+/// Egui output extracted for the render world. The render thread draws frame N while the main
+/// thread runs frame N+1's egui pass, so it can't read the [`EguiContext`]'s output directly: the
+/// next pass would overwrite it (dropping texture updates) before it was drawn.
+#[derive(Default)]
+pub struct ExtractedEguiOutput {
+    primitives: Vec<egui::ClippedPrimitive>,
+    /// Texture updates not yet uploaded, oldest first.
+    textures_delta: egui::TexturesDelta,
 }
 
 pub struct EguiPlugin;
@@ -185,6 +206,13 @@ impl Plugin for EguiPlugin {
         render_app
             .world_mut()
             .add_system(extract_egui_context, RenderStage::Extract);
+        render_app
+            .world_mut()
+            .init_resource::<ExtractedEguiOutput>();
+        render_app.world_mut().add_system(
+            extract_egui_output.after(extract_egui_context),
+            RenderStage::Extract,
+        );
         // draws straight onto the swapchain texture, after the HDR target has been tonemapped onto it
         render_app.world_mut().add_system(
             render.after(render_views).run_if(frame_in_flight()),
@@ -210,6 +238,12 @@ fn extract_egui_context(
     main_world.insert_resource(egui_context);
 }
 
+fn extract_egui_output(main_world: Res<MainWorld>, mut extracted: ResMut<ExtractedEguiOutput>) {
+    if let Some(egui_context) = main_world.get_resource::<EguiContext>() {
+        egui_context.extract_output(&mut extracted);
+    }
+}
+
 pub fn begin_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
     egui_context.begin_frame(&window);
 }
@@ -225,12 +259,13 @@ fn render(
     queue: Res<WgpuQueue>,
     frame: Res<SurfaceFrame>,
     mut egui_context: ResMut<EguiContext>,
+    mut output: ResMut<ExtractedEguiOutput>,
     mut command_buffers: ResMut<CommandBuffers>,
 ) {
     let surface_texture_size = frame.size();
 
     let screen_descriptor = ScreenDescriptor {
-        pixels_per_point: 1.0,
+        pixels_per_point: PIXELS_PER_POINT,
         size_in_pixels: [surface_texture_size.width, surface_texture_size.height],
     };
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -242,6 +277,7 @@ fn render(
         &mut encoder,
         &frame.view,
         &screen_descriptor,
+        &mut output,
     );
 
     command_buffers.push(encoder.finish());

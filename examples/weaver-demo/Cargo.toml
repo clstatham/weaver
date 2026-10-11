@@ -5,4 +5,7 @@ edition = "2024"
 
 [dependencies]
 weaver = { path = "../../" }
-weaver-diagnostics = { path = "../../crates/weaver-diagnostics" }
+weaver-diagnostics = { path = "../../crates/weaver-diagnostics", features = [
+    "egui",
+] }
+weaver-egui = { path = "../../crates/weaver-egui" }

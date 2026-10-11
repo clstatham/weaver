@@ -3,7 +3,13 @@ name = "weaver-diagnostics"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+egui = ["dep:weaver-egui", "dep:egui_plot"]
+
 [dependencies]
 weaver-app = { path = "../weaver-app" }
 weaver-ecs = { path = "../weaver-ecs" }
 weaver-util = { path = "../weaver-util" }
+weaver-egui = { path = "../weaver-egui", optional = true }
+egui_plot = { version = "0.35.0", optional = true }

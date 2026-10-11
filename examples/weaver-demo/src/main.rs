@@ -1,5 +1,6 @@
 use weaver::{DefaultPlugins, prelude::*};
-use weaver_diagnostics::frame_time::LogFrameTimePlugin;
+use weaver_diagnostics::prelude::*;
+use weaver_egui::EguiPlugin;
 
 pub mod camera;
 
@@ -7,6 +8,8 @@ fn main() -> Result<()> {
     App::new()
         .add_plugin(DefaultPlugins::new().with_window_size(1600, 900))?
         .add_plugin(LogFrameTimePlugin::default())?
+        .add_plugin(EguiPlugin)?
+        .add_plugin(DiagnosticsWindowPlugin::default())?
         .insert_resource(Skybox::new("assets/skyboxes/meadow_2k.hdr"))
         .add_system(setup, Init)
         .add_system(camera::update_camera, Update)
@@ -30,12 +33,12 @@ fn setup(
             sensitivity: 0.1,
             ..Default::default()
         }
-        .looking_at(Vec3::new(100.0, 100.0, 100.0), Vec3::ZERO, Vec3::Y),
+        .looking_at(Vec3::new(1000.0, 1000.0, 1000.0), Vec3::ZERO, Vec3::Y),
         PrimaryCamera,
     ));
 
     commands.spawn((
-        Transform::from_translation(Vec3::new(100.0, 100.0, 100.0)),
+        Transform::from_translation(Vec3::new(1000.0, 1000.0, 1000.0)),
         PointLight {
             color: Color::WHITE,
             intensity: 1000.0,
@@ -57,8 +60,8 @@ fn setup(
     let material = materials.insert(material);
 
     let size = 100.0f32;
-    for x in 0..10 {
-        for y in 0..10 {
+    for x in -5..5 {
+        for y in -5..5 {
             let transform =
                 Transform::from_translation(Vec3::new(x as f32 * size, 0.0, y as f32 * size));
             commands.spawn((mesh, material, transform));
