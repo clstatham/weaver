@@ -4,7 +4,6 @@ mod common;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use common::init_task_pool;
 use weaver_ecs::{change_detection::TickRange, prelude::*};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
@@ -23,7 +22,6 @@ fn gated(_commands: Commands) {
 
 #[test]
 fn resource_exists_gates_a_system() {
-    init_task_pool();
     let mut world = World::new();
     world.push_update_stage(Stage1);
     world.add_system(gated.run_if(resource_exists::<Gate>()), Stage1);
@@ -60,7 +58,6 @@ fn on_counter_changed(_counter: Res<Counter>) {
 /// earlier stage is seen exactly once.
 #[test]
 fn resource_changed_runs_once_per_change() {
-    init_task_pool();
     let mut world = World::new();
     world.insert_resource(Counter(0));
     world.push_update_stage(Stage1);
@@ -88,7 +85,6 @@ fn custom(_commands: Commands) {
 
 #[test]
 fn closures_and_not_work_as_conditions() {
-    init_task_pool();
     let mut world = World::new();
     world.push_update_stage(Stage1);
     world.add_system(

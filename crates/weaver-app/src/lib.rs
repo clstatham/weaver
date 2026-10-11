@@ -10,10 +10,6 @@ use weaver_ecs::{
     world::{ConstructFromWorld, World},
 };
 use weaver_event::{Event, EventQueue};
-use weaver_task::{
-    task_pool::TaskPool,
-    usages::{GlobalTaskPool, tick_task_pools},
-};
 use weaver_util::prelude::*;
 
 pub mod plugin;
@@ -413,7 +409,6 @@ impl App {
         }
 
         self.sub_apps.update();
-        tick_task_pools();
     }
 
     pub fn shutdown(&mut self) {
@@ -440,8 +435,6 @@ impl App {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        GlobalTaskPool::get_or_init(TaskPool::new);
-
         if let Some(runner) = self.runner.take() {
             self.finish_plugins();
 

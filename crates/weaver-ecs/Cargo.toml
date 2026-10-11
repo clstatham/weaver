@@ -7,7 +7,6 @@ edition = "2024"
 petgraph = "0.8.3"
 crossbeam-channel = "0.5"
 
-weaver-task = { path = "../weaver-task" }
 weaver-util = { path = "../weaver-util" }
 weaver-ecs-macros = { path = "../weaver-ecs-macros" }
 

@@ -11,7 +11,6 @@ use std::{
     time::Duration,
 };
 
-use common::init_task_pool;
 use weaver_ecs::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
@@ -29,7 +28,6 @@ fn slow(_commands: Commands) {
 /// increments on every pass of the scheduler's busy-wait loop, so it depends on system duration.
 #[test]
 fn change_tick_advance_per_update_is_bounded() {
-    init_task_pool();
     let mut world = World::new();
     world.push_update_stage(Stage1);
     world.add_system(quick, Stage1);
@@ -61,7 +59,6 @@ fn runs_after_panic(_commands: Commands) {
 /// `World::update` returning an error.
 #[test]
 fn system_panic_is_reported() {
-    init_task_pool();
     let mut world = World::new();
     world.push_update_stage(Stage1);
     world.push_update_stage(Stage2);
@@ -92,7 +89,6 @@ fn second(_commands: Commands) {
 /// `.after(x)` should work even if `x` is registered later in the same stage.
 #[test]
 fn after_does_not_depend_on_registration_order() {
-    init_task_pool();
     let mut world = World::new();
     world.push_update_stage(Stage1);
     world.add_system(second.after(first), Stage1);
@@ -120,7 +116,6 @@ macro_rules! add_writers {
 /// after 100 added edges and reports a cycle, which a stage reaches at about 15 such systems.
 #[test]
 fn many_systems_writing_one_resource_can_be_scheduled() {
-    init_task_pool();
     let mut world = World::new();
     world.insert_resource(Shared);
     world.push_update_stage(Stage1);
@@ -140,7 +135,6 @@ fn counted(_commands: Commands) {
 /// `World::add_system` documents that adding the same system to a stage twice is ignored.
 #[test]
 fn adding_a_system_twice_runs_it_once() {
-    init_task_pool();
     let mut world = World::new();
     world.push_update_stage(Stage1);
     world.add_system(counted, Stage1);
@@ -169,7 +163,6 @@ fn read_through_world(world: &World) {
 
 #[test]
 fn world_systems_run_in_order_and_can_fetch_params() {
-    init_task_pool();
     let mut world = World::new();
     world.insert_resource(Counter(0));
     world.push_update_stage(Stage1);

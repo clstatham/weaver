@@ -8,7 +8,7 @@
 
 mod common;
 
-use common::{init_task_pool, with_timeout};
+use common::with_timeout;
 use weaver_ecs::prelude::*;
 
 struct A(u32);
@@ -27,7 +27,6 @@ fn mutate_then_spawn(mut query: Query<&mut A>, commands: Commands) {
 /// Issuing a command must not require the issuing system to release its own queries first.
 #[test]
 fn command_while_holding_own_query_does_not_deadlock() {
-    init_task_pool();
     let values = with_timeout(5, || {
         let mut world = World::new();
         world.spawn((A(0),));
@@ -79,7 +78,6 @@ fn run_writer_and_reader(writer_first: bool) -> Option<bool> {
 /// deadlock, regardless of the order they were registered in.
 #[test]
 fn writer_with_command_and_reader_do_not_deadlock() {
-    init_task_pool();
     assert_eq!(
         run_writer_and_reader(false),
         Some(true),

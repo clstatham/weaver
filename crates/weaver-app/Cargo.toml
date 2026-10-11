@@ -14,4 +14,3 @@ tracing-subscriber = { version = "0.3", features = [
 weaver-util = { path = "../weaver-util" }
 weaver-ecs = { path = "../weaver-ecs" }
 weaver-event = { path = "../weaver-event" }
-weaver-task = { path = "../weaver-task" }

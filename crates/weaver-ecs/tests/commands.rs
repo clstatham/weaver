@@ -7,7 +7,6 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use common::init_task_pool;
 use weaver_ecs::prelude::*;
 
 struct A(u32);
@@ -53,7 +52,6 @@ fn seen(world: &World) -> bool {
 /// in the same update.
 #[test]
 fn later_layers_see_commands_from_earlier_layers() {
-    init_task_pool();
     let mut world = World::new();
     world.insert_resource(Seen::default());
     world.push_update_stage(Stage);
@@ -70,7 +68,6 @@ fn later_layers_see_commands_from_earlier_layers() {
 /// commands.
 #[test]
 fn skipped_system_sees_resource_inserted_by_same_layer_command() {
-    init_task_pool();
     let mut world = World::new();
     world.insert_resource(Seen::default());
     world.push_update_stage(Stage);
@@ -86,7 +83,6 @@ fn skipped_system_sees_resource_inserted_by_same_layer_command() {
 /// its components, and a later `World::spawn` doesn't reuse its id.
 #[test]
 fn spawned_entities_get_their_components_and_are_not_reused() {
-    init_task_pool();
     let mut world = World::new();
     world.insert_resource(Spawned::default());
     world.push_update_stage(Stage);

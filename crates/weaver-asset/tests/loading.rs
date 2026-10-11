@@ -7,7 +7,6 @@ use std::{sync::mpsc, time::Duration};
 
 use weaver_app::SubApp;
 use weaver_asset::{AssetApp, prelude::*};
-use weaver_task::{task_pool::TaskPool, usages::GlobalTaskPool};
 
 struct Blob;
 impl Asset for Blob {}
@@ -19,8 +18,6 @@ const COUNT: usize = 1100;
 /// cleared, so the 1025th send never completed and the update hung.
 #[test]
 fn loading_more_than_1024_assets_completes() {
-    GlobalTaskPool::get_or_init(TaskPool::new);
-
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let mut app = SubApp::new();

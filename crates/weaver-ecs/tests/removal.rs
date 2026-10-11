@@ -4,7 +4,6 @@ mod common;
 
 use std::sync::Mutex;
 
-use common::init_task_pool;
 use weaver_ecs::{change_detection::ChangeDetection, prelude::*};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
@@ -43,7 +42,6 @@ fn record_removed(removed: RemovedComponents<A>) {
 /// Removals and despawns show up in a later system exactly once.
 #[test]
 fn removed_components_reports_each_removal_once() {
-    init_task_pool();
     let mut world = World::new();
     let kept = world.spawn((A(0), B));
     let removed = world.spawn((A(1), B));

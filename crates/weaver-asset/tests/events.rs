@@ -4,7 +4,6 @@ use weaver_app::SubApp;
 use weaver_asset::{AssetApp, AssetEvent, AssetEventKind, AssetId, prelude::*};
 use weaver_ecs::{change_detection::TickRange, system::SystemParam};
 use weaver_event::{EventRx, EventRxState};
-use weaver_task::{task_pool::TaskPool, usages::GlobalTaskPool};
 
 struct Blob(u32);
 impl Asset for Blob {}
@@ -19,8 +18,6 @@ fn read(app: &SubApp, state: &EventRxState<AssetEvent<Blob>>) -> Vec<(AssetId, A
 
 #[test]
 fn asset_changes_are_reported_once_each() {
-    GlobalTaskPool::get_or_init(TaskPool::new);
-
     let mut app = SubApp::new();
     app.add_asset::<Blob>();
     app.world_mut().initialize_systems();

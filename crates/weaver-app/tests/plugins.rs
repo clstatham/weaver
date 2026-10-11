@@ -13,7 +13,6 @@ use std::{
 
 use weaver_app::prelude::*;
 use weaver_ecs::prelude::Commands;
-use weaver_task::{task_pool::TaskPool, usages::GlobalTaskPool};
 use weaver_util::prelude::Result;
 
 static COUNTED_RUNS: AtomicUsize = AtomicUsize::new(0);
@@ -35,7 +34,6 @@ impl Plugin for CountingPlugin {
 /// must not stay registered alongside the second set.
 #[test]
 fn configure_plugin_does_not_duplicate_systems() {
-    GlobalTaskPool::get_or_init(TaskPool::new);
     let mut app = App::new();
     app.add_plugin(CountingPlugin).unwrap();
     app.configure_plugin::<CountingPlugin>(|_| {});
@@ -97,8 +95,6 @@ impl Plugin for NeverReady {
 #[test]
 #[ignore = "known issue: App::update busy-loops until every plugin is ready"]
 fn update_returns_while_a_plugin_is_not_ready() {
-    GlobalTaskPool::get_or_init(TaskPool::new);
-
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let mut app = App::new();

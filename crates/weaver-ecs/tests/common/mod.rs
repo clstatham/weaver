@@ -2,12 +2,6 @@
 
 use std::{sync::mpsc, time::Duration};
 
-use weaver_task::{task_pool::TaskPool, usages::GlobalTaskPool};
-
-pub fn init_task_pool() {
-    GlobalTaskPool::get_or_init(TaskPool::new);
-}
-
 /// Runs `f` on its own thread and returns `None` if it hasn't finished after `secs` seconds,
 /// which in these tests means it deadlocked. The stuck thread is leaked.
 pub fn with_timeout<T: Send + 'static>(

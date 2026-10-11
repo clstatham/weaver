@@ -13,7 +13,6 @@ use std::hint::black_box;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use weaver_ecs::prelude::*;
-use weaver_task::{task_pool::TaskPool, usages::GlobalTaskPool};
 
 const SIZES: [u64; 3] = [100, 1_000, 10_000];
 
@@ -214,7 +213,6 @@ fn integrate(mut query: Query<(&mut Pos, &Vel)>) {
 }
 
 fn system_update(c: &mut Criterion) {
-    GlobalTaskPool::get_or_init(TaskPool::new);
     let mut group = c.benchmark_group("system_update");
     group.sample_size(10);
     for n in SIZES {

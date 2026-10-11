@@ -7,7 +7,6 @@ mod common;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use common::init_task_pool;
 use weaver_ecs::{change_detection::ChangeDetection, prelude::*};
 
 struct A(u32);
@@ -35,7 +34,6 @@ fn count_changed_later(mut query: Query<&A>) {
 /// A system must see changes made by a system that ran before it.
 #[test]
 fn later_system_sees_changes_from_earlier_stage() {
-    init_task_pool();
     let mut world = World::new();
     for i in 0..ENTITIES as u32 {
         world.spawn((A(i),));
@@ -69,7 +67,6 @@ fn mutate_and_count(mut query: Query<&mut A>) {
 /// A system that has just mutated a component must see it as changed, on the first frame too.
 #[test]
 fn system_sees_its_own_changes_on_first_update() {
-    init_task_pool();
     let mut world = World::new();
     for i in 0..ENTITIES as u32 {
         world.spawn((A(i),));
@@ -93,7 +90,6 @@ fn count_added(mut query: Query<&A>) {
 /// Components that existed before a system's first run must be reported as added on that run.
 #[test]
 fn components_spawned_before_first_run_are_added() {
-    init_task_pool();
     let mut world = World::new();
     for i in 0..ENTITIES as u32 {
         world.spawn((A(i),));
