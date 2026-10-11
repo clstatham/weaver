@@ -527,7 +527,6 @@ fn forward_resized_events(
     mut render_events: EventTx<WindowResized>,
 ) {
     for event in events.by_ref() {
-        dbg!(&event);
         render_events.send(event);
     }
 }
@@ -665,6 +664,7 @@ fn resize_surface(
     device: Res<WgpuDevice>,
     surface: Res<WindowSurface>,
     mut hdr_target: ResMut<HdrRenderTarget>,
+    mut staleness: ResMut<ResourceBindGroupStaleness>,
 ) {
     if let Some(event) = events.last() {
         let mut has_current_frame = false;
@@ -757,5 +757,6 @@ fn resize_surface(
         }
 
         hdr_target.resize(&device, width, height);
+        staleness.set_stale::<HdrRenderTarget>(true);
     }
 }

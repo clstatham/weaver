@@ -344,13 +344,20 @@ impl App {
     }
 
     pub fn add_event<T: Event>(&mut self) -> &mut Self {
-        fn clear_events<T: Event>(mut events: ResMut<EventQueue<T>>) {
-            events.update();
+        if self.has_resource::<EventQueue<T>>() {
+            return self;
         }
         self.insert_resource(EventQueue::<T>::new());
         self.main_app_mut()
             .world_mut()
             .add_system(clear_events::<T>, AppStage::FinishFrame);
+        self
+    }
+
+    pub fn remove_event<T: Event>(&mut self) -> &mut Self {
+        let world = self.main_app_mut().world_mut();
+        world.remove_resource::<EventQueue<T>>();
+        world.remove_system(clear_events::<T>, AppStage::FinishFrame);
         self
     }
 
@@ -446,4 +453,8 @@ impl App {
             Ok(())
         }
     }
+}
+
+fn clear_events<T: Event>(mut events: ResMut<EventQueue<T>>) {
+    events.update();
 }

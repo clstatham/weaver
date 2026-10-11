@@ -9,10 +9,7 @@ pub mod transform_gizmo;
 fn main() -> Result<()> {
     App::new()
         .add_plugin(CoreTypesPlugin)?
-        .add_plugin(WindowPlugin::default())?
-        .configure_plugin::<WindowPlugin>(|plugin| {
-            plugin.initial_size = (1600, 900);
-        })
+        .add_plugin(WindowPlugin::new((1600, 900), "Weaver Demo"))?
         .add_plugin(WinitPlugin)?
         .add_plugin(TimePlugin)?
         .add_plugin(InputPlugin)?

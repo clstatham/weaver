@@ -650,6 +650,11 @@ impl SystemGraph {
             ..
         } = config;
 
+        // if the system already exists in the graph, don't add it twice
+        if let Some(&node) = self.index_cache.get(&system_type_id) {
+            return node;
+        }
+
         let node = self.systems.add_node(SharedLock::new(system));
         self.index_cache.insert(system_type_id, node);
 
@@ -682,6 +687,18 @@ impl SystemGraph {
         let from = self.index_cache[&TypeId::of::<S>()];
         let to = self.index_cache[&TypeId::of::<T>()];
         self.systems.add_edge(from, to, ());
+    }
+
+    pub fn remove_system<M, S>(&mut self, _system: S)
+    where
+        M: 'static,
+        S: IntoSystem<M>,
+    {
+        let system_type_id = TypeId::of::<S>();
+        if let Some(&node) = self.index_cache.get(&system_type_id) {
+            self.systems.remove_node(node);
+            self.index_cache.remove(&system_type_id);
+        }
     }
 
     /// Returns true if the graph contains the system.

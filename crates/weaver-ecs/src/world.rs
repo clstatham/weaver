@@ -9,8 +9,8 @@ use crate::{
     change_detection::Tick,
     component::Component,
     prelude::{
-        Bundle, ComponentMap, Entities, IntoSystem, Res, ResMut, System, SystemAccess,
-        SystemStage, Systems,
+        Bundle, ComponentMap, Entities, IntoSystem, Res, ResMut, System, SystemAccess, SystemStage,
+        Systems,
     },
     query::{Query, Queryable},
     system::{IntoSystemConfig, SystemParam},
@@ -200,6 +200,15 @@ impl World {
         M: 'static,
     {
         self.systems.add_system(system, stage);
+    }
+
+    pub fn remove_system<T, S, M>(&mut self, system: S, stage: T)
+    where
+        T: SystemStage,
+        S: IntoSystem<M>,
+        M: 'static,
+    {
+        self.systems.remove_system(system, stage);
     }
 
     /// Orders two systems to run in the specified order in the given system stage.

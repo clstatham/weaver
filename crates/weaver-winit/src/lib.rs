@@ -52,13 +52,20 @@ pub struct WindowPlugin {
     pub initial_size: (u32, u32),
 }
 
-pub struct WinitPlugin;
-
 impl Default for WindowPlugin {
     fn default() -> Self {
         Self {
             window_title: "Weaver",
             initial_size: (800, 600),
+        }
+    }
+}
+
+impl WindowPlugin {
+    pub fn new(initial_size: (u32, u32), window_title: &'static str) -> Self {
+        Self {
+            window_title,
+            initial_size,
         }
     }
 }
@@ -75,10 +82,14 @@ impl Plugin for WindowPlugin {
     }
 
     fn cleanup(&self, app: &mut App) -> Result<()> {
-        app.main_app().world().remove_resource::<WindowSettings>();
+        app.remove_event::<WindowResized>();
+        let world = app.main_app().world();
+        world.remove_resource::<WindowSettings>();
         Ok(())
     }
 }
+
+pub struct WinitPlugin;
 
 impl Plugin for WinitPlugin {
     fn build(&self, app: &mut App) -> Result<()> {
@@ -155,13 +166,12 @@ impl winit::application::ApplicationHandler for WinitRunnerApp<'_> {
     ) {
         event_loop.set_control_flow(ControlFlow::Poll);
 
-        self.app
-            .send_event(WinitEvent {
-                event: Event::DeviceEvent {
-                    device_id,
-                    event: event.clone(),
-                },
-            });
+        self.app.send_event(WinitEvent {
+            event: Event::DeviceEvent {
+                device_id,
+                event: event.clone(),
+            },
+        });
 
         if let Some(mut input) = self.app.main_app().world().get_resource_mut::<Input>() {
             input.update_device(&event);
@@ -176,13 +186,12 @@ impl winit::application::ApplicationHandler for WinitRunnerApp<'_> {
     ) {
         event_loop.set_control_flow(ControlFlow::Poll);
 
-        self.app
-            .send_event(WinitEvent {
-                event: Event::WindowEvent {
-                    window_id,
-                    event: event.clone(),
-                },
-            });
+        self.app.send_event(WinitEvent {
+            event: Event::WindowEvent {
+                window_id,
+                event: event.clone(),
+            },
+        });
 
         if let Some(window) = self.app.main_app().world().get_resource::<Window>() {
             if window.id() != window_id {
@@ -198,11 +207,10 @@ impl winit::application::ApplicationHandler for WinitRunnerApp<'_> {
 
         match event {
             WindowEvent::Resized(size) => {
-                self.app
-                    .send_event(WindowResized {
-                        width: size.width,
-                        height: size.height,
-                    });
+                self.app.send_event(WindowResized {
+                    width: size.width,
+                    height: size.height,
+                });
 
                 if let Some(mut window_size) = self
                     .app

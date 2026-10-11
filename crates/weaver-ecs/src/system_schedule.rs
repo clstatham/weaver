@@ -118,6 +118,14 @@ impl Systems {
         self.get_stage_mut(stage).add_system(system);
     }
 
+    pub fn remove_system<S, M>(&mut self, system: S, stage: impl SystemStage)
+    where
+        S: IntoSystem<M>,
+        M: 'static,
+    {
+        self.get_stage_mut(stage).remove_system(system);
+    }
+
     pub fn has_system<M: 'static>(
         &self,
         system: &impl IntoSystem<M>,
