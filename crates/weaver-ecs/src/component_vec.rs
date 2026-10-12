@@ -40,10 +40,15 @@ impl ComponentVec {
             type_id: TypeId::of::<T>(),
             type_name: std::any::type_name::<T>(),
             item_layout,
-            drop_fn: std::mem::needs_drop::<T>().then_some(drop_in_place::<T> as unsafe fn(*mut u8)),
+            drop_fn: std::mem::needs_drop::<T>()
+                .then_some(drop_in_place::<T> as unsafe fn(*mut u8)),
             data: dangling(item_layout),
             len: 0,
-            capacity: if item_layout.size() == 0 { usize::MAX } else { 0 },
+            capacity: if item_layout.size() == 0 {
+                usize::MAX
+            } else {
+                0
+            },
         }
     }
 
@@ -52,7 +57,11 @@ impl ComponentVec {
         Self {
             data: dangling(self.item_layout),
             len: 0,
-            capacity: if self.item_layout.size() == 0 { usize::MAX } else { 0 },
+            capacity: if self.item_layout.size() == 0 {
+                usize::MAX
+            } else {
+                0
+            },
             ..*self
         }
     }
@@ -89,7 +98,8 @@ impl ComponentVec {
             .size()
             .checked_mul(capacity)
             .expect("ComponentVec capacity overflow");
-        Layout::from_size_align(size, self.item_layout.align()).expect("ComponentVec capacity overflow")
+        Layout::from_size_align(size, self.item_layout.align())
+            .expect("ComponentVec capacity overflow")
     }
 
     /// Makes room for at least one more element. Zero-sized types never allocate.
@@ -147,7 +157,11 @@ impl ComponentVec {
             "can't move a {} into a ComponentVec of {}",
             self.type_name, dst.type_name
         );
-        assert!(index < self.len, "index {index} out of bounds (len {})", self.len);
+        assert!(
+            index < self.len,
+            "index {index} out of bounds (len {})",
+            self.len
+        );
         dst.reserve_one();
         let size = self.item_layout.size();
         let last = self.len - 1;
@@ -236,7 +250,10 @@ mod tests {
             vec.push(i as u64);
         }
         assert_eq!(vec.len(), 1000);
-        assert_eq!(vec.as_slice::<u64>().unwrap(), (0..1000).collect::<Vec<u64>>());
+        assert_eq!(
+            vec.as_slice::<u64>().unwrap(),
+            (0..1000).collect::<Vec<u64>>()
+        );
         assert!(vec.as_slice::<u32>().is_none());
         assert_eq!(vec.pop::<u64>(), Some(999));
     }

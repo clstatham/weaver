@@ -58,7 +58,5 @@ macro_rules! span {
 
 #[macro_export]
 macro_rules! event {
-    ($level:ident, $name:expr) => {{
-        $crate::re_exports::tracing::event!($crate::re_exports::tracing::Level::$level, $name)
-    }};
+    ($level:ident, $name:expr) => {{ $crate::re_exports::tracing::event!($crate::re_exports::tracing::Level::$level, $name) }};
 }

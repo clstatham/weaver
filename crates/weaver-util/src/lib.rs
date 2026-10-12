@@ -9,14 +9,14 @@ pub mod maps;
 pub mod sorted_vec;
 
 pub mod re_exports {
-    pub use anyhow::{anyhow, bail, ensure, Error, Result};
-    pub use downcast_rs::{impl_downcast, Downcast, DowncastSync};
+    pub use anyhow::{Error, Result, anyhow, bail, ensure};
+    pub use downcast_rs::{Downcast, DowncastSync, impl_downcast};
     pub use hashbrown::{HashMap, HashSet};
     pub use indextree;
     pub use lazy_static::lazy_static;
     pub use log;
     pub use rustc_hash::FxHasher;
-    pub use scopeguard::{defer, guard, ScopeGuard};
+    pub use scopeguard::{ScopeGuard, defer, guard};
     pub use thiserror::Error;
     pub use tracing;
 }
