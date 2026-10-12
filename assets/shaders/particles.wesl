@@ -1,5 +1,4 @@
-#define_import_path weaver::particles
-#import weaver::common::CameraUniform
+import package::common::CameraUniform;
 
 struct Particle {
     position: vec4<f32>,

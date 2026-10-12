@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-naga_oil = "0.22.0"
 wgpu = { version = "29.0.3", features = ["naga-ir"] }
+wesl = { version = "0.6.0", features = ["naga-ext"] }
 bytemuck = { version = "1.7.0", features = ["derive"] }
 glam = { version = "0.33.1", features = ["bytemuck", "encase"] }
 encase = { version = "0.12.0", features = [] }

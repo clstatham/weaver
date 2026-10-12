@@ -90,7 +90,7 @@ impl ConstructFromWorld for PbrPipeline {
         let device = world.get_resource::<WgpuDevice>().unwrap();
         let layouts = world.get_resource::<BindGroupLayouts>().unwrap();
         let shaders = world.get_resource::<ShaderLibrary>().unwrap();
-        let shader = shaders.load(&device, "pbr.wgsl");
+        let shader = shaders.load(&device, "pbr.wesl");
 
         let pipeline = RenderPipelineDescriptor::new("PBR Pipeline", &shader)
             .bind_group_layouts([

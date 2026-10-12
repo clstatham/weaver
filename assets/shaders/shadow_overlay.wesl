@@ -1,5 +1,4 @@
-#define_import_path weaver::shadow_overlay
-#import weaver::common::{CameraUniform, DirectionalLight};
+import package::common::{CameraUniform, DirectionalLight, VertexInput};
 
 @group(0) @binding(0) var shadow_map: texture_depth_2d;
 @group(0) @binding(1) var shadow_map_sampler: sampler_comparison;

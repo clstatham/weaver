@@ -1,5 +1,4 @@
-#define_import_path weaver::shadow_cubemap_overlay
-#import weaver::common::{VertexInput, CameraUniform, PointLights, ModelTransform, FAR_PLANE, MIN_LIGHT_INTENSITY};
+import package::common::{VertexInput, CameraUniform, PointLights, ModelTransform, FAR_PLANE, MIN_LIGHT_INTENSITY};
 
 @group(0) @binding(0) var<storage> model_transforms: array<ModelTransform>;
 

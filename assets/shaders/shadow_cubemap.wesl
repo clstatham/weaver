@@ -1,5 +1,4 @@
-#define_import_path weaver::shadow_cubemap
-#import weaver::common::{ModelTransform, PointLight, VertexInput, MIN_LIGHT_INTENSITY, FAR_PLANE};
+import package::common::{ModelTransform, PointLight, VertexInput, MIN_LIGHT_INTENSITY, FAR_PLANE};
 
 @group(0) @binding(0) var<storage> model_transforms: array<ModelTransform>;
 @group(1) @binding(0) var<uniform> light: PointLight;
@@ -11,7 +10,7 @@ struct VertexOutput {
 }
 
 @vertex
-fn shadow_cubemap_vs(input: VertexInput, @builtin(view_index) view_index: i32) -> VertexOutput {
+fn shadow_cubemap_vs(input: VertexInput, @builtin(view_index) view_index: u32) -> VertexOutput {
     var output: VertexOutput;
 
     let model_transform = model_transforms[input.instance_index].model;

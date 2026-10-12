@@ -218,7 +218,7 @@ impl GpuSkybox {
         let dst_bind_group = BindGroup::new(device, &dst_layout, &dst);
 
         // only used once, so it isn't kept around
-        let shader = shaders.load(device, "skybox_loader.wgsl");
+        let shader = shaders.load(device, "skybox_loader.wesl");
         let pipeline = create_compute_pipeline(
             device,
             "Skybox Loader Pipeline",
@@ -313,7 +313,7 @@ impl ConstructFromWorld for SkyboxPipeline {
         let device = world.get_resource::<WgpuDevice>().unwrap();
         let layouts = world.get_resource::<BindGroupLayouts>().unwrap();
         let shaders = world.get_resource::<ShaderLibrary>().unwrap();
-        let shader = shaders.load(&device, "sky.wgsl");
+        let shader = shaders.load(&device, "sky.wesl");
 
         let pipeline = RenderPipelineDescriptor::new("Skybox Pipeline", &shader)
             .bind_group_layouts([

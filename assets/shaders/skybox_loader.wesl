@@ -1,5 +1,3 @@
-#define_import_path weaver::skybox_loader
-
 struct Face {
     forward: vec3<f32>,
     up: vec3<f32>,

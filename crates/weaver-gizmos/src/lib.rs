@@ -240,7 +240,7 @@ impl ConstructFromWorld for GizmoPipelines {
         let device = world.get_resource::<WgpuDevice>().unwrap();
         let layouts = world.get_resource::<BindGroupLayouts>().unwrap();
         let shaders = world.get_resource::<ShaderLibrary>().unwrap();
-        let shader = shaders.load(&device, "gizmos.wgsl");
+        let shader = shaders.load(&device, "gizmos.wesl");
 
         let mut pipelines = FxHashMap::default();
         for mode in [GizmoMode::Solid, GizmoMode::Wireframe] {

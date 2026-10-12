@@ -1,5 +1,4 @@
-#define_import_path weaver::shadow_map
-#import weaver::common::{DirectionalLight, VertexInput};
+import package::common::{DirectionalLight, VertexInput};
 
 @group(0) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
 @group(0) @binding(1) var<uniform> directional_light: DirectionalLight;

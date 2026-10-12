@@ -1,5 +1,4 @@
-#define_import_path weaver::pbr
-#import weaver::common::{ModelTransform, CameraUniform, MaterialUniform, VertexInput, MIN_LIGHT_INTENSITY, PI};
+import package::common::{ModelTransform, CameraUniform, MaterialUniform, VertexInput, MIN_LIGHT_INTENSITY, PI};
 
 struct PointLight {
     position: vec4<f32>,

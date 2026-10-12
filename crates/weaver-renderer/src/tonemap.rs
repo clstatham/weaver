@@ -24,7 +24,7 @@ impl ConstructFromWorld for TonemapPipeline {
         let device = world.get_resource::<WgpuDevice>().unwrap();
         let layouts = world.get_resource::<BindGroupLayouts>().unwrap();
         let shaders = world.get_resource::<ShaderLibrary>().unwrap();
-        let shader = shaders.load(&device, "hdr.wgsl");
+        let shader = shaders.load(&device, "hdr.wesl");
 
         let pipeline = RenderPipelineDescriptor::new("Tonemap Pipeline", &shader)
             .bind_group_layouts([layouts.get::<ViewTarget>(&device)])

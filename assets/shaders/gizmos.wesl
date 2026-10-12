@@ -1,5 +1,4 @@
-#define_import_path weaver::gizmos
-#import weaver::common::{CameraUniform};
+import package::common::{CameraUniform};
 
 struct GizmoVertexInput {
     @builtin(instance_index) instance_index: u32,

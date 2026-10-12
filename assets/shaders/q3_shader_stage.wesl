@@ -1,5 +1,4 @@
-#define_import_path weaver::q3_shader_stage
-#import weaver::common::{ModelTransform, CameraUniform, MaterialUniform, MIN_LIGHT_INTENSITY, PI};
+import package::common::{ModelTransform, CameraUniform, MaterialUniform, MIN_LIGHT_INTENSITY, PI};
 
 
 struct PointLight {
