@@ -339,14 +339,6 @@ impl Aabb {
         self.half_size().dot(plane_normal.abs())
     }
 
-    #[inline]
-    pub fn transformed(&self, transform: Transform) -> Self {
-        let matrix = transform.matrix();
-        let min = matrix.transform_point3(self.min);
-        let max = matrix.transform_point3(self.max);
-        Self { min, max }
-    }
-
     pub const fn corners(&self) -> [Vec3; 8] {
         [
             Vec3::new(self.min.x, self.min.y, self.min.z),
@@ -468,13 +460,6 @@ impl Obb {
 
     pub fn corners(&self) -> [Vec3; 8] {
         self.aabb.corners()
-    }
-
-    pub fn transformed(&self, transform: Transform) -> Self {
-        let matrix = transform.matrix();
-        let aabb = self.aabb.transformed(transform);
-        let transform = Transform::from_matrix(matrix * self.transform.matrix());
-        Self { aabb, transform }
     }
 }
 

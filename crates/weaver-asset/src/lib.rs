@@ -41,6 +41,13 @@ impl_downcast!(Asset);
 
 impl Asset for () {}
 impl<T: Asset> Asset for Vec<T> {}
+impl<K, T, S> Asset for HashMap<K, T, S>
+where
+    K: Send + Sync + 'static,
+    T: Asset,
+    S: Send + Sync + 'static,
+{
+}
 
 pub struct Handle<T: Asset> {
     id: AssetId,

@@ -1,6 +1,7 @@
 use weaver::{DefaultPlugins, prelude::*};
 use weaver_diagnostics::prelude::*;
 use weaver_egui::EguiPlugin;
+use weaver_renderer::mesh::primitive::{CubePrimitive, Primitive};
 
 pub mod camera;
 
@@ -41,27 +42,34 @@ fn setup(
         Transform::from_translation(Vec3::new(1000.0, 1000.0, 1000.0)),
         PointLight {
             color: Color::WHITE,
-            intensity: 1000.0,
+            intensity: 50.0,
             radius: 1000.0,
             enabled: true,
         },
     ));
 
-    let mut material_mesh = GltfMaterialModelLoader
-        .load(
-            PathBuf::from("assets/meshes/stanford_dragon_pbr.glb"),
-            &commands,
-        )
-        .unwrap();
+    // let mut material_mesh = GltfMaterialModelLoader
+    //     .load(
+    //         PathBuf::from("assets/meshes/stanford_dragon_pbr.glb"),
+    //         &commands,
+    //     )
+    //     .unwrap();
 
-    let LoadedMaterialMeshPrimitive { material, mesh, .. } = material_mesh.primitives.remove(0);
+    // let LoadedMaterialMeshPrimitive { material, mesh, .. } = material_mesh.primitives.remove(0);
 
-    let mesh = meshes.insert(mesh);
-    let material = materials.insert(material);
+    // let mesh = meshes.insert(mesh);
+    // let material = materials.insert(material);
+
+    let mesh = meshes.insert(CubePrimitive::new(50.0, false).generate_mesh());
+    let material = materials.insert(
+        GltfSingleMaterialLoader
+            .load(PathBuf::from("assets/materials/wood.glb"), &commands)
+            .unwrap(),
+    );
 
     let size = 100.0f32;
-    for x in -5..5 {
-        for y in -5..5 {
+    for x in -50..50 {
+        for y in -50..50 {
             let transform =
                 Transform::from_translation(Vec3::new(x as f32 * size, 0.0, y as f32 * size));
             commands.spawn((mesh, material, transform));

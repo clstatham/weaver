@@ -3998,6 +3998,7 @@ dependencies = [
  "weaver",
  "weaver-diagnostics",
  "weaver-egui",
+ "weaver-renderer",
 ]
 
 [[package]]

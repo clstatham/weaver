@@ -222,6 +222,24 @@ pub fn load_obj_material_mesh(
 }
 
 #[derive(Default)]
+pub struct GltfSingleMaterialLoader;
+
+impl LoadFrom<PathBuf> for GltfSingleMaterialLoader {
+    type Asset = Material;
+
+    fn load(&self, source: PathBuf, commands: &Commands) -> Result<Self::Asset> {
+        let bytes = std::fs::read(&source)?;
+        let (document, _buffers, images) = gltf::import_slice(bytes)?;
+
+        let Some(material) = document.materials().next() else {
+            bail!("No materials in {}", source.display());
+        };
+
+        load_material(material, &images, commands)
+    }
+}
+
+#[derive(Default)]
 pub struct GltfMaterialModelLoader;
 
 impl LoadFrom<PathBuf> for GltfMaterialModelLoader {

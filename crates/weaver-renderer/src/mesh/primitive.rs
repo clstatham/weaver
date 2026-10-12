@@ -1,8 +1,5 @@
 use glam::{Vec2, Vec3};
-use weaver_core::{
-    mesh::{Mesh, Vertex},
-    transform::Transform,
-};
+use weaver_core::mesh::{Mesh, Vertex};
 
 pub trait Primitive {
     fn generate_mesh(&self) -> Mesh;
@@ -197,15 +194,15 @@ pub fn create_unit_cube(wireframe: bool) -> Mesh {
             // Front face
             0, 1, 2, 2, 3, 0, 
             // Back face
-            4, 5, 6, 6, 7, 4, 
+            4, 7, 6, 6, 5, 4, 
             // Top face
-            8, 9, 10, 10, 11, 8, 
+            8, 11, 10, 10, 9, 8, 
             // Bottom face
             12, 13, 14, 14, 15, 12, 
             // Right face
             16, 17, 18, 18, 19, 16, 
             // Left face
-            20, 21, 22, 22, 23, 20,
+            20, 23, 22, 22, 21, 20,
         ]
     };
 
@@ -214,7 +211,11 @@ pub fn create_unit_cube(wireframe: bool) -> Mesh {
 
 impl Primitive for CubePrimitive {
     fn generate_mesh(&self) -> Mesh {
-        create_unit_cube(self.wireframe)
-            .transformed(Transform::from_scale(Vec3::splat(self.side_length / 2.0)))
+        let mut mesh = create_unit_cube(self.wireframe);
+        for vertex in mesh.vertices.iter_mut() {
+            vertex.position *= self.side_length / 2.0;
+        }
+        mesh.regenerate_aabb();
+        mesh
     }
 }

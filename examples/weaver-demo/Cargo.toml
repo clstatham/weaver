@@ -9,3 +9,4 @@ weaver-diagnostics = { path = "../../crates/weaver-diagnostics", features = [
     "egui",
 ] }
 weaver-egui = { path = "../../crates/weaver-egui" }
+weaver-renderer = { path = "../../crates/weaver-renderer" }

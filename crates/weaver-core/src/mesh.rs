@@ -8,7 +8,7 @@ use weaver_asset::{
 use weaver_ecs::prelude::Commands;
 use weaver_util::prelude::*;
 
-use crate::prelude::{Aabb, Transform};
+use crate::prelude::Aabb;
 
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
@@ -42,22 +42,6 @@ impl Mesh {
             vertices,
             indices,
             aabb,
-        }
-    }
-
-    pub fn transformed(&self, transform: Transform) -> Self {
-        let mut vertices = self.vertices.clone();
-        let matrix = transform.matrix();
-        for vertex in &mut vertices {
-            vertex.position = matrix.transform_point3(vertex.position);
-            vertex.normal = matrix.transform_vector3(vertex.normal);
-            vertex.tangent = matrix.transform_vector3(vertex.tangent);
-        }
-
-        Self {
-            vertices,
-            indices: self.indices.clone(),
-            aabb: self.aabb.transformed(transform),
         }
     }
 
