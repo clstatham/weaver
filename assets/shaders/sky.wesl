@@ -6,13 +6,10 @@ struct Camera {
     view_pos: vec4<f32>,
 }
 
-
-@group(0)
-@binding(0)
+@group(0) @binding(0)
 var env_map: texture_cube<f32>;
 
-@group(0)
-@binding(1)
+@group(0) @binding(1)
 var env_sampler: sampler;
 
 @group(1) @binding(0)
@@ -24,13 +21,8 @@ struct VertexOutput {
 }
 
 @vertex
-fn vs_main(
-    @builtin(vertex_index) id: u32,
-) -> VertexOutput {
-    let uv = vec2<f32>(vec2<u32>(
-        id & 1u,
-        (id >> 1u) & 1u,
-    ));
+fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
+    let uv = vec2<f32>(vec2<u32>(id & 1u, (id >> 1u) & 1u));
     var out: VertexOutput;
     out.clip_position = vec4(uv * 4.0 - 1.0, 1.0, 1.0);
     out.frag_position = vec4(uv * 4.0 - 1.0, 1.0, 1.0);

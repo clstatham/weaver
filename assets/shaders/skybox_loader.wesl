@@ -4,61 +4,36 @@ struct Face {
     right: vec3<f32>,
 }
 
-@group(0)
-@binding(0)
+@group(0) @binding(0)
 var src: texture_2d<f32>;
 
-@group(1)
-@binding(0)
+@group(1) @binding(0)
 var dst: texture_storage_2d_array<rgba16float, write>;
 
-@compute
-@workgroup_size(16, 16, 1)
-fn load(
-    @builtin(global_invocation_id) gid: vec3<u32>,
-) {
+@compute @workgroup_size(16, 16, 1)
+fn load(@builtin(global_invocation_id) gid: vec3<u32>) {
     if gid.x >= u32(textureDimensions(dst).x) {
         return;
     }
 
     var FACES = array(
-        // FACES +X
-        Face(
-            vec3(1.0, 0.0, 0.0),  // forward
-            vec3(0.0, 1.0, 0.0),  // up
-            vec3(0.0, 0.0, -1.0), // right
-        ),
-        // FACES -X
-        Face(
-            vec3(-1.0, 0.0, 0.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(0.0, 0.0, 1.0),
-        ),
-        // FACES +Y
-        Face(
-            vec3(0.0, -1.0, 0.0),
-            vec3(0.0, 0.0, 1.0),
-            vec3(1.0, 0.0, 0.0),
-        ),
-        // FACES -Y
-        Face(
-            vec3(0.0, 1.0, 0.0),
-            vec3(0.0, 0.0, -1.0),
-            vec3(1.0, 0.0, 0.0),
-        ),
-        // FACES +Z
-        Face(
-            vec3(0.0, 0.0, 1.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(1.0, 0.0, 0.0),
-        ),
-        // FACES -Z
-        Face(
-            vec3(0.0, 0.0, -1.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(-1.0, 0.0, 0.0),
-        ),
-    );
+            // FACES +X
+            Face(
+                vec3(1.0, 0.0, 0.0), // forward
+                vec3(0.0, 1.0, 0.0), // up
+                vec3(0.0, 0.0, -1.0), // right
+            ),
+            // FACES -X
+            Face(vec3(-1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 1.0)),
+            // FACES +Y
+            Face(vec3(0.0, -1.0, 0.0), vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0)),
+            // FACES -Y
+            Face(vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, -1.0), vec3(1.0, 0.0, 0.0)),
+            // FACES +Z
+            Face(vec3(0.0, 0.0, 1.0), vec3(0.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0)),
+            // FACES -Z
+            Face(vec3(0.0, 0.0, -1.0), vec3(0.0, 1.0, 0.0), vec3(-1.0, 0.0, 0.0)),
+        );
 
     // Get texture coords relative to cubemap face
     let dst_dimensions = vec2<f32>(textureDimensions(dst));

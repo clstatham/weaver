@@ -1,6 +1,6 @@
 //! WESL shaders, compiled with the `wesl` crate.
 //!
-//! The shader directory is a WESL package: `import package::common::Foo;` resolves to
+//! The shader directory is a WESL package: `import package::utils::Foo;` resolves to
 //! `common.wesl` next to the importing shader. Loading a shader compiles it and everything it
 //! (transitively) imports into a single WGSL module.
 

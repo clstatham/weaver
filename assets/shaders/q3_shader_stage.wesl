@@ -1,12 +1,11 @@
-import package::common::{ModelTransform, CameraUniform, MaterialUniform, MIN_LIGHT_INTENSITY, PI};
-
+import package::utils::{CameraUniform, MIN_LIGHT_INTENSITY, MaterialUniform, ModelTransform, PI};
 
 struct PointLight {
     position: vec4<f32>,
     color: vec4<f32>,
     intensity: f32,
     radius: f32,
-};
+}
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -14,8 +13,7 @@ struct VertexInput {
     @location(2) tangent: vec3<f32>,
     @location(3) uv: vec2<f32>,
     @location(4) tex_idx: u32,
-};
-
+}
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -28,18 +26,26 @@ struct VertexOutput {
 }
 
 // material information
-@group(0) @binding(0) var          tex: binding_array<texture_2d<f32>>;
-@group(0) @binding(1) var          tex_sampler: sampler;
+@group(0) @binding(0)
+var tex: binding_array<texture_2d<f32>>;
+@group(0) @binding(1)
+var tex_sampler: sampler;
 
 // camera information
-@group(1) @binding(0) var<uniform> camera: CameraUniform;
+@group(1) @binding(0)
+var<uniform> camera: CameraUniform;
 
 // lights information
-@group(2) @binding(0) var<storage> point_lights: array<PointLight>;
-@group(2) @binding(1) var          env_map_diffuse: texture_cube<f32>;
-@group(2) @binding(2) var          env_map_specular: texture_cube<f32>;
-@group(2) @binding(3) var          env_map_brdf: texture_2d<f32>;
-@group(2) @binding(4) var          env_map_sampler: sampler;
+@group(2) @binding(0)
+var<storage> point_lights: array<PointLight>;
+@group(2) @binding(1)
+var env_map_diffuse: texture_cube<f32>;
+@group(2) @binding(2)
+var env_map_specular: texture_cube<f32>;
+@group(2) @binding(3)
+var env_map_brdf: texture_2d<f32>;
+@group(2) @binding(4)
+var env_map_sampler: sampler;
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {

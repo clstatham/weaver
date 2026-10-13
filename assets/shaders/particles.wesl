@@ -1,4 +1,4 @@
-import package::common::CameraUniform;
+import package::utils::CameraUniform;
 
 struct Particle {
     position: vec4<f32>,
@@ -18,10 +18,14 @@ struct ParticleVertexOutput {
     @location(2) uv: vec2<f32>,
 }
 
-@group(0) @binding(0) var<storage> particles: array<Particle>;
-@group(0) @binding(1) var<uniform> camera: CameraUniform;
-@group(1) @binding(0) var tex: texture_2d<f32>;
-@group(2) @binding(0) var tex_sampler: sampler;
+@group(0) @binding(0)
+var<storage> particles: array<Particle>;
+@group(0) @binding(1)
+var<uniform> camera: CameraUniform;
+@group(1) @binding(0)
+var tex: texture_2d<f32>;
+@group(2) @binding(0)
+var tex_sampler: sampler;
 
 @vertex
 fn vs_main(input: ParticleVertexInput) -> ParticleVertexOutput {
@@ -34,11 +38,11 @@ fn vs_main(input: ParticleVertexInput) -> ParticleVertexOutput {
     let up = vec3<f32>(0.0, 1.0, 0.0);
     let right = cross(up, forward);
     let lookat = mat4x4<f32>(
-        vec4<f32>(right, 0.0),
-        vec4<f32>(up, 0.0),
-        vec4<f32>(forward, 0.0),
-        vec4<f32>(0.0, 0.0, 0.0, 1.0)
-    );
+            vec4<f32>(right, 0.0),
+            vec4<f32>(up, 0.0),
+            vec4<f32>(forward, 0.0),
+            vec4<f32>(0.0, 0.0, 0.0, 1.0),
+        );
 
     // calculate the particle's position
     let position = lookat * vec4<f32>(input.position.xyz, 1.0) + particle.position;

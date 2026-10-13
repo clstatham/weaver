@@ -1,4 +1,4 @@
-import package::common::{CameraUniform};
+import package::utils::{CameraUniform};
 
 struct GizmoVertexInput {
     @builtin(instance_index) instance_index: u32,
@@ -13,10 +13,13 @@ struct GizmoVertexOutput {
     @location(2) color: vec3<f32>,
 }
 
-@group(0) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
-@group(0) @binding(1) var<storage> colors: array<vec4<f32>>;
+@group(0) @binding(0)
+var<storage> model_transforms: array<mat4x4<f32>>;
+@group(0) @binding(1)
+var<storage> colors: array<vec4<f32>>;
 
-@group(1) @binding(0) var<uniform> camera: CameraUniform;
+@group(1) @binding(0)
+var<uniform> camera: CameraUniform;
 
 @vertex
 fn vs_main(input: GizmoVertexInput) -> GizmoVertexOutput {
@@ -24,10 +27,10 @@ fn vs_main(input: GizmoVertexInput) -> GizmoVertexOutput {
     let model_transform = model_transforms[input.instance_index];
     output.position = (model_transform * vec4<f32>(input.position, 1.0)).xyz;
     let normal_transform = mat3x3<f32>(
-        model_transform[0].xyz,
-        model_transform[1].xyz,
-        model_transform[2].xyz,
-    );
+            model_transform[0].xyz,
+            model_transform[1].xyz,
+            model_transform[2].xyz,
+        );
     output.normal = normal_transform * input.normal;
     output.clip_position = camera.proj * camera.view * vec4(output.position, 1.0);
     output.color = colors[input.instance_index].rgb;

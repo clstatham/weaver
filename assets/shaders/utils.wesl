@@ -1,6 +1,5 @@
 const PI: f32 = 3.1415926535897932384626433832795;
 
-const MAX_LIGHTS: u32 = 32u;
 const MIN_LIGHT_INTENSITY: f32 = 0.01;
 const FAR_PLANE: f32 = 100.0;
 
@@ -49,13 +48,13 @@ struct DirectionalLight {
 struct PointLights {
     count: u32,
     _pad: array<u32, 3>,
-    lights: array<PointLight, MAX_LIGHTS>,
+    lights: array<PointLight, 32u>,
 }
 
 struct DirectionalLights {
     count: u32,
     _pad: array<u32, 3>,
-    lights: array<DirectionalLight, MAX_LIGHTS>,
+    lights: array<DirectionalLight, 32u>,
 }
 
 fn ndc_cube() -> array<vec3<f32>, 36> {

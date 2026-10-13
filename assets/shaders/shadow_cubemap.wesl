@@ -1,4 +1,4 @@
-import package::common::{ModelTransform, PointLight, VertexInput, MIN_LIGHT_INTENSITY, FAR_PLANE};
+import package::utils::{ModelTransform, PointLight, VertexInput, MIN_LIGHT_INTENSITY, FAR_PLANE};
 
 @group(0) @binding(0) var<storage> model_transforms: array<ModelTransform>;
 @group(1) @binding(0) var<uniform> light: PointLight;

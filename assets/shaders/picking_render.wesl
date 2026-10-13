@@ -1,4 +1,4 @@
-import package::common::{CameraUniform, ModelTransform, VertexInput};
+import package::utils::{CameraUniform, ModelTransform, VertexInput};
 
 // camera
 @group(0) @binding(0)

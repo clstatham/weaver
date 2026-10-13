@@ -1,35 +1,58 @@
-import package::common::{ModelTransform, CameraUniform, MaterialUniform, VertexInput, MIN_LIGHT_INTENSITY, PI};
+import package::utils::{
+    CameraUniform,
+    MIN_LIGHT_INTENSITY,
+    MaterialUniform,
+    ModelTransform,
+    PI,
+    VertexInput
+};
 
 struct PointLight {
     position: vec4<f32>,
     color: vec4<f32>,
     intensity: f32,
     radius: f32,
-};
+}
 
 // material information
-@group(0) @binding(0) var<uniform> material: MaterialUniform;
-@group(0) @binding(1) var          diffuse_tex: texture_2d<f32>;
-@group(0) @binding(2) var          diffuse_sampler: sampler;
-@group(0) @binding(3) var          normal_tex: texture_2d<f32>;
-@group(0) @binding(4) var          normal_sampler: sampler;
-@group(0) @binding(5) var          roughness_tex: texture_2d<f32>;
-@group(0) @binding(6) var          roughness_sampler: sampler;
-@group(0) @binding(7) var          ao_tex: texture_2d<f32>;
-@group(0) @binding(8) var          ao_sampler: sampler;
+@group(0) @binding(0)
+var<uniform> material: MaterialUniform;
+@group(0) @binding(1)
+var diffuse_tex: texture_2d<f32>;
+@group(0) @binding(2)
+var diffuse_sampler: sampler;
+@group(0) @binding(3)
+var normal_tex: texture_2d<f32>;
+@group(0) @binding(4)
+var normal_sampler: sampler;
+@group(0) @binding(5)
+var roughness_tex: texture_2d<f32>;
+@group(0) @binding(6)
+var roughness_sampler: sampler;
+@group(0) @binding(7)
+var ao_tex: texture_2d<f32>;
+@group(0) @binding(8)
+var ao_sampler: sampler;
 
 // camera information
-@group(1) @binding(0) var<uniform> camera: CameraUniform;
+@group(1) @binding(0)
+var<uniform> camera: CameraUniform;
 
 // mesh instances: model matrices in draw order, indexed by instance_index
-@group(2) @binding(0) var<storage> model_transforms: array<mat4x4<f32>>;
+@group(2) @binding(0)
+var<storage> model_transforms: array<mat4x4<f32>>;
 
 // lights information
-@group(3) @binding(0) var<storage> point_lights: array<PointLight>;
-@group(3) @binding(1) var          env_map_diffuse: texture_cube<f32>;
-@group(3) @binding(2) var          env_map_specular: texture_cube<f32>;
-@group(3) @binding(3) var          env_map_brdf: texture_2d<f32>;
-@group(3) @binding(4) var          env_map_sampler: sampler;
+@group(3) @binding(0)
+var<storage> point_lights: array<PointLight>;
+@group(3) @binding(1)
+var env_map_diffuse: texture_cube<f32>;
+@group(3) @binding(2)
+var env_map_specular: texture_cube<f32>;
+@group(3) @binding(3)
+var env_map_brdf: texture_2d<f32>;
+@group(3) @binding(4)
+var env_map_sampler: sampler;
 
 fn saturate(x: f32) -> f32 {
     return clamp(x, 0.0, 1.0);
@@ -77,11 +100,7 @@ fn importance_sample_ggx(uv: vec2<f32>, N: vec3<f32>, roughness: f32) -> vec3<f3
     let cos_theta = sqrt((1.0 - uv.y) / (1.0 + (a * a - 1.0) * uv.y));
     let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
 
-    let H = vec3<f32>(
-        sin_theta * cos(phi),
-        sin_theta * sin(phi),
-        cos_theta,
-    );
+    let H = vec3<f32>(sin_theta * cos(phi), sin_theta * sin(phi), cos_theta);
 
     var up: vec3<f32>;
     if abs(N.z) < 0.999 {
@@ -141,13 +160,17 @@ fn calculate_ibl(
     let irradiance = textureSample(env_map_diffuse, env_map_sampler, N).rgb;
     let diffuse = irradiance * albedo;
 
-    let prefiltered_color = textureSampleLevel(env_map_specular, env_map_sampler, R, roughness * f32(textureNumLevels(env_map_specular))).rgb;
+    let prefiltered_color = textureSampleLevel(
+            env_map_specular,
+            env_map_sampler,
+            R,
+            roughness * f32(textureNumLevels(env_map_specular)),
+        ).rgb;
     let brdf = textureSample(env_map_brdf, env_map_sampler, vec2(NdotV, roughness)).rg;
     let specular = prefiltered_color * (kS * brdf.x + brdf.y);
 
     return kD * diffuse + specular;
 }
-
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -193,7 +216,6 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     let tex_color = textureSample(diffuse_tex, diffuse_sampler, uv).rgba * material.base_color.rgba;
     let albedo = pow(tex_color, vec4(2.2));
 
-
     var tex_normal = textureSample(normal_tex, normal_sampler, uv).rgb;
     var N: vec3<f32>;
     if tex_normal.r == 0.0 && tex_normal.g == 0.0 && tex_normal.b == 0.0 {
@@ -201,8 +223,9 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     } else {
         tex_normal = normalize(tex_normal * 2.0 - 1.0);
         N = normalize(
-            vertex.world_tangent * tex_normal.r + vertex.world_binormal * tex_normal.g + vertex.world_normal * tex_normal.b
-        );
+                vertex.world_tangent * tex_normal.r + vertex.world_binormal * tex_normal.g
+                + vertex.world_normal * tex_normal.b,
+            );
     }
 
     let V = normalize(camera.camera_position - vertex.world_position);
@@ -213,7 +236,7 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     var illumination = vec3(0.0);
 
-    for (var i = 0u; i < arrayLength(&point_lights); i = i + 1u) {
+    for(var i = 0u; i < arrayLength(&point_lights); i = i + 1u) {
         let light = point_lights[i];
         if light.intensity == 0.0 {
             continue;
@@ -223,9 +246,19 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
         let L = normalize(light_pos - vertex.world_position);
 
         let distance = length(light_pos - vertex.world_position);
-        let attenuation = light.intensity / (1.0 + distance * distance / (light.radius * light.radius));
+        let attenuation = light.intensity
+            / (1.0 + distance * distance / (light.radius * light.radius));
 
-        illumination += calculate_lighting(albedo.rgb, roughness, metallic, N, L, V, light.color.rgb, attenuation);
+        illumination += calculate_lighting(
+                albedo.rgb,
+                roughness,
+                metallic,
+                N,
+                L,
+                V,
+                light.color.rgb,
+                attenuation,
+            );
     }
 
     let tex_ao = textureSample(ao_tex, ao_sampler, uv).r * material.properties.z;
