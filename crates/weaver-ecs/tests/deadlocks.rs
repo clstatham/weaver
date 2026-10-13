@@ -1,7 +1,7 @@
 //! Commands issued while queries are alive.
 //!
-//! Kept in their own test binary: a deadlocked system permanently occupies a task pool worker,
-//! which could starve other tests sharing the pool.
+//! Kept in their own test binary: a deadlocked update leaks its stuck thread (see
+//! `common::with_timeout`), which would linger through the other tests sharing the process.
 //!
 //! Tests marked `#[ignore = "known issue: ..."]` assert the intended behavior and currently fail.
 //! Run them with `cargo test -p weaver-ecs -- --ignored`.

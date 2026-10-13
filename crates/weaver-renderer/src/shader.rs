@@ -1,7 +1,7 @@
 //! WESL shaders, compiled with the `wesl` crate.
 //!
 //! The shader directory is a WESL package: `import package::utils::Foo;` resolves to
-//! `common.wesl` next to the importing shader. Loading a shader compiles it and everything it
+//! `utils.wesl` in the shader directory. Loading a shader compiles it and everything it
 //! (transitively) imports into a single WGSL module.
 
 use std::{
@@ -90,7 +90,7 @@ mod tests {
         for entry in std::fs::read_dir(&root).unwrap() {
             let path = entry.unwrap().path();
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
-            if !name.ends_with(".wesl") || name == "common.wesl" || name == "package.wesl" {
+            if !name.ends_with(".wesl") || name == "utils.wesl" || name == "package.wesl" {
                 continue;
             }
             let wgsl = library

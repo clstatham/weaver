@@ -24,8 +24,8 @@ fn slow(_commands: Commands) {
     std::thread::sleep(Duration::from_millis(30));
 }
 
-/// The change tick should advance by a small, deterministic amount per update. It currently
-/// increments on every pass of the scheduler's busy-wait loop, so it depends on system duration.
+/// The change tick should advance by a small, deterministic amount per update, regardless of how
+/// long the systems take to run.
 #[test]
 fn change_tick_advance_per_update_is_bounded() {
     let mut world = World::new();

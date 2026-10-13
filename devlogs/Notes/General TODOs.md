@@ -1,8 +1,8 @@
-- Stateful Systems and Queries
-	- Init once, reuse/update stateful resources between runs
-- Make renderer make more sense
-	- Refactor DrawFns, RenderCommands, batching
-	- Don't assume every camera wants to render the whole scene
-- weaver-task: Task pools and thread managers (a la Bevy)
-- Better error handling with `thiserror` and less reliance on `anyhow`
-	- Panic and unwrap less
+- ~~Stateful Systems and Queries~~ (done: `SystemParam` init/update_state per scheduler node, `SystemState<P>`, a57f5a1)
+	- ~~Init once, reuse/update stateful resources between runs~~
+- ~~Make renderer make more sense~~ (done: a57f5a1)
+	- ~~Refactor DrawFns, RenderCommands, batching~~ (done: a57f5a1; RenderCommands removed in favour of phases + `DrawFunction`)
+	- ~~Don't assume every camera wants to render the whole scene~~ (done: per-view `ViewTarget`, render phases and frustum culling, a57f5a1)
+- ~~weaver-task: Task pools and thread managers (a la Bevy)~~ (obsolete: tried in 4f15f5d, crate removed in d5d4b9a; systems are sync now, 5593f8b)
+- Better error handling with `thiserror` and less reliance on `anyhow` (partial: thiserror is a dep of weaver-util only; anyhow still used widely)
+	- Panic and unwrap less (partial: surface errors no longer panic, a57f5a1; ~186 `unwrap()` remain, down from 214)

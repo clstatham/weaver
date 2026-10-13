@@ -29,7 +29,7 @@ pub struct PbrLightingInformation {
     pub env_map: GpuSkyboxIrradiance,
 }
 
-/// Starts out with the black fallback environment map; [`update_environment_map`] swaps in the
+/// Starts out with the black fallback environment map; `update_environment_map` swaps in the
 /// skybox's maps.
 impl ConstructFromWorld for PbrLightingInformation {
     fn from_world(world: &World) -> Self {

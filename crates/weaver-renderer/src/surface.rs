@@ -8,6 +8,10 @@
 //!    [`frame_in_flight`], so they simply don't run on frames where no texture could be acquired
 //!    (minimized window, outdated surface, timeout).
 //! 3. [`RenderStage::Present`]: [`present_frame`] submits everything and presents.
+//!
+//! [`RenderStage::Prepare`]: crate::RenderStage::Prepare
+//! [`RenderStage::Render`]: crate::RenderStage::Render
+//! [`RenderStage::Present`]: crate::RenderStage::Present
 
 use weaver_ecs::{
     commands::Commands,

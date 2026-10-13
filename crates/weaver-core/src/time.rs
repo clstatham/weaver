@@ -71,7 +71,7 @@ impl<Label: Send + Sync + 'static> FixedTimestep<Label> {
     ///
     /// The function will be called multiple times if multiple timesteps have passed since the last time this FixedTimestep was updated.
     ///
-    /// See https://www.gafferongames.com/post/fix_your_timestep/
+    /// See <https://www.gafferongames.com/post/fix_your_timestep/>
     pub fn run_with_fixed_timestep<F>(&mut self, mut f: F)
     where
         F: FnMut(f32, f32),
@@ -124,7 +124,6 @@ impl<Label: Send + Sync + 'static> Plugin for FixedUpdatePlugin<Label> {
             update_fixed_timestep::<Label>.after(update_time),
             AppStage::PreUpdate,
         );
-        //app.add_system_after(update_fixed_timestep::<Label>, update_time, PreUpdate);
         Ok(())
     }
 }
