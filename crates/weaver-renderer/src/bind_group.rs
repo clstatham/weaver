@@ -35,10 +35,15 @@ use crate::{
 /// The kind of resource a binding slot holds. Bindings are checked against their layout by kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BindingKind {
+    /// A uniform or storage buffer.
     Buffer,
+    /// A sampled texture.
     Texture,
+    /// A storage texture.
     StorageTexture,
+    /// A sampler.
     Sampler,
+    /// Anything else (such as an acceleration structure). In a layout, matches any binding.
     Other,
 }
 
@@ -77,6 +82,7 @@ impl BindGroupLayoutBuilder {
         self
     }
 
+    /// A uniform buffer.
     pub fn uniform_buffer(&mut self, visibility: wgpu::ShaderStages) -> &mut Self {
         self.entry(
             visibility,
@@ -88,6 +94,7 @@ impl BindGroupLayoutBuilder {
         )
     }
 
+    /// A storage buffer.
     pub fn storage_buffer(&mut self, visibility: wgpu::ShaderStages, read_only: bool) -> &mut Self {
         self.entry(
             visibility,
@@ -99,6 +106,7 @@ impl BindGroupLayoutBuilder {
         )
     }
 
+    /// A non-multisampled texture with the given dimension and sample type.
     pub fn texture(
         &mut self,
         visibility: wgpu::ShaderStages,
@@ -133,6 +141,7 @@ impl BindGroupLayoutBuilder {
         )
     }
 
+    /// A storage texture.
     pub fn storage_texture(
         &mut self,
         visibility: wgpu::ShaderStages,
@@ -150,6 +159,7 @@ impl BindGroupLayoutBuilder {
         )
     }
 
+    /// A sampler of the given type.
     pub fn sampler(
         &mut self,
         visibility: wgpu::ShaderStages,
@@ -163,6 +173,7 @@ impl BindGroupLayoutBuilder {
         self.sampler(visibility, wgpu::SamplerBindingType::Filtering)
     }
 
+    /// The entries added so far.
     pub fn entries(&self) -> &[wgpu::BindGroupLayoutEntry] {
         &self.entries
     }
@@ -177,6 +188,7 @@ pub struct BindGroupLayout {
 }
 
 impl BindGroupLayout {
+    /// Creates a layout; `build` adds its bindings.
     pub fn new(
         device: &wgpu::Device,
         label: &'static str,
@@ -205,6 +217,7 @@ impl BindGroupLayout {
         Self::new(device, T::LABEL, T::layout)
     }
 
+    /// The layout's label (the `LABEL` of the type it came from).
     pub fn label(&self) -> &'static str {
         self.label
     }
@@ -225,6 +238,7 @@ pub struct BindGroupLayouts {
 }
 
 impl BindGroupLayouts {
+    /// The layout for `T`, creating it if this is the first request.
     pub fn get<T: AsBindGroup>(&self, device: &wgpu::Device) -> BindGroupLayout {
         if let Some(layout) = self.cache.read().get(&TypeId::of::<T>()) {
             return layout.clone();
@@ -241,11 +255,39 @@ impl BindGroupLayouts {
 ///
 /// `layout` and `bindings` must list the same bindings in the same order; [`BindGroup::new`]
 /// panics if their kinds don't line up.
+///
+/// To get a [`BindGroup<T>`] kept up to date automatically, add a [`ComponentBindGroupPlugin`]
+/// (for a component) or a [`ResourceBindGroupPlugin`] (for a resource).
+///
+/// # Examples
+///
+/// ```
+/// use weaver_renderer::{bind_group::*, buffer::GpuBufferVec};
+///
+/// struct Lights {
+///     buffer: GpuBufferVec<[f32; 4]>,
+/// }
+///
+/// impl AsBindGroup for Lights {
+///     const LABEL: &'static str = "Lights";
+///
+///     fn layout(layout: &mut BindGroupLayoutBuilder) {
+///         layout.storage_buffer(wgpu::ShaderStages::FRAGMENT, true);
+///     }
+///
+///     fn bindings<'a>(&'a self, bindings: &mut BindingsBuilder<'a>) {
+///         bindings.buffer_vec(&self.buffer);
+///     }
+/// }
+/// ```
 pub trait AsBindGroup: Send + Sync + 'static {
+    /// Label for the layout and bind group, shown in GPU debuggers and validation errors.
     const LABEL: &'static str;
 
+    /// Declares the bindings, in order.
     fn layout(layout: &mut BindGroupLayoutBuilder);
 
+    /// Lists the resources for those bindings, in the same order as [`AsBindGroup::layout`].
     fn bindings<'a>(&'a self, bindings: &mut BindingsBuilder<'a>);
 }
 
@@ -301,6 +343,8 @@ impl<'a> BindingsBuilder<'a> {
 
     /// Binds the uploaded elements of a [`GpuBufferVec`].
     ///
+    /// # Panics
+    ///
     /// Panics if nothing has been uploaded yet, since an empty buffer binding isn't allowed.
     pub fn buffer_vec<T: ShaderType + WriteInto>(
         &mut self,
@@ -349,6 +393,8 @@ impl<'a> BindingsBuilder<'a> {
     /// Binds a raw texture view. Prefer [`BindingsBuilder::texture`]: a raw view being replaced
     /// can't be detected.
     pub fn texture_view(&mut self, view: &'a wgpu::TextureView) -> &mut Self {
+        // TODO: raw views are never detected as changed (only GpuBuffer/GpuTexture bindings are
+        // tracked)
         self.push(
             wgpu::BindingResource::TextureView(view),
             BindingKind::Texture,
@@ -356,6 +402,7 @@ impl<'a> BindingsBuilder<'a> {
         )
     }
 
+    /// Binds a sampler. Like raw texture views, samplers aren't tracked for changes.
     pub fn sampler(&mut self, sampler: &'a wgpu::Sampler) -> &mut Self {
         self.push(
             wgpu::BindingResource::Sampler(sampler),
@@ -373,7 +420,11 @@ pub struct BindGroup<T: AsBindGroup> {
 }
 
 impl<T: AsBindGroup> BindGroup<T> {
-    /// Panics if `data`'s bindings don't match the layout.
+    /// Creates the bind group from `data`'s current bindings.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `data`'s bindings don't match the layout in count or kind.
     pub fn new(device: &wgpu::Device, layout: &BindGroupLayout, data: &T) -> Self {
         let mut bindings = BindingsBuilder::new();
         data.bindings(&mut bindings);
@@ -427,6 +478,7 @@ impl<T: AsBindGroup> BindGroup<T> {
         bindings.sources != self.sources
     }
 
+    /// The underlying wgpu bind group, cheap to clone.
     pub fn bind_group(&self) -> &Arc<wgpu::BindGroup> {
         &self.bind_group
     }

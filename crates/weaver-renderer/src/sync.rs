@@ -25,6 +25,7 @@ pub struct RenderEntities {
 }
 
 impl RenderEntities {
+    /// The render-world mirror of `main_entity`, if it has one.
     pub fn get(&self, main_entity: Entity) -> Option<Entity> {
         self.map.get(&main_entity).copied()
     }
@@ -38,10 +39,12 @@ impl RenderEntities {
             .or_insert_with(|| commands.spawn((MainEntity(main_entity),)))
     }
 
+    /// Number of mirrored entities.
     pub fn len(&self) -> usize {
         self.map.len()
     }
 
+    /// True if nothing is mirrored.
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }

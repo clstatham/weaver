@@ -1,3 +1,5 @@
+//! Point lights: the main-world component and the render-world types built from it.
+
 use encase::ShaderType;
 use weaver_app::{App, plugin::Plugin};
 
@@ -11,18 +13,27 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::*;
 
+/// A light radiating from a single point.
+///
+/// The position is the entity's [`Transform`] translation, or the origin if it has none.
 #[derive(Copy, Clone, Debug)]
 pub struct PointLight {
+    /// Light color.
     pub color: Color,
+    /// Brightness multiplier on `color`.
     pub intensity: f32,
+    /// Size of the light, passed to the shader.
     pub radius: f32,
+    /// Disabled lights are uploaded with zero intensity.
     pub enabled: bool,
 }
 
 /// A point light in the render world, with its main-world position.
 #[derive(Copy, Clone, Debug)]
 pub struct ExtractedPointLight {
+    /// The main-world component.
     pub light: PointLight,
+    /// World-space position.
     pub position: Vec3,
 }
 
@@ -40,13 +51,18 @@ impl ExtractComponent for PointLight {
     }
 }
 
+/// A [`PointLight`] as the shader's storage buffer element (48 bytes).
 #[derive(Copy, Clone, Debug, Default, ShaderType)]
 #[repr(C)]
 pub struct PointLightUniform {
+    /// World-space position.
     pub position: Vec3,
     _padding: u32,
+    /// Light color.
     pub color: Color,
+    /// Brightness multiplier on `color`; zero for disabled lights.
     pub intensity: f32,
+    /// Size of the light.
     pub radius: f32,
 }
 
@@ -74,7 +90,9 @@ impl From<ExtractedPointLight> for PointLightUniform {
     }
 }
 
+/// The storage buffer of every point light in the scene, bound in the lighting bind group.
 pub struct GpuPointLightArray {
+    /// Rebuilt every frame; never empty (see [`PointLightUniform::NONE`]).
     pub buffer: GpuBufferVec<PointLightUniform>,
 }
 
@@ -90,6 +108,7 @@ impl ConstructFromWorld for GpuPointLightArray {
     }
 }
 
+/// Extracts [`PointLight`]s into the render world as [`ExtractedPointLight`]s.
 pub struct PointLightPlugin;
 
 impl Plugin for PointLightPlugin {

@@ -1,3 +1,24 @@
+//! Systems, their parameters, and the per-stage graph that orders and runs them.
+//!
+//! A system is a plain function whose arguments implement [`SystemParam`] (`Res<T>`, `Query<Q>`,
+//! `Commands`, `Local<T>`, ...), or a `fn(&World)` for [`WorldSystem`]. [`IntoSystem`] turns either
+//! into a boxed [`System`]; [`IntoSystemConfig`] adds `.after`, `.before` and `.run_if`.
+//!
+//! Systems live in a [`SystemGraph`], one per stage (see [`crate::system_schedule::Systems`]). The
+//! scheduler is single-threaded: the graph is split into layers of systems with no ordering edge
+//! between them, and those run one after another on the calling thread. Systems whose declared
+//! [`SystemAccess`] conflict are put in different layers, so the access sets decide ordering, not
+//! thread safety. Deferred work ([`Commands`](crate::commands::Commands)) is applied with
+//! `&mut World` once the whole layer has run.
+//!
+//! A system whose parameters can't be fetched right now (say a `Res<T>` for a resource that
+//! doesn't exist yet) is skipped, then retried after the layer's commands have been applied. A
+//! system that should only run under some condition should say so with `.run_if`, see
+//! [`crate::condition`].
+//!
+//! Systems are identified by the [`TypeId`] of the function item, both for deduplication (adding
+//! the same function to a stage twice is a no-op) and for `.after(f)` / `.before(f)`.
+
 use std::{any::TypeId, collections::VecDeque, sync::Arc};
 
 use crate::{
@@ -10,18 +31,26 @@ use crate::{
 use petgraph::prelude::*;
 use weaver_util::prelude::*;
 
-/// A system access descriptor, indicating what resources and components a system reads and writes. This is used to validate system access at runtime.
+/// What resources and components a system reads and writes.
+///
+/// The scheduler uses it to keep conflicting systems out of the same layer, and parameter tuples
+/// use it to reject a system that conflicts with itself.
 #[derive(Default, Clone)]
 pub struct SystemAccess {
+    /// Resource types taken by shared reference.
     pub resources_read: FxHashSet<TypeId>,
+    /// Resource types taken by mutable reference.
     pub resources_written: FxHashSet<TypeId>,
+    /// Component types read by queries.
     pub components_read: FxHashSet<TypeId>,
+    /// Component types written by queries.
     pub components_written: FxHashSet<TypeId>,
     /// May touch anything in the world (a system taking `&World`).
     pub exclusive: bool,
 }
 
 impl SystemAccess {
+    /// Merges `other` into this descriptor.
     pub fn extend(&mut self, other: SystemAccess) {
         self.resources_read.extend(other.resources_read);
         self.resources_written.extend(other.resources_written);
@@ -30,7 +59,10 @@ impl SystemAccess {
         self.exclusive |= other.exclusive;
     }
 
-    /// Returns true if the access is compatible with another access descriptor.
+    /// Returns true if two systems with these accesses could run at the same time.
+    ///
+    /// A write conflicts with any other access to the same type, and an exclusive access conflicts
+    /// with everything.
     pub fn is_compatible(&self, other: &Self) -> bool {
         if self.exclusive || other.exclusive {
             return false;
@@ -67,9 +99,14 @@ impl SystemAccess {
     }
 }
 
-/// A unit of work that can be executed on a world's resources and components.
+/// A unit of work that runs against a [`World`].
+///
+/// Usually you don't implement this; write a function and let [`IntoSystem`] wrap it in a
+/// [`FunctionSystem`] (or a [`WorldSystem`] for `fn(&World)`).
 pub trait System: Send + Sync {
+    /// Input type. Always `()` for systems the scheduler can run.
     type Input;
+    /// Output type. Always `()` for systems the scheduler can run.
     type Output;
 
     /// Returns the name of the system.
@@ -77,10 +114,10 @@ pub trait System: Send + Sync {
         std::any::type_name::<Self>()
     }
 
-    /// Returns the system access descriptor, describing what resources and components the system requires access to.
+    /// Returns what resources and components the system touches.
     fn access(&self) -> &SystemAccess;
 
-    /// Initializes the system state.
+    /// Builds the system's persistent state. Called once, before the first run.
     #[allow(unused)]
     fn initialize(&mut self, world: &mut World) {}
 
@@ -88,10 +125,16 @@ pub trait System: Send + Sync {
     /// with, and `ticks.last_run` is the `this_run` of the system's previous run.
     fn run(&mut self, world: &World, ticks: TickRange);
 
+    /// Applies work the last run queued up, such as [`Commands`](crate::commands::Commands).
+    ///
+    /// Called by the scheduler with `&mut World` after the system's layer has finished running.
     #[allow(unused)]
     fn apply_deferred(&mut self, world: &mut World) {}
 
-    /// Returns true if the system can run on the world in its current state.
+    /// Returns true if the system's parameters can be fetched from the world right now.
+    ///
+    /// A false here makes the scheduler skip the system and retry it after the layer's commands
+    /// have been applied. It is separate from run conditions, which are the explicit gate.
     #[allow(unused)]
     fn can_run(&self, world: &World) -> bool {
         true
@@ -99,39 +142,75 @@ pub trait System: Send + Sync {
 }
 
 /// A type that can be converted into a system.
+///
+/// Implemented for functions whose arguments are all [`SystemParam`]s, and for `fn(&World)`. The
+/// `Marker` type only exists to keep those two blanket impls from overlapping.
 pub trait IntoSystem<Marker>: 'static + Send + Sync {
+    /// The concrete system type produced.
     type System: System<Input = (), Output = ()>;
 
     /// Converts the type into a boxed system.
     fn into_system(self) -> Box<Self::System>;
 }
 
-/// A parameter that can be used by a system to access resources and components in a world.
+/// An argument type a system function can take: `Res<T>`, `Query<Q>`, `Commands`, and so on.
+///
+/// Each system owns one `State` per parameter, and each run goes through this sequence:
+///
+/// 1. [`init_state`](SystemParam::init_state) builds the state once, when the system is
+///    initialized.
+/// 2. [`update_state`](SystemParam::update_state) refreshes it before every run.
+/// 3. [`can_run`](SystemParam::can_run) is checked by the scheduler; if it's false the system is
+///    skipped and retried after the layer's commands apply.
+/// 4. [`fetch`](SystemParam::fetch) produces the [`Item`](SystemParam::Item) handed to the
+///    function.
+/// 5. [`apply`](SystemParam::apply) runs with `&mut World` after the layer, once every item has
+///    been dropped, so parameters can flush deferred work.
+///
+/// [`access`](SystemParam::access) is read once, when the system is created, and has to cover
+/// everything `fetch` touches; the scheduler trusts it to decide which systems may share a layer.
 pub trait SystemParam: Send + Sync {
+    /// What the system function receives. Usually `Self`.
     type Item: SystemParam;
+    /// Per-system persistent state, created in [`init_state`](SystemParam::init_state).
     type State: Send + Sync;
 
+    /// Returns the resources and components this parameter touches.
+    ///
+    /// # Panics
+    ///
+    /// The tuple impls panic if two of their elements conflict, for example `(ResMut<A>, Res<A>)`.
     fn access() -> SystemAccess;
 
+    /// Creates the state for a new system. Called once, with the world the system will run in.
     fn init_state(world: &World) -> Self::State;
 
+    /// Refreshes the state before a run. Does nothing by default.
     #[allow(unused)]
     fn update_state(state: &mut Self::State, world: &World) {}
 
-    /// Fetches the parameter. `ticks` are the running system's change ticks: changes stamped
-    /// after `ticks.last_run` count as changed, and writes are stamped with `ticks.this_run`.
+    /// Fetches the parameter from the world. `ticks` are the running system's change ticks: changes
+    /// stamped after `ticks.last_run` count as changed, and writes are stamped with
+    /// `ticks.this_run`.
     fn fetch(world: &World, state: &Self::State, ticks: TickRange) -> Self::Item;
 
+    /// Applies deferred work with exclusive access to the world, after the layer has run.
+    ///
+    /// Every item fetched this run has been dropped by then. Does nothing by default.
     #[allow(unused)]
     fn apply(state: &mut Self::State, world: &mut World) {}
 
+    /// Returns false if [`fetch`](SystemParam::fetch) would fail right now, for example because a
+    /// resource is missing or already borrowed. True by default.
     #[allow(unused)]
     fn can_run(world: &World) -> bool {
         true
     }
 }
 
+/// Shorthand for `<P as SystemParam>::Item`.
 pub type SystemParamItem<P> = <P as SystemParam>::Item;
+/// Shorthand for `<P as SystemParam>::State`.
 pub type SystemParamState<P> = <P as SystemParam>::State;
 
 impl SystemParam for () {
@@ -151,6 +230,10 @@ impl SystemParam for () {
     }
 }
 
+/// Per-system state that persists between runs.
+///
+/// The initial value is built once, from [`ConstructFromWorld`], when the system is initialized.
+/// Two systems taking `Local<T>` each get their own copy.
 pub struct Local<T: Send + Sync + ConstructFromWorld> {
     value: SharedLock<T>,
 }
@@ -164,16 +247,19 @@ impl<T: Send + Sync + ConstructFromWorld> Clone for Local<T> {
 }
 
 impl<T: Send + Sync + ConstructFromWorld> Local<T> {
+    /// Wraps `value`.
     pub fn new(value: T) -> Self {
         Self {
             value: SharedLock::new(value),
         }
     }
 
+    /// Locks the value for reading.
     pub fn get(&self) -> OwnedRead<T> {
         self.value.read()
     }
 
+    /// Locks the value for writing.
     pub fn get_mut(&mut self) -> OwnedWrite<T> {
         self.value.write()
     }
@@ -373,21 +459,26 @@ impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S);
 impl_system_param_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
 
+/// Holds the fetched [`Item`](SystemParam::Item) of a parameter `S`, itself usable as a parameter.
 pub struct SystemParamWrapper<S: SystemParam>(S::Item);
 
 impl<S: SystemParam> SystemParamWrapper<S> {
+    /// Wraps an already fetched item.
     pub fn new(item: S::Item) -> Self {
         Self(item)
     }
 
+    /// Returns the wrapped item.
     pub fn item(&self) -> &S::Item {
         &self.0
     }
 
+    /// Returns the wrapped item mutably.
     pub fn item_mut(&mut self) -> &mut S::Item {
         &mut self.0
     }
 
+    /// Unwraps the item.
     pub fn into_item(self) -> S::Item {
         self.0
     }
@@ -422,16 +513,27 @@ impl<S: SystemParam> SystemParam for SystemParamWrapper<S> {
     }
 }
 
+/// A function whose arguments are all [`SystemParam`]s.
+///
+/// Implemented for `Fn`s of up to 20 parameters by a macro; [`FunctionSystem`] drives it.
 pub trait SystemParamFunction<M>: 'static + Send + Sync {
+    /// The function's arguments as a single (tuple) parameter.
     type Param: SystemParam + 'static;
 
+    /// Builds the state for [`Self::Param`](SystemParamFunction::Param).
     fn init_state(world: &World) -> SystemParamState<Self::Param>;
 
+    /// Refreshes the state before a run.
     fn update_state(state: &mut SystemParamState<Self::Param>, world: &World);
 
+    /// Calls the function with freshly fetched parameters.
     fn run(&self, param: SystemParamItem<Self::Param>);
 }
 
+/// A [`System`] built from a function over [`SystemParam`]s.
+///
+/// Holds the function, the parameters' persistent state (created on
+/// [`initialize`](System::initialize)) and the access the parameters declared.
 pub struct FunctionSystem<M, F>
 where
     M: 'static,
@@ -448,6 +550,7 @@ where
     M: 'static,
     F: SystemParamFunction<M>,
 {
+    /// Wraps `func`. The state is created later, by [`System::initialize`].
     pub fn new(func: F) -> Self {
         Self {
             func: Arc::new(func),
@@ -496,6 +599,7 @@ where
     }
 }
 
+/// Marker for the [`IntoSystem`] impl on parameter functions.
 pub struct FunctionSystemMarker;
 
 impl<M, F> IntoSystem<(FunctionSystemMarker, M)> for F
@@ -600,6 +704,7 @@ where
     }
 }
 
+/// Marker for the [`IntoSystem`] impl on `fn(&World)`.
 pub struct WorldSystemMarker;
 
 impl<F> IntoSystem<WorldSystemMarker> for F
@@ -627,6 +732,8 @@ pub struct SystemState<P: SystemParam> {
 }
 
 impl<P: SystemParam> SystemState<P> {
+    /// Creates the state for `P` from `world`. The first [`get`](SystemState::get) sees everything
+    /// as new.
     pub fn new(world: &World) -> Self {
         Self {
             state: P::init_state(world),
@@ -657,12 +764,20 @@ impl<P: SystemParam> SystemState<P> {
     }
 }
 
+/// An ordering request recorded on a [`SystemConfig`]. Holds the other system's `TypeId` and name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SystemAddOption {
+    /// Run after the given system.
     After(TypeId, &'static str),
+    /// Run before the given system.
     Before(TypeId, &'static str),
 }
 
+/// A system together with its ordering requests and run conditions, as passed to
+/// [`SystemGraph::add_system`].
+///
+/// Built with [`IntoSystemConfig`]'s `.after`, `.before` and `.run_if`, or directly from a system
+/// with [`SystemConfig::new`].
 pub struct SystemConfig {
     system_type_id: TypeId,
     system: Box<dyn System<Input = (), Output = ()>>,
@@ -671,6 +786,9 @@ pub struct SystemConfig {
 }
 
 impl SystemConfig {
+    /// Wraps `system` with no ordering requests or conditions.
+    ///
+    /// The system's identity is the `TypeId` of `S`, the function item.
     pub fn new<M, S>(system: S) -> Self
     where
         M: 'static,
@@ -684,6 +802,11 @@ impl SystemConfig {
         }
     }
 
+    /// Runs this system after `system`, which is identified by its function type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this config already asks to run before `system`.
     pub fn after<M2: 'static, T: IntoSystem<M2>>(mut self, _system: T) -> Self {
         let id = TypeId::of::<T>();
         if self
@@ -698,6 +821,11 @@ impl SystemConfig {
         self
     }
 
+    /// Runs this system before `system`, which is identified by its function type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this config already asks to run after `system`.
     pub fn before<M2: 'static, T: IntoSystem<M2>>(mut self, _system: T) -> Self {
         let id = TypeId::of::<T>();
         if self
@@ -719,7 +847,23 @@ impl SystemConfig {
     }
 }
 
+/// Builder methods (`.after`, `.before`, `.run_if`) for anything that can be added to a stage.
+///
+/// Blanket-implemented for every [`IntoSystem`] and for [`SystemConfig`], so the calls chain.
+///
+/// # Examples
+///
+/// ```
+/// use weaver_ecs::prelude::*;
+///
+/// fn load(_commands: Commands) {}
+/// fn simulate(_commands: Commands) {}
+///
+/// let config = simulate.after(load).run_if(resource_exists::<u32>());
+/// # let _ = config;
+/// ```
 pub trait IntoSystemConfig<M>: Sized + 'static {
+    /// Converts into a [`SystemConfig`].
     fn finish(self) -> SystemConfig;
 
     /// Runs this system after `system`. `system` may be registered later in the same stage; it
@@ -827,6 +971,16 @@ struct PendingEdge {
     to_name: &'static str,
 }
 
+/// The systems of one stage, with the ordering between them.
+///
+/// Edges come from `.after`/`.before`, [`add_edge`](SystemGraph::add_edge), and from conflicting
+/// [`SystemAccess`]es, which [`resolve_dependencies`](SystemGraph::resolve_dependencies) turns into
+/// extra edges. [`run`](SystemGraph::run) executes the graph layer by layer on the calling thread
+/// and applies each layer's [`Commands`](crate::commands::Commands) before starting the next.
+///
+/// Within a layer, systems whose parameters aren't available (a missing `Res<T>`, say) are skipped
+/// and retried once the layer's commands have been applied. A system gated with `.run_if` that
+/// returns false is simply not run, and isn't retried.
 #[derive(Default)]
 pub struct SystemGraph {
     systems: StableDiGraph<SystemNode, ()>,
@@ -836,6 +990,9 @@ pub struct SystemGraph {
 
 impl SystemGraph {
     /// Adds a system to the graph. Adding a system that is already in the graph does nothing.
+    ///
+    /// Ordering requests on the config may name systems that aren't added yet; they're resolved by
+    /// [`resolve_dependencies`](SystemGraph::resolve_dependencies).
     pub fn add_system<M, S>(&mut self, system: S) -> NodeIndex
     where
         M: 'static,
@@ -858,6 +1015,8 @@ impl SystemGraph {
             return node;
         }
 
+        // FIXME: `S` is often `SystemConfig`, so ordering error messages name that instead of the
+        // system
         let name = std::any::type_name::<S>();
         let node = self.systems.add_node(SystemNode {
             system,
@@ -890,6 +1049,8 @@ impl SystemGraph {
         node
     }
 
+    /// Requires `_from` to run before `_to`. Both are identified by their function type and must be
+    /// in the graph by the time dependencies are resolved.
     pub fn add_edge<SM, TM, S, T>(&mut self, _from: S, _to: T)
     where
         SM: 'static,
@@ -907,6 +1068,8 @@ impl SystemGraph {
         });
     }
 
+    /// Removes the system and any ordering requests that mention it. Does nothing if it isn't
+    /// in the graph.
     pub fn remove_system<M, S>(&mut self, _system: S)
     where
         M: 'static,
@@ -926,8 +1089,8 @@ impl SystemGraph {
         self.index_cache.contains_key(&TypeId::of::<S>())
     }
 
-    /// Sorts the graph based on system dependencies, returning a list of layers where each layer contains systems that can be run in parallel.
-    /// This will respect existing system dependencies, and will not add any new ones.
+    /// Splits the graph into layers (Kahn levels): every system's dependencies are in earlier
+    /// layers. Doesn't add edges.
     fn get_batches(&self) -> Vec<Vec<NodeIndex>> {
         let mut batches = Vec::new();
         let mut queue = VecDeque::new();
@@ -1009,7 +1172,14 @@ impl SystemGraph {
         bail!("Cyclic system dependency detected: {:#?}", cycles)
     }
 
-    /// Resolves system dependencies, ensuring that no system mutably accesses the same resource or component at the same time as another system.
+    /// Turns the recorded ordering requests into edges, then adds an edge between every pair of
+    /// systems in the same layer whose [`SystemAccess`] conflicts, so that no two conflicting
+    /// systems end up in one layer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an `.after`/`.before` request names a system that isn't in the graph, or
+    /// if the ordering has a cycle.
     pub fn resolve_dependencies(&mut self) -> Result<()> {
         self.resolve_pending_edges()?;
         self.check_for_cycles()?;
@@ -1047,6 +1217,11 @@ impl SystemGraph {
         }
     }
 
+    /// Resolves dependencies and initializes every system that hasn't been yet.
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`resolve_dependencies`](SystemGraph::resolve_dependencies) fails.
     pub fn initialize(&mut self, world: &mut World) {
         if let Err(e) = self.resolve_dependencies() {
             panic!("{e}");
@@ -1061,7 +1236,19 @@ impl SystemGraph {
         }
     }
 
-    /// Runs all systems in the graph.
+    /// Runs every system in the graph once, layer by layer.
+    ///
+    /// Each system run gets a fresh tick range: `this_run` is a newly bumped world tick and
+    /// `last_run` is the system's previous `this_run`, so it sees changes other systems made since
+    /// it last ran. After a layer, the commands of the systems that ran are applied, then the
+    /// systems that were skipped for unavailable parameters get a second chance.
+    ///
+    /// Systems added since the last run, or with unresolved ordering, are initialized first.
+    ///
+    /// # Errors
+    ///
+    /// Currently always returns `Ok`; a broken ordering panics in
+    /// [`initialize`](SystemGraph::initialize) instead.
     pub fn run(&mut self, world: &mut World) -> Result<()> {
         if !self.pending_edges.is_empty()
             || self.systems.node_weights().any(|node| !node.initialized)
@@ -1094,7 +1281,7 @@ impl SystemGraph {
                 self.systems[node].system.apply_deferred(world);
             }
 
-            // run skipped systems synchronously, in case there was a resource conflict
+            // give skipped systems (a param was unavailable) a second chance
             // this has to come after the apply above, so a system skipped for a missing resource can see one inserted by this layer's commands
             for node in skipped {
                 let system = &mut self.systems[node];

@@ -1,3 +1,5 @@
+//! A type-erased `Vec` for one component type, the building block of archetype columns.
+
 use std::{
     alloc::{self, Layout},
     any::TypeId,
@@ -34,6 +36,7 @@ fn dangling(layout: Layout) -> NonNull<u8> {
 }
 
 impl ComponentVec {
+    /// Creates an empty vec for `T`s.
     pub fn new<T: Component>() -> Self {
         let item_layout = Layout::new::<T>();
         Self {
@@ -66,18 +69,22 @@ impl ComponentVec {
         }
     }
 
+    /// The `TypeId` of the element type.
     pub fn element_typeid(&self) -> TypeId {
         self.type_id
     }
 
+    /// The element type's name, for diagnostics.
     pub fn element_type_name(&self) -> &'static str {
         self.type_name
     }
 
+    /// Number of elements.
     pub fn len(&self) -> usize {
         self.len
     }
 
+    /// Whether the vec has no elements.
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
@@ -131,6 +138,11 @@ impl ComponentVec {
         unsafe { self.data.as_ptr().add(index * self.item_layout.size()) }
     }
 
+    /// Appends a value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `T` isn't the element type.
     pub fn push<T: Component>(&mut self, value: T) {
         self.assert_type::<T>();
         self.reserve_one();
@@ -139,6 +151,11 @@ impl ComponentVec {
         self.len += 1;
     }
 
+    /// Removes and returns the last element, or `None` if empty.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `T` isn't the element type.
     pub fn pop<T: Component>(&mut self) -> Option<T> {
         self.assert_type::<T>();
         if self.len == 0 {
@@ -150,7 +167,12 @@ impl ComponentVec {
         Some(unsafe { self.ptr_at(self.len).cast::<T>().read() })
     }
 
-    /// Moves the element at `index` to the end of `dst`, filling the hole with this vec's last element.
+    /// Moves the element at `index` to the end of `dst`, filling the hole with this vec's last
+    /// element.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the two vecs hold different types or `index` is out of bounds.
     pub fn swap_remove_into(&mut self, index: usize, dst: &mut ComponentVec) {
         assert_eq!(
             self.type_id, dst.type_id,
@@ -201,8 +223,9 @@ impl ComponentVec {
         unsafe { std::slice::from_raw_parts(self.data.as_ptr().cast::<T>(), self.len) }
     }
 
-    /// Raw pointer to the first element. Writing through it needs exclusive access to the
-    /// elements, but doesn't need `&mut self`, since the buffer is a separate allocation.
+    /// Raw pointer to the first element (dangling and aligned if the vec is empty).
+    /// Writing through it needs exclusive access to the elements, but doesn't need `&mut self`,
+    /// since the buffer is a separate allocation.
     pub fn as_ptr(&self) -> *mut u8 {
         self.data.as_ptr()
     }

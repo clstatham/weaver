@@ -17,8 +17,10 @@ use crate::{
 /// `ticks.last_run` is the owning system's last run (so "changed" means "changed since the system
 /// last ran"), and `ticks.this_run` is the world's current tick.
 pub trait Condition: Send + Sync + 'static {
+    /// Returns true if the system should run.
     fn evaluate(&mut self, world: &World, ticks: TickRange) -> bool;
 
+    /// Returns a name for logging. Defaults to the type name.
     fn name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }
@@ -33,6 +35,7 @@ where
     }
 }
 
+/// A type-erased [`Condition`].
 pub type BoxedCondition = Box<dyn Condition>;
 
 /// True if the resource exists.

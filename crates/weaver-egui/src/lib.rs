@@ -1,3 +1,12 @@
+//! egui integration.
+//!
+//! [`EguiPlugin`] runs one egui pass per main-world frame: `begin_frame` in `PreUpdate`, UI built
+//! by systems through [`EguiContext::with_ctx`], `end_frame` in `PostUpdate`. Window events are
+//! forwarded to egui as they arrive. On extract the pass's output is tessellated into
+//! [`ExtractedEguiOutput`] (texture changes accumulate there until drawn), and the render thread
+//! draws it straight onto the swapchain after the scene has been tonemapped, outside the phase
+//! system.
+
 use egui::{Context, FullOutput};
 use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::{State, winit};
@@ -20,11 +29,34 @@ use weaver_winit::{Window, WinitEvent};
 
 pub use egui;
 
+/// [`EguiContext`], [`EguiPlugin`] and the `egui` crate itself.
 pub mod prelude {
     pub use super::{EguiContext, EguiPlugin};
     pub use egui;
 }
 
+/// The egui context, winit input state and wgpu renderer, shared between the main and render
+/// worlds.
+///
+/// Clones share the same state. The main thread uses it to feed input and run the UI pass (see
+/// [`with_ctx`](Self::with_ctx)); the render thread uses it to upload textures and draw.
+///
+/// # Examples
+///
+/// Building UI from a system:
+///
+/// ```no_run
+/// use weaver_ecs::component::Res;
+/// use weaver_egui::{EguiContext, egui};
+///
+/// fn ui(egui_context: Res<EguiContext>) {
+///     egui_context.with_ctx(|ctx| {
+///         egui::Window::new("Hello").show(ctx, |ui| {
+///             ui.label("world");
+///         });
+///     });
+/// }
+/// ```
 #[derive(Clone)]
 pub struct EguiContext {
     state: SharedLock<State>,
@@ -33,6 +65,7 @@ pub struct EguiContext {
 }
 
 impl EguiContext {
+    /// Creates the context for `window`, with a renderer that draws to the swapchain format.
     pub fn new(device: &wgpu::Device, window: &winit::window::Window) -> Self {
         let ctx = Context::default();
         let viewport_id = ctx.viewport_id();
@@ -50,28 +83,37 @@ impl EguiContext {
         }
     }
 
+    /// Returns the screen area not covered by panels, in egui points.
     pub fn available_rect(&self) -> egui::Rect {
         self.state.read().egui_ctx().content_rect()
     }
 
+    /// Passes a window event to egui. The game still sees the event too.
     pub fn handle_input(&self, window: &winit::window::Window, event: &winit::event::WindowEvent) {
+        // TODO: egui's response and `wants_input` are never consulted, game input isn't blocked
         let _ = self.state.write().on_window_event(window, event);
     }
 
+    /// Returns whether egui wants the keyboard or the pointer, as of its last pass.
     pub fn wants_input(&self) -> bool {
         self.state.read().egui_ctx().egui_wants_keyboard_input()
             || self.state.read().egui_ctx().egui_wants_pointer_input()
     }
 
+    /// Starts an egui pass with the input gathered since the last one.
+    ///
+    /// UI has to be built between this and [`end_frame`](Self::end_frame).
     pub fn begin_frame(&self, window: &winit::window::Window) {
         let raw_input = self.state.write().take_egui_input(window);
         self.state.read().egui_ctx().begin_pass(raw_input);
     }
 
+    /// Finishes the egui pass and stores its output for the next extract.
     pub fn end_frame(&self) {
         *self.full_output.write() = Some(self.state.read().egui_ctx().end_pass());
     }
 
+    /// Runs `f` with the [`egui::Context`], for building UI.
     pub fn with_ctx<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&egui::Context) -> R,
@@ -79,6 +121,7 @@ impl EguiContext {
         f(self.state.read().egui_ctx())
     }
 
+    /// Registers a wgpu texture view so egui can show it as an image, and returns its id.
     pub fn convert_texture(
         &self,
         device: &wgpu::Device,
@@ -89,6 +132,7 @@ impl EguiContext {
             .register_native_texture(device, texture, wgpu::FilterMode::Nearest)
     }
 
+    /// Points the egui texture `id` (from [`convert_texture`](Self::convert_texture)) at `texture`.
     pub fn update_texture(
         &self,
         device: &wgpu::Device,
@@ -103,6 +147,9 @@ impl EguiContext {
         );
     }
 
+    /// Applies the last pass's platform output (cursor icon, clipboard, IME) to `window`.
+    ///
+    /// Has to run on the main thread. Does nothing before the first pass has finished.
     pub fn pre_render_on_main_thread(&self, window: &winit::window::Window) {
         if self.full_output.read().is_none() {
             return;
@@ -130,6 +177,9 @@ impl EguiContext {
         extracted.textures_delta.append(full_output.textures_delta);
     }
 
+    /// Draws the extracted egui output onto `window_surface_view`, over what's already there.
+    ///
+    /// Applies pending texture updates first and frees dropped textures after the pass.
     pub fn render(
         &mut self,
         device: &wgpu::Device,
@@ -183,6 +233,7 @@ impl EguiContext {
 }
 
 /// The pixels per point egui output is tessellated and rendered at.
+// TODO: HiDPI, use the window's scale factor instead of a constant
 const PIXELS_PER_POINT: f32 = 1.0;
 
 /// Egui output extracted for the render world. The render thread draws frame N while the main
@@ -195,6 +246,15 @@ pub struct ExtractedEguiOutput {
     textures_delta: egui::TexturesDelta,
 }
 
+/// Adds egui: runs a pass each frame, forwards window events to it, and draws the result on the
+/// swapchain after tonemapping.
+///
+/// The [`EguiContext`] resource appears in both worlds on the first extract, so it isn't
+/// available during startup. Needs [`RenderApp`] to exist, so add it after the renderer.
+///
+/// # Panics
+///
+/// Panics in `build` if there's no [`RenderApp`] sub-app.
 pub struct EguiPlugin;
 
 impl Plugin for EguiPlugin {
@@ -244,10 +304,12 @@ fn extract_egui_output(main_world: Res<MainWorld>, mut extracted: ResMut<Extract
     }
 }
 
+/// System that starts the frame's egui pass, in [`AppStage::PreUpdate`].
 pub fn begin_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
     egui_context.begin_frame(&window);
 }
 
+/// System that ends the frame's egui pass, in [`AppStage::PostUpdate`].
 pub fn end_frame(egui_context: Res<EguiContext>, window: Res<Window>) {
     egui_context.end_frame();
 

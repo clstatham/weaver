@@ -1,3 +1,17 @@
+//! The winit-based window and runner.
+//!
+//! [`WindowPlugin`] stores the requested title and size as [`WindowSettings`]. [`WinitPlugin`]
+//! installs a [`Runner`] that takes over the main thread:
+//!
+//! - it calls `App::init`, then starts the winit event loop;
+//! - when the loop is resumed it creates the window, inserts it as the [`Window`] resource and
+//!   calls `App::finish_plugins`;
+//! - window and device events are forwarded into the app as [`WinitEvent`]s and fed to
+//!   [`Input`]; resizes also become [`WindowResized`] events and update [`WindowSettings`];
+//! - the loop polls continuously and every event requests a redraw, and each
+//!   `RedrawRequested` drives one `App::update`;
+//! - `CloseRequested` shuts the app down and exits the loop.
+
 use std::{ops::Deref, sync::Arc};
 
 use weaver_app::{Runner, plugin::Plugin, prelude::App};
@@ -10,21 +24,33 @@ use winit::{
     window::WindowAttributes,
 };
 
+/// Re-exports the window types and `winit` itself.
 pub mod prelude {
     pub use super::{Window, WindowPlugin, WindowResized, WindowSettings, WinitEvent, WinitPlugin};
     pub use winit;
 }
 
+/// The main window, stored as a resource once the event loop has been resumed.
+///
+/// Derefs to [`winit::window::Window`]. Cloning is cheap (the window is behind an `Arc`).
 #[derive(Clone)]
 pub struct Window {
     window: Arc<winit::window::Window>,
+    /// Handle to the display connection, for creating graphics surfaces.
     pub display_handle: OwnedDisplayHandle,
 }
 
+/// Title and size for the window, inserted by [`WindowPlugin`].
+///
+/// The runner reads it when it creates the window and then keeps `width` and `height` in sync
+/// with the actual size.
 #[derive(Debug, Clone)]
 pub struct WindowSettings {
+    /// Window title.
     pub title: String,
+    /// Width in pixels.
     pub width: u32,
+    /// Height in pixels.
     pub height: u32,
 }
 
@@ -36,20 +62,30 @@ impl Deref for Window {
     }
 }
 
+/// A raw winit window or device event, forwarded into the app's event queue.
 #[derive(Debug, Clone)]
 pub struct WinitEvent {
+    /// The event as winit delivered it.
     pub event: Event<()>,
 }
 
+/// Sent when the window changes size.
 #[derive(Debug, Clone)]
 pub struct WindowResized {
+    /// New width in pixels.
     pub width: u32,
+    /// New height in pixels.
     pub height: u32,
 }
 
+/// Plugin that records the window title and initial size and registers [`WindowResized`].
+///
+/// Doesn't create a window itself; that happens in the runner from [`WinitPlugin`].
 #[derive(Clone)]
 pub struct WindowPlugin {
+    /// Window title.
     pub window_title: &'static str,
+    /// Initial inner size as `(width, height)`.
     pub initial_size: (u32, u32),
 }
 
@@ -63,6 +99,7 @@ impl Default for WindowPlugin {
 }
 
 impl WindowPlugin {
+    /// Creates the plugin with the given `(width, height)` and title.
     pub fn new(initial_size: (u32, u32), window_title: &'static str) -> Self {
         Self {
             window_title,
@@ -90,6 +127,10 @@ impl Plugin for WindowPlugin {
     }
 }
 
+/// Plugin that replaces the app's runner with a winit event loop and registers [`WinitEvent`].
+///
+/// Creating the event loop can fail (no display, for instance), in which case `build` returns the
+/// error. Needs [`WindowPlugin`] to have run first, since the runner reads [`WindowSettings`].
 pub struct WinitPlugin;
 
 impl Plugin for WinitPlugin {

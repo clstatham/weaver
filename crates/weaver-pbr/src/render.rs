@@ -1,3 +1,7 @@
+//! The PBR pipeline, its lighting bind group, and the draw function for [`Opaque3d`].
+//!
+//! [`Opaque3d`]: weaver_renderer::phase::Opaque3d
+
 use weaver_asset::Handle;
 use weaver_core::mesh::Mesh;
 use weaver_ecs::{
@@ -25,7 +29,9 @@ use crate::{
 
 /// Point lights and the environment map, bound as group 3 of the PBR pipeline.
 pub struct PbrLightingInformation {
+    /// Every point light in the scene.
     pub point_lights: GpuPointLightArray,
+    /// Diffuse and specular IBL maps and the BRDF lookup table.
     pub env_map: GpuSkyboxIrradiance,
 }
 
@@ -43,6 +49,8 @@ impl ConstructFromWorld for PbrLightingInformation {
 }
 
 /// Loads the skybox's image-based lighting maps whenever the skybox changes.
+///
+/// Keeps the previous maps (and logs) if the files can't be loaded.
 pub(crate) fn update_environment_map(
     skybox: Res<Skybox>,
     mut lighting: ResMut<PbrLightingInformation>,
@@ -81,7 +89,11 @@ impl AsBindGroup for PbrLightingInformation {
     }
 }
 
+/// The render pipeline for [`Material`]ed meshes (`pbr.wesl`).
+///
+/// Bind groups: 0 material, 1 camera, 2 the view's mesh instances, 3 [`PbrLightingInformation`].
 pub struct PbrPipeline {
+    /// The compiled pipeline.
     pub pipeline: RenderPipeline,
 }
 

@@ -1,3 +1,5 @@
+//! Render-world copies of entity transforms.
+
 use encase::ShaderType;
 use weaver_app::{App, plugin::Plugin};
 use weaver_core::transform::Transform;
@@ -22,15 +24,18 @@ impl ExtractComponent for Transform {
 #[derive(Copy, Clone, Debug, ShaderType)]
 #[repr(C)]
 pub struct GpuTransform {
+    /// Local-to-world matrix.
     pub matrix: glam::Mat4,
 }
 
 impl GpuTransform {
+    /// The identity transform.
     pub const IDENTITY: Self = Self {
         matrix: glam::Mat4::IDENTITY,
     };
 }
 
+/// Extracts [`Transform`] components as [`GpuTransform`]s whenever they change.
 pub struct TransformPlugin;
 
 impl Plugin for TransformPlugin {

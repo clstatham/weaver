@@ -32,6 +32,7 @@ pub struct ShaderLibrary {
 }
 
 impl ShaderLibrary {
+    /// Creates a library for the shader directory `root`.
     pub fn new(root: impl AsRef<Path>) -> Self {
         Self {
             compiler: Compiler::new_with_resolver(
@@ -42,6 +43,10 @@ impl ShaderLibrary {
     }
 
     /// Compiles the shader at `path` (relative to the shader directory) into a module.
+    ///
+    /// Nothing is cached: every call recompiles from disk, so load once (usually in `from_world`).
+    ///
+    /// # Panics
     ///
     /// Panics with the compiler's error if the shader doesn't compile: shaders ship with the
     /// engine, so a broken one is a bug to fix rather than a condition to handle.

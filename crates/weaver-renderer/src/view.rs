@@ -29,11 +29,16 @@ use crate::{
 /// A camera in the render world. Only active cameras are extracted.
 #[derive(Clone, Copy, Debug)]
 pub struct ExtractedView {
+    /// A copy of the main-world camera, taken when it last changed.
     pub camera: Camera,
 }
 
 impl ExtractedView {
-    /// True if a mesh with local bounds `aabb` and model matrix `model` may be visible.
+    /// Returns whether a mesh with local bounds `aabb` and model matrix `model` may be visible.
+    ///
+    /// Queue systems call this for frustum culling. It can say yes for things just outside the
+    /// frustum (the test uses the world-space box of the transformed bounds) but never no for
+    /// something visible.
     pub fn may_see(&self, aabb: &Aabb, model: glam::Mat4) -> bool {
         let world_aabb = transform_aabb(aabb, model);
         self.camera
@@ -67,7 +72,9 @@ impl ExtractComponent for Camera {
 /// Where a view renders: an HDR color texture (tonemapped onto the window at the end of the frame)
 /// and a depth texture, both sized like the window.
 pub struct ViewTarget {
+    /// `Rgba16Float` color target.
     pub hdr: GpuTexture,
+    /// `Depth32Float` depth target.
     pub depth: GpuTexture,
     sampler: Arc<wgpu::Sampler>,
 }
@@ -107,6 +114,7 @@ impl ViewTarget {
         }
     }
 
+    /// Returns the size of the color target in pixels.
     pub fn size(&self) -> (u32, u32) {
         let size = self.hdr.texture.size();
         (size.width, size.height)
@@ -150,6 +158,7 @@ pub fn prepare_view_targets(
     }
 }
 
+/// Registers [`Camera`] extraction and the per-view [`ViewTarget`] setup.
 pub struct ViewPlugin;
 
 impl Plugin for ViewPlugin {

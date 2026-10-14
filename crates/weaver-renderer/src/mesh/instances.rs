@@ -71,6 +71,9 @@ pub fn batch_items(items: Vec<Opaque3d>) -> (Vec<Opaque3d>, Vec<Entity>) {
 }
 
 /// Batches each view's sorted [`Opaque3d`] items and uploads their transforms.
+///
+/// Items whose entity no longer has a [`GpuTransform`] are dropped. A view with nothing to draw
+/// still gets one identity transform, because a storage buffer can't be bound empty.
 #[allow(clippy::type_complexity)]
 pub fn batch_opaque_meshes(
     commands: Commands,

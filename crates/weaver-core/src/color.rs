@@ -1,15 +1,26 @@
+//! RGBA colors.
+
 use encase::ShaderType;
 
+/// A color as four `f32` channels in the 0.0 to 1.0 range, red, green, blue, alpha.
+///
+/// The channels are plain numbers: nothing here converts between sRGB and linear. Laid out so it
+/// can be passed to shaders directly.
 #[derive(Debug, Clone, Copy, PartialEq, ShaderType)]
 #[repr(C)]
 pub struct Color {
+    /// Red.
     pub r: f32,
+    /// Green.
     pub g: f32,
+    /// Blue.
     pub b: f32,
+    /// Alpha (1.0 is opaque).
     pub a: f32,
 }
 
 impl Color {
+    /// Fully transparent black.
     pub const TRANSPARENT: Self = Self {
         r: 0.0,
         g: 0.0,
@@ -17,6 +28,7 @@ impl Color {
         a: 0.0,
     };
 
+    /// Opaque black.
     pub const BLACK: Self = Self {
         r: 0.0,
         g: 0.0,
@@ -24,6 +36,7 @@ impl Color {
         a: 1.0,
     };
 
+    /// Opaque white.
     pub const WHITE: Self = Self {
         r: 1.0,
         g: 1.0,
@@ -31,6 +44,7 @@ impl Color {
         a: 1.0,
     };
 
+    /// Opaque red.
     pub const RED: Self = Self {
         r: 1.0,
         g: 0.0,
@@ -38,6 +52,7 @@ impl Color {
         a: 1.0,
     };
 
+    /// Opaque green.
     pub const GREEN: Self = Self {
         r: 0.0,
         g: 1.0,
@@ -45,6 +60,7 @@ impl Color {
         a: 1.0,
     };
 
+    /// Opaque blue.
     pub const BLUE: Self = Self {
         r: 0.0,
         g: 0.0,
@@ -52,6 +68,7 @@ impl Color {
         a: 1.0,
     };
 
+    /// Opaque yellow.
     pub const YELLOW: Self = Self {
         r: 1.0,
         g: 1.0,
@@ -59,6 +76,7 @@ impl Color {
         a: 1.0,
     };
 
+    /// Opaque cyan.
     pub const CYAN: Self = Self {
         r: 0.0,
         g: 1.0,
@@ -66,6 +84,7 @@ impl Color {
         a: 1.0,
     };
 
+    /// Opaque magenta.
     pub const MAGENTA: Self = Self {
         r: 1.0,
         g: 0.0,
@@ -73,10 +92,12 @@ impl Color {
         a: 1.0,
     };
 
+    /// Creates a color from its four channels.
     pub const fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
         Self { r, g, b, a }
     }
 
+    /// Creates a color from a packed `0xRRGGBBAA` value.
     pub fn from_hex(hex: u32) -> Self {
         let r = ((hex >> 24) & 0xff) as f32 / 255.0;
         let g = ((hex >> 16) & 0xff) as f32 / 255.0;
@@ -86,6 +107,9 @@ impl Color {
         Self { r, g, b, a }
     }
 
+    /// Packs the color into `0xRRGGBBAA`.
+    ///
+    /// Channels are scaled to 0..=255 and truncated, not rounded.
     pub fn to_hex(&self) -> u32 {
         (((self.r * 255.0) as u32) << 24)
             | (((self.g * 255.0) as u32) << 16)
@@ -93,14 +117,17 @@ impl Color {
             | (self.a * 255.0) as u32
     }
 
+    /// Returns the channels as `[r, g, b, a]`.
     pub const fn to_rgba(&self) -> [f32; 4] {
         [self.r, self.g, self.b, self.a]
     }
 
+    /// Returns the channels as `[r, g, b]`, dropping alpha.
     pub const fn to_rgb(&self) -> [f32; 3] {
         [self.r, self.g, self.b]
     }
 
+    /// Returns `[r, g, b, a]` scaled to 0..=255 (truncated, and clamped by the cast).
     pub fn to_rgba_u8(&self) -> [u8; 4] {
         [
             (self.r * 255.0) as u8,
@@ -110,6 +137,7 @@ impl Color {
         ]
     }
 
+    /// Returns `[r, g, b]` scaled to 0..=255, dropping alpha.
     pub fn to_rgb_u8(&self) -> [u8; 3] {
         [
             (self.r * 255.0) as u8,
@@ -118,6 +146,7 @@ impl Color {
         ]
     }
 
+    /// Creates a color from `[r, g, b, a]` bytes.
     pub fn from_rgba_u8(rgba: [u8; 4]) -> Self {
         Self {
             r: rgba[0] as f32 / 255.0,
@@ -127,6 +156,7 @@ impl Color {
         }
     }
 
+    /// Creates an opaque color from `[r, g, b]` bytes.
     pub fn from_rgb_u8(rgb: [u8; 3]) -> Self {
         Self {
             r: rgb[0] as f32 / 255.0,
@@ -136,6 +166,7 @@ impl Color {
         }
     }
 
+    /// Creates a color from `[r, g, b, a]`.
     pub const fn from_rgba(rgba: [f32; 4]) -> Self {
         Self {
             r: rgba[0],
@@ -145,6 +176,7 @@ impl Color {
         }
     }
 
+    /// Creates an opaque color from `[r, g, b]`.
     pub const fn from_rgb(rgb: [f32; 3]) -> Self {
         Self {
             r: rgb[0],
@@ -154,6 +186,7 @@ impl Color {
         }
     }
 
+    /// Linearly interpolates every channel from `a` (at `t = 0`) to `b` (at `t = 1`).
     pub fn lerp(a: Self, b: Self, t: f32) -> Self {
         Self {
             r: a.r + (b.r - a.r) * t,

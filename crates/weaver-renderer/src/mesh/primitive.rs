@@ -1,16 +1,24 @@
+//! Generated meshes for quick scenes and debugging.
+
 use glam::{Vec2, Vec3};
 use weaver_core::mesh::{Mesh, Vertex};
 
+/// A shape that can build a [`Mesh`] for itself.
 pub trait Primitive {
+    /// Builds the mesh.
     fn generate_mesh(&self) -> Mesh;
 }
 
+/// An axis-aligned cube centered on the origin.
 pub struct CubePrimitive {
+    /// Edge length.
     pub side_length: f32,
+    /// If set, the mesh is the 12 edges as a line list rather than 36 triangle indices.
     pub wireframe: bool,
 }
 
 impl CubePrimitive {
+    /// Creates a cube with the given edge length.
     pub fn new(side_length: f32, wireframe: bool) -> Self {
         Self {
             side_length,
@@ -19,6 +27,9 @@ impl CubePrimitive {
     }
 }
 
+/// Builds a cube spanning -1 to 1 on each axis (so edge length 2), with 24 vertices.
+///
+/// With `wireframe` the indices are a line list of the 12 edges, otherwise a triangle list.
 pub fn create_unit_cube(wireframe: bool) -> Mesh {
     let vertices = vec![
         // Front face

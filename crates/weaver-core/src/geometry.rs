@@ -1,22 +1,39 @@
+//! Bounding volumes, planes, rays and the intersection tests between them.
+//!
+//! The shapes are plain `Copy` data. [`Intersect`] is the common interface for the tests; which
+//! pairs exist is whatever has an impl (ray against triangle, AABB, OBB and mesh, sphere against
+//! sphere, AABB against sphere, ...). [`Frustum`] holds the six planes used for view culling.
+
 use encase::ShaderType;
 use glam::*;
 
 use crate::{mesh::Mesh, prelude::Transform};
 
+/// An intersection test between `Self` and `Rhs`.
+///
+/// Implementations exist in both directions for most pairs, with the same result.
 pub trait Intersect<Rhs> {
+    /// What a hit is described by: a distance, a [`RayTriangleIntersection`], an [`Intersection`],
+    /// ...
     type Output;
+    /// Tests `self` against `rhs`, returning `None` if there is no hit.
     fn intersect(&self, rhs: &Rhs) -> Option<Self::Output>;
 }
 
+/// How one volume relates to another, for tests that can say more than hit or miss.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub enum Intersection {
+    /// Contained in the other volume (see the specific impl for what counts).
     Inside = 1,
+    /// No overlap.
     Outside = 2,
+    /// Overlaps the boundary of the other volume.
     Intersecting = 3, // 1 | 2
 }
 
 /// 3D plane with infinite extent
+// FIXME: `distance` means n·p = d for some constructors and n·p + d = 0 for others (see Frustum).
 #[derive(Default, Clone, Copy, Debug, PartialEq, ShaderType)]
 #[repr(C)]
 pub struct Plane {
@@ -27,17 +44,25 @@ pub struct Plane {
 }
 
 impl Plane {
+    /// Creates a plane from a normal and a distance value, stored as given.
     #[inline]
     pub fn new(normal: Vec3, distance: f32) -> Self {
         Self { normal, distance }
     }
 
+    /// Creates the plane with the given normal passing through `point`.
+    ///
+    /// Stores `distance = normal.dot(point)`, so points on the plane satisfy `n·p = d`.
     #[inline]
     pub fn from_normal_and_point(normal: Vec3, point: Vec3) -> Self {
         let distance = normal.dot(point);
         Self { normal, distance }
     }
 
+    /// Creates the plane through three points, with the normal following the winding `a`, `b`, `c`
+    /// (counter-clockwise gives a normal pointing at the viewer).
+    ///
+    /// Stores `distance = normal.dot(a)`, so points on the plane satisfy `n·p = d`.
     #[inline]
     pub fn from_points(a: Vec3, b: Vec3, c: Vec3) -> Self {
         let normal = (b - a).cross(c - a).normalize();
@@ -46,6 +71,11 @@ impl Plane {
         Self { normal, distance }
     }
 
+    /// Creates a plane from the coefficients of `a*x + b*y + c*z + d = 0`.
+    ///
+    /// The normal is `(a, b, c)` and `d` is stored as `distance` unchanged, which means points on
+    /// the plane satisfy `n·p + d = 0`. With `normalize` the whole thing is scaled so the normal is
+    /// unit length.
     #[inline]
     pub fn from_coefficients(a: f32, b: f32, c: f32, d: f32, normalize: bool) -> Self {
         let normal = Vec3::new(a, b, c);
@@ -60,6 +90,7 @@ impl Plane {
         }
     }
 
+    /// Like [`Plane::from_coefficients`], with the coefficients packed as `(a, b, c, d)`.
     #[inline]
     pub fn from_coefficient_vec4(coefficients: Vec4, normalize: bool) -> Self {
         Self::from_coefficients(
@@ -71,16 +102,22 @@ impl Plane {
         )
     }
 
+    /// Returns `(normal.x, normal.y, normal.z, distance)`.
     #[inline]
     pub fn to_coefficients(&self) -> Vec4 {
         Vec4::new(self.normal.x, self.normal.y, self.normal.z, self.distance)
     }
 
+    /// Returns `normal * distance`, the point on the plane closest to the origin when `n·p = d`.
     #[inline]
     pub fn center(&self) -> Vec3 {
         self.normal * self.distance
     }
 
+    /// Returns this plane moved by `transform`.
+    ///
+    /// Treats `distance` as `n·p = d`: transforms the normal and [`Plane::center`], then rebuilds
+    /// `distance` from them. The normal isn't renormalized, so scale carries into it.
     #[inline]
     pub fn transformed(&self, transform: Transform) -> Self {
         let matrix = transform.matrix();
@@ -91,24 +128,35 @@ impl Plane {
     }
 }
 
+/// Which side of a plane a point is on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum HalfSpace {
+    /// On the side the normal points to.
     Front,
+    /// On the opposite side.
     Back,
+    /// On the plane itself.
     On,
 }
 
+/// A sphere.
 #[derive(Default, Clone, Copy, Debug, PartialEq, ShaderType)]
 pub struct Sphere {
+    /// Center point.
     pub center: Vec3,
+    /// Radius.
     pub radius: f32,
 }
 
 impl Sphere {
+    /// Creates a sphere.
     pub fn new(center: Vec3, radius: f32) -> Self {
         Self { center, radius }
     }
 
+    /// Returns this sphere with its center moved by `transform`.
+    ///
+    /// The radius stays the same, so scale in the transform is not applied to it.
     pub fn transformed(&self, transform: Transform) -> Self {
         let matrix = transform.matrix();
         let center = matrix.transform_point3(self.center);
@@ -119,6 +167,7 @@ impl Sphere {
     }
 }
 
+// Inside means one sphere contains the other (either way round), Intersecting that they overlap.
 impl Intersect<Sphere> for Sphere {
     type Output = Intersection;
 
@@ -143,19 +192,25 @@ impl Intersect<Sphere> for Sphere {
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType)]
 #[repr(C)]
 pub struct Ray {
+    /// Starting point.
     pub origin: Vec3,
+    /// Direction of travel. Not required to be unit length, but `t` values scale with it.
     pub direction: Vec3,
 }
 
 impl Ray {
+    /// Creates a ray.
     pub fn new(origin: Vec3, direction: Vec3) -> Self {
         Self { origin, direction }
     }
 
+    /// Returns the point `origin + direction * t`.
     pub fn at(&self, t: f32) -> Vec3 {
         self.origin + self.direction * t
     }
 
+    /// Returns this ray with `transform` applied to the origin (as a point) and direction (as a
+    /// vector).
     pub fn transformed(&self, transform: Transform) -> Self {
         let matrix = transform.matrix();
         Self {
@@ -165,23 +220,30 @@ impl Ray {
     }
 }
 
+/// A triangle given by its three corners.
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType)]
 #[repr(C)]
 pub struct Triangle {
+    /// First corner.
     pub a: Vec3,
+    /// Second corner.
     pub b: Vec3,
+    /// Third corner.
     pub c: Vec3,
 }
 
 impl Triangle {
+    /// Creates a triangle.
     pub fn new(a: Vec3, b: Vec3, c: Vec3) -> Self {
         Self { a, b, c }
     }
 
+    /// Returns the unit normal, following the winding `a`, `b`, `c`.
     pub fn normal(&self) -> Vec3 {
         (self.b - self.a).cross(self.c - self.a).normalize()
     }
 
+    /// Returns this triangle with all three corners moved by `transform`.
     pub fn transformed(&self, transform: Transform) -> Self {
         let matrix = transform.matrix();
         Self {
@@ -192,12 +254,16 @@ impl Triangle {
     }
 }
 
+/// A ray hitting a triangle.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RayTriangleIntersection {
+    /// Distance along the ray, in units of the ray's direction vector.
     pub t: f32,
+    /// Barycentric coordinates of the hit: weights of the `b` and `c` corners.
     pub uv: Vec2,
 }
 
+// Moller-Trumbore. Hits both faces; hits behind the ray origin are rejected.
 impl Intersect<Ray> for Triangle {
     type Output = RayTriangleIntersection;
 
@@ -245,18 +311,32 @@ impl Intersect<Triangle> for Ray {
     }
 }
 
+/// The six planes bounding a camera's view volume.
+///
+/// Built by [`Frustum::from_view_proj`]. The plane normals point into the volume.
 #[derive(Default, Clone, Copy, Debug, PartialEq, ShaderType)]
 #[repr(C)]
 pub struct Frustum {
+    /// Left plane.
     pub left: Plane,
+    /// Right plane.
     pub right: Plane,
+    /// Bottom plane.
     pub bottom: Plane,
+    /// Top plane.
     pub top: Plane,
+    /// Near plane.
     pub near: Plane,
+    /// Far plane.
     pub far: Plane,
 }
 
 impl Frustum {
+    /// Extracts the frustum planes from a combined view-projection matrix.
+    ///
+    /// Each plane is built with [`Plane::from_coefficient_vec4`] from sums and differences of
+    /// matrix rows and normalized, so a point is inside a plane when `n·p + d >= 0`. The near plane
+    /// is taken as `w + z`, which matches a projection with a -1..1 depth range.
     #[inline]
     pub fn from_view_proj(view_proj: Mat4) -> Self {
         let left = Plane::from_coefficient_vec4(view_proj.row(3) + view_proj.row(0), true);
@@ -275,6 +355,7 @@ impl Frustum {
         }
     }
 
+    /// Returns the planes in the order left, right, bottom, top, near, far.
     #[inline]
     pub fn planes(&self) -> [Plane; 6] {
         [
@@ -287,6 +368,8 @@ impl Frustum {
         ]
     }
 
+    /// Returns a rough sphere around the frustum, built from the plane centers.
+    // FIXME: treats distance as n·p = d, but Frustum planes use n·p + d = 0.
     #[inline]
     pub fn bounding_sphere(&self) -> Sphere {
         let mut center = Vec3::ZERO;
@@ -309,36 +392,44 @@ impl Frustum {
 #[derive(Clone, Copy, Debug, PartialEq, Default, ShaderType)]
 #[repr(C)]
 pub struct Aabb {
+    /// Corner with the smallest coordinates.
     pub min: Vec3,
+    /// Corner with the largest coordinates.
     pub max: Vec3,
 }
 
 impl Aabb {
+    /// Creates a box from its min and max corners.
     #[inline]
     pub const fn new(min: Vec3, max: Vec3) -> Self {
         Self { min, max }
     }
 
+    /// Returns the middle of the box.
     #[inline]
     pub fn center(&self) -> Vec3 {
         (self.max + self.min) * 0.5
     }
 
+    /// Returns the full extent along each axis.
     #[inline]
     pub fn size(&self) -> Vec3 {
         self.max - self.min
     }
 
+    /// Returns half the extent along each axis.
     #[inline]
     pub fn half_size(&self) -> Vec3 {
         (self.max - self.min) * 0.5
     }
 
+    /// Returns the radius of the box measured along `plane_normal`, for plane-versus-box tests.
     #[inline]
     pub fn relative_radius(&self, plane_normal: Vec3) -> f32 {
         self.half_size().dot(plane_normal.abs())
     }
 
+    /// Returns the eight corners, with x varying slowest and z fastest (min before max).
     pub const fn corners(&self) -> [Vec3; 8] {
         [
             Vec3::new(self.min.x, self.min.y, self.min.z),
@@ -352,6 +443,7 @@ impl Aabb {
         ]
     }
 
+    /// Returns the sphere centered on the box that touches all of its corners.
     #[inline]
     pub fn bounding_sphere(&self) -> Sphere {
         let center = self.center();
@@ -437,27 +529,34 @@ impl Intersect<Sphere> for Aabb {
 /// Oriented bounding box
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Obb {
+    /// The box before the transform is applied.
     pub aabb: Aabb,
+    /// Places the box in the world.
     pub transform: Transform,
 }
 
 impl Obb {
+    /// Creates an oriented box from a local-space box and its placement.
     pub fn new(aabb: Aabb, transform: Transform) -> Self {
         Self { aabb, transform }
     }
 
+    /// Returns the transform's translation.
     pub fn center(&self) -> Vec3 {
         self.transform.translation
     }
 
+    /// Returns the size of the untransformed box.
     pub fn size(&self) -> Vec3 {
         self.aabb.size()
     }
 
+    /// Returns half the size of the untransformed box.
     pub fn half_size(&self) -> Vec3 {
         self.aabb.half_size()
     }
 
+    /// Returns the corners of the untransformed box, in the order of [`Aabb::corners`].
     pub fn corners(&self) -> [Vec3; 8] {
         self.aabb.corners()
     }
@@ -524,9 +623,12 @@ impl Intersect<Ray> for Obb {
     }
 }
 
+/// A ray hitting a mesh: the closest triangle and where on it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RayMeshIntersection {
+    /// The hit on `triangle`.
     pub ray_triangle_intersection: RayTriangleIntersection,
+    /// The triangle that was hit, in the mesh's space.
     pub triangle: Triangle,
 }
 

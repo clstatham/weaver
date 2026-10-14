@@ -1,3 +1,5 @@
+//! Per-frame render-world resources.
+
 use std::ops::{Deref, DerefMut};
 
 /// The command encoder that draw systems record the current frame into. Only exists while a frame
@@ -7,10 +9,12 @@ pub struct ActiveCommandEncoder {
 }
 
 impl ActiveCommandEncoder {
+    /// Wraps a fresh encoder.
     pub fn new(encoder: wgpu::CommandEncoder) -> Self {
         Self { encoder }
     }
 
+    /// Finishes recording and returns the command buffer to submit.
     pub fn finish(self) -> wgpu::CommandBuffer {
         self.encoder.finish()
     }

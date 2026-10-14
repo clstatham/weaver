@@ -1,3 +1,5 @@
+//! Loaders that turn model files into meshes paired with PBR [`Material`]s.
+
 use std::path::PathBuf;
 
 use weaver_asset::{AssetCommands, prelude::*};
@@ -11,8 +13,10 @@ use weaver_util::prelude::*;
 
 use crate::prelude::{BLACK_TEXTURE, Material, WHITE_TEXTURE};
 
+/// A model file loaded as a set of meshes that each carry their own [`Material`].
 #[derive(Asset)]
 pub struct LoadedModelWithMaterials {
+    /// One entry per mesh (OBJ model or glTF primitive) in the file.
     pub primitives: Vec<LoadedMaterialMeshPrimitive>,
 }
 
@@ -28,18 +32,26 @@ impl IntoIterator for LoadedModelWithMaterials {
     }
 }
 
+/// One mesh from a model file together with its material.
 #[derive(Asset, Clone)]
 pub struct LoadedMaterialMeshPrimitive {
+    /// The material the mesh is drawn with.
     pub material: Material,
+    /// The mesh geometry.
     pub mesh: Mesh,
 }
 
 impl LoadedMaterialMeshPrimitive {
+    /// Splits into the material and the mesh.
     pub fn into_parts(self) -> (Material, Mesh) {
         (self.material, self.mesh)
     }
 }
 
+/// Loads `.obj` files, with the materials from their `.mtl` file, as [`LoadedModelWithMaterials`].
+///
+/// Registered by [`PbrPlugin`](crate::PbrPlugin). See [`load_obj_material_mesh`] for how MTL
+/// fields map onto a [`Material`].
 #[derive(Default)]
 pub struct ObjMaterialModelLoader;
 
@@ -55,6 +67,24 @@ impl LoadFrom<PathAndFilesystem> for ObjMaterialModelLoader {
     }
 }
 
+/// Reads an OBJ file and its MTL materials into a [`LoadedModelWithMaterials`].
+///
+/// Meshes are triangulated; missing normals are computed and tangents are always generated.
+/// Textures named by the MTL file are loaded lazily relative to `source`'s filesystem. A model
+/// without a material gets a plain white one.
+///
+/// The MTL fields map as follows: `Kd` and `map_Kd` to the diffuse color and texture, `map_Bump`
+/// to the normal map, `Ka` (averaged) and `map_Ka` to AO, and `Ns` and `map_Ns` to the
+/// metallic factor and metallic-roughness texture. MTL has no PBR parameters, so this is an
+/// approximation.
+///
+/// # Errors
+///
+/// Returns an error if the OBJ or its MTL file can't be read or parsed.
+///
+/// # Panics
+///
+/// Panics if a model has no texture coordinates.
 pub fn load_obj_material_mesh(
     source: &PathAndFilesystem,
     commands: &Commands,
@@ -182,6 +212,7 @@ pub fn load_obj_material_mesh(
                     diffuse: diffuse.into(),
                     diffuse_texture,
                     normal_texture,
+                    // FIXME: Ns / 100 is not metalness, and roughness is hard-coded to 0
                     metallic: metallic / 100.0,
                     roughness: 0.0,
                     metallic_roughness_texture,
@@ -221,6 +252,10 @@ pub fn load_obj_material_mesh(
     Ok(LoadedModelWithMaterials { primitives })
 }
 
+/// Loads the first material of a glTF/GLB file as a [`Material`], ignoring any meshes.
+///
+/// All four textures (base color, normal, metallic-roughness, occlusion) have to be present.
+/// Not registered by [`PbrPlugin`](crate::PbrPlugin); call [`LoadFrom::load`] on it directly.
 #[derive(Default)]
 pub struct GltfSingleMaterialLoader;
 
@@ -239,6 +274,11 @@ impl LoadFrom<PathBuf> for GltfSingleMaterialLoader {
     }
 }
 
+/// Loads every mesh primitive of a glTF/GLB file, with its material, as a
+/// [`LoadedModelWithMaterials`].
+///
+/// Node transforms are ignored. See [`load_gltf_material_mesh`]. Not registered by
+/// [`PbrPlugin`](crate::PbrPlugin); call [`LoadFrom::load`] on it directly.
 #[derive(Default)]
 pub struct GltfMaterialModelLoader;
 
@@ -250,6 +290,13 @@ impl LoadFrom<PathBuf> for GltfMaterialModelLoader {
     }
 }
 
+/// Reads a glTF/GLB file into a [`LoadedModelWithMaterials`], one entry per mesh primitive.
+///
+/// # Errors
+///
+/// Returns an error if the file can't be read or parsed, if a primitive is missing positions,
+/// normals, UV set 0, tangents or indices, or if its material has no base color, normal,
+/// metallic-roughness or occlusion texture (or one that isn't RGB8/RGBA8).
 pub fn load_gltf_material_mesh(
     source: &PathBuf,
     commands: &Commands,
@@ -312,6 +359,7 @@ pub fn load_gltf_material_mesh(
     Ok(LoadedModelWithMaterials { primitives })
 }
 
+// Builds a `Material` from a glTF one, creating texture assets from the already-decoded images.
 fn load_material(
     material: gltf::Material<'_>,
     images: &[gltf::image::Data],
@@ -323,6 +371,7 @@ fn load_material(
         .occlusion_texture()
         .map_or(1.0, |info| info.strength());
     let diffuse = material.pbr_metallic_roughness().base_color_factor();
+    // FIXME: indexes `images` by texture index, not by the texture's source image
     let diffuse_texture = material
         .pbr_metallic_roughness()
         .base_color_texture()

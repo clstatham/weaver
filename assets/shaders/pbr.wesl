@@ -214,10 +214,12 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     let uv = vertex.uv * material.properties.w;
 
     let tex_color = textureSample(diffuse_tex, diffuse_sampler, uv).rgba * material.base_color.rgba;
+    // FIXME: albedo is already decoded from sRGB by the texture view, so this converts twice
     let albedo = pow(tex_color, vec4(2.2));
 
     var tex_normal = textureSample(normal_tex, normal_sampler, uv).rgb;
     var N: vec3<f32>;
+    // TODO: a black normal-map texel is treated as "no normal map" instead of using a flag
     if tex_normal.r == 0.0 && tex_normal.g == 0.0 && tex_normal.b == 0.0 {
         N = vertex.world_normal;
     } else {
@@ -268,6 +270,7 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
     var out_color = ambient + illumination;
 
     // gamma correction
+    // FIXME: gamma-encodes here, but the HDR target should hold linear values
     out_color = pow(out_color, vec3(1.0 / 2.2));
 
     output.color = vec4<f32>(out_color, tex_color.a);

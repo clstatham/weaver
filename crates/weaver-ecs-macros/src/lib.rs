@@ -1,7 +1,25 @@
+//! Derive macros for `weaver-ecs`. Re-exported from there, so depend on that crate instead.
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{DeriveInput, parse_macro_input};
 
+/// Derives `SystemStage` for a label type.
+///
+/// The type needs `Clone + Eq + Hash + Debug + Send + Sync + 'static`; unit structs and fieldless
+/// enums are the usual choice. The generated `dyn_hash` mixes in the type's `TypeId`, so two
+/// different types with equal contents are still different stages. `SystemStage` has to be in
+/// scope where the derive is used (it is in `weaver_ecs::prelude`), and the generated code names
+/// `weaver_util` directly, so the deriving crate needs `weaver-util` as a dependency too.
+///
+/// # Examples
+///
+/// ```ignore
+/// use weaver_ecs::prelude::*;
+///
+/// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
+/// struct Update;
+/// ```
 #[proc_macro_derive(SystemStage)]
 pub fn derive_system_stage(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

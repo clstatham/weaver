@@ -1,3 +1,11 @@
+//! Immediate-mode debug shapes.
+//!
+//! Any system can call methods on [`Gizmos`] (for example [`Gizmos::wire_cube`]) to request a shape
+//! for the current frame. [`GizmoPlugin`] clears the list at the start of each frame, and the
+//! render world copies what's left into instance buffers, one batch per [`GizmoKey`]. The batches
+//! are drawn in the `Overlay3d` phase, after the scene, so they show up on top of every view.
+//! Only cubes exist so far.
+
 use weaver_app::{App, AppStage, plugin::Plugin};
 use weaver_core::{color::Color, prelude::Mat4, transform::Transform};
 use weaver_ecs::{
@@ -27,19 +35,25 @@ use weaver_util::prelude::*;
 
 use wgpu::util::DeviceExt;
 
+/// The types needed to draw gizmos.
 pub mod prelude {
     pub use super::{Gizmo, GizmoMode, GizmoPlugin, Gizmos};
 }
 
+/// A shape a gizmo can take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Gizmo {
+    /// A unit cube, scaled and placed by the instance's transform.
     Cube,
 }
 
 /// A mesh drawn for every instance of a gizmo.
 pub struct GizmoMesh {
+    /// Vertices in the engine's standard vertex layout.
     pub vertex_buffer: GpuBuffer,
+    /// `u32` indices: triangles for solid meshes, line pairs for wireframe ones.
     pub index_buffer: GpuBuffer,
+    /// Number of indices to draw.
     pub num_indices: u32,
 }
 
@@ -68,7 +82,9 @@ impl GizmoMesh {
 
 /// The cube meshes for solid and wireframe gizmos.
 pub struct GizmoMeshes {
+    /// Filled cube.
     pub solid_cube: GizmoMesh,
+    /// Cube edges only.
     pub wire_cube: GizmoMesh,
 }
 
@@ -91,25 +107,36 @@ impl ConstructFromWorld for GizmoMeshes {
     }
 }
 
+/// How a gizmo is rasterized.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GizmoMode {
+    /// Filled triangles.
     Solid,
+    /// Edges only.
     Wireframe,
 }
 
+/// Groups gizmos that can be drawn with the same pipeline and instanced together.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GizmoKey {
+    /// Solid or wireframe.
     pub mode: GizmoMode,
+    /// Whether the scene can hide the gizmo. If false it's drawn over everything.
     pub depth_test: bool,
 }
 
+/// One gizmo to draw this frame.
 pub struct GizmoInstance {
+    /// The shape.
     pub gizmo: Gizmo,
+    /// Flat color.
     pub color: Color,
+    /// Placement and size.
     pub transform: Transform,
 }
 
 impl GizmoInstance {
+    /// Creates an instance of `gizmo`.
     pub fn new(gizmo: Gizmo, color: Color, transform: Transform) -> Self {
         Self {
             gizmo,
@@ -119,6 +146,23 @@ impl GizmoInstance {
     }
 }
 
+/// The gizmos requested this frame, shared between the main and render worlds.
+///
+/// Systems add shapes through `Res<Gizmos>` (all methods take `&self`); [`GizmoPlugin`] empties it
+/// at the start of every frame, so a gizmo has to be re-added each frame it should be visible.
+/// Clones share the same list.
+///
+/// # Examples
+///
+/// ```no_run
+/// use weaver_core::{color::Color, transform::Transform};
+/// use weaver_ecs::component::Res;
+/// use weaver_gizmos::prelude::*;
+///
+/// fn mark_origin(gizmos: Res<Gizmos>) {
+///     gizmos.wire_cube(Transform::default(), Color::RED);
+/// }
+/// ```
 #[derive(Clone)]
 pub struct Gizmos {
     pub(crate) gizmos: SharedLock<FxHashMap<GizmoKey, Vec<GizmoInstance>>>,
@@ -133,14 +177,17 @@ impl Default for Gizmos {
 }
 
 impl Gizmos {
+    /// Adds `gizmo` to the batch for `key`.
     pub fn add_gizmo(&self, key: GizmoKey, gizmo: GizmoInstance) {
         self.gizmos.write().entry(key).or_default().push(gizmo);
     }
 
+    /// Removes every gizmo.
     pub fn clear(&self) {
         self.gizmos.write().clear();
     }
 
+    /// Draws a filled, depth-tested unit cube with the given transform.
     pub fn solid_cube(&self, transform: Transform, color: Color) {
         self.add_gizmo(
             GizmoKey {
@@ -151,6 +198,7 @@ impl Gizmos {
         );
     }
 
+    /// Draws a depth-tested wireframe unit cube with the given transform.
     pub fn wire_cube(&self, transform: Transform, color: Color) {
         self.add_gizmo(
             GizmoKey {
@@ -161,6 +209,7 @@ impl Gizmos {
         );
     }
 
+    /// Draws a filled unit cube over the scene, ignoring depth.
     pub fn solid_cube_no_depth(&self, transform: Transform, color: Color) {
         self.add_gizmo(
             GizmoKey {
@@ -171,6 +220,7 @@ impl Gizmos {
         );
     }
 
+    /// Draws a wireframe unit cube over the scene, ignoring depth.
     pub fn wire_cube_no_depth(&self, transform: Transform, color: Color) {
         self.add_gizmo(
             GizmoKey {
@@ -284,6 +334,7 @@ pub struct GizmoRenderable {
     batches: FxHashMap<GizmoKey, PreparedGizmos>,
 }
 
+/// Copies the shared [`Gizmos`] into per-key GPU buffers, reusing last frame's allocations.
 pub fn prepare_gizmos(
     gizmos: Res<Gizmos>,
     device: Res<WgpuDevice>,
@@ -392,6 +443,13 @@ impl DrawFunction<Overlay3d> for DrawGizmos {
     }
 }
 
+/// Adds gizmo drawing: the [`Gizmos`] resource, and an overlay drawn over every view.
+///
+/// Not part of `DefaultPlugins`. Needs [`RenderApp`] to exist, so add it after the renderer.
+///
+/// # Panics
+///
+/// Panics in `build` if there's no [`RenderApp`] sub-app.
 pub struct GizmoPlugin;
 
 impl Plugin for GizmoPlugin {
@@ -407,6 +465,8 @@ impl Plugin for GizmoPlugin {
     }
 }
 
+/// The render-world half of [`GizmoPlugin`]: hands the shared [`Gizmos`] to the render app and
+/// registers the prepare/queue systems and the draw function.
 pub struct GizmoRenderAppPlugin {
     gizmos: Gizmos,
 }
@@ -425,6 +485,7 @@ impl Plugin for GizmoRenderAppPlugin {
     }
 }
 
+// FIXME: can clear the list before the render thread has prepared the previous frame from it
 fn clear_gizmos(gizmos: Res<Gizmos>) {
     gizmos.clear();
 }

@@ -1,8 +1,12 @@
+//! Demo scene: a 100x100 grid of textured cubes under a point light, with a fly camera, a skybox
+//! and the diagnostics window.
+
 use weaver::{DefaultPlugins, prelude::*};
 use weaver_diagnostics::prelude::*;
 use weaver_egui::EguiPlugin;
 use weaver_renderer::mesh::primitive::{CubePrimitive, Primitive};
 
+/// The fly camera controller.
 pub mod camera;
 
 fn main() -> Result<()> {
@@ -18,6 +22,7 @@ fn main() -> Result<()> {
         .run()
 }
 
+/// Spawns the camera, a point light and the grid of cubes (one shared mesh and material).
 fn setup(
     commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,

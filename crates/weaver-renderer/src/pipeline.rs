@@ -22,12 +22,14 @@ use crate::{
     texture::texture_format::{DEPTH_FORMAT, HDR_FORMAT},
 };
 
+/// A shared handle to a [`wgpu::RenderPipeline`]. Cloning is cheap.
 #[derive(Clone)]
 pub struct RenderPipeline {
     pipeline: Arc<wgpu::RenderPipeline>,
 }
 
 impl RenderPipeline {
+    /// Wraps a pipeline.
     pub fn new(pipeline: wgpu::RenderPipeline) -> Self {
         Self {
             pipeline: Arc::new(pipeline),
@@ -43,12 +45,14 @@ impl Deref for RenderPipeline {
     }
 }
 
+/// A shared handle to a [`wgpu::ComputePipeline`]. Cloning is cheap.
 #[derive(Clone)]
 pub struct ComputePipeline {
     pipeline: Arc<wgpu::ComputePipeline>,
 }
 
 impl ComputePipeline {
+    /// Wraps a pipeline.
     pub fn new(pipeline: wgpu::ComputePipeline) -> Self {
         Self {
             pipeline: Arc::new(pipeline),
@@ -67,7 +71,9 @@ impl Deref for ComputePipeline {
 /// Depth testing for a [`RenderPipelineDescriptor`].
 #[derive(Debug, Clone, Copy)]
 pub struct DepthTest {
+    /// Passes a fragment if its depth compares this way against the stored depth.
     pub compare: wgpu::CompareFunction,
+    /// Whether passing fragments write their depth.
     pub write: bool,
 }
 
@@ -85,20 +91,32 @@ impl Default for DepthTest {
 /// points, one color target in the HDR format, alpha blending, no depth test, no culling, triangle
 /// lists. Override what differs with the builder methods.
 pub struct RenderPipelineDescriptor<'a> {
+    /// Debug label for the pipeline and its layout.
     pub label: &'static str,
+    /// Module holding both entry points.
     pub shader: &'a wgpu::ShaderModule,
+    /// Bind group layouts, in group order.
     pub bind_group_layouts: Vec<BindGroupLayout>,
+    /// Vertex entry point name.
     pub vertex_entry: &'static str,
+    /// Fragment entry point name.
     pub fragment_entry: &'static str,
+    /// Vertex buffer layouts, in slot order.
     pub vertex_buffers: Vec<wgpu::VertexBufferLayout<'static>>,
+    /// Format of the single color target.
     pub color_format: wgpu::TextureFormat,
+    /// Blend state of the color target (`None` overwrites).
     pub blend: Option<wgpu::BlendState>,
+    /// Depth test, or `None` for a pipeline with no depth attachment state.
     pub depth: Option<DepthTest>,
+    /// Which faces to cull (`None` draws both).
     pub cull_mode: Option<wgpu::Face>,
+    /// Primitive topology.
     pub topology: wgpu::PrimitiveTopology,
 }
 
 impl<'a> RenderPipelineDescriptor<'a> {
+    /// Starts a descriptor for `shader` with the defaults described on the type.
     pub fn new(label: &'static str, shader: &'a wgpu::ShaderModule) -> Self {
         Self {
             label,
@@ -124,16 +142,19 @@ impl<'a> RenderPipelineDescriptor<'a> {
         self
     }
 
+    /// Appends a vertex buffer layout (the next slot).
     pub fn vertex_buffer(mut self, layout: wgpu::VertexBufferLayout<'static>) -> Self {
         self.vertex_buffers.push(layout);
         self
     }
 
+    /// Sets the color target format.
     pub fn color_format(mut self, format: wgpu::TextureFormat) -> Self {
         self.color_format = format;
         self
     }
 
+    /// Sets the blend state; `None` turns blending off.
     pub fn blend(mut self, blend: Option<wgpu::BlendState>) -> Self {
         self.blend = blend;
         self
@@ -145,16 +166,19 @@ impl<'a> RenderPipelineDescriptor<'a> {
         self
     }
 
+    /// Sets which faces are culled; `None` draws both.
     pub fn cull_mode(mut self, face: Option<wgpu::Face>) -> Self {
         self.cull_mode = face;
         self
     }
 
+    /// Sets the primitive topology.
     pub fn topology(mut self, topology: wgpu::PrimitiveTopology) -> Self {
         self.topology = topology;
         self
     }
 
+    /// Creates the pipeline layout and the pipeline on `device`.
     pub fn build(&self, device: &wgpu::Device) -> RenderPipeline {
         let bind_group_layouts = self
             .bind_group_layouts
@@ -237,6 +261,9 @@ pub fn create_compute_pipeline(
 
 /// Creates render-world resource `T` (typically a pipeline) with `T::from_world` the first time
 /// the render thread runs after it's missing.
+///
+/// The system runs in [`RenderStage::PrepareAssets`], so the resource doesn't exist until the
+/// first render frame. Systems that take it as `Res<T>` are skipped until then.
 ///
 /// This runs as a system gated on `T` not existing, rather than in `Plugin::finish`, so it works
 /// for plugins added from inside other plugins too.

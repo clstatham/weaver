@@ -1,3 +1,10 @@
+//! CPU-side meshes and the loaders that produce them.
+//!
+//! A [`Mesh`] is a vertex list plus a triangle index list and a bounding box. The renderer uploads
+//! it to the GPU separately. [`load_obj`] and [`load_gltf`] parse file contents into meshes, and
+//! [`ObjMeshLoader`] and [`GltfMeshLoader`] wrap them as asset loaders (registered by
+//! [`CoreTypesPlugin`](crate::CoreTypesPlugin)).
+
 use std::path::PathBuf;
 
 use glam::{Vec2, Vec3, Vec4};
@@ -10,23 +17,35 @@ use weaver_util::prelude::*;
 
 use crate::prelude::Aabb;
 
+/// A single mesh vertex, laid out to be copied straight into a GPU vertex buffer.
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Vertex {
+    /// Position in model space.
     pub position: Vec3,
+    /// Unit surface normal.
     pub normal: Vec3,
+    /// Tangent direction (along increasing `u`) for normal mapping.
     pub tangent: Vec3,
+    /// Texture coordinates, with `v` pointing down (image convention).
     pub tex_coords: Vec2,
 }
 
+/// A triangle mesh in CPU memory.
+///
+/// Triangles are described by `indices`, three entries each.
 #[derive(Clone, Asset, Default)]
 pub struct Mesh {
+    /// Vertex data.
     pub vertices: Vec<Vertex>,
+    /// Triangle list, three indices into `vertices` per triangle.
     pub indices: Vec<u32>,
+    /// Bounds of `vertices` in model space. Kept up to date by `new` and `regenerate_aabb`.
     pub aabb: Aabb,
 }
 
 impl Mesh {
+    /// Creates a mesh and computes its bounding box from the vertex positions.
     pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
         let mut min = Vec3::splat(f32::INFINITY);
         let mut max = Vec3::splat(f32::NEG_INFINITY);
@@ -45,6 +64,7 @@ impl Mesh {
         }
     }
 
+    /// Recomputes [`Mesh::aabb`] after the vertex positions have been edited.
     pub fn regenerate_aabb(&mut self) {
         let mut min = Vec3::splat(f32::INFINITY);
         let mut max = Vec3::splat(f32::NEG_INFINITY);
@@ -57,15 +77,22 @@ impl Mesh {
         self.aabb = Aabb::new(min, max);
     }
 
+    /// Replaces the vertex normals with smooth normals computed from the triangles.
     pub fn recalculate_normals(&mut self) {
         calculate_normals(&mut self.vertices, &self.indices);
     }
 
+    /// Replaces the vertex tangents with ones computed from positions and tex coords.
     pub fn recalculate_tangents(&mut self) {
         calculate_tangents(&mut self.vertices, &self.indices);
     }
 }
 
+/// Asset loader for Wavefront OBJ files, producing a single [`Mesh`].
+///
+/// The type parameter is a tag for the source this registered loader reads from; the loaders for
+/// `PathAndFilesystem` and `Vec<u8>` are the ones registered. The OBJ must contain exactly one
+/// model when loaded by path.
 pub struct ObjMeshLoader<S: LoadSource>(std::marker::PhantomData<S>);
 
 impl<S: LoadSource> Default for ObjMeshLoader<S> {
@@ -98,6 +125,16 @@ impl LoadFrom<Vec<u8>> for ObjMeshLoader<Vec<u8>> {
     }
 }
 
+/// Parses OBJ file contents into one [`Mesh`] per model in the file.
+///
+/// Faces are triangulated and indices unified. Texture coordinates are flipped vertically to match
+/// image-space `v`. Normals are computed if the file has none, and tangents are always computed.
+///
+/// Material libraries are not read.
+///
+/// # Errors
+///
+/// Returns an error if the OBJ can't be parsed or contains no models.
 pub fn load_obj(bytes: &[u8]) -> Result<Vec<Mesh>> {
     let (models, _) = tobj::load_obj_buf(
         &mut std::io::Cursor::new(bytes),
@@ -138,6 +175,7 @@ pub fn load_obj(bytes: &[u8]) -> Result<Vec<Mesh>> {
             } else {
                 [0.0, 0.0, 0.0]
             };
+            // FIXME: panics (index out of bounds) when the OBJ has no texture coordinates.
             let uv = [mesh.texcoords[i * 2], 1.0 - mesh.texcoords[i * 2 + 1]];
 
             vertices.push(Vertex {
@@ -164,6 +202,11 @@ pub fn load_obj(bytes: &[u8]) -> Result<Vec<Mesh>> {
     Ok(meshes)
 }
 
+/// Asset loader for glTF and GLB files, producing a single [`Mesh`].
+///
+/// The type parameter is a tag for the source this registered loader reads from; the loaders for
+/// `PathBuf` (which loads from a `PathAndFilesystem`) and `Vec<u8>` are the ones registered. When
+/// loading by path the file must contain exactly one mesh.
 #[derive(Default)]
 pub struct GltfMeshLoader<S: LoadSource>(std::marker::PhantomData<S>);
 
@@ -191,6 +234,12 @@ impl LoadFrom<Vec<u8>> for GltfMeshLoader<Vec<u8>> {
     }
 }
 
+/// Parses glTF or GLB contents into one [`Mesh`] per glTF mesh, merging its primitives.
+///
+/// # Errors
+///
+/// Returns an error if the file can't be imported, contains no meshes, or a primitive lacks
+/// positions, normals, tex coords (set 0), tangents or indices.
 pub fn load_gltf(bytes: &[u8]) -> Result<Vec<Mesh>> {
     let (gltf, buffers, _) = gltf::import_slice(bytes)?;
 
@@ -253,6 +302,8 @@ pub fn load_gltf(bytes: &[u8]) -> Result<Vec<Mesh>> {
     Ok(meshes)
 }
 
+/// Overwrites the vertex normals with the average of the face normals of the triangles using each
+/// vertex.
 pub fn calculate_normals(vertices: &mut [Vertex], indices: &[u32]) {
     for vertex in vertices.iter_mut() {
         vertex.normal = Vec3::ZERO;
@@ -279,6 +330,10 @@ pub fn calculate_normals(vertices: &mut [Vertex], indices: &[u32]) {
     }
 }
 
+/// Overwrites `vertices`' tangents with the average of the tangents of the triangles using them.
+///
+/// The tangents come from the position and tex coord deltas of each triangle. They aren't
+/// normalized or orthogonalized against the normal.
 pub fn calculate_tangents(vertices: &mut [Vertex], indices: &[u32]) {
     for vertex in vertices.iter_mut() {
         vertex.tangent = Vec3::ZERO;

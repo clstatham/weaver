@@ -1,3 +1,30 @@
+//! Queries: iterating and looking up entities by the components they have.
+//!
+//! A [`Query<Q>`] is a [`SystemParam`]. `Q` is a [`Queryable`]: `&T`, `&mut T`, [`Entity`],
+//! `Option<..>`, the filters [`With`], [`Without`] and [`Changed`], or a tuple of those. Filters
+//! fetch nothing and so can be mixed freely into the tuple.
+//!
+//! A query borrows each component type it touches for as long as it lives, tracked at runtime. Two
+//! queries that conflict (a write overlapping anything) panic instead of running; the scheduler
+//! avoids that by putting systems with conflicting [`QueryAccess`] in different layers.
+//!
+//! # Examples
+//!
+//! ```
+//! use weaver_ecs::prelude::*;
+//!
+//! struct Pos(f32);
+//! struct Vel(f32);
+//! struct Frozen;
+//!
+//! fn integrate(mut query: Query<(&mut Pos, &Vel, Without<Frozen>)>) {
+//!     for (mut pos, vel, _) in query.iter() {
+//!         pos.0 += vel.0;
+//!     }
+//! }
+//! # let _ = integrate;
+//! ```
+
 use std::{any::TypeId, marker::PhantomData};
 
 use weaver_util::prelude::*;
@@ -16,8 +43,11 @@ pub use crate::change_detection::TickRange;
 /// One component type a query touches, and how.
 #[derive(Debug, Clone, Copy)]
 pub struct AccessTerm {
+    /// The component type.
     pub type_id: TypeId,
+    /// The component type's name, for error messages.
     pub type_name: &'static str,
+    /// Whether it is read or written.
     pub access: Access,
 }
 
@@ -28,17 +58,31 @@ pub struct QueryAccess {
 }
 
 impl QueryAccess {
-    /// Collects `Q`'s access. Panics if `Q` would alias a component, e.g. `(&mut A, &A)`.
+    /// Collects `Q`'s access.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `Q` would alias a component, e.g. `(&mut A, &A)`.
     pub fn of<Q: Queryable>() -> Self {
         let mut access = Self::default();
         Q::access(&mut access);
         access
     }
 
+    /// Declares a shared read of `T`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `T` is already written, or this makes a write overlap another access.
     pub fn read<T: Component>(&mut self) {
         self.add::<T>(Access::Read);
     }
 
+    /// Declares a write of `T`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `T` is already accessed, in either way.
     pub fn write<T: Component>(&mut self) {
         self.add::<T>(Access::Write);
     }
@@ -61,6 +105,7 @@ impl QueryAccess {
         });
     }
 
+    /// Returns the declared terms, one per component type.
     pub fn terms(&self) -> &[AccessTerm] {
         &self.terms
     }
@@ -73,18 +118,31 @@ impl QueryAccess {
 ///
 /// # Safety
 ///
-/// An implementation must only access component data it declared in [`Queryable::access`],
-/// and only with the declared kind of access.
+/// [`Queryable::access`] must declare every component type that [`fetch_archetype`] and
+/// [`fetch_row`] touch (data and change ticks alike), as [`QueryAccess::write`] if anything is
+/// written through the returned item and [`QueryAccess::read`] otherwise. [`Query`] takes its
+/// runtime borrows from that declaration only, so an access that isn't declared can alias another
+/// live query. An implementation must also never hand out two live items for the same row from one
+/// fetch, and [`matches`] must only return true for archetypes where [`fetch_archetype`] is sound
+/// (the columns it reads exist).
+///
+/// [`fetch_archetype`]: Queryable::fetch_archetype
+/// [`fetch_row`]: Queryable::fetch_row
+/// [`matches`]: Queryable::matches
 pub unsafe trait Queryable: Send + Sync {
+    /// What one row yields.
     type Item<'w>: Send + Sync;
     /// Per-archetype state, such as column pointers that were downcast once.
     type Fetch<'w>;
 
+    /// Adds the component types this term reads and writes to `access`.
     fn access(access: &mut QueryAccess);
 
     /// Returns true if rows of this archetype can be yielded.
     fn matches(archetype: &Archetype) -> bool;
 
+    /// Builds the per-archetype state used to fetch rows.
+    ///
     /// # Safety
     ///
     /// `matches(archetype)` must be true, and the borrows in `access()` must be held for `'w`.
@@ -99,6 +157,7 @@ pub unsafe trait Queryable: Send + Sync {
     unsafe fn fetch_row<'w>(fetch: &mut Self::Fetch<'w>, row: usize) -> Option<Self::Item<'w>>;
 }
 
+/// Shorthand for `<T as Queryable>::Item<'a>`.
 pub type QueryableItem<'a, T> = <T as Queryable>::Item<'a>;
 
 unsafe impl Queryable for Entity {
@@ -478,6 +537,11 @@ pub struct Query<Q: Queryable> {
 }
 
 impl<Q: Queryable> Query<Q> {
+    /// Creates a query that reports changes since the world's last change tick.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `Q` conflicts with another live query. See [`Query::new_with_ticks`].
     pub fn new(world: &World) -> Self {
         Self::new_with_ticks(
             world,
@@ -489,6 +553,11 @@ impl<Q: Queryable> Query<Q> {
     }
 
     /// Creates a query that reports changes stamped after `ticks.last_run` (up to `ticks.this_run`).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `Q` aliases a component within itself, or needs access that conflicts with
+    /// another live query.
     pub fn new_with_ticks(world: &World, ticks: TickRange) -> Self {
         let access = QueryAccess::of::<Q>();
         let components = world.components();
@@ -527,6 +596,9 @@ impl<Q: Queryable> Query<Q> {
         }
     }
 
+    /// Iterates over every matching row.
+    ///
+    /// Takes `&mut self` so the items of one iteration can't overlap with another.
     pub fn iter(&mut self) -> QueryIter<'_, Q> {
         QueryIter {
             archetypes: self.components.archetypes(),
@@ -538,6 +610,7 @@ impl<Q: Queryable> Query<Q> {
         }
     }
 
+    /// Returns the item for `entity`, or `None` if it doesn't exist or doesn't match `Q`.
     pub fn get(&mut self, entity: Entity) -> Option<Q::Item<'_>> {
         let location = self.components.location(entity)?;
         let archetype = &self.components.archetypes()[location.archetype.as_usize()];
@@ -561,6 +634,7 @@ impl<Q: Queryable> Drop for Query<Q> {
     }
 }
 
+/// The iterator returned by [`Query::iter`].
 pub struct QueryIter<'w, Q: Queryable> {
     archetypes: &'w [Archetype],
     matched: std::slice::Iter<'w, usize>,

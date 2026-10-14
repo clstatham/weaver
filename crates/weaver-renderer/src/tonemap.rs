@@ -16,6 +16,7 @@ use crate::{
 /// Draws a fullscreen triangle sampling a view's HDR target (its `BindGroup<ViewTarget>`) into the
 /// swapchain format.
 pub struct TonemapPipeline {
+    /// The render pipeline.
     pub pipeline: RenderPipeline,
 }
 
@@ -35,6 +36,7 @@ impl ConstructFromWorld for TonemapPipeline {
     }
 }
 
+/// Builds the [`TonemapPipeline`] once the render device exists.
 pub struct TonemapPlugin;
 
 impl Plugin for TonemapPlugin {

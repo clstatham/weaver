@@ -1,3 +1,5 @@
+//! The [`Material`] asset and the render-world resources built from it.
+
 use encase::ShaderType;
 use weaver_app::{App, plugin::Plugin};
 use weaver_asset::{Handle, prelude::Asset};
@@ -17,30 +19,50 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::*;
 
+/// A 1x1 opaque white texture, the default for texture slots with no image.
 pub const WHITE_TEXTURE: Handle<Texture> =
     Handle::from_u128(171952135557955961317447623731106286307);
+/// A 1x1 opaque black texture. As a normal map it means "no normal map".
 pub const BLACK_TEXTURE: Handle<Texture> =
     Handle::from_u128(29903794803500143808416926793703205514);
+/// A 2x2 magenta and black checkerboard, for marking missing textures.
 pub const ERROR_TEXTURE: Handle<Texture> =
     Handle::from_u128(288942464416563327199333453807837020723);
 
+/// A surface description for the PBR pipeline.
+///
+/// The scalar factors multiply what the textures provide: `metallic` and `roughness` scale the
+/// blue and green channels of `metallic_roughness_texture` (glTF layout), `ao` scales the red
+/// channel of `ao_texture`, and `diffuse` tints `diffuse_texture`. Every texture slot has to be
+/// filled; use [`WHITE_TEXTURE`] or [`BLACK_TEXTURE`] for the ones you don't have. A black
+/// normal texture means the mesh normal is used as is.
 #[derive(Asset, Clone)]
 pub struct Material {
+    /// Base color factor, multiplied with the diffuse texture.
     pub diffuse: Color,
+    /// Albedo texture.
     pub diffuse_texture: Handle<Texture>,
 
+    /// Tangent-space normal map.
     pub normal_texture: Handle<Texture>,
 
+    /// Metallic factor, multiplied with the metallic-roughness texture.
     pub metallic: f32,
+    /// Roughness factor, multiplied with the metallic-roughness texture.
     pub roughness: f32,
+    /// Metalness in the blue channel, roughness in the green channel.
     pub metallic_roughness_texture: Handle<Texture>,
 
+    /// Ambient occlusion factor, multiplied with the AO texture.
     pub ao: f32,
+    /// Ambient occlusion in the red channel.
     pub ao_texture: Handle<Texture>,
 
+    /// Multiplier on the UV coordinates, for tiling all four textures at once.
     pub texture_scale: f32,
 }
 
+/// A plain material of the given color: no metal, no normal map, full AO.
 impl From<Color> for Material {
     fn from(color: Color) -> Self {
         Self {
@@ -57,6 +79,7 @@ impl From<Color> for Material {
     }
 }
 
+/// A plain material that's just the given albedo texture.
 impl From<Handle<Texture>> for Material {
     fn from(texture: Handle<Texture>) -> Self {
         Self {
@@ -73,6 +96,7 @@ impl From<Handle<Texture>> for Material {
     }
 }
 
+/// The scalar part of a [`Material`], as the uniform buffer the shader reads.
 #[derive(Debug, Copy, Clone, ShaderType)]
 #[repr(C)]
 pub struct MaterialMetaUniform {
@@ -85,10 +109,15 @@ pub struct MaterialMetaUniform {
 
 /// A material's GPU resources, bound as group 0 of the PBR pipeline.
 pub struct MaterialBindings {
+    /// One-element uniform buffer holding the scalar factors.
     pub meta: GpuBufferVec<MaterialMetaUniform>,
+    /// Albedo.
     pub diffuse_texture: GpuTexture,
+    /// Tangent-space normal map.
     pub normal_texture: GpuTexture,
+    /// Metalness (blue) and roughness (green).
     pub metallic_roughness_texture: GpuTexture,
+    /// Ambient occlusion (red).
     pub ao_texture: GpuTexture,
     /// Shared by all four textures.
     pub sampler: wgpu::Sampler,
@@ -119,8 +148,14 @@ impl AsBindGroup for MaterialBindings {
     }
 }
 
+/// A [`Material`] prepared for rendering: uniform buffer, texture views and the bind group.
+///
+/// Prepared from the [`Material`] asset once all four of its textures have a `GpuImage`;
+/// until then preparation is retried every frame.
 pub struct GpuMaterial {
+    /// The resources the bind group was built from.
     pub bindings: MaterialBindings,
+    /// Bound as group 0 when drawing.
     pub bind_group: BindGroup<MaterialBindings>,
 }
 
@@ -136,6 +171,7 @@ impl MaterialMetaUniform {
     }
 }
 
+// FIXME: only rebuilt on `Material` events, so it keeps stale views if a texture is replaced
 impl RenderAsset for GpuMaterial {
     type Source = Material;
     type Param = (Res<RenderAssets<GpuImage>>, Res<BindGroupLayouts>);
@@ -171,6 +207,7 @@ impl RenderAsset for GpuMaterial {
         meta.push(MaterialMetaUniform::new(&material));
         meta.enqueue_update(device, queue);
 
+        // FIXME: metallic-roughness and AO are linear data but are bound through the sRGB views
         let bindings = MaterialBindings {
             meta,
             diffuse_texture: diffuse.srgb.clone(),
@@ -189,6 +226,7 @@ impl RenderAsset for GpuMaterial {
     }
 }
 
+/// Registers [`GpuMaterial`] as a render asset and extracts [`Handle<Material>`] components.
 pub struct MaterialPlugin;
 
 impl Plugin for MaterialPlugin {

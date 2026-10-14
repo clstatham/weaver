@@ -14,6 +14,7 @@ pub struct TrackedRenderPass<'a> {
 }
 
 impl<'a> TrackedRenderPass<'a> {
+    /// Wraps a pass with nothing bound yet.
     pub fn new(pass: wgpu::RenderPass<'a>) -> Self {
         Self {
             pass,
@@ -24,6 +25,7 @@ impl<'a> TrackedRenderPass<'a> {
         }
     }
 
+    /// Sets the pipeline unless it's already the current one.
     pub fn set_pipeline(&mut self, pipeline: &wgpu::RenderPipeline) {
         let ptr = pipeline as *const _;
         if self.pipeline != Some(ptr) {
@@ -32,6 +34,11 @@ impl<'a> TrackedRenderPass<'a> {
         }
     }
 
+    /// Sets the bind group at `index` (no dynamic offsets) unless it's already bound there.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is 8 or more.
     pub fn set_bind_group(&mut self, index: u32, bind_group: &wgpu::BindGroup) {
         let ptr = bind_group as *const _;
         let slot = &mut self.bind_groups[index as usize];
@@ -41,7 +48,11 @@ impl<'a> TrackedRenderPass<'a> {
         }
     }
 
-    /// Binds the whole buffer.
+    /// Binds the whole buffer as vertex buffer `slot`, unless it's already bound there.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `slot` is 8 or more.
     pub fn set_vertex_buffer(&mut self, slot: u32, buffer: &wgpu::Buffer) {
         let ptr = buffer as *const _;
         let tracked = &mut self.vertex_buffers[slot as usize];
@@ -51,7 +62,7 @@ impl<'a> TrackedRenderPass<'a> {
         }
     }
 
-    /// Binds the whole buffer.
+    /// Binds the whole buffer as the index buffer, unless it's already bound.
     pub fn set_index_buffer(&mut self, buffer: &wgpu::Buffer, format: wgpu::IndexFormat) {
         let ptr = buffer as *const _;
         if self.index_buffer != Some(ptr) {
@@ -60,10 +71,12 @@ impl<'a> TrackedRenderPass<'a> {
         }
     }
 
+    /// Draws non-indexed primitives.
     pub fn draw(&mut self, vertices: std::ops::Range<u32>, instances: std::ops::Range<u32>) {
         self.pass.draw(vertices, instances);
     }
 
+    /// Draws indexed primitives.
     pub fn draw_indexed(
         &mut self,
         indices: std::ops::Range<u32>,

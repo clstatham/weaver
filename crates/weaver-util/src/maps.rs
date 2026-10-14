@@ -1,8 +1,13 @@
+//! Hash map aliases and a few hashing helpers.
+
 use std::{
     any::TypeId,
     hash::{BuildHasherDefault, Hasher},
 };
 
+/// Hasher for keys that are already well-mixed `TypeId`s: it just passes the value through.
+///
+/// Only works with `TypeId` keys; hashing anything else panics.
 #[derive(Default)]
 pub struct TypeIdHasher {
     state: u64,
@@ -26,10 +31,14 @@ impl Hasher for TypeIdHasher {
     }
 }
 
+/// Map keyed by [`TypeId`], using [`TypeIdHasher`].
 pub type TypeIdMap<T> = hashbrown::HashMap<TypeId, T, BuildHasherDefault<TypeIdHasher>>;
+/// Set of [`TypeId`]s, using [`TypeIdHasher`].
 pub type TypeIdSet = hashbrown::HashSet<TypeId, BuildHasherDefault<TypeIdHasher>>;
 
+/// `hashbrown` map with the Fx hasher (fast, not DoS-resistant).
 pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
+/// `hashbrown` set with the Fx hasher.
 pub type FxHashSet<T> = hashbrown::HashSet<T, rustc_hash::FxBuildHasher>;
 
 /// A const non-cryptographically secure hash function for a `u128`.

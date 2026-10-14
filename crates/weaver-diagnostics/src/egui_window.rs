@@ -1,3 +1,5 @@
+//! The egui diagnostics window.
+
 use std::{
     collections::VecDeque,
     time::{Duration, Instant},
@@ -28,6 +30,7 @@ pub struct DiagnosticsWindowPlugin {
 }
 
 impl DiagnosticsWindowPlugin {
+    /// Creates the plugin; the statistics are recomputed every `stats_interval`.
     pub fn new(stats_interval: Duration) -> Self {
         Self { stats_interval }
     }
@@ -58,7 +61,7 @@ impl Plugin for DiagnosticsWindowPlugin {
     }
 }
 
-/// State for the diagnostics window.
+/// State for the diagnostics window: recent frame times and the stats computed from them.
 pub struct DiagnosticsWindow {
     stats_interval: Duration,
     last_stats_update: Instant,
@@ -219,6 +222,8 @@ fn nice_ceiling(value: f32) -> f32 {
         .unwrap_or(10.0 * magnitude)
 }
 
+/// Records this frame's time and draws the "Diagnostics" window. Runs in `Update` once the
+/// [`EguiContext`] exists.
 pub fn diagnostics_window(
     ctx: Res<EguiContext>,
     frame_time: Res<FrameTime>,

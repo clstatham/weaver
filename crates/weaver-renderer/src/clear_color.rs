@@ -1,3 +1,5 @@
+//! The color views are cleared to.
+
 use weaver_app::{App, plugin::Plugin};
 use weaver_core::color::Color;
 use weaver_util::prelude::*;
@@ -21,6 +23,11 @@ impl ExtractResource for ClearColor {
     }
 }
 
+/// Inserts a [`ClearColor`] (default black) and extracts it to the render world.
+///
+/// # Panics
+///
+/// Panics in `build` if [`RendererPlugin`](crate::RendererPlugin) hasn't been added yet.
 #[derive(Clone)]
 pub struct ClearColorPlugin(pub Color);
 

@@ -1,3 +1,5 @@
+//! Removal tracking: which entities lost a component, for the [`RemovedComponents`] parameter.
+
 use std::{any::TypeId, marker::PhantomData};
 
 use weaver_util::prelude::*;
@@ -69,14 +71,17 @@ pub struct RemovedComponents<T: Component> {
 }
 
 impl<T: Component> RemovedComponents<T> {
+    /// Iterates over the entities.
     pub fn iter(&self) -> std::slice::Iter<'_, Entity> {
         self.entities.iter()
     }
 
+    /// Returns how many removals there are.
     pub fn len(&self) -> usize {
         self.entities.len()
     }
 
+    /// Returns true if nothing was removed.
     pub fn is_empty(&self) -> bool {
         self.entities.is_empty()
     }

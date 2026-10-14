@@ -1,3 +1,10 @@
+//! Log-once macros and `tracing` shorthands.
+
+/// Logs a formatted message at the given `log` level (`error`, `warn`, ...) the first time that
+/// exact message text is seen, and never again.
+///
+/// The set of seen messages is per call site and grows forever, so don't put unbounded data
+/// (frame counters, say) in the message.
 #[macro_export]
 macro_rules! log_once {
     ($log:ident; $($arg:tt)*) => {{
@@ -14,6 +21,7 @@ macro_rules! log_once {
     }};
 }
 
+/// [`log_once!`] at `error` level.
 #[macro_export]
 macro_rules! error_once {
     ($($arg:tt)*) => {
@@ -21,6 +29,7 @@ macro_rules! error_once {
     };
 }
 
+/// [`log_once!`] at `warn` level.
 #[macro_export]
 macro_rules! warn_once {
     ($($arg:tt)*) => {
@@ -28,6 +37,7 @@ macro_rules! warn_once {
     };
 }
 
+/// [`log_once!`] at `info` level.
 #[macro_export]
 macro_rules! info_once {
     ($($arg:tt)*) => {
@@ -35,6 +45,7 @@ macro_rules! info_once {
     };
 }
 
+/// [`log_once!`] at `debug` level.
 #[macro_export]
 macro_rules! debug_once {
     ($($arg:tt)*) => {
@@ -42,6 +53,7 @@ macro_rules! debug_once {
     };
 }
 
+/// [`log_once!`] at `trace` level.
 #[macro_export]
 macro_rules! trace_once {
     ($($arg:tt)*) => {
@@ -49,6 +61,7 @@ macro_rules! trace_once {
     };
 }
 
+/// Shorthand for `tracing::span!` taking the level as a bare identifier, e.g. `span!(INFO, "x")`.
 #[macro_export]
 macro_rules! span {
     ($level:ident, $($tail:tt)*) => {{
@@ -56,6 +69,7 @@ macro_rules! span {
     }};
 }
 
+/// Shorthand for `tracing::event!` taking the level as a bare identifier.
 #[macro_export]
 macro_rules! event {
     ($level:ident, $name:expr) => {{ $crate::re_exports::tracing::event!($crate::re_exports::tracing::Level::$level, $name) }};

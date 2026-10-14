@@ -1,3 +1,38 @@
+//! Typed asset storage, handles and loading.
+//!
+//! Assets of type `T` live in an [`Assets<T>`] resource and are referred to by [`Handle<T>`], a
+//! copyable id. A handle can exist before its asset does: asking a loader for something (see
+//! [`AssetLoadQueue::enqueue`] or [`AssetCommands::lazy_load_asset`]) returns the handle at once
+//! and the asset shows up in [`Assets<T>`] later, once the load has run.
+//!
+//! # Loading
+//!
+//! A loader is a type implementing [`LoadFrom<S>`] for some [`LoadSource`] `S` (a path, raw bytes,
+//! another asset, ...). Registering it with [`AssetApp::add_asset_loader`] creates an
+//! [`AssetLoadQueue`] for the (loader, source) pair and a system that drains it in the
+//! [`AssetLoad`] stage. Loading is synchronous: a slow loader stalls the frame. Use
+//! [`AssetApp::add_asset_load_dependency`] to make one loader's queue run before another's.
+//!
+//! # Events
+//!
+//! Changes to an [`Assets<T>`] are collected as [`AssetEvent<T>`]s (added, modified, removed) and a
+//! successful load also sends an [`AssetLoaded<T>`]. Both are published in the [`AssetFlush`] stage
+//! at the end of the frame, so readers see them on the next frame.
+//!
+//! # Setup
+//!
+//! ```
+//! use weaver_app::prelude::*;
+//! use weaver_asset::{AssetApp, prelude::*};
+//!
+//! #[derive(Asset)]
+//! struct Text(String);
+//!
+//! let mut app = App::new();
+//! app.add_asset::<Text>();
+//! assert!(app.has_resource::<Assets<Text>>());
+//! ```
+
 use std::{
     fmt::Debug,
     fs::File,
@@ -19,6 +54,7 @@ use weaver_event::{EventQueue, EventTx};
 use weaver_util::prelude::*;
 use zip::ZipArchive;
 
+/// The common asset types, including the [`Asset`] derive.
 pub mod prelude {
     pub use crate::{
         Asset, AssetLoadQueue, Assets, DirectLoader, Filesystem, Handle, LoadFrom,
@@ -27,9 +63,17 @@ pub mod prelude {
     pub use weaver_asset_macros::Asset;
 }
 
-define_atomic_id!(AssetId);
+define_atomic_id!(
+    /// Identifies one asset, independent of its type. [`Handle`] wraps it with the asset type.
+    AssetId
+);
 
+/// Marker for types that can be stored in [`Assets`].
+///
+/// Use `#[derive(Asset)]` rather than writing the impl by hand. `()`, `Vec<T>` and `HashMap<K, T>`
+/// of assets are assets too, which lets a loader return a bundle of them.
 pub trait Asset: DowncastSync {
+    /// Returns the type's name for log and panic messages.
     fn type_name() -> &'static str
     where
         Self: Sized,
@@ -49,25 +93,33 @@ where
 {
 }
 
+/// A typed reference to an asset in [`Assets<T>`].
+///
+/// A handle is just an id: copying it is free, and the asset it names may not exist yet (it could
+/// still be queued for loading) or any more. Compare, hash and order by id only.
 pub struct Handle<T: Asset> {
     id: AssetId,
     _marker: PhantomData<T>,
 }
 
 impl<T: Asset> Handle<T> {
+    /// A handle that never refers to an asset.
     pub const INVALID: Self = Self {
         id: AssetId::INVALID,
         _marker: PhantomData,
     };
 
+    /// Returns the underlying id.
     pub fn id(&self) -> AssetId {
         self.id
     }
 
+    /// Erases the asset type, keeping its [`TypeId`](std::any::TypeId).
     pub fn into_untyped(self) -> UntypedHandle {
         self.into()
     }
 
+    /// Wraps an id as a handle. Nothing checks that an asset of type `T` has that id.
     pub const fn from_raw(id: AssetId) -> Self {
         Self {
             id,
@@ -75,6 +127,7 @@ impl<T: Asset> Handle<T> {
         }
     }
 
+    /// Builds a handle with a fixed id derived from `uuid`, for well-known assets.
     pub const fn from_u128(uuid: u128) -> Self {
         Self {
             id: AssetId::from_u128(uuid),
@@ -127,6 +180,9 @@ impl<T: Asset> Ord for Handle<T> {
     }
 }
 
+/// A [`Handle`] with the asset type stored at runtime instead of in the type.
+///
+/// Convert back with `Handle::<T>::try_from`, which fails if `T` isn't the original type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UntypedHandle {
     id: AssetId,
@@ -208,7 +264,9 @@ pub enum AssetEventKind {
 /// (for example render-world extraction) use these to only process assets that changed.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct AssetEvent<T: Asset> {
+    /// Which asset changed.
     pub id: AssetId,
+    /// What happened to it.
     pub kind: AssetEventKind,
     _marker: PhantomData<fn() -> T>,
 }
@@ -222,6 +280,7 @@ impl<T: Asset> Clone for AssetEvent<T> {
 impl<T: Asset> Copy for AssetEvent<T> {}
 
 impl<T: Asset> AssetEvent<T> {
+    /// Creates an event for asset `id`.
     pub fn new(id: AssetId, kind: AssetEventKind) -> Self {
         Self {
             id,
@@ -230,11 +289,17 @@ impl<T: Asset> AssetEvent<T> {
         }
     }
 
+    /// Returns a handle to the asset the event is about.
     pub fn handle(&self) -> Handle<T> {
         Handle::from_raw(self.id)
     }
 }
 
+/// Storage for all assets of type `T`.
+///
+/// Register it with [`AssetApp::add_asset`]. Every insert, replace, `get_mut` and remove queues an
+/// [`AssetEvent`] that is published in [`AssetFlush`]. Assets sit behind their own locks, so an
+/// [`AssetRef`] or [`AssetMut`] can be held without borrowing the collection.
 pub struct Assets<T: Asset> {
     storage: FxHashMap<AssetId, SharedLock<T>>,
     /// Events since the last [`Assets::drain_events`], sent out once per frame by the
@@ -252,6 +317,8 @@ impl<T: Asset> Default for Assets<T> {
 }
 
 impl<T: Asset> Assets<T> {
+    // TODO: handles aren't ref-counted, so assets are never freed unless removed by hand
+    /// Creates an empty collection.
     pub fn new() -> Self {
         Self::default()
     }
@@ -271,26 +338,35 @@ impl<T: Asset> Assets<T> {
         }
     }
 
+    /// Inserts an asset under a freshly minted id and returns its handle.
     pub fn insert(&mut self, asset: impl Into<T>) -> Handle<T> {
         self.insert_manual(asset.into(), AssetId::new())
     }
 
+    /// Returns whether an asset exists for `handle`.
     pub fn contains(&self, handle: Handle<T>) -> bool {
         self.storage.contains_key(&handle.id)
     }
 
+    /// Returns the number of stored assets.
     pub fn len(&self) -> usize {
         self.storage.len()
     }
 
+    /// Returns whether no assets are stored.
     pub fn is_empty(&self) -> bool {
         self.storage.is_empty()
     }
 
+    /// Iterates over the ids of all stored assets, in no particular order.
     pub fn ids(&self) -> impl Iterator<Item = AssetId> + '_ {
         self.storage.keys().copied()
     }
 
+    /// Borrows the asset for reading, or returns `None` if there's no such asset.
+    ///
+    /// # Panics
+    ///
     /// Panics if the asset is currently borrowed through [`Assets::get_mut`].
     pub fn get(&self, handle: Handle<T>) -> Option<AssetRef<T>> {
         self.storage.get(&handle.id).map(|asset| {
@@ -307,6 +383,11 @@ impl<T: Asset> Assets<T> {
 
     /// Borrows the asset mutably and reports it as modified.
     ///
+    /// The [`AssetEventKind::Modified`] event is queued as soon as the borrow is taken, whether or
+    /// not the caller changes anything.
+    ///
+    /// # Panics
+    ///
     /// Panics if the asset is currently borrowed.
     pub fn get_mut(&mut self, handle: Handle<T>) -> Option<AssetMut<T>> {
         let asset = self.storage.get(&handle.id)?;
@@ -318,6 +399,10 @@ impl<T: Asset> Assets<T> {
         Some(AssetMut { asset })
     }
 
+    /// Removes the asset and returns it, or `None` if there's no such asset.
+    ///
+    /// # Panics
+    ///
     /// Panics if the asset is currently borrowed.
     pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
         let asset = self.storage.remove(&handle.id)?;
@@ -337,6 +422,8 @@ impl<T: Asset> Assets<T> {
 }
 
 /// Virtual filesystem created from one or more directories or archives.
+///
+/// Lookups try the roots in the order they were added, then the zip archives.
 #[derive(Default)]
 pub struct Filesystem {
     roots: Vec<PathBuf>,
@@ -344,24 +431,37 @@ pub struct Filesystem {
 }
 
 impl Filesystem {
+    /// Creates a filesystem with no roots or archives.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Builder form of [`Filesystem::add_root`].
     pub fn with_root(mut self, root: impl AsRef<Path>) -> Self {
         self.add_root(root);
         self
     }
 
+    /// Builder form of [`Filesystem::add_archive`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the archive can't be opened or isn't a valid zip file.
     pub fn with_archive(mut self, archive: impl AsRef<Path>) -> Result<Self> {
         self.add_archive(archive)?;
         Ok(self)
     }
 
+    /// Adds a directory to search.
     pub fn add_root(&mut self, root: impl AsRef<Path>) {
         self.roots.push(root.as_ref().to_path_buf());
     }
 
+    /// Adds a zip archive to search, after all directories.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the archive can't be opened or isn't a valid zip file.
     pub fn add_archive(&mut self, archive: impl AsRef<Path>) -> Result<()> {
         let archive = File::open(archive)?;
         let archive = BufReader::new(archive);
@@ -370,6 +470,18 @@ impl Filesystem {
         Ok(())
     }
 
+    /// Lists the entries of a directory.
+    ///
+    /// The first root containing `dir_path` wins and its entries come back sorted. Otherwise every
+    /// archive entry under `dir_path` is returned, nested ones included.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no root or archive has the directory, or if reading it fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics on an archive entry whose name isn't a safe relative path.
     pub fn read_dir(&self, dir_path: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
         let dir_path = dir_path.as_ref();
         for root in self.roots.iter() {
@@ -404,6 +516,11 @@ impl Filesystem {
         Err(anyhow!("Failed to list directory: {:?}", dir_path))
     }
 
+    /// Returns whether `path` exists in any root or archive.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `path` isn't valid UTF-8 and there are archives to search.
     pub fn exists(&self, path: impl AsRef<Path>) -> bool {
         let path = path.as_ref();
         for root in self.roots.iter() {
@@ -423,6 +540,15 @@ impl Filesystem {
         false
     }
 
+    /// Reads the file at `path` from the first root or archive that has it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no root or archive has the file, or if reading it fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `path` isn't valid UTF-8 and there are archives to search.
     pub fn read_sub_path(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
         let path = path.as_ref();
         for root in self.roots.iter() {
@@ -445,13 +571,17 @@ impl Filesystem {
     }
 }
 
+/// A load source that names a file inside a [`Filesystem`].
 #[derive(Clone)]
 pub struct PathAndFilesystem {
+    /// Path relative to the filesystem's roots.
     pub path: PathBuf,
+    /// The filesystem to read it from.
     pub fs: Arc<Filesystem>,
 }
 
 impl PathAndFilesystem {
+    /// Creates a source for `path` in `fs`.
     pub fn new(path: impl AsRef<Path>, fs: Arc<Filesystem>) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
@@ -459,6 +589,11 @@ impl PathAndFilesystem {
         }
     }
 
+    /// Reads the file's bytes.
+    ///
+    /// # Errors
+    ///
+    /// See [`Filesystem::read_sub_path`].
     pub fn read(&self) -> Result<Vec<u8>> {
         self.fs.read_sub_path(&self.path)
     }
@@ -470,9 +605,14 @@ impl From<(PathBuf, Arc<Filesystem>)> for PathAndFilesystem {
     }
 }
 
+/// A type-erased asset, usable as a load source for [`DirectLoader`].
 pub type BoxedAsset = Box<dyn Asset>;
 
+/// Something a loader can be asked to load from: a path, raw bytes, another asset.
+///
+/// Every [`Asset`] is a `LoadSource`, so an asset can be handed straight to [`DirectLoader`].
 pub trait LoadSource: Send + Sync + 'static {
+    /// Returns a short description of the source for debug output, if it has one.
     fn as_str(&self) -> Option<&str> {
         None
     }
@@ -492,12 +632,53 @@ impl LoadSource for Vec<u8> {}
 impl LoadSource for BoxedAsset {}
 impl<T: Asset> LoadSource for T {}
 
+/// Turns a source `S` into an asset.
+///
+/// A loader is built from the world each time its queue is drained (it's a [`ConstructFromWorld`],
+/// which every `Default` type is), so it can read configuration from resources. One loader type can
+/// implement `LoadFrom` for several sources. Register it with [`AssetApp::add_asset_loader`].
+///
+/// `commands` is for side work: spawning entities, or asking for dependency assets with
+/// [`AssetCommands::lazy_load_asset`]. Commands are applied after the loading system finishes, so
+/// those dependencies load on a later pass.
+///
+/// # Examples
+///
+/// ```
+/// use weaver_asset::prelude::*;
+/// use weaver_ecs::commands::Commands;
+/// use weaver_util::prelude::Result;
+///
+/// #[derive(Asset)]
+/// struct Text(String);
+///
+/// #[derive(Default)]
+/// struct TextLoader;
+///
+/// impl LoadFrom<Vec<u8>> for TextLoader {
+///     type Asset = Text;
+///
+///     fn load(&self, source: Vec<u8>, _commands: &Commands) -> Result<Text> {
+///         Ok(Text(String::from_utf8(source)?))
+///     }
+/// }
+/// ```
 pub trait LoadFrom<S: LoadSource>: ConstructFromWorld + Send + Sync + 'static {
+    /// The type of asset this loader produces.
     type Asset: Asset;
 
+    /// Loads one asset from `source`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the source can't be turned into an asset.
     fn load(&self, source: S, commands: &Commands) -> Result<Self::Asset>;
 }
 
+/// Loader that passes an asset through unchanged (or downcasts a [`BoxedAsset`] to `T`).
+///
+/// [`AssetApp::add_asset`] registers it for every asset type, which is what makes
+/// [`AssetCommands::lazy_load_asset_direct`] work.
 #[derive(Clone, Copy)]
 pub struct DirectLoader<T: Asset>(PhantomData<T>);
 
@@ -525,20 +706,24 @@ impl<T: Asset> LoadFrom<T> for DirectLoader<T> {
     }
 }
 
+/// A pending load: the handle that was handed out and the source to load it from.
 pub struct AssetLoadRequest<T: Asset, S: LoadSource> {
     handle: Handle<T>,
     source: S,
 }
 
 impl<T: Asset, S: LoadSource> AssetLoadRequest<T, S> {
+    /// Creates a request that will fill `handle` from `source`.
     pub fn new(handle: Handle<T>, source: S) -> Self {
         Self { handle, source }
     }
 
+    /// Returns the handle the loaded asset will be stored under.
     pub fn handle(&self) -> Handle<T> {
         self.handle
     }
 
+    /// Returns the source to load from.
     pub fn source(&self) -> &S {
         &self.source
     }
@@ -558,6 +743,10 @@ impl<T: Asset, S: LoadSource> Debug for AssetLoadRequest<T, S> {
     }
 }
 
+/// Resource holding the pending loads for one (loader, source) pair.
+///
+/// It uses a lock internally, so it can be filled through a shared reference (`Res`). The
+/// [`AssetLoad`] stage drains it every frame.
 pub struct AssetLoadQueue<L: LoadFrom<S>, S: LoadSource> {
     queue: Lock<Vec<AssetLoadRequest<L::Asset, S>>>,
     _marker: PhantomData<L>,
@@ -573,10 +762,12 @@ impl<L: LoadFrom<S>, S: LoadSource> Default for AssetLoadQueue<L, S> {
 }
 
 impl<L: LoadFrom<S>, S: LoadSource> AssetLoadQueue<L, S> {
+    /// Creates an empty queue.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Queues a load of `source` and returns the handle it will be stored under.
     pub fn enqueue(&self, source: impl Into<S>) -> Handle<L::Asset> {
         let handle = Handle::from_raw(AssetId::new());
         self.queue.write().push(AssetLoadRequest {
@@ -586,32 +777,46 @@ impl<L: LoadFrom<S>, S: LoadSource> AssetLoadQueue<L, S> {
         handle
     }
 
+    /// Queues a load request that was built by hand.
     pub fn push(&self, request: AssetLoadRequest<L::Asset, S>) {
         self.queue.write().push(request);
     }
 
+    /// Takes the most recently queued request, if any.
     pub fn pop(&self) -> Option<AssetLoadRequest<L::Asset, S>> {
         self.queue.write().pop()
     }
 
+    /// Returns whether nothing is queued.
     pub fn is_empty(&self) -> bool {
         self.queue.read().is_empty()
     }
 
+    /// Returns the number of queued requests.
     pub fn len(&self) -> usize {
         self.queue.read().len()
     }
 
+    /// Drops all queued requests.
     pub fn clear(&self) {
         self.queue.write().clear();
     }
 }
 
+/// Extension methods on [`Commands`] for requesting asset loads from inside a system.
+///
+/// The handle is minted immediately; the request is put on the loader's [`AssetLoadQueue`] when the
+/// commands are applied.
 pub trait AssetCommands {
+    /// Requests that loader `L` load `source`, returning the handle the result will get.
+    ///
+    /// The command panics when applied if `L` isn't registered for `S` (see
+    /// [`AssetApp::add_asset_loader`]).
     fn lazy_load_asset<L: LoadFrom<S> + 'static, S: LoadSource>(
         &self,
         source: impl Into<S> + Send + Sync + 'static,
     ) -> Handle<L::Asset>;
+    /// Requests that `asset` be inserted into [`Assets<T>`] through the [`DirectLoader`].
     fn lazy_load_asset_direct<T: Asset>(&self, asset: T) -> Handle<T>;
 }
 
@@ -635,6 +840,9 @@ impl AssetCommands for Commands {
     }
 }
 
+/// Sent when a loader has finished an asset and it is in [`Assets`].
+///
+/// A loaded asset also gets an [`AssetEventKind::Added`] [`AssetEvent`].
 #[derive(Debug, Copy, PartialEq, Eq, Hash)]
 pub struct AssetLoaded<T: Asset> {
     id: AssetId,
@@ -651,6 +859,7 @@ impl<T: Asset> Clone for AssetLoaded<T> {
 }
 
 impl<T: Asset> AssetLoaded<T> {
+    /// Creates an event for asset `id`.
     pub fn new(id: AssetId) -> Self {
         Self {
             id,
@@ -658,29 +867,38 @@ impl<T: Asset> AssetLoaded<T> {
         }
     }
 
+    /// Returns the id of the loaded asset.
     pub fn id(&self) -> AssetId {
         self.id
     }
 
+    /// Returns a handle to the loaded asset.
     pub fn handle(&self) -> Handle<T> {
         Handle::from_raw(self.id)
     }
 }
 
+/// Resource recording which assets have been loaded, shared by all asset types.
+///
+/// The loading systems consult it to skip requests that were already satisfied; user code can
+/// poll it to wait for a handle.
 #[derive(Default)]
 pub struct AssetLoadStatus {
     load_status: Lock<FxHashMap<AssetId, bool>>,
 }
 
 impl AssetLoadStatus {
+    /// Creates an empty status table.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Marks `handle` as loaded, for assets that were inserted without going through a loader.
     pub fn manually_set_loaded<T: Asset>(&self, handle: Handle<T>) {
         self.load_status.write().insert(handle.id, true);
     }
 
+    /// Returns whether `handle` has been marked loaded.
     pub fn is_loaded<T: Asset>(&self, handle: Handle<T>) -> bool {
         self.load_status
             .read()
@@ -690,6 +908,9 @@ impl AssetLoadStatus {
     }
 }
 
+/// Stage where the loader queues are drained and assets are inserted.
+///
+/// Added after the app's other stages, so loads requested during a frame finish at the end of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemStage)]
 pub struct AssetLoad;
 
@@ -711,13 +932,30 @@ fn flush_asset_events<T: Asset>(mut assets: ResMut<Assets<T>>, mut events: Event
     }
 }
 
+// Runs before the flush so this frame's events are still readable next frame.
 fn clear_asset_events<T: Asset>(mut events: ResMut<EventQueue<AssetEvent<T>>>) {
     events.update();
 }
 
+/// Asset registration methods for [`App`] and [`SubApp`].
+///
+/// On an [`App`] they act on the main sub-app. All of them are idempotent.
 pub trait AssetApp {
+    /// Registers asset type `T`: its [`Assets<T>`] storage, its event queue, and the
+    /// [`AssetLoad`] and [`AssetFlush`] stages if they're missing.
+    ///
+    /// Also registers a [`DirectLoader`] for `T`, so assets can be queued as-is.
     fn add_asset<T: Asset>(&mut self) -> &mut Self;
+    /// Registers loader `L` for source type `S`: the [`AssetLoadQueue`] and the system that drains
+    /// it in [`AssetLoad`].
+    ///
+    /// The loader's output type has to be registered with [`AssetApp::add_asset`] as well. The
+    /// loading system reads and writes [`Assets<L::Asset>`](Assets), and without that resource it
+    /// never runs.
     fn add_asset_loader<L: LoadFrom<S>, S: LoadSource>(&mut self) -> &mut Self;
+    /// Makes loader `DL` (for source `DS`) run before loader `L` (for `S`) within [`AssetLoad`].
+    ///
+    /// This only orders the two systems. A load requested by `DL` while `L` runs is not waited for.
     fn add_asset_load_dependency<L: LoadFrom<S>, S: LoadSource, DL: LoadFrom<DS>, DS: LoadSource>(
         &mut self,
     ) -> &mut Self;
@@ -821,6 +1059,8 @@ impl AssetApp for App {
     }
 }
 
+// Drains the queue for one (loader, source) pair. Every request is loaded first and the results
+// are inserted afterwards, so a loader never sees assets from its own batch in `Assets`.
 fn load_all_assets<L: LoadFrom<S> + 'static, S: LoadSource>(
     loader: FromWorld<L>,
     load_queue: Res<AssetLoadQueue<L, S>>,
@@ -844,6 +1084,7 @@ fn load_all_assets<L: LoadFrom<S> + 'static, S: LoadSource>(
         if assets.get(request.handle).is_some() || load_status.is_loaded(request.handle) {
             continue;
         }
+        // TODO: failed loads are only logged and the request is dropped; the handle stays dangling
         let result = match loader.load(request.source, &commands) {
             Ok(asset) => Ok(asset),
             Err(e) => {

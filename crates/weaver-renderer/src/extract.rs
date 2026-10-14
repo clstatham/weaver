@@ -1,3 +1,10 @@
+//! Copying data from the main world to the render world.
+//!
+//! Extraction runs in [`RenderStage::Extract`] with the main world available as [`MainWorld`].
+//! [`Extract`] lets a render-world system read from it, [`ExtractComponent`] and
+//! [`ExtractResource`] cover the two common cases, and [`render_extract`] is the function that sets
+//! the whole thing up each frame.
+
 use std::{
     any::TypeId,
     ops::{Deref, DerefMut},
@@ -19,6 +26,25 @@ use weaver_util::prelude::*;
 
 use crate::{MainWorld, RenderStage, ScratchMainWorld, sync::RenderEntities};
 
+/// A system parameter that fetches `T` from the main world instead of the render world.
+///
+/// Only works in [`RenderStage::Extract`] systems, where the main world is available. Change
+/// detection inside it (`Changed<..>`, `is_changed()`) is relative to the system's previous
+/// extract run.
+///
+/// # Examples
+///
+/// ```
+/// use weaver_ecs::query::Query;
+/// use weaver_renderer::extract::Extract;
+///
+/// struct Health(u32);
+///
+/// // Runs in the render world, but the query iterates the main world.
+/// fn count_health(mut query: Extract<Query<&Health>>) {
+///     let _n = query.iter().count();
+/// }
+/// ```
 pub struct Extract<T: SystemParam> {
     item: SystemParamItem<T>,
 }
@@ -121,6 +147,26 @@ impl<T: SystemParam + 'static> SystemParam for Extract<T> {
 ///
 /// Use `Filter = Changed<&'static Self>` to only re-extract when the component changed, or `()`
 /// to re-extract every frame (needed when `Data` reads other components that may change).
+///
+/// # Examples
+///
+/// ```
+/// use weaver_ecs::storage::Ref;
+/// use weaver_renderer::extract::ExtractComponent;
+///
+/// struct Health(u32);
+/// struct GpuHealth(f32);
+///
+/// impl ExtractComponent for Health {
+///     type Data = &'static Health;
+///     type Filter = weaver_ecs::query::Changed<&'static Health>;
+///     type Out = GpuHealth;
+///
+///     fn extract(health: Ref<'_, Health>) -> Option<GpuHealth> {
+///         Some(GpuHealth(health.0 as f32))
+///     }
+/// }
+/// ```
 pub trait ExtractComponent: Component {
     /// Main-world data to extract from.
     type Data: Queryable + 'static;
@@ -129,9 +175,11 @@ pub trait ExtractComponent: Component {
     /// What ends up on the render-world entity.
     type Out: Component;
 
+    /// Converts the main-world data into the render-world component, or `None` to remove it.
     fn extract(item: QueryableItem<'_, Self::Data>) -> Option<Self::Out>;
 }
 
+/// Adds [`extract_component`] for `T` to [`RenderStage::Extract`].
 pub struct ExtractComponentPlugin<T: ExtractComponent>(std::marker::PhantomData<T>);
 
 impl<T: ExtractComponent> Default for ExtractComponentPlugin<T> {
@@ -147,6 +195,8 @@ impl<T: ExtractComponent> Plugin for ExtractComponentPlugin<T> {
     }
 }
 
+/// Extracts `T` from every matching main-world entity onto its render-world mirror, spawning the
+/// mirror if needed, and removes [`ExtractComponent::Out`] where `T` was removed.
 #[allow(clippy::type_complexity)]
 pub fn extract_component<T: ExtractComponent>(
     commands: Commands,
@@ -176,10 +226,13 @@ pub fn extract_component<T: ExtractComponent>(
 /// A main-world resource that gets copied (possibly transformed) into the render world whenever it
 /// changes, and removed from the render world when it's removed from the main world.
 pub trait ExtractResource: Component {
+    /// The main-world resource to copy from. May be the same type as `Self`.
     type Source: Component;
+    /// Builds the render-world resource from the main-world one.
     fn extract_render_resource(source: &Self::Source) -> Self;
 }
 
+/// Adds [`extract_render_resource`] for `T` to [`RenderStage::Extract`].
 pub struct ExtractResourcePlugin<T: ExtractResource>(std::marker::PhantomData<T>);
 
 impl<T: ExtractResource> Default for ExtractResourcePlugin<T> {
@@ -195,6 +248,8 @@ impl<T: ExtractResource> Plugin for ExtractResourcePlugin<T> {
     }
 }
 
+/// Keeps the render-world resource `T` in sync with its main-world source: inserted when the source
+/// appears, rebuilt when it changes, removed when it goes away.
 pub fn extract_render_resource<T: ExtractResource>(
     commands: Commands,
     main_resource: Extract<Option<Res<T::Source>>>,
@@ -216,11 +271,22 @@ pub fn extract_render_resource<T: ExtractResource>(
     }
 }
 
+/// Runs [`RenderStage::Extract`] on the render world with the main world swapped into it as
+/// [`MainWorld`], then swaps it back. This is the render sub-app's extract function.
+///
+/// # Errors
+///
+/// Returns the error if the extract stage fails.
+///
+/// # Panics
+///
+/// Panics if the main world has no [`ScratchMainWorld`].
 pub fn render_extract(main_world: &mut World, render_world: &mut World) -> Result<()> {
     let scratch_world = main_world.remove_resource::<ScratchMainWorld>().unwrap();
     let inserted_world = std::mem::replace(main_world, scratch_world.0);
     render_world.insert_resource(MainWorld(inserted_world));
 
+    // FIXME: on Err the `?` skips the swap back, leaving the real main world stuck in MainWorld
     render_world.run_stage(RenderStage::Extract)?;
 
     let inserted_world = render_world.remove_resource::<MainWorld>().unwrap();

@@ -1,3 +1,9 @@
+//! GPU meshes and the mesh plugin.
+//!
+//! [`GpuMesh`] is the render asset for a [`Mesh`]. [`MeshPlugin`] also extracts `Handle<Mesh>`
+//! components onto render entities and sets up instanced drawing (see [`instances`]); simple
+//! generated meshes live in [`primitive`].
+
 use weaver_app::{App, plugin::Plugin};
 use weaver_core::{geometry::Aabb, mesh::Mesh};
 use weaver_util::prelude::*;
@@ -16,11 +22,18 @@ use crate::{
 pub mod instances;
 pub mod primitive;
 
+/// A mesh uploaded to the GPU.
+///
+/// The index buffer holds `u32` indices, so draw it with `IndexFormat::Uint32`.
 #[derive(Debug)]
 pub struct GpuMesh {
+    /// Local-space bounds, for frustum culling.
     pub aabb: Aabb,
+    /// Vertices laid out as [`vertex_buffer_layout`] describes.
     pub vertex_buffer: wgpu::Buffer,
+    /// `u32` indices.
     pub index_buffer: wgpu::Buffer,
+    /// Number of indices to draw.
     pub num_indices: u32,
 }
 
@@ -55,6 +68,7 @@ impl RenderAsset for GpuMesh {
     }
 }
 
+/// Registers [`GpuMesh`], mesh handle extraction, and opaque mesh batching.
 pub struct MeshPlugin;
 
 impl Plugin for MeshPlugin {

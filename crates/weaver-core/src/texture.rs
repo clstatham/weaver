@@ -1,3 +1,5 @@
+//! CPU-side textures and their asset loaders.
+
 use std::path::PathBuf;
 
 use weaver_asset::{
@@ -7,25 +9,39 @@ use weaver_asset::{
 use weaver_ecs::prelude::Commands;
 use weaver_util::prelude::*;
 
+/// An image held in memory as 8-bit RGBA, before it's uploaded to the GPU.
 #[derive(Debug, Clone, Asset)]
 pub struct Texture {
+    /// The pixel data.
     pub image: image::RgbaImage,
 }
 
 impl Texture {
+    /// Wraps an existing image.
     pub fn new(image: image::RgbaImage) -> Self {
         Self { image }
     }
 
+    /// Creates a texture from tightly packed RGBA bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `rgba8` isn't exactly `width * height * 4` bytes long.
     pub fn from_rgba8(rgba8: &[u8], width: u32, height: u32) -> Self {
         let image = image::RgbaImage::from_raw(width, height, rgba8.to_vec()).unwrap();
         Self { image }
     }
 
+    /// Returns a copy of the pixels as tightly packed RGBA bytes.
     pub fn to_rgba8(&self) -> Vec<u8> {
         self.image.clone().into_raw()
     }
 
+    /// Creates a texture from tightly packed RGB bytes, with alpha set to 255.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `rgb8` is shorter than `width * height * 3` bytes.
     pub fn from_rgb8(rgb8: &[u8], width: u32, height: u32) -> Self {
         let mut rgba8 = Vec::new();
 
@@ -39,6 +55,7 @@ impl Texture {
         Self::from_rgba8(&rgba8, width, height)
     }
 
+    /// Returns a copy of the pixels as tightly packed RGB bytes, dropping alpha.
     pub fn to_rgb8(&self) -> Vec<u8> {
         let mut rgb8 = Vec::new();
 
@@ -54,19 +71,28 @@ impl Texture {
         rgb8
     }
 
+    /// Returns the width in pixels.
     pub fn width(&self) -> u32 {
         self.image.width()
     }
 
+    /// Returns the height in pixels.
     pub fn height(&self) -> u32 {
         self.image.height()
     }
 
+    /// Resamples the texture to `width` by `height` using `filter`.
     pub fn resize(&mut self, width: u32, height: u32, filter: image::imageops::FilterType) {
         self.image = image::imageops::resize(&self.image, width, height, filter);
     }
 }
 
+/// Loads a [`Texture`] from encoded image bytes (PNG, JPEG, TGA, or anything else the `image` crate
+/// reads).
+///
+/// The type parameter only tags which source flavour the registered loader is for: `PathBuf` is the
+/// loader that reads from a [`PathAndFilesystem`], `Vec<u8>` the one that decodes bytes you already
+/// have. See [`CoreTypesPlugin`](crate::CoreTypesPlugin).
 #[derive(Default)]
 pub struct TextureLoader<S: LoadSource>(std::marker::PhantomData<S>);
 

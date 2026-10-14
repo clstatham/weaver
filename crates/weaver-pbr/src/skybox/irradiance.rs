@@ -1,3 +1,6 @@
+//! Image-based lighting maps: the pre-generated diffuse and specular cubemaps and BRDF lookup
+//! table that sit next to a [`Skybox`]'s `.hdr` file.
+
 use std::{path::Path, sync::Arc};
 
 use weaver_renderer::{prelude::wgpu, texture::GpuTexture};
@@ -6,12 +9,18 @@ use wgpu::util::DeviceExt;
 
 use super::Skybox;
 
+/// Face size in pixels of the diffuse irradiance cubemap the asset generator script produces.
 pub const SKYBOX_IRRADIANCE_SIZE: u32 = 64;
+/// Face size in pixels of the specular cubemap's base mip level.
 pub const SKYBOX_SPECULAR_SIZE: u32 = 128;
+/// Number of mip levels in the specular cubemap (one per roughness step).
 pub const SKYBOX_SPECULAR_MIP_LEVELS: u32 = 5;
 
+/// A cubemap read from a `.ktx2` file.
 pub struct LoadedKtx {
+    /// The file's KTX2 header.
     pub header: ktx2::Header,
+    /// The uploaded texture: six layers of `Rgba16Float`, all mips of the file.
     pub texture: Arc<wgpu::Texture>,
 }
 
@@ -91,14 +100,25 @@ fn load_png(
 /// lookup table.
 #[derive(Clone)]
 pub struct GpuSkyboxIrradiance {
+    /// Diffuse irradiance cubemap.
     pub diffuse: GpuTexture,
+    /// Prefiltered specular cubemap, with a mip level per roughness step.
     pub specular: GpuTexture,
+    /// Split-sum BRDF lookup table.
     pub brdf_lut: GpuTexture,
+    /// Clamping, trilinear sampler used for all three maps.
     pub sampler: Arc<wgpu::Sampler>,
 }
 
 impl GpuSkyboxIrradiance {
     /// Loads the maps that belong to `skybox` (see [`Skybox::new`]).
+    ///
+    /// The `.ktx2` files are assumed to hold uncompressed `Rgba16Float` cubemaps; the format in
+    /// the header is not checked.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the three files can't be read or decoded.
     pub fn load(skybox: &Skybox, device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self> {
         let diffuse = load_ktx(&skybox.diffuse_path, device, queue)?;
         let specular = load_ktx(&skybox.specular_path, device, queue)?;

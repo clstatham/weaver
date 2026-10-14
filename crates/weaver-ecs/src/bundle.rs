@@ -1,3 +1,5 @@
+//! Bundles: groups of components that are spawned or inserted together.
+
 use std::any::TypeId;
 
 use weaver_util::prelude::*;
@@ -7,10 +9,24 @@ use crate::{
     component::{Component, ComponentVec},
 };
 
+/// A group of components that are inserted into an entity together.
+///
+/// Implemented for tuples of up to eight [`Component`]s, so `(Position, Velocity)` is a bundle and
+/// so is the one-element `(Position,)`. The order inside the tuple doesn't matter to storage:
+/// components are sorted by `TypeId` before they reach an archetype. A bundle should not name the
+/// same component type twice.
 pub trait Bundle: Send + Sync + 'static {
+    /// The `TypeId` of each component, in tuple order.
     fn component_type_ids() -> Vec<TypeId>;
+    /// One empty [`ComponentVec`] per component, in tuple order.
     fn empty_vecs() -> Vec<ComponentVec>;
+    /// Splits the bundle into one single-element [`ComponentVec`] per component, in tuple order.
     fn into_components(self) -> Vec<ComponentVec>;
+    /// Rebuilds the bundle from single-element vecs, found by element type (any order).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a component type is missing from `components` or its vec is empty.
     fn from_components(components: Vec<ComponentVec>) -> Result<Box<Self>>;
 }
 
@@ -62,6 +78,10 @@ impl_bundle_tuple!(A, B, C, D, E, F);
 impl_bundle_tuple!(A, B, C, D, E, F, G);
 impl_bundle_tuple!(A, B, C, D, E, F, G, H);
 
+/// A type-erased bundle: the components of one entity, sorted by `TypeId`, with their change ticks.
+///
+/// This is the form an entity takes while it moves between archetypes. Each [`ComponentVec`]
+/// holds exactly one element.
 pub struct ComponentBundle {
     pub(crate) types: Vec<TypeId>,
     pub(crate) components: Vec<ComponentVec>,
@@ -69,7 +89,10 @@ pub struct ComponentBundle {
 }
 
 impl ComponentBundle {
+    /// Erases a typed bundle, stamping every component as added and changed at `tick`.
     pub fn from_tuple<T: Bundle>(bundle: T, tick: Tick) -> Self {
+        // FIXME: a bundle naming the same type twice keeps both entries, but lookups only ever find
+        // one column, so a value is silently lost
         let mut types = T::component_type_ids();
         let mut components = T::into_components(bundle);
 
@@ -88,18 +111,26 @@ impl ComponentBundle {
         }
     }
 
+    /// Converts back into a typed bundle.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `T` needs a component this bundle doesn't have.
     pub fn into_tuple<T: Bundle>(self) -> Result<T> {
         Ok(*T::from_components(self.components)?)
     }
 
+    /// The component types, sorted.
     pub fn types(&self) -> &[TypeId] {
         &self.types
     }
 
+    /// The component values, in the same order as [`ComponentBundle::types`].
     pub fn components(&self) -> &[ComponentVec] {
         &self.components
     }
 
+    /// Empty vecs of the same component types, for building an archetype's columns.
     pub fn empty_vecs(&self) -> Vec<ComponentVec> {
         self.components
             .iter()
@@ -107,6 +138,8 @@ impl ComponentBundle {
             .collect()
     }
 
+    /// Adds one component, keeping the types sorted. If the bundle already had that type, the old
+    /// value and ticks are swapped out and returned.
     pub fn insert(
         &mut self,
         mut comp: ComponentVec,
@@ -132,6 +165,7 @@ impl ComponentBundle {
         None
     }
 
+    /// Removes and returns the `T` component, or `None` if the bundle has none.
     pub fn remove<T: Component>(&mut self) -> Option<T> {
         let ty = TypeId::of::<T>();
         let index = self.types.iter().position(|t| *t == ty)?;
@@ -161,6 +195,8 @@ impl ComponentBundle {
         }
     }
 
+    /// Moves every component of `other` into this bundle. Where both have a type, `other`'s value
+    /// wins; the values it displaced come back as a bundle, or `None` if nothing collided.
     pub fn union(&mut self, other: Self) -> Option<Self> {
         let mut ret = Self {
             types: Vec::new(),

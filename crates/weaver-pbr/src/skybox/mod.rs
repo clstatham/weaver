@@ -1,3 +1,10 @@
+//! The skybox: an HDR image converted to a cubemap and drawn behind the scene.
+//!
+//! [`Skybox`] is the main-world resource naming the files. In the render world [`GpuSkybox`] turns
+//! the equirectangular `.hdr` into a cubemap with a compute pass, and [`SkyboxPipeline`] draws it
+//! as a fullscreen triangle in the [`Background3d`] phase. The lighting maps derived from the same
+//! sky live in [`irradiance`].
+
 use std::{
     fs::File,
     path::{Path, PathBuf},
@@ -37,17 +44,44 @@ use weaver_util::prelude::*;
 
 pub mod irradiance;
 
+/// Face size in pixels of the background cubemap converted from the equirectangular image.
 pub const SKYBOX_CUBEMAP_SIZE: u32 = 1024;
 
+/// The sky: an equirectangular HDR image and the files for lighting the scene with it.
+///
+/// Insert it as a resource in the main world. The background cubemap is converted from `path` on
+/// the GPU; the other three files are pre-generated (see `assets/skyboxes/`) and are what
+/// actually light the meshes.
+///
+/// # Examples
+///
+/// ```
+/// use weaver_pbr::skybox::Skybox;
+///
+/// let sky = Skybox::new("assets/skyboxes/meadow_2k.hdr");
+/// assert!(sky.diffuse_path.ends_with("meadow_2k_diffuse.ktx2"));
+/// ```
 #[derive(Clone)]
 pub struct Skybox {
+    /// The equirectangular Radiance `.hdr` image.
     pub path: PathBuf,
+    /// Diffuse irradiance cubemap (`.ktx2`).
     pub diffuse_path: PathBuf,
+    /// Prefiltered specular cubemap with mips (`.ktx2`).
     pub specular_path: PathBuf,
+    /// BRDF lookup table (`.png`).
     pub brdf_lut_path: PathBuf,
 }
 
 impl Skybox {
+    /// Creates a skybox from an `.hdr` path, finding the other files next to it.
+    ///
+    /// For `sky.hdr` those are `sky_diffuse.ktx2`, `sky_specular.ktx2` and `sky_LUT.png` in the
+    /// same directory. Nothing is read until the render world picks the resource up.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `path` has no file name or it isn't valid UTF-8.
     pub fn new(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref().to_path_buf();
         let file_stem = path.file_stem().unwrap().to_str().unwrap().to_owned();
@@ -102,6 +136,8 @@ pub(crate) struct GpuSkyboxDst {
     dst_texture: GpuTexture,
 }
 
+/// The skybox background as a cubemap in the render world, bound as group 0 of
+/// [`SkyboxPipeline`].
 #[derive(Clone)]
 pub struct GpuSkybox {
     #[allow(unused)]
@@ -124,6 +160,13 @@ impl ConstructFromWorld for GpuSkybox {
 
 impl GpuSkybox {
     /// Loads the skybox's equirectangular HDR image and converts it to a cube map on the GPU.
+    ///
+    /// Runs synchronously: decodes the image, uploads it and submits the conversion compute pass
+    /// to `queue` before returning.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `skybox.path` can't be opened or isn't a valid Radiance HDR file.
     pub fn new(
         skybox: &Skybox,
         device: &wgpu::Device,
@@ -304,7 +347,9 @@ impl AsBindGroup for GpuSkybox {
     }
 }
 
+/// Draws the [`GpuSkybox`] as a fullscreen triangle (`sky.wesl`), without blending.
 pub struct SkyboxPipeline {
+    /// The compiled pipeline.
     pub pipeline: RenderPipeline,
 }
 
@@ -368,6 +413,7 @@ impl DrawFunction<Background3d> for DrawSkybox {
     }
 }
 
+/// Extracts the [`Skybox`] and builds the [`GpuSkybox`] from it.
 pub struct SkyboxPlugin;
 
 impl Plugin for SkyboxPlugin {
@@ -386,10 +432,12 @@ impl Plugin for SkyboxPlugin {
     }
 }
 
+// FIXME: built once, so changing the `Skybox` resource later doesn't update the background
 fn init_gpu_skybox(commands: Commands) {
     commands.init_resource::<GpuSkybox>();
 }
 
+/// Draws the skybox in the [`Background3d`] phase of every view.
 pub struct SkyboxRenderablePlugin;
 
 impl Plugin for SkyboxRenderablePlugin {

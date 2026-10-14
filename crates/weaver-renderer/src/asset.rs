@@ -34,11 +34,20 @@ pub enum PrepareAssetError<S> {
 }
 
 /// The GPU version of a main-world asset.
+///
+/// Implement it for the GPU type, name the main-world asset as `Source`, and add a
+/// [`RenderAssetPlugin`] for it.
 pub trait RenderAsset: Send + Sync + Sized + 'static {
+    /// The main-world asset this is made from. It's cloned during extraction.
     type Source: Asset + Clone;
     /// Render-world data needed to prepare the asset (for example other render assets).
     type Param: SystemParam + 'static;
 
+    /// Builds the GPU asset from `source`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PrepareAssetError::RetryNextFrame`] with the source if a dependency isn't ready.
     fn prepare(
         source: Self::Source,
         param: &mut SystemParamItem<Self::Param>,
@@ -61,18 +70,22 @@ impl<T: RenderAsset> Default for RenderAssets<T> {
 }
 
 impl<T: RenderAsset> RenderAssets<T> {
+    /// The prepared asset for a main-world handle, if it has been prepared.
     pub fn get(&self, source: Handle<T::Source>) -> Option<&T> {
         self.assets.get(&source.id())
     }
 
+    /// The prepared asset for a main-world asset id.
     pub fn get_by_id(&self, source: AssetId) -> Option<&T> {
         self.assets.get(&source)
     }
 
+    /// Number of prepared assets.
     pub fn len(&self) -> usize {
         self.assets.len()
     }
 
+    /// True if no asset has been prepared.
     pub fn is_empty(&self) -> bool {
         self.assets.is_empty()
     }
@@ -83,6 +96,7 @@ impl<T: RenderAsset> RenderAssets<T> {
 pub struct ExtractedAssets<T: RenderAsset> {
     /// Sources to prepare, with how many times preparing each has been attempted.
     changed: Vec<(AssetId, T::Source, u32)>,
+    /// Ids whose prepared asset should be dropped.
     removed: Vec<AssetId>,
 }
 
@@ -98,6 +112,7 @@ impl<T: RenderAsset> Default for ExtractedAssets<T> {
     }
 }
 
+/// Registers the extract and prepare systems and the containers for a [`RenderAsset`].
 pub struct RenderAssetPlugin<T: RenderAsset>(PhantomData<T>);
 
 impl<T: RenderAsset> Default for RenderAssetPlugin<T> {
@@ -116,6 +131,8 @@ impl<T: RenderAsset> Plugin for RenderAssetPlugin<T> {
     }
 }
 
+/// Reads this frame's [`AssetEvent`]s from the main world and queues the changed sources (cloned)
+/// and removed ids in [`ExtractedAssets`].
 pub fn extract_render_assets<T: RenderAsset>(
     mut events: Extract<EventRx<AssetEvent<T::Source>>>,
     sources: Extract<Res<Assets<T::Source>>>,
@@ -136,6 +153,8 @@ pub fn extract_render_assets<T: RenderAsset>(
     }
 }
 
+/// Applies queued removals, then tries to prepare every queued source. Sources that ask to be
+/// retried stay queued, and are tried again every frame until they succeed.
 pub fn prepare_render_assets<T: RenderAsset>(
     mut extracted: ResMut<ExtractedAssets<T>>,
     mut render_assets: ResMut<RenderAssets<T>>,

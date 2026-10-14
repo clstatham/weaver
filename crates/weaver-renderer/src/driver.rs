@@ -28,6 +28,14 @@ use crate::{
     view::{ExtractedView, ViewTarget},
 };
 
+/// Records the frame: one "Main Pass" per view, then the tonemap pass onto the swapchain.
+///
+/// Does nothing if there is no [`ActiveCommandEncoder`] (no frame was acquired).
+///
+/// # Panics
+///
+/// Panics if a [`DrawFunctions`] resource for one of the three phases is missing, which means its
+/// [`RenderPhasePlugin`](crate::phase::RenderPhasePlugin) wasn't added.
 pub fn render_views(world: &World) {
     let Some(mut encoder) = world.get_resource_mut::<ActiveCommandEncoder>() else {
         return;

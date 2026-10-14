@@ -1,7 +1,13 @@
+//! Derive macro for `weaver_asset::Asset`.
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse_macro_input;
 
+/// Implements `weaver_asset::Asset` for a type.
+///
+/// The type must be `Send + Sync + 'static`. The expansion names `weaver_asset` directly, so the
+/// crate using the derive needs `weaver-asset` as a dependency under that name.
 #[proc_macro_derive(Asset)]
 pub fn derive_asset(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::DeriveInput);

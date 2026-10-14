@@ -1,3 +1,5 @@
+//! Archetype storage: where entities' components actually live.
+
 use std::{
     any::TypeId,
     cell::UnsafeCell,
@@ -71,6 +73,11 @@ impl Column {
     }
 }
 
+/// All entities that have exactly the same set of component types, stored column by column.
+///
+/// Each component type has one column; row `i` of every column belongs to `entities()[i]`. Rows
+/// are removed with swap-remove, so row order is not stable. Archetypes are created by
+/// [`Components`] the first time an entity with a new set of types shows up.
 #[derive(Default)]
 pub struct Archetype {
     /// Sorted, so lookups can binary search.
@@ -80,6 +87,7 @@ pub struct Archetype {
 }
 
 impl Archetype {
+    /// Creates an empty archetype with a column for each component in the bundle.
     pub fn new_for_bundle<T: Bundle>() -> Self {
         let mut vecs = T::empty_vecs();
         vecs.sort_unstable_by_key(|vec| vec.element_typeid());
@@ -93,26 +101,32 @@ impl Archetype {
         }
     }
 
+    /// The component types stored here, sorted.
     pub fn data_types(&self) -> &[TypeId] {
         &self.data_types
     }
 
+    /// The entity in each row.
     pub fn entities(&self) -> &[Entity] {
         &self.entities
     }
 
+    /// Iterates over the entities in row order.
     pub fn entity_iter(&self) -> impl Iterator<Item = Entity> + '_ {
         self.entities.iter().copied()
     }
 
+    /// Number of entities (rows).
     pub fn len(&self) -> usize {
         self.entities.len()
     }
 
+    /// Whether the archetype has no entities.
     pub fn is_empty(&self) -> bool {
         self.entities.is_empty()
     }
 
+    /// The column index of component type `ty`, if this archetype stores it.
     pub fn index_of(&self, ty: TypeId) -> Option<usize> {
         self.data_types.binary_search(&ty).ok()
     }
@@ -122,6 +136,7 @@ impl Archetype {
         self.entities.iter().position(|&id| id == entity)
     }
 
+    /// Whether this archetype stores `T`.
     pub fn has<T: Component>(&self) -> bool {
         self.index_of(TypeId::of::<T>()).is_some()
     }
@@ -131,40 +146,49 @@ impl Archetype {
             .map(|index| &self.columns[index])
     }
 
+    /// Whether the archetype's component types are exactly the bundle's.
     pub fn exactly_matches_bundle<T: Bundle>(&self) -> bool {
         let mut bundle = T::component_type_ids();
         bundle.sort_unstable();
         self.data_types == bundle
     }
 
+    /// Whether every component type of the archetype appears in the bundle (the archetype is a
+    /// subset of the bundle).
     pub fn partially_matches_bundle<T: Bundle>(&self) -> bool {
         let bundle = T::component_type_ids();
         self.data_types.iter().all(|id| bundle.contains(id))
     }
 
+    /// Whether the archetype's component types are exactly `data_types`, in any order.
     pub fn exactly_matches_type_ids(&self, data_types: impl IntoIterator<Item = TypeId>) -> bool {
         let mut data_types = data_types.into_iter().collect::<Vec<_>>();
         data_types.sort_unstable();
         self.data_types == data_types
     }
 
+    /// Whether the archetype stores every type in `data_types` (the archetype is a superset).
     pub fn partially_matches_type_ids(&self, data_types: impl IntoIterator<Item = TypeId>) -> bool {
         data_types.into_iter().all(|id| self.index_of(id).is_some())
     }
 }
 
+/// Index of an archetype in [`Components::archetypes`]. Stable, since archetypes are never removed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ArchetypeId(u64);
 
 impl ArchetypeId {
+    /// Wraps a raw index.
     pub fn from_u64(id: u64) -> Self {
         Self(id)
     }
 
+    /// The raw index.
     pub fn as_u64(&self) -> u64 {
         self.0
     }
 
+    /// The raw index as a `usize`.
     pub fn as_usize(&self) -> usize {
         self.0 as usize
     }
@@ -173,17 +197,32 @@ impl ArchetypeId {
 /// Where an entity's components live: its archetype and its row within that archetype.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EntityLocation {
+    /// The archetype the entity is in.
     pub archetype: ArchetypeId,
+    /// Index into each of that archetype's columns.
     pub row: usize,
 }
 
 /// The kind of access a [`Query`](crate::query::Query) term needs to a component type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Access {
+    /// Shared access; any number of readers can coexist.
     Read,
+    /// Exclusive access.
     Write,
 }
 
+/// Archetype storage for every entity's components.
+///
+/// Holds the archetypes, the entity-to-row index and one borrow flag per component type. Reading
+/// and writing component data goes through a [`Query`](crate::query::Query), which takes the
+/// borrow flags it needs; inserting or removing components changes archetypes and needs `&mut`,
+/// which is why those operations panic while a query is alive. The [`World`](crate::world::World)
+/// keeps this as a resource and hands it out through [`World::components`] and
+/// [`World::components_mut`].
+///
+/// [`World::components`]: crate::world::World::components
+/// [`World::components_mut`]: crate::world::World::components_mut
 #[derive(Default)]
 pub struct Components {
     // Note: This Vec never shrinks. This is intentional to avoid changing the ArchetypeId of existing archetypes. Empty archetypes are kept initialized in memory for potential reuse later.
@@ -197,11 +236,14 @@ pub struct Components {
 }
 
 impl Components {
+    /// Creates empty storage.
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Removes an entity from the storage and returns the components that were removed.
+    ///
+    /// # Panics
     ///
     /// Panics if the entity does not exist.
     pub(crate) fn remove_entity(&mut self, entity: Entity) -> ComponentBundle {
@@ -293,6 +335,7 @@ impl Components {
 
     /// Inserts the bundle's components into the entity. Components the entity already has are
     /// replaced: the new value wins and is marked changed, but keeps its original `added` tick.
+    /// Moves the entity to a different archetype if its set of types changes.
     pub fn insert_bundle<T: Bundle>(&mut self, entity: Entity, bundle: T, tick: Tick) {
         let mut components = ComponentBundle::from_tuple(bundle, tick);
         if self.entity_location.contains_key(&entity) {
@@ -322,11 +365,19 @@ impl Components {
         Some(self.remove_entity(entity).types)
     }
 
+    /// Where the entity's components are stored, or `None` if it has none.
     pub fn location(&self, entity: Entity) -> Option<EntityLocation> {
         self.entity_location.get(&entity).copied()
     }
 
+    /// Whether the entity has a `T` component.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the entity has no components stored.
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
+        // FIXME: panics for an entity with no components (e.g. fresh from create_entity) or a dead
+        // one, instead of returning false
         let location = self.location(entity).expect("Entity does not exist");
         self.archetypes[location.archetype.as_usize()].has::<T>()
     }
@@ -348,6 +399,11 @@ impl Components {
         ticks
     }
 
+    /// Whether the entity's `T` was added between `last_run` and `this_run`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the entity has no `T`, or `T` is mutably borrowed by a live query.
     pub fn component_added<T: Component>(
         &self,
         entity: Entity,
@@ -358,6 +414,11 @@ impl Components {
             .is_added(last_run, this_run)
     }
 
+    /// Whether the entity's `T` was changed between `last_run` and `this_run`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the entity has no `T`, or `T` is mutably borrowed by a live query.
     pub fn component_changed<T: Component>(
         &self,
         entity: Entity,
@@ -368,10 +429,12 @@ impl Components {
             .is_changed(last_run, this_run)
     }
 
+    /// Iterates over all archetypes, including empty ones.
     pub fn archetype_iter(&self) -> impl Iterator<Item = &Archetype> {
         self.archetypes.iter()
     }
 
+    /// All archetypes, indexed by [`ArchetypeId`].
     pub fn archetypes(&self) -> &[Archetype] {
         &self.archetypes
     }
@@ -408,6 +471,7 @@ impl Components {
     }
 }
 
+/// A shared reference to a component, with its change ticks. Derefs to the component.
 pub struct Ref<'a, T: Component> {
     item: &'a T,
     last_run: Tick,
@@ -430,10 +494,12 @@ impl<'a, T: Component> Ref<'a, T> {
         }
     }
 
+    /// The component.
     pub fn get(&self) -> &T {
         self.item
     }
 
+    /// The component's change ticks.
     pub fn get_ticks(&self) -> &ComponentTicks {
         self.ticks
     }
@@ -461,6 +527,10 @@ impl<T: Component> Deref for Ref<'_, T> {
     }
 }
 
+/// A mutable reference to a component, with its change ticks.
+///
+/// Writing through `DerefMut` marks the component changed. [`Mut::get_mut`] does not, so use it
+/// only when the write shouldn't show up as a change.
 pub struct Mut<'a, T: Component> {
     item: &'a mut T,
     last_run: Tick,
@@ -483,18 +553,22 @@ impl<'a, T: Component> Mut<'a, T> {
         }
     }
 
+    /// The component.
     pub fn get(&self) -> &T {
         self.item
     }
 
+    /// The component mutably, without marking it changed.
     pub fn get_mut(&mut self) -> &mut T {
         self.item
     }
 
+    /// The component's change ticks.
     pub fn get_ticks(&self) -> &ComponentTicks {
         self.ticks
     }
 
+    /// The component's change ticks, mutably.
     pub fn get_ticks_mut(&mut self) -> &mut ComponentTicks {
         self.ticks
     }

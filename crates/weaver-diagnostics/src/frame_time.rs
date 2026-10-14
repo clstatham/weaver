@@ -1,3 +1,5 @@
+//! Frame time measurement, statistics and logging.
+
 use std::time::Duration;
 
 use weaver_app::{App, AppStage, plugin::Plugin};
@@ -7,13 +9,22 @@ use weaver_ecs::{
 };
 use weaver_util::prelude::*;
 
+/// The most recent frame's timing, updated at the start of every frame.
+///
+/// The first frame's `frame_time` covers everything since the plugin was built (startup, window
+/// creation), so it isn't a real frame time. Readers that aggregate should skip frame 1.
 pub struct FrameTime {
+    /// Seconds between the last two updates.
     pub frame_time: f32,
+    /// Instantaneous frames per second, `1 / frame_time`.
     pub fps: f32,
+    /// When the resource was last updated.
     pub last_update: std::time::Instant,
+    /// Number of updates so far.
     pub frame_count: u32,
 }
 
+/// Inserts [`FrameTime`] and updates it in [`AppStage::PreUpdate`].
 pub struct FrameTimePlugin;
 
 impl Plugin for FrameTimePlugin {
@@ -30,18 +41,26 @@ impl Plugin for FrameTimePlugin {
     }
 }
 
+/// State for [`LogFrameTimePlugin`]'s logging system.
 pub struct FrameTimeLogger {
+    /// Minimum time between log lines.
     pub log_interval: Duration,
+    /// When the last line was logged.
     pub last_log: std::time::Instant,
     /// Frame times (in seconds) recorded since the last log.
     samples: Vec<f32>,
 }
 
+/// Logs frame time statistics at `info` level, one line per interval.
+///
+/// Adds [`FrameTimePlugin`] if [`FrameTime`] isn't already present.
 pub struct LogFrameTimePlugin {
+    /// How often to log.
     pub log_interval: Duration,
 }
 
 impl LogFrameTimePlugin {
+    /// Creates the plugin with the given logging interval (default is one second).
     pub fn new(log_interval: Duration) -> Self {
         Self { log_interval }
     }
@@ -83,10 +102,15 @@ fn update_frame_time(mut frame_time: ResMut<FrameTime>) {
 /// Statistics over a set of frame times, all in seconds.
 #[derive(Debug, Clone, Copy)]
 pub struct FrameTimeStats {
+    /// Number of samples.
     pub count: usize,
+    /// Mean frame time.
     pub mean: f32,
+    /// Fastest frame.
     pub min: f32,
+    /// Slowest frame.
     pub max: f32,
+    /// 99th percentile frame time.
     pub p99: f32,
 }
 

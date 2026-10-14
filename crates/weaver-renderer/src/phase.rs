@@ -29,11 +29,13 @@ use crate::{RenderStage, tracked_pass::TrackedRenderPass, view::ExtractedView};
 
 /// One thing to draw in a [`RenderPhase`].
 pub trait PhaseItem: Send + Sync + 'static {
+    /// What [`RenderPhase::sort`] orders the items by.
     type SortKey: Ord;
 
     /// The entity the item draws (or the view, for items that aren't tied to an entity).
     fn entity(&self) -> Entity;
 
+    /// Returns this item's position in the phase's draw order.
     fn sort_key(&self) -> Self::SortKey;
 
     /// The draw function that draws this item.
@@ -42,6 +44,7 @@ pub trait PhaseItem: Send + Sync + 'static {
 
 /// The items one view draws in one phase this frame.
 pub struct RenderPhase<I: PhaseItem> {
+    /// Queued items, in draw order once sorted.
     pub items: Vec<I>,
 }
 
@@ -52,10 +55,12 @@ impl<I: PhaseItem> Default for RenderPhase<I> {
 }
 
 impl<I: PhaseItem> RenderPhase<I> {
+    /// Queues an item.
     pub fn add(&mut self, item: I) {
         self.items.push(item);
     }
 
+    /// Sorts the items by [`PhaseItem::sort_key`]. Equal keys keep their queue order.
     pub fn sort(&mut self) {
         self.items.sort_by_key(|item| item.sort_key());
     }
@@ -96,8 +101,13 @@ impl DrawFunctionId {
 ///
 /// `Param` is fetched from the render world once per call, like a system's parameters.
 pub trait DrawFunction<I: PhaseItem>: Send + Sync + 'static {
+    /// The render-world data the function needs.
     type Param: SystemParam + 'static;
 
+    /// Records draw commands for `items`, all of which name this function, into `pass`.
+    ///
+    /// `view` is the view entity being rendered. The pass is already open, with the view's
+    /// targets attached.
     fn draw(
         param: &mut SystemParamItem<Self::Param>,
         pass: &mut TrackedRenderPass,
@@ -151,6 +161,7 @@ impl<I: PhaseItem> Default for DrawFunctions<I> {
 }
 
 impl<I: PhaseItem> DrawFunctions<I> {
+    /// Registers `D` and returns its id. Registering the same type again returns the same id.
     pub fn add<D: DrawFunction<I>>(&mut self) -> DrawFunctionId {
         *self.ids.entry(TypeId::of::<D>()).or_insert_with(|| {
             self.functions.push(Box::new(DrawFunctionState::<I, D> {
@@ -162,8 +173,11 @@ impl<I: PhaseItem> DrawFunctions<I> {
         })
     }
 
-    /// The id of draw function `D`. Panics if it wasn't registered with
-    /// [`AddDrawFunction::add_draw_function`].
+    /// Returns the id of draw function `D`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `D` wasn't registered with [`AddDrawFunction::add_draw_function`].
     pub fn id<D: DrawFunction<I>>(&self) -> DrawFunctionId {
         *self.ids.get(&TypeId::of::<D>()).unwrap_or_else(|| {
             panic!(
@@ -188,8 +202,14 @@ impl<I: PhaseItem> DrawFunctions<I> {
 
 /// Registering draw functions on the render app.
 pub trait AddDrawFunction {
-    /// Registers draw function `D` for phase `I`. The phase's [`RenderPhasePlugin`] must have been
-    /// added first (the renderer adds the built-in phases).
+    /// Registers draw function `D` for phase `I`.
+    ///
+    /// Call this on the render app (on an [`App`] it targets the main sub-app's world). The
+    /// renderer adds the built-in phases.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the phase's [`RenderPhasePlugin`] hasn't been added.
     fn add_draw_function<I: PhaseItem, D: DrawFunction<I>>(&mut self) -> &mut Self;
 }
 
@@ -251,6 +271,7 @@ fn insert_view_phase<I: PhaseItem>(
     }
 }
 
+/// Sorts every view's [`RenderPhase<I>`].
 pub fn sort_phase<I: PhaseItem>(mut phases: Query<&mut RenderPhase<I>>) {
     for mut phase in phases.iter() {
         phase.sort();
@@ -265,7 +286,9 @@ fn clear_phase<I: PhaseItem>(mut phases: Query<&mut RenderPhase<I>>) {
 
 /// Drawn first, behind everything: skyboxes and other backgrounds.
 pub struct Background3d {
+    /// The view being drawn into.
     pub view: Entity,
+    /// Function that draws the background. Items sort by this id.
     pub draw_function: DrawFunctionId,
 }
 
@@ -288,15 +311,21 @@ impl PhaseItem for Background3d {
 /// What opaque mesh items are sorted (and batched) by: items with equal keys draw the same mesh
 /// with the same material, so neighbors can be merged into one instanced draw.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+// TODO: the key has no depth term, so opaque items aren't drawn front to back.
 pub struct Opaque3dKey {
+    /// Function that draws the item. Sorts first, so a draw function's items stay together.
     pub draw_function: DrawFunctionId,
+    /// Id of the material asset.
     pub material: AssetId,
+    /// Id of the mesh asset.
     pub mesh: AssetId,
 }
 
 /// An opaque mesh.
 pub struct Opaque3d {
+    /// Sort and batch key.
     pub key: Opaque3dKey,
+    /// The mesh entity. Its [`GpuTransform`](crate::transform::GpuTransform) becomes the instance.
     pub entity: Entity,
     /// The instances to draw. Set by batching in [`RenderStage::Sort`]: index `i` in this range
     /// reads the `i`th transform of the view's [`crate::mesh::instances::ViewMeshInstances`].
@@ -304,6 +333,7 @@ pub struct Opaque3d {
 }
 
 impl Opaque3d {
+    /// Creates an unbatched item (`batch_range` is empty until batching runs).
     pub fn new(entity: Entity, key: Opaque3dKey) -> Self {
         Self {
             key,
@@ -331,7 +361,9 @@ impl PhaseItem for Opaque3d {
 
 /// Drawn last, over the scene: gizmos and other debug overlays.
 pub struct Overlay3d {
+    /// The entity being drawn.
     pub entity: Entity,
+    /// Function that draws the overlay. Items sort by this id.
     pub draw_function: DrawFunctionId,
 }
 

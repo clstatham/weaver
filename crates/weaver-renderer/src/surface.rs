@@ -69,14 +69,17 @@ impl WindowSurface {
         Ok(Self { surface, config })
     }
 
+    /// Width in pixels.
     pub fn width(&self) -> u32 {
         self.config.width
     }
 
+    /// Height in pixels.
     pub fn height(&self) -> u32 {
         self.config.height
     }
 
+    /// The surface's texture format.
     pub fn format(&self) -> wgpu::TextureFormat {
         self.config.format
     }
@@ -106,10 +109,12 @@ impl WindowSurface {
 /// [`present_frame`], and only on frames where a texture could be acquired.
 pub struct SurfaceFrame {
     texture: wgpu::SurfaceTexture,
+    /// A view of the swapchain texture to render into.
     pub view: wgpu::TextureView,
 }
 
 impl SurfaceFrame {
+    /// Size of the swapchain texture.
     pub fn size(&self) -> wgpu::Extent3d {
         self.texture.texture.size()
     }
@@ -123,6 +128,7 @@ pub struct CommandBuffers {
 }
 
 impl CommandBuffers {
+    /// Queues a command buffer for submission after the frame's main encoder.
     pub fn push(&mut self, buffer: wgpu::CommandBuffer) {
         self.buffers.push(buffer);
     }
@@ -258,7 +264,12 @@ pub fn acquire_frame(
 }
 
 /// Submits the frame's command buffers and presents the swapchain texture.
+///
+/// # Panics
+///
+/// Panics (when the deferred command runs) if there is no [`WgpuQueue`].
 pub fn present_frame(commands: Commands) {
+    // deferred so the encoder and frame are removed at the end of the Present layer
     commands.add(|world| {
         let Some(frame) = world.remove_resource::<SurfaceFrame>() else {
             return;

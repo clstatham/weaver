@@ -1,3 +1,5 @@
+//! Entity ids and the allocator that hands them out.
+
 use std::{
     hash::{BuildHasherDefault, Hash, Hasher},
     num::NonZeroU32,
@@ -6,6 +8,12 @@ use std::{
 
 use weaver_util::prelude::*;
 
+/// A generational entity id: a slot index plus a generation counter.
+///
+/// Destroying an entity bumps its slot's generation, so a stale `Entity` held somewhere else no
+/// longer matches and [`Entities::is_alive`] reports false for it. Entities are created through
+/// [`World::spawn`](crate::world::World::spawn) or
+/// [`World::create_entity`](crate::world::World::create_entity), not by hand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub struct Entity {
@@ -14,22 +22,31 @@ pub struct Entity {
 }
 
 impl Entity {
+    /// Builds an entity from its parts. Doesn't allocate anything; use [`Entities`] for that.
     pub const fn new(id: u32, generation: NonZeroU32) -> Self {
         Self { id, generation }
     }
 
+    /// The slot index. Unique among live entities, reused after the entity is destroyed.
     pub const fn id(&self) -> u32 {
         self.id
     }
 
+    /// How many times the slot has been freed, plus one. Starts at 1.
     pub const fn generation(&self) -> u32 {
         self.generation.get()
     }
 
+    /// Packs the entity as `generation << 32 | id`.
     pub const fn as_u64(&self) -> u64 {
         ((self.generation() as u64) << 32) | self.id as u64
     }
 
+    /// Unpacks an entity from the layout produced by [`Entity::as_u64`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the generation half is zero.
     pub fn from_u64(value: u64) -> Self {
         Self {
             id: value as u32,
@@ -37,10 +54,16 @@ impl Entity {
         }
     }
 
+    /// [`Entity::as_u64`] truncated to `usize`.
     pub const fn as_usize(&self) -> usize {
         self.as_u64() as usize
     }
 
+    /// Inverse of [`Entity::as_usize`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the generation half is zero.
     pub fn from_usize(value: usize) -> Self {
         Self::from_u64(value as u64)
     }
@@ -52,6 +75,9 @@ impl Hash for Entity {
     }
 }
 
+/// A hasher for [`Entity`] keys: one multiply on the packed id, no other mixing.
+///
+/// Only meant for [`EntityMap`] and [`EntitySet`]; it panics if fed arbitrary bytes.
 #[derive(Debug, Default)]
 pub struct EntityHasher {
     state: u64,
@@ -77,11 +103,19 @@ impl Hasher for EntityHasher {
     }
 }
 
+/// A `HashMap` keyed by [`Entity`] using [`EntityHasher`].
 pub type EntityMap<V> =
     std::collections::hash_map::HashMap<Entity, V, BuildHasherDefault<EntityHasher>>;
 
+/// A `HashSet` of [`Entity`] using [`EntityHasher`].
 pub type EntitySet = std::collections::hash_set::HashSet<Entity, BuildHasherDefault<EntityHasher>>;
 
+/// The entity allocator: tracks which slots are alive and recycles freed ones.
+///
+/// Follows Bevy's scheme. Freed slots go on a `pending` list with their generation already bumped.
+/// [`Entities::reserve`] works through `&self` (it moves an atomic cursor), so ids can be handed
+/// out without exclusive access; the reservation is made real by the next [`Entities::flush`],
+/// which every `&mut self` method does first.
 #[derive(Debug, Default)]
 pub struct Entities {
     // Weaver uses a system similar to Bevy's entity system to manage entities.
@@ -91,6 +125,7 @@ pub struct Entities {
 }
 
 impl Entities {
+    /// Whether there are reservations that haven't been flushed yet.
     pub fn needs_flush(&mut self) -> bool {
         *self.free_cursor.get_mut() != self.pending.len() as i64
     }
@@ -102,6 +137,8 @@ impl Entities {
     //     );
     // }
 
+    /// Makes outstanding [`Entities::reserve`] calls real: grows the generation table for fresh
+    /// ids and drops the recycled ids from the pending list.
     pub fn flush(&mut self) {
         let free_cursor = self.free_cursor.get_mut();
         let current_free_cursor = *free_cursor;
@@ -122,6 +159,14 @@ impl Entities {
         self.pending.drain(new_free_cursor..);
     }
 
+    /// Hands out an entity id through `&self`, preferring a recycled slot.
+    ///
+    /// The entity counts as alive immediately but isn't fully allocated until
+    /// [`Entities::flush`] runs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the id space (`u32`) is exhausted.
     pub fn reserve(&self) -> Entity {
         let n = self.free_cursor.fetch_sub(1, Ordering::Relaxed);
         if n > 0 {
@@ -133,6 +178,11 @@ impl Entities {
         }
     }
 
+    /// Allocates an entity, reusing a freed slot if there is one.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the id space (`u32`) is exhausted.
     pub fn alloc(&mut self) -> Entity {
         self.flush();
 
@@ -147,6 +197,8 @@ impl Entities {
         }
     }
 
+    /// Marks exactly `entity` (id and generation) as alive, growing the table if needed and
+    /// pulling its slot off the free list. Used to recreate entities with known ids.
     pub fn alloc_at(&mut self, entity: Entity) {
         self.flush();
 
@@ -162,6 +214,12 @@ impl Entities {
         self.generations[id] = entity.generation;
     }
 
+    /// Frees the entity's slot and bumps its generation, so the old `Entity` stops being alive.
+    /// Does nothing if the entity is already dead.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the entity's id was never allocated.
     pub fn free(&mut self, entity: Entity) {
         self.flush();
 
@@ -171,6 +229,8 @@ impl Entities {
             return;
         }
 
+        // FIXME: panics when the generation is u32::MAX (wraps to 0, not NonZero); the wrap-around
+        // warning below never fires
         *generation = NonZeroU32::new(generation.get().wrapping_add(1)).unwrap();
 
         if *generation == NonZeroU32::MIN {
@@ -192,6 +252,8 @@ impl Entities {
         }
     }
 
+    /// The entity currently occupying slot `id`, with the slot's current generation, if the slot
+    /// exists (allocated or reserved). Doesn't check that the slot hasn't been freed.
     pub fn find_by_id(&self, id: u32) -> Option<Entity> {
         let id = id as usize;
         if let Some(generation) = self.generations.get(id) {

@@ -1,3 +1,15 @@
+//! Typed event queues and the system parameters for sending and reading them.
+//!
+//! Each event type `T` has one [`EventQueue<T>`] resource. Systems send with [`EventTx<T>`] and
+//! read with [`EventRx<T>`]; every system that takes an `EventRx<T>` has its own cursor, so each
+//! sees every event once no matter what the other readers do.
+//!
+//! The queue is double-buffered: an event can be read in the frame it was sent and in the next
+//! one, then it's dropped. The app's `add_event` registers a system that calls
+//! [`EventQueue::update`] once per frame in a stage the caller picks (the main world uses
+//! `FinishFrame`). The queue itself knows nothing about stages, so an owner that inserts one
+//! without that system has to call [`EventQueue::update`] or [`EventQueue::clear`] by hand.
+
 use std::{
     marker::PhantomData,
     sync::{
@@ -13,10 +25,15 @@ use weaver_ecs::{
     world::World,
 };
 
+/// The queue, the two system params and the [`Event`] trait.
 pub mod prelude {
     pub use super::{Event, EventQueue, EventRx, EventTx};
 }
 
+/// Marker for types that can go through an [`EventQueue`].
+///
+/// Blanket-implemented for anything `'static + Send + Sync + Clone`; readers clone each event out
+/// of the queue.
 pub trait Event: 'static + Send + Sync + Clone {}
 impl<T: 'static + Send + Sync + Clone> Event for T {}
 
@@ -50,15 +67,18 @@ impl<T: Event> Default for EventQueue<T> {
 }
 
 impl<T: Event> EventQueue<T> {
+    /// Creates an empty queue.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Appends `event` to the current frame's buffer.
     pub fn send(&mut self, event: T) {
         self.front_buffer.push(event);
         self.event_count += 1;
     }
 
+    /// Sends `T::default()`, for events that carry no data.
     pub fn send_default(&mut self)
     where
         T: Default,
@@ -84,6 +104,7 @@ impl<T: Event> EventQueue<T> {
         self.back_buffer.len() + self.front_buffer.len()
     }
 
+    /// Returns whether no events are buffered.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -109,10 +130,12 @@ pub struct EventTx<T: Event> {
 }
 
 impl<T: Event> EventTx<T> {
+    /// Wraps a mutable borrow of the queue.
     pub fn new(events: ResMut<EventQueue<T>>) -> Self {
         Self { events }
     }
 
+    /// Sends `event`; readers see it this frame (if they run after this system) and next frame.
     pub fn send(&mut self, event: T) {
         self.events.send(event);
     }
@@ -155,12 +178,14 @@ pub struct EventRx<T: Event> {
 }
 
 impl<T: Event> EventRx<T> {
+    /// Creates a reader over `events` that continues from the cursor in `state`.
     pub fn new(events: Res<EventQueue<T>>, state: EventRxState<T>) -> Self {
         Self { events, state }
     }
 
     /// The id of the next event to read, skipping any the queue has already dropped.
     fn next_id(&self) -> usize {
+        // TODO: a reader that misses two updates silently skips the dropped events, no warning
         self.state
             .next_id
             .load(Ordering::Relaxed)
@@ -172,6 +197,7 @@ impl<T: Event> EventRx<T> {
         self.events.event_count.saturating_sub(self.next_id())
     }
 
+    /// Returns whether there is nothing left to read.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

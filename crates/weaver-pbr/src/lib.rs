@@ -1,3 +1,24 @@
+//! Physically based rendering for static meshes.
+//!
+//! Materials ([`material::Material`]) have albedo, normal, metallic-roughness and AO textures plus
+//! scalar factors. [`PbrPlugin`] extracts them, along with [`light::PointLight`]s and the
+//! [`skybox::Skybox`], into the render world and draws every mesh that has a material in the
+//! [`Opaque3d`] phase with [`render::PbrPipeline`]. The draw function binds four groups: the
+//! material (0), the camera (1), the view's instance transforms (2) and the per-frame lighting
+//! information (3), which holds the point lights and the environment maps.
+//!
+//! The skybox starts from an equirectangular `.hdr` image, which a compute shader converts to a
+//! cubemap that's drawn in the [`Background3d`] phase. Lighting from the sky comes from
+//! pre-generated irradiance and specular cubemaps plus a BRDF lookup table, loaded from files
+//! next to the `.hdr` (see [`skybox::Skybox::new`]). Without a skybox those maps are black, so
+//! only point lights contribute.
+//!
+//! Meshes with materials come from [`assets::material_mesh`]: an OBJ loader (with MTL) and glTF
+//! loaders.
+//!
+//! [`Opaque3d`]: weaver_renderer::phase::Opaque3d
+//! [`Background3d`]: weaver_renderer::phase::Background3d
+
 use assets::material_mesh::{LoadedModelWithMaterials, ObjMaterialModelLoader};
 use light::{ExtractedPointLight, PointLightPlugin, PointLightUniform};
 use material::{BLACK_TEXTURE, ERROR_TEXTURE, MaterialPlugin, WHITE_TEXTURE};
@@ -24,12 +45,16 @@ use weaver_renderer::{
 };
 use weaver_util::prelude::*;
 
+/// Mesh and material loaders (OBJ and glTF).
 pub mod assets;
 pub mod light;
 pub mod material;
 pub mod render;
 pub mod skybox;
 
+/// Everything needed to set up and use PBR rendering.
+///
+/// [`crate::render`] items such as `PbrLightingInformation` are not included.
 pub mod prelude {
     pub use crate::PbrPlugin;
     pub use crate::assets::material_mesh::*;
@@ -38,6 +63,19 @@ pub mod prelude {
     pub use crate::skybox::*;
 }
 
+/// Adds PBR rendering: materials, point lights, the skybox and the PBR draw function.
+///
+/// Needs [`RenderApp`] to exist already, so add it after the renderer plugin (which
+/// `DefaultPlugins` does for you). Only the OBJ loader is registered with the asset system; the
+/// glTF loaders have to be called directly.
+///
+/// Also inserts the [`WHITE_TEXTURE`], [`BLACK_TEXTURE`] and [`ERROR_TEXTURE`] fallbacks into
+/// `Assets<Texture>` in [`Plugin::finish`].
+///
+/// # Panics
+///
+/// Panics in `build` if there's no [`RenderApp`] sub-app, and in `finish` if `Assets<Texture>`
+/// hasn't been registered.
 pub struct PbrPlugin;
 
 impl Plugin for PbrPlugin {
@@ -104,10 +142,12 @@ impl Plugin for PbrPlugin {
     }
 }
 
+/// Creates the [`PbrLightingInformation`] resource the first frame it's missing.
 pub(crate) fn init_pbr_lighting_information(commands: Commands) {
     commands.init_resource::<PbrLightingInformation>();
 }
 
+/// Rebuilds the point light buffer from this frame's [`ExtractedPointLight`]s and uploads it.
 pub(crate) fn update_pbr_lighting_information(
     mut lighting: ResMut<PbrLightingInformation>,
     mut lights: Query<&ExtractedPointLight>,

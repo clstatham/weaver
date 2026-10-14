@@ -1,3 +1,5 @@
+//! The [`World`], which owns entities, components, resources and systems.
+
 use std::{
     any::TypeId,
     ops::{Deref, DerefMut},
@@ -20,6 +22,17 @@ use crate::{
 
 use super::{entity::Entity, storage::Components};
 
+/// The container for everything in a running ECS: entities, their components, resources, systems
+/// and change ticks.
+///
+/// Almost everything takes `&self`. Component data and resources are guarded at runtime (per-type
+/// borrow flags and loans), so a [`Query`] or a [`Res`]/[`ResMut`] can be held while other
+/// parts of the world are used. Operations that restructure storage (spawn, destroy, insert or
+/// remove components) need exclusive access to the component storage and panic if a [`Query`] is
+/// still alive. Operations that change the set of systems take `&mut self`.
+///
+/// A world is driven either with [`World::init`], [`World::update`] and [`World::shutdown`], or by
+/// running individual stages with [`World::run_stage`].
 pub struct World {
     entities: SharedLock<Entities>,
     resources: Lock<ComponentMap>,
@@ -54,28 +67,52 @@ impl World {
         Self::default()
     }
 
+    /// A shared handle to the entity allocator, for code that needs to reserve ids on its own.
     pub fn entities_handle(&self) -> SharedLock<Entities> {
         self.entities.clone()
     }
 
+    /// Flushes reserved entity ids into the allocator. See [`Entities::flush`].
     pub fn flush_entities(&self) {
         self.entities.write().flush();
     }
 
-    /// Creates a new entity in the world.
+    /// Creates a new entity in the world with no components.
+    ///
+    /// Components stored for it later with [`World::insert_component`] or [`World::insert_bundle`].
     pub fn create_entity(&self) -> Entity {
         self.entities.write().alloc()
     }
 
+    /// Marks exactly `entity` (id and generation) as alive without giving it components, e.g. to
+    /// recreate an entity with a known id. See [`Entities::alloc_at`].
     pub fn insert_entity(&self, entity: Entity) {
         self.entities.write().alloc_at(entity);
     }
 
+    /// The entity currently in slot `id`, if the slot exists. See [`Entities::find_by_id`].
     pub fn find_entity_by_id(&self, id: u32) -> Option<Entity> {
         self.entities.read().find_by_id(id)
     }
 
     /// Creates a new entity in the world and adds the bundle of components to it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a [`Query`] is alive.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use weaver_ecs::prelude::*;
+    ///
+    /// struct Name(&'static str);
+    /// struct Health(u32);
+    ///
+    /// let world = World::new();
+    /// let player = world.spawn((Name("player"), Health(100)));
+    /// assert!(world.has_component::<Health>(player));
+    /// ```
     pub fn spawn<T: Bundle>(&self, bundle: T) -> Entity {
         let entity = self.create_entity();
         self.components_mut()
@@ -85,6 +122,10 @@ impl World {
 
     /// Destroys the entity and all its components in the world. Does nothing if the entity is
     /// already dead.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a [`Query`] is alive.
     pub fn destroy_entity(&self, entity: Entity) {
         if !self.is_alive(entity) {
             return;
@@ -106,6 +147,10 @@ impl World {
 
     /// Inserts a component into the entity, replacing any it already has. Ignored (with a
     /// warning) if the entity isn't alive, so a late insert can't resurrect a despawned entity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a [`Query`] is alive.
     pub fn insert_component<T: Component>(&self, entity: Entity, component: T) {
         self.insert_bundle(entity, (component,));
     }
@@ -113,6 +158,10 @@ impl World {
     /// Inserts a bundle of components into the entity, replacing any it already has. Ignored
     /// (with a warning) if the entity isn't alive, so a late insert can't resurrect a despawned
     /// entity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a [`Query`] is alive.
     pub fn insert_bundle<T: Bundle>(&self, entity: Entity, bundle: T) {
         if !self.is_alive(entity) {
             log::warn!(
@@ -127,6 +176,10 @@ impl World {
 
     /// Removes a component from the entity in the world. Returns `None` if the entity doesn't
     /// exist or doesn't have the component.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a [`Query`] is alive.
     pub fn remove_component<T: Component>(&self, entity: Entity) -> Option<T> {
         let removed = self.components_mut().remove_component::<T>(entity);
         if removed.is_some() {
@@ -150,6 +203,10 @@ impl World {
     }
 
     /// Checks if the entity in the world has a certain type of component.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the entity has no components stored.
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
         self.components().has_component::<T>(entity)
     }
@@ -184,10 +241,20 @@ impl World {
             .get_component_mut::<T>(ticks.last_run, ticks.this_run)
     }
 
+    /// Borrows the component storage for reading.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the storage is mutably borrowed.
     pub fn components(&self) -> Res<Components> {
         self.get_resource::<Components>().unwrap()
     }
 
+    /// Borrows the component storage for writing.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the storage is already borrowed, e.g. by a live [`Query`].
     pub fn components_mut(&self) -> ResMut<Components> {
         self.get_resource_mut::<Components>().expect(
             "Components is borrowed: entities can't be spawned, destroyed or have components inserted/removed while a Query is alive",
@@ -199,7 +266,7 @@ impl World {
         self.resources.read().contains_component::<T>()
     }
 
-    /// Initializes a resource in the world. The resource is initialized using its implementation of `FromWorld`.
+    /// Initializes a resource in the world using its [`ConstructFromWorld`] implementation.
     /// If the resource has already been initialized, does nothing, and returns None.
     pub fn init_resource<T: Component + ConstructFromWorld>(&self) -> Option<T> {
         if self.has_resource::<T>() {
@@ -211,6 +278,10 @@ impl World {
 
     /// Inserts a resource into the world.
     /// If the resource has already been inserted, replaces the existing resource with a new one, and returns the old resource.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the existing resource is currently borrowed.
     pub fn insert_resource<T: Component>(&self, component: T) -> Option<T> {
         self.resources
             .write()
@@ -219,39 +290,62 @@ impl World {
     }
 
     /// Removes a resource from the world.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the resource is currently borrowed.
     pub fn remove_resource<T: Component>(&self) -> Option<T> {
         self.resources.write().remove_component::<T>().unwrap()
     }
 
+    /// Whether a stage with this label has been pushed.
     pub fn has_system_stage(&self, stage: impl SystemStage) -> bool {
         self.systems.has_stage(stage)
     }
 
+    /// Appends a stage to the init schedule (run by [`World::init`]).
     pub fn push_init_stage(&mut self, stage: impl SystemStage) {
         self.systems.push_init_stage(stage);
     }
 
+    /// Appends a stage to the update schedule (run by [`World::update`]).
     pub fn push_update_stage(&mut self, stage: impl SystemStage) {
         self.systems.push_update_stage(stage);
     }
 
+    /// Appends a stage to the shutdown schedule (run by [`World::shutdown`]).
     pub fn push_shutdown_stage(&mut self, stage: impl SystemStage) {
         self.systems.push_shutdown_stage(stage);
     }
 
+    /// Appends a stage that only runs when asked for with [`World::run_stage`].
     pub fn push_manual_stage(&mut self, stage: impl SystemStage) {
         self.systems.push_manual_stage(stage);
     }
 
+    /// Inserts an update stage immediately before `before`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `before` isn't an update stage.
     pub fn add_update_stage_before(&mut self, stage: impl SystemStage, before: impl SystemStage) {
         self.systems.add_update_stage_before(stage, before);
     }
 
+    /// Inserts an update stage immediately after `after`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `after` isn't an update stage.
     pub fn add_update_stage_after(&mut self, stage: impl SystemStage, after: impl SystemStage) {
         self.systems.add_update_stage_after(stage, after);
     }
 
     /// Adds a system to the given system stage. If the system has already been added to the stage, a warning is logged and the system is not added again.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stage hasn't been pushed.
     pub fn add_system<T, S, M>(&mut self, system: S, stage: T)
     where
         T: SystemStage,
@@ -261,6 +355,11 @@ impl World {
         self.systems.add_system(system, stage);
     }
 
+    /// Removes a system from the given stage.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stage hasn't been pushed.
     pub fn remove_system<T, S, M>(&mut self, system: S, stage: T)
     where
         T: SystemStage,
@@ -272,7 +371,12 @@ impl World {
 
     /// Orders two systems to run in the specified order in the given system stage.
     ///
-    /// Note that this doesn't necessarily mean the systems will run in this exact sequence; `run_first` is guaranteed to run *at some point* before `run_second`, but there might be other systems that run in between them.
+    /// `run_first` is guaranteed to run at some point before `run_second`, but other systems can
+    /// run in between them.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stage hasn't been pushed.
     pub fn order_systems<Stage, M1, M2, S1, S2>(
         &mut self,
         run_first: S1,
@@ -291,6 +395,10 @@ impl World {
     }
 
     /// Checks if the system has been added to the given system stage.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stage hasn't been pushed.
     pub fn has_system<M: 'static>(
         &self,
         system: &impl IntoSystem<M>,
@@ -299,12 +407,15 @@ impl World {
         self.systems.has_system(system, stage)
     }
 
+    /// Runs every system's one-time setup (parameter state, run conditions). Call after all
+    /// systems are added and before the first run.
     pub fn initialize_systems(&mut self) {
         let mut systems = std::mem::take(&mut self.systems);
         systems.initialize(self);
         self.systems = systems;
     }
 
+    /// Like [`World::initialize_systems`] for a single stage, e.g. for systems added later.
     pub fn initialize_system_stage(&mut self, stage: impl SystemStage) {
         let mut systems = std::mem::take(&mut self.systems);
         systems.initialize_stage(self, stage);
@@ -312,14 +423,25 @@ impl World {
     }
 
     /// Runs the "init" system schedule once.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first error a system returns, and stops.
     pub fn init(&mut self) -> Result<()> {
+        // FIXME: if a system panics or returns Err, `self.systems` stays the empty default and
+        // the World loses all its stages (same in update, shutdown and run_stage).
         let mut systems = std::mem::take(&mut self.systems);
         systems.run_init(self)?;
         self.systems = systems;
         Ok(())
     }
 
-    /// Runs the "update" system schedule once.
+    /// Runs the "update" system schedule once, then advances the change tick and ages out the
+    /// removed-components log.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first error a system returns, and stops.
     pub fn update(&mut self) -> Result<()> {
         let mut systems = std::mem::take(&mut self.systems);
         systems.run_update(self)?;
@@ -330,6 +452,10 @@ impl World {
     }
 
     /// Runs the "shutdown" system schedule once.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first error a system returns, and stops.
     pub fn shutdown(&mut self) -> Result<()> {
         let mut systems = std::mem::take(&mut self.systems);
         systems.run_shutdown(self)?;
@@ -338,6 +464,14 @@ impl World {
     }
 
     /// Runs the given system stage once.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first error a system returns, and stops.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stage hasn't been pushed.
     pub fn run_stage(&mut self, stage: impl SystemStage) -> Result<()> {
         let mut systems = std::mem::take(&mut self.systems);
         systems.run_stage(self, stage)?;
@@ -375,10 +509,12 @@ impl World {
         Tick(tick)
     }
 
+    /// The current change tick.
     pub fn read_change_tick(&self) -> Tick {
         Tick(self.change_tick.load(std::sync::atomic::Ordering::Relaxed))
     }
 
+    /// The tick that was current when [`World::increment_change_tick`] last ran.
     pub fn last_change_tick(&self) -> Tick {
         Tick(
             self.last_change_tick
@@ -387,8 +523,12 @@ impl World {
     }
 }
 
-/// A trait for creating a new instance of a type from a world.
+/// A type that can build itself from the world, e.g. a resource that needs to look at other
+/// resources when it's created.
+///
+/// Every `Default` type implements it by calling `default()`.
 pub trait ConstructFromWorld {
+    /// Creates the value, reading whatever it needs from `world`.
     fn from_world(world: &World) -> Self;
 }
 
@@ -398,11 +538,14 @@ impl<T: Default> ConstructFromWorld for T {
     }
 }
 
+/// A system parameter that builds a `T` with [`ConstructFromWorld`] each time the system runs.
+/// Derefs to the `T`.
 pub struct FromWorld<T: ConstructFromWorld> {
     value: T,
 }
 
 impl<T: ConstructFromWorld> FromWorld<T> {
+    /// Builds the value from `world`.
     pub fn new(world: &World) -> Self {
         Self {
             value: T::from_world(world),

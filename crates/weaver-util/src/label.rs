@@ -1,10 +1,19 @@
+//! Support types for [`define_label!`](crate::define_label).
+
 use std::{
     any::Any,
     hash::{Hash, Hasher},
 };
 
+/// Object-safe equality: compares two type-erased values, equal only if they're the same type
+/// and `==`.
+///
+/// Blanket-implemented for every `Any + Eq` type.
 pub trait DynEq: Any {
+    /// Upcasts to [`Any`] so the other side can be downcast.
     fn as_any(&self) -> &dyn Any;
+
+    /// Returns whether `other` is the same concrete type and compares equal to `self`.
     fn dyn_eq(&self, other: &dyn DynEq) -> bool;
 }
 
@@ -22,8 +31,15 @@ impl<T: Any + Eq> DynEq for T {
     }
 }
 
+/// Object-safe hashing that also mixes in the type id, so equal-looking values of different
+/// types hash differently.
+///
+/// Blanket-implemented for every `Any + Eq + Hash` type.
 pub trait DynHash: Any {
+    /// Upcasts to [`DynEq`].
     fn as_dyn_eq(&self) -> &dyn DynEq;
+
+    /// Feeds the value and its type id into `state`.
     fn dyn_hash<H: Hasher>(&self, state: &mut H);
 }
 
@@ -38,8 +54,20 @@ impl<T: Any + Eq + Hash> DynHash for T {
     }
 }
 
-// yoinked directly from bevy's source code, with minor changes
-// https://github.com/bevyengine/bevy/blob/793e2f2000e43d212a76e81aefa09223e5d65bb1/crates/bevy_ecs/src/label.rs#L94
+/// Declares a label trait plus the interning machinery for it.
+///
+/// `define_label!(MyLabel, MY_LABEL_INTERNER)` creates a trait `MyLabel` (`'static + Send + Sync +
+/// Debug`) and a private `static` [`Interner`](crate::intern::Interner) with the second name.
+/// The trait gets type-erased `dyn_clone`, `as_dyn_eq`, `dyn_hash` and an `intern()` method that
+/// returns an [`Interned`](crate::intern::Interned) handle, and `dyn MyLabel` implements
+/// `Eq` and `Hash`. Implementors still write the three `dyn_*` methods themselves (usually from a
+/// derive), and the interned handle is itself a `MyLabel`.
+///
+/// The longer form takes `extra_methods` (added to the trait) and `extra_methods_impl` (how the
+/// `Interned` handle implements them). Used for system and stage labels.
+///
+/// Yoinked from bevy's source with minor changes:
+/// <https://github.com/bevyengine/bevy/blob/793e2f2000e43d212a76e81aefa09223e5d65bb1/crates/bevy_ecs/src/label.rs#L94>
 #[macro_export]
 macro_rules! define_label {
     (
